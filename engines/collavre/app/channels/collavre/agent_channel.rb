@@ -1,23 +1,7 @@
 # frozen_string_literal: true
 
-require "concurrent/map"
-
 module Collavre
   class AgentChannel < ApplicationCable::Channel
-    # Tracks the currently-active subscription token per per-session Claude
-    # Channel agent so unsubscribed can tell whether THIS connection is still
-    # the live subscriber. If the WS dropped after a reconnect has already
-    # taken over (ActionCable's ping timeout means unsubscribed may fire
-    # several seconds late, possibly AFTER the client has reconnected and
-    # restored routing_expression), the late unsubscribe must NOT clear
-    # routing — that would mark the actively-subscribed agent offline.
-    # Per-process Concurrent::Map: the channel instance that holds the
-    # subscription is in the same process as the unsubscribed callback.
-    @subscription_tokens = Concurrent::Map.new
-    class << self
-      attr_reader :subscription_tokens
-    end
-
     # Subscribes to an agent stream for real-time dispatch notifications.
     # Accepts either:
     #   - agent_id: per-agent stream — used by MCP plugin clients (Claude
@@ -43,26 +27,32 @@ module Collavre
     # an empty stream — delegated work that only clears via stuck recovery.
     # Mark the session agent offline here so Orchestration::Matcher stops
     # selecting it; subscribe_to_agent_stream restores routing on reconnect.
+    #
+    # Cross-process ownership: the subscription token is persisted on the
+    # users row (routing_subscription_token). A late unsubscribe whose token
+    # has been overwritten by a newer subscribe — possibly on a DIFFERENT
+    # Puma/Kamal process — matches zero rows under the conditional UPDATE
+    # below and becomes a no-op. This is required for scaled deployments
+    # (WEB_CONCURRENCY > 1, Solid Cable) where the old connection's
+    # unsubscribed and the reconnect's subscribe may not share a process.
     def unsubscribed
       return unless @session_agent && @subscription_token
 
-      # Only clear routing if this connection is still the latest subscriber
-      # for this agent. If a newer connection has reconnected during the WS
-      # ping-timeout window, it will have overwritten the token via subscribe_
-      # to_agent_stream — clearing here would mark the live agent offline.
-      current_token = self.class.subscription_tokens[@session_agent.id]
-      return unless current_token == @subscription_token
+      rows_updated = User.where(
+        id: @session_agent.id,
+        routing_subscription_token: @subscription_token
+      ).update_all(
+        routing_expression: nil,
+        routing_subscription_token: nil,
+        updated_at: Time.current
+      )
 
-      # We are the last/latest subscriber; release the slot.
-      self.class.subscription_tokens.delete_pair(@session_agent.id, @subscription_token)
-
-      @session_agent.reload
-      if @session_agent.routing_expression.present?
-        @session_agent.update_column(:routing_expression, nil)
+      if rows_updated.zero?
+        # A newer subscribe (any process) has overwritten the token. The
+        # live owner is still subscribed — do not clobber its routing.
       end
-    rescue ActiveRecord::RecordNotFound
-      # Agent deleted between subscribe and unsubscribe — nothing to clear.
-      self.class.subscription_tokens.delete_pair(@session_agent.id, @subscription_token) if @session_agent && @subscription_token
+    rescue ActiveRecord::StatementInvalid => e
+      Rails.logger.warn("[AgentChannel] unsubscribed conditional clear failed: #{e.message}")
     end
 
     # Broadcast an arbitrary payload to a topic's agent stream.
@@ -103,11 +93,12 @@ module Collavre
       # receiving broadcasts.
       if agent.claude_channel_agent?
         @session_agent = agent
-        # Claim ownership of routing for this agent. A subsequent subscribe
-        # for the same agent (reconnect) will overwrite this token, after
-        # which our late unsubscribed becomes a no-op.
+        # Claim cross-process ownership of routing for this agent. A
+        # subsequent subscribe (any process) will overwrite this token on
+        # the users row, after which our late unsubscribed's conditional
+        # UPDATE matches zero rows and becomes a no-op.
         @subscription_token = SecureRandom.hex(8)
-        self.class.subscription_tokens[agent.id] = @subscription_token
+        agent.update_column(:routing_subscription_token, @subscription_token)
       end
       stream_from "agent:user:#{agent.id}"
 
@@ -115,7 +106,7 @@ module Collavre
       # (or an explicit /destroy disabled the agent and the same MCP session
       # is resubscribing without re-registering), restore it on a successful
       # claim of the per-agent stream by the owner so dispatches resume.
-      if agent.claude_channel_agent? && agent.routing_expression.blank?
+      if agent.claude_channel_agent? && agent.reload.routing_expression.blank?
         agent.update_column(:routing_expression, "true")
       end
     end

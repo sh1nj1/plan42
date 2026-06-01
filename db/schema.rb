@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_28_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_02_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -801,6 +801,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_000000) do
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
     t.text "routing_expression"
+    t.string "routing_subscription_token"
     t.boolean "searchable", default: false, null: false
     t.boolean "system_admin", default: false, null: false
     t.text "system_prompt"

@@ -204,17 +204,17 @@ module Collavre
       subscribe agent_id: agent.id
       assert subscription.confirmed?
       assert_equal "true", agent.reload.routing_expression
-      old_token = AgentChannel.subscription_tokens[agent.id]
+      old_token = agent.reload.routing_subscription_token
       assert old_token.present?
 
       # New (reconnected) connection subscribes BEFORE the old connection's
-      # unsubscribed callback has had time to fire. This is a separate
-      # Channel instance in real life — the implementation uses a class-
-      # level token map to distinguish ownership across instances.
+      # unsubscribed callback has had time to fire. The new subscribe
+      # overwrites routing_subscription_token on the persisted row — this
+      # is the cross-process ownership marker.
       stub_connection current_user: @user
       subscribe agent_id: agent.id
       assert subscription.confirmed?
-      new_token = AgentChannel.subscription_tokens[agent.id]
+      new_token = agent.reload.routing_subscription_token
       assert new_token.present?
       refute_equal old_token, new_token,
         "new subscribe must mint a fresh token so a stale unsubscribe is a no-op"
@@ -228,8 +228,47 @@ module Collavre
 
       assert_equal "true", agent.reload.routing_expression,
         "late unsubscribe from a stale connection must not clobber the live subscription"
-      assert_equal new_token, AgentChannel.subscription_tokens[agent.id],
+      assert_equal new_token, agent.reload.routing_subscription_token,
         "the live connection's token must still be the registered owner"
+    end
+
+    test "cross-process: stale unsubscribe on one process does not clobber routing after reconnect on another" do
+      # Codex P2 escalation: a per-process token map cannot tell whether a
+      # late unsubscribe on Puma process A is stale relative to a fresh
+      # subscribe on Puma process B (Solid Cable + WEB_CONCURRENCY > 1).
+      # The ownership marker is now persisted on users.routing_subscription_token,
+      # so a conditional UPDATE filtered by token is the cross-process check.
+      agent = User.create!(
+        email: "agent-channel-cross-process-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: "true",
+        routing_subscription_token: "old-process-a-token",
+        created_by_id: @user.id,
+        searchable: false
+      )
+
+      # Simulate process B: reconnect subscribes here, overwrites the token
+      # on the persisted row. (We bypass the Channel testing harness for the
+      # stale process A instance below — that's the whole point: A's channel
+      # state was never touched by B's subscribe.)
+      agent.update_column(:routing_subscription_token, "new-process-b-token")
+
+      # Process A's late unsubscribed: this Channel instance still holds
+      # the OLD token in its instance variable. With per-process maps, A
+      # would believe it still owns the slot. With the persisted ownership
+      # marker, the conditional UPDATE matches zero rows and is a no-op.
+      stale_channel = AgentChannel.allocate
+      stale_channel.instance_variable_set(:@session_agent, agent)
+      stale_channel.instance_variable_set(:@subscription_token, "old-process-a-token")
+      stale_channel.send(:unsubscribed)
+
+      assert_equal "true", agent.reload.routing_expression,
+        "stale unsubscribe on process A must not clear routing for process B's live subscriber"
+      assert_equal "new-process-b-token", agent.routing_subscription_token,
+        "process B remains the registered owner across the stale unsubscribe"
     end
 
     test "unsubscribe does not touch non-Claude-Channel agent routing_expression" do
