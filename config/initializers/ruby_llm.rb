@@ -7,8 +7,8 @@ return unless defined?(RubyLLM)
 # initializer. Resolver here serves values via DB > ENV > default.
 
 RubyLLM.configure do |config|
-  config.gemini_api_key = Collavre::IntegrationSettings.fetch(:gemini_api_key)
-  gemini_api_base = Collavre::IntegrationSettings.fetch(:gemini_api_base)
+  config.gemini_api_key = Collavre::IntegrationSettings.fetch(:gemini_api_key, boot_safe: true)
+  gemini_api_base = Collavre::IntegrationSettings.fetch(:gemini_api_base, boot_safe: true)
   config.gemini_api_base = gemini_api_base if gemini_api_base.present?
   config.request_timeout = begin
     Collavre::SystemSetting.llm_request_timeout_seconds

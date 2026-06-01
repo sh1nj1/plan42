@@ -19,7 +19,7 @@ if defined?(Collavre::IntegrationSettings::Registry)
 end
 
 resolve = ->(key, credentials_path) {
-  value = Collavre::IntegrationSettings.fetch(key)
+  value = Collavre::IntegrationSettings.fetch(key, boot_safe: true)
   value.presence || Rails.application.credentials.dig(*credentials_path)
 }
 
