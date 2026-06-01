@@ -10,6 +10,17 @@ module Collavre
       @user = users(:one)
       @creative = creatives(:tshirt)
       @topic = @creative.topics.create!(name: "Agent Test Topic", user: @user)
+      # AgentChannel#unsubscribed enqueues CancelOfflineDelegatedTasksJob with
+      # set(wait: ...). The default :async adapter raises NotImplementedError
+      # for future-scheduled jobs; the :test adapter captures them for
+      # assert_enqueued_with and is a no-op for tests that only care about
+      # the routing/token side effects.
+      @prev_queue_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+    end
+
+    teardown do
+      ActiveJob::Base.queue_adapter = @prev_queue_adapter if @prev_queue_adapter
     end
 
     test "subscribes successfully with valid topic and permission" do
@@ -269,6 +280,57 @@ module Collavre
         "stale unsubscribe on process A must not clear routing for process B's live subscriber"
       assert_equal "new-process-b-token", agent.routing_subscription_token,
         "process B remains the registered owner across the stale unsubscribe"
+    end
+
+    test "unsubscribe schedules CancelOfflineDelegatedTasksJob with grace delay when token clear succeeds" do
+      agent = User.create!(
+        email: "agent-channel-grace-job-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: "true",
+        created_by_id: @user.id,
+        searchable: false
+      )
+
+      ActiveJob::Base.queue_adapter = :test
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+      token = agent.reload.routing_subscription_token
+      assert token.present?
+
+      assert_enqueued_with(
+        job: Collavre::CancelOfflineDelegatedTasksJob,
+        args: [ agent.id, token ]
+      ) do
+        unsubscribe
+      end
+    end
+
+    test "stale unsubscribe does NOT schedule CancelOfflineDelegatedTasksJob (newer subscription owns cleanup)" do
+      agent = User.create!(
+        email: "agent-channel-stale-no-enqueue-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: "true",
+        routing_subscription_token: "newer-token-owns-it",
+        created_by_id: @user.id,
+        searchable: false
+      )
+
+      ActiveJob::Base.queue_adapter = :test
+
+      stale_channel = AgentChannel.allocate
+      stale_channel.instance_variable_set(:@session_agent, agent)
+      stale_channel.instance_variable_set(:@subscription_token, "stale-old-token")
+
+      assert_no_enqueued_jobs(only: Collavre::CancelOfflineDelegatedTasksJob) do
+        stale_channel.send(:unsubscribed)
+      end
     end
 
     test "unsubscribe does not touch non-Claude-Channel agent routing_expression" do

@@ -49,8 +49,21 @@ module Collavre
 
       if rows_updated.zero?
         # A newer subscribe (any process) has overwritten the token. The
-        # live owner is still subscribed — do not clobber its routing.
+        # live owner is still subscribed — do not clobber its routing and
+        # do not schedule cancellation; the live owner's lifecycle owns it.
+        return
       end
+
+      # Reconnect-grace cancellation: AgentChannel#unsubscribed only makes the
+      # agent unroutable. Any task already in "delegated" still holds its
+      # ResourceTracker slot — the dispatch was broadcast to a now-dead stream
+      # so no client remains to call /reply, and the slot would stay held
+      # until StuckDetectorJob times out. The job below cancels those tasks
+      # after a grace window, but only if the agent is still offline (the
+      # job rechecks routing_expression and routing_subscription_token).
+      CancelOfflineDelegatedTasksJob
+        .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
+        .perform_later(@session_agent.id, @subscription_token)
     rescue ActiveRecord::StatementInvalid => e
       Rails.logger.warn("[AgentChannel] unsubscribed conditional clear failed: #{e.message}")
     end
