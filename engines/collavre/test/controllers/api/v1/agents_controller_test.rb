@@ -409,6 +409,78 @@ module Collavre
             "loser of the atomic claim must not save a comment"
         end
 
+        test "Claude Channel reply enqueues TriggerLoopCheckJob only AFTER the reply comment is saved" do
+          # Regression for Codex P2: claim_delegated_task previously used
+          # update! which fires after_update_commit synchronously — but the
+          # reply comment hasn't been saved yet at claim time. With a fast
+          # worker (cooldown_seconds: 0), TriggerLoopCheckJob could run
+          # before comment.save committed, fail to find an agent comment,
+          # and leave the drop-trigger loop stuck at state="running" even
+          # though the reply is saved a moment later. The fix moves the
+          # callback replay into finalize_claimed_task (post-save) via
+          # Task#fire_completion_callbacks_after_external_claim.
+          reg = register_agent("trigger-loop-timing-test")
+          ai_user = User.find(reg["agent_id"])
+
+          parent = Collavre::Creative.create!(
+            user: @user,
+            description: "Trigger container",
+            data: { "trigger" => { "on_child_enter" => true } }
+          )
+          child = Collavre::Creative.create!(user: @user, description: "Loop child")
+          Collavre::Creative.where(id: child.id).update_all(parent_id: parent.id)
+          child.reload
+
+          loop_topic = child.topics.create!(name: "Loop topic timing", user: @user)
+          loop_topic.set_primary_agent!(ai_user)
+
+          child.update!(data: {
+            "trigger" => {
+              "loop" => {
+                "state" => "running",
+                "cooldown_seconds" => 0,
+                "trigger_topic_id" => loop_topic.id
+              }
+            }
+          })
+
+          task = Collavre::Task.create!(
+            name: "Loop response",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            trigger_event_payload: { "comment" => { "id" => 999 } },
+            agent: ai_user,
+            topic_id: loop_topic.id,
+            creative_id: child.id
+          )
+
+          # Capture: at the moment TriggerLoopCheckJob is enqueued, does the
+          # task already have a linked reply_comment? If the enqueue happened
+          # during claim_delegated_task (pre-save), reply_comment would still
+          # be nil. If the enqueue happened in finalize_claimed_task
+          # (post-save), reply_comment is present and the job will succeed.
+          reply_comment_present_at_enqueue = nil
+          enqueue_called = false
+          stub_perform_later = lambda do |task_id|
+            enqueue_called = true
+            reply_comment_present_at_enqueue = Collavre::Task.find(task_id).reply_comment.present?
+            nil
+          end
+
+          Collavre::TriggerLoopCheckJob.stub :perform_later, stub_perform_later do
+            post "/api/v1/agent/reply",
+              params: { topic_id: loop_topic.id, text: "Loop continuation", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+            assert_response :created
+          end
+
+          assert enqueue_called, "TriggerLoopCheckJob.perform_later must be invoked"
+          assert reply_comment_present_at_enqueue,
+            "reply_comment must be linked to the task BEFORE TriggerLoopCheckJob is enqueued so the job can find it"
+          assert_equal "done", task.reload.status
+        end
+
         test "Claude Channel reply enqueues TriggerLoopCheckJob for drop-trigger loops" do
           # claim_delegated_task must use update! (not update_all) so that
           # Task's after_update_commit :check_trigger_loop_completion fires

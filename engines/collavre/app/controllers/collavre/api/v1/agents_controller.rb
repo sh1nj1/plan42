@@ -225,14 +225,17 @@ module Collavre
         #      Concurrent claimers block on the lock; the loser sees the
         #      already-flipped status post-lock and returns nil so the
         #      caller can refuse the duplicate.
-        # update! (not update_all) is required so that Task's
-        # after_update_commit callbacks fire — drop-trigger loops depend on
-        # check_trigger_loop_completion enqueuing TriggerLoopCheckJob on
-        # status="done", and the stop-button removal broadcast depends on
-        # became_terminal? firing here. Both are bypassed by update_all.
-        # Returns the claimed Task on success, nil on conflict / no
-        # delegated task. The caller is responsible for finalize_claimed_task
-        # only AFTER the reply comment has been saved.
+        # update_all (NOT update!) is required to skip Task's
+        # after_update_commit callbacks at claim time. The callbacks fire
+        # check_trigger_loop_completion (which enqueues TriggerLoopCheckJob)
+        # and broadcast_stop_button_removal (which reads reply_comment).
+        # Both depend on the reply comment already existing — but reply()
+        # claims BEFORE comment.save to win the race against concurrent
+        # /reply calls. If update! fired the trigger-loop check here, the
+        # job could run (cooldown_seconds: 0) before comment.save commits,
+        # find no agent comment, and leave the loop stuck in "running".
+        # finalize_claimed_task replays both callbacks after the comment is
+        # persisted via Task#fire_completion_callbacks_after_external_claim.
         def claim_delegated_task(agent, topic, requested_task_id)
           scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
           candidate =
@@ -248,8 +251,8 @@ module Collavre
             locked = Task.lock.find_by(id: candidate.id)
             next unless locked && locked.status == "delegated"
 
-            locked.update!(status: "done")
-            claimed = locked
+            Task.where(id: locked.id).update_all(status: "done", updated_at: Time.current)
+            claimed = locked.reload
           end
           claimed
         end
@@ -269,6 +272,13 @@ module Collavre
           end
 
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+
+          # Replay the after_update_commit callbacks that were bypassed by
+          # update_all in claim_delegated_task — now that the reply comment
+          # is linked, TriggerLoopCheckJob can read it and decide whether to
+          # advance/await/complete the drop-trigger loop, and the stop-button
+          # broadcast has a comment to render.
+          task.fire_completion_callbacks_after_external_claim
         end
 
         # When an MCP session unregisters, any tasks still in delegated state
