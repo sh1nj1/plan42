@@ -48,15 +48,17 @@ module Collavre
 
       private
 
-      # SES intent is signaled by the SMTP address: an SES endpoint (boot
-      # scaffold or previous injection) — or the `Mail::SMTP` default
-      # ("localhost") which means the host configured no real SMTP server.
-      # An explicit non-SES address (smtp.sendgrid.net, etc.) means the host
-      # chose a different provider — bail out so we don't clobber their
-      # address or wipe their auth credentials.
+      # SES intent is signaled exclusively by an SES-shaped SMTP address
+      # (`email-smtp.<region>.amazonaws.com`). The boot scaffold in
+      # `config/environments/production.rb` only emits that shape when
+      # `ses_region` is resolvable, so a non-SES address — including
+      # `Mail::SMTP`'s hard-coded `"localhost"` default and explicit relays
+      # like `smtp.sendgrid.net` — means the host is using a different
+      # provider (or a real local relay). Bail in those cases so we don't
+      # clobber the host's address or wipe authenticated credentials.
       def ses_target?(settings)
         address = settings[:address].to_s
-        return true if address.blank? || address == "localhost"
+        return true if address.empty?
 
         address.match?(SES_ADDRESS_PATTERN)
       end

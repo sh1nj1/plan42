@@ -120,6 +120,30 @@ module Collavre
       assert_nil message.delivery_method.settings[:password]
     end
 
+    test "does not treat localhost SMTP relay as SES target" do
+      # A host app running a real localhost SMTP relay (postfix on the
+      # box, dev MailHog, etc.) must not have its `:user_name`/`:password`
+      # wiped or address overwritten just because it left Mail's default
+      # `"localhost"` address in place.
+      ENV["AWS_REGION"] = "us-east-1"
+      ENV["AWS_SES_SMTP_USERNAME"] = "env-user"
+      ENV["AWS_SES_SMTP_PASSWORD"] = "env-pass"
+
+      message = build_smtp_message(
+        settings: {
+          address:   "localhost",
+          port:      25,
+          user_name: "local-user",
+          password:  "local-pass"
+        }
+      )
+      Collavre::SesSettingsInterceptor.delivering_email(message)
+
+      assert_equal "localhost",  message.delivery_method.settings[:address]
+      assert_equal "local-user", message.delivery_method.settings[:user_name]
+      assert_equal "local-pass", message.delivery_method.settings[:password]
+    end
+
     test "passes through non-SES SMTP provider with credentials" do
       # Host app uses SendGrid (or any non-SES SMTP). Even with SES creds
       # configured, the interceptor must leave non-SES messages untouched.
@@ -170,9 +194,16 @@ module Collavre
 
     private
 
+    # Mirrors production.rb's boot scaffold: when SES region is resolvable
+    # the scaffold writes an `email-smtp.<region>.amazonaws.com` address,
+    # which is the signal `SesSettingsInterceptor#ses_target?` uses to
+    # decide it should inject. Tests that want the interceptor to fire
+    # therefore start from an SES-shaped placeholder address; tests that
+    # want it to pass through override with a non-SES address.
     def build_smtp_message(settings:)
+      defaults = { address: "email-smtp.placeholder.amazonaws.com" }
       message = ::Mail.new
-      message.delivery_method :smtp, settings
+      message.delivery_method :smtp, defaults.merge(settings)
       message
     end
   end
