@@ -23,6 +23,30 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "index eagerly creates System topic on first inbox visit so badge has matching topic" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    inbox.topics.where(name: Collavre::Creative::SYSTEM_TOPIC_NAME).destroy_all
+
+    assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME),
+      "precondition: System topic should not exist before first visit"
+
+    get collavre.creative_topics_url(inbox), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    assert json["is_inbox"], "fixture must be an inbox"
+    assert json["system_topic_id"].present?, "system_topic_id must be returned"
+
+    system_topic = inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+    assert system_topic.present?, "System topic must be created by index"
+    assert_equal system_topic.id, json["system_topic_id"]
+
+    topic_ids = json["topics"].map { |t| t["id"] }
+    assert_includes topic_ids, system_topic.id,
+      "active topics list must include the System topic so the sidebar can render it"
+  end
+
   test "should create topic and broadcast" do
     assert_difference("Topic.count") do
       post collavre.creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json
