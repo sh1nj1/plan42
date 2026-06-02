@@ -1123,25 +1123,28 @@ export default class extends Controller {
   openActionEditor(container) {
     if (!container) return
     const json = container.querySelector('.comment-action-json')
+    const md = container.querySelector('.comment-action-markdown')
     const form = container.querySelector('.comment-action-edit-form')
     const btn = container.querySelector('.edit-comment-action-btn')
     const txt = form?.querySelector('.comment-action-edit-textarea')
-    if (json && form && txt) {
-      txt.value = json.textContent || ''
-      form.style.display = 'block'
-      if (btn) btn.style.display = 'none'
-      json.style.display = 'none'
-      txt.focus()
-    }
+    if (!form || !txt) return
+    if (json) txt.value = json.textContent || ''
+    form.style.display = 'block'
+    if (btn) btn.style.display = 'none'
+    if (json) json.style.display = 'none'
+    if (md) md.style.display = 'none'
+    txt.focus()
   }
 
   closeActionEditor(container) {
     if (!container) return
     const json = container.querySelector('.comment-action-json')
+    const md = container.querySelector('.comment-action-markdown')
     const form = container.querySelector('.comment-action-edit-form')
     const btn = container.querySelector('.edit-comment-action-btn')
     if (form) form.style.display = 'none'
     if (json) json.style.display = ''
+    if (md) md.style.display = ''
     if (btn) btn.style.display = ''
   }
 

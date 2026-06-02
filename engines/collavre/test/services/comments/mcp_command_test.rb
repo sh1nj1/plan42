@@ -87,6 +87,72 @@ module Collavre
         assert_nil cmd.call
       end
 
+      test "format_response renders markdown body when result has markdown key" do
+        comment = create_comment("/run_sql_query")
+        cmd = McpCommand.new(comment: comment, user: @user, tool: @tool, meta_tool_service: @mock_service)
+
+        result = cmd.send(:format_response, { result: { "markdown" => "# h1\n\n## h2\n" } })
+
+        assert_includes result, "<details open><summary>run_sql_query response</summary>"
+        assert_includes result, "# h1"
+        assert_includes result, "## h2"
+        refute_includes result, "<pre><code>"
+        refute_includes result, "\"markdown\""
+      end
+
+      test "format_response falls back to JSON when result has no markdown key" do
+        comment = create_comment("/run_sql_query")
+        cmd = McpCommand.new(comment: comment, user: @user, tool: @tool, meta_tool_service: @mock_service)
+
+        result = cmd.send(:format_response, { result: { "rows" => [ { "id" => 1 } ] } })
+
+        assert_includes result, "<pre><code>"
+        assert_includes result, "&quot;rows&quot;"
+      end
+
+      test "format_response falls back to JSON when markdown value is blank" do
+        comment = create_comment("/run_sql_query")
+        cmd = McpCommand.new(comment: comment, user: @user, tool: @tool, meta_tool_service: @mock_service)
+
+        result = cmd.send(:format_response, { result: { "markdown" => "" } })
+
+        assert_includes result, "<pre><code>"
+      end
+
+      test "format_response falls back to JSON when markdown value is not a string" do
+        comment = create_comment("/run_sql_query")
+        cmd = McpCommand.new(comment: comment, user: @user, tool: @tool, meta_tool_service: @mock_service)
+
+        result = cmd.send(:format_response, { result: { "markdown" => { "nested" => true } } })
+
+        assert_includes result, "<pre><code>"
+      end
+
+      test "format_response renders markdown when result uses symbol keys" do
+        comment = create_comment("/run_sql_query")
+        cmd = McpCommand.new(comment: comment, user: @user, tool: @tool, meta_tool_service: @mock_service)
+
+        result = cmd.send(:format_response, { result: { markdown: "# h1\n\n## h2\n" } })
+
+        assert_includes result, "<details open><summary>run_sql_query response</summary>"
+        assert_includes result, "# h1"
+        assert_includes result, "## h2"
+        refute_includes result, "<pre><code>"
+        refute_includes result, "\"markdown\""
+      end
+
+      test "format_response renders markdown when result is JSON string with markdown key" do
+        comment = create_comment("/run_sql_query")
+        cmd = McpCommand.new(comment: comment, user: @user, tool: @tool, meta_tool_service: @mock_service)
+
+        json_string = JSON.generate({ markdown: "# h1\n\n## h2\n" })
+        result = cmd.send(:format_response, { result: json_string })
+
+        assert_includes result, "<details open><summary>run_sql_query response</summary>"
+        assert_includes result, "# h1"
+        refute_includes result, "<pre><code>"
+      end
+
       private
 
       def create_comment(content)
