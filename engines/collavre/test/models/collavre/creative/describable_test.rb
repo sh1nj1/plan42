@@ -54,6 +54,32 @@ module Collavre
         assert_equal "markdown", creative.data["content_type"]
         assert_equal "# keep", creative.data["markdown_source"]
       end
+
+      test "inline data-URI image is rewritten to blob path in stored markdown_source" do
+        pixel_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        data_uri = "data:image/png;base64,#{pixel_b64}"
+
+        source = "before ![pixel](#{data_uri}) after"
+
+        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.last
+
+        stored = creative.data["markdown_source"]
+        refute_includes stored, "data:image/png;base64,", "data URI should be rewritten out of stored markdown_source"
+        assert_match %r{!\[pixel\]\(/rails/active_storage/blobs/[^)]+\)}, stored
+
+        blob_count_after_first = ActiveStorage::Blob.count
+
+        # Subsequent text edits around the (now blob-backed) image must not
+        # re-import the data URI as a fresh blob.
+        edited_source = stored.sub("before", "edited before")
+        creative.update!(content_type_input: "markdown", markdown_source: edited_source)
+        creative.reload
+
+        assert_equal blob_count_after_first, ActiveStorage::Blob.count,
+                     "editing surrounding text must not create new blobs"
+        assert_includes creative.data["markdown_source"], "edited before"
+      end
     end
   end
 end

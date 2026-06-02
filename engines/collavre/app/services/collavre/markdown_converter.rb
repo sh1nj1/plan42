@@ -194,6 +194,48 @@ module Collavre
         end
       end
 
+      # Rewrite data-URI image references in Markdown source to point at
+      # newly-created Active Storage blobs. Returns rewritten Markdown.
+      #
+      # Used by the inline Markdown editor to persist blob URLs in the stored
+      # `markdown_source`, so subsequent text edits around the image do not
+      # re-import the same data URI into a fresh blob on every autosave.
+      def rewrite_data_uri_images(text)
+        return text if text.nil?
+        result = text.dup
+        image_refs = {}
+
+        # Collect reference-style data-URI image definitions: [alt]: <data:...>
+        # Rewrite each definition to point at a freshly-uploaded blob.
+        result.gsub!(/^(\s*\[)([^\]]+)(\]:\s*<\s*)(data:image\/[^>]+)(\s*>\s*)$/) do
+          lead, label, mid, data_url, tail = $1, $2, $3, $4.strip, $5
+          blob_path = data_uri_to_blob_path(data_url)
+          image_refs[label] = blob_path
+          "#{lead}#{label}#{mid}#{blob_path}#{tail}"
+        end
+
+        # Inline data-URI images: ![alt](data:...) → ![alt](blob_path)
+        result.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
+          alt, data_url = $1, $2
+          "![#{alt}](#{data_uri_to_blob_path(data_url)})"
+        end
+
+        result
+      end
+
+      # Convert a data-URI to a freshly-uploaded Active Storage blob path.
+      # Returns the original URL unchanged on parse failure.
+      def data_uri_to_blob_path(data_url)
+        return data_url unless data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
+
+        content_type = Regexp.last_match(1)
+        data = Base64.decode64(Regexp.last_match(2))
+        ext = Mime::Type.lookup(content_type).symbol.to_s
+        filename = "import-#{SecureRandom.hex}.#{ext}"
+        blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(data), filename: filename, content_type: content_type)
+        Rails.application.routes.url_helpers.rails_blob_url(blob, only_path: true)
+      end
+
       private
 
       def escape_table_cell(text)

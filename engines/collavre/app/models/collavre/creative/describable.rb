@@ -55,10 +55,16 @@ module Collavre
           prev_source = data["markdown_source"].to_s
           prev_type = data["content_type"]
           self.data["content_type"] = "markdown"
-          self.data["markdown_source"] = new_source
           if new_source != prev_source || prev_type != "markdown"
-            self.description = Collavre::MarkdownConverter.markdown_to_html(new_source)
+            # Rewrite inline data-URI images to freshly-uploaded blob paths
+            # FIRST, then persist the rewritten source. Subsequent edits
+            # around the same image carry the blob path instead of the
+            # data URI, so re-renders no longer create duplicate blobs.
+            rewritten_source = Collavre::MarkdownConverter.rewrite_data_uri_images(new_source)
+            self.data["markdown_source"] = rewritten_source
+            self.description = Collavre::MarkdownConverter.markdown_to_html(rewritten_source)
           else
+            self.data["markdown_source"] = new_source
             # Source unchanged: description must stay derived from markdown_source.
             # Restore the persisted value rather than trusting params[:description],
             # which would let a stale/crafted request diverge from markdown_source.
