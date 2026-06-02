@@ -114,6 +114,28 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_match %r{/rails/active_storage/blobs/}, json["markdown_source"]
   end
 
+  test "create JSON response exposes rewritten markdown_source for client sync" do
+    png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
+    md_src  = "Hello ![img](data:image/png;base64,#{png_b64}) world"
+
+    post creatives_url, params: {
+      creative: {
+        description: "<p>ignored</p>",
+        markdown_source: md_src,
+        content_type_input: "markdown"
+      }
+    }, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert json["id"].present?, "create response must include id"
+    assert_equal "markdown", json["content_type"]
+    assert json["markdown_source"].is_a?(String), "create response should expose markdown_source"
+    assert_not_includes json["markdown_source"], "data:image/png;base64,",
+      "Server should return rewritten markdown_source with blob path, not the original data URI"
+    assert_match %r{/rails/active_storage/blobs/}, json["markdown_source"]
+  end
+
   test "update_metadata does not post duplicate warning when already enabled" do
     creative = Creative.create!(description: "Documentation", user: @user, data: { "trigger" => { "on_child_enter" => true } })
     feedback_ai = users(:ai_bot)

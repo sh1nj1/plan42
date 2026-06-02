@@ -202,7 +202,16 @@ module Collavre
       @creative = result.creative
 
       if result.success?
-        render json: { id: @creative.id }
+        # Expose the post-rewrite markdown source so the client can sync its
+        # textarea after the server replaces inline data: URIs with blob paths,
+        # matching the update endpoint contract. Without this, a freshly created
+        # markdown creative with a pasted data: URI would re-import the blob on
+        # the next keystroke save.
+        render json: {
+          id: @creative.id,
+          content_type: @creative.data&.dig("content_type"),
+          markdown_source: @creative.data&.dig("markdown_source")
+        }
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
       end
