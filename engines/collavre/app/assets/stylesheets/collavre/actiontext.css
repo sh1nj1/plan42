@@ -23,6 +23,19 @@
   padding: var(--space-2);
 }
 
+@media (min-width: 768px) {
+  .markdown-editor-wrapper {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .markdown-editor-wrapper > .markdown-editor-textarea,
+  .markdown-editor-wrapper > .markdown-preview {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
 .markdown-editor-textarea {
   width: 100%;
   min-height: 6rem;
