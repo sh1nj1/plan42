@@ -48,17 +48,12 @@ module Collavre
           self.data ||= {}
           self.data["content_type"] = "markdown"
           self.data["markdown_source"] = markdown_source.to_s
-          self.description = render_markdown_to_html(markdown_source.to_s)
+          self.description = Collavre::MarkdownConverter.markdown_to_html(markdown_source.to_s)
         elsif content_type_input == "html"
           self.data ||= {}
           self.data.delete("content_type")
           self.data.delete("markdown_source")
         end
-      end
-
-      def render_markdown_to_html(md)
-        return "" if md.blank?
-        Commonmarker.to_html(md, options: { extension: { table: true, autolink: true, strikethrough: true, tasklist: true } })
       end
 
       def sanitize_description_html
