@@ -136,6 +136,33 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_match %r{/rails/active_storage/blobs/}, json["markdown_source"]
   end
 
+  test "update JSON response omits markdown_source for read-only parent_id-only PATCH" do
+    owner = users(:one)
+    reader = users(:two)
+
+    origin = Creative.create!(
+      description: "<p>secret html</p>",
+      user: owner,
+      data: { "content_type" => "markdown", "markdown_source" => "secret source" }
+    )
+    new_parent = Creative.create!(description: "New Parent", user: reader)
+    old_parent = Creative.create!(description: "Old Parent", user: reader)
+    linked = Creative.create!(description: "<p>link</p>", user: owner, origin: origin, parent: old_parent)
+    CreativeShare.create!(creative: linked, user: reader, permission: :read)
+
+    sign_in_as reader, password: "password"
+
+    patch creative_url(linked), params: {
+      creative: { parent_id: new_parent.id }
+    }, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_not json.key?("markdown_source"),
+      "read-only recipient must not receive origin markdown_source via parent-only PATCH"
+    assert_equal new_parent.id, linked.reload.parent_id
+  end
+
   test "update_metadata does not post duplicate warning when already enabled" do
     creative = Creative.create!(description: "Documentation", user: @user, data: { "trigger" => { "on_child_enter" => true } })
     feedback_ai = users(:ai_bot)

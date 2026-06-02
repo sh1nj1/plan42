@@ -281,13 +281,16 @@ module Collavre
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
               has_children: base.children.exists?,
-              content_type: base.data&.dig("content_type"),
-              # Expose the post-rewrite markdown source so the client can sync its
-              # textarea after the server replaces inline data: URIs with blob paths.
-              # The next keystroke save will then carry the blob path instead of
-              # re-importing the same image as a fresh Active Storage blob.
-              markdown_source: base.data&.dig("markdown_source")
+              content_type: base.data&.dig("content_type")
             }
+            # Expose the post-rewrite markdown source so the client can sync its
+            # textarea after the server replaces inline data: URIs with blob paths.
+            # Gated on write permission so a read-only share recipient moving a
+            # linked creative (parent_id-only PATCH bypasses the origin_changes
+            # write check) cannot read the origin's raw Markdown source.
+            if @creative.has_permission?(Current.user, :write)
+              response_data[:markdown_source] = base.data&.dig("markdown_source")
+            end
             # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
             ancestor_records = base.ancestors.order(:id)
             if ancestor_records.any?
