@@ -23,14 +23,24 @@
   <td style="padding: 0.5em; vertical-align: top;">
     <%# Input references the bulk form via HTML5 `form` attribute so the table is not nested inside <form>. %>
     <%# Placeholder displays the current value (masked for sensitive); empty input keeps the existing value. %>
-    <% input_tag = definition.sensitive ? :password_field_tag : :text_field_tag %>
-    <%= send(input_tag,
-          "integration_setting[#{key_str}]",
-          nil,
-          form: bulk_form_id,
-          placeholder: current_display,
-          autocomplete: "off",
-          style: "width: 100%;") %>
+    <% if definition.input_type == :textarea %>
+      <%= text_area_tag "integration_setting[#{key_str}]",
+            nil,
+            form: bulk_form_id,
+            placeholder: current_display,
+            autocomplete: "off",
+            rows: 8,
+            style: "width: 100%; font-family: var(--font-mono, monospace); font-size: 0.85em; min-height: 8em;" %>
+    <% else %>
+      <% input_tag = definition.sensitive ? :password_field_tag : :text_field_tag %>
+      <%= send(input_tag,
+            "integration_setting[#{key_str}]",
+            nil,
+            form: bulk_form_id,
+            placeholder: current_display,
+            autocomplete: "off",
+            style: "width: 100%;") %>
+    <% end %>
     <div style="font-size: 0.8em; margin-top: 0.25em;">
       <span class="badge badge-source-<%= row[:source] %>" style="display: inline-block; padding: 0.1em 0.5em; font-size: 0.85em; border-radius: 3px; background: <%= source_bg %>; color: <%= source_fg %>;">
         <%= t("collavre.admin.integrations.source.#{row[:source]}", default: row[:source].to_s.upcase) %>

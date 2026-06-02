@@ -24,6 +24,26 @@ module Collavre
         assert_equal true,               d.sensitive
         assert_equal false,              d.requires_restart
         assert_equal "SLACK_CLIENT_ID",  d.env_var
+        assert_equal :string,            d.input_type
+        assert_equal true,               d.admin_visible
+      end
+
+      test "registers a key with input_type and admin_visible overrides" do
+        Registry.instance.register(
+          :firebase_service_account_json,
+          category: "fcm",
+          input_type: :textarea
+        )
+        Registry.instance.register(
+          :google_application_credentials,
+          category: "fcm",
+          admin_visible: false
+        )
+        json_def = Registry.instance.find(:firebase_service_account_json)
+        adc_def  = Registry.instance.find(:google_application_credentials)
+        assert_equal :textarea, json_def.input_type
+        assert_equal true,      json_def.admin_visible
+        assert_equal false,     adc_def.admin_visible
       end
 
       test "groups by category" do

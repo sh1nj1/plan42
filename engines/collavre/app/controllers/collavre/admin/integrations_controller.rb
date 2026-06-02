@@ -52,9 +52,11 @@ module Collavre
       end
 
       def build_grouped_settings
-        Registry.instance.by_category.sort_by { |category, _defs| category.to_s }.map do |category, definitions|
-          rows = definitions.map { |definition| build_row(definition) }
-          [ category, rows ]
+        Registry.instance.by_category.sort_by { |category, _defs| category.to_s }.filter_map do |category, definitions|
+          visible = definitions.select { |d| d.admin_visible != false }
+          next if visible.empty?
+
+          [ category, visible.map { |definition| build_row(definition) } ]
         end
       end
 

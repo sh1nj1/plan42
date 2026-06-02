@@ -13,7 +13,17 @@ if defined?(Collavre::IntegrationSettings::Registry)
   registry.register(:fcm_server_key,                  category: "fcm", sensitive: true,  requires_restart: true)
   registry.register(:fcm_sender_id,                   category: "fcm", sensitive: false, requires_restart: true)
   registry.register(:fcm_vapid_key,                   category: "fcm", sensitive: true,  requires_restart: true)
-  registry.register(:google_application_credentials,  category: "fcm", sensitive: true,  requires_restart: true)
+  # Hidden from admin UI: ADC file path is a developer-local convenience read
+  # from ENV/credentials only. Production should use firebase_service_account_json
+  # (DB textarea) or WIF instead.
+  registry.register(:google_application_credentials,  category: "fcm", sensitive: true,  requires_restart: true,
+                                                      admin_visible: false)
+  registry.register(:firebase_service_account_json,   category: "fcm", sensitive: true,  requires_restart: true,
+                                                      input_type: :textarea)
+  registry.register(:fcm_wif_audience,                category: "fcm", sensitive: false, requires_restart: true)
+  registry.register(:fcm_wif_credential_source,       category: "fcm", sensitive: true,  requires_restart: true,
+                                                      input_type: :textarea)
+  registry.register(:fcm_wif_service_account_email,   category: "fcm", sensitive: false, requires_restart: true)
   registry.register(:firebase_project_id,             category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:firebase_service_account,        category: "firebase", sensitive: true,  requires_restart: true)
 end
@@ -23,63 +33,84 @@ resolve = ->(key, credentials_path) {
   value.presence || Rails.application.credentials.dig(*credentials_path)
 }
 
-server_key      = resolve.call(:fcm_server_key,                 %i[fcm server_key])
-project_id      = resolve.call(:firebase_project_id,            %i[firebase project_id])
-project_number  = resolve.call(:fcm_sender_id,                  %i[fcm sender_id])
-service_account = resolve.call(:firebase_service_account,       %i[fcm service_account])
+FCM_SCOPE = [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ].freeze
 
-# Use service account JSON for local development
-FCM_CREDENTIALS = resolve.call(:google_application_credentials, %i[fcm google_application_credentials])
-if FCM_CREDENTIALS.present? && File.exist?(FCM_CREDENTIALS)
+server_key                  = resolve.call(:fcm_server_key,                 %i[fcm server_key])
+project_id                  = resolve.call(:firebase_project_id,            %i[firebase project_id])
+service_account_email       = resolve.call(:firebase_service_account,       %i[fcm service_account])
+service_account_json_body   = resolve.call(:firebase_service_account_json,  %i[fcm service_account_json])
+wif_audience                = resolve.call(:fcm_wif_audience,               %i[fcm wif_audience])
+wif_credential_source       = resolve.call(:fcm_wif_credential_source,      %i[fcm wif_credential_source])
+wif_sa_email                = resolve.call(:fcm_wif_service_account_email,  %i[fcm wif_service_account_email]).presence || service_account_email
+adc_path                    = resolve.call(:google_application_credentials, %i[fcm google_application_credentials])
 
+build_service_account_credentials = ->(json_body) {
+  Google::Auth::ServiceAccountCredentials.make_creds(
+    json_key_io: StringIO.new(json_body),
+    scope: FCM_SCOPE
+  )
+}
+
+build_adc_credentials = ->(path) {
   # `Google::Auth.get_application_default` reads `ENV["GOOGLE_APPLICATION_CREDENTIALS"]`,
   # so we must export the resolved path before the ADC lookup. Overwrite
   # unconditionally — `resolve` already applied DB > ENV precedence, so any
   # pre-existing ENV value lost that race and must not leak back into ADC.
-  ENV["GOOGLE_APPLICATION_CREDENTIALS"] = FCM_CREDENTIALS
+  ENV["GOOGLE_APPLICATION_CREDENTIALS"] = path
+  Google::Auth.get_application_default(scope: FCM_SCOPE)
+}
 
-  # Use default application credentials (reads from GOOGLE_APPLICATION_CREDENTIALS env var)
-  credentials = Google::Auth.get_application_default(
-    scope: [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ]
-  )
+build_wif_credentials = ->(audience, credential_source_json, sa_email) {
+  source = JSON.parse(credential_source_json)
+  impersonation_url = sa_email.present? ?
+    "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/#{sa_email}:generateAccessToken" :
+    nil
 
-  service = Google::Apis::FcmV1::FirebaseCloudMessagingService.new
-  service.authorization = credentials
-
-  Rails.application.config.x.fcm_service = service
-  Rails.application.config.x.fcm_project_id = project_id
-
-  Rails.logger.info "FCM initialized with service account credentials from #{FCM_CREDENTIALS}"
-  puts "FCM initialized with service account credentials from #{FCM_CREDENTIALS}"
-
-elsif project_id.present? && Rails.env.production?
-  Rails.logger.info "FCM initialized with service account credentials from #{service_account}"
-  puts "FCM initialized with service account credentials from #{service_account}"
-  # Use Workload Identity Federation for production (AWS EC2)
-  audience = "//iam.googleapis.com/projects/#{project_number}/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider"
-
-  credentials = Google::Auth::ExternalAccount::AwsCredentials.new(
+  Google::Auth::ExternalAccount::AwsCredentials.new(
     universe_domain: "googleapis.com",
     type: "external_account",
     audience: audience,
     subject_token_type: "urn:ietf:params:aws:token-type:aws4_request",
     token_url: "https://sts.googleapis.com/v1/token",
-    scope: [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ],
-    credential_source: {
-      environment_id: "aws1",
-      region_url: "http://169.254.169.254/latest/meta-data/placement/availability-zone",
-      url: "http://169.254.169.254/latest/meta-data/iam/security-credentials",
-      regional_cred_verification_url: "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
-      imdsv2_session_token_url: "http://169.254.169.254/latest/api/token"
-    },
-    service_account_impersonation_url: "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/#{service_account}:generateAccessToken"
+    scope: FCM_SCOPE,
+    credential_source: source,
+    service_account_impersonation_url: impersonation_url
   )
+}
 
+credentials = nil
+mode = nil
+
+if service_account_json_body.present?
+  begin
+    credentials = build_service_account_credentials.call(service_account_json_body)
+    mode = "service account JSON (DB/ENV)"
+  rescue StandardError => e
+    Rails.logger.error "FCM: failed to parse firebase_service_account_json: #{e.class}: #{e.message}"
+  end
+elsif wif_audience.present? && wif_credential_source.present?
+  begin
+    credentials = build_wif_credentials.call(wif_audience, wif_credential_source, wif_sa_email)
+    mode = "Workload Identity Federation (AWS)"
+  rescue StandardError => e
+    Rails.logger.error "FCM: failed to build WIF credentials: #{e.class}: #{e.message}"
+  end
+elsif adc_path.present? && File.exist?(adc_path)
+  credentials = build_adc_credentials.call(adc_path)
+  mode = "ADC file (#{adc_path})"
+end
+
+if credentials && project_id.present?
   service = Google::Apis::FcmV1::FirebaseCloudMessagingService.new
   service.authorization = credentials
 
   Rails.application.config.x.fcm_service = service
   Rails.application.config.x.fcm_project_id = project_id
+
+  Rails.logger.info "FCM initialized with #{mode}"
+  puts "FCM initialized with #{mode}"
+elsif Rails.env.production?
+  Rails.logger.warn "FCM not initialized: no valid credentials found"
 end
 
 if server_key.present?

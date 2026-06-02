@@ -16,6 +16,10 @@ module Collavre
     #   @return [String] name of the ENV variable used as fallback / seed source
     # @!attribute [r] default
     #   @return [String, nil] static default returned when neither DB nor ENV has a value
+    # @!attribute [r] input_type
+    #   @return [Symbol] admin UI input widget: :string (default, single line) or :textarea
+    # @!attribute [r] admin_visible
+    #   @return [Boolean] when false the key is resolvable but hidden from the admin UI
     KeyDefinition = Struct.new(
       :key,
       :category,
@@ -23,6 +27,8 @@ module Collavre
       :requires_restart,
       :env_var,
       :default,
+      :input_type,
+      :admin_visible,
       keyword_init: true
     )
   end
