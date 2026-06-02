@@ -4,7 +4,12 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
-        attr_accessor :markdown_source, :content_type_input
+        attr_accessor :content_type_input
+        attr_reader :markdown_source
+
+        def markdown_source=(value)
+          @markdown_source = value.is_a?(String) ? value.gsub(/\r\n?/, "\n") : value
+        end
 
         validates :description, presence: true, unless: -> { origin_id.present? }
         validate :description_cannot_change_if_has_origin, on: :update
