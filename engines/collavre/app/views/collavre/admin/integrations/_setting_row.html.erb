@@ -10,8 +10,8 @@
 %>
 <% description = t("collavre.admin.integrations.descriptions.#{key_str}", default: "") %>
 <tr style="border-top: 1px solid var(--color-border);">
-  <td style="padding: 0.5em; vertical-align: top;">
-    <code><%= key_str %></code>
+  <td style="padding: 0.5em; vertical-align: top; word-break: break-word; overflow-wrap: anywhere;">
+    <code style="word-break: break-all; overflow-wrap: anywhere;"><%= key_str %></code>
     <% if definition.requires_restart %>
       <span class="badge badge-warning" style="display: inline-block; margin-left: 0.5em; padding: 0.1em 0.5em; font-size: 0.75em; background: var(--color-warning); color: var(--text-on-badge); border-radius: 3px;">
         <%= t("collavre.admin.integrations.restart_required") %>
@@ -23,7 +23,7 @@
       </div>
     <% end %>
     <div style="font-size: 0.8em; color: var(--color-muted); margin-top: 0.25em;">
-      <%= t("collavre.admin.integrations.env_var_label") %>: <code><%= definition.env_var %></code>
+      <%= t("collavre.admin.integrations.env_var_label") %>: <code style="word-break: break-all; overflow-wrap: anywhere;"><%= definition.env_var %></code>
     </div>
   </td>
   <td style="padding: 0.5em; vertical-align: top;">
