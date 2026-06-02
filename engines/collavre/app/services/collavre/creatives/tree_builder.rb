@@ -189,12 +189,13 @@ module Creatives
 
     def inline_editor_payload_for(creative, can_write:)
       effective = creative.effective_origin(Set.new)
+      origin_writable = effective.id == creative.id ? can_write : creative.has_permission?(user, :write)
       {
         description_raw_html: creative.effective_description(nil, true),
         progress: creative.progress,
         origin_id: creative.origin_id,
         content_type: effective.data&.dig("content_type"),
-        markdown_source: can_write ? effective.data&.dig("markdown_source") : nil
+        markdown_source: origin_writable ? effective.data&.dig("markdown_source") : nil
       }
     end
 
