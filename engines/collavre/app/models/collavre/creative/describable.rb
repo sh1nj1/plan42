@@ -51,10 +51,15 @@ module Collavre
           prev_type = data["content_type"]
           self.data["content_type"] = "markdown"
           self.data["markdown_source"] = new_source
-          # Skip re-rendering when source is unchanged so repeat saves (autosave,
-          # progress, move) don't re-import data-URI images as fresh blobs.
           if new_source != prev_source || prev_type != "markdown"
             self.description = Collavre::MarkdownConverter.markdown_to_html(new_source)
+          else
+            # Source unchanged: description must stay derived from markdown_source.
+            # Restore the persisted value rather than trusting params[:description],
+            # which would let a stale/crafted request diverge from markdown_source.
+            # Skipping the re-render also avoids re-importing data-URI images as
+            # fresh Active Storage blobs on every autosave/progress/move.
+            self.description = description_was if description_changed?
           end
         elsif content_type_input == "html"
           self.data ||= {}
