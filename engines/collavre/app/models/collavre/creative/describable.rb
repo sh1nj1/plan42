@@ -70,6 +70,15 @@ module Collavre
           self.data ||= {}
           self.data.delete("content_type")
           self.data.delete("markdown_source")
+        elsif !new_record? && description_changed? && data&.dig("content_type") == "markdown"
+          # Description was rewritten through a non-markdown path (tool/MCP
+          # update, direct base.update(description: ...), etc.) on a creative
+          # that was previously in markdown mode. The new HTML no longer
+          # matches data["markdown_source"], so the next inline-markdown open
+          # would load the stale source and silently overwrite this update.
+          # Demote to HTML mode so the persisted source matches description.
+          self.data.delete("content_type")
+          self.data.delete("markdown_source")
         end
       end
 

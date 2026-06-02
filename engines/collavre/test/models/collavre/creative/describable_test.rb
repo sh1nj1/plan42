@@ -28,6 +28,32 @@ module Collavre
         assert_equal "line1\nline2\n", creative.data["markdown_source"]
         assert_equal "markdown", creative.data["content_type"]
       end
+
+      test "description-only update on markdown creative demotes to html" do
+        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# old")
+        creative = Creative.last
+        assert_equal "markdown", creative.data["content_type"]
+        assert_equal "# old", creative.data["markdown_source"]
+
+        creative.update!(description: "<h1>new from tool</h1>")
+        creative.reload
+
+        assert_nil creative.data["content_type"]
+        assert_nil creative.data["markdown_source"]
+        assert_includes creative.description, "new from tool"
+      end
+
+      test "non-description update on markdown creative preserves markdown metadata" do
+        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# keep")
+        creative = Creative.last
+        assert_equal "markdown", creative.data["content_type"]
+
+        creative.update!(progress: 1.0)
+        creative.reload
+
+        assert_equal "markdown", creative.data["content_type"]
+        assert_equal "# keep", creative.data["markdown_source"]
+      end
     end
   end
 end
