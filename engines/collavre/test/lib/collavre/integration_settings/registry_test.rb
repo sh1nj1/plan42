@@ -31,12 +31,12 @@ module Collavre
       test "registers a key with input_type and admin_visible overrides" do
         Registry.instance.register(
           :firebase_service_account_json,
-          category: "fcm",
+          category: "firebase",
           input_type: :textarea
         )
         Registry.instance.register(
           :google_application_credentials,
-          category: "fcm",
+          category: "firebase",
           admin_visible: false
         )
         json_def = Registry.instance.find(:firebase_service_account_json)

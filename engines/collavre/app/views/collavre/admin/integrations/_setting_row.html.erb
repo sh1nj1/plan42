@@ -8,6 +8,7 @@
   end
   current_display = row[:present] ? row[:display_value].to_s : "—"
 %>
+<% description = t("collavre.admin.integrations.descriptions.#{key_str}", default: "") %>
 <tr style="border-top: 1px solid var(--color-border);">
   <td style="padding: 0.5em; vertical-align: top;">
     <code><%= key_str %></code>
@@ -15,6 +16,11 @@
       <span class="badge badge-warning" style="display: inline-block; margin-left: 0.5em; padding: 0.1em 0.5em; font-size: 0.75em; background: var(--color-warning); color: var(--text-on-badge); border-radius: 3px;">
         <%= t("collavre.admin.integrations.restart_required") %>
       </span>
+    <% end %>
+    <% if description.present? %>
+      <div style="font-size: 0.85em; color: var(--color-text); margin-top: 0.4em; line-height: 1.4;">
+        <%= simple_format(description) %>
+      </div>
     <% end %>
     <div style="font-size: 0.8em; color: var(--color-muted); margin-top: 0.25em;">
       <%= t("collavre.admin.integrations.env_var_label") %>: <code><%= definition.env_var %></code>

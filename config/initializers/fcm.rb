@@ -1,31 +1,30 @@
-# Register FCM keys with the IntegrationSettings registry so the admin UI can
-# surface them and `Collavre::IntegrationSettings::Resolver` can serve values
-# via the DB > ENV > credentials precedence. Registered eagerly because the
-# FCM client is wired into `Rails.application.config.x.*` at boot.
+# Register Firebase/FCM keys with the IntegrationSettings registry so the admin
+# UI can surface them and `Collavre::IntegrationSettings::Resolver` can serve
+# values via the DB > ENV > credentials precedence. Registered eagerly because
+# the FCM client is wired into `Rails.application.config.x.*` at boot.
 #
-# Firebase keys are also registered here defensively: this initializer (`fcm.rb`)
-# loads before `firebase_config.rb` alphabetically, so without these guards
-# `IntegrationSettings.fetch(:firebase_*)` would raise `UnknownKeyError` and the
-# helper would swallow it to nil — losing the ENV fallback. `register` is
-# idempotent (last write wins), so `firebase_config.rb` re-registering is safe.
+# Firebase JS-config keys are also registered here defensively: this initializer
+# (`fcm.rb`) loads before `firebase_config.rb` alphabetically, so without these
+# guards `IntegrationSettings.fetch(:firebase_*)` would raise `UnknownKeyError`
+# and the helper would swallow it to nil — losing the ENV fallback. `register`
+# is idempotent (last write wins), so `firebase_config.rb` re-registering is safe.
 if defined?(Collavre::IntegrationSettings::Registry)
   registry = Collavre::IntegrationSettings::Registry.instance
-  registry.register(:fcm_server_key,                  category: "fcm", sensitive: true,  requires_restart: true)
-  registry.register(:fcm_sender_id,                   category: "fcm", sensitive: false, requires_restart: true)
-  registry.register(:fcm_vapid_key,                   category: "fcm", sensitive: true,  requires_restart: true)
+  registry.register(:firebase_project_id,             category: "firebase", sensitive: false, requires_restart: true)
+  registry.register(:firebase_service_account_json,   category: "firebase", sensitive: true,  requires_restart: true,
+                                                      input_type: :textarea)
+  registry.register(:fcm_wif_audience,                category: "firebase", sensitive: false, requires_restart: true)
+  registry.register(:fcm_wif_credential_source,       category: "firebase", sensitive: true,  requires_restart: true,
+                                                      input_type: :textarea)
+  registry.register(:fcm_wif_service_account_email,   category: "firebase", sensitive: false, requires_restart: true)
+  registry.register(:fcm_sender_id,                   category: "firebase", sensitive: false, requires_restart: true)
+  registry.register(:fcm_vapid_key,                   category: "firebase", sensitive: true,  requires_restart: true)
+  registry.register(:fcm_server_key,                  category: "firebase", sensitive: true,  requires_restart: true)
   # Hidden from admin UI: ADC file path is a developer-local convenience read
   # from ENV/credentials only. Production should use firebase_service_account_json
   # (DB textarea) or WIF instead.
-  registry.register(:google_application_credentials,  category: "fcm", sensitive: true,  requires_restart: true,
+  registry.register(:google_application_credentials,  category: "firebase", sensitive: true,  requires_restart: true,
                                                       admin_visible: false)
-  registry.register(:firebase_service_account_json,   category: "fcm", sensitive: true,  requires_restart: true,
-                                                      input_type: :textarea)
-  registry.register(:fcm_wif_audience,                category: "fcm", sensitive: false, requires_restart: true)
-  registry.register(:fcm_wif_credential_source,       category: "fcm", sensitive: true,  requires_restart: true,
-                                                      input_type: :textarea)
-  registry.register(:fcm_wif_service_account_email,   category: "fcm", sensitive: false, requires_restart: true)
-  registry.register(:firebase_project_id,             category: "firebase", sensitive: false, requires_restart: true)
-  registry.register(:firebase_service_account,        category: "firebase", sensitive: true,  requires_restart: true)
 end
 
 resolve = ->(key, credentials_path) {
@@ -37,11 +36,10 @@ FCM_SCOPE = [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ].freeze
 
 server_key                  = resolve.call(:fcm_server_key,                 %i[fcm server_key])
 project_id                  = resolve.call(:firebase_project_id,            %i[firebase project_id])
-service_account_email       = resolve.call(:firebase_service_account,       %i[fcm service_account])
 service_account_json_body   = resolve.call(:firebase_service_account_json,  %i[fcm service_account_json])
 wif_audience                = resolve.call(:fcm_wif_audience,               %i[fcm wif_audience])
 wif_credential_source       = resolve.call(:fcm_wif_credential_source,      %i[fcm wif_credential_source])
-wif_sa_email                = resolve.call(:fcm_wif_service_account_email,  %i[fcm wif_service_account_email]).presence || service_account_email
+wif_sa_email                = resolve.call(:fcm_wif_service_account_email,  %i[fcm wif_service_account_email])
 adc_path                    = resolve.call(:google_application_credentials, %i[fcm google_application_credentials])
 
 build_service_account_credentials = ->(json_body) {
