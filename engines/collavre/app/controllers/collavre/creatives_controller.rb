@@ -271,7 +271,13 @@ module Collavre
               id: base.id,
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
-              has_children: base.children.exists?
+              has_children: base.children.exists?,
+              content_type: base.data&.dig("content_type"),
+              # Expose the post-rewrite markdown source so the client can sync its
+              # textarea after the server replaces inline data: URIs with blob paths.
+              # The next keystroke save will then carry the blob path instead of
+              # re-importing the same image as a fresh Active Storage blob.
+              markdown_source: base.data&.dig("markdown_source")
             }
             # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
             ancestor_records = base.ancestors.order(:id)

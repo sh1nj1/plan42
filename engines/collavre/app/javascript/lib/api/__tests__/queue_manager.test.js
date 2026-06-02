@@ -122,6 +122,33 @@ describe('ApiQueueManager', () => {
         expect(options.body.has('file')).toBe(true);
     });
 
+    test('should pass parsed JSON response data to onSuccess callback', async () => {
+        // Restore processQueue for this test
+        apiQueue.processQueue.mockRestore();
+
+        const callback = jest.fn();
+
+        // Mock successful response with JSON body containing markdown_source rewrite
+        const rewrittenSource = '![img](/rails/active_storage/blobs/abc/image.png)';
+        mockCsrfFetch.mockResolvedValue({
+            ok: true,
+            text: async () => JSON.stringify({ id: 42, markdown_source: rewrittenSource })
+        });
+
+        const item = {
+            path: '/creatives/42',
+            method: 'PATCH',
+            onSuccess: callback,
+            retries: 0
+        };
+
+        apiQueue.queue = [item];
+        await apiQueue.processQueue();
+
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback).toHaveBeenCalledWith({ id: 42, markdown_source: rewrittenSource });
+    });
+
     test('should dispatch event on permanent failure', async () => {
         // Restore processQueue for this test
         apiQueue.processQueue.mockRestore();

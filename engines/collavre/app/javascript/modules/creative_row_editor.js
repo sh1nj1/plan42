@@ -1077,6 +1077,19 @@ export function initializeCreativeRowEditor() {
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
+            // Sync rewritten markdown source back into the textarea/hidden input.
+            // Server rewrites inline data: URIs in markdown_source to blob paths so
+            // re-saves don't re-import the same image. If the user hasn't edited
+            // during the request (textarea still equals what we sent), apply the
+            // rewritten source so the next save carries the blob path.
+            if (markdownMode && data && typeof data.markdown_source === 'string'
+                && data.markdown_source !== savedContent
+                && markdownTextarea && markdownTextarea.value === savedContent) {
+              markdownTextarea.value = data.markdown_source;
+              syncMarkdownToForm();
+              savedContent = data.markdown_source;
+            }
+
             // Update dirty state to reflect successful save
             originalContent = savedContent;
             if (shouldPersistProgress) {
@@ -1375,12 +1388,42 @@ export function initializeCreativeRowEditor() {
 
       // Queue the save request
       // Store deletedAttachmentIds as data, not as callback, so it can be serialized
+      // Capture per-enqueue values for the onSuccess closure so concurrent edits
+      // on a different creative don't get clobbered when the response comes back.
+      const onSuccessCreativeId = startCreativeId;
+      const onSuccessSavedMarkdown = isMarkdownSave ? capturedMarkdownSource : null;
+      const onSuccessTree = tree;
       apiQueue.enqueue({
         path: `/creatives/${creativeId}`,
         method: 'PATCH',
         body: body,
         dedupeKey: `creative_${creativeId}`,
-        deletedAttachmentIds: deletedAttachmentIds  // Store as data for serialization
+        deletedAttachmentIds: deletedAttachmentIds,  // Store as data for serialization
+        onSuccess: function (data) {
+          if (!isMarkdownSave || !data || typeof data.markdown_source !== 'string') return;
+          if (data.markdown_source === onSuccessSavedMarkdown) return;
+
+          // Update the row dataset cache regardless of which creative is active now,
+          // so a later loadCreative() for this row picks up the rewritten source.
+          if (onSuccessTree) {
+            const row = treeRowElement(onSuccessTree);
+            if (row && row.dataset.markdownSource === onSuccessSavedMarkdown) {
+              row.dataset.markdownSource = data.markdown_source;
+              row.requestUpdate?.();
+            }
+          }
+
+          // Only touch the live textarea if we are still editing the same creative
+          // AND the user hasn't typed since we queued the save.
+          if (form.dataset.creativeId === onSuccessCreativeId
+              && markdownMode
+              && markdownTextarea
+              && markdownTextarea.value === onSuccessSavedMarkdown) {
+            markdownTextarea.value = data.markdown_source;
+            syncMarkdownToForm();
+            originalContent = data.markdown_source;
+          }
+        }
       });
       // console.warn('apiQueue.enqueue disabled for debugging');
 
