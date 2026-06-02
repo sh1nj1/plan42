@@ -1282,7 +1282,7 @@ export function initializeCreativeRowEditor() {
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
       const startCreativeId = creativeId;
-      const capturedMarkdownSource = isMarkdownSave ? (markdownTextarea?.value || '') : '';
+      let capturedMarkdownSource = isMarkdownSave ? (markdownTextarea?.value || '') : '';
       const capturedContentType = isMarkdownSave ? 'markdown' : 'html';
 
       // Prevent saving empty content, matching saveForm behavior
@@ -1300,8 +1300,15 @@ export function initializeCreativeRowEditor() {
       await waitForUploads();
 
       // If we are still on the same creative (e.g. move awaited us), refresh the content
-      // This ensures we capture the final HTML with signed IDs instead of blob URLs
+      // This ensures we capture the final HTML with signed IDs instead of blob URLs.
+      // Markdown saves regenerate description from creative[markdown_source] server-side,
+      // so we must re-sync and re-capture the latest textarea value too — otherwise edits
+      // made during the upload wait get overwritten by the stale pre-wait source.
       if (form.dataset.creativeId === startCreativeId) {
+        if (isMarkdownSave) {
+          syncMarkdownToForm();
+          capturedMarkdownSource = markdownTextarea?.value || '';
+        }
         currentContent = descriptionInput.value;
         currentProgress = readProgressValue();
         shouldPersistProgress = progressValueChanged();
