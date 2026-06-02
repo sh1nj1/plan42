@@ -154,6 +154,7 @@ en:
       inline_editor:
         placeholder: Describe the creative…
         markdown_placeholder: Write in Markdown…
+        markdown_preview_placeholder: Preview
       edit_title: Edit creative
       edit:
         inline_editor_only_html: Editing creatives now happens directly in the inline

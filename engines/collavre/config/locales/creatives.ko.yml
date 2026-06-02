@@ -141,6 +141,7 @@ ko:
       inline_editor:
         placeholder: 크리에이티브를 설명해주세요…
         markdown_placeholder: 마크다운으로 작성…
+        markdown_preview_placeholder: 미리보기
       edit_title: 크리에이티브 수정
       edit:
         inline_editor_only_html: 크리에이티브 수정은 인라인 편집기에서 바로 진행하세요.
