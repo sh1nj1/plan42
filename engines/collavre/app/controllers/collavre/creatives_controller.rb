@@ -146,7 +146,10 @@ module Collavre
                       @creative.ancestors.count + 1
             end
             sanitized_data = @creative.effective_origin(Set.new).data
-            if !can_edit && sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
+            # markdown_source is exposed via the top-level `markdown_source:` field for writers;
+            # exclude it from the editable `data` payload so the metadata YAML editor can't
+            # round-trip a stale copy back into data["markdown_source"] on update_metadata.
+            if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
               sanitized_data = sanitized_data.except("markdown_source")
             end
             render json: {
@@ -367,6 +370,18 @@ module Collavre
       rescue JSON::ParserError => e
         render json: { error: "Invalid JSON: #{e.message}" }, status: :unprocessable_entity
         return
+      end
+      # Reserved markdown fields are not editable via metadata; preserve current values so a stale
+      # YAML payload from the metadata popup can't overwrite a concurrent markdown edit.
+      if new_data.is_a?(Hash)
+        current_data = creative.data || {}
+        %w[markdown_source content_type].each do |key|
+          if current_data.key?(key)
+            new_data[key] = current_data[key]
+          else
+            new_data.delete(key)
+          end
+        end
       end
       previous_enabled = creative.drop_trigger_enabled?
 

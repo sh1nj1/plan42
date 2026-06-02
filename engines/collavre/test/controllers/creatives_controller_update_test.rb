@@ -59,6 +59,42 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "Drop Trigger", comment.topic.name
   end
 
+  test "update_metadata preserves markdown_source and content_type against stale payload" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "current source", "content_type" => "markdown", "foo" => "bar" }
+    )
+
+    patch update_metadata_creative_url(creative), params: {
+      data: {
+        markdown_source: "stale source",
+        content_type: "richtext",
+        foo: "baz"
+      }.to_json
+    }
+
+    assert_response :success
+    creative.reload
+    assert_equal "current source", creative.data["markdown_source"]
+    assert_equal "markdown", creative.data["content_type"]
+    assert_equal "baz", creative.data["foo"]
+  end
+
+  test "update_metadata strips markdown reserved keys when current data has none" do
+    creative = Creative.create!(description: "<p>html</p>", user: @user, data: { "foo" => "bar" })
+
+    patch update_metadata_creative_url(creative), params: {
+      data: { markdown_source: "injected", content_type: "markdown", foo: "baz" }.to_json
+    }
+
+    assert_response :success
+    creative.reload
+    assert_not creative.data.key?("markdown_source")
+    assert_not creative.data.key?("content_type")
+    assert_equal "baz", creative.data["foo"]
+  end
+
   test "update_metadata does not post duplicate warning when already enabled" do
     creative = Creative.create!(description: "Documentation", user: @user, data: { "trigger" => { "on_child_enter" => true } })
     feedback_ai = users(:ai_bot)
