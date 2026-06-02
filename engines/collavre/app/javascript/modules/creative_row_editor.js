@@ -1059,7 +1059,9 @@ export function initializeCreativeRowEditor() {
         saving = true;
 
         // Capture values being saved to update dirty state on success
-        const savedContent = markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value;
+        // NOTE: `let` (not `const`) — when the server rewrites markdown_source
+        // (e.g. data: URI → blob path) we reassign below.
+        let savedContent = markdownMode ? (markdownTextarea?.value || '') : descriptionInput.value;
         const shouldPersistProgress = progressValueChanged();
         const savedProgress = shouldPersistProgress ? readProgressValue() : progressBaselineValueFrom(originalProgress);
         const savedOriginId = originIdInput ? originIdInput.value : '';
