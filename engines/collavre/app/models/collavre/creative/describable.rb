@@ -10,7 +10,7 @@ module Collavre
         validate :description_cannot_change_if_has_origin, on: :update
         validate :description_cannot_change_if_github_source, on: :update
 
-        before_save :convert_markdown_to_html
+        before_validation :convert_markdown_to_html
         before_save :sanitize_description_html
         after_destroy_commit :purge_description_attachments
       end
