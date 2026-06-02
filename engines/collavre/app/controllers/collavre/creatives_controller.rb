@@ -118,6 +118,7 @@ module Collavre
 
           trigger_loop_data = @creative.data&.dig("trigger", "loop")
           parent_trigger_enabled = @creative.parent&.drop_trigger_enabled? || false
+          can_edit = @creative.has_permission?(Current.user, :write)
 
           etag = [
             "creative",
@@ -132,7 +133,9 @@ module Collavre
             "trigger_v3",
             trigger_loop_data&.dig("state"),
             trigger_loop_data&.dig("current_iteration"),
-            parent_trigger_enabled
+            parent_trigger_enabled,
+            "can_edit",
+            can_edit
           ].join(":")
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
@@ -142,7 +145,6 @@ module Collavre
             else
                       @creative.ancestors.count + 1
             end
-            can_edit = @creative.has_permission?(Current.user, :write)
             sanitized_data = @creative.effective_origin(Set.new).data
             if !can_edit && sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
               sanitized_data = sanitized_data.except("markdown_source")
