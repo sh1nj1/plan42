@@ -142,6 +142,11 @@ module Collavre
             else
                       @creative.ancestors.count + 1
             end
+            can_edit = @creative.has_permission?(Current.user, :write)
+            sanitized_data = @creative.effective_origin(Set.new).data
+            if !can_edit && sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
+              sanitized_data = sanitized_data.except("markdown_source")
+            end
             render json: {
               id: @creative.id,
               description: @creative.effective_description,
@@ -153,12 +158,12 @@ module Collavre
               depth: depth,
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
-              data: @creative.effective_origin(Set.new).data,
+              data: sanitized_data,
               content_type: effective.data&.dig("content_type"),
-              markdown_source: effective.data&.dig("markdown_source"),
+              markdown_source: can_edit ? effective.data&.dig("markdown_source") : nil,
               trigger_loop: trigger_loop_data,
               is_trigger_task: parent_trigger_enabled,
-              can_edit: @creative.has_permission?(Current.user, :write)
+              can_edit: can_edit
             }
           end
         end
