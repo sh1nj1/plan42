@@ -2302,6 +2302,12 @@ export function initializeCreativeRowEditor() {
           scheduleSave();
         } else {
           // Switching from Rich Text → Markdown
+          const currentHtml = descriptionInput.value || '';
+          const hasRichText = currentHtml.replace(/<[^>]*>/g, '').trim().length > 0;
+          if (hasRichText) {
+            const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
+            if (confirmMsg && !confirm(confirmMsg)) return;
+          }
           activateMarkdownMode('');
           isDirty = true;
           scheduleSave();

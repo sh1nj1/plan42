@@ -136,6 +136,8 @@ en:
         toggle_richtext: Rich Text
         markdown_to_richtext_confirm: Switching to Rich Text will discard the Markdown
           source. Continue?
+        richtext_to_markdown_confirm: Switching to Markdown will discard the current
+          rich text content. Continue?
       share:
         shared: Creative shared successfully.
         permission_updated: Permission updated successfully.

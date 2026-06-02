@@ -124,6 +124,7 @@ ko:
         toggle_richtext: 서식 편집
         markdown_to_richtext_confirm: 서식 편집으로 전환하면 마크다운 원본이 삭제됩니다.
           계속하시겠습니까?
+        richtext_to_markdown_confirm: 마크다운으로 전환하면 현재 서식 편집 내용이 삭제됩니다. 계속하시겠습니까?
       share:
         shared: 크리에이티브가 성공적으로 공유되었습니다.
         permission_updated: 권한이 성공적으로 변경되었습니다.
