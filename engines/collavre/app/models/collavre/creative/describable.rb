@@ -20,14 +20,6 @@ module Collavre
         after_destroy_commit :purge_description_attachments
       end
 
-      def markdown_type?
-        data&.dig("content_type") == "markdown"
-      end
-
-      def markdown_source_text
-        data&.dig("markdown_source")
-      end
-
       # Linked Creative의 description을 안전하게 반환
       def effective_description(variation_id = nil, html = true)
         if variation_id.present?
