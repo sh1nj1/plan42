@@ -14,32 +14,38 @@ module Collavre
       # Falls back to lightweight regex conversion for short inline fragments.
       def markdown_to_html(text, image_refs = {})
         return "" if text.nil?
-        input = text.dup
 
-        # Collect reference-style data-URI images. CommonMark allows both the
-        # angle-bracket form `[alt]: <data:...>` and the bare form
-        # `[alt]: data:image/...`, optionally followed by a title.
-        input.gsub!(/^\s*\[([^\]]+)\]:\s*(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*$/) do
-          image_refs[$1] = ($2 || $3).strip
-          ""
-        end
-
-        # Convert data-URI images to Active Storage before rendering
-        input.gsub!(/(?<!\\)!\[([^\]]*)\]\[([^\]]+)\]/) do
-          if (data_url = image_refs[$2])
-            data_image_to_attachment(data_url, $1)
-          else
-            "![#{$1}][#{$2}]"
+        # Protect fenced code blocks and inline code spans from the regex
+        # rewrites below — a Markdown sample like ```` ```md\n![x](data:...)\n``` ````
+        # must not silently upload its data URI as an Active Storage blob.
+        input = with_code_protected(text.dup) do |source|
+          # Collect reference-style data-URI images. CommonMark allows both the
+          # angle-bracket form `[alt]: <data:...>` and the bare form
+          # `[alt]: data:image/...`, optionally followed by a title.
+          source.gsub!(/^\s*\[([^\]]+)\]:\s*(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*$/) do
+            image_refs[$1] = ($2 || $3).strip
+            ""
           end
-        end
 
-        # Inline data-URI images. base64 contains no whitespace or `)`, so bound
-        # the URL on those and capture an optional CommonMark title separately;
-        # otherwise `data:...;base64,XYZ "caption"` would be slurped as one URL
-        # and fail the strict parser in `data_image_to_attachment`. Titles may be
-        # double-quoted, single-quoted, or parenthesized per CommonMark.
-        input.gsub!(/(?<!\\)!\[([^\]]*)\]\(\s*(data:image\/[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/) do
-          data_image_to_attachment($2, $1)
+          # Convert data-URI images to Active Storage before rendering
+          source.gsub!(/(?<!\\)!\[([^\]]*)\]\[([^\]]+)\]/) do
+            if (data_url = image_refs[$2])
+              data_image_to_attachment(data_url, $1)
+            else
+              "![#{$1}][#{$2}]"
+            end
+          end
+
+          # Inline data-URI images. base64 contains no whitespace or `)`, so bound
+          # the URL on those and capture an optional CommonMark title separately;
+          # otherwise `data:...;base64,XYZ "caption"` would be slurped as one URL
+          # and fail the strict parser in `data_image_to_attachment`. Titles may be
+          # double-quoted, single-quoted, or parenthesized per CommonMark.
+          source.gsub!(/(?<!\\)!\[([^\]]*)\]\(\s*(data:image\/[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/) do
+            data_image_to_attachment($2, $1)
+          end
+
+          source
         end
 
         # Render with commonmarker (GFM extensions: table, strikethrough, autolink, tasklist, tagfilter)
@@ -209,34 +215,39 @@ module Collavre
       # re-import the same data URI into a fresh blob on every autosave.
       def rewrite_data_uri_images(text)
         return text if text.nil?
-        result = text.dup
         image_refs = {}
 
-        # Collect reference-style data-URI image definitions. CommonMark accepts
-        # both the angle-bracket form `[alt]: <data:...>` and the bare form
-        # `[alt]: data:image/...`, optionally followed by a title. Rewrite each
-        # definition to point at a freshly-uploaded blob, normalizing to the
-        # bare form (titles are dropped since blob paths cannot collide with
-        # surrounding text).
-        result.gsub!(/^(\s*\[)([^\]]+)(\]:\s*)(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))(\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*)$/) do
-          lead, label, mid, angle_url, bare_url, tail = $1, $2, $3, $4, $5, $6
-          data_url = (angle_url || bare_url).strip
-          blob_path = data_uri_to_blob_path(data_url)
-          image_refs[label] = blob_path
-          "#{lead}#{label}#{mid}#{blob_path}#{tail}"
-        end
+        # Protect fenced code blocks and inline code spans before rewriting —
+        # a Markdown code sample like ```` ```md\n![x](data:...)\n``` ```` must
+        # not be silently uploaded as a blob and have its source rewritten,
+        # which would corrupt the user's code snippet on every autosave.
+        with_code_protected(text.dup) do |result|
+          # Collect reference-style data-URI image definitions. CommonMark accepts
+          # both the angle-bracket form `[alt]: <data:...>` and the bare form
+          # `[alt]: data:image/...`, optionally followed by a title. Rewrite each
+          # definition to point at a freshly-uploaded blob, normalizing to the
+          # bare form (titles are dropped since blob paths cannot collide with
+          # surrounding text).
+          result.gsub!(/^(\s*\[)([^\]]+)(\]:\s*)(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))(\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*)$/) do
+            lead, label, mid, angle_url, bare_url, tail = $1, $2, $3, $4, $5, $6
+            data_url = (angle_url || bare_url).strip
+            blob_path = data_uri_to_blob_path(data_url)
+            image_refs[label] = blob_path
+            "#{lead}#{label}#{mid}#{blob_path}#{tail}"
+          end
 
-        # Inline data-URI images: ![alt](data:...) or ![alt](data:... "title")
-        # → ![alt](blob_path) / ![alt](blob_path "title"). Parse the title
-        # separately so it doesn't get captured into the data URL and break
-        # strict matching in `data_uri_to_blob_path`. Titles may be
-        # double-quoted, single-quoted, or parenthesized per CommonMark.
-        result.gsub!(/(?<!\\)!\[([^\]]*)\]\(\s*(data:image\/[^\s)]+)(\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/) do
-          alt, data_url, title = $1, $2, $3
-          "![#{alt}](#{data_uri_to_blob_path(data_url)}#{title})"
-        end
+          # Inline data-URI images: ![alt](data:...) or ![alt](data:... "title")
+          # → ![alt](blob_path) / ![alt](blob_path "title"). Parse the title
+          # separately so it doesn't get captured into the data URL and break
+          # strict matching in `data_uri_to_blob_path`. Titles may be
+          # double-quoted, single-quoted, or parenthesized per CommonMark.
+          result.gsub!(/(?<!\\)!\[([^\]]*)\]\(\s*(data:image\/[^\s)]+)(\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/) do
+            alt, data_url, title = $1, $2, $3
+            "![#{alt}](#{data_uri_to_blob_path(data_url)}#{title})"
+          end
 
-        result
+          result
+        end
       end
 
       # Convert a data-URI to a freshly-uploaded Active Storage blob path.
@@ -253,6 +264,37 @@ module Collavre
       end
 
       private
+
+      # Run a regex-rewriting block on `text` with fenced code blocks and
+      # inline code spans swapped for unique tokens, then restore the original
+      # segments in the block's return value. Prevents data-URI rewrites from
+      # touching code samples that happen to contain image syntax.
+      def with_code_protected(text)
+        segments = {}
+        index = 0
+        protected_text = text
+
+        # Fenced code blocks (``` or ~~~, indented up to 3 spaces per CommonMark).
+        protected_text.gsub!(/^([ \t]{0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1\2[ \t]*(?=\n|\z)/) do |match|
+          token = "\x00MDPROTECT#{index}\x00"
+          segments[token] = match
+          index += 1
+          token
+        end
+
+        # Inline single-backtick code spans. Multi-backtick spans are rare in
+        # practice; the protection above already covers fenced samples.
+        protected_text.gsub!(/`[^`\n]+?`/) do |match|
+          token = "\x00MDPROTECT#{index}\x00"
+          segments[token] = match
+          index += 1
+          token
+        end
+
+        rewritten = yield(protected_text)
+        segments.each { |token, original| rewritten.sub!(token, original) }
+        rewritten
+      end
 
       def escape_table_cell(text)
         text.to_s.gsub(/(?<!\\)\|/, '\\|')
