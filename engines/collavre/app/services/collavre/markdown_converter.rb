@@ -33,7 +33,11 @@ module Collavre
           end
         end
 
-        input.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
+        # Inline data-URI images. base64 contains no whitespace or `)`, so bound
+        # the URL on those and capture an optional CommonMark title separately;
+        # otherwise `data:...;base64,XYZ "caption"` would be slurped as one URL
+        # and fail the strict parser in `data_image_to_attachment`.
+        input.gsub!(/(?<!\\)!\[([^\]]*)\]\(\s*(data:image\/[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/) do
           data_image_to_attachment($2, $1)
         end
 
@@ -221,10 +225,13 @@ module Collavre
           "#{lead}#{label}#{mid}#{blob_path}#{tail}"
         end
 
-        # Inline data-URI images: ![alt](data:...) → ![alt](blob_path)
-        result.gsub!(/(?<!\\)!\[([^\]]*)\]\((data:image\/[^)]+)\)/) do
-          alt, data_url = $1, $2
-          "![#{alt}](#{data_uri_to_blob_path(data_url)})"
+        # Inline data-URI images: ![alt](data:...) or ![alt](data:... "title")
+        # → ![alt](blob_path) / ![alt](blob_path "title"). Parse the title
+        # separately so it doesn't get captured into the data URL and break
+        # strict matching in `data_uri_to_blob_path`.
+        result.gsub!(/(?<!\\)!\[([^\]]*)\]\(\s*(data:image\/[^\s)]+)(\s+(?:"[^"]*"|'[^']*'))?\s*\)/) do
+          alt, data_url, title = $1, $2, $3
+          "![#{alt}](#{data_uri_to_blob_path(data_url)}#{title})"
         end
 
         result

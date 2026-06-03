@@ -110,6 +110,43 @@ module Collavre
       end
     end
 
+    test "markdown_to_html handles inline data URI with title" do
+      input = %Q(Hello ![pic](#{PNG_DATA_URI} "caption"))
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        html = MarkdownConverter.markdown_to_html(input)
+        assert_includes html, "/rails/active_storage/blobs/"
+        refute_includes html, "data:image/png"
+      end
+    end
+
+    test "markdown_to_html handles inline data URI with single-quoted title" do
+      input = %Q(![pic](#{PNG_DATA_URI} 'cap'))
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        html = MarkdownConverter.markdown_to_html(input)
+        assert_includes html, "/rails/active_storage/blobs/"
+        refute_includes html, "data:image/png"
+      end
+    end
+
+    test "rewrite_data_uri_images rewrites inline data URI with title and preserves title" do
+      input = %Q(![pic](#{PNG_DATA_URI} "caption"))
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_includes rewritten, "/rails/active_storage/blobs/"
+        refute_includes rewritten, "data:image/png"
+        assert_includes rewritten, '"caption"'
+      end
+    end
+
+    test "rewrite_data_uri_images rewrites inline data URI without title" do
+      input = "![pic](#{PNG_DATA_URI})"
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_includes rewritten, "/rails/active_storage/blobs/"
+        refute_includes rewritten, "data:image/png"
+      end
+    end
+
     test "rewrite_data_uri_images still handles angle-bracket reference form" do
       input = "Hello ![pic][p]\n\n[p]: <#{PNG_DATA_URI}>\n"
       assert_difference -> { ActiveStorage::Blob.count }, +1 do
