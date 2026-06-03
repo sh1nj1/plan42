@@ -55,6 +55,27 @@ module Collavre
         assert_equal "# keep", creative.data["markdown_source"]
       end
 
+      test "GFM task list checkboxes survive sanitization" do
+        source = "- [ ] todo\n- [x] done\n"
+
+        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.last
+
+        assert_match %r{<input[^>]*type="checkbox"[^>]*disabled}, creative.description
+        assert_match %r{<input[^>]*checked[^>]*}, creative.description
+      end
+
+      test "non-checkbox input tags are stripped from description" do
+        Creative.create!(
+          user: @user,
+          description: %(<p>hi <input type="text" value="x"> <input type="submit"></p>)
+        )
+        creative = Creative.last
+
+        refute_match %r{<input}, creative.description
+        assert_includes creative.description, "hi"
+      end
+
       test "inline data-URI image is rewritten to blob path in stored markdown_source" do
         pixel_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
         data_uri = "data:image/png;base64,#{pixel_b64}"

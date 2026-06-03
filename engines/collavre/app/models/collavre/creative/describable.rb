@@ -84,10 +84,24 @@ module Collavre
         table_tags = %w[table thead tbody tfoot tr th td]
         table_attrs = %w[colspan rowspan]
         attachment_attrs = %w[download data-filesize]
+        task_list_attrs = %w[type disabled checked]
+
+        # GFM task list checkboxes (`- [ ]` / `- [x]`) render as
+        # <input type="checkbox" disabled> via Commonmarker's tasklist
+        # extension. Strip any other <input> variant before sanitization
+        # so allowing the `input` tag in the safelist can't smuggle in
+        # text/image/submit inputs.
+        scrubbed = Loofah.fragment(description.to_s)
+        scrubbed.css("input").each do |node|
+          unless node["type"] == "checkbox" && node.has_attribute?("disabled")
+            node.remove
+          end
+        end
+
         self.description = ActionController::Base.helpers.sanitize(
-          description,
-          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags,
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + %w[data-lexical]
+          scrubbed.to_html,
+          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + %w[input],
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + %w[data-lexical]
         )
       end
 
