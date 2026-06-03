@@ -276,7 +276,9 @@ module Collavre
         protected_text = text
 
         # Fenced code blocks (``` or ~~~, indented up to 3 spaces per CommonMark).
-        protected_text.gsub!(/^([ \t]{0,3})(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1\2[ \t]*(?=\n|\z)/) do |match|
+        # The closing fence is optional: per CommonMark, an unclosed fence runs to
+        # end-of-document, so we still need to protect its contents from rewrites.
+        protected_text.gsub!(/^([ \t]{0,3})(`{3,}|~{3,})[^\n]*(?:\n(?:[\s\S]*?\n\1\2[ \t]*(?=\n|\z)|[\s\S]*\z)|\z)/) do |match|
           token = "\x00MDPROTECT#{index}\x00"
           segments[token] = match
           index += 1
