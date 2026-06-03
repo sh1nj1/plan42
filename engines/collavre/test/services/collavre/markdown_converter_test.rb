@@ -230,5 +230,51 @@ module Collavre
         refute_includes html, "/rails/active_storage/blobs/"
       end
     end
+
+    test "rewrite_data_uri_images leaves data URIs inside 4-space indented code blocks untouched" do
+      input = "Sample:\n\n    ![pic](#{PNG_DATA_URI})\n\nAfter.\n"
+      assert_no_difference -> { ActiveStorage::Blob.count } do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_equal input, rewritten
+        assert_includes rewritten, "data:image/png"
+      end
+    end
+
+    test "rewrite_data_uri_images leaves data URIs inside tab-indented code blocks untouched" do
+      input = "Sample:\n\n\t![pic](#{PNG_DATA_URI})\n\nAfter.\n"
+      assert_no_difference -> { ActiveStorage::Blob.count } do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_equal input, rewritten
+        assert_includes rewritten, "data:image/png"
+      end
+    end
+
+    test "rewrite_data_uri_images leaves reference-style data URI defs inside indented code blocks untouched" do
+      input = "Sample:\n\n    [p]: #{PNG_DATA_URI}\n    ![pic][p]\n\nAfter.\n"
+      assert_no_difference -> { ActiveStorage::Blob.count } do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_equal input, rewritten
+        assert_includes rewritten, "data:image/png"
+      end
+    end
+
+    test "rewrite_data_uri_images rewrites a real image but leaves an indented-code-sampled one alone" do
+      input = "Real: ![pic](#{PNG_DATA_URI})\n\nSample:\n\n    ![pic](#{PNG_DATA_URI})\n\nAfter.\n"
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_includes rewritten, "/rails/active_storage/blobs/"
+        assert_includes rewritten, "    ![pic](#{PNG_DATA_URI})"
+      end
+    end
+
+    test "markdown_to_html leaves data URIs inside 4-space indented code blocks as literal code" do
+      input = "Sample:\n\n    ![pic](#{PNG_DATA_URI})\n\nAfter.\n"
+      assert_no_difference -> { ActiveStorage::Blob.count } do
+        html = MarkdownConverter.markdown_to_html(input)
+        assert_includes html, "<pre"
+        assert_includes html, "data:image/png"
+        refute_includes html, "/rails/active_storage/blobs/"
+      end
+    end
   end
 end

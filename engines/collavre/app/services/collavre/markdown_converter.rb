@@ -265,10 +265,11 @@ module Collavre
 
       private
 
-      # Run a regex-rewriting block on `text` with fenced code blocks and
-      # inline code spans swapped for unique tokens, then restore the original
-      # segments in the block's return value. Prevents data-URI rewrites from
-      # touching code samples that happen to contain image syntax.
+      # Run a regex-rewriting block on `text` with fenced code blocks,
+      # indented code blocks, and inline code spans swapped for unique tokens,
+      # then restore the original segments in the block's return value.
+      # Prevents data-URI rewrites from touching code samples that happen to
+      # contain image syntax.
       def with_code_protected(text)
         segments = {}
         index = 0
@@ -280,6 +281,18 @@ module Collavre
           segments[token] = match
           index += 1
           token
+        end
+
+        # Indented code blocks: contiguous lines each starting with 4+ spaces
+        # or a tab, preceded by start-of-document or a blank line (CommonRule
+        # requirement so we don't mistake list-item continuations for code).
+        protected_text.gsub!(/(\A|\n\n+)((?:(?:[ ]{4,}|\t)[^\n]*(?:\n|\z))+)/) do
+          prefix = Regexp.last_match(1)
+          block = Regexp.last_match(2)
+          token = "\x00MDPROTECT#{index}\x00"
+          segments[token] = block
+          index += 1
+          "#{prefix}#{token}"
         end
 
         # Inline single-backtick code spans. Multi-backtick spans are rare in
