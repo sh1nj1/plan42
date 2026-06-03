@@ -59,6 +59,157 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "Drop Trigger", comment.topic.name
   end
 
+  test "update_metadata preserves markdown_source and content_type against stale payload" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "current source", "content_type" => "markdown", "foo" => "bar" }
+    )
+
+    patch update_metadata_creative_url(creative), params: {
+      data: {
+        markdown_source: "stale source",
+        content_type: "richtext",
+        foo: "baz"
+      }.to_json
+    }
+
+    assert_response :success
+    creative.reload
+    assert_equal "current source", creative.data["markdown_source"]
+    assert_equal "markdown", creative.data["content_type"]
+    assert_equal "baz", creative.data["foo"]
+  end
+
+  test "update_metadata strips markdown reserved keys when current data has none" do
+    creative = Creative.create!(description: "<p>html</p>", user: @user, data: { "foo" => "bar" })
+
+    patch update_metadata_creative_url(creative), params: {
+      data: { markdown_source: "injected", content_type: "markdown", foo: "baz" }.to_json
+    }
+
+    assert_response :success
+    creative.reload
+    assert_not creative.data.key?("markdown_source")
+    assert_not creative.data.key?("content_type")
+    assert_equal "baz", creative.data["foo"]
+  end
+
+  test "update_metadata rejects non-hash JSON arrays without clobbering markdown fields" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "keep me", "content_type" => "markdown", "foo" => "bar" }
+    )
+
+    patch update_metadata_creative_url(creative), params: { data: "[]" }
+
+    assert_response :unprocessable_entity
+    body = JSON.parse(response.body)
+    assert_equal I18n.t("collavre.creatives.errors.metadata_must_be_object"), body["error"]
+    creative.reload
+    assert_equal "keep me", creative.data["markdown_source"]
+    assert_equal "markdown", creative.data["content_type"]
+    assert_equal "bar", creative.data["foo"]
+  end
+
+  test "update_metadata rejects non-hash JSON scalars without clobbering markdown fields" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "keep me", "content_type" => "markdown" }
+    )
+
+    patch update_metadata_creative_url(creative), params: { data: "\"just a string\"" }
+
+    assert_response :unprocessable_entity
+    creative.reload
+    assert_equal "keep me", creative.data["markdown_source"]
+    assert_equal "markdown", creative.data["content_type"]
+  end
+
+  test "update_metadata non-hash payload error is localized in Korean" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "keep me", "content_type" => "markdown" }
+    )
+
+    patch update_metadata_creative_url(creative), params: { data: "[]" }, headers: { "Accept-Language" => "ko" }
+
+    assert_response :unprocessable_entity
+    body = JSON.parse(response.body)
+    assert_equal "메타데이터는 객체여야 합니다.", body["error"]
+  end
+
+  test "update JSON response exposes rewritten markdown_source for client sync" do
+    png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
+    md_src  = "Hello ![img](data:image/png;base64,#{png_b64}) world"
+
+    creative = Creative.create!(description: "<p>placeholder</p>", user: @user)
+
+    patch creative_url(creative), params: {
+      creative: { description: "<p>ignored</p>", markdown_source: md_src, content_type_input: "markdown" }
+    }, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_equal "markdown", json["content_type"]
+    assert json["markdown_source"].is_a?(String), "markdown_source should be in update response"
+    assert_not_includes json["markdown_source"], "data:image/png;base64,",
+      "Server should return rewritten markdown_source with blob path, not the original data URI"
+    assert_match %r{/rails/active_storage/blobs/}, json["markdown_source"]
+  end
+
+  test "create JSON response exposes rewritten markdown_source for client sync" do
+    png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
+    md_src  = "Hello ![img](data:image/png;base64,#{png_b64}) world"
+
+    post creatives_url, params: {
+      creative: {
+        description: "<p>ignored</p>",
+        markdown_source: md_src,
+        content_type_input: "markdown"
+      }
+    }, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert json["id"].present?, "create response must include id"
+    assert_equal "markdown", json["content_type"]
+    assert json["markdown_source"].is_a?(String), "create response should expose markdown_source"
+    assert_not_includes json["markdown_source"], "data:image/png;base64,",
+      "Server should return rewritten markdown_source with blob path, not the original data URI"
+    assert_match %r{/rails/active_storage/blobs/}, json["markdown_source"]
+  end
+
+  test "update JSON response omits markdown_source for read-only parent_id-only PATCH" do
+    owner = users(:one)
+    reader = users(:two)
+
+    origin = Creative.create!(
+      description: "<p>secret html</p>",
+      user: owner,
+      data: { "content_type" => "markdown", "markdown_source" => "secret source" }
+    )
+    new_parent = Creative.create!(description: "New Parent", user: reader)
+    old_parent = Creative.create!(description: "Old Parent", user: reader)
+    linked = Creative.create!(description: "<p>link</p>", user: owner, origin: origin, parent: old_parent)
+    CreativeShare.create!(creative: linked, user: reader, permission: :read)
+
+    sign_in_as reader, password: "password"
+
+    patch creative_url(linked), params: {
+      creative: { parent_id: new_parent.id }
+    }, headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_not json.key?("markdown_source"),
+      "read-only recipient must not receive origin markdown_source via parent-only PATCH"
+    assert_equal new_parent.id, linked.reload.parent_id
+  end
+
   test "update_metadata does not post duplicate warning when already enabled" do
     creative = Creative.create!(description: "Documentation", user: @user, data: { "trigger" => { "on_child_enter" => true } })
     feedback_ai = users(:ai_bot)

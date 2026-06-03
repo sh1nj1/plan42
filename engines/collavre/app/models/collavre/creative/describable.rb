@@ -4,10 +4,18 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
+        attr_accessor :content_type_input
+        attr_reader :markdown_source
+
+        def markdown_source=(value)
+          @markdown_source = value.is_a?(String) ? value.gsub(/\r\n?/, "\n") : value
+        end
+
         validates :description, presence: true, unless: -> { origin_id.present? }
         validate :description_cannot_change_if_has_origin, on: :update
         validate :description_cannot_change_if_github_source, on: :update
 
+        before_validation :convert_markdown_to_html
         before_save :sanitize_description_html
         after_destroy_commit :purge_description_attachments
       end
@@ -32,14 +40,68 @@ module Collavre
 
       private
 
+      def convert_markdown_to_html
+        if content_type_input == "markdown"
+          self.data ||= {}
+          new_source = markdown_source.to_s
+          prev_source = data["markdown_source"].to_s
+          prev_type = data["content_type"]
+          self.data["content_type"] = "markdown"
+          if new_source != prev_source || prev_type != "markdown"
+            # Rewrite inline data-URI images to freshly-uploaded blob paths
+            # FIRST, then persist the rewritten source. Subsequent edits
+            # around the same image carry the blob path instead of the
+            # data URI, so re-renders no longer create duplicate blobs.
+            rewritten_source = Collavre::MarkdownConverter.rewrite_data_uri_images(new_source)
+            self.data["markdown_source"] = rewritten_source
+            self.description = Collavre::MarkdownConverter.markdown_to_html(rewritten_source)
+          else
+            self.data["markdown_source"] = new_source
+            # Source unchanged: description must stay derived from markdown_source.
+            # Restore the persisted value rather than trusting params[:description],
+            # which would let a stale/crafted request diverge from markdown_source.
+            # Skipping the re-render also avoids re-importing data-URI images as
+            # fresh Active Storage blobs on every autosave/progress/move.
+            self.description = description_was if description_changed?
+          end
+        elsif content_type_input == "html"
+          self.data ||= {}
+          self.data.delete("content_type")
+          self.data.delete("markdown_source")
+        elsif !new_record? && description_changed? && data&.dig("content_type") == "markdown"
+          # Description was rewritten through a non-markdown path (tool/MCP
+          # update, direct base.update(description: ...), etc.) on a creative
+          # that was previously in markdown mode. The new HTML no longer
+          # matches data["markdown_source"], so the next inline-markdown open
+          # would load the stale source and silently overwrite this update.
+          # Demote to HTML mode so the persisted source matches description.
+          self.data.delete("content_type")
+          self.data.delete("markdown_source")
+        end
+      end
+
       def sanitize_description_html
         table_tags = %w[table thead tbody tfoot tr th td]
         table_attrs = %w[colspan rowspan]
         attachment_attrs = %w[download data-filesize]
+        task_list_attrs = %w[type disabled checked]
+
+        # GFM task list checkboxes (`- [ ]` / `- [x]`) render as
+        # <input type="checkbox" disabled> via Commonmarker's tasklist
+        # extension. Strip any other <input> variant before sanitization
+        # so allowing the `input` tag in the safelist can't smuggle in
+        # text/image/submit inputs.
+        scrubbed = Loofah.fragment(description.to_s)
+        scrubbed.css("input").each do |node|
+          unless node["type"] == "checkbox" && node.has_attribute?("disabled")
+            node.remove
+          end
+        end
+
         self.description = ActionController::Base.helpers.sanitize(
-          description,
-          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags,
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + %w[data-lexical]
+          scrubbed.to_html,
+          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + %w[input],
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + %w[data-lexical]
         )
       end
 

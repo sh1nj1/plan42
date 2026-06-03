@@ -132,4 +132,55 @@ class MarkdownImporterTest < ActiveSupport::TestCase
     table_htmls = html_fragments.select { |html| html.include?("<table>") }
     assert_equal 1, table_htmls.size, "Only actual tables should be converted to HTML"
   end
+
+  test "imports bare reference-style data-URI image definitions as attachments" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    png_b64 = Base64.strict_encode64("\x89PNG\r\n\x1A\n" + "x" * 64)
+    markdown = <<~MD
+      ![pic][p]
+
+      [p]: data:image/png;base64,#{png_b64}
+    MD
+
+    created = MarkdownImporter.import(markdown, parent: parent, user: user)
+
+    image_creative = created.find { |c| c.reload.description.match?(%r{<img[^>]+/rails/active_storage/}) }
+    assert_not_nil image_creative, "Bare reference-style data URI should resolve to an Active Storage blob image"
+    assert_no_match(/data:image\/png;base64/, image_creative.description, "Raw data URI must not survive import")
+  end
+
+  test "imports angle-bracket reference-style data-URI image definitions as attachments" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    png_b64 = Base64.strict_encode64("\x89PNG\r\n\x1A\n" + "y" * 64)
+    markdown = <<~MD
+      ![pic][p]
+
+      [p]: <data:image/png;base64,#{png_b64}>
+    MD
+
+    created = MarkdownImporter.import(markdown, parent: parent, user: user)
+
+    image_creative = created.find { |c| c.reload.description.match?(%r{<img[^>]+/rails/active_storage/}) }
+    assert_not_nil image_creative, "Angle-bracket reference-style data URI should still resolve to an Active Storage blob image"
+    assert_no_match(/data:image\/png;base64/, image_creative.description, "Raw data URI must not survive import")
+  end
+
+  test "imports bare reference-style data-URI image with optional title" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    png_b64 = Base64.strict_encode64("\x89PNG\r\n\x1A\n" + "z" * 64)
+    markdown = <<~MD
+      ![pic][p]
+
+      [p]: data:image/png;base64,#{png_b64} "caption"
+    MD
+
+    created = MarkdownImporter.import(markdown, parent: parent, user: user)
+
+    image_creative = created.find { |c| c.reload.description.match?(%r{<img[^>]+/rails/active_storage/}) }
+    assert_not_nil image_creative, "Bare reference-style data URI with title should still resolve to an Active Storage blob image"
+    assert_no_match(/data:image\/png;base64/, image_creative.description, "Raw data URI must not survive import")
+  end
 end

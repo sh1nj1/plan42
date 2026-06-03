@@ -174,11 +174,11 @@ class ApiQueueManager {
         // Merge new callback with existing callbacks
         let mergedCallback = null
         if (existingCallbacks.length > 0 || request.onSuccess) {
-            mergedCallback = () => {
+            mergedCallback = (responseData) => {
                 // Run all existing callbacks first
                 existingCallbacks.forEach(cb => {
                     try {
-                        cb()
+                        cb(responseData)
                     } catch (error) {
                         console.error('Merged callback failed:', error)
                     }
@@ -186,7 +186,7 @@ class ApiQueueManager {
                 // Then run the new callback
                 if (typeof request.onSuccess === 'function') {
                     try {
-                        request.onSuccess()
+                        request.onSuccess(responseData)
                     } catch (error) {
                         console.error('New callback failed:', error)
                     }
@@ -229,8 +229,20 @@ class ApiQueueManager {
         while (this.queue.length > 0) {
             const item = this.queue[0]
 
+            let responseData = null
             try {
-                await this.executeRequest(item)
+                const response = await this.executeRequest(item)
+                // Parse JSON body so callbacks can react to server-side rewrites
+                // (e.g. markdown_source data: URIs → blob paths). Best-effort: empty
+                // or non-JSON bodies leave responseData null.
+                if (response && typeof response.text === 'function') {
+                    try {
+                        const text = await response.text()
+                        responseData = text ? JSON.parse(text) : null
+                    } catch (_parseError) {
+                        responseData = null
+                    }
+                }
                 // Success - handle cleanup actions
 
                 // Dispatch event for attachment cleanup if needed
@@ -243,7 +255,7 @@ class ApiQueueManager {
                 // Call onSuccess callback if provided (for non-serializable actions)
                 if (typeof item.onSuccess === 'function') {
                     try {
-                        item.onSuccess()
+                        item.onSuccess(responseData)
                     } catch (callbackError) {
                         console.error('onSuccess callback failed:', callbackError)
                     }

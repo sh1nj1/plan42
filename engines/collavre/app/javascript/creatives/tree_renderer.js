@@ -163,6 +163,12 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
     setDatasetValue(row, 'originId', inlinePayload.origin_id ?? '')
   }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'content_type')) {
+    setDatasetValue(row, 'contentType', inlinePayload.content_type ?? '')
+  }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_source')) {
+    setDatasetValue(row, 'markdownSource', inlinePayload.markdown_source ?? '')
+  }
 
   if (dirty && typeof row.requestUpdate === 'function') {
     // Before Lit re-renders, sync progressHtml from current DOM.

@@ -6,9 +6,14 @@ module Collavre
     def self.import(content, parent:, user:, create_root: false)
       lines = content.to_s.lines
       image_refs = {}
+      # CommonMark allows both the angle-bracket form `[alt]: <data:...>` and
+      # the bare form `[alt]: data:image/...`, optionally followed by a title
+      # (`"..."`, `'...'`, or `(...)`). Match both so reference-style data-URI
+      # images survive the import path and resolve to attachments downstream
+      # (mirrors MarkdownConverter#markdown_to_html).
       lines.reject! do |ln|
-        if ln =~ /^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/
-          image_refs[$1] = $2.strip
+        if ln =~ /^\s*\[([^\]]+)\]:\s*(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*$/
+          image_refs[$1] = ($2 || $3).strip
           true
         else
           false
