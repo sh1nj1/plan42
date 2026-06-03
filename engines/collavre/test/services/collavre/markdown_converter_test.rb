@@ -69,5 +69,54 @@ module Collavre
       input = '<strong class="highlight">bold</strong> text'
       assert_equal "**bold** text", MarkdownConverter.html_to_markdown(input)
     end
+
+    # 1x1 transparent PNG
+    PNG_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=".freeze
+
+    test "markdown_to_html handles bare reference-style data URI" do
+      input = "Hello ![pic][p]\n\n[p]: #{PNG_DATA_URI}\n"
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        html = MarkdownConverter.markdown_to_html(input)
+        assert_includes html, "/rails/active_storage/blobs/"
+        refute_includes html, "data:image/png"
+      end
+    end
+
+    test "markdown_to_html handles bare reference-style data URI with title" do
+      input = %Q(Hello ![pic][p]\n\n[p]: #{PNG_DATA_URI} "caption"\n)
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        html = MarkdownConverter.markdown_to_html(input)
+        assert_includes html, "/rails/active_storage/blobs/"
+        refute_includes html, "data:image/png"
+      end
+    end
+
+    test "rewrite_data_uri_images rewrites bare reference-style data URI" do
+      input = "Hello ![pic][p]\n\n[p]: #{PNG_DATA_URI}\n"
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_includes rewritten, "/rails/active_storage/blobs/"
+        refute_includes rewritten, "data:image/png"
+      end
+    end
+
+    test "rewrite_data_uri_images rewrites bare reference-style data URI with title" do
+      input = %Q(Hello ![pic][p]\n\n[p]: #{PNG_DATA_URI} "caption"\n)
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_includes rewritten, "/rails/active_storage/blobs/"
+        refute_includes rewritten, "data:image/png"
+        assert_includes rewritten, '"caption"'
+      end
+    end
+
+    test "rewrite_data_uri_images still handles angle-bracket reference form" do
+      input = "Hello ![pic][p]\n\n[p]: <#{PNG_DATA_URI}>\n"
+      assert_difference -> { ActiveStorage::Blob.count }, +1 do
+        rewritten = MarkdownConverter.rewrite_data_uri_images(input)
+        assert_includes rewritten, "/rails/active_storage/blobs/"
+        refute_includes rewritten, "data:image/png"
+      end
+    end
   end
 end

@@ -16,9 +16,11 @@ module Collavre
         return "" if text.nil?
         input = text.dup
 
-        # Collect reference-style data-URI images: [alt]: <data:...>
-        input.gsub!(/^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/) do
-          image_refs[$1] = $2.strip
+        # Collect reference-style data-URI images. CommonMark allows both the
+        # angle-bracket form `[alt]: <data:...>` and the bare form
+        # `[alt]: data:image/...`, optionally followed by a title.
+        input.gsub!(/^\s*\[([^\]]+)\]:\s*(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*$/) do
+          image_refs[$1] = ($2 || $3).strip
           ""
         end
 
@@ -205,10 +207,15 @@ module Collavre
         result = text.dup
         image_refs = {}
 
-        # Collect reference-style data-URI image definitions: [alt]: <data:...>
-        # Rewrite each definition to point at a freshly-uploaded blob.
-        result.gsub!(/^(\s*\[)([^\]]+)(\]:\s*<\s*)(data:image\/[^>]+)(\s*>\s*)$/) do
-          lead, label, mid, data_url, tail = $1, $2, $3, $4.strip, $5
+        # Collect reference-style data-URI image definitions. CommonMark accepts
+        # both the angle-bracket form `[alt]: <data:...>` and the bare form
+        # `[alt]: data:image/...`, optionally followed by a title. Rewrite each
+        # definition to point at a freshly-uploaded blob, normalizing to the
+        # bare form (titles are dropped since blob paths cannot collide with
+        # surrounding text).
+        result.gsub!(/^(\s*\[)([^\]]+)(\]:\s*)(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))(\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*)$/) do
+          lead, label, mid, angle_url, bare_url, tail = $1, $2, $3, $4, $5, $6
+          data_url = (angle_url || bare_url).strip
           blob_path = data_uri_to_blob_path(data_url)
           image_refs[label] = blob_path
           "#{lead}#{label}#{mid}#{blob_path}#{tail}"
