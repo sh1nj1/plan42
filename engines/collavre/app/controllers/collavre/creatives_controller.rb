@@ -389,16 +389,18 @@ module Collavre
         render json: { error: "Invalid JSON: #{e.message}" }, status: :unprocessable_entity
         return
       end
+      unless new_data.is_a?(Hash)
+        render json: { error: "Metadata must be an object" }, status: :unprocessable_entity
+        return
+      end
       # Reserved markdown fields are not editable via metadata; preserve current values so a stale
       # YAML payload from the metadata popup can't overwrite a concurrent markdown edit.
-      if new_data.is_a?(Hash)
-        current_data = creative.data || {}
-        %w[markdown_source content_type].each do |key|
-          if current_data.key?(key)
-            new_data[key] = current_data[key]
-          else
-            new_data.delete(key)
-          end
+      current_data = creative.data || {}
+      %w[markdown_source content_type].each do |key|
+        if current_data.key?(key)
+          new_data[key] = current_data[key]
+        else
+          new_data.delete(key)
         end
       end
       previous_enabled = creative.drop_trigger_enabled?

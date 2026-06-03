@@ -95,6 +95,37 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "baz", creative.data["foo"]
   end
 
+  test "update_metadata rejects non-hash JSON arrays without clobbering markdown fields" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "keep me", "content_type" => "markdown", "foo" => "bar" }
+    )
+
+    patch update_metadata_creative_url(creative), params: { data: "[]" }
+
+    assert_response :unprocessable_entity
+    creative.reload
+    assert_equal "keep me", creative.data["markdown_source"]
+    assert_equal "markdown", creative.data["content_type"]
+    assert_equal "bar", creative.data["foo"]
+  end
+
+  test "update_metadata rejects non-hash JSON scalars without clobbering markdown fields" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "keep me", "content_type" => "markdown" }
+    )
+
+    patch update_metadata_creative_url(creative), params: { data: "\"just a string\"" }
+
+    assert_response :unprocessable_entity
+    creative.reload
+    assert_equal "keep me", creative.data["markdown_source"]
+    assert_equal "markdown", creative.data["content_type"]
+  end
+
   test "update JSON response exposes rewritten markdown_source for client sync" do
     png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
     md_src  = "Hello ![img](data:image/png;base64,#{png_b64}) world"
