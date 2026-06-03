@@ -6,6 +6,7 @@ import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tr
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
+import { isHtmlEmpty } from './html_content_empty'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -299,14 +300,6 @@ export function initializeCreativeRowEditor() {
         content_type: row.dataset?.contentType || null,
         markdown_source: row.dataset?.markdownSource || null
       };
-    }
-
-    function isHtmlEmpty(html) {
-      if (!html) return true;
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-      if (temp.querySelector('img')) return false;
-      return (temp.textContent || '').trim().length === 0;
     }
 
     function isMarkdownEmpty(md) {
@@ -2362,8 +2355,7 @@ export function initializeCreativeRowEditor() {
         } else {
           // Switching from Rich Text → Markdown
           const currentHtml = descriptionInput.value || '';
-          const hasRichText = currentHtml.replace(/<[^>]*>/g, '').trim().length > 0;
-          if (hasRichText) {
+          if (!isHtmlEmpty(currentHtml)) {
             const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
             if (confirmMsg && !confirm(confirmMsg)) return;
           }
