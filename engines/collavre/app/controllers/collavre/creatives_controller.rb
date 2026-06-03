@@ -390,7 +390,7 @@ module Collavre
         return
       end
       unless new_data.is_a?(Hash)
-        render json: { error: "Metadata must be an object" }, status: :unprocessable_entity
+        render json: { error: t("collavre.creatives.errors.metadata_must_be_object") }, status: :unprocessable_entity
         return
       end
       # Reserved markdown fields are not editable via metadata; preserve current values so a stale

@@ -139,6 +139,7 @@ ko:
         progress_recalculated: 진행률을 다시 계산 했습니다.
       errors:
         no_permission: 이 작업을 수행할 권한이 없습니다.
+        metadata_must_be_object: 메타데이터는 객체여야 합니다.
       inline_editor:
         placeholder: 크리에이티브를 설명해주세요…
         markdown_placeholder: 마크다운으로 작성…

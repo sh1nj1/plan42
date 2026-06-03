@@ -105,6 +105,8 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     patch update_metadata_creative_url(creative), params: { data: "[]" }
 
     assert_response :unprocessable_entity
+    body = JSON.parse(response.body)
+    assert_equal I18n.t("collavre.creatives.errors.metadata_must_be_object"), body["error"]
     creative.reload
     assert_equal "keep me", creative.data["markdown_source"]
     assert_equal "markdown", creative.data["content_type"]
@@ -124,6 +126,20 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     creative.reload
     assert_equal "keep me", creative.data["markdown_source"]
     assert_equal "markdown", creative.data["content_type"]
+  end
+
+  test "update_metadata non-hash payload error is localized in Korean" do
+    creative = Creative.create!(
+      description: "<p>html</p>",
+      user: @user,
+      data: { "markdown_source" => "keep me", "content_type" => "markdown" }
+    )
+
+    patch update_metadata_creative_url(creative), params: { data: "[]" }, headers: { "Accept-Language" => "ko" }
+
+    assert_response :unprocessable_entity
+    body = JSON.parse(response.body)
+    assert_equal "메타데이터는 객체여야 합니다.", body["error"]
   end
 
   test "update JSON response exposes rewritten markdown_source for client sync" do
