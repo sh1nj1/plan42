@@ -5,6 +5,7 @@ import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
+import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -1081,15 +1082,21 @@ export function initializeCreativeRowEditor() {
           }).then(function (data) {
             // Sync rewritten markdown source back into the textarea/hidden input.
             // Server rewrites inline data: URIs in markdown_source to blob paths so
-            // re-saves don't re-import the same image. If the user hasn't edited
-            // during the request (textarea still equals what we sent), apply the
-            // rewritten source so the next save carries the blob path.
+            // re-saves don't re-import the same image. If the user typed during the
+            // request, merge the substitutions into the live textarea so the next
+            // save still carries blob paths instead of re-importing the data URI.
             if (markdownMode && data && typeof data.markdown_source === 'string'
-                && data.markdown_source !== savedContent
-                && markdownTextarea && markdownTextarea.value === savedContent) {
-              markdownTextarea.value = data.markdown_source;
-              syncMarkdownToForm();
-              savedContent = data.markdown_source;
+                && data.markdown_source !== savedContent && markdownTextarea) {
+              const reconciled = reconcileMarkdownSource(
+                savedContent, data.markdown_source, markdownTextarea.value
+              );
+              if (reconciled !== null && reconciled !== markdownTextarea.value) {
+                markdownTextarea.value = reconciled;
+                syncMarkdownToForm();
+              }
+              if (reconciled !== null) {
+                savedContent = data.markdown_source;
+              }
             }
 
             // Update dirty state to reflect successful save
@@ -1415,15 +1422,22 @@ export function initializeCreativeRowEditor() {
             }
           }
 
-          // Only touch the live textarea if we are still editing the same creative
-          // AND the user hasn't typed since we queued the save.
+          // Merge the data: URI -> blob path substitutions into the live textarea,
+          // even if the user typed during the queued save. We still require the
+          // same creative to be open (race-safe across editor switches).
           if (form.dataset.creativeId === onSuccessCreativeId
               && markdownMode
-              && markdownTextarea
-              && markdownTextarea.value === onSuccessSavedMarkdown) {
-            markdownTextarea.value = data.markdown_source;
-            syncMarkdownToForm();
-            originalContent = data.markdown_source;
+              && markdownTextarea) {
+            const reconciled = reconcileMarkdownSource(
+              onSuccessSavedMarkdown, data.markdown_source, markdownTextarea.value
+            );
+            if (reconciled !== null && reconciled !== markdownTextarea.value) {
+              markdownTextarea.value = reconciled;
+              syncMarkdownToForm();
+            }
+            if (reconciled !== null) {
+              originalContent = data.markdown_source;
+            }
           }
         }
       });
