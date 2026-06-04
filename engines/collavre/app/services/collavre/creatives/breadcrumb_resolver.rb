@@ -52,7 +52,7 @@ module Creatives
 
     private
 
-    attr_reader :ids, :user
+    attr_reader :ids, :user, :include_archived
 
     # Batched read-permission filter for the ancestor set so a node shared
     # without its parents never leaks the parent's text. Delegates to the
@@ -78,7 +78,7 @@ module Creatives
     # aren't being shown — matching exactly the rows the browse endpoints emit,
     # so a breadcrumb jump never targets a node the tree won't render.
     def renderable_ancestor_ids(accessible_ids, records)
-      return accessible_ids if @include_archived
+      return accessible_ids if include_archived
 
       accessible_ids.reject { |id| records[id]&.archived? }.to_set
     end
