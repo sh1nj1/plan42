@@ -205,4 +205,27 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
     expect(scrollLeftValue).toBe(0)
   })
+
+  test("always scrolls the local user's own new typing indicator into view, even when scrolled back to badges", () => {
+    // currentUserId is '7'. The user is parked at the left looking at PR/Preview
+    // badges (scrollLeft 0, not at end). When they themselves start typing they
+    // always want to see their own indicator, so stick-to-end must not suppress it.
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 })
+
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+
+    expect(scrollLeftValue).toBe(300)
+  })
+
+  test('does not re-scroll on repeat self typing pings (only the first appearance forces scroll)', () => {
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 })
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    expect(scrollLeftValue).toBe(300)
+
+    // A heartbeat ping for the same (already-shown) self typer while scrolled
+    // back must not yank to the end again — only the first appearance forces it.
+    scrollLeftValue = 0
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    expect(scrollLeftValue).toBe(0)
+  })
 })

@@ -197,8 +197,13 @@ export default class extends Controller {
     if (data.typing) {
       const { id, name } = data.typing
       const isNewTyper = !(id in this.typingUsers)
+      // The user always wants to see their OWN typing indicator the moment it
+      // appears — they just started typing. Stick-to-end (which pauses while the
+      // user is scrolled back looking at badges) must not suppress that, so force
+      // the scroll for the local user's first typing frame.
+      const isSelf = String(id) === String(this.currentUserId)
       this.typingUsers[id] = name
-      this.renderTypingIndicator({ newItem: isNewTyper })
+      this.renderTypingIndicator({ newItem: isNewTyper, force: isNewTyper && isSelf })
       clearTimeout(this.typingTimers[id])
       this.typingTimers[id] = setTimeout(() => {
         delete this.typingUsers[id]
@@ -348,13 +353,15 @@ export default class extends Controller {
   }
 
 
-  renderTypingIndicator({ newItem = false } = {}) {
+  renderTypingIndicator({ newItem = false, force = false } = {}) {
     if (!this.hasTypingIndicatorTarget) return
 
     // Capture stick-to-end BEFORE mutating the DOM: only auto-scroll a newly
     // added item into view when the user was already parked at the right edge,
     // so we never yank them away from a chip they scrolled back to look at.
-    const stickToEnd = newItem && this.isScrollRowAtEnd()
+    // `force` overrides that guard for cases where the scroll is always wanted
+    // (e.g. the local user's own typing indicator first appearing).
+    const stickToEnd = force || (newItem && this.isScrollRowAtEnd())
 
     this.typingIndicatorTarget.innerHTML = ''
 
