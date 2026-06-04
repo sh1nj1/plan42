@@ -259,4 +259,23 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     assert_equal limit, body.length
   end
+
+  test "simple search fills the cap with readable rows past a shorter unreadable match" do
+    limit = ::Collavre::Creatives::IndexQuery::SIMPLE_SEARCH_LIMIT
+    token = "zqrankcap"
+    # Shortest description, ranks first, but unreadable: must not take a cap slot
+    # nor block readable rows behind it.
+    unreadable = Creative.create!(user: users(:two), description: token, sequence: 40)
+    limit.times do |i|
+      Creative.create!(user: @user, parent: @root, description: "#{token} mine #{i}", sequence: 100 + i)
+    end
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    ids = body.map { |c| c["id"] }
+    assert_equal limit, body.length, "the cap fills with readable rows, not the shorter unreadable one"
+    assert_not_includes ids, unreadable.id
+  end
 end

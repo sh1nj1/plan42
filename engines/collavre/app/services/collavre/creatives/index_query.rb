@@ -5,6 +5,11 @@ module Creatives
     # The full-page search (no `simple` flag) is intentionally unbounded.
     SIMPLE_SEARCH_LIMIT = 50
 
+    # Permission-check matched rows in rank order in slices of this size, so a
+    # heavily-matched query only checks the prefix needed to fill the cap rather
+    # than its entire match set.
+    PERMISSION_FILTER_BATCH = 200
+
     Result = Struct.new(
       :creatives,
       :parent_creative,
@@ -126,18 +131,11 @@ module Creatives
       matched = pipeline.matched_ids
       return empty_result if matched.empty?
 
-      readable = PermissionFilter.new(user: user).readable_ids(matched)
-      return empty_result if readable.empty?
+      ids = ranked_readable_window(matched)
+      return empty_result if ids.empty?
 
-      # Permission-filter the ids first (id-level batch), then let the DB rank and
-      # cap so only the bounded window is materialized — not every matched record.
-      # Shorter description = more relevant match; LENGTH() is supported by
-      # SQLite/Postgres/MySQL and byte-vs-char differences are immaterial for a
-      # ranking heuristic.
-      creatives = Creative.where(id: readable)
-        .order(Arel.sql("LENGTH(description)"))
-        .limit(SIMPLE_SEARCH_LIMIT)
-        .to_a
+      by_id = Creative.where(id: ids).index_by(&:id)
+      creatives = ids.filter_map { |id| by_id[id] }
 
       {
         creatives: creatives,
@@ -146,6 +144,30 @@ module Creatives
         overall_progress: nil,
         progress_map: nil
       }
+    end
+
+    # Rank matched ids by relevance (shortest description first) in the DB, then
+    # permission-filter in that order one slice at a time, stopping as soon as
+    # the cap is filled. Only the prefix needed for SIMPLE_SEARCH_LIMIT readable
+    # rows is permission-checked and materialized, so a heavily-matched short
+    # query no longer permission-filters and loads its entire match set up front.
+    # PermissionFilter stays the single source of read permission (no
+    # security-sensitive re-derivation pushed into SQL); the residual cost is one
+    # id-only ordered scan, inherent to ranking the global match set.
+    # LENGTH() is portable across SQLite/Postgres/MySQL and byte-vs-char length
+    # is immaterial for a ranking heuristic.
+    def ranked_readable_window(matched)
+      ranked_ids = Creative.where(id: matched)
+        .order(Arel.sql("LENGTH(creatives.description)"), :id)
+        .pluck(:id)
+
+      readable = []
+      ranked_ids.each_slice(PERMISSION_FILTER_BATCH) do |slice|
+        permitted = PermissionFilter.new(user: user).readable_ids(slice).to_set
+        slice.each { |id| readable << id if permitted.include?(id) }
+        break if readable.size >= SIMPLE_SEARCH_LIMIT
+      end
+      readable.first(SIMPLE_SEARCH_LIMIT)
     end
 
     def handle_id_query
