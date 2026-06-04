@@ -520,7 +520,7 @@ a.popup-menu-item:hover {
 }
 
 .link-crumb:hover {
-  color: var(--text-link);
+  color: var(--color-link);
   text-decoration: underline;
 }
 
