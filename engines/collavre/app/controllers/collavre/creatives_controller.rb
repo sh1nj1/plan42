@@ -584,25 +584,34 @@ module Collavre
         end
       end
 
-      # Batched "does this node have children?" lookup so the picker tree can
-      # render expand toggles without an N+1 of per-row existence checks.
+      # Batched "does this node have a child the user can actually browse to?"
+      # lookup so the picker tree renders expand toggles without an N+1.
       #
-      # Linked-creative shells (origin_id set) store their children under the
-      # effective origin (see redirect_parent_to_origin + the children->origin
-      # migration), and the tree expands a node via children_with_permission,
-      # which reads effective_origin.children. So we must resolve each row to its
-      # effective origin before the parent_id lookup; otherwise a shared subtree
-      # reachable on expand would report has_children: false and render no toggle.
+      # Must match exactly what expanding the node shows (IndexQuery#handle_id_query
+      # -> children_with_permission, minus archived unless show_archived), or the
+      # toggle either hides a reachable subtree or opens to an empty branch (and
+      # leaks that hidden children exist). Two alignments are needed:
+      #   1. Linked shells (origin_id set) store children under the effective
+      #      origin (redirect_parent_to_origin + children->origin migration), so
+      #      resolve each row to its effective origin before the lookup.
+      #   2. Apply the same archived + read-permission filters as the browse path.
       def children_presence_set(collection)
         return Set.new if collection.empty?
 
         origin_id_by_id = collection.to_h { |c| [ c.id, c.effective_origin.id ] }
-        parents_with_children = Creative
-          .where(parent_id: origin_id_by_id.values.uniq)
-          .distinct.pluck(:parent_id).to_set
+
+        candidates = Creative.where(parent_id: origin_id_by_id.values.uniq)
+        candidates = candidates.where(archived_at: nil) unless params[:show_archived]
+        child_rows = candidates.pluck(:id, :parent_id) # [child_id, origin_id]
+        return Set.new if child_rows.empty?
+
+        readable = Collavre::Creatives::PermissionFilter
+          .new(user: Current.user).readable_ids(child_rows.map(&:first)).to_set
+        origins_with_visible_children = child_rows
+          .each_with_object(Set.new) { |(child_id, origin_id), set| set << origin_id if readable.include?(child_id) }
 
         collection.each_with_object(Set.new) do |c, set|
-          set << c.id if parents_with_children.include?(origin_id_by_id[c.id])
+          set << c.id if origins_with_visible_children.include?(origin_id_by_id[c.id])
         end
       end
 

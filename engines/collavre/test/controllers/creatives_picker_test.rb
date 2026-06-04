@@ -46,9 +46,11 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
   end
 
   test "simple browse reports has_children for a linked-creative shell via its origin" do
-    # Origin owned by another user, with a child stored under the origin.
+    # Origin owned by another user, shared (read) to the signed-in user, with a
+    # readable child stored under the origin.
     origin = Creative.create!(user: users(:two), description: "Shared Origin", sequence: 950)
     Creative.create!(user: users(:two), parent: origin, description: "Shared Child", sequence: 1)
+    CreativeShare.create!(creative: origin, user: @user, permission: :read) # propagates cache to subtree
 
     # Linked shell owned by the signed-in user appears as a root for them.
     shell = Creative.create!(user: @user, origin_id: origin.id, parent_id: nil)
@@ -75,6 +77,37 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     root_row = body.find { |c| c["id"] == @root.id }
     assert_not_nil root_row
     assert_not root_row.key?("origin_id"), "non-linked creative should not carry origin_id"
+  end
+
+  test "simple browse does not report has_children when the only child is archived" do
+    parent = Creative.create!(user: @user, description: "Has only archived child", sequence: 960)
+    Creative.create!(user: @user, parent: parent, description: "Archived", sequence: 1,
+                     archived_at: Time.current)
+
+    get collavre.creatives_path(format: :json, simple: true)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    row = body.find { |c| c["id"] == parent.id }
+    assert_not_nil row
+    # Expansion drops archived children (show_archived unset), so the toggle must
+    # not be advertised — otherwise it opens to an empty branch.
+    assert_equal false, row["has_children"]
+  end
+
+  test "simple browse does not report has_children for unreadable children" do
+    parent = Creative.create!(user: @user, description: "Has unreadable child", sequence: 970)
+    # Child owned by another user with no share to @user -> not readable.
+    Creative.create!(user: users(:two), parent: parent, description: "Hidden", sequence: 1)
+
+    get collavre.creatives_path(format: :json, simple: true)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    row = body.find { |c| c["id"] == parent.id }
+    assert_not_nil row
+    # Advertising a toggle here would leak that hidden children exist.
+    assert_equal false, row["has_children"]
   end
 
   test "simple search annotates results with ancestor breadcrumb path" do

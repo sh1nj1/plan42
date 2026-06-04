@@ -90,48 +90,10 @@ module Creatives
     end
 
     def filter_by_permission(ids)
-      # O(1) 캐시 테이블 조회
-      # no_access가 public share보다 우선하므로 별도 처리 필요
-      accessible_ids = Set.new
-
-      if user
-        # 사용자별 캐시 엔트리 확인
-        user_entries = CreativeSharesCache
-          .where(creative_id: ids, user_id: user.id)
-          .pluck(:creative_id, :permission)
-
-        user_accessible = []
-        user_denied = Set.new
-        user_entries.each do |cid, perm|
-          # perm is a string from enum (e.g., "no_access", "read")
-          if perm == "no_access"
-            user_denied << cid
-          else
-            user_accessible << cid
-          end
-        end
-        accessible_ids.merge(user_accessible)
-
-        # public share 확인 (no_access로 거부된 것 제외)
-        public_ids = CreativeSharesCache
-          .where(creative_id: ids, user_id: nil)
-          .where.not(permission: :no_access)
-          .pluck(:creative_id)
-        accessible_ids.merge(public_ids - user_denied.to_a)
-
-        # Fallback: owned creatives (for fixtures)
-        owned_ids = Creative.where(id: ids, user_id: user.id).pluck(:id)
-        accessible_ids.merge(owned_ids)
-      else
-        # 비로그인: public share만
-        accessible_ids = CreativeSharesCache
-          .where(creative_id: ids, user_id: nil)
-          .where.not(permission: :no_access)
-          .pluck(:creative_id)
-          .to_set
-      end
-
-      accessible_ids.to_a
+      # O(1) 캐시 테이블 조회. no_access가 public share보다 우선.
+      # Canonical batch permission logic lives in PermissionFilter so the picker
+      # can reuse the exact same posture (see PermissionFilter).
+      PermissionFilter.new(user: user).readable_ids(ids)
     end
 
     def calculate_progress(allowed_ids, matched_ids)
