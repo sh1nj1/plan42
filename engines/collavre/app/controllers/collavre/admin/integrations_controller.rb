@@ -51,8 +51,13 @@ module Collavre
       private
 
       def load_definition!
-        @definition = Registry.instance.find(params[:key]) or
-          (render file: Rails.root.join("public/404.html"), status: :not_found, layout: false and return)
+        @definition = Registry.instance.find(params[:key])
+        # Keys hidden from the admin UI (admin_visible: false) are treated as
+        # non-addressable here too, so a crafted DELETE cannot reset them.
+        if @definition.nil? || @definition.admin_visible == false
+          @definition = nil
+          render file: Rails.root.join("public/404.html"), status: :not_found, layout: false and return
+        end
       end
 
       def build_grouped_settings
