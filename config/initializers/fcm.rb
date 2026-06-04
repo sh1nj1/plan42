@@ -16,7 +16,8 @@ if defined?(Collavre::IntegrationSettings::Registry)
   registry.register(:fcm_wif_audience,                category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:fcm_wif_credential_source,       category: "firebase", sensitive: true,  requires_restart: true,
                                                       input_type: :textarea)
-  registry.register(:fcm_wif_service_account_email,   category: "firebase", sensitive: false, requires_restart: true)
+  registry.register(:fcm_wif_service_account_email,   category: "firebase", sensitive: false, requires_restart: true,
+                                                      env_var: "FIREBASE_SERVICE_ACCOUNT")
   registry.register(:fcm_sender_id,                   category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:fcm_vapid_key,                   category: "firebase", sensitive: true,  requires_restart: true)
   registry.register(:fcm_server_key,                  category: "firebase", sensitive: true,  requires_restart: true)
@@ -32,20 +33,42 @@ resolve = ->(key, credentials_path) {
   value.presence || Rails.application.credentials.dig(*credentials_path)
 }
 
-FCM_SCOPE = [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ].freeze
+fcm_scope = [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ].freeze
+
+# Default AWS Workload Identity Federation settings. Used as a fallback so the
+# pre-existing production deploy — which only injects FCM_SENDER_ID (the GCP
+# project number) and FIREBASE_SERVICE_ACCOUNT (the SA email) — keeps working
+# without having to set the explicit fcm_wif_* overrides. Admins can override
+# either piece via the admin UI / ENV for non-default pools or providers.
+default_aws_audience = ->(project_number) {
+  "//iam.googleapis.com/projects/#{project_number}/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider"
+}
+default_aws_credential_source = {
+  environment_id: "aws1",
+  region_url: "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+  url: "http://169.254.169.254/latest/meta-data/iam/security-credentials",
+  regional_cred_verification_url: "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+  imdsv2_session_token_url: "http://169.254.169.254/latest/api/token"
+}.freeze
 
 server_key                  = resolve.call(:fcm_server_key,                 %i[fcm server_key])
 project_id                  = resolve.call(:firebase_project_id,            %i[firebase project_id])
+project_number              = resolve.call(:fcm_sender_id,                  %i[fcm sender_id])
 service_account_json_body   = resolve.call(:firebase_service_account_json,  %i[fcm service_account_json])
-wif_audience                = resolve.call(:fcm_wif_audience,               %i[fcm wif_audience])
-wif_credential_source       = resolve.call(:fcm_wif_credential_source,      %i[fcm wif_credential_source])
-wif_sa_email                = resolve.call(:fcm_wif_service_account_email,  %i[fcm wif_service_account_email])
+wif_audience_explicit       = resolve.call(:fcm_wif_audience,               %i[fcm wif_audience])
+wif_credential_source_raw   = resolve.call(:fcm_wif_credential_source,      %i[fcm wif_credential_source])
+# Single SA-email key. `fcm_wif_service_account_email` is registered with the
+# legacy FIREBASE_SERVICE_ACCOUNT env var so existing prod deploys resolve here
+# unchanged; the `firebase_service_account` key/credentials path stays readable
+# as an extra fallback for older setups.
+wif_sa_email                = resolve.call(:fcm_wif_service_account_email,  %i[fcm wif_service_account_email]).presence ||
+                              Rails.application.credentials.dig(:firebase, :service_account)
 adc_path                    = resolve.call(:google_application_credentials, %i[fcm google_application_credentials])
 
 build_service_account_credentials = ->(json_body) {
   Google::Auth::ServiceAccountCredentials.make_creds(
     json_key_io: StringIO.new(json_body),
-    scope: FCM_SCOPE
+    scope: fcm_scope
   )
 }
 
@@ -55,11 +78,17 @@ build_adc_credentials = ->(path) {
   # unconditionally — `resolve` already applied DB > ENV precedence, so any
   # pre-existing ENV value lost that race and must not leak back into ADC.
   ENV["GOOGLE_APPLICATION_CREDENTIALS"] = path
-  Google::Auth.get_application_default(scope: FCM_SCOPE)
+  Google::Auth.get_application_default(scope: fcm_scope)
 }
 
-build_wif_credentials = ->(audience, credential_source_json, sa_email) {
-  source = JSON.parse(credential_source_json)
+build_wif_credentials = ->(audience, credential_source_raw, sa_email) {
+  # AwsCredentials reads the source with symbol keys (`source[:environment_id]`),
+  # so explicit JSON must be parsed with symbolize_names. Parsing happens here
+  # (lazily, inside the rescued attempt) so a malformed override can't crash boot.
+  credential_source = credential_source_raw.present? ?
+    JSON.parse(credential_source_raw, symbolize_names: true) :
+    default_aws_credential_source
+
   impersonation_url = sa_email.present? ?
     "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/#{sa_email}:generateAccessToken" :
     nil
@@ -70,32 +99,50 @@ build_wif_credentials = ->(audience, credential_source_json, sa_email) {
     audience: audience,
     subject_token_type: "urn:ietf:params:aws:token-type:aws4_request",
     token_url: "https://sts.googleapis.com/v1/token",
-    scope: FCM_SCOPE,
-    credential_source: source,
+    scope: fcm_scope,
+    credential_source: credential_source,
     service_account_impersonation_url: impersonation_url
   )
 }
 
+# WIF is reachable two ways:
+#   * explicit — admin/ENV sets both fcm_wif_audience and fcm_wif_credential_source
+#     (works in any environment, for non-AWS-default pools/providers)
+#   * legacy   — production with only FCM_SENDER_ID set; audience + credential
+#     source fall back to the AWS defaults (preserves pre-existing prod behavior)
+wif_audience = wif_audience_explicit.presence ||
+               (project_number.present? ? default_aws_audience.call(project_number) : nil)
+wif_explicit = wif_audience_explicit.present? && wif_credential_source_raw.present?
+wif_legacy   = Rails.env.production? && project_number.present?
+wif_enabled  = wif_audience.present? && (wif_explicit || wif_legacy)
+
+# Ordered credential attempts. Each is tried only when its inputs are present,
+# and a failure falls through to the next instead of dead-ending — so a malformed
+# service-account JSON paste cannot silently disable a working WIF/ADC setup.
+attempts = []
+if service_account_json_body.present?
+  attempts << [ "service account JSON (DB/ENV)", -> { build_service_account_credentials.call(service_account_json_body) } ]
+end
+if wif_enabled
+  attempts << [ "Workload Identity Federation (AWS)", -> { build_wif_credentials.call(wif_audience, wif_credential_source_raw, wif_sa_email) } ]
+end
+if adc_path.present? && File.exist?(adc_path)
+  attempts << [ "ADC file (#{adc_path})", -> { build_adc_credentials.call(adc_path) } ]
+end
+
 credentials = nil
 mode = nil
-
-if service_account_json_body.present?
+attempts.each do |attempt_mode, builder|
   begin
-    credentials = build_service_account_credentials.call(service_account_json_body)
-    mode = "service account JSON (DB/ENV)"
+    credentials = builder.call
+    mode = attempt_mode
+    break if credentials
   rescue StandardError => e
-    Rails.logger.error "FCM: failed to parse firebase_service_account_json: #{e.class}: #{e.message}"
+    # Log the error class only — never the message. JSON::ParserError#message
+    # echoes the surrounding source, which for a service-account key includes
+    # part of the private_key and would leak it into log sinks.
+    Rails.logger.error "FCM: #{attempt_mode} credential init failed: #{e.class}"
   end
-elsif wif_audience.present? && wif_credential_source.present?
-  begin
-    credentials = build_wif_credentials.call(wif_audience, wif_credential_source, wif_sa_email)
-    mode = "Workload Identity Federation (AWS)"
-  rescue StandardError => e
-    Rails.logger.error "FCM: failed to build WIF credentials: #{e.class}: #{e.message}"
-  end
-elsif adc_path.present? && File.exist?(adc_path)
-  credentials = build_adc_credentials.call(adc_path)
-  mode = "ADC file (#{adc_path})"
 end
 
 if credentials && project_id.present?

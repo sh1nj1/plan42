@@ -44,9 +44,9 @@ ko:
         descriptions:
           firebase_project_id: "Firebase 프로젝트 ID (예: my-app-12345). 서버 푸시와 브라우저 SDK 모두에서 필수. Firebase Console → 프로젝트 설정 → 일반에서 확인."
           firebase_service_account_json: "Google Cloud 서비스 계정 키 JSON 본문 전체를 붙여넣으세요. 서버 FCM 인증의 권장 경로 — 이 값만 설정하면 끝납니다. Firebase Console → 프로젝트 설정 → 서비스 계정 → 새 비공개 키 생성. WIF 보다 우선합니다."
-          fcm_wif_audience: "Workload Identity Federation audience (AWS 전용). 형식: //iam.googleapis.com/projects/{PROJECT_NUMBER}/locations/global/workloadIdentityPools/{POOL_ID}/providers/{PROVIDER_ID}. 위의 JSON 키가 비어있을 때만 사용됩니다."
-          fcm_wif_credential_source: "WIF AWS credential source JSON (IMDS 엔드포인트). 예시: {\"environment_id\":\"aws1\",\"region_url\":\"http://169.254.169.254/latest/meta-data/placement/availability-zone\",\"url\":\"http://169.254.169.254/latest/meta-data/iam/security-credentials\",\"regional_cred_verification_url\":\"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15\"}"
-          fcm_wif_service_account_email: "WIF 로 임퍼소네이션할 GCP 서비스 계정 이메일 (예: firebase-sender@PROJECT.iam.gserviceaccount.com). WIF 모드에서만 사용됩니다."
+          fcm_wif_audience: "선택적 WIF 오버라이드 (AWS 전용). 위 JSON 키가 비어있을 때만 사용됩니다. 비워두면 production 에서 Sender ID 로부터 기본 aws-pool/aws-provider 를 사용해 자동 생성됩니다. 비표준 풀 오버라이드: //iam.googleapis.com/projects/{PROJECT_NUMBER}/locations/global/workloadIdentityPools/{POOL_ID}/providers/{PROVIDER_ID}."
+          fcm_wif_credential_source: "선택적 WIF 오버라이드: AWS credential source JSON (IMDS 엔드포인트). 비워두면 기본 AWS IMDS 엔드포인트를 사용합니다. 오버라이드 예시: {\"environment_id\":\"aws1\",\"region_url\":\"http://169.254.169.254/latest/meta-data/placement/availability-zone\",\"url\":\"http://169.254.169.254/latest/meta-data/iam/security-credentials\",\"regional_cred_verification_url\":\"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15\"}"
+          fcm_wif_service_account_email: "WIF 로 임퍼소네이션할 GCP 서비스 계정 이메일 (예: firebase-sender@PROJECT.iam.gserviceaccount.com). WIF 모드에서만 사용됩니다. 레거시 FIREBASE_SERVICE_ACCOUNT 환경변수를 폴백으로 읽습니다."
           fcm_sender_id: "웹 푸시 전용: Firebase JS SDK 의 messagingSenderId (프로젝트 번호). 브라우저 푸시 구독에 필수. Firebase Console → 프로젝트 설정 → 클라우드 메시징 → 발신자 ID 에서 확인."
           fcm_vapid_key: "웹 푸시 전용: 브라우저 푸시 구독용 VAPID 공개키. Firebase Console → 프로젝트 설정 → 클라우드 메시징 → 웹 구성 → 웹 푸시 인증서에서 생성."
           fcm_server_key: "Legacy FCM 서버 키 (Google 에서 deprecated). 구버전 HTTP v0 API 를 쓰는 클라이언트가 있을 때만 설정하세요."

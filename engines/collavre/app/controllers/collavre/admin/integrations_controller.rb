@@ -23,6 +23,10 @@ module Collavre
             next if value.blank?
 
             definition = Registry.instance.find(key) or next
+            # Mirror the index filter: keys hidden from the admin UI
+            # (admin_visible: false) are not editable via this form, so a crafted
+            # POST cannot write them.
+            next if definition.admin_visible == false
 
             row = Collavre::IntegrationSetting.find_or_initialize_by(key: definition.key.to_s)
             row.category = definition.category

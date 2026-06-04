@@ -207,6 +207,26 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_match %r{<textarea[^>]*name="integration_setting\[json_blob_key\]"}, response.body
   end
 
+  test "bulk_update ignores keys with admin_visible: false" do
+    Registry.instance.register(
+      :hidden_writable_key,
+      category: "misc",
+      sensitive: true,
+      requires_restart: false,
+      env_var: "HIDDEN_WRITABLE_KEY",
+      admin_visible: false
+    )
+    sign_in_as(@admin, password: "password")
+
+    patch collavre.bulk_update_admin_integrations_path, params: {
+      integration_setting: { hidden_writable_key: "/tmp/injected" }
+    }
+
+    assert_redirected_to collavre.admin_integrations_path
+    assert_nil IntegrationSetting.find_by(key: "hidden_writable_key"),
+      "A crafted POST must not write a key hidden from the admin UI"
+  end
+
   test "bulk_update saves multiline textarea value verbatim" do
     Registry.instance.register(
       :json_blob_key,
