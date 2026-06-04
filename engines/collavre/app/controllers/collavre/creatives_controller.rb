@@ -582,9 +582,11 @@ module Collavre
               progress: c.progress,
               has_children: children_ids.include?(c.id)
             }
-            path = breadcrumbs[c.id]
-            item[:path] = path if path.present?
             reveal = reveal_paths[c.id]
+            path = breadcrumbs[c.id]
+            if path.present?
+              item[:path] = mask_unreachable_crumbs(path, reveal)
+            end
             item[:reveal_path] = reveal if reveal.present?
             # For linked shells, expose the effective origin id so the picker can
             # map a search breadcrumb (origin ids) back to the rendered shell node.
@@ -593,6 +595,36 @@ module Collavre
           end
         else
           collection.map { |c| { id: c.id, description: c.effective_description, progress: c.progress } }
+        end
+      end
+
+      # A breadcrumb jump expands the tree from a rendered root (or, for a shared
+      # subtree, a linked shell) down to the clicked crumb. If an ancestor above a
+      # crumb is itself unrenderable (unreadable, or archived while archived rows
+      # aren't shown) and no linked shell re-roots the path at/below it, the
+      # descendant can't be expanded either — so mask it too. BreadcrumbResolver
+      # masks the unrenderable ancestor itself; this masks everything downstream of
+      # it on the plain origin chain, matching exactly what the tree can render.
+      #
+      # `reveal` is RevealPathResolver's per-origin map: a crumb whose origin id is
+      # a key re-roots navigation through its own shell (the client anchors at the
+      # nearest reveal entry at/above the clicked crumb), so it clears the block for
+      # itself and its descendants regardless of an archived/unreadable origin
+      # above it.
+      def mask_unreachable_crumbs(path, reveal)
+        blocked = false
+        path.map do |crumb|
+          if reveal&.key?(crumb[:id])
+            blocked = false
+            crumb
+          elsif crumb[:restricted]
+            blocked = true
+            crumb
+          elsif blocked
+            crumb.merge(restricted: true, description: nil)
+          else
+            crumb
+          end
         end
       end
 

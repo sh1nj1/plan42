@@ -311,4 +311,58 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_equal 0, single_id_loads.size,
       "expected origins preloaded (no per-shell load), got:\n#{single_id_loads.join("\n")}"
   end
+
+  test "simple search masks a crumb whose path crosses an archived ancestor" do
+    # Reachable state: archive the whole tree, then unarchive @mid — unarchive only
+    # touches self_and_descendants, so @root stays archived while @mid/@leaf go
+    # active. The leaf still surfaces (search filters the matched row only), but a
+    # jump to @mid would expand from @root, which browse never renders -> dead-end.
+    # So @mid must be masked too, not just the archived @root.
+    @root.archive!
+    @mid.reload.unarchive!
+
+    get collavre.creatives_path(format: :json, simple: true, search: @token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == @leaf.id }
+    assert_not_nil match, "the active leaf still surfaces despite the archived ancestor"
+
+    path = match["path"]
+    assert_equal [ @root.id, @mid.id ], path.map { |p| p["id"] }, "depth is preserved"
+    assert path.all? { |p| p["restricted"] },
+      "both the archived root and the crumb stranded behind it are masked"
+  end
+
+  test "simple search keeps a crumb navigable past an archived ancestor when a shell re-roots it" do
+    token = "zqbypass"
+    # Shared subtree root -> descendant -> hit, all owned by another user.
+    rooto = Creative.create!(user: users(:two), description: "Bypass Root", sequence: 1010)
+    desc  = Creative.create!(user: users(:two), parent: rooto, description: "Bypass Desc", sequence: 1)
+    hit   = Creative.create!(user: users(:two), parent: desc, description: "Bypass Hit #{token}", sequence: 1)
+    CreativeShare.create!(creative: rooto, user: @user, permission: :read)
+
+    # The user holds a shell for the descendant, re-rooting navigation there.
+    folder = Creative.create!(user: @user, description: "Bypass Folder", sequence: 1011)
+    shell  = Creative.create!(user: @user, origin_id: desc.id, parent: folder)
+
+    # Archive the shared tree, then unarchive the descendant: root stays archived,
+    # descendant (and its shell) active -> the descendant crumb is reachable via
+    # the shell even though the origin above it is archived.
+    rooto.archive!
+    desc.reload.unarchive!
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == hit.id }
+    assert_not_nil match
+    path = match["path"]
+    root_crumb = path.find { |p| p["id"] == rooto.id }
+    desc_crumb = path.find { |p| p["id"] == desc.id }
+    assert root_crumb["restricted"], "the archived shared root is masked"
+    assert_not desc_crumb["restricted"],
+      "the descendant stays navigable through its own shell, not masked by the archived root"
+  end
 end
