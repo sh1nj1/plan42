@@ -563,6 +563,11 @@ module Collavre
 
       def serialize_creatives(collection)
         if params[:simple].present?
+          # Preload origins so effective_origin (used per linked-shell row in both
+          # children_presence_set and the origin_id mapping below) resolves from
+          # memory instead of firing a query per shell. Only browse can hold shells;
+          # search is scoped to origin_id: nil, so this is a no-op there.
+          ActiveRecord::Associations::Preloader.new(records: collection.to_a, associations: :origin).call
           children_ids = children_presence_set(collection)
           searching = params[:search].present?
           breadcrumbs = searching ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user).call : {}
@@ -612,7 +617,7 @@ module Collavre
         child_rows = candidates.pluck(:id, :parent_id) # [child_id, origin_id]
         return Set.new if child_rows.empty?
 
-        readable = Collavre::Creatives::PermissionFilter
+        readable = ::Creatives::PermissionFilter
           .new(user: Current.user).readable_ids(child_rows.map(&:first)).to_set
         origins_with_visible_children = child_rows
           .each_with_object(Set.new) { |(child_id, origin_id), set| set << origin_id if readable.include?(child_id) }

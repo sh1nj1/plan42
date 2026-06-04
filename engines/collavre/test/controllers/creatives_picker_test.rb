@@ -278,4 +278,37 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_equal limit, body.length, "the cap fills with readable rows, not the shorter unreadable one"
     assert_not_includes ids, unreadable.id
   end
+
+  test "browse with multiple linked shells preloads origins instead of a per-shell query" do
+    # Several shells at root, each pointing at a distinct shared origin. The
+    # serialize path resolves effective_origin per shell twice (children_presence_set
+    # + the row map); without the preload each resolution is a single-id origin load.
+    shells = Array.new(3) do |i|
+      origin = Creative.create!(user: users(:two), description: "Shared Origin #{i}", sequence: 960 + i)
+      Creative.create!(user: users(:two), parent: origin, description: "Shared Child #{i}", sequence: 1)
+      CreativeShare.create!(creative: origin, user: @user, permission: :read)
+      Creative.create!(user: @user, origin_id: origin.id, parent_id: nil)
+    end
+
+    controller = Collavre::CreativesController.new
+    controller.define_singleton_method(:params) { ActionController::Parameters.new(simple: "true") }
+    collection = Creative.where(id: shells.map(&:id)).to_a
+
+    single_id_loads = []
+    callback = ->(_n, _s, _f, _id, payload) {
+      sql = payload[:sql]
+      next if payload[:name] == "SCHEMA"
+      # belongs_to :origin loads one row by primary key; the preload uses IN(...).
+      single_id_loads << sql if sql =~ /FROM\s+["`]?creatives["`]?.*WHERE.*["`]?creatives["`]?\.["`]?id["`]?\s*=\s/i
+    }
+
+    Current.set(user: @user) do
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        controller.send(:serialize_creatives, collection)
+      end
+    end
+
+    assert_equal 0, single_id_loads.size,
+      "expected origins preloaded (no per-shell load), got:\n#{single_id_loads.join("\n")}"
+  end
 end

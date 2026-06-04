@@ -72,6 +72,7 @@ Rails.application.config.to_prepare do
   set_alias(Creatives, :PlanTagger, Collavre::Creatives::PlanTagger)
   set_alias(Creatives, :IndexQuery, Collavre::Creatives::IndexQuery)
   set_alias(Creatives, :FilterPipeline, Collavre::Creatives::FilterPipeline)
+  set_alias(Creatives, :PermissionFilter, Collavre::Creatives::PermissionFilter)
   set_alias(Creatives, :BreadcrumbResolver, Collavre::Creatives::BreadcrumbResolver)
   set_alias(Creatives, :RevealPathResolver, Collavre::Creatives::RevealPathResolver)
   set_alias(Creatives, :Reorderer, Collavre::Creatives::Reorderer)
