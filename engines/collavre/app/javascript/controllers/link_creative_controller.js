@@ -5,6 +5,13 @@ import creativesApi from '../lib/api/creatives'
 // browsable mini-tree instead (empty input => tree, >= MIN_QUERY chars => search).
 const MIN_QUERY = 2
 
+// Chevron icons matched to the main creative tree (creative_tree_row.js#_toggleIcon)
+// so the mini-tree expand/collapse affordance is visually identical.
+const CHEVRON_COLLAPSED =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6L15 12L9 18"/></svg>'
+const CHEVRON_EXPANDED =
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9L12 15L18 9"/></svg>'
+
 export default class extends CommonPopupController {
     static targets = ['input', 'list', 'close']
 
@@ -176,7 +183,7 @@ export default class extends CommonPopupController {
         toggle.type = 'button'
         toggle.className = 'link-tree-toggle'
         if (node.has_children) {
-            toggle.textContent = '▸'
+            toggle.innerHTML = CHEVRON_COLLAPSED
             toggle.setAttribute('aria-label', this._text('expandText'))
             toggle.addEventListener('mousedown', (e) => e.preventDefault())
             toggle.addEventListener('click', (e) => {
@@ -227,7 +234,7 @@ export default class extends CommonPopupController {
         const childrenUl = li.querySelector(':scope > .link-tree-children')
         if (childrenUl) childrenUl.hidden = true
         const toggle = li.querySelector(':scope > .link-tree-row > .link-tree-toggle')
-        if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.textContent = '▸'
+        if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.innerHTML = CHEVRON_COLLAPSED
     }
 
     // Returns a promise that resolves once the node is expanded (children loaded
@@ -240,7 +247,7 @@ export default class extends CommonPopupController {
         const toggle = li.querySelector(':scope > .link-tree-row > .link-tree-toggle')
         li.classList.add('expanded')
         childrenUl.hidden = false
-        if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.textContent = '▾'
+        if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.innerHTML = CHEVRON_EXPANDED
 
         if (li.dataset.loaded === '1') return Promise.resolve()
 

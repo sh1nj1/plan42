@@ -82,12 +82,18 @@ describe('LinkCreativeController picker', () => {
     await flush()
 
     const toggle = document.querySelector('.link-tree-toggle:not(.link-tree-toggle-empty)')
+    // Collapsed toggle renders the same SVG chevron as the main creative tree.
+    expect(toggle.querySelector('svg')).not.toBeNull()
+    expect(toggle.textContent).toBe('')
+
     toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flush()
 
     expect(browse).toHaveBeenLastCalledWith('1')
     const child = document.querySelector('.link-tree-children .link-tree-item .link-tree-label')
     expect(child.textContent).toBe('Child')
+    // Expanded toggle still renders an SVG chevron (icon swapped, not text).
+    expect(toggle.querySelector('svg')).not.toBeNull()
 
     application.stop()
   })
