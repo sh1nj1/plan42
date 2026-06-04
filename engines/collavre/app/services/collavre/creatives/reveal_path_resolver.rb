@@ -32,21 +32,23 @@ module Creatives
         .pluck(:descendant_id, :ancestor_id, :generations)
       return {} if hit_rows.empty?
 
-      shell_by_origin = user_shells_by_origin(hit_rows.map { |_d, a, _g| a }.uniq)
-      return {} if shell_by_origin.empty?
+      shells_by_origin = user_shells_by_origin(hit_rows.map { |_d, a, _g| a }.uniq)
+      return {} if shells_by_origin.empty?
 
-      shell_for_hit = resolve_shell_for_hit(hit_rows, shell_by_origin)
-      return {} if shell_for_hit.empty?
+      shell_candidates = resolve_shell_candidates(hit_rows, shells_by_origin)
+      return {} if shell_candidates.empty?
 
-      local_prefix = local_ancestor_paths(shell_for_hit.values.uniq)
+      local_prefix = local_ancestor_paths(shell_candidates.values.flatten.uniq)
 
-      shell_for_hit.each_with_object({}) do |(hit_id, shell_id), out|
-        prefix = local_prefix[shell_id]
-        # nil prefix = shell sits behind an archived (unrendered) folder, so the
-        # browse path can never surface it — omit rather than send a dead-end jump.
-        next if prefix.nil?
+      shell_candidates.each_with_object({}) do |(hit_id, shell_ids), out|
+        # A user may hold several shells for the same origin. Pick the first
+        # (deepest-origin first) whose local path is actually renderable — i.e.
+        # not behind an archived/unrendered folder ([] for a root shell counts as
+        # renderable). Omit only when no candidate is reachable.
+        shell_id = shell_ids.find { |sid| local_prefix[sid] }
+        next unless shell_id
 
-        out[hit_id] = prefix + [ shell_id ]
+        out[hit_id] = local_prefix[shell_id] + [ shell_id ]
       end
     end
 
@@ -55,8 +57,9 @@ module Creatives
     attr_reader :ids, :user, :include_archived
 
     # Shells the signed-in user owns whose origin is one of the hits' ancestors,
-    # keyed by origin id. Archived shells are excluded (unless show_archived) so
-    # the reveal path only targets nodes the browse endpoint actually renders.
+    # grouped by origin id (a user can hold more than one shell per origin).
+    # Archived shells are excluded (unless show_archived) so the reveal path only
+    # targets nodes the browse endpoint actually renders.
     def user_shells_by_origin(origin_ids)
       return {} if origin_ids.empty?
 
@@ -65,17 +68,23 @@ module Creatives
         .where.not(origin_id: nil)
         .where(origin_id: origin_ids)
       scope = scope.where(archived_at: nil) unless include_archived
-      scope.pluck(:origin_id, :id).to_h
+      scope.pluck(:origin_id, :id).each_with_object({}) do |(origin_id, id), grouped|
+        (grouped[origin_id] ||= []) << id
+      end
     end
 
-    # For each hit, pick the deepest (closest) ancestor-or-self that the user has
-    # a shell for — that shell is the entry point rendering the hit's subtree.
-    def resolve_shell_for_hit(hit_rows, shell_by_origin)
+    # For each hit, the candidate shell ids that could render its subtree —
+    # ordered deepest-origin first (the most specific entry point), so the caller
+    # prefers the closest reachable shell.
+    def resolve_shell_candidates(hit_rows, shells_by_origin)
       result = {}
       hit_rows.group_by { |descendant_id, _a, _g| descendant_id }.each do |hit_id, rows|
-        best = rows.select { |_d, ancestor_id, _g| shell_by_origin.key?(ancestor_id) }
-          .min_by { |_d, _a, generations| generations }
-        result[hit_id] = shell_by_origin[best[1]] if best
+        ordered = rows
+          .select { |_d, ancestor_id, _g| shells_by_origin.key?(ancestor_id) }
+          .sort_by { |_d, _a, generations| generations }
+          .flat_map { |_d, ancestor_id, _g| shells_by_origin[ancestor_id] }
+          .uniq
+        result[hit_id] = ordered if ordered.any?
       end
       result
     end

@@ -166,6 +166,29 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_not match.key?("reveal_path"), "no reveal_path to an unrenderable archived shell"
   end
 
+  test "simple search picks a renderable shell when several exist for one origin" do
+    token = "zqmultishell"
+    origin = Creative.create!(user: users(:two), description: "Multi Origin", sequence: 996)
+    child = Creative.create!(user: users(:two), parent: origin, description: "Multi Child #{token}", sequence: 1)
+    CreativeShare.create!(creative: origin, user: @user, permission: :read)
+
+    # Two shells for the SAME origin: one behind an archived (unrendered) folder,
+    # one under a visible folder. The reveal path must use the reachable shell.
+    archived_folder = Creative.create!(user: @user, description: "Archived Folder", sequence: 997,
+                                       archived_at: Time.current)
+    Creative.create!(user: @user, origin_id: origin.id, parent: archived_folder)
+    visible_folder = Creative.create!(user: @user, description: "Visible Folder", sequence: 998)
+    visible_shell = Creative.create!(user: @user, origin_id: origin.id, parent: visible_folder)
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == child.id }
+    assert_not_nil match
+    assert_equal [ visible_folder.id, visible_shell.id ], match["reveal_path"]
+  end
+
   test "simple search omits reveal_path for hits in the user's own tree" do
     get collavre.creatives_path(format: :json, simple: true, search: @token)
 
