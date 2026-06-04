@@ -126,12 +126,18 @@ module Creatives
       matched = pipeline.matched_ids
       return empty_result if matched.empty?
 
-      readable = PermissionFilter.new(user: user).readable_ids(matched).to_set
-      creatives = Creative.where(id: matched.to_a)
-        .select { |c| readable.include?(c.id) }
-        # Shorter description = more relevant match.
-        .sort_by { |c| c.description.to_s.length }
-        .first(SIMPLE_SEARCH_LIMIT)
+      readable = PermissionFilter.new(user: user).readable_ids(matched)
+      return empty_result if readable.empty?
+
+      # Permission-filter the ids first (id-level batch), then let the DB rank and
+      # cap so only the bounded window is materialized — not every matched record.
+      # Shorter description = more relevant match; LENGTH() is supported by
+      # SQLite/Postgres/MySQL and byte-vs-char differences are immaterial for a
+      # ranking heuristic.
+      creatives = Creative.where(id: readable)
+        .order(Arel.sql("LENGTH(description)"))
+        .limit(SIMPLE_SEARCH_LIMIT)
+        .to_a
 
       {
         creatives: creatives,

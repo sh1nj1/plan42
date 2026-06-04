@@ -569,7 +569,7 @@ module Collavre
           # For hits routed through a linked shell, the path to expand in the
           # user's own tree (local folders -> shell) so a breadcrumb jump can
           # reach a shell nested under a collapsed folder.
-          reveal_paths = searching ? ::Creatives::RevealPathResolver.new(collection.map(&:id), user: Current.user).call : {}
+          reveal_paths = searching ? ::Creatives::RevealPathResolver.new(collection.map(&:id), user: Current.user, include_archived: params[:show_archived].present?).call : {}
           collection.map do |c|
             item = {
               id: c.id,

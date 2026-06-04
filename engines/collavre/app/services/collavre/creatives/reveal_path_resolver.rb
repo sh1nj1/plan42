@@ -17,9 +17,10 @@ module Creatives
   # Returns { hit_id (Integer) => [user_tree_id, ...] }, omitting hits that are
   # not routed through a shell (their origin path already matches rendered ids).
   class RevealPathResolver
-    def initialize(creative_ids, user: nil)
+    def initialize(creative_ids, user: nil, include_archived: false)
       @ids = Array(creative_ids).map { |id| id.to_s.to_i }.uniq.reject(&:zero?)
       @user = user
+      @include_archived = include_archived
     end
 
     def call
@@ -39,24 +40,32 @@ module Creatives
 
       local_prefix = local_ancestor_paths(shell_for_hit.values.uniq)
 
-      shell_for_hit.transform_values { |shell_id| local_prefix[shell_id] + [ shell_id ] }
+      shell_for_hit.each_with_object({}) do |(hit_id, shell_id), out|
+        prefix = local_prefix[shell_id]
+        # nil prefix = shell sits behind an archived (unrendered) folder, so the
+        # browse path can never surface it — omit rather than send a dead-end jump.
+        next if prefix.nil?
+
+        out[hit_id] = prefix + [ shell_id ]
+      end
     end
 
     private
 
-    attr_reader :ids, :user
+    attr_reader :ids, :user, :include_archived
 
     # Shells the signed-in user owns whose origin is one of the hits' ancestors,
-    # keyed by origin id.
+    # keyed by origin id. Archived shells are excluded (unless show_archived) so
+    # the reveal path only targets nodes the browse endpoint actually renders.
     def user_shells_by_origin(origin_ids)
       return {} if origin_ids.empty?
 
-      Creative
+      scope = Creative
         .where(user_id: user.id)
         .where.not(origin_id: nil)
         .where(origin_id: origin_ids)
-        .pluck(:origin_id, :id)
-        .to_h
+      scope = scope.where(archived_at: nil) unless include_archived
+      scope.pluck(:origin_id, :id).to_h
     end
 
     # For each hit, pick the deepest (closest) ancestor-or-self that the user has
@@ -72,17 +81,31 @@ module Creatives
     end
 
     # User-local ancestors of each shell (the user's own folders above it),
-    # ordered root-most down to the shell's immediate parent.
+    # ordered root-most down to the shell's immediate parent. Returns nil for a
+    # shell whose path crosses an archived (unrendered) folder, since the browse
+    # path could never expand down to it.
     def local_ancestor_paths(shell_ids)
-      paths = Hash.new { |h, k| h[k] = [] }
       rows = CreativeHierarchy
         .where(descendant_id: shell_ids)
         .where("generations > 0")
         .pluck(:descendant_id, :ancestor_id, :generations)
-      rows.group_by { |descendant_id, _a, _g| descendant_id }.each do |shell_id, srows|
-        paths[shell_id] = srows.sort_by { |_d, _a, generations| -generations }.map { |_d, ancestor_id, _g| ancestor_id }
+      by_shell = rows.group_by { |descendant_id, _a, _g| descendant_id }
+      archived = archived_ancestor_ids(rows.map { |_d, a, _g| a }.uniq)
+
+      shell_ids.index_with do |shell_id|
+        ordered = (by_shell[shell_id] || [])
+          .sort_by { |_d, _a, generations| -generations }
+          .map { |_d, ancestor_id, _g| ancestor_id }
+        ordered.any? { |ancestor_id| archived.include?(ancestor_id) } ? nil : ordered
       end
-      paths
+    end
+
+    # Ancestor folder ids that are archived (and thus hidden from the browse path
+    # unless show_archived). Empty when show_archived is set.
+    def archived_ancestor_ids(ancestor_ids)
+      return Set.new if include_archived || ancestor_ids.empty?
+
+      Creative.where(id: ancestor_ids).where.not(archived_at: nil).pluck(:id).to_set
     end
   end
 end

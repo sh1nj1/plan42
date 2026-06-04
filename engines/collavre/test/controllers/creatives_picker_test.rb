@@ -147,6 +147,25 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_equal [ folder.id, shell.id ], match["reveal_path"]
   end
 
+  test "simple search omits reveal_path when the linked shell is archived" do
+    token = "zqarchshell"
+    origin = Creative.create!(user: users(:two), description: "Arch Origin", sequence: 990)
+    child = Creative.create!(user: users(:two), parent: origin, description: "Arch Child #{token}", sequence: 1)
+    CreativeShare.create!(creative: origin, user: @user, permission: :read)
+
+    folder = Creative.create!(user: @user, description: "Arch Local Folder", sequence: 995)
+    # Shell archived -> browse hides it, so a reveal_path targeting it would dead-end.
+    Creative.create!(user: @user, origin_id: origin.id, parent: folder, archived_at: Time.current)
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == child.id }
+    assert_not_nil match, "shared child still surfaces in search"
+    assert_not match.key?("reveal_path"), "no reveal_path to an unrenderable archived shell"
+  end
+
   test "simple search omits reveal_path for hits in the user's own tree" do
     get collavre.creatives_path(format: :json, simple: true, search: @token)
 
