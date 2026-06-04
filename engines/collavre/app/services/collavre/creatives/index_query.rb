@@ -10,13 +10,6 @@ module Creatives
     # than its entire match set.
     PERMISSION_FILTER_BATCH = 200
 
-    # Hard ceiling on ranked windows scanned to fill the cap. PERMISSION_FILTER_BATCH
-    # * this bounds the rows a single picker search will ever transfer/permission-check
-    # (25 * 200 = 5000). Reaching it means the cap could not be filled from the top
-    # 5000 readable-ranked candidates — vanishingly unlikely for a picker — and we
-    # stop rather than re-scan the whole match set indefinitely (logged, not silent).
-    MAX_SEARCH_WINDOWS = 25
-
     Result = Struct.new(
       :creatives,
       :parent_creative,
@@ -160,12 +153,21 @@ module Creatives
     # pull PERMISSION_FILTER_BATCH-sized slices via LIMIT/OFFSET, permission-filtering
     # each and stopping as soon as the cap is filled. The match itself stays a
     # subquery (`id IN (<search relation>)`), so Ruby never holds the full match-id
-    # set — only the windows needed to fill SIMPLE_SEARCH_LIMIT readable rows are
-    # transferred and permission-checked. Wrapping the join+distinct search as a
-    # subquery also keeps the outer relation join-free, so `ORDER BY LENGTH(description)`
-    # is portable (no Postgres "DISTINCT + ORDER BY must be in select list" issue).
-    # The DB still scans/sorts all matches (inherent to a leading-wildcard LIKE +
-    # global relevance ranking), but the rows crossing into Ruby are bounded.
+    # set at once — only one PERMISSION_FILTER_BATCH window is in memory at a time.
+    # Wrapping the join+distinct search as a subquery also keeps the outer relation
+    # join-free, so `ORDER BY LENGTH(description)` is portable (no Postgres
+    # "DISTINCT + ORDER BY must be in select list" issue). The DB still scans/sorts
+    # all matches (inherent to a leading-wildcard LIKE + global relevance ranking),
+    # but the rows crossing into Ruby are bounded per window.
+    #
+    # The loop continues until the cap is filled OR the match set is exhausted —
+    # there is no fixed window ceiling. A ceiling would silently truncate results:
+    # in a multi-user install the match scope is every `origin_id: nil` row before
+    # permission filtering, so a user's readable matches can sort after many
+    # unreadable ones, and capping the scan would return an empty/incomplete result
+    # even though matching readable creatives exist. Termination is guaranteed by the
+    # finite match set (offset advances past the last row → empty window → break);
+    # per-window memory stays bounded regardless of how deep the scan goes.
     # PermissionFilter stays the single source of read permission. LENGTH() is
     # portable across SQLite/Postgres/MySQL and byte-vs-char length is immaterial
     # for a ranking heuristic.
@@ -174,21 +176,16 @@ module Creatives
         .order(Arel.sql("LENGTH(creatives.description)"), :id)
 
       readable = []
-      MAX_SEARCH_WINDOWS.times do |i|
-        window = ordered.offset(i * PERMISSION_FILTER_BATCH)
-          .limit(PERMISSION_FILTER_BATCH).pluck(:id)
+      offset = 0
+      loop do
+        window = ordered.offset(offset).limit(PERMISSION_FILTER_BATCH).pluck(:id)
         break if window.empty?
 
         permitted = PermissionFilter.new(user: user).readable_ids(window).to_set
         window.each { |id| readable << id if permitted.include?(id) }
         break if readable.size >= SIMPLE_SEARCH_LIMIT || window.size < PERMISSION_FILTER_BATCH
 
-        if i == MAX_SEARCH_WINDOWS - 1
-          Rails.logger.info(
-            "[IndexQuery] simple search hit MAX_SEARCH_WINDOWS (#{MAX_SEARCH_WINDOWS}); " \
-            "returning #{readable.size} readable rows without scanning the full match set"
-          )
-        end
+        offset += PERMISSION_FILTER_BATCH
       end
       readable.first(SIMPLE_SEARCH_LIMIT)
     end

@@ -309,6 +309,40 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_not full_pluck, "search-only path must not pluck the whole match set up front"
   end
 
+  test "simple search scans past multiple windows of unreadable matches to fill the cap" do
+    # Regression: the windowed scan must not stop at a fixed window ceiling. In a
+    # multi-user install the match scope is every origin_id: nil row before permission
+    # filtering, so a user's readable matches can sort after many unreadable ones.
+    # Shrink the batch so a handful of rows already spans several windows, then place
+    # the readable match past more than one window of shorter-ranked unreadable rows.
+    token = "zqdeep"
+    klass = ::Collavre::Creatives::IndexQuery
+    original_batch = klass::PERMISSION_FILTER_BATCH
+    klass.send(:remove_const, :PERMISSION_FILTER_BATCH)
+    klass.const_set(:PERMISSION_FILTER_BATCH, 2)
+    begin
+      # Six unreadable rows (owned by another user, no share), shortest description so
+      # they rank first — three full windows' worth.
+      6.times do |i|
+        Creative.create!(user: users(:two), description: token, sequence: 700 + i)
+      end
+      # The only readable match has a longer description, so it ranks last (past the
+      # unreadable run). A capped scan would never reach it.
+      mine = Creative.create!(user: @user, parent: @root, description: "#{token} readable tail", sequence: 800)
+
+      get collavre.creatives_path(format: :json, simple: true, search: token)
+    ensure
+      klass.send(:remove_const, :PERMISSION_FILTER_BATCH)
+      klass.const_set(:PERMISSION_FILTER_BATCH, original_batch)
+    end
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    ids = body.map { |c| c["id"] }
+    assert_includes ids, mine.id, "readable match past several windows must still be returned"
+    assert_equal 1, body.length, "only the readable match should surface"
+  end
+
   test "browse with multiple linked shells preloads origins instead of a per-shell query" do
     # Several shells at root, each pointing at a distinct shared origin. The
     # serialize path resolves effective_origin per shell twice (children_presence_set
