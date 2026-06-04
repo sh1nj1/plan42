@@ -31,6 +31,34 @@ module Creatives
       assert(path.all? { |p| p[:restricted] && p[:description].nil? })
     end
 
+    test "masks an archived ancestor since browse won't render it" do
+      # Unarchiving a leaf only touches self_and_descendants, so a parent can
+      # stay archived while the active leaf still surfaces in search.
+      @mid.update!(archived_at: Time.current)
+
+      result = Collavre::Creatives::BreadcrumbResolver.new([ @leaf.id ], user: @owner).call
+
+      path = result[@leaf.id]
+      # Depth preserved...
+      assert_equal [ @root.id, @mid.id ], path.map { |p| p[:id] }
+      # ...active readable root stays a normal crumb...
+      assert_equal "Root Doc", path.first[:description]
+      assert_nil path.first[:restricted]
+      # ...but the archived ancestor is masked (a jump to it would dead-end).
+      assert path.last[:restricted]
+      assert_nil path.last[:description]
+    end
+
+    test "keeps an archived ancestor when archived rows are shown" do
+      @mid.update!(archived_at: Time.current)
+
+      result = Collavre::Creatives::BreadcrumbResolver.new([ @leaf.id ], user: @owner, include_archived: true).call
+
+      path = result[@leaf.id]
+      assert_equal "Mid", path.last[:description]
+      assert_nil path.last[:restricted]
+    end
+
     test "returns empty hash for creatives without ancestors" do
       assert_equal({}, Collavre::Creatives::BreadcrumbResolver.new([ @root.id ], user: @owner).call)
     end

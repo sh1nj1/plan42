@@ -570,7 +570,7 @@ module Collavre
           ActiveRecord::Associations::Preloader.new(records: collection.to_a, associations: :origin).call
           children_ids = children_presence_set(collection)
           searching = params[:search].present?
-          breadcrumbs = searching ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user).call : {}
+          breadcrumbs = searching ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user, include_archived: params[:show_archived].present?).call : {}
           # For hits routed through a linked shell, the path to expand in the
           # user's own tree (local folders -> shell) so a breadcrumb jump can
           # reach a shell nested under a collapsed folder.
