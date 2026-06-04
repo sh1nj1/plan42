@@ -14,8 +14,14 @@ module Creatives
   # prefix `[localFolder..., shellId]`; the client expands it before walking the
   # origin chain. Display is unaffected — only navigation.
   #
-  # Returns { hit_id (Integer) => [user_tree_id, ...] }, omitting hits that are
-  # not routed through a shell (their origin path already matches rendered ids).
+  # Returns { hit_id (Integer) => { origin_ancestor_id (Integer) => [user_tree_id, ...] } },
+  # i.e. for each hit, a per-origin-ancestor map: every origin ancestor (incl.
+  # the hit itself) that the user holds a renderable shell for maps to the local
+  # path that surfaces *that* shell. The client anchors a breadcrumb click at the
+  # entry at/above the clicked crumb, so a higher ancestor crumb resolves through
+  # its own shell rather than a deeper one (a user may hold shells at several
+  # depths of the same shared subtree). Hits not routed through any shell are
+  # omitted (their origin path already matches rendered ids).
   class RevealPathResolver
     def initialize(creative_ids, user: nil, include_archived: false)
       @ids = Array(creative_ids).map { |id| id.to_s.to_i }.uniq.reject(&:zero?)
@@ -35,21 +41,28 @@ module Creatives
       shells_by_origin = user_shells_by_origin(hit_rows.map { |_d, a, _g| a }.uniq)
       return {} if shells_by_origin.empty?
 
-      shell_candidates = resolve_shell_candidates(hit_rows, shells_by_origin)
-      return {} if shell_candidates.empty?
+      local_prefix = local_ancestor_paths(shells_by_origin.values.flatten.uniq)
 
-      local_prefix = local_ancestor_paths(shell_candidates.values.flatten.uniq)
+      # For each hit, map every origin ancestor (incl. self) that has a renderable
+      # user shell to the local path [localFolder..., shellId] surfacing it.
+      hit_rows.group_by { |descendant_id, _a, _g| descendant_id }
+        .each_with_object({}) do |(hit_id, rows), out|
+          paths = rows.each_with_object({}) do |(_d, ancestor_id, _g), acc|
+            next if acc.key?(ancestor_id)
 
-      shell_candidates.each_with_object({}) do |(hit_id, shell_ids), out|
-        # A user may hold several shells for the same origin. Pick the first
-        # (deepest-origin first) whose local path is actually renderable — i.e.
-        # not behind an archived/unrendered folder ([] for a root shell counts as
-        # renderable). Omit only when no candidate is reachable.
-        shell_id = shell_ids.find { |sid| local_prefix[sid] }
-        next unless shell_id
+            shell_ids = shells_by_origin[ancestor_id]
+            next unless shell_ids
 
-        out[hit_id] = local_prefix[shell_id] + [ shell_id ]
-      end
+            # A user may hold several shells for the same origin; pick the first
+            # whose local path is actually renderable (not behind an archived
+            # folder; [] for a root shell counts as renderable).
+            shell_id = shell_ids.find { |sid| local_prefix[sid] }
+            next unless shell_id
+
+            acc[ancestor_id] = local_prefix[shell_id] + [ shell_id ]
+          end
+          out[hit_id] = paths if paths.any?
+        end
     end
 
     private
@@ -71,22 +84,6 @@ module Creatives
       scope.pluck(:origin_id, :id).each_with_object({}) do |(origin_id, id), grouped|
         (grouped[origin_id] ||= []) << id
       end
-    end
-
-    # For each hit, the candidate shell ids that could render its subtree —
-    # ordered deepest-origin first (the most specific entry point), so the caller
-    # prefers the closest reachable shell.
-    def resolve_shell_candidates(hit_rows, shells_by_origin)
-      result = {}
-      hit_rows.group_by { |descendant_id, _a, _g| descendant_id }.each do |hit_id, rows|
-        ordered = rows
-          .select { |_d, ancestor_id, _g| shells_by_origin.key?(ancestor_id) }
-          .sort_by { |_d, _a, generations| generations }
-          .flat_map { |_d, ancestor_id, _g| shells_by_origin[ancestor_id] }
-          .uniq
-        result[hit_id] = ordered if ordered.any?
-      end
-      result
     end
 
     # User-local ancestors of each shell (the user's own folders above it),

@@ -243,7 +243,8 @@ describe('LinkCreativeController picker', () => {
         id: 9,
         description: 'Deep Leaf',
         progress: 0,
-        reveal_path: [50, 100],
+        // Keyed by origin ancestor: origin 1's shell is reached via [50, 100].
+        reveal_path: { 1: [50, 100] },
         path: [
           { id: 1, description: 'Shared' },
           { id: 3, description: 'Mid' },
@@ -259,7 +260,7 @@ describe('LinkCreativeController picker', () => {
     controller.search()
     await flush()
 
-    // Click the second crumb (Mid): chain = [50, 100, 1], target = 3.
+    // Click the second crumb (Mid): anchor at origin 1 -> chain = [50, 100], target = 3.
     const crumbs = document.querySelectorAll('.link-crumb')
     crumbs[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     for (let i = 0; i < 5; i++) await flush()
@@ -269,6 +270,56 @@ describe('LinkCreativeController picker', () => {
     expect(browse).toHaveBeenCalledWith('100')
     const mid = document.querySelector('.link-tree-children .link-tree-item[data-id="3"]')
     expect(mid).not.toBeNull()
+
+    application.stop()
+  })
+
+  test('a higher ancestor crumb resolves through its own shell, not the deepest one', async () => {
+    // The user holds a shell for both origin 1 (under folder 50) and origin 3
+    // (under folder 60). Root browse returns both local folders.
+    browse
+      .mockResolvedValueOnce([
+        { id: 50, description: 'Folder A', progress: 0, has_children: true },
+        { id: 60, description: 'Folder D', progress: 0, has_children: true },
+      ])
+      // Expanding folder A (50) reveals origin 1's shell (id 100).
+      .mockResolvedValueOnce([
+        { id: 100, description: 'Ancestor', progress: 0, has_children: true, origin_id: 1 },
+      ])
+      // Expanding that shell loads origin 1's children.
+      .mockResolvedValueOnce([{ id: 3, description: 'Descendant', progress: 0, has_children: false }])
+    // Per-origin reveal map: each origin ancestor maps to its own shell path.
+    search.mockResolvedValue([
+      {
+        id: 9,
+        description: 'Deep Leaf',
+        progress: 0,
+        reveal_path: { 1: [50, 100], 3: [60, 200] },
+        path: [
+          { id: 1, description: 'Ancestor' },
+          { id: 3, description: 'Descendant' },
+        ],
+      },
+    ])
+
+    const { application, controller } = await installController()
+    controller.open(rect, jest.fn(), jest.fn())
+    await flush() // caches root nodes (both local folders)
+
+    controller.inputTarget.value = 'lea'
+    controller.search()
+    await flush()
+
+    // Click the FIRST crumb (Ancestor, id 1): must anchor at origin 1's shell
+    // (folder 50 -> shell 100), NOT the deeper origin 3 shell (folder 60).
+    const crumbs = document.querySelectorAll('.link-crumb')
+    crumbs[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    for (let i = 0; i < 5; i++) await flush()
+
+    expect(browse).toHaveBeenCalledWith('50')
+    expect(browse).toHaveBeenCalledWith('100')
+    expect(browse).not.toHaveBeenCalledWith('60')
+    expect(browse).not.toHaveBeenCalledWith('200')
 
     application.stop()
   })

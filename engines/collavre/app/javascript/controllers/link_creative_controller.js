@@ -340,12 +340,32 @@ export default class extends CommonPopupController {
     _navigateToCrumb(result, crumbIndex) {
         // When the hit lives under a linked shell nested in the user's own tree,
         // the origin-space crumbs omit the local folders above the shell. The
-        // server-supplied reveal_path ([localFolder..., shellId]) bridges that
-        // gap so the collapsed folders are expanded before the origin chain.
-        const localPrefix = Array.isArray(result.reveal_path) ? result.reveal_path.map(String) : []
-        const originChain = result.path.slice(0, crumbIndex).map((p) => String(p.id))
+        // server-supplied reveal_path maps each origin ancestor id to the local
+        // path ([localFolder..., shellId]) that surfaces *that* ancestor's shell.
+        // Anchor at the entry at/above the clicked crumb (nearest first) so a
+        // higher ancestor crumb resolves through its own shell, not a deeper one;
+        // origins between the anchoring shell and the target render as the shell's
+        // descendants, while origins above the anchor are not in the user's tree.
+        const path = result.path
+        const revealMap =
+            result.reveal_path && typeof result.reveal_path === 'object' && !Array.isArray(result.reveal_path)
+                ? result.reveal_path
+                : null
+        let localPrefix = []
+        let anchorIndex = -1
+        if (revealMap) {
+            for (let i = crumbIndex; i >= 0; i--) {
+                const entry = revealMap[String(path[i].id)]
+                if (entry) {
+                    localPrefix = entry.map(String)
+                    anchorIndex = i
+                    break
+                }
+            }
+        }
+        const originChain = path.slice(anchorIndex + 1, crumbIndex).map((p) => String(p.id))
         const chain = localPrefix.concat(originChain)
-        const targetId = String(result.path[crumbIndex].id)
+        const targetId = String(path[crumbIndex].id)
 
         this.inputTarget.value = ''
         this._searchToken++

@@ -143,8 +143,9 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     match = body.find { |c| c["id"] == child.id }
     assert_not_nil match, "shared child should surface in search"
-    # Expand local folder, then the shell, before walking the origin chain.
-    assert_equal [ folder.id, shell.id ], match["reveal_path"]
+    # Keyed by the origin ancestor (origin) -> expand local folder, then the
+    # shell, before walking the origin chain.
+    assert_equal({ origin.id.to_s => [ folder.id, shell.id ] }, match["reveal_path"])
   end
 
   test "simple search omits reveal_path when the linked shell is archived" do
@@ -186,7 +187,38 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     body = JSON.parse(response.body)
     match = body.find { |c| c["id"] == child.id }
     assert_not_nil match
-    assert_equal [ visible_folder.id, visible_shell.id ], match["reveal_path"]
+    assert_equal({ origin.id.to_s => [ visible_folder.id, visible_shell.id ] }, match["reveal_path"])
+  end
+
+  test "simple search maps each origin ancestor to its own shell at multiple depths" do
+    token = "zqmultidepth"
+    # Shared subtree: ancestor -> descendant; the hit is under the descendant.
+    ancestor = Creative.create!(user: users(:two), description: "Depth Ancestor", sequence: 1000)
+    descendant = Creative.create!(user: users(:two), parent: ancestor, description: "Depth Descendant", sequence: 1)
+    child = Creative.create!(user: users(:two), parent: descendant, description: "Depth Child #{token}", sequence: 1)
+    CreativeShare.create!(creative: ancestor, user: @user, permission: :read)
+
+    # The user holds a shell for BOTH the ancestor and the descendant, each in a
+    # different local folder. A single deepest path could not serve an ancestor
+    # crumb click, so each origin must map to its own shell's local path.
+    folder_a = Creative.create!(user: @user, description: "Folder A", sequence: 1001)
+    shell_a = Creative.create!(user: @user, origin_id: ancestor.id, parent: folder_a)
+    folder_d = Creative.create!(user: @user, description: "Folder D", sequence: 1002)
+    shell_d = Creative.create!(user: @user, origin_id: descendant.id, parent: folder_d)
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == child.id }
+    assert_not_nil match
+    assert_equal(
+      {
+        ancestor.id.to_s => [ folder_a.id, shell_a.id ],
+        descendant.id.to_s => [ folder_d.id, shell_d.id ]
+      },
+      match["reveal_path"]
+    )
   end
 
   test "simple search omits reveal_path for hits in the user's own tree" do
