@@ -1,6 +1,10 @@
 module Collavre
 module Creatives
   class IndexQuery
+    # Cap flat search results for the lightweight picker popup (simple mode).
+    # The full-page search (no `simple` flag) is intentionally unbounded.
+    SIMPLE_SEARCH_LIMIT = 50
+
     Result = Struct.new(
       :creatives,
       :parent_creative,
@@ -86,6 +90,8 @@ module Creatives
         elsif params[:search].present? && params[:simple].present?
           # Sort by description length (shorter = more relevant match)
           matched_creatives = matched_creatives.sort_by { |c| c.description.to_s.length }
+          # Bound the result set so the popup stays light regardless of tree size
+          matched_creatives = matched_creatives.first(SIMPLE_SEARCH_LIMIT)
         end
 
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil

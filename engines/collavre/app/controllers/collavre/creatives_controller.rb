@@ -563,10 +563,31 @@ module Collavre
 
       def serialize_creatives(collection)
         if params[:simple].present?
-          collection.map { |c| { id: c.id, description: c.effective_description(nil, false), progress: c.progress } }
+          children_ids = children_presence_set(collection)
+          breadcrumbs = params[:search].present? ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user).call : {}
+          collection.map do |c|
+            item = {
+              id: c.id,
+              description: c.effective_description(nil, false),
+              progress: c.progress,
+              has_children: children_ids.include?(c.id)
+            }
+            path = breadcrumbs[c.id]
+            item[:path] = path if path.present?
+            item
+          end
         else
           collection.map { |c| { id: c.id, description: c.effective_description, progress: c.progress } }
         end
+      end
+
+      # Batched "does this node have children?" lookup so the picker tree can
+      # render expand toggles without an N+1 of per-row existence checks.
+      def children_presence_set(collection)
+        ids = collection.map(&:id)
+        return Set.new if ids.empty?
+
+        Creative.where(parent_id: ids).distinct.pluck(:parent_id).to_set
       end
 
       def reorderer

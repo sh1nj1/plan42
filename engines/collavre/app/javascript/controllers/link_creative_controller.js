@@ -1,6 +1,10 @@
 import CommonPopupController from './common_popup_controller'
 import creativesApi from '../lib/api/creatives'
 
+// Minimum characters before a text search fires. Below this the popup shows the
+// browsable mini-tree instead (empty input => tree, >= MIN_QUERY chars => search).
+const MIN_QUERY = 2
+
 export default class extends CommonPopupController {
     static targets = ['input', 'list', 'close']
 
@@ -8,6 +12,9 @@ export default class extends CommonPopupController {
         super.connect()
         this._debounceTimer = null
         this._searchToken = 0
+        this._mode = 'tree'
+        this._rootNodes = null
+        this._activeEl = null
         this.inputTarget.addEventListener('input', this._debouncedSearch.bind(this))
         this.inputTarget.addEventListener('keydown', this.handleInputKeydown.bind(this))
         this.closeTarget.addEventListener('click', () => this.close())
@@ -17,72 +24,370 @@ export default class extends CommonPopupController {
     }
 
     disconnect() {
-        if (this._debounceTimer) {
-            clearTimeout(this._debounceTimer)
-            this._debounceTimer = null
-        }
+        this._clearDebounce()
         super.disconnect()
     }
 
     open(anchorRect, onSelectCallback, onCloseCallback) {
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
-        this.setItems([])
+        this._mode = 'tree'
+        this._rootNodes = null
+        this._activeEl = null
         this.inputTarget.value = ''
+        // Clear any CommonPopup item state; we render our own DOM into the list.
+        this.popup.setItems([])
         super.open(anchorRect)
 
         requestAnimationFrame(() => {
             this.inputTarget.focus()
         })
+
+        this._showTree()
     }
 
     close() {
+        this._clearDebounce()
+        super.close()
+    }
+
+    _clearDebounce() {
         if (this._debounceTimer) {
             clearTimeout(this._debounceTimer)
             this._debounceTimer = null
         }
-        // super.close() calls popup.hide(), which triggers dispatchClose, 
-        // where we now handle the callback. So we just need to call super.close().
-        super.close()
     }
 
     handleInputKeydown(event) {
-        // Delegate to CommonPopup for navigation
-        if (this.handleKey(event)) return
-
-        // Special handling for this specific popup
+        // CommonPopup's key handling is item-list based and we don't populate it,
+        // so it is a no-op here. We drive navigation over our own rendered rows.
         if (event.key === 'Escape') {
             this.close()
+            return
+        }
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault()
+            this._moveActive(1)
+            return
+        }
+
+        if (event.key === 'ArrowUp') {
+            event.preventDefault()
+            this._moveActive(-1)
+            return
+        }
+
+        if ((event.key === 'Enter' || event.key === 'Tab') && this._activeEl) {
+            event.preventDefault()
+            this._activateRow(this._activeEl)
+            return
+        }
+
+        if (this._mode === 'tree' && this._activeEl) {
+            if (event.key === 'ArrowRight') {
+                event.preventDefault()
+                this._expandNode(this._activeEl.closest('.link-tree-item'))
+                return
+            }
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                this._collapseNode(this._activeEl.closest('.link-tree-item'))
+            }
         }
     }
 
     _debouncedSearch() {
-        if (this._debounceTimer) clearTimeout(this._debounceTimer)
+        this._clearDebounce()
         this._debounceTimer = setTimeout(() => this.search(), 300)
     }
 
     search() {
         const query = this.inputTarget.value.trim()
-        if (query.length < 3) {
+        if (query.length < MIN_QUERY) {
             this._searchToken++
-            this.setItems([])
+            this._showTree()
             return
         }
 
+        this._mode = 'search'
         const token = ++this._searchToken
         creativesApi.search(query, { simple: true })
             .then((results) => {
                 // Discard stale responses if input changed since this request
                 if (token !== this._searchToken) return
-
-                const items = Array.isArray(results)
-                    ? results.map((result) => ({ id: result.id, label: result.description }))
-                    : []
-                this.setItems(items)
+                this._renderSearchResults(Array.isArray(results) ? results : [])
             })
             .catch(() => {
-                if (token === this._searchToken) this.setItems([])
+                if (token === this._searchToken) this._renderSearchResults([])
             })
+    }
+
+    // --- Tree (browse) mode --------------------------------------------------
+
+    _showTree() {
+        this._mode = 'tree'
+        if (this._rootNodes) {
+            this._renderTree(this._rootNodes)
+            return
+        }
+
+        this._renderMessage(this._text('loadingText'))
+        const token = ++this._searchToken
+        creativesApi.browse(null)
+            .then((nodes) => {
+                if (token !== this._searchToken) return
+                this._rootNodes = Array.isArray(nodes) ? nodes : []
+                this._renderTree(this._rootNodes)
+            })
+            .catch(() => {
+                if (token === this._searchToken) this._renderMessage(this._text('emptyText'))
+            })
+    }
+
+    _renderTree(nodes) {
+        this.listTarget.innerHTML = ''
+        if (!nodes || nodes.length === 0) {
+            this._renderMessage(this._text('emptyText'))
+            return
+        }
+        nodes.forEach((node) => this.listTarget.appendChild(this._buildTreeItem(node, 0)))
+        this._resetActive()
+    }
+
+    _buildTreeItem(node, level) {
+        const li = document.createElement('li')
+        li.className = 'link-tree-item'
+        li.dataset.id = String(node.id)
+        li.dataset.level = String(level)
+        li.dataset.loaded = '0'
+
+        const row = document.createElement('div')
+        row.className = 'link-tree-row'
+        row.setAttribute('data-pick-row', '')
+        row.dataset.id = String(node.id)
+        row.style.paddingLeft = `${level * 1.1 + 0.5}em`
+
+        const toggle = document.createElement('button')
+        toggle.type = 'button'
+        toggle.className = 'link-tree-toggle'
+        if (node.has_children) {
+            toggle.textContent = '▸'
+            toggle.setAttribute('aria-label', 'expand')
+            toggle.addEventListener('mousedown', (e) => e.preventDefault())
+            toggle.addEventListener('click', (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                this._toggleNode(li)
+            })
+        } else {
+            toggle.className = 'link-tree-toggle link-tree-toggle-empty'
+            toggle.tabIndex = -1
+            toggle.setAttribute('aria-hidden', 'true')
+        }
+        row.appendChild(toggle)
+
+        const label = document.createElement('span')
+        label.className = 'link-tree-label'
+        label.textContent = node.description || ''
+        row.appendChild(label)
+
+        row.addEventListener('mouseenter', () => this._setActive(row))
+        row.addEventListener('mousedown', (e) => e.preventDefault())
+        row.addEventListener('click', () => this._activateRow(row))
+
+        li.appendChild(row)
+
+        if (node.has_children) {
+            const childrenUl = document.createElement('ul')
+            childrenUl.className = 'link-tree-children'
+            childrenUl.hidden = true
+            li.appendChild(childrenUl)
+        }
+
+        return li
+    }
+
+    _toggleNode(li) {
+        if (!li) return
+        if (li.classList.contains('expanded')) {
+            this._collapseNode(li)
+        } else {
+            this._expandNode(li)
+        }
+    }
+
+    _collapseNode(li) {
+        if (!li || !li.classList.contains('expanded')) return
+        li.classList.remove('expanded')
+        const childrenUl = li.querySelector(':scope > .link-tree-children')
+        if (childrenUl) childrenUl.hidden = true
+        const toggle = li.querySelector(':scope > .link-tree-row > .link-tree-toggle')
+        if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.textContent = '▸'
+    }
+
+    // Returns a promise that resolves once the node is expanded (children loaded
+    // and visible). Used both by user interaction and breadcrumb navigation.
+    _expandNode(li) {
+        if (!li) return Promise.resolve()
+        const childrenUl = li.querySelector(':scope > .link-tree-children')
+        if (!childrenUl) return Promise.resolve() // leaf
+
+        const toggle = li.querySelector(':scope > .link-tree-row > .link-tree-toggle')
+        li.classList.add('expanded')
+        childrenUl.hidden = false
+        if (toggle && !toggle.classList.contains('link-tree-toggle-empty')) toggle.textContent = '▾'
+
+        if (li.dataset.loaded === '1') return Promise.resolve()
+
+        const level = parseInt(li.dataset.level, 10) + 1
+        li.dataset.loaded = '1'
+        childrenUl.innerHTML = `<li class="link-tree-loading">${this._escape(this._text('loadingText'))}</li>`
+
+        return creativesApi.browse(li.dataset.id)
+            .then((nodes) => {
+                childrenUl.innerHTML = ''
+                const list = Array.isArray(nodes) ? nodes : []
+                if (list.length === 0) {
+                    childrenUl.innerHTML = `<li class="link-tree-empty">${this._escape(this._text('emptyText'))}</li>`
+                    return
+                }
+                list.forEach((child) => childrenUl.appendChild(this._buildTreeItem(child, level)))
+            })
+            .catch(() => {
+                li.dataset.loaded = '0'
+                childrenUl.innerHTML = ''
+            })
+    }
+
+    // --- Search (flat + breadcrumb) mode -------------------------------------
+
+    _renderSearchResults(results) {
+        this.listTarget.innerHTML = ''
+        if (!results || results.length === 0) {
+            this._renderMessage(this._text('noResultsText'))
+            return
+        }
+
+        results.forEach((result) => {
+            const li = document.createElement('li')
+            li.className = 'link-result-item'
+            li.setAttribute('data-pick-row', '')
+            li.dataset.id = String(result.id)
+
+            const label = document.createElement('div')
+            label.className = 'link-result-label'
+            label.textContent = result.description || ''
+            li.appendChild(label)
+
+            if (Array.isArray(result.path) && result.path.length > 0) {
+                li.appendChild(this._buildBreadcrumb(result))
+            }
+
+            li.addEventListener('mouseenter', () => this._setActive(li))
+            li.addEventListener('mousedown', (e) => e.preventDefault())
+            li.addEventListener('click', () => this._activateRow(li))
+
+            this.listTarget.appendChild(li)
+        })
+        this._resetActive()
+    }
+
+    _buildBreadcrumb(result) {
+        const nav = document.createElement('div')
+        nav.className = 'link-result-path'
+
+        result.path.forEach((crumb, index) => {
+            if (index > 0) {
+                const sep = document.createElement('span')
+                sep.className = 'link-crumb-sep'
+                sep.textContent = '›'
+                nav.appendChild(sep)
+            }
+            // Ancestors the user cannot read are kept (to preserve depth) but
+            // masked and non-navigable — clicking them would reveal nothing.
+            if (crumb.restricted) {
+                const masked = document.createElement('span')
+                masked.className = 'link-crumb link-crumb-restricted'
+                masked.textContent = '…'
+                nav.appendChild(masked)
+                return
+            }
+
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'link-crumb'
+            btn.dataset.id = String(crumb.id)
+            btn.textContent = crumb.description || ''
+            btn.addEventListener('mousedown', (e) => e.preventDefault())
+            btn.addEventListener('click', (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                this._navigateToCrumb(result, index)
+            })
+            nav.appendChild(btn)
+        })
+
+        return nav
+    }
+
+    // Clicking a breadcrumb segment switches to the tree, expands the path down
+    // to that ancestor, and highlights it — turning search into a jump-to-place.
+    _navigateToCrumb(result, crumbIndex) {
+        const chain = result.path.slice(0, crumbIndex).map((p) => String(p.id))
+        const targetId = String(result.path[crumbIndex].id)
+
+        this.inputTarget.value = ''
+        this._searchToken++
+        this._mode = 'tree'
+
+        const reveal = () => this._expandChain(chain).then(() => this._highlight(targetId))
+
+        if (this._rootNodes) {
+            this._renderTree(this._rootNodes)
+            reveal()
+        } else {
+            creativesApi.browse(null)
+                .then((nodes) => {
+                    this._rootNodes = Array.isArray(nodes) ? nodes : []
+                    this._renderTree(this._rootNodes)
+                    return reveal()
+                })
+                .catch(() => this._renderMessage(this._text('emptyText')))
+        }
+    }
+
+    _expandChain(ids) {
+        return ids.reduce((promise, id) => {
+            return promise.then(() => {
+                const li = this._findItem(id)
+                return li ? this._expandNode(li) : null
+            })
+        }, Promise.resolve())
+    }
+
+    _highlight(id) {
+        const li = this._findItem(id)
+        if (!li) return
+        const row = li.querySelector(':scope > .link-tree-row')
+        if (row) {
+            this._setActive(row)
+            row.scrollIntoView({ block: 'nearest' })
+        }
+    }
+
+    _findItem(id) {
+        return this.listTarget.querySelector(`.link-tree-item[data-id="${id}"]`)
+    }
+
+    // --- Selection & keyboard navigation -------------------------------------
+
+    _activateRow(row) {
+        if (!row || !row.hasAttribute('data-pick-row')) return
+        const id = Number(row.dataset.id)
+        const labelEl = row.querySelector('.link-tree-label, .link-result-label')
+        const label = labelEl ? labelEl.textContent : ''
+        this.select({ id, label })
     }
 
     // Override select to invoke callback
@@ -93,15 +398,62 @@ export default class extends CommonPopupController {
         this.close()
     }
 
-    renderItem(item) {
-        // Escape HTML to prevent XSS since CommonPopup uses innerHTML
-        const text = item.label || ''
-        return text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;")
+    _visibleRows() {
+        return Array.from(this.listTarget.querySelectorAll('[data-pick-row]'))
+            .filter((el) => el.offsetParent !== null)
+    }
+
+    _resetActive() {
+        const rows = this._visibleRows()
+        this._setActive(rows[0] || null)
+    }
+
+    _setActive(row) {
+        if (this._activeEl === row) return
+        if (this._activeEl) this._activeEl.classList.remove('active')
+        this._activeEl = row
+        if (row) row.classList.add('active')
+    }
+
+    _moveActive(delta) {
+        const rows = this._visibleRows()
+        if (rows.length === 0) return
+        const current = rows.indexOf(this._activeEl)
+        let next = current + delta
+        if (next < 0) next = rows.length - 1
+        if (next >= rows.length) next = 0
+        const row = rows[next]
+        this._setActive(row)
+        row.scrollIntoView({ block: 'nearest' })
+    }
+
+    // --- Helpers -------------------------------------------------------------
+
+    _renderMessage(text) {
+        this.listTarget.innerHTML = ''
+        const li = document.createElement('li')
+        li.className = 'link-popup-message'
+        li.textContent = text
+        this.listTarget.appendChild(li)
+        this._activeEl = null
+    }
+
+    _text(key) {
+        const map = {
+            loadingText: this.element.dataset.linkCreativeLoadingText,
+            noResultsText: this.element.dataset.linkCreativeNoResultsText,
+            emptyText: this.element.dataset.linkCreativeEmptyText,
+        }
+        return map[key] || ''
+    }
+
+    _escape(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;')
     }
 
     dispatchClose(reason) {

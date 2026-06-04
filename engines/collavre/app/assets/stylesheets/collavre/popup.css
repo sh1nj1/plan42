@@ -396,3 +396,144 @@ a.popup-menu-item:hover {
     min-width: 100%;
   }
 }
+
+/* ── Link-creative picker: mini-tree + flat search results ── */
+.link-creative-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Tree (browse) rows */
+.link-tree-item {
+  list-style: none;
+}
+
+.link-tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.link-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.3em 0.5em;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.link-tree-row:hover,
+.link-tree-row.active {
+  background: var(--surface-hover);
+}
+
+.link-tree-toggle {
+  flex: 0 0 auto;
+  width: 1.2em;
+  height: 1.2em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.75em;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  appearance: none;
+}
+
+.link-tree-toggle:hover {
+  color: var(--text-primary);
+}
+
+.link-tree-toggle-empty {
+  visibility: hidden;
+  cursor: default;
+}
+
+.link-tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.link-tree-loading,
+.link-tree-empty,
+.link-popup-message {
+  list-style: none;
+  padding: 0.35em 0.6em;
+  color: var(--text-muted);
+  font-size: var(--text-0);
+}
+
+/* Flat search results with breadcrumb */
+.link-result-item {
+  list-style: none;
+  padding: 0.4em 0.5em;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.link-result-item:hover,
+.link-result-item.active {
+  background: var(--surface-hover);
+}
+
+.link-result-label {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-result-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15em;
+  margin-top: 0.15em;
+  font-size: var(--text-00);
+  color: var(--text-muted);
+}
+
+.link-crumb {
+  background: transparent;
+  border: none;
+  padding: 0 0.1em;
+  font-size: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  appearance: none;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-crumb:hover {
+  color: var(--text-link);
+  text-decoration: underline;
+}
+
+.link-crumb-sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.link-crumb-restricted {
+  cursor: default;
+  opacity: 0.6;
+}
+.link-crumb-restricted:hover {
+  color: var(--text-muted);
+  text-decoration: none;
+}
