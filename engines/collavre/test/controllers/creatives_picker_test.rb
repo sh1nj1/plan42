@@ -45,6 +45,25 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_equal false, leaf_row["has_children"]
   end
 
+  test "simple browse reports has_children for a linked-creative shell via its origin" do
+    # Origin owned by another user, with a child stored under the origin.
+    origin = Creative.create!(user: users(:two), description: "Shared Origin", sequence: 950)
+    Creative.create!(user: users(:two), parent: origin, description: "Shared Child", sequence: 1)
+
+    # Linked shell owned by the signed-in user appears as a root for them.
+    shell = Creative.create!(user: @user, origin_id: origin.id, parent_id: nil)
+
+    get collavre.creatives_path(format: :json, simple: true)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    shell_row = body.find { |c| c["id"] == shell.id }
+    assert_not_nil shell_row, "linked shell should appear as a root"
+    # Children live under the origin (parent_id == origin.id), not the shell.
+    # has_children must follow the effective origin to match what expansion shows.
+    assert_equal true, shell_row["has_children"]
+  end
+
   test "simple search annotates results with ancestor breadcrumb path" do
     get collavre.creatives_path(format: :json, simple: true, search: @token)
 

@@ -583,11 +583,24 @@ module Collavre
 
       # Batched "does this node have children?" lookup so the picker tree can
       # render expand toggles without an N+1 of per-row existence checks.
+      #
+      # Linked-creative shells (origin_id set) store their children under the
+      # effective origin (see redirect_parent_to_origin + the children->origin
+      # migration), and the tree expands a node via children_with_permission,
+      # which reads effective_origin.children. So we must resolve each row to its
+      # effective origin before the parent_id lookup; otherwise a shared subtree
+      # reachable on expand would report has_children: false and render no toggle.
       def children_presence_set(collection)
-        ids = collection.map(&:id)
-        return Set.new if ids.empty?
+        return Set.new if collection.empty?
 
-        Creative.where(parent_id: ids).distinct.pluck(:parent_id).to_set
+        origin_id_by_id = collection.to_h { |c| [ c.id, c.effective_origin.id ] }
+        parents_with_children = Creative
+          .where(parent_id: origin_id_by_id.values.uniq)
+          .distinct.pluck(:parent_id).to_set
+
+        collection.each_with_object(Set.new) do |c, set|
+          set << c.id if parents_with_children.include?(origin_id_by_id[c.id])
+        end
       end
 
       def reorderer
