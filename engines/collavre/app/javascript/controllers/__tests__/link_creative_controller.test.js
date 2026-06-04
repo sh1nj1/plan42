@@ -44,6 +44,15 @@ describe('LinkCreativeController picker', () => {
   beforeAll(() => {
     // jsdom does not implement scrollIntoView (used when highlighting a node).
     window.HTMLElement.prototype.scrollIntoView = jest.fn()
+    // jsdom does not compute layout, so offsetParent is null for every element;
+    // the picker's _visibleRows() filters on it. Treat any attached element as
+    // visible so keyboard navigation over the rendered rows is exercisable.
+    Object.defineProperty(window.HTMLElement.prototype, 'offsetParent', {
+      configurable: true,
+      get() {
+        return this.parentNode
+      },
+    })
   })
 
   afterEach(() => {
@@ -363,6 +372,75 @@ describe('LinkCreativeController picker', () => {
     await flush()
 
     expect(onSelect).toHaveBeenCalledWith({ id: 1, label: 'Shared' })
+
+    application.stop()
+  })
+
+  test('Tab in the initial browse state moves focus instead of linking the first row', async () => {
+    // Empty input => browse: the first root is auto-highlighted but unchosen.
+    // Tab (leaving the search field) must not link it; focus moves normally.
+    browse.mockResolvedValue([{ id: 7, description: 'Pick Me', progress: 0, has_children: false }])
+    const onSelect = jest.fn()
+
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn())
+    await flush()
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true })
+    controller.inputTarget.dispatchEvent(tab)
+    await flush()
+
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(tab.defaultPrevented).toBe(false)
+
+    application.stop()
+  })
+
+  test('Tab selects the highlighted row after the user navigates the tree', async () => {
+    browse.mockResolvedValue([
+      { id: 7, description: 'Pick Me', progress: 0, has_children: false },
+      { id: 8, description: 'Second', progress: 0, has_children: false },
+    ])
+    const onSelect = jest.fn()
+
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn())
+    await flush()
+
+    // Explicit navigation: move the active row down to the second node.
+    controller.inputTarget.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', cancelable: true, bubbles: true }),
+    )
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true })
+    controller.inputTarget.dispatchEvent(tab)
+    await flush()
+
+    expect(onSelect).toHaveBeenCalledWith({ id: 8, label: 'Second' })
+    expect(tab.defaultPrevented).toBe(true)
+
+    application.stop()
+  })
+
+  test('Tab selects the top search result without prior navigation', async () => {
+    // A typed query is an explicit choice context, so Tab selects the top result.
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([{ id: 9, description: 'Found', progress: 0, path: [] }])
+    const onSelect = jest.fn()
+
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn())
+    await flush()
+
+    controller.inputTarget.value = 'fo'
+    controller.search()
+    await flush()
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true })
+    controller.inputTarget.dispatchEvent(tab)
+    await flush()
+
+    expect(onSelect).toHaveBeenCalledWith({ id: 9, label: 'Found' })
+    expect(tab.defaultPrevented).toBe(true)
 
     application.stop()
   })

@@ -22,6 +22,10 @@ export default class extends CommonPopupController {
         this._mode = 'tree'
         this._rootNodes = null
         this._activeEl = null
+        // Whether the user has explicitly navigated the active row (arrow keys).
+        // Gates Tab-to-select so Tab still moves focus out of the initial browse
+        // state, where the first row is auto-highlighted but unchosen.
+        this._navigated = false
         this.inputTarget.addEventListener('input', this._debouncedSearch.bind(this))
         this.inputTarget.addEventListener('keydown', this.handleInputKeydown.bind(this))
         this.closeTarget.addEventListener('click', () => this.close())
@@ -85,7 +89,18 @@ export default class extends CommonPopupController {
             return
         }
 
-        if ((event.key === 'Enter' || event.key === 'Tab') && this._activeEl) {
+        // Enter is a deliberate select key: always activate the highlighted row.
+        if (event.key === 'Enter' && this._activeEl) {
+            event.preventDefault()
+            this._activateRow(this._activeEl)
+            return
+        }
+
+        // Tab-to-select only when the choice is explicit — an actual search result
+        // or after the user has navigated the tree. In the initial browse state the
+        // first row is auto-highlighted but unchosen, so let Tab move focus instead
+        // of linking a creative the user never picked.
+        if (event.key === 'Tab' && this._activeEl && (this._mode === 'search' || this._navigated)) {
             event.preventDefault()
             this._activateRow(this._activeEl)
             return
@@ -94,11 +109,13 @@ export default class extends CommonPopupController {
         if (this._mode === 'tree' && this._activeEl) {
             if (event.key === 'ArrowRight') {
                 event.preventDefault()
+                this._navigated = true
                 this._expandNode(this._activeEl.closest('.link-tree-item'))
                 return
             }
             if (event.key === 'ArrowLeft') {
                 event.preventDefault()
+                this._navigated = true
                 this._collapseNode(this._activeEl.closest('.link-tree-item'))
             }
         }
@@ -134,6 +151,9 @@ export default class extends CommonPopupController {
 
     _showTree() {
         this._mode = 'tree'
+        // Entering a fresh browse state (open, or query cleared back to browse):
+        // the auto-highlighted first row is unchosen until the user navigates.
+        this._navigated = false
         if (this._rootNodes) {
             this._renderTree(this._rootNodes)
             return
@@ -466,6 +486,7 @@ export default class extends CommonPopupController {
     _moveActive(delta) {
         const rows = this._visibleRows()
         if (rows.length === 0) return
+        this._navigated = true
         const current = rows.indexOf(this._activeEl)
         let next = current + delta
         if (next < 0) next = rows.length - 1
