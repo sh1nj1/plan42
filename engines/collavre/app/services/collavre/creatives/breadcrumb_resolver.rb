@@ -49,36 +49,14 @@ module Creatives
 
     attr_reader :ids, :user
 
-    # Batched read-permission filter for the ancestor set, mirroring the
-    # CreativeSharesCache lookup used by Creative#children_with_permission so a
-    # node shared without its parents never leaks the parent's text.
+    # Batched read-permission filter for the ancestor set so a node shared
+    # without its parents never leaks the parent's text. Delegates to the
+    # canonical PermissionFilter — the same batch posture the picker's
+    # has_children check and FilterPipeline use — rather than re-deriving it.
     def accessible_ancestor_ids(ancestor_ids)
       return Set.new if ancestor_ids.empty?
 
-      no_access = CreativeSharesCache.permissions[:no_access]
-      accessible = Set.new
-
-      if user
-        denied = Set.new
-        user_seen = Set.new
-        CreativeSharesCache.where(creative_id: ancestor_ids, user_id: user.id)
-          .pluck(:creative_id, :permission).each do |cid, perm|
-            user_seen << cid
-            CreativeSharesCache.permissions[perm] == no_access ? denied << cid : accessible << cid
-          end
-
-        public_ids = CreativeSharesCache.where(creative_id: ancestor_ids, user_id: nil)
-          .where.not(permission: :no_access).pluck(:creative_id)
-        accessible.merge(public_ids.reject { |cid| user_seen.include?(cid) || denied.include?(cid) })
-
-        owned_ids = Creative.where(id: ancestor_ids, user_id: user.id).pluck(:id)
-        accessible.merge(owned_ids)
-      else
-        accessible = CreativeSharesCache.where(creative_id: ancestor_ids, user_id: nil)
-          .where.not(permission: :no_access).pluck(:creative_id).to_set
-      end
-
-      accessible
+      PermissionFilter.new(user: user).readable_ids(ancestor_ids).to_set
     end
 
     def build_ancestor_labels(accessible_ids)
