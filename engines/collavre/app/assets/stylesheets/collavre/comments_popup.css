@@ -1111,6 +1111,34 @@ body.chat-fullscreen {
     gap: var(--space-1);
 }
 
+/* Horizontally-scrollable viewport for channel chips + typing indicator.
+   Keeps PR/Preview badges and live typing on a single line so they never
+   wrap and push the form down. The scroll-prev button stays pinned at the
+   left because it is a flex sibling of (not inside) this viewport.
+   min-width:0 lets this flex child shrink below its content width, which is
+   what actually enables overflow scrolling. */
+#typing-scroll-viewport {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scroll-behavior: smooth;
+}
+
+#typing-scroll-viewport::-webkit-scrollbar {
+    height: 4px;
+}
+
+#typing-scroll-viewport::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: var(--radius-2);
+}
+
 .scroll-prev-msg-btn {
     background: none;
     border: 1px solid var(--border-color);
@@ -1131,10 +1159,11 @@ body.chat-fullscreen {
 
 #typing-indicator {
     font-style: italic;
-    flex: 1;
+    flex: 0 0 auto;
     min-height: var(--space-px-5);
     display: flex;
     align-items: center;
+    white-space: nowrap;
 }
 
 #typing-indicator .avatar-wrapper {
@@ -1188,7 +1217,8 @@ body.chat-fullscreen {
 #channel-chips-container,
 .channel-chips {
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
     gap: var(--space-1);
     align-items: center;
 }
