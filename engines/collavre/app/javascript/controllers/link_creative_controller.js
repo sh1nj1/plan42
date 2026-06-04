@@ -399,7 +399,13 @@ export default class extends CommonPopupController {
 
     _activateRow(row) {
         if (!row || !row.hasAttribute('data-pick-row')) return
-        const id = Number(row.dataset.id)
+        // For a linked-creative shell row, emit the effective origin id, not the
+        // shell id: consumers use the selected id as the new link's origin, and
+        // linking to the shell (rather than the real shared creative) would make
+        // PermissionChecker treat the shell as the permission base. Flat search
+        // rows already carry the origin creative's id, so they pass through.
+        const item = row.closest('.link-tree-item')
+        const id = Number((item && item.dataset.originId) || row.dataset.id)
         const labelEl = row.querySelector('.link-tree-label, .link-result-label')
         const label = labelEl ? labelEl.textContent : ''
         this.select({ id, label })

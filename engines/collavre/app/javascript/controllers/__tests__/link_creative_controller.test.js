@@ -288,4 +288,25 @@ describe('LinkCreativeController picker', () => {
 
     application.stop()
   })
+
+  test('selecting a linked shell row emits the effective origin id', async () => {
+    // Shell row (id 100) whose effective origin is 1; selecting it must hand the
+    // origin id to consumers so a new link is based on the real shared creative,
+    // not the user's shell (which would corrupt the permission base).
+    browse.mockResolvedValue([
+      { id: 100, description: 'Shared', progress: 0, has_children: false, origin_id: 1 },
+    ])
+    const onSelect = jest.fn()
+
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn())
+    await flush()
+
+    document.querySelector('.link-tree-row').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flush()
+
+    expect(onSelect).toHaveBeenCalledWith({ id: 1, label: 'Shared' })
+
+    application.stop()
+  })
 })
