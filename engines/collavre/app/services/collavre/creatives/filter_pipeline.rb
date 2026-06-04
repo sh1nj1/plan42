@@ -49,6 +49,13 @@ module Creatives
       FILTERS.any? { |klass| klass.new(params: params, scope: scope).active? }
     end
 
+    # Public: the raw filter/search matches, skipping ancestor + progress
+    # resolution. Lets lightweight callers (the picker's flat search) avoid the
+    # full-page work in #call when they only need the matched rows.
+    def matched_ids
+      apply_filters
+    end
+
     private
 
     attr_reader :user, :params, :scope

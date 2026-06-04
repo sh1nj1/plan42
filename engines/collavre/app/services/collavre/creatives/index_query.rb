@@ -67,12 +67,16 @@ module Creatives
 
     def handle_filtered_query
       scope = determine_scope
+      pipeline = FilterPipeline.new(user: user, params: params, scope: scope)
 
-      result = FilterPipeline.new(
-        user: user,
-        params: params,
-        scope: scope
-      ).call
+      # The picker's flat search (simple mode) only renders matched rows ranked
+      # and capped; ancestors, progress_map and overall_progress are full-page
+      # concerns it never reads (breadcrumbs are resolved separately). Skip that
+      # work — and the per-row readable? N+1 — so a 2-char query in a large tree
+      # caps before doing unbounded resolution.
+      return simple_search_result(pipeline) if simple_search?
+
+      result = pipeline.call
 
       return empty_result if result.matched_ids.empty?
 
@@ -87,11 +91,6 @@ module Creatives
         # Sort by comment updated_at for comment filter
         if params[:comment] == "true"
           matched_creatives = matched_creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
-        elsif params[:search].present? && params[:simple].present?
-          # Sort by description length (shorter = more relevant match)
-          matched_creatives = matched_creatives.sort_by { |c| c.description.to_s.length }
-          # Bound the result set so the popup stays light regardless of tree size
-          matched_creatives = matched_creatives.first(SIMPLE_SEARCH_LIMIT)
         end
 
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
@@ -113,6 +112,34 @@ module Creatives
           progress_map: result.progress_map
         }
       end
+    end
+
+    def simple_search?
+      params[:search].present? && params[:simple].present? &&
+        params[:search_mode] != "tree" && params[:comment] != "true"
+    end
+
+    # Lightweight flat-search path for the picker popup: matched rows only,
+    # permission-filtered in one batch, ranked by relevance and capped — without
+    # resolving ancestors/progress for the whole match set.
+    def simple_search_result(pipeline)
+      matched = pipeline.matched_ids
+      return empty_result if matched.empty?
+
+      readable = PermissionFilter.new(user: user).readable_ids(matched).to_set
+      creatives = Creative.where(id: matched.to_a)
+        .select { |c| readable.include?(c.id) }
+        # Shorter description = more relevant match.
+        .sort_by { |c| c.description.to_s.length }
+        .first(SIMPLE_SEARCH_LIMIT)
+
+      {
+        creatives: creatives,
+        parent: params[:id] ? Creative.find_by(id: params[:id]) : nil,
+        allowed_ids: nil,
+        overall_progress: nil,
+        progress_map: nil
+      }
     end
 
     def handle_id_query

@@ -125,6 +125,21 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_equal "Picker Root", path.first["description"]
   end
 
+  test "simple search excludes matches the user cannot read" do
+    token = "zqsecret"
+    mine = Creative.create!(user: @user, parent: @root, description: "Mine #{token}", sequence: 50)
+    # Same token, owned by another user with no share -> must not surface.
+    Creative.create!(user: users(:two), description: "Theirs #{token}", sequence: 51)
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    ids = body.map { |c| c["id"] }
+    assert_includes ids, mine.id
+    assert_equal 1, body.length, "only the readable match should be returned"
+  end
+
   test "simple search results are capped at SIMPLE_SEARCH_LIMIT" do
     limit = ::Collavre::Creatives::IndexQuery::SIMPLE_SEARCH_LIMIT
     capped_token = "zqcap"
