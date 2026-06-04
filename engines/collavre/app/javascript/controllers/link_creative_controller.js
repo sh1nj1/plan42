@@ -338,7 +338,13 @@ export default class extends CommonPopupController {
     // Clicking a breadcrumb segment switches to the tree, expands the path down
     // to that ancestor, and highlights it — turning search into a jump-to-place.
     _navigateToCrumb(result, crumbIndex) {
-        const chain = result.path.slice(0, crumbIndex).map((p) => String(p.id))
+        // When the hit lives under a linked shell nested in the user's own tree,
+        // the origin-space crumbs omit the local folders above the shell. The
+        // server-supplied reveal_path ([localFolder..., shellId]) bridges that
+        // gap so the collapsed folders are expanded before the origin chain.
+        const localPrefix = Array.isArray(result.reveal_path) ? result.reveal_path.map(String) : []
+        const originChain = result.path.slice(0, crumbIndex).map((p) => String(p.id))
+        const chain = localPrefix.concat(originChain)
         const targetId = String(result.path[crumbIndex].id)
 
         this.inputTarget.value = ''

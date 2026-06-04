@@ -564,7 +564,12 @@ module Collavre
       def serialize_creatives(collection)
         if params[:simple].present?
           children_ids = children_presence_set(collection)
-          breadcrumbs = params[:search].present? ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user).call : {}
+          searching = params[:search].present?
+          breadcrumbs = searching ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user).call : {}
+          # For hits routed through a linked shell, the path to expand in the
+          # user's own tree (local folders -> shell) so a breadcrumb jump can
+          # reach a shell nested under a collapsed folder.
+          reveal_paths = searching ? ::Creatives::RevealPathResolver.new(collection.map(&:id), user: Current.user).call : {}
           collection.map do |c|
             item = {
               id: c.id,
@@ -574,6 +579,8 @@ module Collavre
             }
             path = breadcrumbs[c.id]
             item[:path] = path if path.present?
+            reveal = reveal_paths[c.id]
+            item[:reveal_path] = reveal if reveal.present?
             # For linked shells, expose the effective origin id so the picker can
             # map a search breadcrumb (origin ids) back to the rendered shell node.
             item[:origin_id] = c.effective_origin.id if c.origin_id

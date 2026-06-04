@@ -224,6 +224,55 @@ describe('LinkCreativeController picker', () => {
     application.stop()
   })
 
+  test('reveal_path expands local folders to reach a nested linked shell', async () => {
+    // The shell is nested under the user's own (collapsed) folder, so root
+    // browse returns only that folder — not the shell.
+    browse
+      .mockResolvedValueOnce([
+        { id: 50, description: 'Local Folder', progress: 0, has_children: true },
+      ])
+      // Expanding the local folder reveals the shell (id 100, origin 1).
+      .mockResolvedValueOnce([
+        { id: 100, description: 'Shared', progress: 0, has_children: true, origin_id: 1 },
+      ])
+      // Expanding the shell loads the origin's real children (id 3).
+      .mockResolvedValueOnce([{ id: 3, description: 'Mid', progress: 0, has_children: false }])
+    // Origin-space breadcrumb (ids 1,3) plus the user-local reveal path to the shell.
+    search.mockResolvedValue([
+      {
+        id: 9,
+        description: 'Deep Leaf',
+        progress: 0,
+        reveal_path: [50, 100],
+        path: [
+          { id: 1, description: 'Shared' },
+          { id: 3, description: 'Mid' },
+        ],
+      },
+    ])
+
+    const { application, controller } = await installController()
+    controller.open(rect, jest.fn(), jest.fn())
+    await flush() // caches root nodes (the local folder)
+
+    controller.inputTarget.value = 'lea'
+    controller.search()
+    await flush()
+
+    // Click the second crumb (Mid): chain = [50, 100, 1], target = 3.
+    const crumbs = document.querySelectorAll('.link-crumb')
+    crumbs[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    for (let i = 0; i < 5; i++) await flush()
+
+    // Local folder (50) and shell (100) were both expanded to surface the hit.
+    expect(browse).toHaveBeenCalledWith('50')
+    expect(browse).toHaveBeenCalledWith('100')
+    const mid = document.querySelector('.link-tree-children .link-tree-item[data-id="3"]')
+    expect(mid).not.toBeNull()
+
+    application.stop()
+  })
+
   test('selecting a tree row invokes the callback with id and label', async () => {
     browse.mockResolvedValue([{ id: 7, description: 'Pick Me', progress: 0, has_children: false }])
     const onSelect = jest.fn()

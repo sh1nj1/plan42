@@ -125,6 +125,38 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_equal "Picker Root", path.first["description"]
   end
 
+  test "simple search supplies a reveal_path for a hit under a nested linked shell" do
+    token = "zqreveal"
+    # Origin subtree owned by another user, shared (read) to the signed-in user.
+    origin = Creative.create!(user: users(:two), description: "Reveal Origin", sequence: 980)
+    child = Creative.create!(user: users(:two), parent: origin, description: "Reveal Child #{token}", sequence: 1)
+    CreativeShare.create!(creative: origin, user: @user, permission: :read) # propagates cache to subtree
+
+    # The signed-in user's own folder, with the linked shell nested *under* it
+    # (not a root) — so the origin-space breadcrumb alone can't reach the shell.
+    folder = Creative.create!(user: @user, description: "Local Folder", sequence: 985)
+    shell = Creative.create!(user: @user, origin_id: origin.id, parent: folder)
+
+    get collavre.creatives_path(format: :json, simple: true, search: token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == child.id }
+    assert_not_nil match, "shared child should surface in search"
+    # Expand local folder, then the shell, before walking the origin chain.
+    assert_equal [ folder.id, shell.id ], match["reveal_path"]
+  end
+
+  test "simple search omits reveal_path for hits in the user's own tree" do
+    get collavre.creatives_path(format: :json, simple: true, search: @token)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    match = body.find { |c| c["id"] == @leaf.id }
+    assert_not_nil match
+    assert_not match.key?("reveal_path"), "own-tree hits need no reveal_path"
+  end
+
   test "simple search excludes matches the user cannot read" do
     token = "zqsecret"
     mine = Creative.create!(user: @user, parent: @root, description: "Mine #{token}", sequence: 50)
