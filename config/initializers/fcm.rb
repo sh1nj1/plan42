@@ -155,7 +155,17 @@ if credentials && project_id.present?
   Rails.logger.info "FCM initialized with #{mode}"
   puts "FCM initialized with #{mode}"
 elsif Rails.env.production?
-  Rails.logger.warn "FCM not initialized: no valid credentials found"
+  reason =
+    if credentials && project_id.blank?
+      # Credentials built fine; the operator just forgot the project id. Say so
+      # explicitly so they don't go hunting for a bogus credentials problem.
+      "credentials resolved via #{mode} but firebase_project_id is blank"
+    elsif credentials.nil? && project_id.present?
+      "no valid credentials found"
+    else
+      "no valid credentials found and firebase_project_id is blank"
+    end
+  Rails.logger.warn "FCM not initialized: #{reason}"
 end
 
 if server_key.present?
