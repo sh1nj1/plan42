@@ -56,6 +56,21 @@ module Creatives
       apply_filters
     end
 
+    # Public: the search match as a relation, but only when the flat search is
+    # the *sole* active filter. Lets the picker order + window the matches in
+    # SQL (via a subquery) instead of plucking every id into Ruby. Returns nil
+    # when other filters are active — the matched set is then a Ruby
+    # intersection of several filters, which has no single-relation form, so
+    # callers must fall back to #matched_ids.
+    def search_only_relation
+      active = FILTERS
+        .map { |klass| klass.new(params: params, scope: scope) }
+        .select(&:active?)
+      return nil unless active.size == 1 && active.first.is_a?(Filters::SearchFilter)
+
+      active.first.matched_relation
+    end
+
     private
 
     attr_reader :user, :params, :scope

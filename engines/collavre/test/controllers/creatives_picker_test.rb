@@ -279,6 +279,36 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     assert_not_includes ids, unreadable.id
   end
 
+  test "simple search windows in SQL without plucking the full match set" do
+    token = "zqwindowed"
+    3.times { |i| Creative.create!(user: @user, parent: @root, description: "#{token} #{i}", sequence: 300 + i) }
+
+    statements = []
+    callback = ->(_n, _s, _f, _id, payload) {
+      next if payload[:name] == "SCHEMA"
+      statements << payload[:sql]
+    }
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+      get collavre.creatives_path(format: :json, simple: true, search: token)
+    end
+    assert_response :success
+
+    # The ranked window keeps the search as a subquery and caps with LIMIT, so the
+    # match set never crosses into Ruby as a plucked id list.
+    windowed = statements.any? do |sql|
+      sql =~ /IN \(SELECT DISTINCT.+LEFT OUTER JOIN.+comments.+\).+ORDER BY LENGTH.+LIMIT/im
+    end
+    assert windowed, "expected a windowed subquery (IN (SELECT DISTINCT ... comments ...) ... LIMIT), got:\n#{statements.join("\n")}"
+
+    # The eliminated path plucked every match first: a standalone DISTINCT id pluck
+    # over the joined comments scope. It must not run for a search-only query.
+    full_pluck = statements.any? do |sql|
+      sql =~ /\ASELECT DISTINCT ["`]?creatives["`]?\.["`]?id["`]? FROM ["`]?creatives["`]? LEFT OUTER JOIN/i
+    end
+    assert_not full_pluck, "search-only path must not pluck the whole match set up front"
+  end
+
   test "browse with multiple linked shells preloads origins instead of a per-shell query" do
     # Several shells at root, each pointing at a distinct shared origin. The
     # serialize path resolves effective_origin per shell twice (children_presence_set
