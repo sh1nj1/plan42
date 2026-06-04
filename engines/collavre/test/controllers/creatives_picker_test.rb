@@ -62,6 +62,19 @@ class CreativesPickerTest < ActionDispatch::IntegrationTest
     # Children live under the origin (parent_id == origin.id), not the shell.
     # has_children must follow the effective origin to match what expansion shows.
     assert_equal true, shell_row["has_children"]
+    # The effective origin id is exposed so the client can map search
+    # breadcrumbs (origin ids) back to this shell node.
+    assert_equal origin.id, shell_row["origin_id"]
+  end
+
+  test "simple browse omits origin_id for non-linked creatives" do
+    get collavre.creatives_path(format: :json, simple: true)
+
+    assert_response :success
+    body = JSON.parse(response.body)
+    root_row = body.find { |c| c["id"] == @root.id }
+    assert_not_nil root_row
+    assert_not root_row.key?("origin_id"), "non-linked creative should not carry origin_id"
   end
 
   test "simple search annotates results with ancestor breadcrumb path" do

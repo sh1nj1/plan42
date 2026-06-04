@@ -161,6 +161,10 @@ export default class extends CommonPopupController {
         li.dataset.id = String(node.id)
         li.dataset.level = String(level)
         li.dataset.loaded = '0'
+        // Linked-creative shells render under the user's shell id, but search
+        // breadcrumbs carry the effective origin id. Record the origin id so
+        // _findItem can resolve a breadcrumb's root crumb back to this shell.
+        if (node.origin_id) li.dataset.originId = String(node.origin_id)
 
         const row = document.createElement('div')
         row.className = 'link-tree-row'
@@ -173,7 +177,7 @@ export default class extends CommonPopupController {
         toggle.className = 'link-tree-toggle'
         if (node.has_children) {
             toggle.textContent = '▸'
-            toggle.setAttribute('aria-label', 'expand')
+            toggle.setAttribute('aria-label', this._text('expandText'))
             toggle.addEventListener('mousedown', (e) => e.preventDefault())
             toggle.addEventListener('click', (e) => {
                 e.preventDefault()
@@ -377,7 +381,12 @@ export default class extends CommonPopupController {
     }
 
     _findItem(id) {
-        return this.listTarget.querySelector(`.link-tree-item[data-id="${id}"]`)
+        // Match the rendered node id first; fall back to the effective origin id
+        // so a breadcrumb's root crumb (origin id) resolves to its linked shell.
+        return (
+            this.listTarget.querySelector(`.link-tree-item[data-id="${id}"]`) ||
+            this.listTarget.querySelector(`.link-tree-item[data-origin-id="${id}"]`)
+        )
     }
 
     // --- Selection & keyboard navigation -------------------------------------
@@ -443,6 +452,7 @@ export default class extends CommonPopupController {
             loadingText: this.element.dataset.linkCreativeLoadingText,
             noResultsText: this.element.dataset.linkCreativeNoResultsText,
             emptyText: this.element.dataset.linkCreativeEmptyText,
+            expandText: this.element.dataset.linkCreativeExpandText,
         }
         return map[key] || ''
     }

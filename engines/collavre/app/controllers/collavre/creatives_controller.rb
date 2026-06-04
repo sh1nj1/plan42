@@ -574,6 +574,9 @@ module Collavre
             }
             path = breadcrumbs[c.id]
             item[:path] = path if path.present?
+            # For linked shells, expose the effective origin id so the picker can
+            # map a search breadcrumb (origin ids) back to the rendered shell node.
+            item[:origin_id] = c.effective_origin.id if c.origin_id
             item
           end
         else
