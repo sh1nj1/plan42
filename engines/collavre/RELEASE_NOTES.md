@@ -1,3 +1,29 @@
+## v0.21.0 (2026-06-04)
+
+### Changes
+- 349546e1 feat: add Markdown content type for creatives (#1169)
+- f25448cc feat: render MCP tool response markdown in chat (#1213)
+- d0e18291 fix(inbox): create System topic on first visit so badge has matching sidebar entry (#1264)
+- 7c8b144a feat(collavre): Phase 3 AWS — DB-backed S3 + SES via boot + runtime interceptor (#1270)
+- 83d558a0 feat(collavre): Phase 3 batch — DB-backed firebase/fcm/llm/openclaw/mail/misc settings (#1267)
+- 6e3d2728 feat(collavre): Phase 2 GitHub — DB-backed webhook secret, API endpoint, mock toggle (#1266)
+- 3d73c334 feat(collavre): Phase 2 OmniAuth — DB-backed Google/GitHub/Notion OAuth keys (#1265)
+- 2e86a60d feat(collavre): DB-backed integration settings (Phase 1: Slack) (#1263)
+- 853fe428 fix(test): align sign-in landing assertion with authenticated home redirect (#1262)
+- d5142c79 feat(commands): auto-fill creative_id / topic_id from chat context (#1260)
+- 78a4fda3 feat(admin): split home page path into unauthenticated and authenticated (#1261)
+- c500dfab feat: store topic primary_agent_id in topics table (#1171)
+- 73876b13 feat(channels): topic-badge abstraction + preview MCP tools (#1259)
+- 53b3da6e feat: Add landing page for unauthenticated users (#827)
+- 0489e641 feat(collavre): Creative attachments with CDN-cached public URLs (#1257)
+- 8e7f12e3 fix(creatives): defer cable subscribe + retry transient fetch errors (#1256)
+- 21963486 feat(drop_trigger): branch Drop Trigger topic from Main on creation (#1258)
+- 199a0ebf fix(pr_monitor): default chip label/link fallback from channel config (#1255)
+- c9ce095a fix(channel-chip): align PR chip font-size with context chip token (#1254)
+- d43ea449 fix(pr_monitor): de-dup closed event, status badge chips, dismiss-on-X (#1242)
+- bf9b1d57 feat(channels): GitHub PR comment listener via Channel abstraction (#1238)
+- a618a1e9 build(deps): bump view_component from 4.5.0 to 4.9.0 (#1228)
+
 ## v0.20.3 (2026-04-30)
 
 ### Changes

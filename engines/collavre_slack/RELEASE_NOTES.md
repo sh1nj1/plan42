@@ -1,3 +1,8 @@
+## v0.2.7 (2026-06-04)
+
+### Changes
+- 2e86a60d feat(collavre): DB-backed integration settings (Phase 1: Slack) (#1263)
+
 ## v0.2.6 (2026-04-17)
 
 ### Changes
