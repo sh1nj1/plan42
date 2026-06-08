@@ -111,6 +111,44 @@ describe("colorAwareSpanImport", () => {
     )
   })
 
+  it("preserves non-format text styles (font-size/family/transform) on a colored span", () => {
+    // The custom span import must carry the span's FULL style, not just color:
+    // a colored span can also set font-size / font-family / text-transform /
+    // letter-spacing, and Lexical's default conversion ignores them, so cherry-
+    // picking color alone drops the rest on reopen.
+    const html =
+      '<p><span style="color: rgb(255, 0, 0); font-size: 20px; font-family: Georgia; ' +
+      'text-transform: uppercase; letter-spacing: 2px; white-space: pre-wrap;">big</span></p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].text).toBe("big")
+    // white-space (Lexical's own artifact) is intentionally dropped; everything
+    // else survives.
+    expect(parseStyleMap(nodes[0].style)).toEqual({
+      color: "rgb(255, 0, 0)",
+      "font-size": "20px",
+      "font-family": "Georgia",
+      "text-transform": "uppercase",
+      "letter-spacing": "2px"
+    })
+    expect(nodes[0].formats).toEqual([])
+  })
+
+  it("preserves non-format text styles on a non-span colored block element", () => {
+    // Same generality for the block path: a colored <p>/<li> carrying font-size
+    // etc. must keep those styles when normalizeColoredContainers wraps its text.
+    const html = '<p style="color: rgb(255, 0, 0); font-size: 20px;">big block</p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].text).toBe("big block")
+    expect(parseStyleMap(nodes[0].style)).toEqual({
+      color: "rgb(255, 0, 0)",
+      "font-size": "20px"
+    })
+  })
+
   it("keeps an inner span's own color instead of inheriting the outer color", () => {
     // Pasted content nests colored spans. The outer span's after-callback runs
     // after the inner span is converted, so it must merge (inner color wins)
