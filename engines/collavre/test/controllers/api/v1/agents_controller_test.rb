@@ -378,6 +378,81 @@ module Collavre
           assert_response :forbidden
         end
 
+        test "notify with task_id authorizes Claude Channel agent on work topic where primary_agent diverges" do
+          # A native permission prompt can be raised during a dispatch that
+          # selected this session via routing_expression on a *work* topic
+          # whose primary_agent is unset or a different agent. The topic-
+          # primary_agent gate would 403 and the prompt would never surface in
+          # Collavre. The echoed task_id must authorize the dispatched session
+          # agent directly — mirroring /reply.
+          reg = register_agent("notify-diverge-test")
+          ai_user = User.find(reg["agent_id"])
+
+          creative = Creative.create!(user: @user, description: "Work creative")
+          other_agent = users(:ai_bot)
+          topic = creative.topics.create!(name: "Work topic", user: @user)
+          topic.set_primary_agent!(other_agent)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+
+          task = Collavre::Task.create!(
+            name: "Dispatch via routing_expression",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, text: "🔐 권한 요청: Bash", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert_equal ai_user.id, comment.user_id,
+            "permission prompt must be attributed to the dispatched Claude Channel agent, not topic.primary_agent"
+          # notify still must NOT complete the in-flight task even when given a
+          # task_id — it uses task_id only to authorize the poster.
+          assert_equal "delegated", task.reload.status,
+            "notify must not complete the delegated task it authorizes against"
+          assert_nil comment.task_id
+        end
+
+        test "notify with task_id refuses when task agent is not owned by current_user" do
+          # task_id must not become a back-door to post as someone else's agent.
+          reg = register_agent("notify-foreign-owner-test")
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+
+          foreign_agent = User.create!(
+            email: "foreign-notify-claude@agent.collavre.local",
+            name: "Foreign Claude",
+            password: SecureRandom.hex(32),
+            llm_vendor: "anthropic",
+            llm_model: "claude-code",
+            created_by_id: users(:two).id
+          )
+          foreign_task = Collavre::Task.create!(
+            name: "Foreign delegated task",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: foreign_agent,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+          comments_before = creative.comments.count
+
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, text: "should not post", task_id: foreign_task.id },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :forbidden
+          assert_equal comments_before, creative.comments.count,
+            "no comment should be posted when task_id resolves to a foreign agent"
+        end
+
         test "concurrent replies for same task_id only one wins; loser gets 409 without duplicate comment" do
           # Race: two /reply requests for the same task_id can both pass
           # resolve_reply_agent (read-only scope check). Without an atomic

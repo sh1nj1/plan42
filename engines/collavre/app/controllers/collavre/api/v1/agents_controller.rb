@@ -196,12 +196,11 @@ module Collavre
             return
           end
 
-          # The poster must be this session's own Claude Channel agent (the
-          # topic's primary_agent set at register), owned by the token holder —
-          # so /notify can't be used to ventriloquize an unrelated agent or post
-          # into a topic the caller doesn't drive.
-          agent = topic.primary_agent
-          unless agent&.claude_channel_agent? && agent.created_by_id == current_user.id
+          # The poster must be this session's own Claude Channel agent, owned by
+          # the token holder — so /notify can't be used to ventriloquize an
+          # unrelated agent or post into a topic the caller doesn't drive.
+          agent = resolve_notify_agent(topic, params[:task_id])
+          unless agent
             render json: { error: "Not authorized" }, status: :forbidden
             return
           end
@@ -221,6 +220,38 @@ module Collavre
           end
         end
         private
+
+        # Identify which Claude Channel agent a /notify posts as.
+        #
+        # Mirrors resolve_reply_agent's task_id-first resolution but never
+        # touches the task graph (notify only authorizes, it does not complete).
+        # A native permission prompt can be raised during a dispatch that
+        # selected this session via routing_expression on a *work* topic whose
+        # primary_agent is unset or a different agent (the case documented on
+        # resolve_reply_agent). The echoed active-dispatch task_id authorizes
+        # the dispatched session agent directly; without it the topic-
+        # primary_agent gate would 403 and the prompt would never surface in
+        # Collavre.
+        #
+        # task_id absent → fall back to topic.primary_agent (the registration
+        # inbox default, where the session IS primary — locally-initiated
+        # turns). task_id present-but-unresolved → nil (no fall-through), same
+        # as resolve_reply_agent: a present id targeting a vanished/foreign task
+        # must not silently post as primary_agent.
+        def resolve_notify_agent(topic, requested_task_id)
+          if requested_task_id.present?
+            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            agent = task&.agent
+            return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
+
+            return agent
+          end
+
+          agent = topic.primary_agent
+          return agent if agent&.claude_channel_agent? && agent.created_by_id == current_user.id
+
+          nil
+        end
 
         # Identify which Claude Channel agent this reply is for.
         #

@@ -49,7 +49,7 @@ function errorResult(message: string) {
   };
 }
 
-function buildServer(client: CollavreClient): Server {
+function buildServer(client: CollavreClient, active: ActiveContext): Server {
   const server = new Server(
     { name: "collavre", version: "0.1.0" },
     {
@@ -130,6 +130,14 @@ function buildServer(client: CollavreClient): Server {
     }
 
     const result = await client.reply(topicId, text, taskId);
+
+    // The dispatched turn is concluding (Claude has replied). Reset the active
+    // context to the registration inbox default so a subsequent locally-
+    // initiated turn's permission prompt surfaces in the inbox rather than
+    // leaking into this just-finished work topic.
+    active.topicId = active.defaultTopicId;
+    active.taskId = null;
+
     return {
       content: [
         { type: "text" as const, text: `Sent (comment #${result.comment_id})` },
@@ -140,12 +148,26 @@ function buildServer(client: CollavreClient): Server {
   return server;
 }
 
-// Tracks the topic of the most recently forwarded dispatch so an incoming
-// permission_request (which carries no topic) can be surfaced into the right
-// topic. A Claude Code session processes one turn at a time, so the last
-// forwarded dispatch is the turn whose tool is now awaiting permission.
+// Tracks the most recently forwarded dispatch so an incoming permission_request
+// (which carries no topic or task) can be surfaced into the right topic AND
+// authorized as the dispatched agent. A Claude Code session processes one turn
+// at a time, so the last forwarded dispatch is the turn whose tool is now
+// awaiting permission.
+//
+// taskId is the dispatch's delegated task: the server authorizes /notify
+// against it so prompts raised on a *work* topic (where this session is not the
+// topic's primary_agent, having been matched via routing_expression) still
+// surface — topic.primary_agent alone would 403 there.
+//
+// defaultTopicId is the registration inbox topic. After a turn ends (the reply
+// tool is called) topicId/taskId reset to this default so a subsequent locally-
+// initiated turn's prompt surfaces in the inbox instead of leaking into the
+// just-finished work topic (and so a normal reply there is not consumed as a
+// permission decision).
 interface ActiveContext {
   topicId: number | null;
+  taskId: number | null;
+  defaultTopicId: number | null;
 }
 
 async function sendPermissionDecision(
@@ -217,9 +239,11 @@ function makeEventHandler(
       `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id}) task_id=${event.task_id ?? "none"}\n`,
     );
 
-    // Record the active turn's topic so a permission_request relayed during it
-    // can be surfaced into this topic.
+    // Record the active turn's topic AND delegated task so a permission_request
+    // relayed during it can be surfaced into this topic and authorized as the
+    // dispatched agent (work topics where this session is not primary_agent).
     active.topicId = topicId;
+    active.taskId = event.task_id ?? null;
 
     try {
       const meta: Record<string, string> = {
@@ -254,10 +278,14 @@ async function main(): Promise<void> {
 
   const client = new CollavreClient(config);
   const agentName = buildAgentName();
-  const server = buildServer(client);
 
   const coordinator = new PermissionCoordinator();
-  const active: ActiveContext = { topicId: null };
+  const active: ActiveContext = {
+    topicId: null,
+    taskId: null,
+    defaultTopicId: null,
+  };
+  const server = buildServer(client, active);
 
   // Surface relayed tool-permission prompts into the active topic so the user
   // can approve/deny from Collavre. Registered before connect so the handler
@@ -274,11 +302,13 @@ async function main(): Promise<void> {
         );
         return;
       }
+      const taskId = active.taskId;
       coordinator.add(topicId, request_id);
       try {
         await client.notify(
           topicId,
           formatPermissionPrompt({ request_id, tool_name, description, input_preview }),
+          taskId ?? undefined,
         );
         process.stderr.write(
           `[collavre] permission_request relayed to topic #${topicId}: ${tool_name ?? "tool"} (request_id=${request_id})\n`,
@@ -319,7 +349,11 @@ async function main(): Promise<void> {
   // Default permission prompts to the registration inbox topic so a
   // locally-initiated turn (typed in the Claude Code REPL, not a channel
   // dispatch) still surfaces its prompt somewhere visible. Each incoming
-  // dispatch overrides this with that dispatch's topic.
+  // dispatch overrides this with that dispatch's topic/task; the reply tool
+  // resets back to this default when the dispatched turn ends. The inbox
+  // default carries no task — the session is the inbox topic's primary_agent,
+  // so /notify authorizes via topic.primary_agent there.
+  active.defaultTopicId = reg.topic_id;
   active.topicId = reg.topic_id;
 
   // Subscribe by agent_id, not topic_id. Comments in the registration inbox

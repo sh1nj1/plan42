@@ -62,15 +62,27 @@ export class CollavreClient {
 
   // Post an out-of-band informational comment to a topic WITHOUT completing a
   // task (used to surface relayed permission prompts). Unlike reply(), this
-  // hits /agent/notify and never touches the task graph.
-  async notify(topicId: number, text: string): Promise<{ comment_id: number }> {
+  // hits /agent/notify and never touches the task graph. taskId, when present,
+  // is the active dispatch's delegated task: the server uses it ONLY to
+  // authorize the poster (so prompts on a work topic where this session is not
+  // primary_agent still surface) — it is never completed.
+  async notify(
+    topicId: number,
+    text: string,
+    taskId?: number,
+  ): Promise<{ comment_id: number }> {
+    const body: Record<string, unknown> = { topic_id: topicId, text };
+    if (taskId !== undefined && taskId !== null) {
+      body.task_id = taskId;
+    }
+
     const res = await fetch(`${this.baseUrl}/api/v1/agent/notify`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.token}`,
       },
-      body: JSON.stringify({ topic_id: topicId, text }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
