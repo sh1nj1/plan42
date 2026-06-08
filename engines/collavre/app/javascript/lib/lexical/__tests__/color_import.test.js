@@ -39,7 +39,10 @@ function importColors(html, { withConfig }) {
       })
       result = root.getAllTextNodes().map((node) => ({
         text: node.getTextContent(),
-        style: node.getStyle()
+        style: node.getStyle(),
+        formats: ["bold", "italic", "underline", "strikethrough", "subscript", "superscript"].filter(
+          (f) => node.hasFormat(f)
+        )
       }))
     },
     { discrete: true }
@@ -58,8 +61,8 @@ describe("colorAwareSpanImport", () => {
 
     const nodes = importColors(html, { withConfig: true })
     expect(nodes).toEqual([
-      { text: "hello", style: "" },
-      { text: "RED", style: "color: rgb(255, 0, 0)" }
+      { text: "hello", style: "", formats: [] },
+      { text: "RED", style: "color: rgb(255, 0, 0)", formats: [] }
     ])
   })
 
@@ -81,7 +84,26 @@ describe("colorAwareSpanImport", () => {
       '<p><span style="background-color: rgb(255, 255, 0); white-space: pre-wrap;">hi</span></p>'
 
     const nodes = importColors(html, { withConfig: true })
-    expect(nodes).toEqual([{ text: "hi", style: "background-color: rgb(255, 255, 0)" }])
+    expect(nodes).toEqual([
+      { text: "hi", style: "background-color: rgb(255, 255, 0)", formats: [] }
+    ])
+  })
+
+  it("preserves inline-style text formatting on a span that also carries color", () => {
+    // Pasted content (Google Docs / Word) encodes bold/italic/underline as
+    // inline span styles, not <b>/<i> tags. The custom span import must compose
+    // those formats with the color binding instead of dropping them.
+    const html =
+      '<p><span style="color: rgb(255, 0, 0); font-weight: 700; font-style: italic; ' +
+      'text-decoration: underline line-through; white-space: pre-wrap;">styled</span></p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].text).toBe("styled")
+    expect(nodes[0].style).toBe("color: rgb(255, 0, 0)")
+    expect(nodes[0].formats.sort()).toEqual(
+      ["bold", "italic", "strikethrough", "underline"].sort()
+    )
   })
 
   it("demonstrates the drift the fix removes (no config = color on wrong/lost node)", () => {

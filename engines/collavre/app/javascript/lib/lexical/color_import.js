@@ -1,11 +1,40 @@
 import { $isElementNode, $isTextNode } from "lexical"
 
-function applyStyleToTextNodes(nodes, styleText) {
+// Mirrors Lexical's internal applyTextFormatFromStyle (Lexical's
+// convertSpanElement) for the inline-style text formats it reads off a <span>:
+// font-weight / font-style / text-decoration / vertical-align. Lexical does not
+// export it, so we replicate it here — our custom span import must COMPOSE these
+// formats with the color binding, not bypass them. Pasted content (Google Docs,
+// Word) carries bold/italic/underline as inline span styles rather than <b>/<i>
+// tags, so dropping this would lose that formatting on reopen.
+function applyTextFormatFromStyle(node, domStyle) {
+  const fontWeight = domStyle.fontWeight
+  const textDecoration = (domStyle.textDecoration || "").split(" ")
+  const verticalAlign = domStyle.verticalAlign
+
+  const toggles = [
+    [fontWeight === "700" || fontWeight === "bold", "bold"],
+    [textDecoration.includes("line-through"), "strikethrough"],
+    [domStyle.fontStyle === "italic", "italic"],
+    [textDecoration.includes("underline"), "underline"],
+    [verticalAlign === "sub", "subscript"],
+    [verticalAlign === "super", "superscript"]
+  ]
+
+  toggles.forEach(([shouldApply, format]) => {
+    if (shouldApply && !node.hasFormat(format)) {
+      node.toggleFormat(format)
+    }
+  })
+}
+
+function applyStyleToTextNodes(nodes, styleText, domStyle) {
   nodes.forEach((node) => {
     if ($isTextNode(node)) {
       node.setStyle(styleText)
+      applyTextFormatFromStyle(node, domStyle)
     } else if ($isElementNode(node)) {
-      applyStyleToTextNodes(node.getChildren(), styleText)
+      applyStyleToTextNodes(node.getChildren(), styleText, domStyle)
     }
   })
 }
@@ -47,7 +76,7 @@ export function colorAwareSpanImport(domNode) {
     conversion: () => ({
       node: null,
       after: (childLexicalNodes) => {
-        applyStyleToTextNodes(childLexicalNodes, styleText)
+        applyStyleToTextNodes(childLexicalNodes, styleText, domNode.style)
         return childLexicalNodes
       }
     }),
