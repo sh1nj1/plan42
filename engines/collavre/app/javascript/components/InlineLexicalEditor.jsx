@@ -50,7 +50,7 @@ import { AttachmentNode } from "../lib/lexical/attachment_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
-import { lexicalHtmlConfig } from "../lib/lexical/color_import"
+import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
 const URL_MATCHERS = [
@@ -139,6 +139,10 @@ function InitialContentPlugin({ html }) {
       // longer re-apply styles positionally after import, which used to drift
       // onto the wrong text node whenever Lexical split or dropped text nodes.
       syncLexicalStyleAttributes(container)
+      // Push color/background-color from non-span elements onto spans so the
+      // colorAwareSpanImport config binds it (the span importer can't see it
+      // otherwise). Must run after the sync above materializes data-lexical-*.
+      normalizeColoredContainers(container)
       const nodes = $generateNodesFromDOM(editor, container)
 
       // Filter out duplicate image nodes if any

@@ -116,3 +116,41 @@ export const lexicalHtmlConfig = {
     span: colorAwareSpanImport
   }
 }
+
+// Lexical's html.import is keyed per tag, and colorAwareSpanImport only runs for
+// <span>. Color / background-color that sits on a NON-span element — e.g.
+// `<p style="color: red">text</p>`, a `<li>`/`<h1>` carrying color, or a
+// materialized data-lexical-color on a block element (common in legacy /
+// Trix-migrated or pasted content) — would otherwise be dropped on import,
+// because Lexical's default block conversions ignore color. The removed
+// positional collector read each text node's IMMEDIATE parent element regardless
+// of tag, so it preserved these.
+//
+// Normalize the DOM before import: for each colored non-span element, wrap its
+// DIRECT text-node children in a <span> carrying that element's color /
+// background-color, so the span importer binds it like any other span. We only
+// push onto direct text children (matching the old immediate-parent semantics) —
+// nested colored elements keep their own color and win via the merge in
+// applyStyleToTextNodes. Run this AFTER syncLexicalStyleAttributes so
+// data-lexical-* attributes are already materialized into inline style.
+const TEXT_NODE = 3
+
+export function normalizeColoredContainers(root) {
+  if (!root || typeof root.querySelectorAll !== "function") return
+  const ownerDocument = root.ownerDocument || document
+
+  root.querySelectorAll("[style]").forEach((element) => {
+    if (element.tagName === "SPAN") return
+    const { color, backgroundColor } = element.style
+    if (!color && !backgroundColor) return
+
+    Array.from(element.childNodes).forEach((child) => {
+      if (child.nodeType !== TEXT_NODE || !child.nodeValue) return
+      const span = ownerDocument.createElement("span")
+      if (color) span.style.color = color
+      if (backgroundColor) span.style.backgroundColor = backgroundColor
+      element.replaceChild(span, child)
+      span.appendChild(child)
+    })
+  })
+}

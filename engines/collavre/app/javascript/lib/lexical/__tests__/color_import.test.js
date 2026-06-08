@@ -1,6 +1,6 @@
 import { createEditor, $getRoot, $isTextNode, $createParagraphNode } from "lexical"
 import { $generateNodesFromDOM } from "@lexical/html"
-import { lexicalHtmlConfig } from "../color_import"
+import { lexicalHtmlConfig, normalizeColoredContainers } from "../color_import"
 
 // Parse an inline style string into a plain object so order doesn't matter.
 function parseStyleMap(styleText) {
@@ -31,6 +31,7 @@ function importColors(html, { withConfig }) {
       const root = $getRoot()
       root.getChildren().forEach((child) => child.remove())
       const doc = new DOMParser().parseFromString(html, "text/html")
+      if (withConfig) normalizeColoredContainers(doc.body)
       const nodes = $generateNodesFromDOM(editor, doc.body)
       nodes.forEach((node) => {
         if ($isTextNode(node)) {
@@ -134,6 +135,28 @@ describe("colorAwareSpanImport", () => {
       "background-color": "rgb(255, 255, 0)",
       color: "rgb(255, 0, 0)"
     })
+  })
+
+  it("imports color carried on a non-span block element (e.g. <p style=color>)", () => {
+    // Legacy / Trix-migrated / pasted content can put color on a block element
+    // instead of a span. The span importer can't see it; normalizeColoredContainers
+    // wraps the block's direct text in a span so the color survives reopen.
+    const html = '<p style="color: rgb(255, 0, 0);">red paragraph</p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes).toEqual([
+      { text: "red paragraph", style: "color: rgb(255, 0, 0)", formats: [] }
+    ])
+  })
+
+  it("lets an inner colored span override the color of its non-span block parent", () => {
+    const html =
+      '<p style="color: rgb(255, 0, 0);">outer ' +
+      '<span style="color: rgb(0, 0, 255);">inner</span></p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes.find((n) => n.text === "outer ").style).toBe("color: rgb(255, 0, 0)")
+    expect(nodes.find((n) => n.text === "inner").style).toBe("color: rgb(0, 0, 255)")
   })
 
   it("demonstrates the drift the fix removes (no config = color on wrong/lost node)", () => {
