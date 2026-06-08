@@ -50,6 +50,7 @@ import { AttachmentNode } from "../lib/lexical/attachment_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
+import { lexicalHtmlConfig } from "../lib/lexical/color_import"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
 const URL_MATCHERS = [
@@ -120,43 +121,6 @@ function InitialContentPlugin({ html }) {
   const [editor] = useLexicalComposerContext()
   const lastApplied = useRef(null)
 
-  const collectDomTextStyles = useCallback((container) => {
-    const styles = []
-    if (!container) return styles
-    const ownerDocument = container.ownerDocument || document
-    const walker = ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-    let current = walker.nextNode()
-    while (current) {
-      const parent = current.parentElement
-      let styleText = parent?.getAttribute?.("style") || ""
-      const colorAttr = parent?.dataset?.lexicalColor
-      const bgAttr = parent?.dataset?.lexicalBackgroundColor
-
-      if ((!styleText || !styleText.trim()) && (colorAttr || bgAttr)) {
-        const declarations = []
-        if (colorAttr) declarations.push(`color: ${colorAttr}`)
-        if (bgAttr) declarations.push(`background-color: ${bgAttr}`)
-        styleText = declarations.join("; ")
-      } else {
-        const lower = styleText.toLowerCase()
-        const fragments = []
-        if (colorAttr && !lower.includes("color:")) {
-          fragments.push(`color: ${colorAttr}`)
-        }
-        if (bgAttr && !lower.includes("background-color:")) {
-          fragments.push(`background-color: ${bgAttr}`)
-        }
-        if (fragments.length > 0) {
-          styleText = `${styleText}${styleText.trim().endsWith(";") || !styleText.trim() ? "" : ";"} ${fragments.join("; ")}`.trim()
-        }
-      }
-
-      styles.push(styleText || "")
-      current = walker.nextNode()
-    }
-    return styles
-  }, [])
-
   useEffect(() => {
     if (lastApplied.current === html) return
     lastApplied.current = html
@@ -170,8 +134,11 @@ function InitialContentPlugin({ html }) {
       // No more .trix-content wrapper
       const container = doc.body
 
+      // Color / background-color are bound to text nodes during import by the
+      // colorAwareSpanImport html config (see lib/lexical/color_import). We no
+      // longer re-apply styles positionally after import, which used to drift
+      // onto the wrong text node whenever Lexical split or dropped text nodes.
       syncLexicalStyleAttributes(container)
-      const collectedStyles = collectDomTextStyles(container)
       const nodes = $generateNodesFromDOM(editor, container)
 
       // Filter out duplicate image nodes if any
@@ -217,12 +184,6 @@ function InitialContentPlugin({ html }) {
         appendedNodes.push(paragraph)
       }
 
-      const textNodes = root.getAllTextNodes()
-      textNodes.forEach((textNode, index) => {
-        const style = collectedStyles[index]
-        textNode.setStyle(style || "")
-      })
-
       let lastChild = root.getLastChild()
       while (
         lastChild &&
@@ -237,7 +198,7 @@ function InitialContentPlugin({ html }) {
         root.append($createParagraphNode())
       }
     })
-  }, [collectDomTextStyles, editor, html])
+  }, [editor, html])
 
   return null
 }
@@ -1024,7 +985,8 @@ export default function InlineLexicalEditor({
       onError(error) {
         throw error
       },
-      theme
+      theme,
+      html: lexicalHtmlConfig
     }),
     []
   )
