@@ -63,6 +63,47 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
+  # Uses the core PreviewChannel (not the collavre_github GithubPrChannel) so
+  # the core engine test suite stays independent of the optional GitHub engine
+  # per AGENTS.md. The cascade-on-delete behavior under test lives in the base
+  # Collavre::Channel, so any channel subclass exercises the same path.
+  test "should destroy topic that has a badge channel + injected comments" do
+    channel = Collavre::PreviewChannel.create!(
+      topic_id: @topic.id,
+      config: { "preview_url" => "http://localhost:4000", "label" => "Preview #1" }
+    )
+    channel.inject_into_topic!(channel.attached_message)
+
+    assert @topic.channels.exists?, "precondition: topic has a channel (badge)"
+    assert @topic.comments.exists?, "precondition: topic has injected comments"
+
+    assert_difference("Topic.count", -1) do
+      delete collavre.creative_topic_url(@creative, @topic)
+    end
+
+    assert_response :no_content
+    assert_nil Collavre::Topic.find_by(id: @topic.id), "topic must actually be gone from DB"
+  end
+
+  test "should destroy topic that has a comment_snapshot (compress/merge)" do
+    Collavre::CommentSnapshot.create!(
+      creative: @creative,
+      topic: @topic,
+      user: @user,
+      operation: "compress",
+      comments_data: [ { "id" => 1, "content" => "x" } ]
+    )
+
+    assert Collavre::CommentSnapshot.where(topic_id: @topic.id).exists?, "precondition: topic has a snapshot"
+
+    assert_difference("Topic.count", -1) do
+      delete collavre.creative_topic_url(@creative, @topic)
+    end
+
+    assert_response :no_content
+    assert_nil Collavre::Topic.find_by(id: @topic.id), "topic must actually be gone from DB"
+  end
+
   test "should update topic name" do
     patch collavre.creative_topic_url(@creative, @topic), params: { topic: { name: "Updated Name" } }, as: :json
 
