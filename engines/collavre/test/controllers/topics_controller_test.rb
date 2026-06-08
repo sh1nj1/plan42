@@ -63,6 +63,43 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
+  test "should destroy topic that has a PR badge channel + injected comments" do
+    channel = CollavreGithub::GithubPrChannel.create!(
+      topic_id: @topic.id,
+      config: { "repo_full_name" => "owner/repo", "pr_number" => 123, "pr_state" => "open" }
+    )
+    channel.inject_into_topic!(channel.attached_message)
+
+    assert @topic.channels.exists?, "precondition: topic has a channel (PR badge)"
+    assert @topic.comments.exists?, "precondition: topic has injected comments"
+
+    assert_difference("Topic.count", -1) do
+      delete collavre.creative_topic_url(@creative, @topic)
+    end
+
+    assert_response :no_content
+    assert_nil Collavre::Topic.find_by(id: @topic.id), "topic must actually be gone from DB"
+  end
+
+  test "should destroy topic that has a comment_snapshot (compress/merge)" do
+    Collavre::CommentSnapshot.create!(
+      creative: @creative,
+      topic: @topic,
+      user: @user,
+      operation: "compress",
+      comments_data: [ { "id" => 1, "content" => "x" } ]
+    )
+
+    assert Collavre::CommentSnapshot.where(topic_id: @topic.id).exists?, "precondition: topic has a snapshot"
+
+    assert_difference("Topic.count", -1) do
+      delete collavre.creative_topic_url(@creative, @topic)
+    end
+
+    assert_response :no_content
+    assert_nil Collavre::Topic.find_by(id: @topic.id), "topic must actually be gone from DB"
+  end
+
   test "should update topic name" do
     patch collavre.creative_topic_url(@creative, @topic), params: { topic: { name: "Updated Name" } }, as: :json
 
