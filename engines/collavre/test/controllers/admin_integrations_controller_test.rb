@@ -152,4 +152,120 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
     delete collavre.reset_admin_integration_path(key: "no_such_key")
     assert_response :not_found
   end
+
+  test "reset on a key hidden from the admin UI returns 404 and keeps the DB row" do
+    Registry.instance.register(
+      :hidden_resettable_key,
+      category: "misc",
+      sensitive: true,
+      requires_restart: false,
+      env_var: "HIDDEN_RESETTABLE_KEY",
+      admin_visible: false
+    )
+    IntegrationSetting.create!(
+      key: "hidden_resettable_key", value: "db-val", category: "misc"
+    )
+    sign_in_as(@admin, password: "password")
+
+    delete collavre.reset_admin_integration_path(key: "hidden_resettable_key")
+
+    assert_response :not_found
+    assert_not_nil IntegrationSetting.find_by(key: "hidden_resettable_key"),
+      "A crafted DELETE must not reset a key hidden from the admin UI"
+  end
+
+  # ---------- admin_visible / input_type ----------
+
+  test "index hides keys with admin_visible: false" do
+    Registry.instance.register(
+      :hidden_key,
+      category: "misc",
+      sensitive: true,
+      requires_restart: false,
+      env_var: "HIDDEN_KEY",
+      admin_visible: false
+    )
+    sign_in_as(@admin, password: "password")
+
+    get collavre.admin_integrations_path
+
+    assert_response :success
+    assert_not_includes response.body, "hidden_key",
+      "Keys with admin_visible: false must not appear in the admin UI"
+  end
+
+  test "index hides category whose keys are all admin_visible: false" do
+    Registry.instance.instance_variable_set(:@definitions, {})
+    Registry.instance.register(
+      :hidden_only_key,
+      category: "hidden_cat",
+      sensitive: false,
+      requires_restart: false,
+      admin_visible: false
+    )
+    sign_in_as(@admin, password: "password")
+
+    get collavre.admin_integrations_path
+
+    assert_response :success
+    assert_not_includes response.body, "hidden_cat"
+  end
+
+  test "index renders textarea for input_type: :textarea keys" do
+    Registry.instance.register(
+      :json_blob_key,
+      category: "misc",
+      sensitive: true,
+      requires_restart: false,
+      env_var: "JSON_BLOB_KEY",
+      input_type: :textarea
+    )
+    sign_in_as(@admin, password: "password")
+
+    get collavre.admin_integrations_path
+
+    assert_response :success
+    assert_match %r{<textarea[^>]*name="integration_setting\[json_blob_key\]"}, response.body
+  end
+
+  test "bulk_update ignores keys with admin_visible: false" do
+    Registry.instance.register(
+      :hidden_writable_key,
+      category: "misc",
+      sensitive: true,
+      requires_restart: false,
+      env_var: "HIDDEN_WRITABLE_KEY",
+      admin_visible: false
+    )
+    sign_in_as(@admin, password: "password")
+
+    patch collavre.bulk_update_admin_integrations_path, params: {
+      integration_setting: { hidden_writable_key: "/tmp/injected" }
+    }
+
+    assert_redirected_to collavre.admin_integrations_path
+    assert_nil IntegrationSetting.find_by(key: "hidden_writable_key"),
+      "A crafted POST must not write a key hidden from the admin UI"
+  end
+
+  test "bulk_update saves multiline textarea value verbatim" do
+    Registry.instance.register(
+      :json_blob_key,
+      category: "misc",
+      sensitive: true,
+      requires_restart: false,
+      env_var: "JSON_BLOB_KEY",
+      input_type: :textarea
+    )
+    sign_in_as(@admin, password: "password")
+
+    multiline = %({\n  "type": "service_account",\n  "project_id": "demo"\n})
+    patch collavre.bulk_update_admin_integrations_path, params: {
+      integration_setting: { json_blob_key: multiline }
+    }
+
+    row = IntegrationSetting.find_by(key: "json_blob_key")
+    assert_not_nil row
+    assert_equal multiline, row.value
+  end
 end

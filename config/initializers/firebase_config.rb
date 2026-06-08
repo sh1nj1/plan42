@@ -8,7 +8,6 @@ if defined?(Collavre::IntegrationSettings::Registry)
   registry.register(:firebase_auth_domain,     category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:firebase_project_id,      category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:firebase_app_id,          category: "firebase", sensitive: false, requires_restart: true)
-  registry.register(:firebase_service_account, category: "firebase", sensitive: true,  requires_restart: true)
 end
 
 resolve = ->(key, credentials_path) {
