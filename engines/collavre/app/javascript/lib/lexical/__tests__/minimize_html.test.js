@@ -195,6 +195,35 @@ describe("minimizeContentHtml", () => {
     )
   })
 
+  test("keeps pre-wrap on both sides when a space run straddles a format boundary", () => {
+    // The live editor serializes a bolded " bar" (within a 2-space run) as
+    // `foo ` + `<b><strong> bar</strong></b>`: the second space is nested inside
+    // the bold. Each node holds one edge space, so dropping pre-wrap from both
+    // would collapse the pair. Both sides must keep pre-wrap.
+    const lexical =
+      '<p class="lexical-paragraph">' +
+      '<span style="white-space: pre-wrap;">foo </span>' +
+      '<b><strong class="lexical-text-bold" style="white-space: pre-wrap;"> bar</strong></b>' +
+      "</p>"
+    const out = minimize(lexical)
+    expect(out).toBe(
+      '<span style="white-space: pre-wrap;">foo </span>' +
+      '<strong class="lexical-text-bold" style="white-space: pre-wrap;"> bar</strong>'
+    )
+    // pre-wrap survives on both the plain run and the styled run.
+    expect(out.match(/white-space/g)).toHaveLength(2)
+  })
+
+  test("boundary space across a paragraph break does NOT keep pre-wrap", () => {
+    // Different blocks have separate inline contexts — trailing space of one
+    // line and leading space of the next never combine, so neither is significant.
+    const lexical =
+      '<p class="lexical-paragraph"><span style="white-space: pre-wrap;">foo </span></p>' +
+      '<p class="lexical-paragraph"><span style="white-space: pre-wrap;"> bar</span></p>'
+    const out = minimize(lexical)
+    expect(out).not.toContain("white-space")
+  })
+
   test("soft line break keeps its <p> wrapper", () => {
     const out = minimize(serialize("<p>line 1<br>line 2</p>"))
     expect(out).toContain("<br>")

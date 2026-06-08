@@ -44,9 +44,54 @@ function hasSignificantWhitespace(text) {
   return /\s{2,}|[\t\n\r\f]/.test(text)
 }
 
+// Block-level tags terminate an inline formatting context: whitespace never
+// combines across them, so the document-order scan below must not look past one.
+const BLOCK_TAGS = new Set([
+  "BODY", "DIV", "P", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "LI",
+  "BLOCKQUOTE", "PRE", "TABLE", "THEAD", "TBODY", "TR", "TD", "TH", "FIGURE", "HR"
+])
+
+function isBlock(node) {
+  return node != null && node.nodeType === 1 && BLOCK_TAGS.has(node.tagName)
+}
+
+// The rendered character immediately adjacent to `el` in document order, within
+// the same inline formatting context. `dir` is "previousSibling"/"nextSibling".
+// Climbs out of inline wrappers (e.g. `<b><strong>`) so a space nested one level
+// deep still sees its neighbour, but stops at a block edge (returns "").
+function adjacentInlineChar(el, dir) {
+  let node = el
+  while (node && !node[dir]) {
+    node = node.parentNode
+    if (isBlock(node)) return ""
+  }
+  const sibling = node && node[dir]
+  if (!sibling) return ""
+  const text = sibling.textContent || ""
+  return dir === "previousSibling" ? text.slice(-1) : text.charAt(0)
+}
+
+// Significant whitespace can straddle an inline formatting boundary: e.g. the
+// live editor serializes a bolded " bar" as `foo ` + `<b><strong> bar</strong></b>`,
+// where each node holds a single edge space. Dropping `pre-wrap` from both sides
+// would collapse the pair to one space. Detect each side independently so the
+// kept `pre-wrap` lands on BOTH elements and the run survives unambiguously.
+function hasBoundarySignificantWhitespace(el) {
+  const text = el.textContent || ""
+  if (/^\s/.test(text) && /\s/.test(adjacentInlineChar(el, "previousSibling"))) {
+    return true
+  }
+  if (/\s$/.test(text) && /\s/.test(adjacentInlineChar(el, "nextSibling"))) {
+    return true
+  }
+  return false
+}
+
 function stripRedundantStyle(el) {
   if (!el.hasAttribute("style")) return
-  const keepWhiteSpace = hasSignificantWhitespace(el.textContent)
+  const keepWhiteSpace =
+    hasSignificantWhitespace(el.textContent) ||
+    hasBoundarySignificantWhitespace(el)
   REDUNDANT_STYLE_PROPS.forEach((prop) => {
     if (prop === "white-space" && keepWhiteSpace) return
     el.style.removeProperty(prop)
