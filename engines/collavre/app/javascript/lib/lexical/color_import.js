@@ -1,39 +1,22 @@
 import { $isElementNode, $isTextNode } from "lexical"
 
-// Tracks, per lexical text node, which format dimensions a nearer (more deeply
-// nested) span has already decided during this import. Child span `after`
-// callbacks run before their ancestors', so a nested span claims its
-// dimensions first and an ancestor must not override them. Keyed by node, so
-// entries fall away with the nodes; distinct nodes never collide across imports.
+// Per text node, which format dimensions a nearer (more nested) span already
+// decided this import. Child span `after` callbacks run before ancestors', so a
+// nested span claims its dimensions first and ancestors must not override them.
 const decidedFormats = new WeakMap()
 
-// Mirrors Lexical's internal applyTextFormatFromStyle (Lexical's
-// convertSpanElement) for the inline-style text formats it reads off a <span>:
-// font-weight / font-style / text-decoration / vertical-align. Lexical does not
-// export it, so we replicate it here — our custom span import must COMPOSE these
-// formats with the color binding, not bypass them. Pasted content (Google Docs,
-// Word) carries bold/italic/underline as inline span styles rather than <b>/<i>
-// tags, so dropping this would lose that formatting on reopen.
+// Replicates Lexical's (non-exported) inline-style format reading for <span>:
+// font-weight / font-style / text-decoration / vertical-align. Pasted content
+// (Google Docs, Word) carries bold/italic as inline styles, not <b>/<i> tags,
+// so our custom span import must compose these formats with the color binding.
 //
-// `applyTextFormatFromStyle` only turns formats ON (toggleFormat when the value
-// matches), so a nested span that RESETS a format — e.g.
-// <span font-weight:700>bold <span font-weight:normal>normal</span></span> —
-// cannot un-bold itself once an ancestor re-applies bold over every descendant.
-// To honour resets we treat a dimension as "decided" by the FIRST (nearest)
-// span that declares it at all: if the inner span sets font-weight (even to
-// `normal`), it owns the bold dimension for that text and the outer span skips
-// it. A span that omits a declaration leaves the dimension open, so the format
-// still inherits from the ancestor (matching CSS).
-//
-// Declaring a dimension is also not enough when an ANCESTOR TAG (<b>/<strong>,
-// <i>/<em>) already toggled the format on via Lexical's default conversion —
-// e.g. <b><span font-weight:normal>normal</span></b>. Our span `after` callback
-// runs after that tag's forChild, so for genuinely-inherited CSS properties
-// (font-weight, font-style) a reset value must actively CLEAR the format, not
-// just claim the dimension. text-decoration and vertical-align are NOT cleared
-// on a non-matching value: in CSS those propagate to descendants additively
-// (an inner `text-decoration: underline` does not remove an ancestor's
-// line-through), so they stay add-only to avoid stripping inherited decorations.
+// Lexical only turns formats ON, so a nested reset (font-weight:normal) can't
+// un-bold itself once an ancestor re-applies bold. We treat a dimension as
+// decided by the FIRST (nearest) span that declares it at all, so the inner
+// span owns it; an omitted declaration leaves it open to inherit from ancestors.
+// For inherited CSS props (font-weight, font-style) a reset value also actively
+// CLEARS a format an ancestor tag (<b>/<i>) already toggled. text-decoration /
+// vertical-align stay add-only (they propagate additively in CSS).
 function applyTextFormatFromStyle(node, domStyle) {
   const fontWeight = domStyle.fontWeight
   const textDecoration = domStyle.textDecoration
@@ -41,8 +24,7 @@ function applyTextFormatFromStyle(node, domStyle) {
   const verticalAlign = domStyle.verticalAlign
   const decorations = (textDecoration || "").split(" ")
 
-  // [declared by this span?, value matches the format?, format name, resettable?]
-  // resettable = inherited CSS property whose reset value clears the format.
+  // [declared by this span?, value matches format?, format name, resettable?]
   const rules = [
     [Boolean(fontWeight), fontWeight === "700" || fontWeight === "bold", "bold", true],
     [Boolean(textDecoration), decorations.includes("line-through"), "strikethrough", false],
@@ -58,9 +40,7 @@ function applyTextFormatFromStyle(node, domStyle) {
     if (shouldApply && !node.hasFormat(format)) {
       node.toggleFormat(format)
     } else if (resettable && declared && !shouldApply && node.hasFormat(format)) {
-      // Explicit reset (font-weight:normal / font-style:normal) clears a format
-      // an ancestor tag or converter already applied.
-      node.toggleFormat(format)
+      node.toggleFormat(format) // explicit reset clears an ancestor's format
     }
     if (declared) {
       if (!decided) {
@@ -72,37 +52,26 @@ function applyTextFormatFromStyle(node, domStyle) {
   })
 }
 
-// For each property applyTextFormatFromStyle consumes, the exact values it maps
-// to a Lexical format (or a reset that clears one). Only these (property, value)
-// pairs are kept OUT of the carried node style — carrying them too would
-// double-represent bold/italic/etc. Crucially this is value-aware, not
-// property-wide: a value the formatter does NOT map (font-weight:800,
-// font-style:oblique, vertical-align:middle) is not turned into a format, so it
-// must be carried as inline style or it would be silently dropped on reopen —
-// exactly what the removed positional collector preserved by copying the full
-// style string.
+// The exact (property, value) pairs applyTextFormatFromStyle turns into a format
+// or reset. Only these are kept OUT of the carried node style (carrying them too
+// would double-represent the format). Value-aware on purpose: an unmapped value
+// (font-weight:800, font-style:oblique, vertical-align:middle) must be carried
+// as inline style or it's silently dropped on reopen.
 const FORMAT_MAPPED_VALUES = {
   "font-weight": new Set(["700", "bold", "normal"]),
   "font-style": new Set(["italic", "normal"]),
   "vertical-align": new Set(["sub", "super"])
 }
 
-// `text-decoration` is dropped wholesale: its tokens (underline / line-through)
-// become Lexical underline / strikethrough formats, which Lexical re-exports by
-// writing its OWN text-decoration on the span. Carrying a remainder token (e.g.
-// `overline`) here would collide with that exported declaration, so unmapped
-// decoration tokens are not preserved (a deliberate boundary). `white-space` is
-// Lexical's own exportDOM artifact (stamped on every span), not user intent.
+// text-decoration is dropped wholesale: its tokens become formats that Lexical
+// re-exports as its own text-decoration, so a remainder token would collide.
+// white-space is Lexical's exportDOM artifact, not user intent.
 const DROPPED_STYLE_PROPS = new Set(["text-decoration", "white-space"])
 
-// Every inline style declaration on the element that should be carried onto the
-// text nodes it produces: ALL of them except (a) the values that become Lexical
-// formats and (b) Lexical's white-space artifact / text-decoration. This
-// preserves color, background-color, font-size, font-family, text-transform,
-// letter-spacing, unmapped font-weight/font-style/vertical-align — and any
-// future text-level style — instead of cherry-picking individual properties. It
-// mirrors the full-style copy the removed positional collector did, so reopening
-// pasted/legacy content keeps every styled attribute, not just color.
+// Every inline declaration to carry onto the produced text nodes: all of them
+// except format-mapped values and the dropped props above. Preserves color,
+// background, font-size/family, text-transform, etc. without cherry-picking,
+// mirroring the full-style copy the removed positional collector did.
 function carriedStyleDeclarations(domStyle) {
   const map = new Map()
   for (let i = 0; i < domStyle.length; i++) {
@@ -110,7 +79,7 @@ function carriedStyleDeclarations(domStyle) {
     if (DROPPED_STYLE_PROPS.has(prop)) continue
     const value = domStyle.getPropertyValue(prop)
     const mapped = FORMAT_MAPPED_VALUES[prop]
-    if (mapped && mapped.has(value)) continue // becomes a format — don't double-carry
+    if (mapped && mapped.has(value)) continue
     map.set(prop, value)
   }
   return map
@@ -134,13 +103,9 @@ function serializeStyle(map) {
     .join("; ")
 }
 
-// `inherited` is the parent span's carried style declarations as a Map (color,
-// background-color, font-size, font-family, … — see carriedStyleDeclarations).
-// We MERGE rather than overwrite: a descendant text node that already carries
-// its own declaration (from a deeper colored span converted first) keeps it —
-// the inner value wins, matching CSS inheritance. The parent only fills in
-// declarations the node is missing. Clobbering here would turn nested content
-// like <span color:red>outer <span color:blue>inner</span></span> all red.
+// Merge (not overwrite) inherited declarations: a node that already carries its
+// own value (from a deeper colored span converted first) keeps it — inner wins,
+// matching CSS inheritance. The parent only fills in what's missing.
 function applyStyleToTextNodes(nodes, inherited, domStyle) {
   nodes.forEach((node) => {
     if ($isTextNode(node)) {
@@ -156,40 +121,18 @@ function applyStyleToTextNodes(nodes, inherited, domStyle) {
   })
 }
 
-// Custom HTML import for <span> that binds the span's inline style (color,
-// background-color, font-size, … — everything except format props and
-// white-space) to the text nodes it produces, at import time.
+// Custom <span> import: binds the span's inline style (color, background, and
+// every other non-format/non-white-space prop) to its text nodes AT IMPORT TIME.
+// The editor used to re-apply collected styles positionally to
+// root.getAllTextNodes(), which drifts whenever Lexical's importer doesn't map
+// DOM text nodes 1:1 (white-space:pre-wrap splits on \n/\t; whitespace-only
+// nodes are dropped). Binding during conversion keeps style on the right node.
 //
-// Lexical's default span import (applyTextFormatFromStyle) only reads
-// font-weight / font-style / text-decoration — it ignores color, background and
-// every other non-format style. The editor used to compensate by collecting one
-// style per DOM text node and re-applying them positionally to
-// root.getAllTextNodes() after import. That drifts whenever Lexical's importer
-// does not produce a 1:1, same-order mapping of DOM text nodes to lexical text
-// nodes — and it frequently does not:
-//   - TextNode.exportDOM stamps `white-space: pre-wrap` on every span, so on
-//     re-import isNodePre() is true and a span's text is split on "\n"/"\t"
-//     into multiple nodes (one DOM text node -> N lexical nodes).
-//   - whitespace-only text nodes (e.g. newlines between block tags in
-//     server-stored / Trix-migrated HTML) are dropped on import but still
-//     counted by the collector.
-// Any such mismatch shifts every subsequent style onto the wrong text node, so
-// reopening the editor showed the color applied somewhere else (or lost).
-//
-// Binding the style during conversion keeps it attached to the right node
-// regardless of how Lexical splits or drops surrounding text. We carry the
-// span's FULL style set (not just color) so font-size / font-family /
-// text-transform / letter-spacing survive reopen too — the positional collector
-// copied the parent's whole style string, and cherry-picking individual
-// properties here drops the rest.
-//
-// We still only take over when the span actually carries color/background:
-// Lexical's default span conversion already handles a colorless span, so
-// deferring there avoids changing behaviour for content this fix isn't about.
+// We only take over when the span carries color/background — Lexical's default
+// conversion already handles colorless spans, so deferring avoids behavior change.
 export function colorAwareSpanImport(domNode) {
   const { color, backgroundColor } = domNode.style
   if (!color && !backgroundColor) {
-    // Defer to Lexical's default span conversion (format-from-style).
     return null
   }
 
@@ -213,34 +156,14 @@ export const lexicalHtmlConfig = {
   }
 }
 
-// Lexical's html.import is keyed per tag, and colorAwareSpanImport only runs for
-// <span>. Color / background-color that sits on a NON-span element — e.g.
-// `<p style="color: red">text</p>`, a `<li>`/`<h1>` carrying color, or a
-// materialized data-lexical-color on a block element (common in legacy /
-// Trix-migrated or pasted content) — would otherwise be dropped on import,
-// because Lexical's default block conversions ignore color. The removed
-// positional collector read each text node's IMMEDIATE parent element regardless
-// of tag, so it preserved these.
-//
-// Normalize the DOM before import: for each colored non-span element, wrap its
-// DIRECT text-node children in a <span> carrying that element's FULL inline
-// style, so the span importer binds it like any other span. We only push onto
-// direct text children (matching the old immediate-parent semantics) — nested
-// colored elements keep their own style and win via the merge in
-// applyStyleToTextNodes. Run this AFTER syncLexicalStyleAttributes so
-// data-lexical-* attributes are already materialized into inline style.
-//
-// The wrapper copies the element's entire style string rather than selected
-// properties: a block element can carry color plus arbitrary text styles — e.g.
-// pasted <p style="color:red; font-weight:700; font-size:20px">. Lexical's
-// default block conversion ignores those styles, and the old positional
-// collector applied the parent's full style string to the text node, so cherry-
-// picking would drop whatever properties we forgot. colorAwareSpanImport then
-// decides what to keep as node style vs. apply as a format vs. drop (white-space),
-// uniformly for spans and these wrappers — block-level declarations like
-// text-align/margin ride along harmlessly on the (inline) wrapper and are
-// re-exported on the text node's span, exactly as the positional collector left
-// them; the block keeps its own style for paragraph-level alignment.
+// colorAwareSpanImport only runs for <span>. Color on a non-span element (a
+// colored <p>/<li>/<h1>, or a materialized data-lexical-color on a block) would
+// be dropped, since Lexical's default block conversions ignore color. Before
+// import (and AFTER syncLexicalStyleAttributes materializes data-lexical-*), wrap
+// each colored non-span's direct text children in a span carrying its full style,
+// so the span importer binds it. Nested colored elements keep their own style and
+// win via the merge in applyStyleToTextNodes. Block-level props (text-align,
+// margin) ride along harmlessly on the inline wrapper.
 const TEXT_NODE = 3
 
 export function normalizeColoredContainers(root) {
