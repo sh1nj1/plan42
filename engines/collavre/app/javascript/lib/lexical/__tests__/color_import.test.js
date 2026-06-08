@@ -159,6 +159,28 @@ describe("colorAwareSpanImport", () => {
     expect(nodes.find((n) => n.text === "inner").style).toBe("color: rgb(0, 0, 255)")
   })
 
+  it("lets a nested span reset a text format the outer span turned on", () => {
+    // applyTextFormatFromStyle only turns formats ON, so without dimension
+    // tracking the outer span's after-callback re-bolds the inner text even
+    // though the inner span explicitly reset font-weight. The nearer span must
+    // win: an inner font-weight:normal un-bolds, while an inner span with no
+    // weight declaration still inherits the outer bold.
+    const reset = importColors(
+      '<p><span style="color: rgb(255, 0, 0); font-weight: 700;">bold ' +
+        '<span style="color: rgb(0, 0, 255); font-weight: normal;">normal</span></span></p>',
+      { withConfig: true }
+    )
+    expect(reset.find((n) => n.text === "bold ").formats).toEqual(["bold"])
+    expect(reset.find((n) => n.text === "normal").formats).toEqual([])
+
+    const inherit = importColors(
+      '<p><span style="color: rgb(255, 0, 0); font-weight: 700;">bold ' +
+        '<span style="color: rgb(0, 0, 255);">still</span></span></p>',
+      { withConfig: true }
+    )
+    expect(inherit.find((n) => n.text === "still").formats).toEqual(["bold"])
+  })
+
   it("demonstrates the drift the fix removes (no config = color on wrong/lost node)", () => {
     const html =
       '<p><span style="white-space: pre-wrap;">hello</span></p>\n' +

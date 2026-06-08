@@ -1,5 +1,12 @@
 import { $isElementNode, $isTextNode } from "lexical"
 
+// Tracks, per lexical text node, which format dimensions a nearer (more deeply
+// nested) span has already decided during this import. Child span `after`
+// callbacks run before their ancestors', so a nested span claims its
+// dimensions first and an ancestor must not override them. Keyed by node, so
+// entries fall away with the nodes; distinct nodes never collide across imports.
+const decidedFormats = new WeakMap()
+
 // Mirrors Lexical's internal applyTextFormatFromStyle (Lexical's
 // convertSpanElement) for the inline-style text formats it reads off a <span>:
 // font-weight / font-style / text-decoration / vertical-align. Lexical does not
@@ -7,23 +14,45 @@ import { $isElementNode, $isTextNode } from "lexical"
 // formats with the color binding, not bypass them. Pasted content (Google Docs,
 // Word) carries bold/italic/underline as inline span styles rather than <b>/<i>
 // tags, so dropping this would lose that formatting on reopen.
+//
+// `applyTextFormatFromStyle` only turns formats ON (toggleFormat when the value
+// matches), so a nested span that RESETS a format — e.g.
+// <span font-weight:700>bold <span font-weight:normal>normal</span></span> —
+// cannot un-bold itself once an ancestor re-applies bold over every descendant.
+// To honour resets we treat a dimension as "decided" by the FIRST (nearest)
+// span that declares it at all: if the inner span sets font-weight (even to
+// `normal`), it owns the bold dimension for that text and the outer span skips
+// it. A span that omits a declaration leaves the dimension open, so the format
+// still inherits from the ancestor (matching CSS).
 function applyTextFormatFromStyle(node, domStyle) {
   const fontWeight = domStyle.fontWeight
-  const textDecoration = (domStyle.textDecoration || "").split(" ")
+  const textDecoration = domStyle.textDecoration
+  const fontStyle = domStyle.fontStyle
   const verticalAlign = domStyle.verticalAlign
+  const decorations = (textDecoration || "").split(" ")
 
-  const toggles = [
-    [fontWeight === "700" || fontWeight === "bold", "bold"],
-    [textDecoration.includes("line-through"), "strikethrough"],
-    [domStyle.fontStyle === "italic", "italic"],
-    [textDecoration.includes("underline"), "underline"],
-    [verticalAlign === "sub", "subscript"],
-    [verticalAlign === "super", "superscript"]
+  // [dimension declared by this span?, value matches the format?, format name]
+  const rules = [
+    [Boolean(fontWeight), fontWeight === "700" || fontWeight === "bold", "bold"],
+    [Boolean(textDecoration), decorations.includes("line-through"), "strikethrough"],
+    [Boolean(fontStyle), fontStyle === "italic", "italic"],
+    [Boolean(textDecoration), decorations.includes("underline"), "underline"],
+    [Boolean(verticalAlign), verticalAlign === "sub", "subscript"],
+    [Boolean(verticalAlign), verticalAlign === "super", "superscript"]
   ]
 
-  toggles.forEach(([shouldApply, format]) => {
+  let decided = decidedFormats.get(node)
+  rules.forEach(([declared, shouldApply, format]) => {
+    if (decided && decided.has(format)) return
     if (shouldApply && !node.hasFormat(format)) {
       node.toggleFormat(format)
+    }
+    if (declared) {
+      if (!decided) {
+        decided = new Set()
+        decidedFormats.set(node, decided)
+      }
+      decided.add(format)
     }
   })
 }
