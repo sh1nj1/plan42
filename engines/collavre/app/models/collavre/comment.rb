@@ -163,7 +163,14 @@ module Collavre
       return unless user_id        # nil user = system message
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
-      return if creative.inbox?
+      # Inbox creatives hold the user's notifications/DMs and normally must not
+      # trigger AI orchestration. Exception: a Claude Channel agent session
+      # registers its topic *inside* the inbox (Creative.inbox_for) and depends
+      # on the orchestration pipeline (Matcher → Arbiter → AiAgentService) to
+      # deliver comments to the running session. Such session topics carry a
+      # primary_agent; ordinary inbox threads do not — so only skip when the
+      # topic has no primary agent.
+      return if creative.inbox? && topic&.primary_agent_id.nil?
 
       SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
