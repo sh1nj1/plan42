@@ -27,6 +27,7 @@ import {
   $getRoot,
   $getSelection,
   $isElementNode,
+  $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
   CAN_REDO_COMMAND,
@@ -51,6 +52,7 @@ import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
+import { minimizeContentHtml } from "../lib/lexical/minimize_html"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
 const URL_MATCHERS = [
@@ -163,24 +165,35 @@ function InitialContentPlugin({ html }) {
       })
 
       const appendedNodes = []
+      // Text nodes and inline elements (links, etc.) cannot live directly under
+      // the root. Minimized HTML stores a single line without its <p> wrapper, so
+      // a line like "Hello <strong>World</strong>" re-imports as several
+      // top-level inline nodes — group consecutive ones back into one paragraph
+      // so the line is not split apart.
+      let pendingParagraph = null
+      const flushPending = () => {
+        if (pendingParagraph) {
+          root.append(pendingParagraph)
+          appendedNodes.push(pendingParagraph)
+          pendingParagraph = null
+        }
+      }
       uniqueNodes.forEach((node) => {
-        if ($isTextNode(node)) {
-          const paragraph = $createParagraphNode()
-          paragraph.append(node)
-          root.append(paragraph)
-          appendedNodes.push(paragraph)
+        const isInlineLeaf =
+          $isTextNode(node) ||
+          $isLineBreakNode(node) ||
+          ($isElementNode(node) && node.isInline())
+        if (isInlineLeaf) {
+          if (!pendingParagraph) pendingParagraph = $createParagraphNode()
+          pendingParagraph.append(node)
           return
         }
 
-        if ($isElementNode(node) && node.getType?.() === "paragraph") {
-          root.append(node)
-          appendedNodes.push(node)
-          return
-        }
-
+        flushPending()
         root.append(node)
         appendedNodes.push(node)
       })
+      flushPending()
 
       if (root.getChildrenSize() === 0) {
         const paragraph = $createParagraphNode()
@@ -907,7 +920,9 @@ function EditorInner({
                 anchor.setAttribute("target", "_blank")
                 anchor.setAttribute("rel", "noopener")
               })
-              serialized = doc.body.innerHTML
+              // Strip Lexical's verbose markup (extra <div>, white-space spans,
+              // duplicate format wrappers, single-line <p>) before persisting.
+              serialized = minimizeContentHtml(doc.body.firstElementChild)
             })
             // No Trix wrapper
             onChange(serialized)
