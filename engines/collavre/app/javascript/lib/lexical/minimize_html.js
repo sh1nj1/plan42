@@ -13,9 +13,12 @@
 // the editor's re-import (`$generateNodesFromDOM`) relies on.
 
 // Editor-only inline style declarations that carry no meaning once rendered.
-// `white-space: pre-wrap` is redundant: plain text wraps normally and code
-// blocks preserve whitespace via the kept `.lexical-code-block` rule (which
-// children inherit).
+// `white-space: pre-wrap` is usually redundant: plain text wraps normally and
+// code blocks preserve whitespace via the kept `.lexical-code-block` rule (which
+// children inherit). It is NOT redundant when the text carries significant
+// whitespace (see `hasSignificantWhitespace`): the render container
+// (`.creative-content`) has no `pre-wrap`, so dropping it would collapse runs of
+// spaces / indentation that the user actually typed.
 const REDUNDANT_STYLE_PROPS = ["white-space"]
 
 // Editor-only attributes that never affect rendering of persisted content.
@@ -32,9 +35,22 @@ function hasNoAttributes(el) {
   return el.attributes.length === 0
 }
 
+// Whitespace whose rendering changes once `white-space: pre-wrap` is dropped:
+// a run of 2+ whitespace (collapses to one space) or a tab/newline/form-feed.
+// A single leading/trailing space between inline runs renders fine without
+// `pre-wrap`, so it is not significant and must not block minimization of the
+// common case (e.g. the "Hello " before a bold word).
+function hasSignificantWhitespace(text) {
+  return /\s{2,}|[\t\n\r\f]/.test(text)
+}
+
 function stripRedundantStyle(el) {
   if (!el.hasAttribute("style")) return
-  REDUNDANT_STYLE_PROPS.forEach((prop) => el.style.removeProperty(prop))
+  const keepWhiteSpace = hasSignificantWhitespace(el.textContent)
+  REDUNDANT_STYLE_PROPS.forEach((prop) => {
+    if (prop === "white-space" && keepWhiteSpace) return
+    el.style.removeProperty(prop)
+  })
   if (el.style.length === 0 || !el.getAttribute("style")?.trim()) {
     el.removeAttribute("style")
   }
@@ -99,6 +115,12 @@ function unwrapSingleParagraph(root) {
     // stored value matches isHtmlEmpty and re-imports to a fresh paragraph.
     if (!paragraph.textContent.trim() && !paragraph.querySelector(MEDIA_SELECTOR)) {
       return ""
+    }
+    // A soft line break (<br>) inside the line must keep its <p> wrapper: a bare
+    // top-level <br> cannot be re-grouped into a paragraph on re-import and would
+    // break the document shape / split the line.
+    if (paragraph.querySelector("br")) {
+      return root.innerHTML
     }
     return paragraph.innerHTML
   }

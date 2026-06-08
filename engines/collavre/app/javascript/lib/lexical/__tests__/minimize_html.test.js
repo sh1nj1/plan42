@@ -6,6 +6,7 @@ import {
   $getRoot,
   $createParagraphNode,
   $isElementNode,
+  $isLineBreakNode,
   $isTextNode
 } from "lexical"
 import { HeadingNode, QuoteNode } from "@lexical/rich-text"
@@ -73,7 +74,10 @@ function reimportFormats(minimizedHtml) {
     let pending = null
     const flush = () => { if (pending) { root.append(pending); pending = null } }
     nodes.forEach((node) => {
-      const inlineLeaf = $isTextNode(node) || ($isElementNode(node) && node.isInline())
+      const inlineLeaf =
+        $isTextNode(node) ||
+        $isLineBreakNode(node) ||
+        ($isElementNode(node) && node.isInline())
       if (inlineLeaf) {
         if (!pending) pending = $createParagraphNode()
         pending.append(node)
@@ -164,6 +168,41 @@ describe("minimizeContentHtml", () => {
     expect(out.replace(/<br\s*\/?>/g, "").trim()).toBe("")
   })
 
+  test("keeps pre-wrap span when text has 2+ consecutive spaces", () => {
+    // The render container has no `white-space: pre-wrap`, so significant
+    // whitespace must survive in the persisted markup.
+    const lexical =
+      '<p class="lexical-paragraph">' +
+      '<span style="white-space: pre-wrap;">foo  bar</span></p>'
+    const out = minimize(lexical)
+    expect(out).toContain("foo  bar")
+    expect(out).toContain("white-space")
+  })
+
+  test("keeps pre-wrap span for leading indentation", () => {
+    const lexical =
+      '<p class="lexical-paragraph">' +
+      '<span style="white-space: pre-wrap;">    indented</span></p>'
+    const out = minimize(lexical)
+    expect(out).toContain("    indented")
+    expect(out).toContain("white-space")
+  })
+
+  test("a single trailing space stays minimal (not significant)", () => {
+    // The "Hello " run has one trailing space — renders fine bare, so no span.
+    expect(minimize(serialize("<p>Hello <b>World</b></p>"))).toBe(
+      'Hello <strong class="lexical-text-bold">World</strong>'
+    )
+  })
+
+  test("soft line break keeps its <p> wrapper", () => {
+    const out = minimize(serialize("<p>line 1<br>line 2</p>"))
+    expect(out).toContain("<br>")
+    expect(out.startsWith("<p")).toBe(true)
+    expect(out).toContain("line 1")
+    expect(out).toContain("line 2")
+  })
+
   // Round-trip stability: minimized HTML re-imported and re-serialized, then
   // minimized again, must equal the first minimization (no format loss / drift).
   const roundTripCases = [
@@ -179,7 +218,8 @@ describe("minimizeContentHtml", () => {
     "<p>line1</p><p>line2</p>",
     "<ul><li>a</li><li>b</li></ul>",
     "<blockquote>quoted</blockquote>",
-    '<p><a href="https://a.com">link</a></p>'
+    '<p><a href="https://a.com">link</a></p>',
+    "<p>line 1<br>line 2</p>"
   ]
 
   test.each(roundTripCases)("round-trip stable: %s", (input) => {

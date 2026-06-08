@@ -27,6 +27,7 @@ import {
   $getRoot,
   $getSelection,
   $isElementNode,
+  $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
   CAN_REDO_COMMAND,
@@ -208,7 +209,9 @@ function InitialContentPlugin({ html }) {
       }
       uniqueNodes.forEach((node) => {
         const isInlineLeaf =
-          $isTextNode(node) || ($isElementNode(node) && node.isInline())
+          $isTextNode(node) ||
+          $isLineBreakNode(node) ||
+          ($isElementNode(node) && node.isInline())
         if (isInlineLeaf) {
           if (!pendingParagraph) pendingParagraph = $createParagraphNode()
           pendingParagraph.append(node)
