@@ -13,9 +13,14 @@ class CustomJsdomEnvironment extends NodeEnvironment {
     this.global.Node = window.Node
     this.global.Element = window.Element
     // Lexical reads several browser globals — `navigator` at module-eval time
-    // (navigator.platform for IS_APPLE), the rest at runtime. Node 21+ exposes a
-    // global `navigator`, but older Node (CI) does not, so inject jsdom's.
-    this.global.navigator = window.navigator
+    // (navigator.platform for IS_APPLE), the rest at runtime. Node 21+ exposes
+    // `navigator` as a getter-only global, so a plain assignment can throw in
+    // strict mode; defineProperty replaces the read-only accessor with jsdom's.
+    Object.defineProperty(this.global, "navigator", {
+      value: window.navigator,
+      configurable: true,
+      writable: true,
+    })
     this.global.getComputedStyle = window.getComputedStyle
     this.global.MutationObserver = window.MutationObserver
     this.global.Text = window.Text
