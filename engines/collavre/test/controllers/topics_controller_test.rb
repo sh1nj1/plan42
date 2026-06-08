@@ -63,14 +63,18 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
-  test "should destroy topic that has a PR badge channel + injected comments" do
-    channel = CollavreGithub::GithubPrChannel.create!(
+  # Uses the core PreviewChannel (not the collavre_github GithubPrChannel) so
+  # the core engine test suite stays independent of the optional GitHub engine
+  # per AGENTS.md. The cascade-on-delete behavior under test lives in the base
+  # Collavre::Channel, so any channel subclass exercises the same path.
+  test "should destroy topic that has a badge channel + injected comments" do
+    channel = Collavre::PreviewChannel.create!(
       topic_id: @topic.id,
-      config: { "repo_full_name" => "owner/repo", "pr_number" => 123, "pr_state" => "open" }
+      config: { "preview_url" => "http://localhost:4000", "label" => "Preview #1" }
     )
     channel.inject_into_topic!(channel.attached_message)
 
-    assert @topic.channels.exists?, "precondition: topic has a channel (PR badge)"
+    assert @topic.channels.exists?, "precondition: topic has a channel (badge)"
     assert @topic.comments.exists?, "precondition: topic has injected comments"
 
     assert_difference("Topic.count", -1) do
