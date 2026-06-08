@@ -177,7 +177,18 @@ export const lexicalHtmlConfig = {
 // nested colored elements keep their own color and win via the merge in
 // applyStyleToTextNodes. Run this AFTER syncLexicalStyleAttributes so
 // data-lexical-* attributes are already materialized into inline style.
+//
+// The wrapper also forwards the element's own inline TEXT-format declarations
+// (font-weight / font-style / text-decoration / vertical-align). A block element
+// can carry both color and formatting — e.g. pasted
+// <p style="color:red; font-weight:700">. Lexical's default block conversion
+// ignores those styles, and the old positional collector applied the parent's
+// full style string to the text node, so without forwarding them the bold/italic
+// would be dropped on reopen. colorAwareSpanImport's applyTextFormatFromStyle
+// then reads them off the wrapper span. Block-level styles (text-align, margin,
+// …) are intentionally NOT forwarded — they belong on the block, not the text.
 const TEXT_NODE = 3
+const FORWARDED_TEXT_STYLES = ["fontWeight", "fontStyle", "textDecoration", "verticalAlign"]
 
 export function normalizeColoredContainers(root) {
   if (!root || typeof root.querySelectorAll !== "function") return
@@ -193,6 +204,9 @@ export function normalizeColoredContainers(root) {
       const span = ownerDocument.createElement("span")
       if (color) span.style.color = color
       if (backgroundColor) span.style.backgroundColor = backgroundColor
+      FORWARDED_TEXT_STYLES.forEach((prop) => {
+        if (element.style[prop]) span.style[prop] = element.style[prop]
+      })
       element.replaceChild(span, child)
       span.appendChild(child)
     })

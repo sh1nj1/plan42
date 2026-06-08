@@ -149,6 +149,21 @@ describe("colorAwareSpanImport", () => {
     ])
   })
 
+  it("preserves a non-span block element's own text formatting alongside its color", () => {
+    // Pasted content can put color AND text formatting on a block element, e.g.
+    // <p style="color:red; font-weight:700; font-style:italic">. The wrapper span
+    // must carry those format styles too, or normalization drops the bold/italic.
+    const html =
+      '<p style="color: rgb(255, 0, 0); font-weight: 700; font-style: italic; ' +
+      'text-decoration: underline;">styled block</p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].text).toBe("styled block")
+    expect(nodes[0].style).toBe("color: rgb(255, 0, 0)")
+    expect(nodes[0].formats.sort()).toEqual(["bold", "italic", "underline"].sort())
+  })
+
   it("lets an inner colored span override the color of its non-span block parent", () => {
     const html =
       '<p style="color: rgb(255, 0, 0);">outer ' +
