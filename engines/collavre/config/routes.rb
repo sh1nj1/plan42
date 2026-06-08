@@ -141,6 +141,7 @@ Collavre::Engine.routes.draw do
     namespace :v1 do
       post "agent/register", to: "agents#register"
       post "agent/reply", to: "agents#reply"
+      post "agent/notify", to: "agents#notify"
       delete "agent/:id", to: "agents#destroy"
     end
   end

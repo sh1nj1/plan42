@@ -306,6 +306,78 @@ module Collavre
           assert_equal newer.id, Comment.find(body["comment_id"]).task_id
         end
 
+        # --- Notify (out-of-band informational comment, no task completion) ---
+
+        test "notify posts an informational comment as the agent" do
+          reg = register_agent("notify-test")
+          topic_id = reg["topic_id"]
+
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic_id, text: "🔐 권한 요청: Bash" },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :created
+          body = JSON.parse(response.body)
+          comment = Comment.find(body["comment_id"])
+          assert_equal "🔐 권한 요청: Bash", comment.content
+          assert_equal topic_id, comment.topic_id
+          assert_equal reg["agent_id"], comment.user_id
+        end
+
+        test "notify does NOT complete a delegated task (unlike reply)" do
+          # The permission prompt is posted mid-turn while the original task is
+          # still delegated. notify must leave that task untouched — otherwise
+          # surfacing a prompt would prematurely mark the in-flight task done.
+          reg = register_agent("notify-no-complete-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic_id, text: "awaiting approval" },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :created
+          assert_equal "delegated", task.reload.status,
+            "notify must not complete the in-flight delegated task"
+          assert_nil Comment.find(JSON.parse(response.body)["comment_id"]).task_id
+        end
+
+        test "notify requires authentication" do
+          reg = register_agent("notify-auth-test")
+          post "/api/v1/agent/notify",
+            params: { topic_id: reg["topic_id"], text: "hi" },
+            as: :json
+          assert_response :unauthorized
+        end
+
+        test "notify rejects a topic not owned by the caller's agent" do
+          reg = register_agent("notify-owner-test")
+          # A topic with no Claude Channel primary agent for this caller.
+          other_topic = Topic.create!(
+            name: "Foreign topic",
+            creative: Creative.inbox_for(@user),
+            user: @user
+          )
+
+          post "/api/v1/agent/notify",
+            params: { topic_id: other_topic.id, text: "hi" },
+            headers: auth_headers,
+            as: :json
+          assert_response :forbidden
+        end
+
         test "concurrent replies for same task_id only one wins; loser gets 409 without duplicate comment" do
           # Race: two /reply requests for the same task_id can both pass
           # resolve_reply_agent (read-only scope check). Without an atomic

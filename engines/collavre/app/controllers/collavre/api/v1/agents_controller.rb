@@ -170,6 +170,56 @@ module Collavre
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
         end
+
+        # POST /api/v1/agent/notify
+        # Posts an out-of-band informational comment to a topic as the agent
+        # WITHOUT completing any task or dispatching. Unlike /reply, this never
+        # touches the task graph: it surfaces notices (e.g. native channel
+        # permission prompts relayed by Claude Code mid-turn) into the topic
+        # chat while the originating task stays in flight. skip_dispatch avoids
+        # spawning a new delegated task for the agent's own message.
+        def notify
+          topic = Topic.find_by(id: params[:topic_id])
+          unless topic
+            render json: { error: "Topic not found" }, status: :not_found
+            return
+          end
+
+          creative = topic.creative&.effective_origin
+          unless creative
+            render json: { error: "Creative not found" }, status: :not_found
+            return
+          end
+
+          unless creative.has_permission?(current_user, :feedback)
+            render json: { error: "Not authorized" }, status: :forbidden
+            return
+          end
+
+          # The poster must be this session's own Claude Channel agent (the
+          # topic's primary_agent set at register), owned by the token holder —
+          # so /notify can't be used to ventriloquize an unrelated agent or post
+          # into a topic the caller doesn't drive.
+          agent = topic.primary_agent
+          unless agent&.claude_channel_agent? && agent.created_by_id == current_user.id
+            render json: { error: "Not authorized" }, status: :forbidden
+            return
+          end
+
+          comment = creative.comments.build(
+            content: params[:text].to_s,
+            topic: topic,
+            user: agent,
+            skip_default_user: true,
+            skip_dispatch: true
+          )
+
+          if comment.save
+            render json: { comment_id: comment.id }, status: :created
+          else
+            render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
+          end
+        end
         private
 
         # Identify which Claude Channel agent this reply is for.

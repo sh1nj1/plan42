@@ -10,11 +10,13 @@
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^4.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

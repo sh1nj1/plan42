@@ -6,10 +6,35 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import { hostname } from "os";
 import { CollavreClient } from "./collavre-client.js";
 import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
+import {
+  PermissionCoordinator,
+  formatPermissionPrompt,
+  type Behavior,
+} from "./permission.js";
+
+// Native Claude Channel permission relay (CC v2.1.168+). When the
+// `claude/channel/permission` capability is declared, Claude Code relays each
+// mid-turn tool permission prompt to this server via this notification (in
+// addition to the local TUI dialog). request_id correlates the eventual
+// decision; the payload carries no topic, so we map it to the active dispatch.
+const PERMISSION_REQUEST_METHOD =
+  "notifications/claude/channel/permission_request";
+const PERMISSION_DECISION_METHOD = "notifications/claude/channel/permission";
+
+const PermissionRequestNotificationSchema = z.object({
+  method: z.literal(PERMISSION_REQUEST_METHOD),
+  params: z.object({
+    request_id: z.coerce.string(),
+    tool_name: z.string().optional(),
+    description: z.string().optional(),
+    input_preview: z.unknown().optional(),
+  }),
+});
 
 function buildAgentName(): string {
   // pid is unique among concurrent processes on the same machine, so
@@ -31,6 +56,10 @@ function buildServer(client: CollavreClient): Server {
       capabilities: {
         experimental: {
           "claude/channel": {},
+          // Opt into native permission relay: Claude Code only routes
+          // permission_request notifications to channel servers that declare
+          // BOTH capabilities (gated by the tengu_harbor_permissions flag).
+          "claude/channel/permission": {},
         },
         tools: {},
       },
@@ -111,7 +140,38 @@ function buildServer(client: CollavreClient): Server {
   return server;
 }
 
-function makeEventHandler(server: Server, debug: boolean) {
+// Tracks the topic of the most recently forwarded dispatch so an incoming
+// permission_request (which carries no topic) can be surfaced into the right
+// topic. A Claude Code session processes one turn at a time, so the last
+// forwarded dispatch is the turn whose tool is now awaiting permission.
+interface ActiveContext {
+  topicId: number | null;
+}
+
+async function sendPermissionDecision(
+  server: Server,
+  requestId: string,
+  behavior: Behavior,
+): Promise<void> {
+  await server.notification({
+    method: PERMISSION_DECISION_METHOD,
+    params: { request_id: requestId, behavior },
+  });
+}
+
+function decisionAck(behavior: Behavior): string {
+  return behavior === "allow"
+    ? "🔓 권한 승인됨 — 계속 진행합니다."
+    : "🚫 권한 거부됨.";
+}
+
+function makeEventHandler(
+  server: Server,
+  client: CollavreClient,
+  coordinator: PermissionCoordinator,
+  active: ActiveContext,
+  debug: boolean,
+) {
   return async (event: AgentEvent): Promise<void> => {
     if (event.type !== "dispatch" || !event.comment) {
       if (debug) {
@@ -122,9 +182,44 @@ function makeEventHandler(server: Server, debug: boolean) {
       return;
     }
 
+    const topicId = event.comment.topic_id;
+
+    // If this comment answers a permission prompt awaiting a decision, consume
+    // it as allow/deny instead of forwarding it to Claude — Claude is suspended
+    // on the permission and cannot act on a normal message. The decision
+    // unblocks the original turn; we then complete the task this reply spawned
+    // so it does not hang delegated.
+    const decision = coordinator.tryResolve(topicId, event.comment.content);
+    if (decision) {
+      process.stderr.write(
+        `[collavre] Permission decision from comment #${event.comment.id}: ${decision.behavior} (request_id=${decision.request_id})\n`,
+      );
+      try {
+        await sendPermissionDecision(server, decision.request_id, decision.behavior);
+      } catch (err) {
+        process.stderr.write(
+          `[collavre] Failed to send permission decision: ${err instanceof Error ? err.stack : err}\n`,
+        );
+      }
+      if (event.task_id != null) {
+        try {
+          await client.reply(topicId, decisionAck(decision.behavior), event.task_id);
+        } catch (err) {
+          process.stderr.write(
+            `[collavre] Failed to complete decision task: ${err instanceof Error ? err.message : err}\n`,
+          );
+        }
+      }
+      return;
+    }
+
     process.stderr.write(
       `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id}) task_id=${event.task_id ?? "none"}\n`,
     );
+
+    // Record the active turn's topic so a permission_request relayed during it
+    // can be surfaced into this topic.
+    active.topicId = topicId;
 
     try {
       const meta: Record<string, string> = {
@@ -161,6 +256,41 @@ async function main(): Promise<void> {
   const agentName = buildAgentName();
   const server = buildServer(client);
 
+  const coordinator = new PermissionCoordinator();
+  const active: ActiveContext = { topicId: null };
+
+  // Surface relayed tool-permission prompts into the active topic so the user
+  // can approve/deny from Collavre. Registered before connect so the handler
+  // is live as soon as Claude Code starts relaying. The local TUI dialog still
+  // works in parallel — this is additive (first responder wins).
+  server.setNotificationHandler(
+    PermissionRequestNotificationSchema,
+    async (notif) => {
+      const { request_id, tool_name, description, input_preview } = notif.params;
+      const topicId = active.topicId;
+      if (topicId == null) {
+        process.stderr.write(
+          `[collavre] permission_request (${tool_name ?? "tool"}) with no active topic — leaving to local TUI\n`,
+        );
+        return;
+      }
+      coordinator.add(topicId, request_id);
+      try {
+        await client.notify(
+          topicId,
+          formatPermissionPrompt({ request_id, tool_name, description, input_preview }),
+        );
+        process.stderr.write(
+          `[collavre] permission_request relayed to topic #${topicId}: ${tool_name ?? "tool"} (request_id=${request_id})\n`,
+        );
+      } catch (err) {
+        process.stderr.write(
+          `[collavre] Failed to relay permission_request: ${err instanceof Error ? err.message : err}\n`,
+        );
+      }
+    },
+  );
+
   // Connect stdio transport FIRST — Claude Code sends an MCP initialize
   // request immediately after spawning this process and will timeout if
   // we block on network calls before reading stdin.
@@ -175,7 +305,7 @@ async function main(): Promise<void> {
   const cable = new CableSubscriber(
     config.url,
     config.token,
-    makeEventHandler(server, debug),
+    makeEventHandler(server, client, coordinator, active, debug),
     debug,
   );
   await cable.connect();
@@ -185,6 +315,12 @@ async function main(): Promise<void> {
   process.stderr.write(
     `[collavre] Registered: ${reg.agent_name} (agent #${reg.agent_id}) → inbox topic #${reg.topic_id} (${reg.topic_name})\n`,
   );
+
+  // Default permission prompts to the registration inbox topic so a
+  // locally-initiated turn (typed in the Claude Code REPL, not a channel
+  // dispatch) still surfaces its prompt somewhere visible. Each incoming
+  // dispatch overrides this with that dispatch's topic.
+  active.topicId = reg.topic_id;
 
   // Subscribe by agent_id, not topic_id. Comments in the registration inbox
   // are skipped by Comment#dispatch_to_orchestration; real dispatches arrive
