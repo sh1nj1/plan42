@@ -181,6 +181,41 @@ describe("colorAwareSpanImport", () => {
     expect(inherit.find((n) => n.text === "still").formats).toEqual(["bold"])
   })
 
+  it("clears a tag-applied format when a colored span resets it", () => {
+    // Lexical's default conversion toggles bold on for the <b> tag before the
+    // colored span's after-callback runs. A reset value on the span (an
+    // inherited CSS property) must actively un-bold the text, not just claim the
+    // dimension — otherwise reopened/pasted content reopens as bold.
+    const nodes = importColors(
+      '<p><b><span style="color: rgb(255, 0, 0); font-weight: normal;">normal</span></b></p>',
+      { withConfig: true }
+    )
+    expect(nodes).toEqual([
+      { text: "normal", style: "color: rgb(255, 0, 0)", formats: [] }
+    ])
+
+    // Same for italic via <i> + font-style: normal.
+    const italic = importColors(
+      '<p><i><span style="color: rgb(255, 0, 0); font-style: normal;">upright</span></i></p>',
+      { withConfig: true }
+    )
+    expect(italic.find((n) => n.text === "upright").formats).toEqual([])
+  })
+
+  it("keeps an inherited strikethrough when a colored span only adds underline", () => {
+    // text-decoration propagates to descendants additively in CSS: an inner
+    // `text-decoration: underline` does NOT remove an ancestor's line-through.
+    // So a colored span must keep the tag-applied strikethrough and add underline
+    // (add-only), unlike the inherited font-weight/font-style reset above.
+    const nodes = importColors(
+      '<p><s><span style="color: rgb(255, 0, 0); text-decoration: underline;">both</span></s></p>',
+      { withConfig: true }
+    )
+    expect(nodes.find((n) => n.text === "both").formats.sort()).toEqual(
+      ["strikethrough", "underline"].sort()
+    )
+  })
+
   it("demonstrates the drift the fix removes (no config = color on wrong/lost node)", () => {
     const html =
       '<p><span style="white-space: pre-wrap;">hello</span></p>\n' +

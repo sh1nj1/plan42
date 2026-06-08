@@ -24,6 +24,16 @@ const decidedFormats = new WeakMap()
 // `normal`), it owns the bold dimension for that text and the outer span skips
 // it. A span that omits a declaration leaves the dimension open, so the format
 // still inherits from the ancestor (matching CSS).
+//
+// Declaring a dimension is also not enough when an ANCESTOR TAG (<b>/<strong>,
+// <i>/<em>) already toggled the format on via Lexical's default conversion —
+// e.g. <b><span font-weight:normal>normal</span></b>. Our span `after` callback
+// runs after that tag's forChild, so for genuinely-inherited CSS properties
+// (font-weight, font-style) a reset value must actively CLEAR the format, not
+// just claim the dimension. text-decoration and vertical-align are NOT cleared
+// on a non-matching value: in CSS those propagate to descendants additively
+// (an inner `text-decoration: underline` does not remove an ancestor's
+// line-through), so they stay add-only to avoid stripping inherited decorations.
 function applyTextFormatFromStyle(node, domStyle) {
   const fontWeight = domStyle.fontWeight
   const textDecoration = domStyle.textDecoration
@@ -31,20 +41,25 @@ function applyTextFormatFromStyle(node, domStyle) {
   const verticalAlign = domStyle.verticalAlign
   const decorations = (textDecoration || "").split(" ")
 
-  // [dimension declared by this span?, value matches the format?, format name]
+  // [declared by this span?, value matches the format?, format name, resettable?]
+  // resettable = inherited CSS property whose reset value clears the format.
   const rules = [
-    [Boolean(fontWeight), fontWeight === "700" || fontWeight === "bold", "bold"],
-    [Boolean(textDecoration), decorations.includes("line-through"), "strikethrough"],
-    [Boolean(fontStyle), fontStyle === "italic", "italic"],
-    [Boolean(textDecoration), decorations.includes("underline"), "underline"],
-    [Boolean(verticalAlign), verticalAlign === "sub", "subscript"],
-    [Boolean(verticalAlign), verticalAlign === "super", "superscript"]
+    [Boolean(fontWeight), fontWeight === "700" || fontWeight === "bold", "bold", true],
+    [Boolean(textDecoration), decorations.includes("line-through"), "strikethrough", false],
+    [Boolean(fontStyle), fontStyle === "italic", "italic", true],
+    [Boolean(textDecoration), decorations.includes("underline"), "underline", false],
+    [Boolean(verticalAlign), verticalAlign === "sub", "subscript", false],
+    [Boolean(verticalAlign), verticalAlign === "super", "superscript", false]
   ]
 
   let decided = decidedFormats.get(node)
-  rules.forEach(([declared, shouldApply, format]) => {
+  rules.forEach(([declared, shouldApply, format, resettable]) => {
     if (decided && decided.has(format)) return
     if (shouldApply && !node.hasFormat(format)) {
+      node.toggleFormat(format)
+    } else if (resettable && declared && !shouldApply && node.hasFormat(format)) {
+      // Explicit reset (font-weight:normal / font-style:normal) clears a format
+      // an ancestor tag or converter already applied.
       node.toggleFormat(format)
     }
     if (declared) {
