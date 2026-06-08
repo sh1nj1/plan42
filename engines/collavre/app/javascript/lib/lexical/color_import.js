@@ -72,33 +72,46 @@ function applyTextFormatFromStyle(node, domStyle) {
   })
 }
 
-// Style properties that become Lexical text FORMATS (applied via
-// applyTextFormatFromStyle), so they must NOT also be carried in the node's
-// style string — that would double-represent bold/italic/etc. `white-space` is
-// Lexical's own exportDOM artifact (stamped on every span), not user intent, so
-// it is dropped too.
-const NON_CARRIED_STYLE_PROPS = new Set([
-  "font-weight",
-  "font-style",
-  "text-decoration",
-  "vertical-align",
-  "white-space"
-])
+// For each property applyTextFormatFromStyle consumes, the exact values it maps
+// to a Lexical format (or a reset that clears one). Only these (property, value)
+// pairs are kept OUT of the carried node style — carrying them too would
+// double-represent bold/italic/etc. Crucially this is value-aware, not
+// property-wide: a value the formatter does NOT map (font-weight:800,
+// font-style:oblique, vertical-align:middle) is not turned into a format, so it
+// must be carried as inline style or it would be silently dropped on reopen —
+// exactly what the removed positional collector preserved by copying the full
+// style string.
+const FORMAT_MAPPED_VALUES = {
+  "font-weight": new Set(["700", "bold", "normal"]),
+  "font-style": new Set(["italic", "normal"]),
+  "vertical-align": new Set(["sub", "super"])
+}
+
+// `text-decoration` is dropped wholesale: its tokens (underline / line-through)
+// become Lexical underline / strikethrough formats, which Lexical re-exports by
+// writing its OWN text-decoration on the span. Carrying a remainder token (e.g.
+// `overline`) here would collide with that exported declaration, so unmapped
+// decoration tokens are not preserved (a deliberate boundary). `white-space` is
+// Lexical's own exportDOM artifact (stamped on every span), not user intent.
+const DROPPED_STYLE_PROPS = new Set(["text-decoration", "white-space"])
 
 // Every inline style declaration on the element that should be carried onto the
-// text nodes it produces: ALL of them except the format-mapped props (which
-// become Lexical formats) and Lexical's white-space artifact. This preserves
-// color, background-color, font-size, font-family, text-transform,
-// letter-spacing — and any future text-level style — instead of cherry-picking
-// individual properties. It mirrors the full-style copy the removed positional
-// collector did, so reopening pasted/legacy content keeps every styled
-// attribute, not just color.
+// text nodes it produces: ALL of them except (a) the values that become Lexical
+// formats and (b) Lexical's white-space artifact / text-decoration. This
+// preserves color, background-color, font-size, font-family, text-transform,
+// letter-spacing, unmapped font-weight/font-style/vertical-align — and any
+// future text-level style — instead of cherry-picking individual properties. It
+// mirrors the full-style copy the removed positional collector did, so reopening
+// pasted/legacy content keeps every styled attribute, not just color.
 function carriedStyleDeclarations(domStyle) {
   const map = new Map()
   for (let i = 0; i < domStyle.length; i++) {
     const prop = domStyle.item(i)
-    if (NON_CARRIED_STYLE_PROPS.has(prop)) continue
-    map.set(prop, domStyle.getPropertyValue(prop))
+    if (DROPPED_STYLE_PROPS.has(prop)) continue
+    const value = domStyle.getPropertyValue(prop)
+    const mapped = FORMAT_MAPPED_VALUES[prop]
+    if (mapped && mapped.has(value)) continue // becomes a format — don't double-carry
+    map.set(prop, value)
   }
   return map
 }

@@ -135,6 +135,42 @@ describe("colorAwareSpanImport", () => {
     expect(nodes[0].formats).toEqual([])
   })
 
+  it("carries an unmapped font-weight/font-style/vertical-align value instead of dropping it", () => {
+    // applyTextFormatFromStyle only maps font-weight 700/bold, font-style italic
+    // and vertical-align sub/super to Lexical formats. A value it does NOT map
+    // (font-weight:800, font-style:oblique, vertical-align:middle) is not a
+    // format, so it must survive as carried inline style — the old positional
+    // collector copied the full style string and kept these.
+    const nodes = importColors(
+      '<p><span style="color: rgb(255, 0, 0); font-weight: 800; font-style: oblique; ' +
+        'vertical-align: middle; white-space: pre-wrap;">heavy</span></p>',
+      { withConfig: true }
+    )
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].text).toBe("heavy")
+    expect(parseStyleMap(nodes[0].style)).toEqual({
+      color: "rgb(255, 0, 0)",
+      "font-weight": "800",
+      "font-style": "oblique",
+      "vertical-align": "middle"
+    })
+    // None of these unmapped values map to a Lexical format.
+    expect(nodes[0].formats).toEqual([])
+  })
+
+  it("does NOT carry a mapped font-weight/font-style value (it becomes a format)", () => {
+    // Guards the value-aware exclusion: 700/bold/italic still convert to Lexical
+    // formats and must not also appear in the carried node style (double-represent).
+    const nodes = importColors(
+      '<p><span style="color: rgb(255, 0, 0); font-weight: 700; font-style: italic; ' +
+        'white-space: pre-wrap;">styled</span></p>',
+      { withConfig: true }
+    )
+    expect(nodes).toHaveLength(1)
+    expect(parseStyleMap(nodes[0].style)).toEqual({ color: "rgb(255, 0, 0)" })
+    expect(nodes[0].formats.sort()).toEqual(["bold", "italic"].sort())
+  })
+
   it("preserves non-format text styles on a non-span colored block element", () => {
     // Same generality for the block path: a colored <p>/<li> carrying font-size
     // etc. must keep those styles when normalizeColoredContainers wraps its text.
