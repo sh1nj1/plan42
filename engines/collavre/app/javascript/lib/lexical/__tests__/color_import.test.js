@@ -2,12 +2,16 @@ import { createEditor, $getRoot, $isTextNode, $createParagraphNode } from "lexic
 import { $generateNodesFromDOM } from "@lexical/html"
 import { lexicalHtmlConfig } from "../color_import"
 
-// The jsdom jest environment exposes `window`/`document`/`DOMParser`, but
-// Lexical reaches for a few more browser globals at runtime.
-for (const key of ["getComputedStyle", "MutationObserver", "Text", "HTMLElement"]) {
-  if (typeof globalThis[key] === "undefined" && window[key]) {
-    globalThis[key] = window[key]
-  }
+// Parse an inline style string into a plain object so order doesn't matter.
+function parseStyleMap(styleText) {
+  const map = {}
+  ;(styleText || "").split(";").forEach((decl) => {
+    const idx = decl.indexOf(":")
+    if (idx === -1) return
+    const key = decl.slice(0, idx).trim()
+    if (key) map[key] = decl.slice(idx + 1).trim()
+  })
+  return map
 }
 
 // Reproduces InlineLexicalEditor's InitialContentPlugin import path: parse the
@@ -104,6 +108,32 @@ describe("colorAwareSpanImport", () => {
     expect(nodes[0].formats.sort()).toEqual(
       ["bold", "italic", "strikethrough", "underline"].sort()
     )
+  })
+
+  it("keeps an inner span's own color instead of inheriting the outer color", () => {
+    // Pasted content nests colored spans. The outer span's after-callback runs
+    // after the inner span is converted, so it must merge (inner color wins)
+    // rather than clobber every descendant with the outer color.
+    const html =
+      '<p><span style="color: rgb(255, 0, 0);">outer ' +
+      '<span style="color: rgb(0, 0, 255);">inner</span></span></p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    expect(nodes.find((n) => n.text === "outer ").style).toBe("color: rgb(255, 0, 0)")
+    expect(nodes.find((n) => n.text === "inner").style).toBe("color: rgb(0, 0, 255)")
+  })
+
+  it("preserves an inner span's background-color while inheriting the outer color", () => {
+    const html =
+      '<p><span style="color: rgb(255, 0, 0);">outer ' +
+      '<span style="background-color: rgb(255, 255, 0);">inner</span></span></p>'
+
+    const nodes = importColors(html, { withConfig: true })
+    const inner = nodes.find((n) => n.text === "inner")
+    expect(parseStyleMap(inner.style)).toEqual({
+      "background-color": "rgb(255, 255, 0)",
+      color: "rgb(255, 0, 0)"
+    })
   })
 
   it("demonstrates the drift the fix removes (no config = color on wrong/lost node)", () => {

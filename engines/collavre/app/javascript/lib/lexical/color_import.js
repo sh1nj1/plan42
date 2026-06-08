@@ -28,13 +28,41 @@ function applyTextFormatFromStyle(node, domStyle) {
   })
 }
 
-function applyStyleToTextNodes(nodes, styleText, domStyle) {
+function parseStyle(styleText) {
+  const map = new Map()
+  ;(styleText || "").split(";").forEach((decl) => {
+    const idx = decl.indexOf(":")
+    if (idx === -1) return
+    const key = decl.slice(0, idx).trim()
+    const value = decl.slice(idx + 1).trim()
+    if (key) map.set(key, value)
+  })
+  return map
+}
+
+function serializeStyle(map) {
+  return Array.from(map.entries())
+    .map(([key, value]) => `${key}: ${value}`)
+    .join("; ")
+}
+
+// `inherited` is the parent span's color/background-color declarations as a Map.
+// We MERGE rather than overwrite: a descendant text node that already carries
+// its own color/background (from a deeper colored span converted first) keeps
+// it — inner color wins, matching CSS inheritance. The parent only fills in
+// declarations the node is missing. Clobbering here would turn nested content
+// like <span color:red>outer <span color:blue>inner</span></span> all red.
+function applyStyleToTextNodes(nodes, inherited, domStyle) {
   nodes.forEach((node) => {
     if ($isTextNode(node)) {
-      node.setStyle(styleText)
+      const merged = parseStyle(node.getStyle())
+      inherited.forEach((value, key) => {
+        if (!merged.has(key)) merged.set(key, value)
+      })
+      node.setStyle(serializeStyle(merged))
       applyTextFormatFromStyle(node, domStyle)
     } else if ($isElementNode(node)) {
-      applyStyleToTextNodes(node.getChildren(), styleText, domStyle)
+      applyStyleToTextNodes(node.getChildren(), inherited, domStyle)
     }
   })
 }
@@ -67,16 +95,15 @@ export function colorAwareSpanImport(domNode) {
     return null
   }
 
-  const declarations = []
-  if (color) declarations.push(`color: ${color}`)
-  if (backgroundColor) declarations.push(`background-color: ${backgroundColor}`)
-  const styleText = declarations.join("; ")
+  const inherited = new Map()
+  if (color) inherited.set("color", color)
+  if (backgroundColor) inherited.set("background-color", backgroundColor)
 
   return {
     conversion: () => ({
       node: null,
       after: (childLexicalNodes) => {
-        applyStyleToTextNodes(childLexicalNodes, styleText, domNode.style)
+        applyStyleToTextNodes(childLexicalNodes, inherited, domNode.style)
         return childLexicalNodes
       }
     }),
