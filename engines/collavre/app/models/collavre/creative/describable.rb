@@ -41,7 +41,16 @@ module Collavre
 
       # Append an attachment node for `blob` to the description and save.
       # after_save reconcile then attaches the blob to creative.files.
+      #
+      # Linked creatives (origin_id present) cannot change their own description
+      # (description_cannot_change_if_has_origin); the description lives on the
+      # origin. Resolve effective_origin and embed there so an upload against a
+      # write-permitted linked row attaches to the origin instead of raising
+      # mid-request and orphaning the freshly-created blob.
       def embed_attachment_blob!(blob)
+        target = effective_origin
+        return target.embed_attachment_blob!(blob) unless target == self
+
         node = attachment_node_html(blob)
         new_html = "#{description}#{node}"
         # Markdown-mode creatives derive description from markdown_source; demote
@@ -73,6 +82,9 @@ module Collavre
       # into the HTML), detach it directly so removal still works. Returns true
       # if an attachment was present.
       def remove_attachment!(signed_id)
+        target = effective_origin
+        return target.remove_attachment!(signed_id) unless target == self
+
         blob = ActiveStorage::Blob.find_signed(signed_id)
         return false unless blob
 

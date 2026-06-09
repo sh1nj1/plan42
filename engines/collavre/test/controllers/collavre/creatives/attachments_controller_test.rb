@@ -84,6 +84,26 @@ module Collavre
              headers: { "Authorization" => "Bearer #{token_for(@owner)}" }
         assert_response :unprocessable_entity
       end
+
+      test "upload to a linked creative attaches to the effective origin" do
+        # Linked rows cannot change their own description; the upload must embed
+        # into the origin (where description lives) instead of raising mid-request
+        # (description_cannot_change_if_has_origin) and orphaning the blob.
+        origin = Collavre::Creative.create!(description: "<p>origin</p>", user: @owner)
+        linked = Collavre::Creative.create!(origin: origin, user: @owner)
+
+        post path_for(linked),
+             params: { file: upload(content_type: "image/png", filename: "pic.png") },
+             headers: { "Authorization" => "Bearer #{token_for(@owner)}" }
+        assert_response :success
+        body = JSON.parse(response.body)
+
+        origin.reload
+        assert_includes origin.description, "<img"
+        assert_includes origin.description, body["signed_id"]
+        assert_includes origin.files.map { |f| f.blob.signed_id }, body["signed_id"]
+        assert_not_includes linked.reload.description.to_s, body["signed_id"]
+      end
     end
   end
 end
