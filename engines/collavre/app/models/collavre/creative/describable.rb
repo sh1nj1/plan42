@@ -17,6 +17,7 @@ module Collavre
 
         before_validation :convert_markdown_to_html
         before_save :sanitize_description_html
+        after_save :reconcile_description_attachments
         after_destroy_commit :purge_description_attachments
       end
 
@@ -36,6 +37,32 @@ module Collavre
 
       def creative_snippet
         CGI.unescapeHTML(ActionController::Base.helpers.strip_tags(effective_origin.description || "")).truncate(24, omission: "...")
+      end
+
+      # Append an attachment node for `blob` to the description and save.
+      # after_save reconcile then attaches the blob to creative.files.
+      def embed_attachment_blob!(blob)
+        node = attachment_node_html(blob)
+        new_html = "#{description}#{node}"
+        # Markdown-mode creatives derive description from markdown_source; demote
+        # to HTML so the embedded node is the persisted source of truth.
+        self.content_type_input = "html" if data&.dig("content_type") == "markdown"
+        update!(description: new_html)
+      end
+
+      # HTML for embedding a blob inline, branching on content type. The proxy
+      # path MUST match what extract_signed_ids_from_description scans and what
+      # the sanitizer allows.
+      def attachment_node_html(blob)
+        url = "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
+        name = ERB::Util.html_escape(blob.filename.to_s)
+        if blob.content_type.to_s.start_with?("image/")
+          %(<img src="#{url}" alt="#{name}">)
+        elsif blob.content_type.to_s.start_with?("video/")
+          %(<video controls src="#{url}"></video>)
+        else
+          %(<a href="#{url}" download="#{name}" data-filesize="#{blob.byte_size}">#{name}</a>)
+        end
       end
 
       private
@@ -85,6 +112,8 @@ module Collavre
         table_attrs = %w[colspan rowspan]
         attachment_attrs = %w[download data-filesize]
         task_list_attrs = %w[type disabled checked]
+        media_tags = %w[video source]
+        media_attrs = %w[controls src preload width height poster]
 
         # GFM task list checkboxes (`- [ ]` / `- [x]`) render as
         # <input type="checkbox" disabled> via Commonmarker's tasklist
@@ -100,9 +129,42 @@ module Collavre
 
         self.description = ActionController::Base.helpers.sanitize(
           scrubbed.to_html,
-          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + %w[input],
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + %w[data-lexical]
+          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input],
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical]
         )
+      end
+
+      # Description HTML is the source of truth for attachments. After each save,
+      # make creative.files exactly match the blobs referenced in the description:
+      # attach referenced-but-unattached blobs, detach attached-but-unreferenced.
+      # Must never raise during save — malformed HTML yields [] and a no-op.
+      #
+      # Markdown-mode creatives manage their own blob lifecycle through
+      # MarkdownConverter (markdown_source <-> description) and
+      # purge_description_attachments; HTML-derived reconcile would fight that.
+      # The embed paths (embed_attachment_blob!) demote markdown -> html first,
+      # so agent/editor uploads are still reconciled.
+      def reconcile_description_attachments
+        return if data&.dig("content_type") == "markdown"
+
+        referenced = extract_signed_ids_from_description.filter_map do |sid|
+          ActiveStorage::Blob.find_signed(sid)
+        rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+          nil
+        end
+        referenced_ids = referenced.map(&:id).to_set
+
+        current = files.includes(:blob).to_a
+        current_blob_ids = current.map(&:blob_id).to_set
+
+        to_attach = referenced.reject { |b| current_blob_ids.include?(b.id) }
+        to_detach = current.reject { |a| referenced_ids.include?(a.blob_id) }
+        return if to_attach.empty? && to_detach.empty?
+
+        to_attach.each { |blob| files.attach(blob) }
+        to_detach.each(&:purge_later)
+      rescue StandardError => e
+        Rails.logger.error("Creative##{id}: reconcile_description_attachments failed: #{e.message}")
       end
 
       def purge_description_attachments
@@ -136,6 +198,7 @@ module Collavre
 
         ids = html.scan(%r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/?#]+)}).flatten
         ids += html.scan(%r{/rails/active_storage/blobs/([^/?#]+)}).flatten
+        ids += html.scan(%r{/public-assets/blobs/([^/?#]+)}).flatten
 
         ids.uniq
       end

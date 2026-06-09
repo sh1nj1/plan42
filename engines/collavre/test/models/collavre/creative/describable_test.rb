@@ -101,6 +101,88 @@ module Collavre
                      "editing surrounding text must not create new blobs"
         assert_includes creative.data["markdown_source"], "edited before"
       end
+
+      # --- Attachment reconcile (creative.files derived from description HTML) ---
+
+      def make_blob(filename: "a.png", content_type: "image/png")
+        ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new("x"), filename: filename, content_type: content_type
+        )
+      end
+
+      def asset_url(blob)
+        "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
+      end
+
+      test "embedding a blob proxy URL in description attaches it on save" do
+        creative = Creative.create!(description: "<p>hi</p>", user: @user)
+        blob = make_blob
+        creative.update!(description: %(<p>hi</p><img src="#{asset_url(blob)}" alt="a.png">))
+
+        assert_includes creative.reload.files.map { |f| f.blob.signed_id }, blob.signed_id
+      end
+
+      test "removing the node detaches the blob on next save" do
+        blob = make_blob
+        creative = Creative.create!(description: %(<img src="#{asset_url(blob)}">), user: @user)
+        assert_includes creative.reload.files.map { |f| f.blob.signed_id }, blob.signed_id
+
+        creative.update!(description: "<p>gone</p>")
+
+        refute_includes creative.reload.files.map { |f| f.blob.signed_id }, blob.signed_id
+      end
+
+      test "idempotent re-save does not churn attachments" do
+        blob = make_blob
+        creative = Creative.create!(description: %(<img src="#{asset_url(blob)}">), user: @user)
+        before = creative.reload.files.map(&:id).sort
+
+        creative.update!(progress: 0.5)
+
+        assert_equal before, creative.reload.files.map(&:id).sort
+      end
+
+      test "malformed attachment HTML does not raise and save succeeds" do
+        creative = Creative.create!(description: "<p>ok</p>", user: @user)
+        assert_nothing_raised { creative.update!(description: "<p>x</p><img src=") }
+      end
+
+      # --- Sanitizer: media tags ---
+
+      test "video tag with controls/src survives sanitization" do
+        blob = make_blob(filename: "v.mp4", content_type: "video/mp4")
+        creative = Creative.create!(description: %(<video controls src="#{asset_url(blob)}"></video>), user: @user)
+        html = creative.reload.description
+        assert_includes html, "<video"
+        assert_includes html, "controls"
+        assert_includes html, asset_url(blob)
+      end
+
+      test "script tag is still stripped" do
+        creative = Creative.create!(description: "<p>x</p><script>alert(1)</script>", user: @user)
+        refute_includes creative.reload.description, "<script"
+      end
+
+      # --- Backfill: embed orphan creative.files into description ---
+
+      test "backfill embeds an attached-but-unreferenced blob into the description" do
+        creative = Creative.create!(description: "<p>doc</p>", user: @user)
+        blob = make_blob(filename: "ref.png", content_type: "image/png")
+        # Simulate a legacy attachment: attached to creative.files but never
+        # referenced in the description (attach on a persisted record does not
+        # trigger the model save callbacks, so reconcile does not detach it).
+        creative.files.attach(blob)
+        refute_includes creative.reload.description, blob.signed_id
+        assert_includes creative.files.map { |f| f.blob.signed_id }, blob.signed_id
+
+        Collavre::AttachmentBackfill.embed_orphans!(creative)
+
+        assert_includes creative.reload.description, blob.signed_id
+
+        before = creative.reload.description
+        Collavre::AttachmentBackfill.embed_orphans!(creative)
+        assert_equal before, creative.reload.description
+      end
     end
   end
 end
