@@ -147,6 +147,32 @@ module Collavre
         assert_nothing_raised { creative.update!(description: "<p>x</p><img src=") }
       end
 
+      test "detaching a blob still referenced by another creative does not purge it" do
+        blob = make_blob
+        shared = Creative.create!(description: %(<img src="#{asset_url(blob)}">), user: @user)
+        other = Creative.create!(description: %(<img src="#{asset_url(blob)}">), user: @user)
+        assert_includes shared.reload.files.map(&:blob_id), blob.id
+        assert_includes other.reload.files.map(&:blob_id), blob.id
+
+        # Run any enqueued purge so a (wrongly) purged blob would actually vanish.
+        perform_enqueued_jobs { shared.update!(description: "<p>gone</p>") }
+
+        refute_includes shared.reload.files.map(&:blob_id), blob.id
+        assert ActiveStorage::Blob.exists?(blob.id), "blob referenced by another creative must survive"
+        assert_includes other.reload.files.map(&:blob_id), blob.id
+      end
+
+      test "detaching a blob referenced nowhere else purges it" do
+        blob = make_blob
+        creative = Creative.create!(description: %(<img src="#{asset_url(blob)}">), user: @user)
+        assert ActiveStorage::Blob.exists?(blob.id)
+
+        perform_enqueued_jobs { creative.update!(description: "<p>gone</p>") }
+
+        refute_includes creative.reload.files.map(&:blob_id), blob.id
+        assert_not ActiveStorage::Blob.exists?(blob.id), "orphan blob should be purged"
+      end
+
       # --- Sanitizer: media tags ---
 
       test "video tag with controls/src survives sanitization" do

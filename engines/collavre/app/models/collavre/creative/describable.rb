@@ -162,9 +162,31 @@ module Collavre
         return if to_attach.empty? && to_detach.empty?
 
         to_attach.each { |blob| files.attach(blob) }
-        to_detach.each(&:purge_later)
+        to_detach.each { |attachment| detach_and_maybe_purge(attachment) }
       rescue StandardError => e
         Rails.logger.error("Creative##{id}: reconcile_description_attachments failed: #{e.message}")
+      end
+
+      # Remove this creative's attachment join, then purge the underlying blob
+      # ONLY if nothing else references it. A blob can be shared across creatives
+      # (e.g. description HTML copied between them, after which each reconcile
+      # attaches the same blob). Blindly calling Attachment#purge_later deletes
+      # the blob/file out from under those other creatives, leaving their
+      # descriptions pointing at a 404. Mirror purge_description_attachments'
+      # cross-creative guard so detach here is safe.
+      def detach_and_maybe_purge(attachment)
+        blob = attachment.blob
+        attachment.delete
+        return if blob.nil?
+
+        signed_id = blob.signed_id
+        still_referenced = Creative.where.not(id: id)
+                                   .where("description LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%")
+                                   .exists?
+        return if still_referenced
+        return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+
+        blob.purge_later
       end
 
       def purge_description_attachments
