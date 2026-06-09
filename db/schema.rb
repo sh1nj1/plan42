@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_02_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -757,6 +757,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_02_000000) do
     t.string "name", null: false
     t.integer "position", default: 0, null: false
     t.integer "primary_agent_id"
+    t.string "session_id"
     t.integer "source_topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -764,6 +765,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_02_000000) do
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
     t.index ["creative_id"], name: "index_topics_on_creative_id"
+    t.index ["primary_agent_id", "session_id"], name: "index_topics_on_primary_agent_and_session"
     t.index ["primary_agent_id"], name: "index_topics_on_primary_agent_id"
     t.index ["source_topic_id"], name: "index_topics_on_source_topic_id"
     t.index ["user_id"], name: "index_topics_on_user_id"

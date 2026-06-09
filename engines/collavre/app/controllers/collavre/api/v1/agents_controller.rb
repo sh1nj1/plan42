@@ -5,37 +5,39 @@ module Collavre
     module V1
       class AgentsController < BaseController
         # POST /api/v1/agent/register
-        # Registers a Claude Code session as an agent:
-        # 1. Finds or creates an AI User for this session
-        # 2. Creates a Topic in the user's inbox
-        # 3. Sets the AI user as primary agent on the topic
+        # Registers a Claude Code session, separating two identities:
+        #   - Agent (agent_name): the user-facing unit. One shared ai_user per
+        #     (human, agent_name). Without an explicit AGENT_NAME the plugin
+        #     sends a default name so every session collapses onto one agent.
+        #   - Session (session_id): one Topic per Claude Code session, keyed by
+        #     a stable id (derived per cwd by the plugin, stable across
+        #     --resume). Multiple session topics can share one primary_agent.
+        #
+        # Back-compat: older plugins send only :name. It is treated as BOTH the
+        # agent and the session identity, reproducing the prior
+        # one-agent-one-topic-per-name behavior.
         def register
-          session_name = params[:name].to_s.strip
-          if session_name.blank?
-            render json: { error: "name is required" }, status: :unprocessable_entity
+          agent_name = params[:agent_name].to_s.strip
+          session_id = params[:session_id].to_s.strip
+          legacy_name = params[:name].to_s.strip
+          agent_name = legacy_name if agent_name.blank?
+          session_id = legacy_name if session_id.blank?
+
+          if agent_name.blank? || session_id.blank?
+            render json: { error: "name (or agent_name and session_id) is required" },
+                   status: :unprocessable_entity
             return
           end
 
-          # Per-session ai_user: each MCP session gets its own agent so the
-          # per-agent ActionCable stream (agent:user:<id>) and per-agent task
-          # scope (Task.where(agent_id: ...)) are isolated. Two concurrent
-          # Claude Code sessions for the same human no longer share a stream
-          # (which would cause both to receive every dispatch and produce
-          # duplicate replies) or share delegated-task scope (which would
-          # force unregister to narrow to one topic and leak work-topic tasks).
-          ai_user = find_or_create_session_agent(session_name)
+          ai_user = find_or_create_session_agent(agent_name)
           unless ai_user
             render json: { error: "Session agent email is already in use by a different account" }, status: :conflict
             return
           end
 
           inbox = Creative.inbox_for(current_user)
-          topic_name = "Claude #{session_name}"
-          topic = inbox.topics.find_or_create_by!(name: topic_name) do |t|
-            t.user = current_user
-          end
+          topic = find_or_create_session_topic(inbox, ai_user, session_id, params[:session_label])
           topic.unarchive! if topic.archived?
-
           topic.set_primary_agent!(ai_user)
 
           CreativeShare.find_or_create_by!(creative: inbox, user: ai_user) do |s|
@@ -48,6 +50,7 @@ module Collavre
             agent_name: ai_user.name,
             topic_id: topic.id,
             topic_name: topic.name,
+            session_id: session_id,
             inbox_creative_id: inbox.id,
             ws_url: "/cable"
           }, status: :ok
@@ -462,10 +465,10 @@ module Collavre
           ).dispatch
         end
 
-        # One ai_user per (current_user, session_name) so each MCP session has
-        # its own agent identity. Same session_name re-registering (e.g. the
-        # plugin reconnects with the same hostname-pid) reuses the existing
-        # row — idempotent retries don't proliferate agents.
+        # One ai_user per (current_user, agent_name) so a human's sessions share
+        # one Agent identity. Same agent_name re-registering reuses the existing
+        # row — idempotent retries (and every additional session) don't
+        # proliferate agents.
         #
         # Returns nil when a row with the deterministic email already exists
         # but is owned by someone else or isn't a Claude Channel ai_user. The
@@ -474,8 +477,8 @@ module Collavre
         # would attach the caller's inbox feedback share to that foreign User
         # and leave the plugin's AgentChannel subscription rejected on
         # ownership mismatch. Caller renders 409 in that case.
-        def find_or_create_session_agent(session_name)
-          slug = session_name.to_s.downcase.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
+        def find_or_create_session_agent(agent_name)
+          slug = agent_name.to_s.downcase.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
           slug = "session" if slug.blank?
           email = "claude-channel-#{current_user.id}-#{slug}@agent.collavre.local"
 
@@ -500,7 +503,7 @@ module Collavre
           # comment on the reuse path above.
           User.create!(
             email: email,
-            name: "Claude Channel (#{session_name})",
+            name: "Claude Channel (#{agent_name})",
             password: SecureRandom.hex(32),
             llm_vendor: "anthropic",
             llm_model: "claude-code",
@@ -508,6 +511,39 @@ module Collavre
             searchable: false,
             routing_expression: nil
           )
+        end
+
+        # One Topic per (agent, session_id). On re-register (including --resume
+        # from the same cwd, which yields the same session_id) the existing
+        # topic is reused — even if archived — so the conversation persists
+        # instead of orphaning. A fresh session gets a new topic under the same
+        # shared agent, which is how one agent fans out to many sessions.
+        def find_or_create_session_topic(inbox, ai_user, session_id, session_label)
+          existing = inbox.topics.find_by(primary_agent_id: ai_user.id, session_id: session_id)
+          return existing if existing
+
+          label = session_label.to_s.strip.presence || session_id
+          inbox.topics.create!(
+            name: unique_topic_name(inbox, "Claude #{label}"),
+            user: current_user,
+            primary_agent_id: ai_user.id,
+            session_id: session_id
+          )
+        end
+
+        # Topics carry a UNIQUE (creative_id, name) index, so two sessions whose
+        # friendly labels collide (e.g. both rooted at a dir named "src") cannot
+        # share a name. Append the smallest numeric suffix that is free.
+        def unique_topic_name(inbox, desired)
+          return desired unless inbox.topics.exists?(name: desired)
+
+          n = 2
+          loop do
+            candidate = "#{desired} (#{n})"
+            return candidate unless inbox.topics.exists?(name: candidate)
+
+            n += 1
+          end
         end
       end
     end

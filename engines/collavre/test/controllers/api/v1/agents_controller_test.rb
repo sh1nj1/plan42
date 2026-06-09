@@ -215,6 +215,107 @@ module Collavre
           assert_response :unprocessable_entity
         end
 
+        # --- Agent/Session split (agent_name + session_id) ---
+
+        test "register keys the agent by agent_name and the topic by session_id" do
+          post "/api/v1/agent/register",
+            params: { agent_name: "claude", session_id: "sess-alpha" },
+            headers: auth_headers,
+            as: :json
+          assert_response :ok
+          body = JSON.parse(response.body)
+
+          ai_user = User.find(body["agent_id"])
+          assert ai_user.claude_channel_agent?
+          # Agent identity derives from agent_name, NOT the session id.
+          assert_equal "claude-channel-#{@user.id}-claude@agent.collavre.local", ai_user.email
+          # The topic carries the session id so re-register can find it.
+          assert_equal "sess-alpha", Topic.find(body["topic_id"]).session_id
+          assert_equal "sess-alpha", body["session_id"]
+        end
+
+        test "register: one agent_name with two session_ids yields one agent and two topics" do
+          # The headline multi-session case: without a distinct AGENT_NAME, every
+          # Claude Code session for one human collapses onto a single shared
+          # ai_user, but each session gets its own Collavre topic.
+          assert_difference -> { User.count }, 1 do
+            post "/api/v1/agent/register",
+              params: { agent_name: "claude", session_id: "sess-1" },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            post "/api/v1/agent/register",
+              params: { agent_name: "claude", session_id: "sess-2" },
+              headers: auth_headers, as: :json
+            assert_response :ok
+          end
+
+          agents = User.where(created_by_id: @user.id, llm_model: "claude-code")
+          assert_equal 1, agents.count, "both sessions must share one agent"
+          assert_equal 2, Topic.where(primary_agent_id: agents.first.id).count,
+            "each session must get its own topic under the shared agent"
+        end
+
+        test "register: same agent_name and session_id is idempotent (one agent, one topic)" do
+          assert_difference -> { User.count }, 1 do
+            2.times do
+              post "/api/v1/agent/register",
+                params: { agent_name: "claude", session_id: "sess-same" },
+                headers: auth_headers, as: :json
+              assert_response :ok
+            end
+          end
+
+          agent = User.where(created_by_id: @user.id, llm_model: "claude-code").first
+          assert_equal 1, Topic.where(primary_agent_id: agent.id).count,
+            "re-registering the same session must not duplicate the topic"
+        end
+
+        test "register: distinct agent_name in the same session_id yields distinct agents" do
+          # Explicit AGENT_NAME carves out a separate agent even when the session
+          # id collides (e.g. two agents launched from the same cwd).
+          assert_difference -> { User.count }, 2 do
+            post "/api/v1/agent/register",
+              params: { agent_name: "claude", session_id: "shared-cwd" },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            a = JSON.parse(response.body)
+
+            post "/api/v1/agent/register",
+              params: { agent_name: "ops", session_id: "shared-cwd" },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            b = JSON.parse(response.body)
+
+            assert_not_equal a["agent_id"], b["agent_id"]
+            assert_not_equal a["topic_id"], b["topic_id"]
+          end
+        end
+
+        test "register uses session_label for the topic name when provided" do
+          post "/api/v1/agent/register",
+            params: { agent_name: "claude", session_id: "sess-x", session_label: "plan42-worktree87" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          body = JSON.parse(response.body)
+          assert_equal "Claude plan42-worktree87", body["topic_name"]
+        end
+
+        test "register disambiguates a colliding topic name across sessions" do
+          # The (creative_id, name) unique index means two sessions that would
+          # produce the same friendly name must not collide on create.
+          post "/api/v1/agent/register",
+            params: { agent_name: "claude", session_id: "sess-a", session_label: "src" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          post "/api/v1/agent/register",
+            params: { agent_name: "claude", session_id: "sess-b", session_label: "src" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          second = JSON.parse(response.body)
+          assert_not_equal "Claude src", second["topic_name"],
+            "second session with the same label must get a disambiguated topic name"
+        end
+
         # --- Reply ---
 
         test "reply creates comment as AI agent" do
