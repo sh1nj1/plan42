@@ -71,6 +71,31 @@ module Collavre
       quoted_comment_id.present? && !review_type_question?
     end
 
+    # Claim the OpenClaw Gateway run_id on this comment as a persistent
+    # idempotency marker. The same run's "final" event is re-delivered as a
+    # proactive event to every process sharing the Gateway; the unique
+    # openclaw_run_id lets those processes recognize an already-handled run and
+    # suppress duplicate comments.
+    #
+    # This comment is treated as canonical (it carries the visible content /
+    # activity log), so on a lost race — a proactive duplicate from another
+    # process already claimed the run_id — it reclaims the run: nulls the
+    # duplicate's key, takes the key here, and removes the duplicate so exactly
+    # one comment survives per run. Uses update_column to avoid re-broadcasting
+    # or firing callbacks for what is purely a dedup-key backfill.
+    def claim_openclaw_run_id(run_id)
+      return if run_id.blank?
+      return if openclaw_run_id.present?
+
+      update_column(:openclaw_run_id, run_id)
+    rescue ActiveRecord::RecordNotUnique
+      reclaim_openclaw_run_id(run_id)
+    rescue StandardError => e
+      Rails.logger.warn(
+        "[Collavre::Comment] Failed to claim run_id #{run_id} on comment #{id}: #{e.message}"
+      )
+    end
+
     # public for db migration
     def creative_snippet
       creative.creative_snippet
@@ -102,6 +127,33 @@ module Collavre
     end
 
     private
+
+    # Resolve a lost run_id race in favor of this (canonical) comment. Atomically
+    # transfers the run_id from the proactive duplicate to this comment, then
+    # destroys the duplicate so exactly one comment survives per run (destroy
+    # broadcasts the removal to clients).
+    def reclaim_openclaw_run_id(run_id)
+      duplicate = Collavre::Comment.find_by(openclaw_run_id: run_id)
+      if duplicate.nil? || duplicate.id == id
+        # The claim vanished or is already ours; just (re)take it.
+        update_column(:openclaw_run_id, run_id) if reload.openclaw_run_id.blank?
+        return
+      end
+
+      Collavre::Comment.transaction do
+        duplicate.update_column(:openclaw_run_id, nil)
+        update_column(:openclaw_run_id, run_id)
+      end
+      duplicate.destroy
+      Rails.logger.warn(
+        "[Collavre::Comment] Reclaimed run #{run_id} for comment #{id}; " \
+        "removed duplicate #{duplicate.id}"
+      )
+    rescue ActiveRecord::RecordNotUnique
+      Rails.logger.warn("[Collavre::Comment] run_id #{run_id} reclaim lost a concurrent race")
+    rescue StandardError => e
+      Rails.logger.warn("[Collavre::Comment] Failed to reclaim run_id #{run_id}: #{e.message}")
+    end
 
     def nullify_selected_version
       update_column(:selected_version_id, nil) if selected_version_id.present?

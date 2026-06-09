@@ -147,54 +147,22 @@ module CollavreOpenclaw
       end
     end
 
-    # Persist the Gateway runId on the reply comment so that the same run's
-    # final event — re-delivered as "proactive" to every other process sharing
-    # this Gateway — is recognized as already-handled and suppressed. Uses
-    # update_column to avoid re-broadcasting the comment or firing callbacks for
-    # what is purely a dedup-key backfill.
+    # Persist the Gateway runId on the solicited reply comment so that the same
+    # run's final event — re-delivered as "proactive" to every other process
+    # sharing this Gateway — is recognized as already-handled and suppressed.
+    # The canonical-wins reclaim (when a proactive duplicate won the race) lives
+    # on Collavre::Comment so the solicited path here and the review-finalizer
+    # path share one implementation of the dedup invariant.
     def persist_run_id_on_comment(run_id)
       return if run_id.blank?
 
       comment = @context[:comment]
-      return unless comment.respond_to?(:id) && comment.id.present?
-      return if comment.openclaw_run_id.present?
+      return unless comment.respond_to?(:claim_openclaw_run_id) &&
+                    comment.respond_to?(:id) && comment.id.present?
 
-      comment.update_column(:openclaw_run_id, run_id)
-    rescue ActiveRecord::RecordNotUnique
-      # A proactive duplicate from another process already claimed this run_id
-      # for a different comment. Returning here would leave BOTH comments alive
-      # (this solicited reply run_id-less, the proactive one with no activity
-      # log) — the exact duplicate this change exists to prevent. The solicited
-      # reply is canonical, so reclaim the run and remove the duplicate.
-      reclaim_run_id_for_solicited_reply(comment, run_id)
+      comment.claim_openclaw_run_id(run_id)
     rescue StandardError => e
       Rails.logger.warn("[CollavreOpenclaw] Failed to persist run_id on comment: #{e.message}")
-    end
-
-    # Resolve a lost run_id race in favor of the solicited reply (the comment
-    # that carries the activity log). Atomically transfers the run_id from the
-    # proactive duplicate to this comment, then destroys the duplicate so exactly
-    # one comment survives per run (destroy broadcasts a removal to clients).
-    def reclaim_run_id_for_solicited_reply(comment, run_id)
-      duplicate = Collavre::Comment.find_by(openclaw_run_id: run_id)
-      if duplicate.nil? || duplicate.id == comment.id
-        # The claim vanished or is already ours; just (re)take it.
-        comment.update_column(:openclaw_run_id, run_id) if comment.reload.openclaw_run_id.blank?
-        return
-      end
-
-      Collavre::Comment.transaction do
-        duplicate.update_column(:openclaw_run_id, nil)
-        comment.update_column(:openclaw_run_id, run_id)
-      end
-      duplicate.destroy
-      Rails.logger.warn("[CollavreOpenclaw] Reclaimed run #{run_id} for solicited comment " \
-                        "#{comment.id}; removed proactive duplicate #{duplicate.id}")
-    rescue ActiveRecord::RecordNotUnique
-      # Lost a concurrent re-race; leave the current winner in place.
-      Rails.logger.warn("[CollavreOpenclaw] run_id #{run_id} reclaim lost a concurrent race")
-    rescue StandardError => e
-      Rails.logger.warn("[CollavreOpenclaw] Failed to reclaim run_id #{run_id}: #{e.message}")
     end
 
     def build_ws_chat_payload
