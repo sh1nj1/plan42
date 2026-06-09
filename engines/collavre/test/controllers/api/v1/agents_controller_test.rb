@@ -366,6 +366,39 @@ module Collavre
           assert_equal task.id, Comment.find(body["comment_id"]).task_id
         end
 
+        test "reply broadcasts idle agent_status so the typing indicator clears" do
+          reg = register_agent("reply-idle-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          topic = Topic.find(topic_id)
+          creative = topic.creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Response to comment_created",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          broadcasts = []
+          ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, task_id: task.id, text: "Claude responded" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :created
+
+          idle = broadcasts
+                 .select { |b| b[:data].is_a?(Hash) && b[:data][:agent_status].present? }
+                 .map { |b| b[:data][:agent_status] }
+                 .find { |s| s[:status] == "idle" && s[:id] == ai_user.id }
+          assert_not_nil idle, "expected an idle agent_status broadcast on reply to clear the typing indicator"
+          assert_equal task.id, idle[:task_id]
+        end
+
         test "reply with task_id completes the specified delegated task" do
           # When topic concurrency > 1, multiple delegated tasks can co-exist
           # in the same topic. Claude may reply to a later dispatch first;

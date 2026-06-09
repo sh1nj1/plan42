@@ -412,6 +412,28 @@ module Collavre
           # advance/await/complete the drop-trigger loop, and the stop-button
           # broadcast has a comment to render.
           task.fire_completion_callbacks_after_external_claim
+
+          # Clear the typing indicator immediately on reply. ClaudeChannelPresenceJob
+          # would also stop on its next beat (task no longer "delegated"), but that
+          # is up to HEARTBEAT_SECONDS away — broadcast idle now so the indicator
+          # drops the moment Claude's reply lands.
+          broadcast_claude_idle(agent, task, comment)
+        end
+
+        # Broadcast an "idle" agent_status so the chat typing indicator clears.
+        # Mirrors AgentLifecycleManager#broadcast_status for the Claude path.
+        def broadcast_claude_idle(agent, task, comment)
+          creative = comment.creative&.effective_origin
+          return unless creative
+
+          CommentsPresenceChannel.broadcast_agent_status(
+            creative.id,
+            status: "idle",
+            agent_id: agent.id,
+            agent_name: agent.display_name,
+            task_id: task.id,
+            source_creative_id: creative.id
+          )
         end
 
         # When an MCP session unregisters, any tasks still in delegated state

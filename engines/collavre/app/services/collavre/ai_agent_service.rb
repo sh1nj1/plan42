@@ -47,6 +47,12 @@ module Collavre
         task: @task
       ).deliver
 
+      # Drive the chat typing indicator for this async dispatch (and surface a
+      # disconnect notice if no session is live). The dispatch above returns
+      # immediately; ClaudeChannelPresenceJob keeps agent_status alive until the
+      # reply lands or the session is gone — see the job for the full lifecycle.
+      ClaudeChannelPresenceJob.perform_later(@task.id) if @task
+
       log_action("delegated", { message: "Message delivered to Claude Channel" })
       nil
     end

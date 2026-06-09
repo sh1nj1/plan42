@@ -219,10 +219,21 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     initial_count = @creative.comments.count
 
+    # Use the :test adapter so the enqueued ClaudeChannelPresenceJob is recorded
+    # rather than run inline (which, with no live session, would post a disconnect
+    # notice and, with one, recurse on its self-re-enqueue).
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    enqueued = nil
     broadcasts = []
-    ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
-      result = AiAgentService.new(task).call
-      assert_nil result
+    begin
+      ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+        result = AiAgentService.new(task).call
+        assert_nil result
+      end
+      enqueued = ActiveJob::Base.queue_adapter.enqueued_jobs
+    ensure
+      ActiveJob::Base.queue_adapter = original_adapter
     end
 
     # No reply comment created (reply comes via API)
@@ -234,6 +245,10 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     # Broadcast dispatch event
     dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
     assert_not_nil dispatch
+
+    # Drives the chat typing indicator via the presence heartbeat job.
+    assert(enqueued.any? { |j| j[:job] == Collavre::ClaudeChannelPresenceJob && j[:args] == [ task.id ] },
+           "expected ClaudeChannelPresenceJob enqueued for task #{task.id} to drive the typing indicator")
   end
 
   test "does not call AiClient for claude_channel_agent" do
