@@ -49,12 +49,27 @@ module Collavre
       ActiveJob::Base.queue_adapter = @original_adapter
     end
 
-    test "human comment in an inbox topic WITH a primary_agent dispatches to orchestration" do
-      topic = @inbox.topics.create!(name: "Claude session-x", user: @user)
+    test "human comment in a registered Claude session topic dispatches to orchestration" do
+      topic = @inbox.topics.create!(name: "Claude session-x", user: @user, session_id: "sess-x")
       topic.set_primary_agent!(@agent)
 
       assert_enqueued_with(job: Collavre::AiAgentJob) do
         @inbox.comments.create!(content: "hi", user: @user, topic: topic)
+      end
+    end
+
+    # A Claude Channel ai_user can be set as an inbox topic's primary_agent via
+    # TopicsController#set_primary_agent without ever registering a session (no
+    # session_id). That is NOT a real session topic: the adapter stamps
+    # session_topic on session_id presence, so dispatching here would route an
+    # ordinary inbox thread to the live Claude session. The exception must key
+    # on the registration marker (session_id), matching the adapter.
+    test "human comment in an inbox topic with a Claude primary_agent but NO session_id does not dispatch" do
+      topic = @inbox.topics.create!(name: "Claude agent, unregistered", user: @user)
+      topic.set_primary_agent!(@agent)
+
+      assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+        @inbox.comments.create!(content: "ordinary dm", user: @user, topic: topic)
       end
     end
 

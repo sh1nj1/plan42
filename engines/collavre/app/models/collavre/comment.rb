@@ -197,11 +197,18 @@ module Collavre
     end
 
     # True only when this comment's topic is an actual Claude Channel session
-    # topic — i.e. its primary_agent is a claude_channel_agent? (llm_model
-    # "claude-code"). Used to scope the inbox dispatch exception so ordinary
-    # inbox threads (no primary, or a non-Claude primary) stay local.
+    # topic — it carries the registration marker (session_id) AND its
+    # primary_agent is a claude_channel_agent? (llm_model "claude-code"). Used to
+    # scope the inbox dispatch exception so ordinary inbox threads stay local.
+    #
+    # session_id is required, not just the Claude primary_agent: a Claude
+    # channel ai_user can be assigned as primary_agent on an ordinary inbox
+    # topic via TopicsController#set_primary_agent without ever registering a
+    # session. Gating on the agent alone would dispatch that ordinary thread and
+    # leak it to the live Claude session. session_id is exactly what
+    # ClaudeChannelAdapter#session_topic? keys on, so the two stay consistent.
     def claude_channel_session_topic?
-      topic&.primary_agent&.claude_channel_agent?
+      topic&.session_id.present? && topic&.primary_agent&.claude_channel_agent?
     end
 
     # Deliver this comment as an allow/deny decision to any Claude Channel
