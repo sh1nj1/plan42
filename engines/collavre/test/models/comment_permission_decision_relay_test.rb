@@ -73,6 +73,30 @@ module Collavre
       assert_equal @topic.id, payload.dig("comment", "topic_id")
     end
 
+    test "relayed payload marks a session topic so sibling sessions filter it out" do
+      @topic.update!(session_id: "sess-x", primary_agent: @agent)
+      delegated_task(pending: { "request_id" => "abc" })
+
+      payload = nil
+      capture_broadcasts("agent:user:#{@agent.id}") do
+        @creative.comments.create!(content: "allow", user: @user, topic: @topic)
+      end.tap { |msgs| payload = msgs.first }
+
+      assert_equal true, payload["session_topic"],
+        "decision on a session topic must carry session_topic so only the owning session handles it"
+    end
+
+    test "relayed payload marks a non-session work topic as session_topic false" do
+      delegated_task(pending: { "request_id" => "abc" })
+
+      payload = nil
+      capture_broadcasts("agent:user:#{@agent.id}") do
+        @creative.comments.create!(content: "allow", user: @user, topic: @topic)
+      end.tap { |msgs| payload = msgs.first }
+
+      assert_equal false, payload["session_topic"]
+    end
+
     test "human comment does NOT relay when the delegated task has no pending_tool_call" do
       delegated_task(pending: nil)
 

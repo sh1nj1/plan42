@@ -240,6 +240,12 @@ module Collavre
       {
         type: "dispatch",
         task_id: nil,
+        # Mirror ClaudeChannelAdapter#deliver: stamp session_topic so the MCP
+        # plugin's sibling-topic filter applies. Without it the flag is absent
+        # (treated as a work topic) and every sibling session sharing this agent
+        # would forward the allow/deny text into its own unrelated Claude turn —
+        # only the owning session holds the pending permission coordinator.
+        session_topic: topic&.session_id.present?,
         comment: {
           id: id,
           content: content,
