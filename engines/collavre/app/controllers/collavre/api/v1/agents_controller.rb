@@ -564,6 +564,25 @@ module Collavre
           ).dispatch
         end
 
+        # Deterministic, collision-free email key for a (current_user, agent_name)
+        # agent. The readable slug is lossy — "qa/bot", "qa bot" and "qa--bot" all
+        # squeeze to "qa-bot", and any all-symbol name collapses to "session" — so
+        # a short digest of the normalized raw name disambiguates distinct
+        # configured names that would otherwise alias onto ONE shared agent
+        # identity (ActionCable stream, routing state, tasks, creative shares).
+        # The slug stays for human readability; the digest decides identity. Same
+        # normalized name -> same key, so idempotent re-register/reuse is
+        # preserved. Normalization (strip+downcase) keeps case/whitespace-only
+        # differences folded, matching the prior behavior — only the lossy
+        # punctuation/spacing collapse is fixed.
+        def session_agent_email(agent_name)
+          normalized = agent_name.to_s.strip.downcase
+          slug = normalized.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
+          slug = "session" if slug.blank?
+          digest = Digest::SHA256.hexdigest(normalized)[0, 10]
+          "claude-channel-#{current_user.id}-#{slug}-#{digest}@agent.collavre.local"
+        end
+
         # One ai_user per (current_user, agent_name) so a human's sessions share
         # one Agent identity. Same agent_name re-registering reuses the existing
         # row — idempotent retries (and every additional session) don't
@@ -571,15 +590,13 @@ module Collavre
         #
         # Returns nil when a row with the deterministic email already exists
         # but is owned by someone else or isn't a Claude Channel ai_user. The
-        # email format is human-derivable (current_user.id + slug), so a
+        # email format is human-derivable (current_user.id + slug + digest), so a
         # foreign row could be planted by signup/import; silently reusing it
         # would attach the caller's inbox feedback share to that foreign User
         # and leave the plugin's AgentChannel subscription rejected on
         # ownership mismatch. Caller renders 409 in that case.
         def find_or_create_session_agent(agent_name)
-          slug = agent_name.to_s.downcase.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
-          slug = "session" if slug.blank?
-          email = "claude-channel-#{current_user.id}-#{slug}@agent.collavre.local"
+          email = session_agent_email(agent_name)
 
           existing = User.find_by(email: email)
           return verified_session_agent(existing) if existing

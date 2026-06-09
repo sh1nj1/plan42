@@ -142,7 +142,7 @@ module Collavre
           # plugin's WS subscription on ownership mismatch.
           other = users(:two)
           slug = "collision"
-          email = "claude-channel-#{@user.id}-#{slug}@agent.collavre.local"
+          email = session_agent_email(slug)
           User.create!(
             email: email,
             name: "Squatter",
@@ -168,7 +168,7 @@ module Collavre
           # Gemini agent previously created with the same email) must not be
           # silently repurposed as a Claude Channel agent.
           slug = "wrongmodel"
-          email = "claude-channel-#{@user.id}-#{slug}@agent.collavre.local"
+          email = session_agent_email(slug)
           User.create!(
             email: email,
             name: "Gemini",
@@ -228,7 +228,7 @@ module Collavre
           ai_user = User.find(body["agent_id"])
           assert ai_user.claude_channel_agent?
           # Agent identity derives from agent_name, NOT the session id.
-          assert_equal "claude-channel-#{@user.id}-claude@agent.collavre.local", ai_user.email
+          assert_equal session_agent_email("claude"), ai_user.email
           # The topic carries the session id so re-register can find it.
           assert_equal "sess-alpha", Topic.find(body["topic_id"]).session_id
           assert_equal "sess-alpha", body["session_id"]
@@ -289,6 +289,37 @@ module Collavre
             assert_not_equal a["agent_id"], b["agent_id"]
             assert_not_equal a["topic_id"], b["topic_id"]
           end
+        end
+
+        test "register does not alias distinct agent_names that share a lossy slug" do
+          # Codex P2: the readable slug squeezes "qa/bot", "qa bot" and "qa--bot"
+          # all to "qa-bot". Keying identity on the slug alone would silently
+          # merge these distinct configured agents onto one ai_user (sharing its
+          # stream, routing, tasks, shares). A digest of the raw name keeps them
+          # distinct while same-name re-register stays idempotent.
+          post "/api/v1/agent/register",
+            params: { agent_name: "qa/bot", session_id: "sess-1" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          a = JSON.parse(response.body)
+
+          post "/api/v1/agent/register",
+            params: { agent_name: "qa-bot", session_id: "sess-2" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          b = JSON.parse(response.body)
+
+          assert_not_equal a["agent_id"], b["agent_id"],
+            "distinct names that share a slug must not collapse to one agent"
+          assert_not_equal User.find(a["agent_id"]).email, User.find(b["agent_id"]).email
+
+          # Same raw name still reuses the same agent (idempotency preserved).
+          post "/api/v1/agent/register",
+            params: { agent_name: "qa/bot", session_id: "sess-3" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          again = JSON.parse(response.body)
+          assert_equal a["agent_id"], again["agent_id"], "same raw name must reuse its agent"
         end
 
         test "register uses session_label for the topic name when provided" do
@@ -1832,7 +1863,7 @@ module Collavre
 
           assert_response :ok, "the race loser must reuse the winner's row, not 500"
           body = JSON.parse(response.body)
-          email = "claude-channel-#{@user.id}-claude@agent.collavre.local"
+          email = session_agent_email("claude")
           assert_equal email, User.find(body["agent_id"]).email
           assert_equal 1, User.where(email: email).count, "no duplicate agent row"
         end
@@ -1855,6 +1886,17 @@ module Collavre
 
         def auth_headers
           { "Authorization" => "Bearer #{@token.token}" }
+        end
+
+        # Mirrors AgentsController#session_agent_email: the deterministic agent
+        # identity key. The digest of the normalized raw name disambiguates
+        # distinct configured names that share a lossy slug.
+        def session_agent_email(name)
+          normalized = name.to_s.strip.downcase
+          slug = normalized.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
+          slug = "session" if slug.blank?
+          digest = Digest::SHA256.hexdigest(normalized)[0, 10]
+          "claude-channel-#{@user.id}-#{slug}-#{digest}@agent.collavre.local"
         end
 
         def register_agent(name)
