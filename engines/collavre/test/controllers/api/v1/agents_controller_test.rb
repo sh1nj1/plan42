@@ -1460,6 +1460,47 @@ module Collavre
             "agent slot must be released so concurrency capacity reflects reality"
         end
 
+        test "destroy drains the topic queue after cancelling pending pre-dispatch work" do
+          # Pre-dispatch (queued/pending/running) cancellation must drain the
+          # topic queue just like the delegated path does. Otherwise, when a
+          # live sibling shares a work topic, cancelling this session's pending
+          # task without a dequeue strands the sibling's queued task on that
+          # topic until some unrelated completion happens to drain it.
+          reg = register_agent("drain-pending-test")
+          inbox_topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+
+          work_creative = creatives(:tshirt)
+          work_topic = work_creative.topics.create!(name: "Shared work topic drain", user: @user)
+          # Only a pending task for this agent — no delegated task — so the
+          # delegated path's dequeue never fires. The drain must come from the
+          # pre-dispatch cancellation path.
+          pending_task = Collavre::Task.create!(
+            name: "Pending on shared work topic",
+            status: "pending",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: work_topic.id,
+            creative_id: work_creative.id
+          )
+
+          dequeue_calls = []
+          stub = ->(t, c = nil) { dequeue_calls << [ t, c ] }
+
+          Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, stub) do
+            delete "/api/v1/agent/#{ai_user.id}",
+              params: { topic_id: inbox_topic_id },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :no_content
+
+          assert_equal "cancelled", pending_task.reload.status
+          assert_includes dequeue_calls, [ work_topic.id, work_creative.id ],
+            "work topic queue must be drained after cancelling this session's pending task " \
+            "so a sibling's queued task on the shared topic is promoted"
+        end
+
         test "destroy clears routing_expression to exclude session agent from Matcher" do
           # Per-session ai_users left lying around with routing_expression="true"
           # keep being scanned by Orchestration::Matcher#match_by_expression,

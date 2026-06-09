@@ -514,10 +514,12 @@ module Collavre
           return if tasks.empty?
 
           tracker = Orchestration::ResourceTracker.for(agent)
+          drained_topics = {}
           tasks.find_each do |task|
             was_running = task.status == "running"
             task.update!(status: "cancelled")
             tracker.release!(task.id) if was_running
+            drained_topics[task.topic_id] ||= task.creative_id
 
             if task.parent_task_id.present?
               begin
@@ -530,6 +532,19 @@ module Collavre
                 )
               end
             end
+          end
+
+          # Drain each affected topic's queue once, AFTER all of this session's
+          # pre-dispatch tasks are cancelled. The delegated path dequeues per
+          # task, but it never cancels queued tasks; this path does. A per-task
+          # dequeue here could promote one of our own still-queued tasks to
+          # pending mid-loop, only for the loop to cancel it — and its AiAgentJob
+          # early-returns on "cancelled" without dequeuing, re-stranding a live
+          # sibling's queued task on the same shared topic. Draining once at the
+          # end (when none of our tasks remain queued) promotes the sibling's
+          # task instead of ours.
+          drained_topics.each do |topic_id, creative_id|
+            Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
           end
         end
 
