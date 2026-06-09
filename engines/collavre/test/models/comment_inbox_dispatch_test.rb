@@ -65,5 +65,28 @@ module Collavre
         @inbox.comments.create!(content: "just a note", user: @user, topic: topic)
       end
     end
+
+    # An inbox topic may be given a primary agent that is NOT a Claude Channel
+    # session (TopicsController#set_primary_agent accepts any ai_user). The inbox
+    # dispatch exception must stay scoped to actual Claude Channel session topics
+    # — otherwise an ordinary inbox thread leaks to the live Claude session,
+    # which holds inbox-wide feedback + routing_expression="true".
+    test "human comment in an inbox topic with a NON-Claude primary_agent does not dispatch" do
+      other_agent = User.create!(
+        email: "inbox_other_agent@agent.collavre.local",
+        name: "Ordinary Inbox Agent",
+        password: "password",
+        llm_vendor: "anthropic",
+        llm_model: "claude-3-5-sonnet",
+        routing_expression: "true",
+        created_by_id: @user.id
+      )
+      topic = @inbox.topics.create!(name: "Inbox thread with non-claude agent", user: @user)
+      topic.set_primary_agent!(other_agent)
+
+      assert_no_enqueued_jobs(only: Collavre::AiAgentJob) do
+        @inbox.comments.create!(content: "ordinary dm", user: @user, topic: topic)
+      end
+    end
   end
 end

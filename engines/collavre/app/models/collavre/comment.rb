@@ -167,10 +167,14 @@ module Collavre
       # trigger AI orchestration. Exception: a Claude Channel agent session
       # registers its topic *inside* the inbox (Creative.inbox_for) and depends
       # on the orchestration pipeline (Matcher → Arbiter → AiAgentService) to
-      # deliver comments to the running session. Such session topics carry a
-      # primary_agent; ordinary inbox threads do not — so only skip when the
-      # topic has no primary agent.
-      return if creative.inbox? && topic&.primary_agent_id.nil?
+      # deliver comments to the running session. Scope the exception to actual
+      # Claude Channel session topics (primary_agent is a claude_channel_agent?).
+      # An inbox topic can be given any ai_user as primary_agent via
+      # TopicsController#set_primary_agent; gating on mere primary_agent presence
+      # would leak ordinary inbox DMs to the live Claude session, which holds
+      # inbox-wide :feedback + routing_expression="true" and would be selected by
+      # the Matcher for any dispatched inbox comment.
+      return if creative.inbox? && !claude_channel_session_topic?
 
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
@@ -190,6 +194,14 @@ module Collavre
         "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
       )
       raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
+    end
+
+    # True only when this comment's topic is an actual Claude Channel session
+    # topic — i.e. its primary_agent is a claude_channel_agent? (llm_model
+    # "claude-code"). Used to scope the inbox dispatch exception so ordinary
+    # inbox threads (no primary, or a non-Claude primary) stay local.
+    def claude_channel_session_topic?
+      topic&.primary_agent&.claude_channel_agent?
     end
 
     # Deliver this comment as an allow/deny decision to any Claude Channel
