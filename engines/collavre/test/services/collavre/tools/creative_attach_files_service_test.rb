@@ -112,6 +112,23 @@ module Collavre
         assert_nil result[:success]
         assert_match(/filename/i, result[:error])
       end
+
+      test "creates no orphan blob when a later file is missing a filename" do
+        # A valid first entry followed by a blank-filename entry must not leave
+        # the first blob orphaned: validate the whole payload before uploading any.
+        assert_no_difference -> { ActiveStorage::Blob.count } do
+          result = CreativeAttachFilesService.new.call(
+            creative_id: @creative.id,
+            files: [
+              { "filename" => "notes.md", "content" => "# Hi" },
+              { "content" => "no name" }
+            ]
+          )
+          assert_nil result[:success]
+          assert_match(/filename/i, result[:error])
+        end
+        assert_not_includes @creative.reload.description.to_s, "notes.md"
+      end
     end
   end
 end

@@ -26,14 +26,15 @@ module Tools
         return { error: "Cannot attach files to GitHub-synced content", id: creative_id }
       end
       return { error: "No files provided" } if files.blank?
+      # Validate the entire payload before creating any blob, so a bad entry
+      # later in the array never leaves an orphaned blob from an earlier one.
+      return { error: "Each file requires a filename" } if files.any? { |f| f["filename"].to_s.blank? }
 
-      blobs = []
-      files.each do |f|
+      blobs = files.map do |f|
         name = f["filename"].to_s
         content = f["content"].to_s
-        return { error: "Each file requires a filename" } if name.blank?
 
-        blobs << ActiveStorage::Blob.create_and_upload!(
+        ActiveStorage::Blob.create_and_upload!(
           io: StringIO.new(content),
           filename: name,
           content_type: f["content_type"].presence || Marcel::MimeType.for(name: name) || "text/plain"
