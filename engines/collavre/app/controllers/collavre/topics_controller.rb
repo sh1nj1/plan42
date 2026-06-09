@@ -105,7 +105,13 @@ module Collavre
       end
 
       topic_id = topic.id
+      topic_name = topic.name
       topic.destroy
+
+      Collavre::Topics::OrphanedCronNotifier.new(
+        topic_id: topic_id,
+        topic_name: topic_name
+      ).call
 
       broadcast_topic_event("deleted", topic_id: topic_id)
       head :no_content
