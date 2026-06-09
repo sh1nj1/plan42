@@ -80,10 +80,7 @@ module Collavre
       return unless topic_id
 
       creative.comments.create!(
-        content: I18n.t(
-          "collavre.claude_channel.disconnected",
-          default: "🔌 Claude Channel과 연결되어 있지 않습니다 — 다시 연결되면 메시지가 전달됩니다."
-        ),
+        content: I18n.t("collavre.claude_channel.disconnected"),
         topic_id: topic_id,
         private: false,
         skip_default_user: true,

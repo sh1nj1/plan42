@@ -9,3 +9,5 @@ en:
         badge:
           running: "Running"
           stopped: "Stopped"
+    claude_channel:
+      disconnected: "🔌 Not connected to Claude Channel — your message will be delivered once it reconnects."

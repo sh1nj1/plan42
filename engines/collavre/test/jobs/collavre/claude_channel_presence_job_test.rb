@@ -95,6 +95,11 @@ module Collavre
       assert_equal before + 1, @creative.comments.count, "expected one system disconnect notice comment"
       notice = @creative.comments.order(:created_at).last
       assert_nil notice.user_id, "disconnect notice should be authorless (a system message)"
+      # The notice must come from a real locale key (not an inline Korean
+      # default), so non-Korean locales render their own translation.
+      assert_equal I18n.t("collavre.claude_channel.disconnected"), notice.content
+      assert_not_includes I18n.t("collavre.claude_channel.disconnected", locale: :en), "연결되어",
+                          "English locale must not fall back to the Korean string"
     end
 
     test "stale session row is ignored (treated as disconnected) and reaped" do

@@ -339,6 +339,37 @@ module Collavre
           assert_equal ai_user.id, comment.user_id
         end
 
+        test "legacy reply (no task_id) is refused when primary_agent is not a Claude Channel agent" do
+          # The legacy fallback in resolve_reply_agent must apply the same
+          # claude_channel_agent? gate as the task_id path. Otherwise a caller
+          # with feedback permission could POST /reply (no task_id) on an
+          # ordinary topic whose primary_agent is a normal AI user and save an
+          # unlinked comment authored as that AI user.
+          normal_agent = User.create!(
+            email: "normal-ai@collavre.local",
+            password: "password123",
+            name: "Normal AI",
+            llm_vendor: "google",
+            llm_model: "gemini-1.5-flash",
+            created_by_id: @user.id
+          )
+          assert_not normal_agent.claude_channel_agent?
+
+          creative = Creative.create!(user: @user, description: "Ordinary creative")
+          topic = creative.topics.create!(name: "Ordinary topic", user: @user)
+          topic.set_primary_agent!(normal_agent)
+
+          before = Comment.count
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Impersonation attempt" },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :forbidden
+          assert_equal before, Comment.count,
+            "no comment may be saved as a non-Claude-Channel primary_agent via the legacy reply fallback"
+        end
+
         test "reply marks delegated task done and links comment" do
           reg = register_agent("delegated-task-test")
           topic_id = reg["topic_id"]

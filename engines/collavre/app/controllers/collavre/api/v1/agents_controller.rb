@@ -351,8 +351,13 @@ module Collavre
             return agent
           end
 
+          # Legacy fallback (no task_id) must apply the same Claude Channel
+          # gate as the task_id path above. Without it, a feedback-permission
+          # caller could POST /reply on an ordinary topic whose primary_agent
+          # is a normal AI user and save an unlinked comment authored as that
+          # agent. Restrict to Claude Channel agents owned by the caller.
           agent = topic.primary_agent
-          return agent if agent && agent.created_by_id == current_user.id
+          return agent if agent&.claude_channel_agent? && agent.created_by_id == current_user.id
 
           nil
         end
