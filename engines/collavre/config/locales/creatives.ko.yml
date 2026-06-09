@@ -40,6 +40,8 @@ ko:
         no_creatives: 크리에이티브가 없습니다.
         no_sub_creatives: 하위 크리에이티브가 없습니다.
         no_search_results: 검색 결과가 없습니다.
+        link_loading: 불러오는 중…
+        link_expand: 펼치기
         recommend_parent: 카테고리 추천
         import_uploading: 업로드 중...
         import_success: 가져오기 성공! 새로고침 중...
@@ -120,6 +122,11 @@ ko:
         metadata_tooltip: 메타데이터 편집
         metadata_title: 메타데이터
         metadata_save: 저장
+        toggle_markdown: 마크다운
+        toggle_richtext: 서식 편집
+        markdown_to_richtext_confirm: 서식 편집으로 전환하면 마크다운 원본이 삭제됩니다.
+          계속하시겠습니까?
+        richtext_to_markdown_confirm: 마크다운으로 전환하면 현재 서식 편집 내용이 삭제됩니다. 계속하시겠습니까?
       share:
         shared: 크리에이티브가 성공적으로 공유되었습니다.
         permission_updated: 권한이 성공적으로 변경되었습니다.
@@ -134,8 +141,11 @@ ko:
         progress_recalculated: 진행률을 다시 계산 했습니다.
       errors:
         no_permission: 이 작업을 수행할 권한이 없습니다.
+        metadata_must_be_object: 메타데이터는 객체여야 합니다.
       inline_editor:
         placeholder: 크리에이티브를 설명해주세요…
+        markdown_placeholder: 마크다운으로 작성…
+        markdown_preview_placeholder: 미리보기
       edit_title: 크리에이티브 수정
       edit:
         inline_editor_only_html: 크리에이티브 수정은 인라인 편집기에서 바로 진행하세요.

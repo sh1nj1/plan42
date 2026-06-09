@@ -27,7 +27,6 @@ module Collavre
         registry = Collavre::IntegrationSettings::Registry.instance
         registry.register(:default_mailer_from, category: "mail", sensitive: false, requires_restart: true)
         registry.register(:public_assets_host,  category: "mail", sensitive: false, requires_restart: false)
-        registry.register(:mcp_upload_root,     category: "misc", sensitive: false, requires_restart: false)
         # LLM keys consumed by Collavre::AiClient (engine service). Owned by the
         # engine so gem-mounted host apps don't depend on the app-level
         # `ruby_llm.rb` initializer for ENV fallback.
@@ -35,6 +34,35 @@ module Collavre
         registry.register(:openai_api_key,    category: "llm", sensitive: true,  requires_restart: false)
         registry.register(:anthropic_api_key, category: "llm", sensitive: true,  requires_restart: false)
         registry.register(:gemini_api_base,   category: "llm", sensitive: false, requires_restart: true)
+      end
+    end
+
+    # AWS keys are consumed by `config/environments/*.rb` (active_storage.service
+    # decision, SMTP scaffold) and `config/storage.yml` ERB, both of which evaluate
+    # during the `:load_environment_config` initializer — earlier than
+    # `:load_config_initializers`. Register them in their own block so
+    # `IntegrationSettings.fetch` can resolve the keys at that earlier point.
+    # S3 keys are `requires_restart: true` because Rails resolves the storage
+    # service once at boot; SES keys are runtime-injected by SesSettingsInterceptor.
+    initializer "collavre.integration_settings_registry.aws", before: :load_environment_config do
+      if defined?(Collavre::IntegrationSettings::Registry)
+        registry = Collavre::IntegrationSettings::Registry.instance
+        registry.register(:aws_s3_access_key_id,     category: "aws_s3",  sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_secret_access_key, category: "aws_s3",  sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_bucket,            category: "aws_s3",  sensitive: false, requires_restart: true)
+        registry.register(:aws_region,               category: "aws_s3",  sensitive: false, requires_restart: true)
+        registry.register(:aws_ses_smtp_username,    category: "aws_ses", sensitive: true,  requires_restart: false)
+        registry.register(:aws_ses_smtp_password,    category: "aws_ses", sensitive: true,  requires_restart: false)
+      end
+    end
+
+    # Register the SES SMTP settings interceptor so each outgoing mail picks up
+    # the current DB > ENV > credentials value for SES creds at send time.
+    # Hooked after ActionMailer loads to ensure Mail::SMTP is defined.
+    initializer "collavre.ses_settings_interceptor" do
+      ActiveSupport.on_load(:action_mailer) do
+        require "mail"
+        ::Mail.register_interceptor(Collavre::SesSettingsInterceptor)
       end
     end
 

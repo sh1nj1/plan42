@@ -1,3 +1,8 @@
+## v0.6.2 (2026-06-04)
+
+### Changes
+- 83d558a0 feat(collavre): Phase 3 batch — DB-backed firebase/fcm/llm/openclaw/mail/misc settings (#1267)
+
 ## v0.6.1 (2026-04-17)
 
 ### Changes

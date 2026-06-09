@@ -6,12 +6,51 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
+<%
+  # Pre-warm encryption fallback keys so the calls below can decrypt
+  # admin-saved DB rows even though
+  # `config/initializers/active_record_encryption.rb` runs later. Without
+  # this, the `boot_safe:` rescue would swallow the encryption error and
+  # silently downgrade DB-backed S3 to local disk.
+  EncryptionBootstrap.ensure_keys!(Rails.application) if defined?(EncryptionBootstrap)
+
+  # `AwsCredentials.s3` returns a source-coherent pair (both DB, both ENV, or
+  # neither), so a partial admin save can't combine a DB access_key_id with an
+  # ENV secret and boot Active Storage with a mismatched credential pair.
+  # When `Collavre::AwsCredentials` is unavailable (`USE_COLLAVRE_GEM=true`
+  # with a gem version predating this feature), fall back to plain ENV so
+  # legacy env-based S3 deploys keep working. `CollavreCompat.call` drops
+  # the `boot_safe:` keyword on older gem versions that don't accept it,
+  # avoiding an ArgumentError at boot. Loaded eagerly by `config/application.rb`.
+  s3_credentials =
+    if defined?(Collavre::AwsCredentials)
+      CollavreCompat.call(Collavre::AwsCredentials, :s3, boot_safe: true)
+    elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
+      { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
+    else
+      {}
+    end
+
+  s3_region =
+    if defined?(Collavre::IntegrationSettings)
+      CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :aws_region, default: ENV.fetch("AWS_REGION", "ap-northeast-2"), boot_safe: true)
+    else
+      ENV.fetch("AWS_REGION", "ap-northeast-2")
+    end
+
+  s3_bucket =
+    if defined?(Collavre::IntegrationSettings)
+      CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :aws_s3_bucket, default: ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}"), boot_safe: true)
+    else
+      ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}")
+    end
+%>
 amazon:
   service: S3
-  access_key_id: <%= ENV["AWS_S3_ACCESS_KEY_ID"] %>
-  secret_access_key: <%= ENV["AWS_S3_SECRET_ACCESS_KEY"] %>
-  region: <%= ENV.fetch("AWS_REGION", "ap-northeast-2") %>
-  bucket: <%= ENV.fetch("AWS_S3_BUCKET", "collavre-uploads-#{Rails.env}") %>
+  access_key_id: <%= s3_credentials[:access_key_id] %>
+  secret_access_key: <%= s3_credentials[:secret_access_key] %>
+  region: <%= s3_region %>
+  bucket: <%= s3_bucket %>
   upload:
     server_side_encryption: "AES256"
 

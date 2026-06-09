@@ -23,6 +23,10 @@ module Collavre
             next if value.blank?
 
             definition = Registry.instance.find(key) or next
+            # Mirror the index filter: keys hidden from the admin UI
+            # (admin_visible: false) are not editable via this form, so a crafted
+            # POST cannot write them.
+            next if definition.admin_visible == false
 
             row = Collavre::IntegrationSetting.find_or_initialize_by(key: definition.key.to_s)
             row.category = definition.category
@@ -47,14 +51,21 @@ module Collavre
       private
 
       def load_definition!
-        @definition = Registry.instance.find(params[:key]) or
-          (render file: Rails.root.join("public/404.html"), status: :not_found, layout: false and return)
+        @definition = Registry.instance.find(params[:key])
+        # Keys hidden from the admin UI (admin_visible: false) are treated as
+        # non-addressable here too, so a crafted DELETE cannot reset them.
+        if @definition.nil? || @definition.admin_visible == false
+          @definition = nil
+          render file: Rails.root.join("public/404.html"), status: :not_found, layout: false and return
+        end
       end
 
       def build_grouped_settings
-        Registry.instance.by_category.sort_by { |category, _defs| category.to_s }.map do |category, definitions|
-          rows = definitions.map { |definition| build_row(definition) }
-          [ category, rows ]
+        Registry.instance.by_category.sort_by { |category, _defs| category.to_s }.filter_map do |category, definitions|
+          visible = definitions.select { |d| d.admin_visible != false }
+          next if visible.empty?
+
+          [ category, visible.map { |definition| build_row(definition) } ]
         end
       end
 

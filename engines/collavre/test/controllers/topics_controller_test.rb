@@ -23,6 +23,30 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  test "index eagerly creates System topic on first inbox visit so badge has matching topic" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    inbox.topics.where(name: Collavre::Creative::SYSTEM_TOPIC_NAME).destroy_all
+
+    assert_nil inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME),
+      "precondition: System topic should not exist before first visit"
+
+    get collavre.creative_topics_url(inbox), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+
+    assert json["is_inbox"], "fixture must be an inbox"
+    assert json["system_topic_id"].present?, "system_topic_id must be returned"
+
+    system_topic = inbox.topics.find_by(name: Collavre::Creative::SYSTEM_TOPIC_NAME)
+    assert system_topic.present?, "System topic must be created by index"
+    assert_equal system_topic.id, json["system_topic_id"]
+
+    topic_ids = json["topics"].map { |t| t["id"] }
+    assert_includes topic_ids, system_topic.id,
+      "active topics list must include the System topic so the sidebar can render it"
+  end
+
   test "should create topic and broadcast" do
     assert_difference("Topic.count") do
       post collavre.creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json
@@ -37,6 +61,47 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :no_content
+  end
+
+  # Uses the core PreviewChannel (not the collavre_github GithubPrChannel) so
+  # the core engine test suite stays independent of the optional GitHub engine
+  # per AGENTS.md. The cascade-on-delete behavior under test lives in the base
+  # Collavre::Channel, so any channel subclass exercises the same path.
+  test "should destroy topic that has a badge channel + injected comments" do
+    channel = Collavre::PreviewChannel.create!(
+      topic_id: @topic.id,
+      config: { "preview_url" => "http://localhost:4000", "label" => "Preview #1" }
+    )
+    channel.inject_into_topic!(channel.attached_message)
+
+    assert @topic.channels.exists?, "precondition: topic has a channel (badge)"
+    assert @topic.comments.exists?, "precondition: topic has injected comments"
+
+    assert_difference("Topic.count", -1) do
+      delete collavre.creative_topic_url(@creative, @topic)
+    end
+
+    assert_response :no_content
+    assert_nil Collavre::Topic.find_by(id: @topic.id), "topic must actually be gone from DB"
+  end
+
+  test "should destroy topic that has a comment_snapshot (compress/merge)" do
+    Collavre::CommentSnapshot.create!(
+      creative: @creative,
+      topic: @topic,
+      user: @user,
+      operation: "compress",
+      comments_data: [ { "id" => 1, "content" => "x" } ]
+    )
+
+    assert Collavre::CommentSnapshot.where(topic_id: @topic.id).exists?, "precondition: topic has a snapshot"
+
+    assert_difference("Topic.count", -1) do
+      delete collavre.creative_topic_url(@creative, @topic)
+    end
+
+    assert_response :no_content
+    assert_nil Collavre::Topic.find_by(id: @topic.id), "topic must actually be gone from DB"
   end
 
   test "should update topic name" do

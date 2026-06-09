@@ -58,6 +58,7 @@ Collavre::Engine.routes.draw do
     end
   end
   resources :creatives do
+    resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do

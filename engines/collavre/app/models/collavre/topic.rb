@@ -9,6 +9,11 @@ module Collavre
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
     has_many :channels, class_name: "Collavre::Channel", dependent: :destroy
+    # Compress/merge snapshots capture a topic's comments as a restore point. The
+    # comment_snapshots -> topics FK has no DB-level ON DELETE, so without this the
+    # row blocks topic deletion (ActiveRecord::InvalidForeignKey -> 500). Once the
+    # topic is gone the snapshot can no longer be restored into it, so :destroy.
+    has_many :comment_snapshots, class_name: "Collavre::CommentSnapshot", dependent: :destroy
     has_many :branches, class_name: "Collavre::Topic", foreign_key: :source_topic_id, dependent: :nullify
     has_many :user_creative_preferences_as_last_topic, class_name: "Collavre::UserCreativePreference",
              foreign_key: :last_topic_id, dependent: :nullify, inverse_of: :last_topic

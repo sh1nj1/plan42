@@ -128,7 +128,7 @@ module Creatives
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: filtered_children.any?),
-          inline_editor_payload: inline_editor_payload_for(creative),
+          inline_editor_payload: inline_editor_payload_for(creative, can_write: cached_can_write?(creative)),
           children_container: children_container_payload(
             creative,
             filtered_children,
@@ -187,11 +187,15 @@ module Creatives
       }
     end
 
-    def inline_editor_payload_for(creative)
+    def inline_editor_payload_for(creative, can_write:)
+      effective = creative.effective_origin(Set.new)
+      origin_writable = effective.id == creative.id ? can_write : creative.has_permission?(user, :write)
       {
         description_raw_html: creative.effective_description(nil, true),
         progress: creative.progress,
-        origin_id: creative.origin_id
+        origin_id: creative.origin_id,
+        content_type: effective.data&.dig("content_type"),
+        markdown_source: origin_writable ? effective.data&.dig("markdown_source") : nil
       }
     end
 

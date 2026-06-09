@@ -118,6 +118,7 @@ module Collavre
 
           trigger_loop_data = @creative.data&.dig("trigger", "loop")
           parent_trigger_enabled = @creative.parent&.drop_trigger_enabled? || false
+          can_edit = @creative.has_permission?(Current.user, :write)
 
           etag = [
             "creative",
@@ -132,7 +133,9 @@ module Collavre
             "trigger_v3",
             trigger_loop_data&.dig("state"),
             trigger_loop_data&.dig("current_iteration"),
-            parent_trigger_enabled
+            parent_trigger_enabled,
+            "can_edit",
+            can_edit
           ].join(":")
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
@@ -141,6 +144,13 @@ module Collavre
                       (@creative.ancestors.count - root.ancestors.count) + 1
             else
                       @creative.ancestors.count + 1
+            end
+            sanitized_data = @creative.effective_origin(Set.new).data
+            # markdown_source is exposed via the top-level `markdown_source:` field for writers;
+            # exclude it from the editable `data` payload so the metadata YAML editor can't
+            # round-trip a stale copy back into data["markdown_source"] on update_metadata.
+            if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
+              sanitized_data = sanitized_data.except("markdown_source")
             end
             render json: {
               id: @creative.id,
@@ -153,10 +163,12 @@ module Collavre
               depth: depth,
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
-              data: @creative.effective_origin(Set.new).data,
+              data: sanitized_data,
+              content_type: effective.data&.dig("content_type"),
+              markdown_source: can_edit ? effective.data&.dig("markdown_source") : nil,
               trigger_loop: trigger_loop_data,
               is_trigger_task: parent_trigger_enabled,
-              can_edit: @creative.has_permission?(Current.user, :write)
+              can_edit: can_edit
             }
           end
         end
@@ -190,7 +202,16 @@ module Collavre
       @creative = result.creative
 
       if result.success?
-        render json: { id: @creative.id }
+        # Expose the post-rewrite markdown source so the client can sync its
+        # textarea after the server replaces inline data: URIs with blob paths,
+        # matching the update endpoint contract. Without this, a freshly created
+        # markdown creative with a pasted data: URI would re-import the blob on
+        # the next keystroke save.
+        render json: {
+          id: @creative.id,
+          content_type: @creative.data&.dig("content_type"),
+          markdown_source: @creative.data&.dig("markdown_source")
+        }
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
       end
@@ -259,8 +280,17 @@ module Collavre
               id: base.id,
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
-              has_children: base.children.exists?
+              has_children: base.children.exists?,
+              content_type: base.data&.dig("content_type")
             }
+            # Expose the post-rewrite markdown source so the client can sync its
+            # textarea after the server replaces inline data: URIs with blob paths.
+            # Gated on write permission so a read-only share recipient moving a
+            # linked creative (parent_id-only PATCH bypasses the origin_changes
+            # write check) cannot read the origin's raw Markdown source.
+            if @creative.has_permission?(Current.user, :write)
+              response_data[:markdown_source] = base.data&.dig("markdown_source")
+            end
             # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
             ancestor_records = base.ancestors.order(:id)
             if ancestor_records.any?
@@ -358,6 +388,20 @@ module Collavre
       rescue JSON::ParserError => e
         render json: { error: "Invalid JSON: #{e.message}" }, status: :unprocessable_entity
         return
+      end
+      unless new_data.is_a?(Hash)
+        render json: { error: t("collavre.creatives.errors.metadata_must_be_object") }, status: :unprocessable_entity
+        return
+      end
+      # Reserved markdown fields are not editable via metadata; preserve current values so a stale
+      # YAML payload from the metadata popup can't overwrite a concurrent markdown edit.
+      current_data = creative.data || {}
+      %w[markdown_source content_type].each do |key|
+        if current_data.key?(key)
+          new_data[key] = current_data[key]
+        else
+          new_data.delete(key)
+        end
       end
       previous_enabled = creative.drop_trigger_enabled?
 
@@ -499,7 +543,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input)
       end
 
       def any_filter_active?
@@ -519,9 +563,99 @@ module Collavre
 
       def serialize_creatives(collection)
         if params[:simple].present?
-          collection.map { |c| { id: c.id, description: c.effective_description(nil, false), progress: c.progress } }
+          # Preload origins so effective_origin (used per linked-shell row in both
+          # children_presence_set and the origin_id mapping below) resolves from
+          # memory instead of firing a query per shell. Only browse can hold shells;
+          # search is scoped to origin_id: nil, so this is a no-op there.
+          ActiveRecord::Associations::Preloader.new(records: collection.to_a, associations: :origin).call
+          children_ids = children_presence_set(collection)
+          searching = params[:search].present?
+          breadcrumbs = searching ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user, include_archived: params[:show_archived].present?).call : {}
+          # For hits routed through a linked shell, the path to expand in the
+          # user's own tree (local folders -> shell) so a breadcrumb jump can
+          # reach a shell nested under a collapsed folder.
+          reveal_paths = searching ? ::Creatives::RevealPathResolver.new(collection.map(&:id), user: Current.user, include_archived: params[:show_archived].present?).call : {}
+          collection.map do |c|
+            item = {
+              id: c.id,
+              description: c.effective_description(nil, false),
+              progress: c.progress,
+              has_children: children_ids.include?(c.id)
+            }
+            reveal = reveal_paths[c.id]
+            path = breadcrumbs[c.id]
+            if path.present?
+              item[:path] = mask_unreachable_crumbs(path, reveal)
+            end
+            item[:reveal_path] = reveal if reveal.present?
+            # For linked shells, expose the effective origin id so the picker can
+            # map a search breadcrumb (origin ids) back to the rendered shell node.
+            item[:origin_id] = c.effective_origin.id if c.origin_id
+            item
+          end
         else
           collection.map { |c| { id: c.id, description: c.effective_description, progress: c.progress } }
+        end
+      end
+
+      # A breadcrumb jump expands the tree from a rendered root (or, for a shared
+      # subtree, a linked shell) down to the clicked crumb. If an ancestor above a
+      # crumb is itself unrenderable (unreadable, or archived while archived rows
+      # aren't shown) and no linked shell re-roots the path at/below it, the
+      # descendant can't be expanded either — so mask it too. BreadcrumbResolver
+      # masks the unrenderable ancestor itself; this masks everything downstream of
+      # it on the plain origin chain, matching exactly what the tree can render.
+      #
+      # `reveal` is RevealPathResolver's per-origin map: a crumb whose origin id is
+      # a key re-roots navigation through its own shell (the client anchors at the
+      # nearest reveal entry at/above the clicked crumb), so it clears the block for
+      # itself and its descendants regardless of an archived/unreadable origin
+      # above it.
+      def mask_unreachable_crumbs(path, reveal)
+        blocked = false
+        path.map do |crumb|
+          if reveal&.key?(crumb[:id])
+            blocked = false
+            crumb
+          elsif crumb[:restricted]
+            blocked = true
+            crumb
+          elsif blocked
+            crumb.merge(restricted: true, description: nil)
+          else
+            crumb
+          end
+        end
+      end
+
+      # Batched "does this node have a child the user can actually browse to?"
+      # lookup so the picker tree renders expand toggles without an N+1.
+      #
+      # Must match exactly what expanding the node shows (IndexQuery#handle_id_query
+      # -> children_with_permission, minus archived unless show_archived), or the
+      # toggle either hides a reachable subtree or opens to an empty branch (and
+      # leaks that hidden children exist). Two alignments are needed:
+      #   1. Linked shells (origin_id set) store children under the effective
+      #      origin (redirect_parent_to_origin + children->origin migration), so
+      #      resolve each row to its effective origin before the lookup.
+      #   2. Apply the same archived + read-permission filters as the browse path.
+      def children_presence_set(collection)
+        return Set.new if collection.empty?
+
+        origin_id_by_id = collection.to_h { |c| [ c.id, c.effective_origin.id ] }
+
+        candidates = Creative.where(parent_id: origin_id_by_id.values.uniq)
+        candidates = candidates.where(archived_at: nil) unless params[:show_archived]
+        child_rows = candidates.pluck(:id, :parent_id) # [child_id, origin_id]
+        return Set.new if child_rows.empty?
+
+        readable = ::Creatives::PermissionFilter
+          .new(user: Current.user).readable_ids(child_rows.map(&:first)).to_set
+        origins_with_visible_children = child_rows
+          .each_with_object(Set.new) { |(child_id, origin_id), set| set << origin_id if readable.include?(child_id) }
+
+        collection.each_with_object(Set.new) do |c, set|
+          set << c.id if origins_with_visible_children.include?(origin_id_by_id[c.id])
         end
       end
 

@@ -7,7 +7,7 @@ const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
 
 export default class extends Controller {
-  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips']
+  static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow']
 
   connect() {
     this.creativeId = null
@@ -196,8 +196,14 @@ export default class extends Controller {
     }
     if (data.typing) {
       const { id, name } = data.typing
+      const isNewTyper = !(id in this.typingUsers)
+      // The user always wants to see their OWN typing indicator the moment it
+      // appears — they just started typing. Stick-to-end (which pauses while the
+      // user is scrolled back looking at badges) must not suppress that, so force
+      // the scroll for the local user's first typing frame.
+      const isSelf = String(id) === String(this.currentUserId)
       this.typingUsers[id] = name
-      this.renderTypingIndicator()
+      this.renderTypingIndicator({ newItem: isNewTyper, force: isNewTyper && isSelf })
       clearTimeout(this.typingTimers[id])
       this.typingTimers[id] = setTimeout(() => {
         delete this.typingUsers[id]
@@ -239,6 +245,7 @@ export default class extends Controller {
       if (agentCreativeId && String(agentCreativeId) !== String(this.creativeId)) {
         return
       }
+      const isNewAgent = (status === 'thinking' || status === 'streaming') && !(id in this.typingUsers)
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
         if (!this.activeAgentTasks) this.activeAgentTasks = {}
@@ -262,7 +269,7 @@ export default class extends Controller {
         }
       }
       this.syncGlobalAgentTasks()
-      this.renderTypingIndicator()
+      this.renderTypingIndicator({ newItem: isNewAgent })
     }
   }
 
@@ -346,8 +353,16 @@ export default class extends Controller {
   }
 
 
-  renderTypingIndicator() {
+  renderTypingIndicator({ newItem = false, force = false } = {}) {
     if (!this.hasTypingIndicatorTarget) return
+
+    // Capture stick-to-end BEFORE mutating the DOM: only auto-scroll a newly
+    // added item into view when the user was already parked at the right edge,
+    // so we never yank them away from a chip they scrolled back to look at.
+    // `force` overrides that guard for cases where the scroll is always wanted
+    // (e.g. the local user's own typing indicator first appearing).
+    const stickToEnd = force || (newItem && this.isScrollRowAtEnd())
+
     this.typingIndicatorTarget.innerHTML = ''
 
     if (this.manualTypingMessage) {
@@ -413,6 +428,33 @@ export default class extends Controller {
     const text = document.createElement('span')
     text.textContent = `${names.join(', ')} ...`
     this.typingIndicatorTarget.appendChild(text)
+
+    if (stickToEnd) this.scrollRowToEnd()
+  }
+
+  // Distance (px) from the right edge still counted as "at the end". A small
+  // slack absorbs sub-pixel rounding and momentum scroll so stick-to-end stays
+  // engaged when the user is effectively, but not exactly, at the edge.
+  static STICK_TO_END_THRESHOLD = 24
+
+  get scrollRowElement() {
+    return this.hasScrollRowTarget ? this.scrollRowTarget : null
+  }
+
+  // True when the horizontal scroll row is at (or near) its right edge — i.e.
+  // the user is looking at the newest items rather than scrolled back. Returns
+  // true when there is no scroll row or no overflow (nothing to yank away from).
+  isScrollRowAtEnd() {
+    const el = this.scrollRowElement
+    if (!el) return true
+    const threshold = this.constructor.STICK_TO_END_THRESHOLD
+    return el.scrollLeft + el.clientWidth >= el.scrollWidth - threshold
+  }
+
+  scrollRowToEnd() {
+    const el = this.scrollRowElement
+    if (!el) return
+    el.scrollLeft = el.scrollWidth
   }
 
   syncGlobalAgentTasks() {
@@ -484,7 +526,16 @@ export default class extends Controller {
     })
       .then((r) => (r.ok ? r.text() : null))
       .then((html) => {
-        if (html) target.outerHTML = html
+        if (!html) return
+        // A newly attached channel (e.g. a fresh PR/Preview badge) is a "new
+        // item" in the scroll row. Count chips before/after and scroll the new
+        // one into view, but only when the user was already at the right edge.
+        const row = this.scrollRowElement
+        const prevChipCount = row ? row.querySelectorAll('.channel-chip').length : 0
+        const wasAtEnd = this.isScrollRowAtEnd()
+        target.outerHTML = html
+        const newChipCount = row ? row.querySelectorAll('.channel-chip').length : 0
+        if (wasAtEnd && newChipCount > prevChipCount) this.scrollRowToEnd()
       })
       .catch((err) => console.warn('[presence] refresh channel chips failed:', err))
   }

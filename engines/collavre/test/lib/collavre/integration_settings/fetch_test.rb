@@ -59,6 +59,40 @@ module Collavre
                        Collavre::IntegrationSettings.fetch(:default_mailer_from)
         end
       end
+
+      test "boot_safe: true falls back to ENV when encryption raises" do
+        # AWS keys are consumed during `:load_environment_config`, which can
+        # run before the host app's encryption initializer wires up keys. Boot
+        # callers (storage.yml, config/environments/*.rb) opt in with
+        # boot_safe: true so the row's decryption error doesn't crash boot.
+        ENV["DEFAULT_MAILER_FROM"] = "env-after-encryption-error@example.com"
+        Resolver.stub(:get, ->(_k) { raise ActiveRecord::Encryption::Errors::Configuration, "no key" }) do
+          assert_equal "env-after-encryption-error@example.com",
+                       Collavre::IntegrationSettings.fetch(:default_mailer_from, boot_safe: true)
+        end
+      end
+
+      test "default (runtime) raises on encryption error so secret keys can't silently turn blank" do
+        # Runtime callers like ApplicationController's CloudFront origin check
+        # MUST see decryption failures — treating the secret as blank would
+        # silently disable the origin verification.
+        Resolver.stub(:get, ->(_k) { raise ActiveRecord::Encryption::Errors::Configuration, "no key" }) do
+          assert_raises(ActiveRecord::Encryption::Errors::Configuration) do
+            Collavre::IntegrationSettings.fetch(:origin_shared_secret)
+          end
+        end
+      end
+
+      test "non-encryption StandardError still bubbles up even under boot_safe" do
+        # Encryption errors are the only ones explicitly rescued under
+        # boot_safe; other StandardError subclasses must still propagate so
+        # genuine bugs aren't masked.
+        Resolver.stub(:get, ->(_k) { raise RuntimeError, "unexpected" }) do
+          assert_raises(RuntimeError) do
+            Collavre::IntegrationSettings.fetch(:default_mailer_from, boot_safe: true)
+          end
+        end
+      end
     end
   end
 end

@@ -121,3 +121,111 @@ describe('CommentsPresenceController', () => {
     expect(close).not.toHaveBeenCalled()
   })
 })
+
+describe('CommentsPresenceController typing-row horizontal scroll', () => {
+  let application
+  let container
+  let controller
+  let row
+  let scrollLeftValue
+
+  // jsdom has no layout engine, so scroll geometry must be stubbed. Treat the
+  // row as 100px wide with 300px of content: "at end" means scrollLeft >= 176.
+  function setGeometry({ clientWidth, scrollWidth, scrollLeft }) {
+    scrollLeftValue = scrollLeft
+    Object.defineProperty(row, 'clientWidth', { value: clientWidth, configurable: true })
+    Object.defineProperty(row, 'scrollWidth', { value: scrollWidth, configurable: true })
+    Object.defineProperty(row, 'scrollLeft', {
+      configurable: true,
+      get: () => scrollLeftValue,
+      set: (v) => { scrollLeftValue = v },
+    })
+  }
+
+  beforeEach(async () => {
+    document.body.dataset.currentUserId = '7'
+    global.fetch = jest.fn()
+
+    container = document.createElement('div')
+    container.innerHTML = `
+      <div id="comments-popup" data-controller="comments--presence">
+        <textarea data-comments--presence-target="textarea"></textarea>
+        <input type="checkbox" data-comments--presence-target="privateCheckbox" />
+        <div id="typing-indicator-row">
+          <div id="typing-scroll-viewport" data-comments--presence-target="scrollRow">
+            <div data-comments--presence-target="channelChips"></div>
+            <div data-comments--presence-target="typingIndicator"></div>
+          </div>
+        </div>
+      </div>
+    `
+    document.body.appendChild(container)
+
+    application = Application.start()
+    application.register('comments--presence', PresenceController)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const el = document.getElementById('comments-popup')
+    controller = application.getControllerForElementAndIdentifier(el, 'comments--presence')
+    controller.creativeId = '123'
+    row = el.querySelector('#typing-scroll-viewport')
+  })
+
+  afterEach(() => {
+    application.stop()
+    document.body.innerHTML = ''
+    delete document.body.dataset.currentUserId
+    jest.restoreAllMocks()
+  })
+
+  test('auto-scrolls a new typer into view when parked at the right edge', () => {
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 200 }) // at end
+
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+
+    expect(scrollLeftValue).toBe(300)
+  })
+
+  test('does NOT scroll when the user has scrolled back to look at earlier items', () => {
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 }) // scrolled back
+
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+
+    expect(scrollLeftValue).toBe(0)
+  })
+
+  test('does not re-scroll on repeat typing pings from the same user (not a new item)', () => {
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 200 })
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+    expect(scrollLeftValue).toBe(300)
+
+    // User scrolls back; a heartbeat ping for the same (already-shown) typer
+    // must not yank them to the end again.
+    scrollLeftValue = 0
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+    expect(scrollLeftValue).toBe(0)
+  })
+
+  test("always scrolls the local user's own new typing indicator into view, even when scrolled back to badges", () => {
+    // currentUserId is '7'. The user is parked at the left looking at PR/Preview
+    // badges (scrollLeft 0, not at end). When they themselves start typing they
+    // always want to see their own indicator, so stick-to-end must not suppress it.
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 })
+
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+
+    expect(scrollLeftValue).toBe(300)
+  })
+
+  test('does not re-scroll on repeat self typing pings (only the first appearance forces scroll)', () => {
+    setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 })
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    expect(scrollLeftValue).toBe(300)
+
+    // A heartbeat ping for the same (already-shown) self typer while scrolled
+    // back must not yank to the end again — only the first appearance forces it.
+    scrollLeftValue = 0
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    expect(scrollLeftValue).toBe(0)
+  })
+})

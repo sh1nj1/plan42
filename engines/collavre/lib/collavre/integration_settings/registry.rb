@@ -22,8 +22,11 @@ module Collavre
       # @param requires_restart [Boolean] when true, surfaces restart-required badge
       # @param env_var [String, nil] ENV variable name (defaults to key.upcase)
       # @param default [String, nil] static fallback used when DB & ENV blank
+      # @param input_type [Symbol] admin UI widget: :string (default) or :textarea
+      # @param admin_visible [Boolean] when false the key is resolvable but hidden from admin UI
       # @return [KeyDefinition]
-      def register(key, category:, sensitive: true, requires_restart: false, env_var: nil, default: nil)
+      def register(key, category:, sensitive: true, requires_restart: false, env_var: nil, default: nil,
+                   input_type: :string, admin_visible: true)
         key = key.to_sym
         @definitions[key] = KeyDefinition.new(
           key: key,
@@ -31,7 +34,9 @@ module Collavre
           sensitive: sensitive,
           requires_restart: requires_restart,
           env_var: env_var || key.to_s.upcase,
-          default: default
+          default: default,
+          input_type: input_type,
+          admin_visible: admin_visible
         )
       end
 

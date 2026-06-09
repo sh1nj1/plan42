@@ -1,3 +1,15 @@
+## v0.6.0 (2026-06-04)
+
+### Changes
+- 6e3d2728 feat(collavre): Phase 2 GitHub — DB-backed webhook secret, API endpoint, mock toggle (#1266)
+- 3d73c334 feat(collavre): Phase 2 OmniAuth — DB-backed Google/GitHub/Notion OAuth keys (#1265)
+- 73876b13 feat(channels): topic-badge abstraction + preview MCP tools (#1259)
+- 199a0ebf fix(pr_monitor): default chip label/link fallback from channel config (#1255)
+- d43ea449 fix(pr_monitor): de-dup closed event, status badge chips, dismiss-on-X (#1242)
+- 7cd616ac fix(pr_monitor): auto-provision PR-channel webhook events and re-seed on reactivate (#1240)
+- a8cafca7 fix(pr_monitor): seed chip label/link and announce attach in topic (#1239)
+- bf9b1d57 feat(channels): GitHub PR comment listener via Channel abstraction (#1238)
+
 ## v0.5.1 (2026-04-17)
 
 ### Changes

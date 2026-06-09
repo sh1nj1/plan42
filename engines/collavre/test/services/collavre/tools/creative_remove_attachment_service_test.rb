@@ -25,6 +25,29 @@ module Collavre
         assert_equal 0, @creative.reload.files.count
       end
 
+      test "strips the embedded node from the description and detaches" do
+        # HTML is the source of truth: an attachment embedded in the description
+        # must have its node removed, otherwise the next save reconciles the
+        # blob back into creative.files (or leaves a dangling/broken asset).
+        creative = Creative.create!(description: "<p>hi</p>", user: @user)
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new("img"), filename: "p.png", content_type: "image/png"
+        )
+        creative.embed_attachment_blob!(blob)
+        assert_includes creative.reload.description, blob.signed_id
+        assert_equal 1, creative.files.count
+
+        result = CreativeRemoveAttachmentService.new.call(
+          creative_id: creative.id,
+          signed_id: blob.signed_id
+        )
+        assert result[:success]
+        creative.reload
+        refute_includes creative.description, blob.signed_id
+        refute_includes creative.description, "<img"
+        assert_equal 0, creative.files.count
+      end
+
       test "rejects when user lacks write permission" do
         other = users(:two)
         Current.user = other

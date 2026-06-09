@@ -6,6 +6,22 @@ require "rails/all"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+# Compatibility shim for boot-time `Collavre::IntegrationSettings.fetch` and
+# `Collavre::AwsCredentials.{s3,ses_smtp}` callers. Required eagerly so
+# `config/storage.yml` (ERB) and `config/environments/*.rb` can use
+# `CollavreCompat.call` to drop kwargs an older gem version doesn't accept
+# (e.g. `USE_COLLAVRE_GEM=true` pinned to a pre-`boot_safe:` release).
+require_relative "../lib/collavre_compat"
+
+# Idempotent fallback encryption key generator (mirrors the
+# `config/initializers/active_record_encryption.rb` logic). Required eagerly so
+# boot-time DB reads in `config/storage.yml` and `config/environments/*.rb`
+# can decrypt admin-saved integration settings BEFORE the initializer runs.
+# Without this, deployments relying on the initializer to populate keys hit a
+# decryption error and Phase 3 `boot_safe:` rescues fall back to ENV — making
+# DB-backed S3 credentials silently downgrade to `:local` storage.
+require_relative "../lib/encryption_bootstrap"
+
 # Ensure .env values override existing ENV values when using dotenv's Rails integration
 if defined?(Dotenv::Rails)
   Dotenv::Rails.overwrite = true

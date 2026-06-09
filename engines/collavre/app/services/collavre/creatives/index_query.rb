@@ -1,6 +1,15 @@
 module Collavre
 module Creatives
   class IndexQuery
+    # Cap flat search results for the lightweight picker popup (simple mode).
+    # The full-page search (no `simple` flag) is intentionally unbounded.
+    SIMPLE_SEARCH_LIMIT = 50
+
+    # Permission-check matched rows in rank order in slices of this size, so a
+    # heavily-matched query only checks the prefix needed to fill the cap rather
+    # than its entire match set.
+    PERMISSION_FILTER_BATCH = 200
+
     Result = Struct.new(
       :creatives,
       :parent_creative,
@@ -63,12 +72,16 @@ module Creatives
 
     def handle_filtered_query
       scope = determine_scope
+      pipeline = FilterPipeline.new(user: user, params: params, scope: scope)
 
-      result = FilterPipeline.new(
-        user: user,
-        params: params,
-        scope: scope
-      ).call
+      # The picker's flat search (simple mode) only renders matched rows ranked
+      # and capped; ancestors, progress_map and overall_progress are full-page
+      # concerns it never reads (breadcrumbs are resolved separately). Skip that
+      # work — and the per-row readable? N+1 — so a 2-char query in a large tree
+      # caps before doing unbounded resolution.
+      return simple_search_result(pipeline) if simple_search?
+
+      result = pipeline.call
 
       return empty_result if result.matched_ids.empty?
 
@@ -83,9 +96,6 @@ module Creatives
         # Sort by comment updated_at for comment filter
         if params[:comment] == "true"
           matched_creatives = matched_creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
-        elsif params[:search].present? && params[:simple].present?
-          # Sort by description length (shorter = more relevant match)
-          matched_creatives = matched_creatives.sort_by { |c| c.description.to_s.length }
         end
 
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
@@ -107,6 +117,98 @@ module Creatives
           progress_map: result.progress_map
         }
       end
+    end
+
+    def simple_search?
+      params[:search].present? && params[:simple].present? &&
+        params[:search_mode] != "tree" && params[:comment] != "true"
+    end
+
+    # Lightweight flat-search path for the picker popup: matched rows only,
+    # permission-filtered in one batch, ranked by relevance and capped — without
+    # resolving ancestors/progress for the whole match set.
+    def simple_search_result(pipeline)
+      relation = pipeline.search_only_relation
+      ids = if relation
+        windowed_readable_ids(relation)
+      else
+        matched = pipeline.matched_ids
+        matched.empty? ? [] : ranked_readable_window(matched)
+      end
+      return empty_result if ids.empty?
+
+      by_id = Creative.where(id: ids).index_by(&:id)
+      creatives = ids.filter_map { |id| by_id[id] }
+
+      {
+        creatives: creatives,
+        parent: params[:id] ? Creative.find_by(id: params[:id]) : nil,
+        allowed_ids: nil,
+        overall_progress: nil,
+        progress_map: nil
+      }
+    end
+
+    # Window the ranked search matches entirely in SQL: order by relevance and
+    # pull PERMISSION_FILTER_BATCH-sized slices via LIMIT/OFFSET, permission-filtering
+    # each and stopping as soon as the cap is filled. The match itself stays a
+    # subquery (`id IN (<search relation>)`), so Ruby never holds the full match-id
+    # set at once — only one PERMISSION_FILTER_BATCH window is in memory at a time.
+    # Wrapping the join+distinct search as a subquery also keeps the outer relation
+    # join-free, so `ORDER BY LENGTH(description)` is portable (no Postgres
+    # "DISTINCT + ORDER BY must be in select list" issue). The DB still scans/sorts
+    # all matches (inherent to a leading-wildcard LIKE + global relevance ranking),
+    # but the rows crossing into Ruby are bounded per window.
+    #
+    # The loop continues until the cap is filled OR the match set is exhausted —
+    # there is no fixed window ceiling. A ceiling would silently truncate results:
+    # in a multi-user install the match scope is every `origin_id: nil` row before
+    # permission filtering, so a user's readable matches can sort after many
+    # unreadable ones, and capping the scan would return an empty/incomplete result
+    # even though matching readable creatives exist. Termination is guaranteed by the
+    # finite match set (offset advances past the last row → empty window → break);
+    # per-window memory stays bounded regardless of how deep the scan goes.
+    # PermissionFilter stays the single source of read permission. LENGTH() is
+    # portable across SQLite/Postgres/MySQL and byte-vs-char length is immaterial
+    # for a ranking heuristic.
+    def windowed_readable_ids(relation)
+      ordered = Creative.where(id: relation.select(:id))
+        .order(Arel.sql("LENGTH(creatives.description)"), :id)
+
+      readable = []
+      offset = 0
+      loop do
+        window = ordered.offset(offset).limit(PERMISSION_FILTER_BATCH).pluck(:id)
+        break if window.empty?
+
+        permitted = PermissionFilter.new(user: user).readable_ids(window).to_set
+        window.each { |id| readable << id if permitted.include?(id) }
+        break if readable.size >= SIMPLE_SEARCH_LIMIT || window.size < PERMISSION_FILTER_BATCH
+
+        offset += PERMISSION_FILTER_BATCH
+      end
+      readable.first(SIMPLE_SEARCH_LIMIT)
+    end
+
+    # Fallback for when other filters are active alongside search (no single-relation
+    # form): rank the already-matched ids by relevance in the DB, then permission-filter
+    # in that order one slice at a time, stopping as soon as the cap is filled. Only the
+    # prefix needed for SIMPLE_SEARCH_LIMIT readable rows is permission-checked and
+    # materialized. The matched-id set itself is plucked up front here (it was already
+    # intersected across filters in Ruby), which is why the search-only path prefers the
+    # windowed subquery above. PermissionFilter stays the single source of read permission.
+    def ranked_readable_window(matched)
+      ranked_ids = Creative.where(id: matched)
+        .order(Arel.sql("LENGTH(creatives.description)"), :id)
+        .pluck(:id)
+
+      readable = []
+      ranked_ids.each_slice(PERMISSION_FILTER_BATCH) do |slice|
+        permitted = PermissionFilter.new(user: user).readable_ids(slice).to_set
+        slice.each { |id| readable << id if permitted.include?(id) }
+        break if readable.size >= SIMPLE_SEARCH_LIMIT
+      end
+      readable.first(SIMPLE_SEARCH_LIMIT)
     end
 
     def handle_id_query

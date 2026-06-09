@@ -123,6 +123,15 @@ export default class extends Controller {
       }
     }
 
+    const actionMarkdownElement = this.element.querySelector('.comment-action-markdown')
+    if (actionMarkdownElement && actionMarkdownElement.dataset.rendered !== 'true') {
+      const text = actionMarkdownElement.textContent || ''
+      actionMarkdownElement.innerHTML = renderCommentMarkdown(text)
+      addTableDownloadButtons(actionMarkdownElement)
+      renderMermaidDiagrams(actionMarkdownElement)
+      actionMarkdownElement.dataset.rendered = 'true'
+    }
+
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     document.addEventListener('mouseup', this.handleMouseUp)

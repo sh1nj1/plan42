@@ -12,6 +12,14 @@ module Collavre
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
       can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
 
+      # Eagerly ensure Main (and System for inboxes) exist BEFORE loading
+      # active_topics. Otherwise the first inbox visit sees no System topic in
+      # the sidebar, and when a later notification creates it via
+      # find_or_create_by!, the unread badge appears but the user has no way to
+      # open the topic.
+      main_topic = @creative.main_topic(fallback_user: Current.user)
+      system_topic = @creative.inbox? ? @creative.system_topic(fallback_user: Current.user) : nil
+
       active_topics = @creative.topics.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at).to_a
       archived_topics = @creative.topics.archived.order(:created_at)
 
@@ -21,8 +29,8 @@ module Collavre
                           .pick(:last_topic_id)
       end
 
-      system_topic_id = @creative.inbox? ? @creative.topics.find_by(name: Creative::SYSTEM_TOPIC_NAME)&.id : nil
-      main_topic_id = @creative.main_topic(fallback_user: Current.user).id
+      system_topic_id = system_topic&.id
+      main_topic_id = main_topic.id
 
       render json: {
         topics: active_topics.map { |t| topic_json(t) },
@@ -97,7 +105,22 @@ module Collavre
       end
 
       topic_id = topic.id
+      topic_name = topic.name
       topic.destroy
+
+      # Best-effort orphaned-cron notice. Must never break the core deletion:
+      # if it raises, swallow + log so broadcast/head still run.
+      begin
+        Collavre::Topics::OrphanedCronNotifier.new(
+          topic_id: topic_id,
+          topic_name: topic_name
+        ).call
+      rescue StandardError => e
+        Rails.logger.error(
+          "[TopicsController#destroy] OrphanedCronNotifier failed for topic " \
+          "#{topic_id}: #{e.class} #{e.message}"
+        )
+      end
 
       broadcast_topic_event("deleted", topic_id: topic_id)
       head :no_content

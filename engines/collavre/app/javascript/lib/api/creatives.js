@@ -18,6 +18,18 @@ export function loadChildren(url) {
   return csrfFetch(url, { headers: JSON_HEADERS }).then((response) => response.json())
 }
 
+// Browse the creative tree for the picker popup. Returns the lightweight
+// simple payload ([{ id, description, progress, has_children }]) for the
+// children of `parentId`, or the roots when `parentId` is null/undefined.
+export function browse(parentId) {
+  const params = new URLSearchParams({ simple: 'true' })
+  if (parentId != null) params.set('id', parentId)
+
+  return csrfFetch(`/creatives.json?${params.toString()}`, {
+    headers: JSON_HEADERS,
+  }).then((response) => response.json())
+}
+
 export function search(query, { simple = false } = {}) {
   const params = new URLSearchParams()
   if (query != null) params.set('search', query)
@@ -92,6 +104,7 @@ const creativesApi = {
   get,
   parentSuggestions,
   loadChildren,
+  browse,
   search,
   save,
   linkExisting,

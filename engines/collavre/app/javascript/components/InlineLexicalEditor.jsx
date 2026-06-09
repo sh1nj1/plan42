@@ -27,6 +27,7 @@ import {
   $getRoot,
   $getSelection,
   $isElementNode,
+  $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
   CAN_REDO_COMMAND,
@@ -47,9 +48,12 @@ import FileUploadPlugin, {
 } from "./plugins/image_upload_plugin"
 import { ImageNode } from "../lib/lexical/image_node"
 import { AttachmentNode } from "../lib/lexical/attachment_node"
+import { VideoNode } from "../lib/lexical/video_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
+import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
+import { minimizeContentHtml } from "../lib/lexical/minimize_html"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
 const URL_MATCHERS = [
@@ -120,43 +124,6 @@ function InitialContentPlugin({ html }) {
   const [editor] = useLexicalComposerContext()
   const lastApplied = useRef(null)
 
-  const collectDomTextStyles = useCallback((container) => {
-    const styles = []
-    if (!container) return styles
-    const ownerDocument = container.ownerDocument || document
-    const walker = ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-    let current = walker.nextNode()
-    while (current) {
-      const parent = current.parentElement
-      let styleText = parent?.getAttribute?.("style") || ""
-      const colorAttr = parent?.dataset?.lexicalColor
-      const bgAttr = parent?.dataset?.lexicalBackgroundColor
-
-      if ((!styleText || !styleText.trim()) && (colorAttr || bgAttr)) {
-        const declarations = []
-        if (colorAttr) declarations.push(`color: ${colorAttr}`)
-        if (bgAttr) declarations.push(`background-color: ${bgAttr}`)
-        styleText = declarations.join("; ")
-      } else {
-        const lower = styleText.toLowerCase()
-        const fragments = []
-        if (colorAttr && !lower.includes("color:")) {
-          fragments.push(`color: ${colorAttr}`)
-        }
-        if (bgAttr && !lower.includes("background-color:")) {
-          fragments.push(`background-color: ${bgAttr}`)
-        }
-        if (fragments.length > 0) {
-          styleText = `${styleText}${styleText.trim().endsWith(";") || !styleText.trim() ? "" : ";"} ${fragments.join("; ")}`.trim()
-        }
-      }
-
-      styles.push(styleText || "")
-      current = walker.nextNode()
-    }
-    return styles
-  }, [])
-
   useEffect(() => {
     if (lastApplied.current === html) return
     lastApplied.current = html
@@ -170,8 +137,15 @@ function InitialContentPlugin({ html }) {
       // No more .trix-content wrapper
       const container = doc.body
 
+      // Color / background-color are bound to text nodes during import by the
+      // colorAwareSpanImport html config (see lib/lexical/color_import). We no
+      // longer re-apply styles positionally after import, which used to drift
+      // onto the wrong text node whenever Lexical split or dropped text nodes.
       syncLexicalStyleAttributes(container)
-      const collectedStyles = collectDomTextStyles(container)
+      // Push color/background-color from non-span elements onto spans so the
+      // colorAwareSpanImport config binds it (the span importer can't see it
+      // otherwise). Must run after the sync above materializes data-lexical-*.
+      normalizeColoredContainers(container)
       const nodes = $generateNodesFromDOM(editor, container)
 
       // Filter out duplicate image nodes if any
@@ -192,36 +166,41 @@ function InitialContentPlugin({ html }) {
       })
 
       const appendedNodes = []
+      // Text nodes and inline elements (links, etc.) cannot live directly under
+      // the root. Minimized HTML stores a single line without its <p> wrapper, so
+      // a line like "Hello <strong>World</strong>" re-imports as several
+      // top-level inline nodes — group consecutive ones back into one paragraph
+      // so the line is not split apart.
+      let pendingParagraph = null
+      const flushPending = () => {
+        if (pendingParagraph) {
+          root.append(pendingParagraph)
+          appendedNodes.push(pendingParagraph)
+          pendingParagraph = null
+        }
+      }
       uniqueNodes.forEach((node) => {
-        if ($isTextNode(node)) {
-          const paragraph = $createParagraphNode()
-          paragraph.append(node)
-          root.append(paragraph)
-          appendedNodes.push(paragraph)
+        const isInlineLeaf =
+          $isTextNode(node) ||
+          $isLineBreakNode(node) ||
+          ($isElementNode(node) && node.isInline())
+        if (isInlineLeaf) {
+          if (!pendingParagraph) pendingParagraph = $createParagraphNode()
+          pendingParagraph.append(node)
           return
         }
 
-        if ($isElementNode(node) && node.getType?.() === "paragraph") {
-          root.append(node)
-          appendedNodes.push(node)
-          return
-        }
-
+        flushPending()
         root.append(node)
         appendedNodes.push(node)
       })
+      flushPending()
 
       if (root.getChildrenSize() === 0) {
         const paragraph = $createParagraphNode()
         root.append(paragraph)
         appendedNodes.push(paragraph)
       }
-
-      const textNodes = root.getAllTextNodes()
-      textNodes.forEach((textNode, index) => {
-        const style = collectedStyles[index]
-        textNode.setStyle(style || "")
-      })
 
       let lastChild = root.getLastChild()
       while (
@@ -237,7 +216,7 @@ function InitialContentPlugin({ html }) {
         root.append($createParagraphNode())
       }
     })
-  }, [collectDomTextStyles, editor, html])
+  }, [editor, html])
 
   return null
 }
@@ -942,7 +921,9 @@ function EditorInner({
                 anchor.setAttribute("target", "_blank")
                 anchor.setAttribute("rel", "noopener")
               })
-              serialized = doc.body.innerHTML
+              // Strip Lexical's verbose markup (extra <div>, white-space spans,
+              // duplicate format wrappers, single-line <p>) before persisting.
+              serialized = minimizeContentHtml(doc.body.firstElementChild)
             })
             // No Trix wrapper
             onChange(serialized)
@@ -1019,12 +1000,14 @@ export default function InlineLexicalEditor({
         LinkNode,
         AutoLinkNode,
         ImageNode,
-        AttachmentNode
+        AttachmentNode,
+        VideoNode
       ],
       onError(error) {
         throw error
       },
-      theme
+      theme,
+      html: lexicalHtmlConfig
     }),
     []
   )

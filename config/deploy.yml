@@ -58,6 +58,9 @@ env:
     - FIREBASE_PROJECT_ID
     - FIREBASE_APP_ID
     - FIREBASE_SERVICE_ACCOUNT
+    - FIREBASE_SERVICE_ACCOUNT_JSON
+    - FCM_WIF_AUDIENCE
+    - FCM_WIF_CREDENTIAL_SOURCE
     - FCM_SERVER_KEY
     - FCM_SENDER_ID
     - FCM_VAPID_KEY
@@ -72,7 +75,6 @@ env:
     - ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
     - ORIGIN_SHARED_SECRET
     - PUBLIC_ASSETS_HOST
-    - MCP_UPLOAD_ROOT
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
     # When you start using multiple servers, you should split out job processing to a dedicated machine.
