@@ -211,6 +211,13 @@ module Collavre
       # so agent/editor uploads are still reconciled.
       def reconcile_description_attachments
         return if data&.dig("content_type") == "markdown"
+        # Linked creatives (origin_id present) do not own their description — the
+        # origin's HTML is authoritative and embed_attachment_blob! routes their
+        # uploads to the origin. Their own description column is blank, so
+        # reconcile would treat every legacy creative.files attachment as an
+        # orphan and detach/purge it on the next save (e.g. a reparent). Skip
+        # them so pre-existing linked-row attachments are preserved.
+        return if origin_id.present?
 
         referenced = extract_signed_ids_from_description.filter_map do |sid|
           ActiveStorage::Blob.find_signed(sid)

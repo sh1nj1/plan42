@@ -173,6 +173,22 @@ module Collavre
         assert_not ActiveStorage::Blob.exists?(blob.id), "orphan blob should be purged"
       end
 
+      test "saving a linked creative does not detach or purge its legacy files" do
+        origin = Creative.create!(description: "<p>origin</p>", user: @user)
+        linked = Creative.create!(user: @user, origin: origin)
+        new_parent = Creative.create!(description: "<p>parent</p>", user: @user)
+        blob = make_blob(filename: "legacy.png", content_type: "image/png")
+        # Legacy attach landed directly on the linked row (its own description is blank).
+        linked.files.attach(blob)
+        assert_includes linked.reload.files.map(&:blob_id), blob.id
+
+        # Moving the linked row triggers after_save; reconcile must not purge the blob.
+        perform_enqueued_jobs { linked.update!(parent: new_parent) }
+
+        assert_includes linked.reload.files.map(&:blob_id), blob.id
+        assert ActiveStorage::Blob.exists?(blob.id), "linked-row legacy blob must survive a save"
+      end
+
       # --- Sanitizer: media tags ---
 
       test "video tag with controls/src survives sanitization" do
