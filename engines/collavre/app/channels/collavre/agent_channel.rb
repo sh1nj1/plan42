@@ -2,6 +2,12 @@
 
 module Collavre
   class AgentChannel < ApplicationCable::Channel
+    # Heartbeat for Claude Channel presence rows. Fires for every subscription,
+    # but touch_presence is a no-op unless this connection registered a presence
+    # row (agent_id subscribe by a Claude Channel agent), so topic/legacy/non-
+    # Claude subscribers pay only an idle timer.
+    periodically :touch_presence, every: AgentSubscription::HEARTBEAT_SECONDS
+
     # Subscribes to an agent stream for real-time dispatch notifications.
     # Accepts either:
     #   - agent_id: per-agent stream — used by MCP plugin clients (Claude
@@ -50,9 +56,14 @@ module Collavre
         # owns routing — do not clobber it, do not schedule cancellation.
         next if deleted.zero?
 
-        # Another session is still subscribed to this shared agent. Keep
-        # routing active; whichever session unsubscribes last clears it.
-        next if AgentSubscription.where(agent_id: @session_agent.id).exists?
+        # Drop crash-orphaned sibling rows (a Puma/ActionCable process that
+        # died without firing unsubscribed) before reading presence, so a dead
+        # row cannot masquerade as a live sibling and pin routing on forever.
+        AgentSubscription.reap_stale!(@session_agent.id)
+
+        # Another session is still LIVE on this shared agent. Keep routing
+        # active; whichever session unsubscribes last clears it.
+        next if AgentSubscription.live.where(agent_id: @session_agent.id).exists?
 
         @session_agent.update_columns(
           routing_expression: nil,
@@ -124,6 +135,10 @@ module Collavre
       # marker (debugging / grace-job arg); presence rows are the real gate.
       if agent.claude_channel_agent?
         agent.with_lock do
+          # Self-heal: clear crash-orphaned rows for this agent before counting
+          # so this session's activation isn't blocked from, and presence reads
+          # aren't fooled by, a dead process's leftover row.
+          AgentSubscription.reap_stale!(agent.id)
           AgentSubscription.create!(agent_id: agent.id, token: @subscription_token)
           agent.update_columns(
             routing_subscription_token: @subscription_token,
@@ -131,6 +146,15 @@ module Collavre
           )
         end
       end
+    end
+
+    # Periodic heartbeat callback: keep this session's presence row live. No-op
+    # once the row is gone (rotated by a newer subscribe, or reaped), so it can
+    # never resurrect a removed row.
+    def touch_presence
+      return unless @session_agent && @subscription_token
+
+      AgentSubscription.touch!(@session_agent.id, @subscription_token)
     end
   end
 end

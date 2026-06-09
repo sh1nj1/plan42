@@ -113,6 +113,35 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       "delegated work must survive while a sibling session is still subscribed"
   end
 
+  test "cancels delegated work when the only presence row is stale (crash-orphaned)" do
+    topic = Topic.create!(creative: @creative, name: "cc-stale-row-topic", user: @owner)
+    delegated_task = Task.create!(
+      name: "Delegated task",
+      status: "delegated",
+      agent: @claude_agent,
+      creative_id: @creative.id,
+      topic_id: topic.id,
+      trigger_event_payload: {
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id },
+        "comment" => { "id" => @comment.id }
+      }
+    )
+
+    # A crash-orphaned row from a process that died without unsubscribing. It is
+    # NOT proof the agent is online — the job must ignore stale rows (and reap
+    # them) so offline delegated work is still cancelled.
+    stale = Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "crashed-process")
+    stale.update_column(:last_seen_at, (Collavre::AgentSubscription::STALE_AFTER + 1.minute).ago)
+
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
+
+    assert_equal "cancelled", delegated_task.reload.status,
+      "a stale presence row must not keep delegated work alive"
+    refute Collavre::AgentSubscription.exists?(id: stale.id),
+      "the job should reap the crash-orphaned row"
+  end
+
   test "fails parent workflow when cancelling a delegated subtask" do
     parent_task = Task.create!(
       name: "Workflow Parent",

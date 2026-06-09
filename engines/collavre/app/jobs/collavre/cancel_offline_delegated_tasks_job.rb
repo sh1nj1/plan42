@@ -28,10 +28,12 @@ module Collavre
       return if agent.routing_expression.present?
 
       # A session (reconnect or a still-live sibling sharing this agent) holds
-      # a presence row — the agent is online, its delegated work is still
+      # a LIVE presence row — the agent is online, its delegated work is still
       # owned. Presence is the authority now that one agent fans out to many
-      # concurrent sessions.
-      return if AgentSubscription.where(agent_id: agent.id).exists?
+      # concurrent sessions. Reap crash-orphaned rows first so a dead process's
+      # leftover row can't masquerade as a live session and strand this work.
+      AgentSubscription.reap_stale!(agent.id)
+      return if AgentSubscription.live.where(agent_id: agent.id).exists?
 
       # A different subscription has taken over (token rotated). The new
       # session's lifecycle owns its own cancellation; don't double-cancel.

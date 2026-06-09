@@ -427,5 +427,80 @@ module Collavre
 
       assert_equal "true", agent.reload.routing_expression
     end
+
+    test "last session unsubscribe clears routing even when a crash-orphaned stale sibling row remains" do
+      # Codex P2: presence rows are deleted only by unsubscribed, so a Puma/
+      # ActionCable crash leaves a stale row behind. If a plain `exists?` gated
+      # routing, that orphan would keep the agent routable forever — dispatching
+      # into a dead stream. The live scope must ignore rows past STALE_AFTER so
+      # this session, leaving cleanly, still clears routing.
+      agent = User.create!(
+        email: "agent-channel-stale-sibling-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+
+      crashed = AgentSubscription.create!(agent_id: agent.id, token: "crashed-process")
+      crashed.update_column(:last_seen_at, (AgentSubscription::STALE_AFTER + 1.minute).ago)
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert_equal "true", agent.reload.routing_expression
+
+      unsubscribe
+
+      assert_nil agent.reload.routing_expression,
+        "a crash-orphaned stale sibling row must not keep routing on"
+    end
+
+    test "subscribe reaps crash-orphaned stale presence rows for the agent" do
+      agent = User.create!(
+        email: "agent-channel-reap-on-subscribe-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stale = AgentSubscription.create!(agent_id: agent.id, token: "crashed-old")
+      stale.update_column(:last_seen_at, (AgentSubscription::STALE_AFTER + 1.minute).ago)
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+
+      refute AgentSubscription.exists?(id: stale.id),
+        "stale rows must be reaped when a new session subscribes to the agent"
+    end
+
+    test "heartbeat refreshes the live session's presence last_seen_at" do
+      agent = User.create!(
+        email: "agent-channel-heartbeat-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      row = AgentSubscription.find_by(agent_id: agent.id)
+      assert row
+      row.update_column(:last_seen_at, 1.hour.ago)
+
+      subscription.send(:touch_presence)
+
+      assert_operator row.reload.last_seen_at, :>, 1.minute.ago,
+        "the periodic heartbeat must keep this session's presence row live"
+    end
   end
 end
