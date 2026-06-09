@@ -5,11 +5,11 @@
   "author": {
     "name": "VReRV"
   },
-  "repository": "https://github.com/AIdoodle/plan42",
+  "repository": "https://github.com/sh1nj1/plan42",
   "license": "MIT",
   "userConfig": {
     "url": {
-      "description": "Collavre server URL (e.g., https://collavre.example.com)",
+      "description": "Collavre server URL (e.g., https://collavre.com)",
       "sensitive": false
     },
     "token": {
