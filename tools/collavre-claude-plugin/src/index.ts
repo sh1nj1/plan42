@@ -309,6 +309,7 @@ async function main(): Promise<void> {
           topicId,
           formatPermissionPrompt({ request_id, tool_name, description, input_preview }),
           taskId ?? undefined,
+          request_id,
         );
         process.stderr.write(
           `[collavre] permission_request relayed to topic #${topicId}: ${tool_name ?? "tool"} (request_id=${request_id})\n`,

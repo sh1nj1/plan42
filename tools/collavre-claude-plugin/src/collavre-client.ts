@@ -66,14 +66,24 @@ export class CollavreClient {
   // is the active dispatch's delegated task: the server uses it ONLY to
   // authorize the poster (so prompts on a work topic where this session is not
   // primary_agent still surface) — it is never completed.
+  //
+  // permissionRequestId, when present, marks this notify as a native
+  // tool-permission prompt: the server parks the in-flight delegated task
+  // (pending_tool_call) so the human's subsequent allow/deny is relayed
+  // straight to this suspended session instead of deadlocking behind the
+  // delegated topic slot.
   async notify(
     topicId: number,
     text: string,
     taskId?: number,
+    permissionRequestId?: string,
   ): Promise<{ comment_id: number }> {
     const body: Record<string, unknown> = { topic_id: topicId, text };
     if (taskId !== undefined && taskId !== null) {
       body.task_id = taskId;
+    }
+    if (permissionRequestId !== undefined && permissionRequestId !== null) {
+      body.permission_request_id = permissionRequestId;
     }
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/notify`, {

@@ -214,12 +214,32 @@ module Collavre
           )
 
           if comment.save
+            park_pending_permission(topic, agent, params[:task_id], params[:permission_request_id])
             render json: { comment_id: comment.id }, status: :created
           else
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
         end
         private
+
+        # When the relayed comment is a native tool-permission prompt (carries a
+        # permission_request_id), park the in-flight dispatch as "awaiting a
+        # decision" by stamping pending_tool_call on its delegated task.
+        # Comment#dispatch_to_orchestration then relays the human's subsequent
+        # allow/deny straight to this suspended session instead of queuing it
+        # behind the delegated topic slot (which would deadlock — the task holds
+        # the slot it is itself waiting to be unblocked on). Cleared when the
+        # task is completed (/reply) or cancelled (unregister/stuck recovery).
+        def park_pending_permission(topic, agent, requested_task_id, request_id)
+          return if request_id.blank? || requested_task_id.blank?
+
+          task = Task.where(topic_id: topic.id, status: "delegated", agent_id: agent.id)
+                     .find_by(id: requested_task_id)
+          task&.update_column(:pending_tool_call, {
+            "request_id" => request_id.to_s,
+            "requested_at" => Time.current.iso8601
+          })
+        end
 
         # Identify which Claude Channel agent a /notify posts as.
         #
@@ -332,7 +352,7 @@ module Collavre
             locked = Task.lock.find_by(id: candidate.id)
             next unless locked && locked.status == "delegated"
 
-            Task.where(id: locked.id).update_all(status: "done", updated_at: Time.current)
+            Task.where(id: locked.id).update_all(status: "done", pending_tool_call: nil, updated_at: Time.current)
             claimed = locked.reload
           end
           claimed
@@ -374,7 +394,7 @@ module Collavre
 
           tracker = Orchestration::ResourceTracker.for(agent)
           tasks.find_each do |task|
-            task.update!(status: "cancelled")
+            task.update!(status: "cancelled", pending_tool_call: nil)
             tracker.release!(task.id)
 
             if task.parent_task_id.present?

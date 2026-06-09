@@ -172,6 +172,17 @@ module Collavre
       # topic has no primary agent.
       return if creative.inbox? && topic&.primary_agent_id.nil?
 
+      # A Claude Channel session suspended on a native tool-permission prompt
+      # parks its in-flight dispatch as a `delegated` task carrying a
+      # pending_tool_call (stamped by /agent/notify when the 🔐 prompt is
+      # relayed). While parked, this human comment is an allow/deny *decision*,
+      # not a new turn — relay it straight to the suspended agent's stream so the
+      # MCP plugin can resolve the prompt, and skip orchestration. Dispatching it
+      # as a competing turn would deadlock: the delegated task holds the topic's
+      # only concurrency slot (running_for_topic counts `delegated`) and is
+      # itself waiting on the decision that would be queued behind that slot.
+      return if relay_permission_decision
+
       SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
       Rails.logger.error(
@@ -179,6 +190,47 @@ module Collavre
         "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
       )
       raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
+    end
+
+    # Deliver this comment as an allow/deny decision to any Claude Channel
+    # session in this topic that is suspended on a tool-permission prompt
+    # (a `delegated` task with pending_tool_call). Returns true when at least
+    # one suspended session was found (so dispatch_to_orchestration skips normal
+    # routing). The payload mirrors ClaudeChannelAdapter#deliver's dispatch
+    # shape so the MCP plugin's existing event handler consumes it via its
+    # permission coordinator; task_id is nil so the plugin does NOT complete the
+    # in-flight task — the decision only unblocks its paused tool call.
+    def relay_permission_decision
+      return false unless topic_id
+
+      awaiting = Task
+        .where(topic_id: topic_id, status: "delegated")
+        .where.not(pending_tool_call: nil)
+        .includes(:agent)
+        .select { |task| task.agent&.claude_channel_agent? }
+      return false if awaiting.empty?
+
+      payload = permission_decision_payload
+      awaiting.each do |task|
+        AgentChannel.broadcast_to_agent(task.agent_id, payload.merge(agent_id: task.agent_id))
+      end
+      true
+    end
+
+    def permission_decision_payload
+      {
+        type: "dispatch",
+        task_id: nil,
+        comment: {
+          id: id,
+          content: content,
+          author_id: user_id,
+          author_name: user&.display_name,
+          topic_id: topic_id,
+          creative_id: creative_id,
+          created_at: created_at&.iso8601
+        }
+      }
     end
 
     def assign_default_user

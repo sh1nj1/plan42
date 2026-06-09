@@ -419,6 +419,65 @@ module Collavre
           assert_nil comment.task_id
         end
 
+        test "notify with permission_request_id parks the delegated task as awaiting a decision" do
+          # When the relayed comment is a native tool-permission prompt, the
+          # in-flight dispatch must be parked (pending_tool_call) so the human's
+          # subsequent allow/deny is relayed straight to the suspended session
+          # by Comment#dispatch_to_orchestration instead of deadlocking behind
+          # the delegated topic slot.
+          reg = register_agent("notify-perm-park-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic_id, text: "🔐 권한 요청: Bash", task_id: task.id, permission_request_id: "req-42" },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "delegated", task.reload.status,
+            "parking the prompt must not complete the in-flight task"
+          assert_equal "req-42", task.pending_tool_call&.dig("request_id"),
+            "the delegated task must be parked as awaiting a permission decision"
+        end
+
+        test "reply clears pending_tool_call when completing a parked delegated task" do
+          reg = register_agent("reply-clears-pending-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id,
+            pending_tool_call: { "request_id" => "req-9" }
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "done", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "done", task.reload.status
+          assert_nil task.pending_tool_call,
+            "completing the task must clear the awaiting-permission marker"
+        end
+
         test "notify with task_id refuses when task agent is not owned by current_user" do
           # task_id must not become a back-door to post as someone else's agent.
           reg = register_agent("notify-foreign-owner-test")
