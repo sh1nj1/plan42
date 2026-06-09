@@ -22,6 +22,9 @@ module Tools
       unless creative.has_permission?(Current.user, :write)
         return { error: "No write permission on Creative", id: creative_id }
       end
+      unless creative.attachments_embeddable?
+        return { error: "Cannot attach files to GitHub-synced content", id: creative_id }
+      end
       return { error: "No files provided" } if files.blank?
 
       blobs = []

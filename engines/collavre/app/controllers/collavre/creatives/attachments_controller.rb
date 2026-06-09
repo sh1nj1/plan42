@@ -19,6 +19,10 @@ module Collavre
           return render(json: { error: "No write permission" }, status: :forbidden)
         end
 
+        unless creative.attachments_embeddable?
+          return render(json: { error: "Cannot attach files to GitHub-synced content" }, status: :unprocessable_entity)
+        end
+
         file = params[:file]
         return render(json: { error: "No file provided" }, status: :unprocessable_entity) unless file.respond_to?(:read)
 

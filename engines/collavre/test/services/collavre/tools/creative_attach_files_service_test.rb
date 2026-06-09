@@ -86,6 +86,24 @@ module Collavre
         assert_match(/no files/i, result[:error])
       end
 
+      test "rejects a GitHub-synced creative and creates no orphan blob" do
+        # GitHub-synced creatives reject description changes, so embedding would
+        # raise and orphan the freshly-created blobs. Reject before creating any.
+        creative = Creative.create!(
+          description: "<p>synced</p>", user: @user,
+          data: { "source" => { "type" => "github_markdown" } }
+        )
+        assert_no_difference -> { ActiveStorage::Blob.count } do
+          result = CreativeAttachFilesService.new.call(
+            creative_id: creative.id,
+            files: [ { "filename" => "notes.md", "content" => "# Hi" } ]
+          )
+          assert_nil result[:success]
+          assert_match(/github/i, result[:error])
+        end
+        assert_not_includes creative.reload.description.to_s, "notes.md"
+      end
+
       test "returns error when a file is missing a filename" do
         result = CreativeAttachFilesService.new.call(
           creative_id: @creative.id,

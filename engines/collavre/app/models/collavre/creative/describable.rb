@@ -39,6 +39,17 @@ module Collavre
         CGI.unescapeHTML(ActionController::Base.helpers.strip_tags(effective_origin.description || "")).truncate(24, omission: "...")
       end
 
+      # Whether inline attachments can be embedded into this creative's
+      # description. GitHub-synced creatives derive their description from the
+      # synced markdown (description_cannot_change_if_github_source rejects any
+      # direct change), so embedding a node would raise mid-request and orphan
+      # the freshly-created blob. Resolve through effective_origin since that is
+      # where the description actually lives. Callers MUST check this before
+      # creating the blob so a rejected upload never leaves an orphan.
+      def attachments_embeddable?
+        !effective_origin.github_markdown?
+      end
+
       # Append an attachment node for `blob` to the description and save.
       # after_save reconcile then attaches the blob to creative.files.
       #

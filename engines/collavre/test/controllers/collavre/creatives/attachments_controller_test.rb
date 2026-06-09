@@ -104,6 +104,24 @@ module Collavre
         assert_includes origin.files.map { |f| f.blob.signed_id }, body["signed_id"]
         assert_not_includes linked.reload.description.to_s, body["signed_id"]
       end
+
+      test "422 for a GitHub-synced creative and creates no orphan blob" do
+        # GitHub-synced creatives reject description changes
+        # (description_cannot_change_if_github_source), so embedding would raise
+        # mid-request. The endpoint must reject BEFORE creating the blob so a
+        # rejected upload leaves no orphaned ActiveStorage blob.
+        creative = Collavre::Creative.create!(
+          description: "<p>synced</p>", user: @owner,
+          data: { "source" => { "type" => "github_markdown" } }
+        )
+        assert_no_difference -> { ActiveStorage::Blob.count } do
+          post path_for(creative),
+               params: { file: upload(content_type: "image/png", filename: "pic.png") },
+               headers: { "Authorization" => "Bearer #{token_for(@owner)}" }
+        end
+        assert_response :unprocessable_entity
+        assert_not_includes creative.reload.description.to_s, "<img"
+      end
     end
   end
 end
