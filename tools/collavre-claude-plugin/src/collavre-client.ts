@@ -9,6 +9,30 @@ export interface RegisterResult {
   ws_url: string;
 }
 
+export interface RegisterParams {
+  // Agent identity (one shared ai_user per human unless overridden).
+  agentName: string;
+  // Session identity (one Collavre topic per Claude Code session). Stable
+  // across --resume so a restart re-binds to the same topic.
+  sessionId: string;
+}
+
+export interface RegisterBody {
+  agent_name: string;
+  session_id: string;
+  // Legacy composite for servers that only read params[:name]. The new server
+  // keys off agent_name/session_id and ignores this.
+  name: string;
+}
+
+export function buildRegisterBody(params: RegisterParams): RegisterBody {
+  return {
+    agent_name: params.agentName,
+    session_id: params.sessionId,
+    name: `${params.agentName}-${params.sessionId}`,
+  };
+}
+
 export class CollavreClient {
   private baseUrl: string;
   private token: string;
@@ -18,14 +42,14 @@ export class CollavreClient {
     this.token = config.token;
   }
 
-  async register(name: string): Promise<RegisterResult> {
+  async register(params: RegisterParams): Promise<RegisterResult> {
     const res = await fetch(`${this.baseUrl}/api/v1/agent/register`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.token}`,
       },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(buildRegisterBody(params)),
     });
 
     if (!res.ok) {

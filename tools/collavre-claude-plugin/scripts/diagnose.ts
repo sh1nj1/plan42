@@ -6,6 +6,7 @@
  */
 
 import { loadConfig } from "../src/config.js";
+import { buildRegisterBody } from "../src/collavre-client.js";
 import WebSocket from "ws";
 
 const PASS = "✓";
@@ -36,7 +37,9 @@ async function diagnose() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.token}`,
       },
-      body: JSON.stringify({ name: "diag-test" }),
+      body: JSON.stringify(
+        buildRegisterBody({ agentName: config.agentName, sessionId: "diag-test" }),
+      ),
     });
     if (!res.ok) {
       const body = await res.text();

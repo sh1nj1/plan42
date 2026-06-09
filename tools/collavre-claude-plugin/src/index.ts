@@ -7,10 +7,10 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { hostname } from "os";
 import { CollavreClient } from "./collavre-client.js";
 import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
+import { resolveSessionId, defaultSessionStateDir } from "./session.js";
 import {
   PermissionCoordinator,
   formatPermissionPrompt,
@@ -35,12 +35,6 @@ const PermissionRequestNotificationSchema = z.object({
     input_preview: z.unknown().optional(),
   }),
 });
-
-function buildAgentName(): string {
-  // pid is unique among concurrent processes on the same machine, so
-  // running multiple Claude Code sessions in parallel cannot collide.
-  return `${hostname().split(".")[0]}-${process.pid}`;
-}
 
 function errorResult(message: string) {
   return {
@@ -277,7 +271,17 @@ async function main(): Promise<void> {
   process.stderr.write(`[collavre] Config loaded: url=${config.url}\n`);
 
   const client = new CollavreClient(config);
-  const agentName = buildAgentName();
+  const agentName = config.agentName;
+  // Session id is stable per working directory (S1): a --resume from the same
+  // cwd re-binds to the same Collavre topic instead of orphaning a new one.
+  const sessionId = resolveSessionId({
+    cwd: process.cwd(),
+    stateDir: defaultSessionStateDir(),
+    override: config.sessionIdOverride,
+  });
+  process.stderr.write(
+    `[collavre] Agent="${agentName}" session=${sessionId} (cwd=${process.cwd()})\n`,
+  );
 
   const coordinator = new PermissionCoordinator();
   const active: ActiveContext = {
@@ -342,7 +346,7 @@ async function main(): Promise<void> {
   await cable.connect();
   process.stderr.write("[collavre] WebSocket ready\n");
 
-  const reg = await client.register(agentName);
+  const reg = await client.register({ agentName, sessionId });
   process.stderr.write(
     `[collavre] Registered: ${reg.agent_name} (agent #${reg.agent_id}) → inbox topic #${reg.topic_id} (${reg.topic_name})\n`,
   );
