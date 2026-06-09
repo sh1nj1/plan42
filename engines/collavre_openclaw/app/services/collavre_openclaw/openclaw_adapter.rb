@@ -147,20 +147,18 @@ module CollavreOpenclaw
       end
     end
 
-    # Persist the Gateway runId on the solicited reply comment so that the same
-    # run's final event — re-delivered as "proactive" to every other process
-    # sharing this Gateway — is recognized as already-handled and suppressed.
-    # The canonical-wins reclaim (when a proactive duplicate won the race) lives
-    # on Collavre::Comment so the solicited path here and the review-finalizer
-    # path share one implementation of the dedup invariant.
+    # Record the Gateway runId for the solicited reply comment so the same run's
+    # final event — re-delivered as "proactive" to every other process sharing
+    # this Gateway — is recognized as already-handled and suppressed. The
+    # solicited reply is canonical (it carries the activity log), so claim_canonical
+    # reclaims the run if a proactive duplicate won the race.
     def persist_run_id_on_comment(run_id)
       return if run_id.blank?
 
       comment = @context[:comment]
-      return unless comment.respond_to?(:claim_openclaw_run_id) &&
-                    comment.respond_to?(:id) && comment.id.present?
+      return unless comment.respond_to?(:id) && comment.id.present?
 
-      comment.claim_openclaw_run_id(run_id)
+      CollavreOpenclaw::ProcessedAiRun.claim_canonical(run_id, comment)
     rescue StandardError => e
       Rails.logger.warn("[CollavreOpenclaw] Failed to persist run_id on comment: #{e.message}")
     end

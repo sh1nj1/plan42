@@ -114,27 +114,15 @@ module CollavreOpenclaw
       effective_creative = creative.effective_origin
       run_id = context[:openclaw_run_id].presence
 
-      # Cross-process idempotency: the Gateway broadcasts a run's events to
-      # every connection, so the initiating process records the run as
-      # solicited while every other process sees the same final event as
-      # "proactive". Keying on the Gateway runId collapses those into the one
-      # comment already created (typically the solicited reply that carries the
-      # activity log), regardless of process, reconnect, or content drift.
-      #
-      # The ProcessedAiRun tombstone is the durable backstop: a run whose
-      # comment-level marker was lost (e.g. the review workflow folded and
-      # destroyed the solicited reply) is still recognized as already-handled.
-      if run_id
-        if Collavre::ProcessedAiRun.processed?(run_id)
-          Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (already processed)")
-          return nil
-        end
-
-        existing = Collavre::Comment.find_by(openclaw_run_id: run_id)
-        if existing
-          Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (existing comment #{existing.id})")
-          return existing
-        end
+      # Cross-process idempotency: the Gateway broadcasts a run's events to every
+      # connection, so the initiating process records the run as solicited while
+      # every other process sees the same final event as "proactive". The
+      # engine-owned ProcessedAiRun tombstone keys on the Gateway runId so those
+      # collapse into the one comment already created, regardless of process,
+      # reconnect, content drift, or a folded/destroyed solicited reply.
+      if run_id && CollavreOpenclaw::ProcessedAiRun.processed?(run_id)
+        Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (already processed)")
+        return CollavreOpenclaw::ProcessedAiRun.comment_for(run_id)
       end
 
       # Dedup: skip if an identical comment was recently created
@@ -153,8 +141,7 @@ module CollavreOpenclaw
         creative: effective_creative,
         user: @user,
         content: content,
-        private: false,
-        openclaw_run_id: run_id
+        private: false
       }
 
       # Handle topic/thread if specified
@@ -164,15 +151,19 @@ module CollavreOpenclaw
       end
 
       comment = Collavre::Comment.create!(comment_attrs)
+
+      # Record this (proactive, non-canonical) run. A unique run_id row is the
+      # hard backstop for the race where two processes create the same run
+      # concurrently: the loser discards its duplicate and returns the winner.
+      if run_id && !CollavreOpenclaw::ProcessedAiRun.claim_proactive(run_id, comment)
+        Rails.logger.warn("[CollavreOpenclaw] Race on run #{run_id} resolved; discarding duplicate comment #{comment.id}")
+        comment.destroy
+        return CollavreOpenclaw::ProcessedAiRun.comment_for(run_id)
+      end
+
       Rails.logger.info("[CollavreOpenclaw] Created AI comment #{comment.id} on creative #{creative_id}")
 
       comment
-    rescue ActiveRecord::RecordNotUnique
-      # The unique index on openclaw_run_id is the hard backstop for the race
-      # where two processes create the same run concurrently. Return the winner.
-      existing = Collavre::Comment.find_by(openclaw_run_id: context[:openclaw_run_id])
-      Rails.logger.warn("[CollavreOpenclaw] Race on run #{context[:openclaw_run_id]} resolved to comment #{existing&.id}")
-      existing
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.error("[CollavreOpenclaw] Failed to create comment: #{e.message}")
       nil

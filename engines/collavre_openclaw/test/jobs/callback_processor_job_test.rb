@@ -23,8 +23,8 @@ module CollavreOpenclaw
     end
 
     teardown do
+      CollavreOpenclaw::ProcessedAiRun.where(run_id: %w[run-aaa run-bbb run-ccc run-folded run-camel]).delete_all
       Collavre::Comment.where(creative: @creative).destroy_all
-      Collavre::ProcessedAiRun.where(run_id: %w[run-aaa run-bbb run-ccc run-folded run-camel]).delete_all
       @creative&.destroy
       @user&.destroy
       @owner&.destroy
@@ -217,7 +217,7 @@ module CollavreOpenclaw
 
     # --- run_id idempotency (cross-process duplicate suppression) ---
 
-    test "proactive message persists openclaw_run_id on the comment" do
+    test "proactive message records the run via the ProcessedAiRun tombstone" do
       CallbackProcessorJob.perform_now(@user.id, {
         "type" => "proactive",
         "creative_id" => @creative.id,
@@ -226,7 +226,8 @@ module CollavreOpenclaw
       })
 
       comment = @creative.comments.reload.order(:id).last
-      assert_equal "run-aaa", comment.openclaw_run_id
+      assert CollavreOpenclaw::ProcessedAiRun.processed?("run-aaa")
+      assert_equal comment.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-aaa")&.id
     end
 
     test "proactive message honors the Gateway camelCase runId field" do
@@ -242,7 +243,7 @@ module CollavreOpenclaw
       })
 
       comment = @creative.comments.reload.order(:id).last
-      assert_equal "run-camel", comment.openclaw_run_id
+      assert_equal comment.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-camel")&.id
     end
 
     test "duplicate run_id is suppressed even with different content and past content window" do
@@ -268,13 +269,13 @@ module CollavreOpenclaw
       assert_equal first.id, @creative.comments.order(:id).last.id
     end
 
-    test "proactive skips when a comment already claimed the run_id (solicited path won)" do
-      # Simulate the solicited reply comment that already backfilled the run_id.
+    test "proactive skips when the run is already claimed (solicited path won)" do
+      # Simulate the canonical solicited reply that already recorded the run.
       solicited = @creative.comments.create!(
         user: @user,
-        content: "Solicited reply with activity log",
-        openclaw_run_id: "run-ccc"
+        content: "Solicited reply with activity log"
       )
+      CollavreOpenclaw::ProcessedAiRun.claim_canonical("run-ccc", solicited)
       count_before = @creative.comments.reload.count
 
       CallbackProcessorJob.perform_now(@user.id, {
@@ -285,14 +286,14 @@ module CollavreOpenclaw
       })
 
       assert_equal count_before, @creative.comments.reload.count
-      assert_equal solicited.id, @creative.comments.where(openclaw_run_id: "run-ccc").sole.id
+      assert_equal solicited.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-ccc")&.id
     end
 
     test "proactive is suppressed when the run is recorded in the tombstone but no comment holds it" do
-      # Simulates the review workflow: the solicited reply that owned the run_id
-      # was folded into its quoted comment and destroyed, so NO comment carries
-      # the run_id — only the durable ProcessedAiRun tombstone remains.
-      Collavre::ProcessedAiRun.record("run-folded")
+      # Simulates the review workflow: the solicited reply that owned the run was
+      # folded into its quoted comment and destroyed, so NO comment carries it —
+      # only the durable ProcessedAiRun tombstone (comment_id nullified) remains.
+      CollavreOpenclaw::ProcessedAiRun.create!(run_id: "run-folded")
       count_before = @creative.comments.reload.count
 
       result = CallbackProcessorJob.perform_now(@user.id, {
@@ -314,7 +315,6 @@ module CollavreOpenclaw
         "content" => "Keyless proactive message"
       })
       assert_equal before_count + 1, @creative.comments.reload.count
-      assert_nil @creative.comments.order(:id).last.openclaw_run_id
     end
 
     test "non-duplicate response messages create comments normally" do

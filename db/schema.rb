@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_020000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -155,7 +155,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
     t.text "content", null: false
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
-    t.string "openclaw_run_id"
     t.boolean "private", default: false, null: false
     t.integer "quoted_comment_id"
     t.text "quoted_text"
@@ -168,7 +167,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
-    t.index ["openclaw_run_id"], name: "index_comments_on_openclaw_run_id", unique: true, where: "openclaw_run_id IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"
@@ -467,6 +465,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
     t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
   end
 
+  create_table "openclaw_processed_ai_runs", force: :cascade do |t|
+    t.integer "comment_id"
+    t.datetime "created_at", null: false
+    t.string "run_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_openclaw_processed_ai_runs_on_comment_id"
+    t.index ["run_id"], name: "index_openclaw_processed_ai_runs_on_run_id", unique: true
+  end
+
   create_table "orchestrator_policies", force: :cascade do |t|
     t.json "config", default: {}, null: false
     t.datetime "created_at", null: false
@@ -479,13 +486,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
     t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
     t.index ["priority"], name: "index_orchestrator_policies_on_priority"
     t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
-  end
-
-  create_table "processed_ai_runs", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "run_id", null: false
-    t.datetime "updated_at", null: false
-    t.index ["run_id"], name: "index_processed_ai_runs_on_run_id", unique: true
   end
 
   create_table "sessions", force: :cascade do |t|
@@ -901,6 +901,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
   add_foreign_key "openclaw_pending_callbacks", "users"
+  add_foreign_key "openclaw_processed_ai_runs", "comments", on_delete: :nullify
   add_foreign_key "sessions", "users"
   add_foreign_key "slack_accounts", "users"
   add_foreign_key "slack_channel_links", "creatives"
