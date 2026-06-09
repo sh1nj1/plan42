@@ -420,20 +420,15 @@ module Collavre
           broadcast_claude_idle(agent, task, comment)
         end
 
-        # Broadcast an "idle" agent_status so the chat typing indicator clears.
-        # Mirrors AgentLifecycleManager#broadcast_status for the Claude path.
+        # Clear the chat typing indicator via the canonical status broadcaster
+        # (the same one AiAgentService uses for every other agent), so the Claude
+        # path emits an identical "idle" agent_status payload.
         def broadcast_claude_idle(agent, task, comment)
           creative = comment.creative&.effective_origin
           return unless creative
 
-          CommentsPresenceChannel.broadcast_agent_status(
-            creative.id,
-            status: "idle",
-            agent_id: agent.id,
-            agent_name: agent.display_name,
-            task_id: task.id,
-            source_creative_id: creative.id
-          )
+          AiAgent::AgentLifecycleManager.new(task: task, agent: agent, creative: creative)
+                                        .broadcast_status("idle")
         end
 
         # When an MCP session unregisters, any tasks still in delegated state

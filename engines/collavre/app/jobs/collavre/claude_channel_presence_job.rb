@@ -46,11 +46,16 @@ module Collavre
 
       AgentSubscription.reap_stale!(agent.id)
 
+      # Reuse the canonical status broadcaster that drives the typing indicator
+      # for every other agent (AiAgentService#execute_llm_conversation), so the
+      # "thinking"/"idle" payload stays identical across both paths.
+      lifecycle = AiAgent::AgentLifecycleManager.new(task: task, agent: agent, creative: creative)
+
       if AgentSubscription.live.where(agent_id: agent.id).exists?
-        broadcast_status(creative, agent, task, "thinking")
+        lifecycle.broadcast_status("thinking")
         self.class.set(wait: HEARTBEAT_SECONDS.seconds).perform_later(task_id)
       else
-        broadcast_status(creative, agent, task, "idle")
+        lifecycle.broadcast_status("idle")
         post_disconnect_notice(creative, task)
       end
     end
@@ -64,17 +69,6 @@ module Collavre
 
     def resolve_topic_id(task)
       task.topic_id || task.trigger_event_payload&.dig("topic", "id")
-    end
-
-    def broadcast_status(creative, agent, task, status)
-      CommentsPresenceChannel.broadcast_agent_status(
-        creative.id,
-        status: status,
-        agent_id: agent.id,
-        agent_name: agent.display_name,
-        task_id: task.id,
-        source_creative_id: creative.id
-      )
     end
 
     # Authorless, non-dispatching system message so the human sees the channel is
