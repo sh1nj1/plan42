@@ -46,12 +46,14 @@ module Collavre
           review_handler.add_completion_reaction
           surviving = @original_comment.quoted_comment
           reassociate_activity_logs(@reply_comment, surviving)
-          # The placeholder reply carries the OpenClaw run_id (dedup marker). It is
-          # destroyed here, so the marker must move to the surviving comment or a
-          # later proactive delivery of the same run would no longer find it and
-          # create the duplicate this whole mechanism exists to prevent. Capture
-          # before destroy (frees the unique index), then claim on the survivor.
+          # The placeholder reply carries the OpenClaw run_id (dedup marker) and is
+          # destroyed here. The surviving comment has a single run_id slot, but it
+          # can be reviewed N times (N runs), so the column alone cannot mark every
+          # run. Record a durable tombstone so a later proactive delivery of this
+          # run is still recognized as already-handled. The comment-level carry is
+          # kept as a best-effort label for the common single-review case.
           carried_run_id = @reply_comment.openclaw_run_id
+          ProcessedAiRun.record(carried_run_id)
           @reply_comment.destroy!
           surviving&.claim_openclaw_run_id(carried_run_id)
           surviving

@@ -115,7 +115,16 @@ module CollavreOpenclaw
       # "proactive". Keying on the Gateway runId collapses those into the one
       # comment already created (typically the solicited reply that carries the
       # activity log), regardless of process, reconnect, or content drift.
+      #
+      # The ProcessedAiRun tombstone is the durable backstop: a run whose
+      # comment-level marker was lost (e.g. the review workflow folded and
+      # destroyed the solicited reply) is still recognized as already-handled.
       if run_id
+        if Collavre::ProcessedAiRun.processed?(run_id)
+          Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (already processed)")
+          return nil
+        end
+
         existing = Collavre::Comment.find_by(openclaw_run_id: run_id)
         if existing
           Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (existing comment #{existing.id})")

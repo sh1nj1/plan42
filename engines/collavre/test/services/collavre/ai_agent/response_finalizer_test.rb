@@ -34,9 +34,36 @@ module Collavre
 
         assert_equal quoted.id, result.id, "quoted comment is the survivor"
         assert_not Comment.exists?(reply.id), "placeholder reply is destroyed"
+        assert ProcessedAiRun.processed?("run-review"),
+               "run is durably recorded so a later re-delivery is suppressed"
         assert_equal "run-review", quoted.reload.openclaw_run_id,
-                     "run_id is carried to the surviving comment"
-        assert_equal quoted.id, Comment.where(openclaw_run_id: "run-review").sole.id
+                     "run_id is also carried to the surviving comment (single-review label)"
+      end
+
+      # A comment reviewed multiple times spans multiple runs but has a single
+      # run_id column slot. Every run must still be durably recorded so a late
+      # re-delivery of ANY of them is suppressed — the exact gap the tombstone
+      # closes that the comment column cannot.
+      test "repeated reviews of the same comment record every run durably" do
+        quoted = @creative.comments.create!(content: "agent draft", user: @agent, topic: @topic)
+
+        %w[run-A run-B run-C].each do |rid|
+          review = @creative.comments.create!(
+            content: "revise again", user: @user, topic: @topic, quoted_comment: quoted
+          )
+          reply = @creative.comments.create!(
+            content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: @topic,
+            openclaw_run_id: rid
+          )
+          ResponseFinalizer.new(
+            task: @task, agent: @agent, original_comment: review,
+            reply_comment: reply, response_content: "content #{rid}"
+          ).finalize
+        end
+
+        assert ProcessedAiRun.processed?("run-A"), "first run recorded"
+        assert ProcessedAiRun.processed?("run-B"), "second run recorded"
+        assert ProcessedAiRun.processed?("run-C"), "third run recorded"
       end
 
       # When the placeholder carried no run_id (e.g. HTTP transport or run_id never

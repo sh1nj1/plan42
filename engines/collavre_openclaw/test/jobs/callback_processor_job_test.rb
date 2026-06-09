@@ -24,6 +24,7 @@ module CollavreOpenclaw
 
     teardown do
       Collavre::Comment.where(creative: @creative).destroy_all
+      Collavre::ProcessedAiRun.where(run_id: %w[run-aaa run-bbb run-ccc run-folded]).delete_all
       @creative&.destroy
       @user&.destroy
       @owner&.destroy
@@ -269,6 +270,24 @@ module CollavreOpenclaw
 
       assert_equal count_before, @creative.comments.reload.count
       assert_equal solicited.id, @creative.comments.where(openclaw_run_id: "run-ccc").sole.id
+    end
+
+    test "proactive is suppressed when the run is recorded in the tombstone but no comment holds it" do
+      # Simulates the review workflow: the solicited reply that owned the run_id
+      # was folded into its quoted comment and destroyed, so NO comment carries
+      # the run_id — only the durable ProcessedAiRun tombstone remains.
+      Collavre::ProcessedAiRun.record("run-folded")
+      count_before = @creative.comments.reload.count
+
+      result = CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Late re-delivery of a folded run",
+        "run_id" => "run-folded"
+      })
+
+      assert_nil result, "no comment is created for an already-processed run"
+      assert_equal count_before, @creative.comments.reload.count
     end
 
     test "proactive without run_id still creates a comment" do

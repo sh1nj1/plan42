@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_010000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -479,6 +479,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
     t.index ["policy_type", "enabled"], name: "index_orchestrator_policies_on_policy_type_and_enabled"
     t.index ["priority"], name: "index_orchestrator_policies_on_priority"
     t.index ["scope_type", "scope_id"], name: "index_orchestrator_policies_on_scope_type_and_scope_id"
+  end
+
+  create_table "processed_ai_runs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "run_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["run_id"], name: "index_processed_ai_runs_on_run_id", unique: true
   end
 
   create_table "sessions", force: :cascade do |t|
