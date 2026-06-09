@@ -412,6 +412,43 @@ module Collavre
         "the sibling's presence row must survive this session's unsubscribe"
     end
 
+    test "unsubscribe schedules a session-scoped cancellation when a live sibling remains" do
+      # Codex P2: when a session's WS drops without DELETE and a sibling keeps
+      # the shared agent routable, routing is preserved — but the dropped
+      # session's OWN session topic is private to it (siblings filter
+      # session_topic dispatches to their own topic), so a task delegated there
+      # would hold its ResourceTracker slot until stuck recovery. The WS-drop
+      # path must schedule a grace-delayed, session-scoped cleanup, mirroring the
+      # HTTP destroy path's cancel_tasks_for_topic for the still-live-sibling case.
+      agent = User.create!(
+        email: "agent-channel-sibling-session-cancel-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      AgentSubscription.create!(agent_id: agent.id, token: "sibling-token")
+
+      ActiveJob::Base.queue_adapter = :test
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id, session_id: "sess-drop"
+      assert subscription.confirmed?
+      token = agent.reload.routing_subscription_token
+
+      assert_enqueued_with(
+        job: Collavre::CancelOfflineDelegatedTasksJob,
+        args: [ agent.id, token, "sess-drop" ]
+      ) do
+        unsubscribe
+      end
+
+      assert_equal "true", agent.reload.routing_expression,
+        "routing must stay active for the still-live sibling"
+    end
+
     test "last session unsubscribe clears routing and removes the presence row" do
       agent = User.create!(
         email: "agent-channel-last-session-test@agent.collavre.local",

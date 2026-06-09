@@ -19,9 +19,17 @@ module Collavre
 
     GRACE_SECONDS = 30
 
-    def perform(agent_id, expected_token)
+    def perform(agent_id, expected_token, session_id = nil)
       agent = User.find_by(id: agent_id)
       return unless agent&.claude_channel_agent?
+
+      # Session-scoped variant: a live sibling may keep the shared agent
+      # routable (so the agent-wide rechecks below would no-op), but the
+      # dropped session's OWN session topic is private to it — siblings filter
+      # session_topic dispatches to their own topic, so none will /reply. Cancel
+      # only that topic's delegated work. Enqueued by AgentChannel#unsubscribed
+      # when a sibling remains; mirrors the destroy path's cancel_tasks_for_topic.
+      return cancel_dropped_session_tasks(agent, session_id) if session_id.present?
 
       # Agent came back online during the grace window — the same MCP
       # session (or a new one) is subscribed and can answer /reply.
@@ -43,13 +51,28 @@ module Collavre
         return
       end
 
-      cancel_delegated_tasks(agent)
+      cancel_delegated_tasks(Task.where(agent_id: agent.id, status: "delegated"), agent)
     end
 
     private
 
-    def cancel_delegated_tasks(agent)
-      tasks = Task.where(agent_id: agent.id, status: "delegated")
+    # Cancel only the dropped session's own session-topic delegated work, unless
+    # this same session reconnected within the grace window (a fresh live row
+    # under the same session_id). Work on OTHER topics is fan-out — any live
+    # sibling can still claim it — so it is deliberately left untouched.
+    def cancel_dropped_session_tasks(agent, session_id)
+      AgentSubscription.reap_stale!(agent.id)
+      return if AgentSubscription.live.where(agent_id: agent.id, session_id: session_id).exists?
+
+      topic = Topic.find_by(primary_agent_id: agent.id, session_id: session_id)
+      return unless topic
+
+      cancel_delegated_tasks(
+        Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated"), agent
+      )
+    end
+
+    def cancel_delegated_tasks(tasks, agent)
       return if tasks.empty?
 
       tracker = Orchestration::ResourceTracker.for(agent)

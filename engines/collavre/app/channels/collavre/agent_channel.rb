@@ -48,13 +48,19 @@ module Collavre
       return unless @session_agent && @subscription_token
 
       cleared = false
+      dropped_session_id = nil
       @session_agent.with_lock do
-        deleted = AgentSubscription
-                  .where(agent_id: @session_agent.id, token: @subscription_token)
-                  .delete_all
+        scope = AgentSubscription.where(agent_id: @session_agent.id, token: @subscription_token)
+        # Capture the dropped session's id before deleting its row so a live-
+        # sibling exit can still scope a cleanup to this session's own topic.
+        dropped_session_id = scope.pick(:session_id)
+        deleted = scope.delete_all
         # Stale: our presence row is already gone. The live owner's lifecycle
         # owns routing — do not clobber it, do not schedule cancellation.
-        next if deleted.zero?
+        if deleted.zero?
+          dropped_session_id = nil
+          next
+        end
 
         # Drop crash-orphaned sibling rows (a Puma/ActionCable process that
         # died without firing unsubscribed) before reading presence, so a dead
@@ -72,18 +78,29 @@ module Collavre
         cleared = true
       end
 
-      return unless cleared
-
-      # Reconnect-grace cancellation: clearing routing only makes the agent
-      # unroutable. Any task already "delegated" still holds its ResourceTracker
-      # slot — the dispatch was broadcast to a now-dead stream so no client
-      # remains to call /reply, and the slot would stay held until
-      # StuckDetectorJob times out. The job cancels those tasks after a grace
-      # window, but only if the agent is still offline (it rechecks
-      # routing_expression AND that no session has resubscribed).
-      CancelOfflineDelegatedTasksJob
-        .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
-        .perform_later(@session_agent.id, @subscription_token)
+      if cleared
+        # Reconnect-grace cancellation (last session): clearing routing only
+        # makes the agent unroutable. Any task already "delegated" still holds
+        # its ResourceTracker slot — the dispatch was broadcast to a now-dead
+        # stream so no client remains to call /reply, and the slot would stay
+        # held until StuckDetectorJob times out. The job cancels those tasks
+        # after a grace window, but only if the agent is still offline (it
+        # rechecks routing_expression AND that no session has resubscribed).
+        CancelOfflineDelegatedTasksJob
+          .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
+          .perform_later(@session_agent.id, @subscription_token)
+      elsif dropped_session_id.present?
+        # A live sibling keeps the shared agent routable, so we must NOT clear
+        # routing or sweep agent-wide. But this dropped session's OWN session
+        # topic is private to it — siblings filter session_topic dispatches to
+        # their own topic, so none will /reply to a task delegated there and it
+        # would hold its slot until stuck recovery. Schedule a grace-delayed,
+        # session-scoped cancellation (skipped if this same session reconnects
+        # within the window), mirroring the destroy path's cancel_tasks_for_topic.
+        CancelOfflineDelegatedTasksJob
+          .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
+          .perform_later(@session_agent.id, @subscription_token, dropped_session_id)
+      end
     rescue ActiveRecord::StatementInvalid => e
       Rails.logger.warn("[AgentChannel] unsubscribed presence clear failed: #{e.message}")
     end

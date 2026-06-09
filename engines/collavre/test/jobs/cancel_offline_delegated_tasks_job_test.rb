@@ -142,6 +142,72 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       "the job should reap the crash-orphaned row"
   end
 
+  test "session-scoped: cancels the dropped session's session-topic delegated task despite a live sibling" do
+    # Codex P2: a live sibling keeps routing_expression on, so the agent-wide
+    # rechecks would no-op — but the dropped session's own session topic is
+    # private to it and no sibling will /reply. The session-scoped invocation
+    # targets only that topic's delegated work.
+    @claude_agent.update_column(:routing_expression, "true")
+    Collavre::AgentSubscription.create!(
+      agent_id: @claude_agent.id, token: "sibling", session_id: "sess-other"
+    )
+
+    session_topic = Topic.create!(
+      creative: @creative, name: "cc-session-topic", user: @owner,
+      primary_agent_id: @claude_agent.id, session_id: "sess-drop"
+    )
+    task = Task.create!(
+      name: "Delegated on session topic", status: "delegated",
+      agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
+    )
+
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+
+    assert_equal "cancelled", task.reload.status,
+      "the dropped session's own session-topic work must be cancelled"
+  end
+
+  test "session-scoped: no-op when the same session reconnected within the grace window" do
+    Collavre::AgentSubscription.create!(
+      agent_id: @claude_agent.id, token: "reconnected", session_id: "sess-drop"
+    )
+    session_topic = Topic.create!(
+      creative: @creative, name: "cc-reconnect-topic", user: @owner,
+      primary_agent_id: @claude_agent.id, session_id: "sess-drop"
+    )
+    task = Task.create!(
+      name: "Delegated on session topic", status: "delegated",
+      agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
+    )
+
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+
+    assert_equal "delegated", task.reload.status,
+      "a reconnected session (live row with the same session_id) keeps its work"
+  end
+
+  test "session-scoped: leaves shared work-topic tasks for a live sibling to claim" do
+    # A delegated task on a DIFFERENT topic is fan-out work any live session can
+    # /reply to — the dropped session's session-scoped cleanup must not touch it.
+    Collavre::AgentSubscription.create!(
+      agent_id: @claude_agent.id, token: "sibling", session_id: "sess-other"
+    )
+    Topic.create!(
+      creative: @creative, name: "cc-own-session-topic", user: @owner,
+      primary_agent_id: @claude_agent.id, session_id: "sess-drop"
+    )
+    work_topic = Topic.create!(creative: @creative, name: "cc-work-topic", user: @owner)
+    work_task = Task.create!(
+      name: "Shared work-topic task", status: "delegated",
+      agent: @claude_agent, creative_id: @creative.id, topic_id: work_topic.id
+    )
+
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+
+    assert_equal "delegated", work_task.reload.status,
+      "work-topic tasks belong to the fan-out pool and must survive a session-scoped cancel"
+  end
+
   test "fails parent workflow when cancelling a delegated subtask" do
     parent_task = Task.create!(
       name: "Workflow Parent",
