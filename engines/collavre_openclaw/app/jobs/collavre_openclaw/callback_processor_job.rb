@@ -60,7 +60,12 @@ module CollavreOpenclaw
       content = payload[:content] || payload[:message]
       thread_id = payload[:thread_id] || payload[:topic_id] || payload.dig(:context, :thread_id) || payload.dig(:context, :topic_id)
       parent_comment_id = payload[:parent_comment_id] || payload.dig(:context, :parent_comment_id)
-      run_id = payload[:run_id] || payload.dig(:context, :run_id)
+      # The Gateway emits the run identifier as camelCase `runId`; the HTTP
+      # CallbacksController path forwards that raw payload verbatim, so accept
+      # both casings. Missing it here would null out the idempotency key and let
+      # a cross-path duplicate slip past dedup.
+      run_id = payload[:run_id] || payload[:runId] ||
+               payload.dig(:context, :run_id) || payload.dig(:context, :runId)
 
       unless creative_id.present?
         Rails.logger.error("[CollavreOpenclaw] Proactive message missing creative_id")

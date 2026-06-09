@@ -24,7 +24,7 @@ module CollavreOpenclaw
 
     teardown do
       Collavre::Comment.where(creative: @creative).destroy_all
-      Collavre::ProcessedAiRun.where(run_id: %w[run-aaa run-bbb run-ccc run-folded]).delete_all
+      Collavre::ProcessedAiRun.where(run_id: %w[run-aaa run-bbb run-ccc run-folded run-camel]).delete_all
       @creative&.destroy
       @user&.destroy
       @owner&.destroy
@@ -227,6 +227,22 @@ module CollavreOpenclaw
 
       comment = @creative.comments.reload.order(:id).last
       assert_equal "run-aaa", comment.openclaw_run_id
+    end
+
+    test "proactive message honors the Gateway camelCase runId field" do
+      # The Gateway emits camelCase `runId`; the HTTP CallbacksController path
+      # forwards the raw Gateway payload, so the job must read it even when the
+      # snake_case `run_id` is absent. Otherwise the dedup key is dropped and a
+      # cross-path duplicate slips through.
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "camelCase run-keyed proactive message",
+        "runId" => "run-camel"
+      })
+
+      comment = @creative.comments.reload.order(:id).last
+      assert_equal "run-camel", comment.openclaw_run_id
     end
 
     test "duplicate run_id is suppressed even with different content and past content window" do
