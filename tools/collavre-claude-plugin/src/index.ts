@@ -400,7 +400,7 @@ async function main(): Promise<void> {
 
   const cleanup = async () => {
     cable.disconnect();
-    await client.unregister(reg.agent_id, reg.topic_id);
+    await client.unregister(reg.agent_id, reg.topic_id, sessionId);
     process.exit(0);
   };
 

@@ -136,10 +136,22 @@ export class CollavreClient {
     return res.json() as Promise<{ comment_id: number }>;
   }
 
-  async unregister(agentId: number, topicId?: number): Promise<void> {
+  async unregister(
+    agentId: number,
+    topicId?: number,
+    sessionId?: string,
+  ): Promise<void> {
     const url = new URL(`${this.baseUrl}/api/v1/agent/${agentId}`);
     if (topicId !== undefined) {
       url.searchParams.set("topic_id", String(topicId));
+    }
+    // Send the stable session id so the server can drop THIS session's
+    // presence row even when the topic_id no longer resolves (stale/archived).
+    // Without it, destroy falls back to topic.session_id and, on a nil topic,
+    // can't identify the exiting session — leaving its own row to masquerade as
+    // a live sibling and pin routing_expression until the 45s lease reap.
+    if (sessionId !== undefined) {
+      url.searchParams.set("session_id", sessionId);
     }
     await fetch(url.toString(), {
       method: "DELETE",

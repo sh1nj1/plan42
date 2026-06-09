@@ -1614,6 +1614,42 @@ module Collavre
             "the exiting session's own presence row must be removed by destroy"
         end
 
+        test "destroy drops the exiting session's row via session_id param when topic_id does not resolve" do
+          # Review gap: the exiting session is identified by
+          #   exiting_session_id = params[:session_id].presence || topic&.session_id
+          # If the plugin only sent topic_id and that topic no longer resolves
+          # (stale/archived id, or it does not belong to this agent), topic is
+          # nil, the fallback yields nil, the own row is NOT dropped, and the
+          # last session's own still-live row masquerades as a live sibling —
+          # pinning routing_expression "true" on a now-clientless agent until the
+          # lease reap. The plugin now always sends its stable session_id, so
+          # destroy can identify and drop the exiting row regardless of topic
+          # resolution. Lock that contract.
+          post "/api/v1/agent/register",
+            params: { agent_name: "stale-topic", session_id: "sess-stale" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg = JSON.parse(response.body)
+
+          ai_user = User.find(reg["agent_id"])
+          Collavre::AgentSubscription.create!(
+            agent_id: ai_user.id, token: "stale-token", session_id: "sess-stale"
+          )
+          ai_user.update_column(:routing_expression, "true")
+
+          # A non-resolving topic_id (never belonged to this agent), but the
+          # stable session_id is supplied — destroy must still tear down.
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: 999_999, session_id: "sess-stale" },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+
+          assert_nil ai_user.reload.routing_expression,
+            "session_id param must let destroy clear routing even when topic_id does not resolve"
+          assert_equal 0, Collavre::AgentSubscription.where(agent_id: ai_user.id).count,
+            "the exiting session's own presence row must be removed via session_id"
+        end
+
         test "destroy keeps a live sibling's routing intact and only removes the exiting session's row" do
           # The exiting session's own row must be dropped, but a DISTINCT live
           # sibling's row (different session_id) must survive so routing stays on.
