@@ -13,6 +13,7 @@ ko:
       branch_prefix: "분기"
       main_name: "메인"
       cannot_delete_main: "메인 토픽은 삭제할 수 없습니다."
+      orphaned_cron_notice: "[시스템] '%{topic_name}' 토픽이 삭제되었지만, 이 토픽을 대상으로 하는 반복 크론 작업(%{cron_key})이 아직 남아 있어 실행될 때마다 아무 동작도 하지 않고 조용히 종료됩니다. 원래 메시지: \"%{message}\". 다른 토픽으로 다시 지정하거나 cron_cancel로 취소하세요."
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.

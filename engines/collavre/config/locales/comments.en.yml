@@ -13,6 +13,7 @@ en:
       branch_prefix: "Branch"
       main_name: "Main"
       cannot_delete_main: "Cannot delete the Main topic."
+      orphaned_cron_notice: "[System] The topic '%{topic_name}' was deleted, but a recurring cron job (%{cron_key}) still targets it and will silently do nothing on each run. Original message: \"%{message}\". Re-point it to another topic or cancel it with cron_cancel."
       create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
