@@ -48,11 +48,9 @@ module Collavre
 
       private
 
-      # Browser uploads carry a real Content-Type, but the bundled `collavre`
-      # CLI always sends application/octet-stream for the multipart part. Treat
-      # octet-stream (and blank) as "unknown" and sniff via Marcel (magic bytes
-      # + filename) so png/mp4 resolve to image/* and video/* and render as
-      # inline <img>/<video> nodes instead of generic download links.
+      # The bundled `collavre` CLI sends application/octet-stream for every part,
+      # so treat octet-stream (and blank) as "unknown" and sniff via Marcel —
+      # otherwise png/mp4 render as generic download links, not inline media.
       def resolved_content_type(file, io)
         declared = file.content_type.presence
         return declared if declared && declared != "application/octet-stream"

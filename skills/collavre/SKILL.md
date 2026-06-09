@@ -60,6 +60,16 @@ collavre import --parent 123 --stdin < plan.md
 echo "# Quick\n## Plan" | collavre import --parent 123 --stdin
 ```
 
+### Attach a file
+```bash
+collavre attach --creative 123 --file ./hero.png    # png/mp4/pdf/svg
+```
+Uploads the raw bytes over a bearer multipart endpoint, embeds the matching
+node (`<img>`/`<video>`/`<a>`) into the creative's description, and attaches the
+blob to `creative.files`. Use this for binary files on disk. For inline
+agent-generated text (markdown/html/svg source), use the
+`creative_attach_files_service` tool with `files: [{ filename, content }]`.
+
 ### Batch operations
 ```bash
 collavre batch --file ops.json

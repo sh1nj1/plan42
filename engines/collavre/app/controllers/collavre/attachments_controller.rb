@@ -19,13 +19,10 @@ module Collavre
 
     private
 
-    # Description HTML is the source of truth for creative.files; a blob can be
-    # shared across creatives (HTML copied between them, after which each save's
-    # reconcile attaches the same blob). The editor still fires this DELETE for
-    # removed nodes after its PATCH lands, so purging unconditionally here would
-    # delete a blob still referenced by another creative, leaving its description
-    # pointing at a 404. Mirror the model's detach_and_maybe_purge guard: only
-    # purge a true orphan; otherwise leave reconcile to own the blob lifecycle.
+    # A blob can be shared across creatives (description HTML copied between
+    # them). The editor fires this DELETE for removed nodes after its PATCH, so
+    # purging unconditionally could delete a blob another creative still
+    # references, 404-ing its description. Only purge a true orphan.
     def purge_unless_referenced(blob)
       signed_id = blob.signed_id
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
@@ -44,16 +41,11 @@ module Collavre
         orphan_blob?(blob)
     end
 
-    # A blob attached to nothing and referenced by no creative description is a
-    # true orphan. The editor direct-uploads an image/video/file, inserts a
-    # node, and fires DELETE /attachments/:signed_id when the user removes it;
-    # if the node is removed before the blob is ever attached (removed-then-save,
-    # so reconcile never sees it in the saved HTML), neither ownership nor a
-    # writable-reference can be proven and the DELETE would 403, stranding the
-    # blob in storage. Authorizing the purge here is safe: the blob is unused,
-    # so removing it cannot break any creative, and any in-use blob still fails
-    # this check (an attachment or a referencing description protects it). This
-    # mirrors purge_unless_referenced exactly, which then performs the purge.
+    # Authorize purging a true orphan (attached to nothing, in no description).
+    # Covers a node removed before its blob was ever attached (removed-then-save,
+    # so reconcile never sees it), which can prove neither ownership nor a
+    # writable reference and would otherwise 403, stranding the blob. Safe: any
+    # in-use blob still fails this check. Mirrors purge_unless_referenced.
     def orphan_blob?(blob)
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(blob.signed_id)}%"
 

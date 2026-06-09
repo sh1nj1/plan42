@@ -6,12 +6,8 @@ module Collavre
     module_function
 
     def embed_orphans!(creative)
-      # Markdown-mode creatives manage their own blob lifecycle through
-      # MarkdownConverter (markdown_source <-> description) and are excluded
-      # from HTML-derived reconcile (reconcile_description_attachments returns
-      # early for them). Appending HTML nodes here would be a no-op for
-      # reconcile AND would demote the creative to HTML mode via
-      # convert_markdown_to_html, silently discarding data["markdown_source"].
+      # Skip markdown creatives: reconcile skips them too, so appending nodes is
+      # a no-op AND would demote them to HTML, discarding data["markdown_source"].
       return if creative.data&.dig("content_type") == "markdown"
 
       referenced = creative.send(:extract_signed_ids_from_description).to_set
@@ -21,8 +17,7 @@ module Collavre
       return if orphans.empty?
 
       nodes = orphans.map { |att| creative.attachment_node_html(att.blob) }.join
-      # Normal save path: sanitizer keeps the nodes; reconcile is a no-op for
-      # these blobs since they are already attached.
+      # reconcile is a no-op here — these blobs are already attached.
       creative.update!(description: "#{creative.description}#{nodes}")
     rescue StandardError => e
       Rails.logger.error("AttachmentBackfill: creative #{creative.id} failed: #{e.message}")

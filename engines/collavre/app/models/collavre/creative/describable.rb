@@ -39,25 +39,17 @@ module Collavre
         CGI.unescapeHTML(ActionController::Base.helpers.strip_tags(effective_origin.description || "")).truncate(24, omission: "...")
       end
 
-      # Whether inline attachments can be embedded into this creative's
-      # description. GitHub-synced creatives derive their description from the
-      # synced markdown (description_cannot_change_if_github_source rejects any
-      # direct change), so embedding a node would raise mid-request and orphan
-      # the freshly-created blob. Resolve through effective_origin since that is
-      # where the description actually lives. Callers MUST check this before
-      # creating the blob so a rejected upload never leaves an orphan.
+      # GitHub-synced creatives reject any description change
+      # (description_cannot_change_if_github_source), so embedding would raise
+      # and orphan the blob. Callers MUST check this before creating the blob.
       def attachments_embeddable?
         !effective_origin.github_markdown?
       end
 
-      # Append an attachment node for `blob` to the description and save.
-      # after_save reconcile then attaches the blob to creative.files.
-      #
-      # Linked creatives (origin_id present) cannot change their own description
-      # (description_cannot_change_if_has_origin); the description lives on the
-      # origin. Resolve effective_origin and embed there so an upload against a
-      # write-permitted linked row attaches to the origin instead of raising
-      # mid-request and orphaning the freshly-created blob.
+      # Append an attachment node and save; after_save reconcile attaches the
+      # blob to creative.files. Linked creatives can't change their own
+      # description (it lives on the origin), so embed on effective_origin —
+      # otherwise the save raises and orphans the blob.
       def embed_attachment_blob!(blob)
         target = effective_origin
         return target.embed_attachment_blob!(blob) unless target == self
@@ -85,13 +77,10 @@ module Collavre
         end
       end
 
-      # Remove the attachment referenced by `signed_id`. Description HTML is the
-      # source of truth, so the node (<img>/<video>/<a>) must come out of the
-      # description; after_save reconcile then detaches the now-unreferenced
-      # blob and purges it only if nothing else references it. If the blob is
-      # attached but not embedded (e.g. a legacy attachment not yet backfilled
-      # into the HTML), detach it directly so removal still works. Returns true
-      # if an attachment was present.
+      # Remove the attachment for `signed_id`. HTML is the source of truth, so
+      # strip the node and let after_save reconcile detach + safe-purge. A blob
+      # that's attached but not embedded (legacy, not yet backfilled) is
+      # detached directly. Returns true if an attachment was present.
       def remove_attachment!(signed_id)
         target = effective_origin
         return target.remove_attachment!(signed_id) unless target == self
@@ -199,24 +188,18 @@ module Collavre
         )
       end
 
-      # Description HTML is the source of truth for attachments. After each save,
-      # make creative.files exactly match the blobs referenced in the description:
-      # attach referenced-but-unattached blobs, detach attached-but-unreferenced.
-      # Must never raise during save — malformed HTML yields [] and a no-op.
+      # Sync creative.files to exactly the blobs referenced in the description
+      # HTML (attach new, detach removed). Must never raise during save —
+      # malformed HTML yields [] and a no-op.
       #
-      # Markdown-mode creatives manage their own blob lifecycle through
-      # MarkdownConverter (markdown_source <-> description) and
-      # purge_description_attachments; HTML-derived reconcile would fight that.
-      # The embed paths (embed_attachment_blob!) demote markdown -> html first,
-      # so agent/editor uploads are still reconciled.
+      # Markdown-mode creatives manage their own blobs via MarkdownConverter;
+      # the embed paths demote markdown -> html first, so uploads still reconcile.
       def reconcile_description_attachments
         return if data&.dig("content_type") == "markdown"
-        # Linked creatives (origin_id present) do not own their description — the
-        # origin's HTML is authoritative and embed_attachment_blob! routes their
-        # uploads to the origin. Their own description column is blank, so
-        # reconcile would treat every legacy creative.files attachment as an
-        # orphan and detach/purge it on the next save (e.g. a reparent). Skip
-        # them so pre-existing linked-row attachments are preserved.
+        # Linked creatives don't own their description (it lives on the origin)
+        # and their own column is blank, so reconcile would treat every legacy
+        # attachment as an orphan and purge it on the next save (e.g. a
+        # reparent). Skip them to preserve pre-existing linked-row attachments.
         return if origin_id.present?
 
         referenced = extract_signed_ids_from_description.filter_map do |sid|
@@ -239,13 +222,10 @@ module Collavre
         Rails.logger.error("Creative##{id}: reconcile_description_attachments failed: #{e.message}")
       end
 
-      # Remove this creative's attachment join, then purge the underlying blob
-      # ONLY if nothing else references it. A blob can be shared across creatives
-      # (e.g. description HTML copied between them, after which each reconcile
-      # attaches the same blob). Blindly calling Attachment#purge_later deletes
-      # the blob/file out from under those other creatives, leaving their
-      # descriptions pointing at a 404. Mirror purge_description_attachments'
-      # cross-creative guard so detach here is safe.
+      # Detach this creative's join, then purge the blob ONLY if nothing else
+      # references it — a shared blob (description copied between creatives)
+      # would otherwise be deleted out from under the others, 404-ing their
+      # descriptions.
       def detach_and_maybe_purge(attachment)
         blob = attachment.blob
         attachment.delete
