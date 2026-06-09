@@ -60,6 +60,7 @@ module CollavreOpenclaw
       content = payload[:content] || payload[:message]
       thread_id = payload[:thread_id] || payload[:topic_id] || payload.dig(:context, :thread_id) || payload.dig(:context, :topic_id)
       parent_comment_id = payload[:parent_comment_id] || payload.dig(:context, :parent_comment_id)
+      run_id = payload[:run_id] || payload.dig(:context, :run_id)
 
       unless creative_id.present?
         Rails.logger.error("[CollavreOpenclaw] Proactive message missing creative_id")
@@ -74,6 +75,7 @@ module CollavreOpenclaw
       context = {
         thread_id: thread_id,
         parent_comment_id: parent_comment_id,
+        openclaw_run_id: run_id,
         proactive: true
       }
 
@@ -105,6 +107,21 @@ module CollavreOpenclaw
       end
 
       effective_creative = creative.effective_origin
+      run_id = context[:openclaw_run_id].presence
+
+      # Cross-process idempotency: the Gateway broadcasts a run's events to
+      # every connection, so the initiating process records the run as
+      # solicited while every other process sees the same final event as
+      # "proactive". Keying on the Gateway runId collapses those into the one
+      # comment already created (typically the solicited reply that carries the
+      # activity log), regardless of process, reconnect, or content drift.
+      if run_id
+        existing = Collavre::Comment.find_by(openclaw_run_id: run_id)
+        if existing
+          Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (existing comment #{existing.id})")
+          return existing
+        end
+      end
 
       # Dedup: skip if an identical comment was recently created
       existing = Collavre::Comment
@@ -122,7 +139,8 @@ module CollavreOpenclaw
         creative: effective_creative,
         user: @user,
         content: content,
-        private: false
+        private: false,
+        openclaw_run_id: run_id
       }
 
       # Handle topic/thread if specified
@@ -135,6 +153,12 @@ module CollavreOpenclaw
       Rails.logger.info("[CollavreOpenclaw] Created AI comment #{comment.id} on creative #{creative_id}")
 
       comment
+    rescue ActiveRecord::RecordNotUnique
+      # The unique index on openclaw_run_id is the hard backstop for the race
+      # where two processes create the same run concurrently. Return the winner.
+      existing = Collavre::Comment.find_by(openclaw_run_id: context[:openclaw_run_id])
+      Rails.logger.warn("[CollavreOpenclaw] Race on run #{context[:openclaw_run_id]} resolved to comment #{existing&.id}")
+      existing
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.error("[CollavreOpenclaw] Failed to create comment: #{e.message}")
       nil

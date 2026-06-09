@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_29_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -155,6 +155,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_29_100000) do
     t.text "content", null: false
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.string "openclaw_run_id"
     t.boolean "private", default: false, null: false
     t.integer "quoted_comment_id"
     t.text "quoted_text"
@@ -167,6 +168,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_29_100000) do
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
+    t.index ["openclaw_run_id"], name: "index_comments_on_openclaw_run_id", unique: true, where: "openclaw_run_id IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"

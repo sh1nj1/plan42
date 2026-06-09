@@ -154,9 +154,14 @@ module CollavreOpenclaw
     # @param message [String]
     # @param attachments [Array<Hash>, nil]
     # @param idempotency_key [String]
+    # @param on_run_id [#call, nil] invoked once with the resolved Gateway runId
+    #   as soon as chat.send responds, before any streaming event is yielded.
+    #   Lets callers persist the runId (cross-process idempotency key) on the
+    #   reply comment so duplicate "proactive" deliveries in other processes
+    #   can be suppressed.
     # @yield [Hash] chat events with :state, :text, :message keys
     # @return [String, nil] final response text
-    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, &block)
+    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, on_run_id: nil, &block)
       ensure_connected!
       touch_activity!
 
@@ -195,6 +200,17 @@ module CollavreOpenclaw
           @pending_runs.delete(idempotency_key)
           # Ensure runId is registered (may already be from handle_response)
           @pending_runs[actual_run_id] ||= run_queue
+        end
+      end
+
+      # Surface the resolved runId to the caller before streaming so it can be
+      # persisted as a cross-process idempotency key. Guard against a faulty
+      # callback so it can never abort the chat stream.
+      if on_run_id
+        begin
+          on_run_id.call(actual_run_id)
+        rescue StandardError => e
+          Rails.logger.warn("[CollavreOpenclaw::WS] on_run_id callback failed: #{e.message}")
         end
       end
 

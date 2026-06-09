@@ -106,7 +106,8 @@ module CollavreOpenclaw
         client.chat_send(
           session_key: session_key,
           message: payload[:message],
-          attachments: payload[:attachments]
+          attachments: payload[:attachments],
+          on_run_id: method(:persist_run_id_on_comment)
         ) do |event|
           case event[:state]
           when "delta"
@@ -144,6 +145,27 @@ module CollavreOpenclaw
         Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
         chat_via_http(&block)
       end
+    end
+
+    # Persist the Gateway runId on the reply comment so that the same run's
+    # final event — re-delivered as "proactive" to every other process sharing
+    # this Gateway — is recognized as already-handled and suppressed. Uses
+    # update_column to avoid re-broadcasting the comment or firing callbacks for
+    # what is purely a dedup-key backfill.
+    def persist_run_id_on_comment(run_id)
+      return if run_id.blank?
+
+      comment = @context[:comment]
+      return unless comment.respond_to?(:id) && comment.id.present?
+      return if comment.openclaw_run_id.present?
+
+      comment.update_column(:openclaw_run_id, run_id)
+    rescue ActiveRecord::RecordNotUnique => e
+      # Another process already claimed this run_id for a different comment.
+      # The job-side dedup will collapse to that winner; nothing to do here.
+      Rails.logger.warn("[CollavreOpenclaw] run_id #{run_id} already claimed: #{e.message}")
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to persist run_id on comment: #{e.message}")
     end
 
     def build_ws_chat_payload

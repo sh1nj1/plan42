@@ -214,6 +214,74 @@ module CollavreOpenclaw
       assert_equal count_after_first + 1, @creative.comments.reload.count
     end
 
+    # --- run_id idempotency (cross-process duplicate suppression) ---
+
+    test "proactive message persists openclaw_run_id on the comment" do
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Run-keyed proactive message",
+        "run_id" => "run-aaa"
+      })
+
+      comment = @creative.comments.reload.order(:id).last
+      assert_equal "run-aaa", comment.openclaw_run_id
+    end
+
+    test "duplicate run_id is suppressed even with different content and past content window" do
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "First arrival of this run",
+        "run_id" => "run-bbb"
+      })
+      count_after_first = @creative.comments.reload.count
+      first = @creative.comments.order(:id).last
+
+      # Different content (so the 5s content-based dedup would NOT catch it)
+      # simulating another process classifying the same run as proactive.
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Second arrival, different framing",
+        "run_id" => "run-bbb"
+      })
+
+      assert_equal count_after_first, @creative.comments.reload.count
+      assert_equal first.id, @creative.comments.order(:id).last.id
+    end
+
+    test "proactive skips when a comment already claimed the run_id (solicited path won)" do
+      # Simulate the solicited reply comment that already backfilled the run_id.
+      solicited = @creative.comments.create!(
+        user: @user,
+        content: "Solicited reply with activity log",
+        openclaw_run_id: "run-ccc"
+      )
+      count_before = @creative.comments.reload.count
+
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Proactive duplicate of the solicited run",
+        "run_id" => "run-ccc"
+      })
+
+      assert_equal count_before, @creative.comments.reload.count
+      assert_equal solicited.id, @creative.comments.where(openclaw_run_id: "run-ccc").sole.id
+    end
+
+    test "proactive without run_id still creates a comment" do
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Keyless proactive message"
+      })
+      assert_equal before_count + 1, @creative.comments.reload.count
+      assert_nil @creative.comments.order(:id).last.openclaw_run_id
+    end
+
     test "non-duplicate response messages create comments normally" do
       before_count = @creative.comments.count
       CallbackProcessorJob.perform_now(@user.id, {
