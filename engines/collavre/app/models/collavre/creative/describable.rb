@@ -65,7 +65,49 @@ module Collavre
         end
       end
 
+      # Remove the attachment referenced by `signed_id`. Description HTML is the
+      # source of truth, so the node (<img>/<video>/<a>) must come out of the
+      # description; after_save reconcile then detaches the now-unreferenced
+      # blob and purges it only if nothing else references it. If the blob is
+      # attached but not embedded (e.g. a legacy attachment not yet backfilled
+      # into the HTML), detach it directly so removal still works. Returns true
+      # if an attachment was present.
+      def remove_attachment!(signed_id)
+        blob = ActiveStorage::Blob.find_signed(signed_id)
+        return false unless blob
+
+        attachment = files.attachments.find_by(blob_id: blob.id)
+        return false unless attachment
+
+        stripped = description_without_attachment_node(blob.signed_id)
+        if stripped
+          # Demote markdown -> html so the stripped HTML is the persisted source
+          # of truth (mirrors embed_attachment_blob!).
+          self.content_type_input = "html" if data&.dig("content_type") == "markdown"
+          update!(description: stripped)
+        else
+          detach_and_maybe_purge(attachment)
+        end
+        true
+      end
+
       private
+
+      # description HTML with every node (<img>/<video>/<source>/<a>) whose
+      # src/href references signed_id removed, or nil when none is present.
+      def description_without_attachment_node(signed_id)
+        return nil if description.blank?
+
+        doc = Loofah.fragment(description.to_s)
+        matches = doc.css("img, video, source, a").select do |node|
+          ref = node["src"] || node["href"]
+          ref&.include?(signed_id)
+        end
+        return nil if matches.empty?
+
+        matches.each(&:remove)
+        doc.to_html
+      end
 
       def convert_markdown_to_html
         if content_type_input == "markdown"

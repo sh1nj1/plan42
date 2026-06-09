@@ -22,11 +22,11 @@ module Collavre
         file = params[:file]
         return render(json: { error: "No file provided" }, status: :unprocessable_entity) unless file.respond_to?(:read)
 
-        content_type = file.content_type.presence ||
-                       Marcel::MimeType.for(file.to_io, name: file.original_filename) ||
-                       "application/octet-stream"
+        io = file.to_io
+        content_type = resolved_content_type(file, io)
+        io.rewind
         blob = ActiveStorage::Blob.create_and_upload!(
-          io: file.to_io,
+          io: io,
           filename: file.original_filename,
           content_type: content_type
         )
@@ -43,6 +43,19 @@ module Collavre
       end
 
       private
+
+      # Browser uploads carry a real Content-Type, but the bundled `collavre`
+      # CLI always sends application/octet-stream for the multipart part. Treat
+      # octet-stream (and blank) as "unknown" and sniff via Marcel (magic bytes
+      # + filename) so png/mp4 resolve to image/* and video/* and render as
+      # inline <img>/<video> nodes instead of generic download links.
+      def resolved_content_type(file, io)
+        declared = file.content_type.presence
+        return declared if declared && declared != "application/octet-stream"
+
+        Marcel::MimeType.for(io, name: file.original_filename).presence ||
+          "application/octet-stream"
+      end
 
       # Resolve a Doorkeeper bearer token to Current.user. The MCP middleware
       # only does this for /mcp paths, so this endpoint authenticates itself.

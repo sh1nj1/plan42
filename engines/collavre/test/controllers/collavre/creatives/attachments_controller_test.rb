@@ -63,6 +63,21 @@ module Collavre
         assert_includes creative.description, "controls"
       end
 
+      test "sniffs content type when client sends octet-stream (CLI uploads)" do
+        # The bundled `collavre attach` CLI always sends the multipart part as
+        # application/octet-stream. The endpoint must sniff real PNG bytes back
+        # to image/png so it embeds as <img>, not a generic download link.
+        png_bytes = File.binread(Collavre::Engine.root.join("test/fixtures/files/small.png"))
+        creative = Collavre::Creative.create!(description: "<p>x</p>", user: @owner)
+        post path_for(creative),
+             params: { file: upload(content_type: "application/octet-stream", filename: "pic.png", bytes: png_bytes) },
+             headers: { "Authorization" => "Bearer #{token_for(@owner)}" }
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert_equal "image/png", body["content_type"]
+        assert_includes creative.reload.description, "<img"
+      end
+
       test "422 when no file param" do
         creative = Collavre::Creative.create!(description: "<p>x</p>", user: @owner)
         post path_for(creative),
