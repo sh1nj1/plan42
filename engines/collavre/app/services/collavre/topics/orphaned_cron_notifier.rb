@@ -43,7 +43,11 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
-        main_topic = creative.main_topic
+        # The recurring task stores the original (possibly linked/child) creative
+        # id, but Comment#use_origin_creative rewrites the comment to the origin.
+        # Post to the origin's Main topic so the notice stays on the origin and
+        # is reachable from normal topic navigation (matches CronCreateService).
+        main_topic = creative.effective_origin.main_topic
         return unless main_topic
 
         Comment.create!(
