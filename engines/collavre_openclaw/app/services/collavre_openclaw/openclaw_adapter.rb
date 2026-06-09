@@ -147,11 +147,9 @@ module CollavreOpenclaw
       end
     end
 
-    # Record the Gateway runId for the solicited reply comment so the same run's
-    # final event — re-delivered as "proactive" to every other process sharing
-    # this Gateway — is recognized as already-handled and suppressed. The
-    # solicited reply is canonical (it carries the activity log), so claim_canonical
-    # reclaims the run if a proactive duplicate won the race.
+    # Claim the run for the solicited reply so the same run's final, re-delivered
+    # as "proactive" to other processes, is suppressed. This reply is canonical
+    # (it carries the activity log), so it reclaims on a lost race.
     def persist_run_id_on_comment(run_id)
       return if run_id.blank?
 

@@ -154,11 +154,8 @@ module CollavreOpenclaw
     # @param message [String]
     # @param attachments [Array<Hash>, nil]
     # @param idempotency_key [String]
-    # @param on_run_id [#call, nil] invoked once with the resolved Gateway runId
-    #   as soon as chat.send responds, before any streaming event is yielded.
-    #   Lets callers persist the runId (cross-process idempotency key) on the
-    #   reply comment so duplicate "proactive" deliveries in other processes
-    #   can be suppressed.
+    # @param on_run_id [#call, nil] called with the resolved Gateway runId before
+    #   streaming, so callers can persist it as a cross-process idempotency key.
     # @yield [Hash] chat events with :state, :text, :message keys
     # @return [String, nil] final response text
     def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, on_run_id: nil, &block)
@@ -203,9 +200,7 @@ module CollavreOpenclaw
         end
       end
 
-      # Surface the resolved runId to the caller before streaming so it can be
-      # persisted as a cross-process idempotency key. Guard against a faulty
-      # callback so it can never abort the chat stream.
+      # Surface runId before streaming; guard so a faulty callback can't abort the stream.
       if on_run_id
         begin
           on_run_id.call(actual_run_id)

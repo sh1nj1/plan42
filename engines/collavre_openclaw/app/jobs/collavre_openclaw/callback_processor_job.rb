@@ -60,10 +60,8 @@ module CollavreOpenclaw
       content = payload[:content] || payload[:message]
       thread_id = payload[:thread_id] || payload[:topic_id] || payload.dig(:context, :thread_id) || payload.dig(:context, :topic_id)
       parent_comment_id = payload[:parent_comment_id] || payload.dig(:context, :parent_comment_id)
-      # The Gateway emits the run identifier as camelCase `runId`; the HTTP
-      # CallbacksController path forwards that raw payload verbatim, so accept
-      # both casings. Missing it here would null out the idempotency key and let
-      # a cross-path duplicate slip past dedup.
+      # Accept both casings: the HTTP CallbacksController path forwards the raw
+      # Gateway payload, which uses camelCase `runId`.
       run_id = payload[:run_id] || payload[:runId] ||
                payload.dig(:context, :run_id) || payload.dig(:context, :runId)
 
@@ -114,12 +112,8 @@ module CollavreOpenclaw
       effective_creative = creative.effective_origin
       run_id = context[:openclaw_run_id].presence
 
-      # Cross-process idempotency: the Gateway broadcasts a run's events to every
-      # connection, so the initiating process records the run as solicited while
-      # every other process sees the same final event as "proactive". The
-      # engine-owned ProcessedAiRun tombstone keys on the Gateway runId so those
-      # collapse into the one comment already created, regardless of process,
-      # reconnect, content drift, or a folded/destroyed solicited reply.
+      # The Gateway broadcasts a run to every process, so non-initiating ones see
+      # the final as "proactive" — suppress them via the run's tombstone.
       if run_id && CollavreOpenclaw::ProcessedAiRun.processed?(run_id)
         Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (already processed)")
         return CollavreOpenclaw::ProcessedAiRun.comment_for(run_id)
@@ -152,9 +146,8 @@ module CollavreOpenclaw
 
       comment = Collavre::Comment.create!(comment_attrs)
 
-      # Record this (proactive, non-canonical) run. A unique run_id row is the
-      # hard backstop for the race where two processes create the same run
-      # concurrently: the loser discards its duplicate and returns the winner.
+      # Unique run_id row is the backstop for a concurrent same-run race: the
+      # loser discards its duplicate and returns the winner.
       if run_id && !CollavreOpenclaw::ProcessedAiRun.claim_proactive(run_id, comment)
         Rails.logger.warn("[CollavreOpenclaw] Race on run #{run_id} resolved; discarding duplicate comment #{comment.id}")
         comment.destroy

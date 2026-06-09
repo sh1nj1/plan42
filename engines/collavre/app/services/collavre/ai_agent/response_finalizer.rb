@@ -46,10 +46,7 @@ module Collavre
           review_handler.add_completion_reaction
           surviving = @original_comment.quoted_comment
           reassociate_activity_logs(@reply_comment, surviving)
-          # The placeholder reply may own an OpenClaw run (recorded in
-          # CollavreOpenclaw::ProcessedAiRun). That run row survives this destroy
-          # via its ON DELETE SET NULL comment reference, so the run stays
-          # recognized as already-handled without any run-id bookkeeping here.
+          # Run row survives via ON DELETE SET NULL, so no run-id bookkeeping here.
           @reply_comment.destroy!
           surviving
         else

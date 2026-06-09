@@ -1,17 +1,8 @@
 module CollavreOpenclaw
-  # Cross-process / durable idempotency for OpenClaw Gateway runs.
-  #
-  # The Gateway re-delivers a run's "final" event to every process sharing the
-  # Gateway; only the issuing process treats it as solicited, every other process
-  # sees it as "proactive". Keying on the Gateway runId collapses those into the
-  # single comment already created, regardless of process, reconnect, or content
-  # drift. Owned by this engine so the run concept stays out of core collavre and
-  # off the general-purpose comments table.
-  #
-  # comment_id references the canonical (activity-logged) comment when one
-  # survives; the migration's ON DELETE SET NULL keeps the run row alive as a
-  # tombstone after the comment is destroyed (review-fold), so the run is still
-  # recognized as already-handled.
+  # Durable idempotency key for OpenClaw Gateway runs. Owned by this engine so
+  # the run concept stays off core collavre's general-purpose comments table.
+  # comment_id is set when a comment owns the run; ON DELETE SET NULL keeps the
+  # row alive as a tombstone after the comment is destroyed (review-fold).
   class ProcessedAiRun < ApplicationRecord
     self.table_name = "openclaw_processed_ai_runs"
 
@@ -25,16 +16,14 @@ module CollavreOpenclaw
       exists?(run_id: run_id)
     end
 
-    # The comment that currently owns a run, if it still exists.
     def self.comment_for(run_id)
       return nil if run_id.blank?
 
       find_by(run_id: run_id)&.comment
     end
 
-    # Record a run produced by a non-canonical (proactive) comment. Returns true
-    # when this comment owns the run, false when it lost the race (another
-    # process already claimed it) — the caller should then discard its duplicate.
+    # Returns false when another process already claimed the run, so the caller
+    # discards its duplicate.
     def self.claim_proactive(run_id, comment)
       return true if run_id.blank?
 
@@ -47,10 +36,8 @@ module CollavreOpenclaw
       false
     end
 
-    # Record a run produced by the canonical (solicited, activity-logged) reply.
-    # On a lost race — a proactive duplicate already claimed the run — the
-    # canonical comment reclaims it: the run row is repointed here and the
-    # proactive duplicate comment is destroyed so exactly one comment survives.
+    # The canonical (activity-logged) reply wins: on a lost race it reclaims the
+    # run from the proactive duplicate and destroys it, leaving one comment.
     def self.claim_canonical(run_id, comment)
       return if run_id.blank? || comment.nil?
 
