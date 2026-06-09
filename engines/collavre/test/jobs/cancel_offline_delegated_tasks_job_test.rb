@@ -88,6 +88,31 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
     assert_equal "delegated", delegated_task.reload.status, "Task should not be cancelled when a different session has taken over"
   end
 
+  test "no-op when a sibling session still holds a presence row (shared agent online)" do
+    topic = Topic.create!(creative: @creative, name: "cc-sibling-topic", user: @owner)
+    delegated_task = Task.create!(
+      name: "Delegated task",
+      status: "delegated",
+      agent: @claude_agent,
+      creative_id: @creative.id,
+      topic_id: topic.id,
+      trigger_event_payload: {
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id }
+      }
+    )
+
+    # The dropped session cleared routing on its way out, but a concurrent
+    # sibling session sharing this agent is still subscribed — its presence row
+    # proves the agent is online and its delegated work must not be cancelled.
+    Collavre::AgentSubscription.create!(agent_id: @claude_agent.id, token: "sibling-still-here")
+
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "expected-token-value")
+
+    assert_equal "delegated", delegated_task.reload.status,
+      "delegated work must survive while a sibling session is still subscribed"
+  end
+
   test "fails parent workflow when cancelling a delegated subtask" do
     parent_task = Task.create!(
       name: "Workflow Parent",

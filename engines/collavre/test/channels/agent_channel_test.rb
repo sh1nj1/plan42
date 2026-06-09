@@ -333,6 +333,81 @@ module Collavre
       end
     end
 
+    test "subscribe records a presence row for the Claude Channel session" do
+      agent = User.create!(
+        email: "agent-channel-presence-row-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+
+      assert_equal 1, AgentSubscription.where(agent_id: agent.id).count,
+        "each live session must register a presence row"
+    end
+
+    test "concurrent sessions: unsubscribing one keeps routing active while a sibling remains" do
+      # The headline multi-session fix: with the shared default agent, two
+      # Claude Code sessions subscribe to the SAME agent:user:<id> stream. When
+      # one ends, its unsubscribe must NOT clear routing or cancel work for the
+      # still-live sibling.
+      agent = User.create!(
+        email: "agent-channel-sibling-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+
+      # A sibling session is already subscribed (its own presence row).
+      AgentSubscription.create!(agent_id: agent.id, token: "sibling-token")
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert subscription.confirmed?
+      assert_equal "true", agent.reload.routing_expression
+
+      assert_no_enqueued_jobs(only: Collavre::CancelOfflineDelegatedTasksJob) do
+        unsubscribe
+      end
+
+      assert_equal "true", agent.reload.routing_expression,
+        "routing must stay active while the sibling session is still subscribed"
+      assert AgentSubscription.where(agent_id: agent.id, token: "sibling-token").exists?,
+        "the sibling's presence row must survive this session's unsubscribe"
+    end
+
+    test "last session unsubscribe clears routing and removes the presence row" do
+      agent = User.create!(
+        email: "agent-channel-last-session-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      assert_equal 1, AgentSubscription.where(agent_id: agent.id).count
+
+      unsubscribe
+
+      assert_nil agent.reload.routing_expression
+      assert_equal 0, AgentSubscription.where(agent_id: agent.id).count,
+        "the last session's presence row must be removed on unsubscribe"
+    end
+
     test "unsubscribe does not touch non-Claude-Channel agent routing_expression" do
       agent = User.create!(
         email: "agent-channel-other-ai-test@agent.collavre.local",

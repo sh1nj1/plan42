@@ -27,6 +27,12 @@ module Collavre
       # session (or a new one) is subscribed and can answer /reply.
       return if agent.routing_expression.present?
 
+      # A session (reconnect or a still-live sibling sharing this agent) holds
+      # a presence row — the agent is online, its delegated work is still
+      # owned. Presence is the authority now that one agent fans out to many
+      # concurrent sessions.
+      return if AgentSubscription.where(agent_id: agent.id).exists?
+
       # A different subscription has taken over (token rotated). The new
       # session's lifecycle owns its own cancellation; don't double-cancel.
       if expected_token.present? &&

@@ -21,51 +21,60 @@ module Collavre
     end
 
     # When the MCP process crashes or the WebSocket drops before the plugin
-    # can call DELETE /api/v1/agent/:id, the per-session Claude Channel agent
-    # would otherwise stay matchable (routing_expression: "true") and any
-    # future comment on a creative still shared with it would dispatch into
-    # an empty stream — delegated work that only clears via stuck recovery.
-    # Mark the session agent offline here so Orchestration::Matcher stops
-    # selecting it; subscribe_to_agent_stream restores routing on reconnect.
+    # can call DELETE /api/v1/agent/:id, a Claude Channel session would
+    # otherwise stay matchable (routing_expression: "true") and any future
+    # comment on a creative still shared with the agent would dispatch into an
+    # empty stream — delegated work that only clears via stuck recovery.
     #
-    # Cross-process ownership: the subscription token is persisted on the
-    # users row (routing_subscription_token). A late unsubscribe whose token
-    # has been overwritten by a newer subscribe — possibly on a DIFFERENT
-    # Puma/Kamal process — matches zero rows under the conditional UPDATE
-    # below and becomes a no-op. This is required for scaled deployments
-    # (WEB_CONCURRENCY > 1, Solid Cable) where the old connection's
-    # unsubscribed and the reconnect's subscribe may not share a process.
+    # One shared agent can have MANY concurrent sessions, so routing is gated
+    # on PRESENCE: this session drops its own AgentSubscription row, and
+    # routing is cleared only when NO rows remain. A still-live sibling session
+    # keeps its row, so routing stays active and its in-flight work is never
+    # cancelled. Done under the agent's row lock so a concurrent subscribe on
+    # the same agent serializes (no clear-vs-activate race).
+    #
+    # Cross-process / late unsubscribe: the row was keyed by this connection's
+    # own @subscription_token. A stale unsubscribe whose row was already
+    # removed (newer subscribe took over, or a different Puma/Kamal process)
+    # deletes zero rows and becomes a no-op — required for scaled deployments
+    # (WEB_CONCURRENCY > 1, Solid Cable).
     def unsubscribed
       return unless @session_agent && @subscription_token
 
-      rows_updated = User.where(
-        id: @session_agent.id,
-        routing_subscription_token: @subscription_token
-      ).update_all(
-        routing_expression: nil,
-        routing_subscription_token: nil,
-        updated_at: Time.current
-      )
+      cleared = false
+      @session_agent.with_lock do
+        deleted = AgentSubscription
+                  .where(agent_id: @session_agent.id, token: @subscription_token)
+                  .delete_all
+        # Stale: our presence row is already gone. The live owner's lifecycle
+        # owns routing — do not clobber it, do not schedule cancellation.
+        next if deleted.zero?
 
-      if rows_updated.zero?
-        # A newer subscribe (any process) has overwritten the token. The
-        # live owner is still subscribed — do not clobber its routing and
-        # do not schedule cancellation; the live owner's lifecycle owns it.
-        return
+        # Another session is still subscribed to this shared agent. Keep
+        # routing active; whichever session unsubscribes last clears it.
+        next if AgentSubscription.where(agent_id: @session_agent.id).exists?
+
+        @session_agent.update_columns(
+          routing_expression: nil,
+          routing_subscription_token: nil
+        )
+        cleared = true
       end
 
-      # Reconnect-grace cancellation: AgentChannel#unsubscribed only makes the
-      # agent unroutable. Any task already in "delegated" still holds its
-      # ResourceTracker slot — the dispatch was broadcast to a now-dead stream
-      # so no client remains to call /reply, and the slot would stay held
-      # until StuckDetectorJob times out. The job below cancels those tasks
-      # after a grace window, but only if the agent is still offline (the
-      # job rechecks routing_expression and routing_subscription_token).
+      return unless cleared
+
+      # Reconnect-grace cancellation: clearing routing only makes the agent
+      # unroutable. Any task already "delegated" still holds its ResourceTracker
+      # slot — the dispatch was broadcast to a now-dead stream so no client
+      # remains to call /reply, and the slot would stay held until
+      # StuckDetectorJob times out. The job cancels those tasks after a grace
+      # window, but only if the agent is still offline (it rechecks
+      # routing_expression AND that no session has resubscribed).
       CancelOfflineDelegatedTasksJob
         .set(wait: CancelOfflineDelegatedTasksJob::GRACE_SECONDS.seconds)
         .perform_later(@session_agent.id, @subscription_token)
     rescue ActiveRecord::StatementInvalid => e
-      Rails.logger.warn("[AgentChannel] unsubscribed conditional clear failed: #{e.message}")
+      Rails.logger.warn("[AgentChannel] unsubscribed presence clear failed: #{e.message}")
     end
 
     # Broadcast an arbitrary payload to a topic's agent stream.
@@ -104,23 +113,23 @@ module Collavre
       # waiting on stuck recovery. Registering the subscription first means
       # by the time the agent is matchable, this connection is already
       # receiving broadcasts.
-      if agent.claude_channel_agent?
-        @session_agent = agent
-        # Claim cross-process ownership of routing for this agent. A
-        # subsequent subscribe (any process) will overwrite this token on
-        # the users row, after which our late unsubscribed's conditional
-        # UPDATE matches zero rows and becomes a no-op.
-        @subscription_token = SecureRandom.hex(8)
-        agent.update_column(:routing_subscription_token, @subscription_token)
-      end
+      @session_agent = agent if agent.claude_channel_agent?
+      @subscription_token = SecureRandom.hex(8) if agent.claude_channel_agent?
       stream_from "agent:user:#{agent.id}"
 
-      # Reconnect-grace: if a prior unsubscribed cleared routing_expression
-      # (or an explicit /destroy disabled the agent and the same MCP session
-      # is resubscribing without re-registering), restore it on a successful
-      # claim of the per-agent stream by the owner so dispatches resume.
-      if agent.claude_channel_agent? && agent.reload.routing_expression.blank?
-        agent.update_column(:routing_expression, "true")
+      # Record this session's presence row and (re)activate routing under the
+      # agent's row lock, so a concurrent unsubscribe on the same shared agent
+      # serializes against this and cannot clear routing out from under a live
+      # session. routing_subscription_token is kept as the most-recent-session
+      # marker (debugging / grace-job arg); presence rows are the real gate.
+      if agent.claude_channel_agent?
+        agent.with_lock do
+          AgentSubscription.create!(agent_id: agent.id, token: @subscription_token)
+          agent.update_columns(
+            routing_subscription_token: @subscription_token,
+            routing_expression: "true"
+          )
+        end
       end
     end
   end
