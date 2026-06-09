@@ -1566,6 +1566,86 @@ module Collavre
             "routing still stays active for the live sibling"
         end
 
+        test "destroy clears routing when the only session's own presence row is still live" do
+          # Codex P2: the plugin closes the WebSocket and IMMEDIATELY sends
+          # DELETE, so AgentChannel#unsubscribed (which drops the presence row by
+          # the server-minted WS token) may not have run yet. If destroy counted
+          # this exiting session's OWN still-live row as a live sibling, it would
+          # skip the last-session teardown — routing pinned "true", delegated work
+          # left holding its slot — and if the WS close is never processed the row
+          # only goes stale, with nothing left to clear routing. destroy must drop
+          # the exiting session's own row (keyed by its session_id, derived from
+          # the required topic_id) BEFORE deciding a sibling is live.
+          post "/api/v1/agent/register",
+            params: { agent_name: "solo-race", session_id: "sess-solo" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg = JSON.parse(response.body)
+
+          ai_user = User.find(reg["agent_id"])
+          # The exiting session's own presence row, stamped with its session_id,
+          # is still live (unsubscribed hasn't fired).
+          Collavre::AgentSubscription.create!(
+            agent_id: ai_user.id, token: "solo-token", session_id: "sess-solo"
+          )
+          ai_user.update_column(:routing_expression, "true")
+
+          topic = Topic.find(reg["topic_id"])
+          task = Collavre::Task.create!(
+            name: "solo delegated", status: "delegated", trigger_event_name: "comment_created",
+            agent: ai_user, topic_id: topic.id, creative_id: topic.creative.effective_origin.id
+          )
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(task.id)
+
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: reg["topic_id"] },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+
+          assert_nil ai_user.reload.routing_expression,
+            "the last session leaving must clear routing even if its own WS row is still live"
+          assert_equal "cancelled", task.reload.status,
+            "the last session's delegated work must be cancelled, not stranded"
+          assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
+            "the last session's reserved slot must be released"
+          assert_equal 0, Collavre::AgentSubscription.where(agent_id: ai_user.id).count,
+            "the exiting session's own presence row must be removed by destroy"
+        end
+
+        test "destroy keeps a live sibling's routing intact and only removes the exiting session's row" do
+          # The exiting session's own row must be dropped, but a DISTINCT live
+          # sibling's row (different session_id) must survive so routing stays on.
+          post "/api/v1/agent/register",
+            params: { agent_name: "sib-row", session_id: "sess-a" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg_a = JSON.parse(response.body)
+
+          ai_user = User.find(reg_a["agent_id"])
+          # Both sessions hold their own (live) presence rows.
+          Collavre::AgentSubscription.create!(
+            agent_id: ai_user.id, token: "a-token", session_id: "sess-a"
+          )
+          Collavre::AgentSubscription.create!(
+            agent_id: ai_user.id, token: "b-token", session_id: "sess-b"
+          )
+          ai_user.update_column(:routing_expression, "true")
+
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: reg_a["topic_id"] },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+
+          assert_equal "true", ai_user.reload.routing_expression,
+            "routing must stay active for the still-live sibling session"
+          refute Collavre::AgentSubscription.where(agent_id: ai_user.id, session_id: "sess-a").exists?,
+            "the exiting session's own presence row must be removed"
+          assert Collavre::AgentSubscription.where(agent_id: ai_user.id, session_id: "sess-b").exists?,
+            "the live sibling's presence row must survive"
+        end
+
         test "destroy ignores topic_id that does not belong to the agent" do
           reg = register_agent("ownership-test")
           agent_id = reg["agent_id"]

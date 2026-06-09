@@ -80,27 +80,38 @@ module Collavre
           # topic_id can't archive an unrelated inbox conversation.
           topic = nil unless topic && topic.primary_agent&.id == ai_user.id
 
-          if sibling_sessions_live?(ai_user)
-            # One shared agent fans out to many concurrent sessions (the default
-            # AGENT_NAME case). Another session is still LIVE, so agent-wide
-            # cleanup would clear the shared routing_expression and cancel the
-            # sibling's in-flight work — exactly the hazard AgentChannel#unsubscribed
-            # guards against via presence. Tear down ONLY this ending session:
-            # cancel work on its own topic (whose client is gone, so it would
-            # otherwise hold a slot / block the topic queue until stuck recovery)
-            # and archive it. The shared routing and any work on other topics
-            # belong to the live sibling and are left untouched — the eventual
-            # last-session unregister runs the full agent-wide sweep below.
-            cancel_tasks_for_topic(ai_user, topic) if topic
-          else
-            # Last (or only) session for this agent. Clear routing_expression
-            # FIRST so Orchestration::Matcher#match_by_expression stops dispatching
-            # new comments to this now-clientless agent while we drain its task
-            # graph; otherwise a comment arriving mid-drain could enqueue a new
-            # task right after we cancelled the last one. (Routing is reactivated
-            # on the next AgentChannel subscribe, not on re-register.)
-            ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
+          # The plugin closes the WebSocket and IMMEDIATELY calls DELETE, so
+          # AgentChannel#unsubscribed may not have dropped this session's presence
+          # row yet. Drop it up front — keyed by the ending session's id (sent by
+          # the plugin, or derived from the required topic) — so this session's
+          # own still-live row cannot masquerade as a live sibling and skip the
+          # last-session teardown (which would pin routing_expression on and, if
+          # the WS close is never processed, leave nothing to clear it). Done
+          # under the agent row lock to serialize against a concurrent subscribe/
+          # unsubscribe on the shared agent — the same lock AgentChannel uses.
+          exiting_session_id = params[:session_id].presence || topic&.session_id
+          last_session = false
+          ai_user.with_lock do
+            if exiting_session_id.present?
+              AgentSubscription
+                .where(agent_id: ai_user.id, session_id: exiting_session_id)
+                .delete_all
+            end
 
+            unless sibling_sessions_live?(ai_user)
+              last_session = true
+              # Last (or only) session for this agent. Clear routing_expression
+              # FIRST so Orchestration::Matcher#match_by_expression stops
+              # dispatching new comments to this now-clientless agent while we
+              # drain its task graph below; otherwise a comment arriving mid-drain
+              # could enqueue a new task right after we cancelled the last one.
+              # (Routing is reactivated on the next AgentChannel subscribe, not on
+              # re-register.)
+              ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
+            end
+          end
+
+          if last_session
             # Cancel queued/pending tasks BEFORE draining topic queues. The topic
             # queue (Task.queued_for_topic) is scoped by topic_id, not agent_id,
             # so dequeue_next_for_topic would otherwise flip a queued task for
@@ -115,6 +126,17 @@ module Collavre
             # scoping by topic_id alone would leak the common case (a /work
             # dispatch on a project topic) until stuck detection times out.
             cancel_delegated_tasks_for_session(ai_user)
+          elsif topic
+            # One shared agent fans out to many concurrent sessions (the default
+            # AGENT_NAME case). Another session is still LIVE, so agent-wide
+            # cleanup would clear the shared routing_expression and cancel the
+            # sibling's in-flight work — exactly the hazard AgentChannel#unsubscribed
+            # guards against via presence. Tear down ONLY this ending session:
+            # cancel work on its own topic (whose client is gone, so it would
+            # otherwise hold a slot / block the topic queue until stuck recovery).
+            # The shared routing and any work on other topics belong to the live
+            # sibling and are left untouched.
+            cancel_tasks_for_topic(ai_user, topic)
           end
           topic.archive! if topic
 

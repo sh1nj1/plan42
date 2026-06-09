@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_020000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_030000) do
   create_table "action_text_rich_texts", force: :cascade do |t|
     t.text "body"
     t.datetime "created_at", null: false
@@ -66,8 +66,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_020000) do
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
     t.datetime "last_seen_at", null: false
+    t.string "session_id"
     t.string "token", null: false
     t.datetime "updated_at", null: false
+    t.index ["agent_id", "session_id"], name: "index_agent_subscriptions_on_agent_id_and_session_id"
     t.index ["agent_id"], name: "index_agent_subscriptions_on_agent_id"
     t.index ["last_seen_at"], name: "index_agent_subscriptions_on_last_seen_at"
     t.index ["token"], name: "index_agent_subscriptions_on_token", unique: true

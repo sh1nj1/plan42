@@ -352,6 +352,32 @@ module Collavre
         "each live session must register a presence row"
     end
 
+    test "subscribe stamps the session_id on the presence row so the HTTP DELETE can correlate it" do
+      # The HTTP unregister path drops the exiting session's OWN row before
+      # deciding sibling liveness, but the WS token is server-minted and unknown
+      # to that HTTP client. The plugin sends its stable session_id in the cable
+      # subscribe; the presence row must record it so DELETE (which knows the
+      # session via the topic) can target exactly this session's row.
+      agent = User.create!(
+        email: "agent-channel-session-id-row-test@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id, session_id: "sess-xyz"
+      assert subscription.confirmed?
+
+      row = AgentSubscription.find_by(agent_id: agent.id)
+      assert row
+      assert_equal "sess-xyz", row.session_id,
+        "the presence row must record the session_id sent by the plugin"
+    end
+
     test "concurrent sessions: unsubscribing one keeps routing active while a sibling remains" do
       # The headline multi-session fix: with the shared default agent, two
       # Claude Code sessions subscribe to the SAME agent:user:<id> stream. When

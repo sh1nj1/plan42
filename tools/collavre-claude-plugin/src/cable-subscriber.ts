@@ -95,12 +95,20 @@ export class CableSubscriber {
   // registration inbox (which is where real work happens — inbox comments
   // are skipped by Comment#dispatch_to_orchestration) only reach the client
   // through the per-agent stream.
-  subscribeToAgent(agentId: number): void {
+  subscribeToAgent(agentId: number, sessionId?: string): void {
     this.agentId = agentId;
-    this.channelIdentifier = JSON.stringify({
+    const identifier: Record<string, unknown> = {
       channel: "Collavre::AgentChannel",
       agent_id: agentId,
-    });
+    };
+    // Carry the stable session_id so the server stamps it on this session's
+    // presence row. The HTTP unregister path (DELETE /api/v1/agent/:id) cannot
+    // know this connection's server-minted WS token, so it correlates the
+    // exiting session to its presence row via session_id instead.
+    if (sessionId) {
+      identifier.session_id = sessionId;
+    }
+    this.channelIdentifier = JSON.stringify(identifier);
     this.sendSubscribe();
   }
 

@@ -139,7 +139,15 @@ module Collavre
           # so this session's activation isn't blocked from, and presence reads
           # aren't fooled by, a dead process's leftover row.
           AgentSubscription.reap_stale!(agent.id)
-          AgentSubscription.create!(agent_id: agent.id, token: @subscription_token)
+          # Record the plugin-supplied session_id (stable across --resume) on the
+          # row. The HTTP unregister path (DELETE /api/v1/agent/:id) cannot know
+          # this connection's server-minted @subscription_token, so it correlates
+          # the exiting session to its row via session_id instead.
+          AgentSubscription.create!(
+            agent_id: agent.id,
+            token: @subscription_token,
+            session_id: params[:session_id].presence
+          )
           agent.update_columns(
             routing_subscription_token: @subscription_token,
             routing_expression: "true"

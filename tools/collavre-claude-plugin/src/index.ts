@@ -396,7 +396,7 @@ async function main(): Promise<void> {
   // Subscribe by agent_id, not topic_id. Comments in the registration inbox
   // are skipped by Comment#dispatch_to_orchestration; real dispatches arrive
   // on the per-agent stream regardless of which topic triggered them.
-  cable.subscribeToAgent(reg.agent_id);
+  cable.subscribeToAgent(reg.agent_id, sessionId);
 
   const cleanup = async () => {
     cable.disconnect();
