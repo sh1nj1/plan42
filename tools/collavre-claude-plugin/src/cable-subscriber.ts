@@ -7,6 +7,10 @@ export interface AgentEvent {
   // MCP client must echo it back via /reply so the server can complete the
   // exact dispatched task (required when topic concurrency > 1).
   task_id?: number | null;
+  // session_topic marks whether the dispatched topic is a Session-mapped topic.
+  // Used to ignore dispatches belonging to a sibling session that shares this
+  // agent's stream. Absent when talking to a legacy server.
+  session_topic?: boolean;
   comment: {
     id: number;
     content: string;

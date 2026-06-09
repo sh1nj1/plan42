@@ -7,10 +7,12 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { basename } from "path";
 import { CollavreClient } from "./collavre-client.js";
 import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
 import { resolveSessionId, defaultSessionStateDir } from "./session.js";
+import { shouldHandleDispatch } from "./dispatch-filter.js";
 import {
   PermissionCoordinator,
   formatPermissionPrompt,
@@ -162,6 +164,10 @@ interface ActiveContext {
   topicId: number | null;
   taskId: number | null;
   defaultTopicId: number | null;
+  // This session's own session topic (from register). Fixed for the process
+  // lifetime: used to ignore dispatches routed to a sibling session's mapped
+  // topic over the shared per-agent stream.
+  sessionTopicId: number | null;
 }
 
 async function sendPermissionDecision(
@@ -199,6 +205,26 @@ function makeEventHandler(
     }
 
     const topicId = event.comment.topic_id;
+
+    // Ignore dispatches that belong to a sibling session's mapped topic. A
+    // shared agent fans out to many session topics, and every session on this
+    // agent's stream hears them all — only the owning session answers its own
+    // session topic. Work/project topics (session_topic=false) pass through;
+    // the server's atomic task claim dedups if two sessions both take one.
+    if (
+      !shouldHandleDispatch({
+        sessionTopic: event.session_topic,
+        dispatchTopicId: topicId,
+        mySessionTopicId: active.sessionTopicId,
+      })
+    ) {
+      if (debug) {
+        process.stderr.write(
+          `[collavre] Ignoring dispatch for sibling session topic #${topicId} (mine=#${active.sessionTopicId})\n`,
+        );
+      }
+      return;
+    }
 
     // If this comment answers a permission prompt awaiting a decision, consume
     // it as allow/deny instead of forwarding it to Claude — Claude is suspended
@@ -288,6 +314,7 @@ async function main(): Promise<void> {
     topicId: null,
     taskId: null,
     defaultTopicId: null,
+    sessionTopicId: null,
   };
   const server = buildServer(client, active);
 
@@ -346,7 +373,11 @@ async function main(): Promise<void> {
   await cable.connect();
   process.stderr.write("[collavre] WebSocket ready\n");
 
-  const reg = await client.register({ agentName, sessionId });
+  const reg = await client.register({
+    agentName,
+    sessionId,
+    sessionLabel: basename(process.cwd()),
+  });
   process.stderr.write(
     `[collavre] Registered: ${reg.agent_name} (agent #${reg.agent_id}) → inbox topic #${reg.topic_id} (${reg.topic_name})\n`,
   );
@@ -360,6 +391,7 @@ async function main(): Promise<void> {
   // so /notify authorizes via topic.primary_agent there.
   active.defaultTopicId = reg.topic_id;
   active.topicId = reg.topic_id;
+  active.sessionTopicId = reg.topic_id;
 
   // Subscribe by agent_id, not topic_id. Comments in the registration inbox
   // are skipped by Comment#dispatch_to_orchestration; real dispatches arrive

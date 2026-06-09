@@ -15,22 +15,31 @@ export interface RegisterParams {
   // Session identity (one Collavre topic per Claude Code session). Stable
   // across --resume so a restart re-binds to the same topic.
   sessionId: string;
+  // Human-friendly label for the session topic name (e.g. the cwd basename).
+  // Optional; the server falls back to the session id.
+  sessionLabel?: string;
 }
 
 export interface RegisterBody {
   agent_name: string;
   session_id: string;
+  session_label?: string;
   // Legacy composite for servers that only read params[:name]. The new server
   // keys off agent_name/session_id and ignores this.
   name: string;
 }
 
 export function buildRegisterBody(params: RegisterParams): RegisterBody {
-  return {
+  const body: RegisterBody = {
     agent_name: params.agentName,
     session_id: params.sessionId,
     name: `${params.agentName}-${params.sessionId}`,
   };
+  const label = params.sessionLabel?.trim();
+  if (label) {
+    body.session_label = label;
+  }
+  return body;
 }
 
 export class CollavreClient {

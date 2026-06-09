@@ -33,6 +33,14 @@ module Collavre
           # can complete the exact dispatched task even when topic concurrency
           # > 1 allows multiple in-flight delegated tasks per topic.
           task_id: @task&.id,
+          # session_topic marks whether this dispatch targets a Session-mapped
+          # topic (topics.session_id present). One shared agent fans out to many
+          # session topics; without this flag every session subscribed to
+          # agent:user:<id> would also answer a sibling session's topic. The
+          # plugin handles a session-topic dispatch only on its OWN session
+          # topic; a non-session (work) topic may be handled by any session
+          # (the server's atomic task claim dedups concurrent handlers).
+          session_topic: session_topic?,
           comment: {
             id: @context.dig("comment", "id"),
             content: @context.dig("comment", "content"),
@@ -54,6 +62,13 @@ module Collavre
       end
 
       private
+
+      # True when the dispatched topic is a Claude Channel Session topic (it
+      # carries a stable session_id). Work/project topics the agent is merely
+      # matched onto via routing_expression have no session_id → false.
+      def session_topic?
+        Topic.where(id: @topic_id).where.not(session_id: nil).exists?
+      end
 
       def find_comment
         comment_id = @context.dig("comment", "id")

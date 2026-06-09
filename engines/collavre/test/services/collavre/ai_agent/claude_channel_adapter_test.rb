@@ -88,6 +88,32 @@ module Collavre
         assert_nil dispatch[:data][:task_id]
       end
 
+      test "dispatch flags a session topic (session_id present) so siblings can ignore it" do
+        @topic.update!(session_id: "sess-abc")
+
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context).deliver
+        end
+
+        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+        assert_equal true, dispatch[:data][:session_topic],
+          "a session-mapped topic must be flagged so only its owning session handles it"
+      end
+
+      test "dispatch flags a work topic (no session_id) as non-session" do
+        # @topic has no session_id — a project/work topic the agent was matched
+        # onto via routing_expression. Any live session may take it; the flag
+        # being false is what lets the client allow that.
+        broadcasts = []
+        ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+          ClaudeChannelAdapter.new(agent: @agent, context: @context).deliver
+        end
+
+        dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+        assert_equal false, dispatch[:data][:session_topic]
+      end
+
       test "raises UndeliverableError when topic_id is missing" do
         adapter = ClaudeChannelAdapter.new(
           agent: @agent,
