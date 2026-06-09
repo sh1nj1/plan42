@@ -27,7 +27,6 @@ module Collavre
         registry = Collavre::IntegrationSettings::Registry.instance
         registry.register(:default_mailer_from, category: "mail", sensitive: false, requires_restart: true)
         registry.register(:public_assets_host,  category: "mail", sensitive: false, requires_restart: false)
-        registry.register(:mcp_upload_root,     category: "misc", sensitive: false, requires_restart: false)
         # LLM keys consumed by Collavre::AiClient (engine service). Owned by the
         # engine so gem-mounted host apps don't depend on the app-level
         # `ruby_llm.rb` initializer for ENV fallback.
