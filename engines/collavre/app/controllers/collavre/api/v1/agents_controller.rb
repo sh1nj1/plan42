@@ -80,35 +80,42 @@ module Collavre
           # topic_id can't archive an unrelated inbox conversation.
           topic = nil unless topic && topic.primary_agent&.id == ai_user.id
 
-          # Clear routing_expression FIRST so Orchestration::Matcher#match_by_expression
-          # stops dispatching new comments to this now-clientless session agent
-          # while we're draining its task graph. Without this, every creative
-          # still feedback-shared with the session ai_user keeps generating
-          # delegated tasks that only time out via stuck recovery, blocking
-          # the per-topic queue in the meantime — and a comment arriving mid-
-          # drain could create a new queued task right after we cancelled the
-          # last one. Re-register restores routing_expression in
-          # find_or_create_session_agent.
-          ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
+          if sibling_sessions_live?(ai_user)
+            # One shared agent fans out to many concurrent sessions (the default
+            # AGENT_NAME case). Another session is still LIVE, so agent-wide
+            # cleanup would clear the shared routing_expression and cancel the
+            # sibling's in-flight work — exactly the hazard AgentChannel#unsubscribed
+            # guards against via presence. Tear down ONLY this ending session:
+            # cancel work on its own topic (whose client is gone, so it would
+            # otherwise hold a slot / block the topic queue until stuck recovery)
+            # and archive it. The shared routing and any work on other topics
+            # belong to the live sibling and are left untouched — the eventual
+            # last-session unregister runs the full agent-wide sweep below.
+            cancel_tasks_for_topic(ai_user, topic) if topic
+          else
+            # Last (or only) session for this agent. Clear routing_expression
+            # FIRST so Orchestration::Matcher#match_by_expression stops dispatching
+            # new comments to this now-clientless agent while we drain its task
+            # graph; otherwise a comment arriving mid-drain could enqueue a new
+            # task right after we cancelled the last one. (Routing is reactivated
+            # on the next AgentChannel subscribe, not on re-register.)
+            ai_user.update_column(:routing_expression, nil) if ai_user.routing_expression.present?
 
-          # Cancel queued/pending tasks for this agent BEFORE draining the
-          # topic queues. The topic queue (Task.queued_for_topic) is scoped by
-          # topic_id, not agent_id, so dequeue_next_for_topic would otherwise
-          # flip a queued task for this clientless session agent to pending
-          # and enqueue AiAgentJob — which then broadcasts to a stream with
-          # no subscriber and leaves the task stuck in delegated until stuck
-          # recovery. Cancelling them first means subsequent dequeue calls
-          # either pick up a queued task for a different agent (fine) or
-          # find nothing (fine).
-          cancel_pending_tasks_for_session(ai_user)
+            # Cancel queued/pending tasks BEFORE draining topic queues. The topic
+            # queue (Task.queued_for_topic) is scoped by topic_id, not agent_id,
+            # so dequeue_next_for_topic would otherwise flip a queued task for
+            # this clientless agent to pending and enqueue AiAgentJob — which then
+            # broadcasts to a stream with no subscriber and strands the task in
+            # delegated until stuck recovery.
+            cancel_pending_tasks_for_session(ai_user)
 
-          # Fail any tasks still delegated to this MCP session — including
-          # dispatches routed to *work* topics outside the registration inbox.
-          # The agent is per-session, so agent_id alone uniquely identifies
-          # this session's delegated work; scoping by topic_id here would only
-          # cancel inbox-topic tasks and leak the actually common case (a /work
-          # dispatch on a project topic) until stuck detection times out.
-          cancel_delegated_tasks_for_session(ai_user)
+            # Fail any tasks still delegated to this agent — including dispatches
+            # routed to *work* topics outside the registration inbox. With no live
+            # session left, agent_id uniquely scopes this agent's delegated work;
+            # scoping by topic_id alone would leak the common case (a /work
+            # dispatch on a project topic) until stuck detection times out.
+            cancel_delegated_tasks_for_session(ai_user)
+          end
           topic.archive! if topic
 
           head :no_content
@@ -391,8 +398,28 @@ module Collavre
         # both free up immediately rather than waiting for stuck detection.
         # Scopes by agent_id only: per-session ai_users mean every delegated
         # task for this agent belongs to this session, on any topic.
+        # True when a concurrent session still drives this shared agent. Reaps
+        # crash-orphaned presence rows first so a dead process's leftover row
+        # can't fool the gate into preserving routing for a sibling that is gone.
+        def sibling_sessions_live?(agent)
+          AgentSubscription.reap_stale!(agent.id)
+          AgentSubscription.live.where(agent_id: agent.id).exists?
+        end
+
+        # Scope cancellation to one ending session's topic (used when a live
+        # sibling shares the agent, so an agent-wide sweep is unsafe). Tasks on
+        # this topic are unambiguously the ending session's — its session topic
+        # is private to it.
+        def cancel_tasks_for_topic(agent, topic)
+          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running]), agent)
+          cancel_delegated_tasks(Task.where(topic_id: topic.id, status: "delegated"), agent)
+        end
+
         def cancel_delegated_tasks_for_session(agent)
-          tasks = Task.where(agent_id: agent.id, status: "delegated")
+          cancel_delegated_tasks(Task.where(agent_id: agent.id, status: "delegated"), agent)
+        end
+
+        def cancel_delegated_tasks(tasks, agent)
           return if tasks.empty?
 
           tracker = Orchestration::ResourceTracker.for(agent)
@@ -431,7 +458,10 @@ module Collavre
         # Parent subtasks are still failed so workflow executors don't deadlock
         # waiting for a reply that will never come.
         def cancel_pending_tasks_for_session(agent)
-          tasks = Task.where(agent_id: agent.id, status: %w[queued pending running])
+          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running]), agent)
+        end
+
+        def cancel_pending_tasks(tasks, agent)
           return if tasks.empty?
 
           tracker = Orchestration::ResourceTracker.for(agent)

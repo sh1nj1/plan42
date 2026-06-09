@@ -1472,6 +1472,100 @@ module Collavre
             "re-register must NOT restore routing_expression — wait for subscribe"
         end
 
+        test "destroy leaves shared-agent routing and a live sibling's work intact" do
+          # Codex P1: two Claude Code sessions share one default agent. When
+          # session A unregisters (DELETE) while session B is still live, A's
+          # teardown must NOT clear the shared agent's routing or cancel B's
+          # in-flight work — the same multi-session hazard fixed for
+          # AgentChannel#unsubscribed, but on the HTTP destroy path.
+          post "/api/v1/agent/register",
+            params: { agent_name: "shared-sib", session_id: "sess-a" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg_a = JSON.parse(response.body)
+
+          post "/api/v1/agent/register",
+            params: { agent_name: "shared-sib", session_id: "sess-b" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg_b = JSON.parse(response.body)
+          assert_equal reg_a["agent_id"], reg_b["agent_id"], "sanity: sessions share one agent"
+
+          ai_user = User.find(reg_a["agent_id"])
+          # Session B is live: holds a presence row, routing active.
+          Collavre::AgentSubscription.create!(agent_id: ai_user.id, token: "sess-b-token")
+          ai_user.update_column(:routing_expression, "true")
+
+          # B's in-flight delegated work on B's own topic.
+          topic_b = Topic.find(reg_b["topic_id"])
+          b_task = Collavre::Task.create!(
+            name: "B delegated", status: "delegated", trigger_event_name: "comment_created",
+            agent: ai_user, topic_id: topic_b.id, creative_id: topic_b.creative.effective_origin.id
+          )
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(b_task.id)
+
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: reg_a["topic_id"] },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+
+          assert_equal "true", ai_user.reload.routing_expression,
+            "routing must stay active while the sibling session is still live"
+          assert_equal "delegated", b_task.reload.status,
+            "the sibling session's in-flight work must not be cancelled"
+          assert_equal 1, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
+            "the sibling's reserved slot must not be released"
+          assert Topic.find(reg_a["topic_id"]).archived?,
+            "the ending session's own topic is still archived"
+          assert_not Topic.find(reg_b["topic_id"]).archived?,
+            "the sibling's topic must stay active"
+        end
+
+        test "destroy cancels the ending session's own-topic work even when a sibling is live" do
+          # The flip side of presence-gating: A's own session topic has delegated
+          # work whose client (A) is now gone. That is unambiguously A's (keyed by
+          # A's session topic_id), so it must still be cancelled and its slot
+          # released — only the agent-wide sweep is withheld while B is live.
+          post "/api/v1/agent/register",
+            params: { agent_name: "shared-own", session_id: "sess-a" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg_a = JSON.parse(response.body)
+
+          post "/api/v1/agent/register",
+            params: { agent_name: "shared-own", session_id: "sess-b" },
+            headers: auth_headers, as: :json
+          assert_response :ok
+          reg_b = JSON.parse(response.body)
+
+          ai_user = User.find(reg_a["agent_id"])
+          Collavre::AgentSubscription.create!(agent_id: ai_user.id, token: "sess-b-token")
+          ai_user.update_column(:routing_expression, "true")
+
+          topic_a = Topic.find(reg_a["topic_id"])
+          a_task = Collavre::Task.create!(
+            name: "A delegated", status: "delegated", trigger_event_name: "comment_created",
+            agent: ai_user, topic_id: topic_a.id, creative_id: topic_a.creative.effective_origin.id
+          )
+          tracker = Collavre::Orchestration::ResourceTracker.for(ai_user)
+          tracker.reset!
+          tracker.reserve!(a_task.id)
+
+          delete "/api/v1/agent/#{ai_user.id}",
+            params: { topic_id: reg_a["topic_id"] },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+
+          assert_equal "cancelled", a_task.reload.status,
+            "the ending session's own-topic delegated work must be cancelled"
+          assert_equal 0, Collavre::Orchestration::ResourceTracker.for(ai_user).active_jobs,
+            "the ending session's slot must be released"
+          assert_equal "true", ai_user.reload.routing_expression,
+            "routing still stays active for the live sibling"
+        end
+
         test "destroy ignores topic_id that does not belong to the agent" do
           reg = register_agent("ownership-test")
           agent_id = reg["agent_id"]
