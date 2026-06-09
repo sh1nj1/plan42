@@ -209,6 +209,24 @@ module Collavre
         Collavre::AttachmentBackfill.embed_orphans!(creative)
         assert_equal before, creative.reload.description
       end
+
+      test "backfill skips markdown creatives and preserves their markdown source" do
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_source: "# title\n\nbody"
+        )
+        blob = make_blob(filename: "ref.png", content_type: "image/png")
+        creative.files.attach(blob)
+        creative.reload
+        assert_equal "markdown", creative.data["content_type"]
+
+        Collavre::AttachmentBackfill.embed_orphans!(creative)
+        creative.reload
+
+        # Still markdown mode, source intact, description untouched (no HTML nodes appended).
+        assert_equal "markdown", creative.data["content_type"]
+        assert_equal "# title\n\nbody", creative.data["markdown_source"]
+        refute_includes creative.description, blob.signed_id
+      end
     end
   end
 end

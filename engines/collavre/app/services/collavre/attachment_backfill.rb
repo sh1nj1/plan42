@@ -6,6 +6,14 @@ module Collavre
     module_function
 
     def embed_orphans!(creative)
+      # Markdown-mode creatives manage their own blob lifecycle through
+      # MarkdownConverter (markdown_source <-> description) and are excluded
+      # from HTML-derived reconcile (reconcile_description_attachments returns
+      # early for them). Appending HTML nodes here would be a no-op for
+      # reconcile AND would demote the creative to HTML mode via
+      # convert_markdown_to_html, silently discarding data["markdown_source"].
+      return if creative.data&.dig("content_type") == "markdown"
+
       referenced = creative.send(:extract_signed_ids_from_description).to_set
       orphans = creative.files.includes(:blob).reject do |att|
         referenced.include?(att.blob.signed_id)
