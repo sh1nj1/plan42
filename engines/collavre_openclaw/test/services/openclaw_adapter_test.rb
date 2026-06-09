@@ -799,5 +799,38 @@ module CollavreOpenclaw
 
       assert_includes adapter.session_key, @user.id.to_s
     end
+
+    # --- run_id backfill / reclaim (cross-process duplicate suppression) ---
+
+    test "persist_run_id_on_comment backfills run_id onto the solicited reply" do
+      creative = Collavre::Creative.create!(description: "Reclaim creative", user: @user)
+      reply = creative.comments.create!(user: @user, content: "Solicited reply")
+      adapter = OpenclawAdapter.new(user: @user, system_prompt: "Test", context: { comment: reply })
+
+      adapter.send(:persist_run_id_on_comment, "run-backfill")
+
+      assert_equal "run-backfill", reply.reload.openclaw_run_id
+    ensure
+      creative&.destroy
+    end
+
+    test "persist_run_id_on_comment reclaims the run and removes a proactive duplicate when it lost the race" do
+      creative = Collavre::Creative.create!(description: "Reclaim creative", user: @user)
+      # A proactive duplicate from another process already claimed the run_id.
+      duplicate = creative.comments.create!(
+        user: @user, content: "Proactive duplicate (no activity log)", openclaw_run_id: "run-race"
+      )
+      # The canonical solicited reply (carries the activity log) tries to backfill.
+      reply = creative.comments.create!(user: @user, content: "Solicited reply with activity log")
+      adapter = OpenclawAdapter.new(user: @user, system_prompt: "Test", context: { comment: reply })
+
+      adapter.send(:persist_run_id_on_comment, "run-race")
+
+      assert_equal "run-race", reply.reload.openclaw_run_id, "solicited reply should own the run_id"
+      assert_not Collavre::Comment.exists?(duplicate.id), "proactive duplicate should be removed"
+      assert_equal reply.id, Collavre::Comment.where(openclaw_run_id: "run-race").sole.id
+    ensure
+      creative&.destroy
+    end
   end
 end
