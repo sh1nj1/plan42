@@ -108,10 +108,19 @@ module Collavre
       topic_name = topic.name
       topic.destroy
 
-      Collavre::Topics::OrphanedCronNotifier.new(
-        topic_id: topic_id,
-        topic_name: topic_name
-      ).call
+      # Best-effort orphaned-cron notice. Must never break the core deletion:
+      # if it raises, swallow + log so broadcast/head still run.
+      begin
+        Collavre::Topics::OrphanedCronNotifier.new(
+          topic_id: topic_id,
+          topic_name: topic_name
+        ).call
+      rescue StandardError => e
+        Rails.logger.error(
+          "[TopicsController#destroy] OrphanedCronNotifier failed for topic " \
+          "#{topic_id}: #{e.class} #{e.message}"
+        )
+      end
 
       broadcast_topic_event("deleted", topic_id: topic_id)
       head :no_content

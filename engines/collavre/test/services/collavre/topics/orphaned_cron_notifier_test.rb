@@ -73,6 +73,25 @@ module Collavre
         end
       end
 
+      test "keeps the notice as a system message even when a deleter is Current.user" do
+        create_cron(creative_id: @creative.id, topic_id: @topic.id)
+        deleted_id = @topic.id
+        @topic.destroy!
+
+        # Simulate the controller path where the admin deleting the topic is the
+        # current user; the notice must still be a system message (user nil) so
+        # it does not get attributed to them or trigger AI orchestration.
+        Collavre::Current.user = @user
+        begin
+          OrphanedCronNotifier.new(topic_id: deleted_id, topic_name: "Counseling").call
+        ensure
+          Collavre::Current.user = nil
+        end
+
+        notice = @creative.comments.order(:created_at).last
+        assert_nil notice.user_id, "notice must remain a system message (user nil)"
+      end
+
       test "ignores crons whose topic_id is nil (main-topic crons)" do
         create_cron(creative_id: @creative.id, topic_id: nil)
         deleted_id = @topic.id

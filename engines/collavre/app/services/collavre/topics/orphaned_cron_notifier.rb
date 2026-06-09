@@ -10,6 +10,8 @@ module Collavre
     # Decision: notify only. The recurring task is intentionally left in place
     # so the user can decide whether to re-point or cancel it.
     class OrphanedCronNotifier
+      include Collavre::Crons::RecurringTaskArguments
+
       def initialize(topic_id:, topic_name:)
         @topic_id = topic_id
         @topic_name = topic_name
@@ -48,6 +50,7 @@ module Collavre
           creative: creative,
           topic_id: main_topic.id,
           user: nil, # System message
+          skip_default_user: true, # keep user nil even when a deleter is Current.user; don't trigger AI orchestration
           content: I18n.t(
             "collavre.topics.orphaned_cron_notice",
             topic_name: @topic_name,
@@ -55,18 +58,6 @@ module Collavre
             message: args["message"]
           )
         )
-      end
-
-      def parse_arguments(task)
-        args = task.arguments
-        return {} unless args.is_a?(Array) && args.first.is_a?(Hash)
-
-        args.first.stringify_keys
-      end
-
-      def parse_creative_id_from_key(key)
-        match = key.match(/\Acron_(\d+)_/)
-        match[1].to_i if match
       end
     end
   end
