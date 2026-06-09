@@ -40,9 +40,19 @@ module Collavre
           topic.unarchive! if topic.archived?
           topic.set_primary_agent!(ai_user)
 
-          CreativeShare.find_or_create_by!(creative: inbox, user: ai_user) do |s|
-            s.permission = :feedback
-            s.shared_by = current_user
+          # find_or_create_by! keeps the SELECT-first path (so a sequential
+          # re-register reuses the existing share without tripping CreativeShare's
+          # model-level user_id/creative_id uniqueness validation). But concurrent
+          # sibling registrations can both pass that SELECT before either commits;
+          # the loser then hits the DB unique index. Rescue that race and re-find
+          # instead of surfacing a 500/conflict.
+          begin
+            CreativeShare.find_or_create_by!(creative: inbox, user: ai_user) do |s|
+              s.permission = :feedback
+              s.shared_by = current_user
+            end
+          rescue ActiveRecord::RecordNotUnique
+            CreativeShare.find_by!(creative: inbox, user: ai_user)
           end
 
           render json: {
@@ -551,25 +561,12 @@ module Collavre
           slug = "session" if slug.blank?
           email = "claude-channel-#{current_user.id}-#{slug}@agent.collavre.local"
 
-          ai_user = User.find_by(email: email)
-          if ai_user
-            return nil unless ai_user.created_by_id == current_user.id &&
-                              ai_user.ai_user? &&
-                              ai_user.claude_channel_agent?
-
-            # Do NOT restore routing_expression here. Activation is deferred
-            # until AgentChannel#subscribe_to_agent_stream so the agent only
-            # becomes matchable once a WebSocket subscriber actually exists
-            # for agent:user:<id>. Otherwise comments matched between this
-            # POST returning and the client's subsequent cable subscribe would
-            # broadcast into an empty stream — stuck delegated tasks until
-            # stuck recovery.
-            return ai_user
-          end
+          existing = User.find_by(email: email)
+          return verified_session_agent(existing) if existing
 
           # routing_expression: nil so the new ai_user is not matchable until
           # the client claims the per-agent stream via AgentChannel. See the
-          # comment on the reuse path above.
+          # comment on verified_session_agent.
           User.create!(
             email: email,
             name: "Claude Channel (#{agent_name})",
@@ -580,6 +577,28 @@ module Collavre
             searchable: false,
             routing_expression: nil
           )
+        rescue ActiveRecord::RecordNotUnique
+          # A concurrent registration for the same (user, agent_name) won the
+          # users.email unique race. The desired row now exists — re-find and
+          # re-verify ownership instead of surfacing a 500 that aborts one of the
+          # two simultaneously launching plugin instances.
+          verified_session_agent(User.find_by(email: email))
+        end
+
+        # Returns the agent only when it is the current user's own Claude Channel
+        # agent; nil otherwise (the caller renders :conflict). Routing activation
+        # stays deferred to AgentChannel#subscribe_to_agent_stream so the agent
+        # becomes matchable only once a WebSocket subscriber exists for
+        # agent:user:<id> — otherwise comments matched between this POST returning
+        # and the client's subsequent cable subscribe would broadcast into an
+        # empty stream, stranding delegated tasks until stuck recovery.
+        def verified_session_agent(ai_user)
+          return nil unless ai_user &&
+                            ai_user.created_by_id == current_user.id &&
+                            ai_user.ai_user? &&
+                            ai_user.claude_channel_agent?
+
+          ai_user
         end
 
         # One Topic per (agent, session_id). On re-register (including --resume

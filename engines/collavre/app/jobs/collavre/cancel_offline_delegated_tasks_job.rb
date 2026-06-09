@@ -67,9 +67,42 @@ module Collavre
       topic = Topic.find_by(primary_agent_id: agent.id, session_id: session_id)
       return unless topic
 
+      # Cancel queued/pending/running work FIRST. Otherwise cancelling the
+      # delegated task below calls dequeue_next_for_topic, which promotes the next
+      # queued task on this session topic into "delegated" and broadcasts it — but
+      # the session that owned this private topic is gone and siblings filter
+      # session_topic dispatches to their own topic, so nothing would /reply and
+      # the promoted task would hold its slot until stuck recovery. Draining the
+      # queue first leaves nothing to promote. Mirrors cancel_tasks_for_topic.
+      cancel_pending_tasks(
+        Task.where(agent_id: agent.id, topic_id: topic.id, status: %w[queued pending running]), agent
+      )
       cancel_delegated_tasks(
         Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated"), agent
       )
+    end
+
+    def cancel_pending_tasks(tasks, agent)
+      return if tasks.empty?
+
+      tracker = Orchestration::ResourceTracker.for(agent)
+      tasks.find_each do |task|
+        was_running = task.status == "running"
+        task.update!(status: "cancelled")
+        tracker.release!(task.id) if was_running
+
+        next if task.parent_task_id.blank?
+
+        begin
+          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+            task, error_message: "Claude Channel session lost connection before dispatch"
+          )
+        rescue StandardError => e
+          Rails.logger.error(
+            "[CancelOfflineDelegatedTasksJob] fail_subtask! failed for queued task #{task.id}: #{e.message}"
+          )
+        end
+      end
     end
 
     def cancel_delegated_tasks(tasks, agent)

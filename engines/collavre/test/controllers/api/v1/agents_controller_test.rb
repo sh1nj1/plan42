@@ -1735,6 +1735,50 @@ module Collavre
         end
 
 
+        test "register is idempotent when a concurrent session wins the users.email race" do
+          # Codex P2: two sessions for the same (user, agent_name) registering at
+          # once both pass find_by(email:) before either insert commits; the loser
+          # would hit the users.email unique index and 500, aborting one plugin.
+          # Simulate the winner committing the row mid-call, then our insert losing.
+          original_create = User.method(:create!)
+          raised = false
+          stub = lambda do |attrs|
+            if attrs[:email].to_s.include?("claude-channel-") && !raised
+              raised = true
+              winner = original_create.call(attrs) # concurrent winner commits
+              raise ActiveRecord::RecordNotUnique, "duplicate key (users.email) #{winner.email}"
+            end
+            original_create.call(attrs)
+          end
+
+          User.stub(:create!, stub) do
+            post "/api/v1/agent/register",
+              params: { agent_name: "claude", session_id: "sess-race" },
+              headers: auth_headers,
+              as: :json
+          end
+
+          assert_response :ok, "the race loser must reuse the winner's row, not 500"
+          body = JSON.parse(response.body)
+          email = "claude-channel-#{@user.id}-claude@agent.collavre.local"
+          assert_equal email, User.find(body["agent_id"]).email
+          assert_equal 1, User.where(email: email).count, "no duplicate agent row"
+        end
+
+        test "register does not duplicate the inbox feedback share on re-register" do
+          # Codex P2: the inbox CreativeShare create must be atomic
+          # (create_or_find_by!) so concurrent siblings can't RecordNotUnique on
+          # the [creative_id, user_id] unique index. Guard the de-dup invariant.
+          first = register_agent("share-dedup")
+          inbox = Creative.inbox_for(@user)
+
+          assert_no_difference -> { CreativeShare.where(creative: inbox).count } do
+            register_agent("share-dedup")
+          end
+          assert_equal 1,
+            CreativeShare.where(creative: inbox, user_id: first["agent_id"]).count
+        end
+
         private
 
         def auth_headers

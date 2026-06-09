@@ -208,6 +208,37 @@ class CancelOfflineDelegatedTasksJobTest < ActiveJob::TestCase
       "work-topic tasks belong to the fan-out pool and must survive a session-scoped cancel"
   end
 
+  test "session-scoped: also cancels queued work on the dropped session topic" do
+    # Codex P2: cancelling only the delegated task drains the topic queue and
+    # promotes the queued task into this now-clientless session topic, which no
+    # sibling will /reply to. The queued task must be cancelled too, before the
+    # delegated cancel triggers dequeue_next_for_topic.
+    @claude_agent.update_column(:routing_expression, "true")
+    Collavre::AgentSubscription.create!(
+      agent_id: @claude_agent.id, token: "sibling", session_id: "sess-other"
+    )
+
+    session_topic = Topic.create!(
+      creative: @creative, name: "cc-queued-session-topic", user: @owner,
+      primary_agent_id: @claude_agent.id, session_id: "sess-drop"
+    )
+    delegated_task = Task.create!(
+      name: "Delegated on session topic", status: "delegated",
+      agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
+    )
+    queued_task = Task.create!(
+      name: "Queued on session topic", status: "queued",
+      agent: @claude_agent, creative_id: @creative.id, topic_id: session_topic.id
+    )
+
+    Collavre::CancelOfflineDelegatedTasksJob.perform_now(@claude_agent.id, "tok", "sess-drop")
+
+    assert_equal "cancelled", delegated_task.reload.status,
+      "the dropped session's delegated work must be cancelled"
+    assert_equal "cancelled", queued_task.reload.status,
+      "queued work on the dropped session topic must be cancelled, not promoted into a clientless topic"
+  end
+
   test "fails parent workflow when cancelling a delegated subtask" do
     parent_task = Task.create!(
       name: "Workflow Parent",
