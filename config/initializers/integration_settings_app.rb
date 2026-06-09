@@ -3,7 +3,7 @@
 #
 # Engine-owned keys live in each engine's `Engine` class so they remain
 # registered when an engine is mounted as a gem in a host app:
-#   - `Collavre::Engine` → `:default_mailer_from`, `:public_assets_host`, `:mcp_upload_root`
+#   - `Collavre::Engine` → `:default_mailer_from`, `:public_assets_host`
 #   - `CollavreOpenclaw::Engine` → `:app_host`, `:rails_host`
 #
 # `:default_url_host` carries `requires_restart: true` because its primary
