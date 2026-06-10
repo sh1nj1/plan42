@@ -66,6 +66,27 @@ test("coordinator clears all pending requests when the turn ends", () => {
   );
 });
 
+test("coordinator exposes its pending ids for pull-on-resubscribe replay", () => {
+  // Option A (pull-on-resubscribe): after every (re)subscribe the plugin sends
+  // the request_ids it still holds pending so the server replays the recorded
+  // decision for exactly those — no wall-clock window, so an outage of any
+  // length is covered. pendingIds() is that source of truth; claim/clear must
+  // remove ids from it so a settled id is never re-requested.
+  const c = new PermissionCoordinator();
+  assert.deepEqual(c.pendingIds(), [], "no pending ids initially");
+  c.add("req-1");
+  c.add("req-2");
+  assert.deepEqual(c.pendingIds(), ["req-1", "req-2"], "insertion order preserved");
+  c.claim("req-1");
+  assert.deepEqual(
+    c.pendingIds(),
+    ["req-2"],
+    "a claimed id is no longer pending and won't be re-requested",
+  );
+  c.clear();
+  assert.deepEqual(c.pendingIds(), [], "turn-end clear empties the pending set");
+});
+
 test("coordinator bounds memory by capacity, evicting the oldest entries", () => {
   const c = new PermissionCoordinator(3);
   c.add("req-1");

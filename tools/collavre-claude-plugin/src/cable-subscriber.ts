@@ -44,6 +44,7 @@ export class CableSubscriber {
   private topicId: number | null = null;
   private agentId: number | null = null;
   private callback: EventCallback;
+  private subscribedHandler: (() => void) | null = null;
   private channelIdentifier: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private staleCheckTimer: ReturnType<typeof setInterval> | null = null;
@@ -116,6 +117,27 @@ export class CableSubscriber {
     }
     this.channelIdentifier = JSON.stringify(identifier);
     this.sendSubscribe();
+  }
+
+  // Register a handler fired on every subscription confirmation — the initial
+  // subscribe AND every reconnect resubscribe. Used for pull-on-resubscribe
+  // replay: once the stream is confirmed live, the plugin tells the server which
+  // permission request_ids it still holds pending so any decision lost during
+  // the reconnect gap is redelivered.
+  onSubscriptionConfirmed(handler: () => void): void {
+    this.subscribedHandler = handler;
+  }
+
+  // Send a client→server channel action (ActionCable `message` command) on the
+  // current subscription. The `action` selects the receiver method on the Rails
+  // channel; remaining fields are merged into its `data` argument.
+  perform(action: string, data: Record<string, unknown> = {}): void {
+    if (!this.channelIdentifier) return;
+    this.send({
+      command: "message",
+      identifier: this.channelIdentifier,
+      data: JSON.stringify({ action, ...data }),
+    });
   }
 
   disconnect(): void {
@@ -245,6 +267,10 @@ export class CableSubscriber {
       process.stderr.write(
         `[collavre-cable] Subscribed (${this.subscriptionDescription()})\n`,
       );
+      // The stream is now live on the server. Fire the resubscribe hook so the
+      // plugin can pull-replay decisions for any prompts still pending — this
+      // runs on the initial subscribe and again after every reconnect.
+      this.subscribedHandler?.();
       return;
     }
 

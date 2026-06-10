@@ -14,35 +14,41 @@ module Collavre
 
       ACTION_TYPE = "claude_channel_permission"
 
-      # How far back a (re)subscribing session replays decided permission prompts.
-      # broadcast_claude_channel_permission_decision fires once into the transient
-      # agent:user:<id> stream; a decision clicked while the plugin's WebSocket was
-      # reconnecting lands in a subscriber-less stream and is lost, leaving the
-      # suspended tool hung with no retry path. On resubscribe we re-broadcast
-      # decisions made within this window so the redelivered decision resolves the
-      # paused call. The window only needs to cover the reconnect gap: a decision
-      # clicked while the plugin is connected is delivered live and never needs
-      # replay. Replay is idempotent (PermissionCoordinator.claim ignores a
-      # request_id it no longer holds pending), so the bound is purely a cost knob.
-      PERMISSION_DECISION_REPLAY_WINDOW = 5.minutes
-
       # Raised when a decision was already recorded, so a double-click (or a
       # concurrent approve+deny) resolves to exactly one decision.
       class AlreadyDecided < StandardError; end
 
       class_methods do
-        # Re-broadcast every permission decision made for this agent within the
-        # replay window. Called when a Claude Channel session (re)subscribes so a
-        # decision lost during a WebSocket reconnect gap is redelivered. Scoped by
-        # the agent's user_id (the broadcast target) and bounded by
-        # PERMISSION_DECISION_REPLAY_WINDOW; the coarse action LIKE filter is
-        # narrowed by claude_channel_permission? per row before re-broadcasting.
-        def replay_undelivered_claude_channel_permission_decisions(agent_id, since:)
+        # Re-broadcast the recorded decision for each given request_id that belongs
+        # to this agent and has been decided. Called when a Claude Channel session
+        # sends the request_ids it still holds pending after a (re)subscribe
+        # (pull-on-resubscribe): broadcast_claude_channel_permission_decision fires
+        # once into the transient agent:user:<id> stream, so a decision clicked
+        # while the plugin's WebSocket was reconnecting lands in a subscriber-less
+        # stream and is lost — leaving the suspended tool hung with no retry path.
+        #
+        # The plugin's pending set is the SOLE bound: there is no wall-clock window,
+        # so a decision made during an outage of any length is still redelivered,
+        # and a decision the plugin already consumed is simply never requested. The
+        # coarse action LIKE filter (one per requested id) is narrowed by an exact
+        # request_id match per row before re-broadcasting; replay is idempotent
+        # (PermissionCoordinator.claim ignores a request_id it no longer holds), so
+        # an over-broad LIKE match is a harmless no-op on the plugin side.
+        def replay_claude_channel_permission_decisions_for(agent_id, request_ids)
+          ids = Array(request_ids).filter_map { |r| r.to_s.presence }.uniq
+          return if ids.empty?
+
+          likes = Array.new(ids.size, "action LIKE ?")
+          args = ids.map { |rid| "%#{sanitize_sql_like(rid)}%" }
           where(user_id: agent_id)
             .where.not(action_executed_at: nil)
-            .where(action_executed_at: since..)
-            .where("action LIKE ?", "%#{ACTION_TYPE}%")
-            .find_each(&:rebroadcast_claude_channel_permission_decision)
+            .where(likes.join(" OR "), *args)
+            .find_each do |comment|
+              next unless comment.claude_channel_permission?
+              next unless ids.include?(comment.claude_channel_permission_request_id)
+
+              comment.rebroadcast_claude_channel_permission_decision
+            end
         end
       end
 

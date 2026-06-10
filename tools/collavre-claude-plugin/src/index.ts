@@ -373,6 +373,20 @@ async function main(): Promise<void> {
     makeEventHandler(server, client, coordinator, active, debug),
     debug,
   );
+
+  // Pull-on-resubscribe: after every (re)subscribe, tell the server the
+  // permission request_ids this session still holds pending so it replays any
+  // decision broadcast into a subscriber-less stream while the WebSocket was
+  // down. The coordinator's pending set is the source of truth — there is no
+  // wall-clock window, so a decision clicked during an outage of any length is
+  // redelivered once the link is back. Empty set (the common case) → no-op.
+  cable.onSubscriptionConfirmed(() => {
+    const pending = coordinator.pendingIds();
+    if (pending.length > 0) {
+      cable.perform("replay_permissions", { request_ids: pending });
+    }
+  });
+
   await cable.connect();
   process.stderr.write("[collavre] WebSocket ready\n");
 

@@ -70,6 +70,18 @@ export class PermissionCoordinator {
     return this.pending.has(requestId);
   }
 
+  // The request_ids this session still holds pending, in insertion order. Sent
+  // after every (re)subscribe (pull-on-resubscribe) so the server re-broadcasts
+  // the recorded decision for exactly these — redelivering a decision that was
+  // broadcast into a subscriber-less stream during a WebSocket reconnect gap.
+  // Because this set is the source of truth for what still needs delivery, the
+  // redelivery is bounded by the plugin's own outstanding prompts rather than a
+  // wall-clock window: an outage of any length is covered, and a decision
+  // already claimed (or cleared on turn end) is simply never requested again.
+  pendingIds(): string[] {
+    return [...this.pending];
+  }
+
   // Drop every pending request. Called when the dispatched turn ends (the reply
   // tool fires): any request still pending was resolved by the local TUI dialog
   // (or abandoned), since Claude Code sends no per-request resolution signal and

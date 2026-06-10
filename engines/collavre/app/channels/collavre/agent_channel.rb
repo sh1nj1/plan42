@@ -105,6 +105,26 @@ module Collavre
       Rails.logger.warn("[AgentChannel] unsubscribed presence clear failed: #{e.message}")
     end
 
+    # Pull-on-resubscribe replay (Codex P2): after every (re)subscribe the plugin
+    # sends the permission request_ids it still holds pending, and the server
+    # re-broadcasts the recorded decision for exactly those ids. A decision
+    # broadcast once into the transient agent:user:<id> stream while the plugin's
+    # WebSocket was down would otherwise be lost (action_executed_at already
+    # stamped, buttons hidden), hanging the suspended tool with no retry path.
+    # The plugin's pending set is the sole bound — there is no wall-clock window,
+    # so an outage of any length is covered, and a decision already consumed is
+    # never requested. Idempotent: the plugin's coordinator drops any id it no
+    # longer holds. Gated on @session_agent so only a Claude Channel agent
+    # subscription (where stream_from agent:user:<id> is attached) can pull.
+    def replay_permissions(data)
+      return unless @session_agent
+
+      Comment.replay_claude_channel_permission_decisions_for(
+        @session_agent.id,
+        data["request_ids"]
+      )
+    end
+
     # Broadcast an arbitrary payload to a topic's agent stream.
     def self.broadcast_to_topic(topic_id, payload)
       ActionCable.server.broadcast("agent:topic:#{topic_id}", payload)
@@ -170,18 +190,6 @@ module Collavre
             routing_expression: "true"
           )
         end
-
-        # Redeliver any decision broadcast into this agent's stream while the
-        # plugin's WebSocket was down. The live broadcast fires once into the
-        # transient stream with no buffering, so a decision clicked during a
-        # reconnect gap would otherwise never reach the suspended tool call.
-        # stream_from is already attached above, so these reach this session;
-        # the plugin's coordinator drops any request_id it no longer holds
-        # pending, making an already-delivered decision a harmless no-op.
-        Comment.replay_undelivered_claude_channel_permission_decisions(
-          agent.id,
-          since: Comment::ClaudeChannelPermission::PERMISSION_DECISION_REPLAY_WINDOW.ago
-        )
       end
     end
 
