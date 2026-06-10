@@ -38,11 +38,17 @@ module Collavre
           ids = Array(request_ids).filter_map { |r| r.to_s.presence }.uniq
           return if ids.empty?
 
-          likes = Array.new(ids.size, "action LIKE ?")
-          args = ids.map { |rid| "%#{sanitize_sql_like(rid)}%" }
+          # Build the coarse "action LIKE '%<rid>%'" prefilter with Arel matchers
+          # rather than a raw SQL fragment so the wildcards stay bound parameters
+          # (the surrounding %…% is ours; sanitize_sql_like escapes any %/_ inside
+          # the id). No interpolation into SQL — Brakeman-clean and identical
+          # semantics to the old OR-joined LIKE.
+          matcher = ids
+            .map { |rid| arel_table[:action].matches("%#{sanitize_sql_like(rid)}%") }
+            .reduce(:or)
           where(user_id: agent_id)
             .where.not(action_executed_at: nil)
-            .where(likes.join(" OR "), *args)
+            .where(matcher)
             .find_each do |comment|
               next unless comment.claude_channel_permission?
               next unless ids.include?(comment.claude_channel_permission_request_id)
