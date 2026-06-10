@@ -56,6 +56,12 @@ claude mcp add --scope local collavre -- \
 > channel/permission notifications to MCP servers registered in a real scope
 > (`enterprise` / `user` / `project` / `local`). Use `claude plugin install` or
 > `claude mcp add --scope local` so the server is discoverable as `server:collavre`.
+>
+> ⚠️ Registering via `claude mcp add` adds a bare **MCP server**, not a plugin, so the
+> `hooks/hooks.json` hooks (SessionStart build + `reply` auto-approve) are **not** loaded. Build
+> `dist/` yourself and pass `--allowedTools "mcp__collavre__reply"` to silence the per-reply
+> prompt. See **[Testing unmerged changes against a preview server](#testing-unmerged-changes-against-a-preview-server)**
+> for the full dev loop. `claude plugin install` loads the hooks and needs neither workaround.
 
 ### Configuration
 
@@ -131,6 +137,83 @@ npm test           # node --test on src/**/*.test.ts
 > Tests follow **TDD** (RED → GREEN). Add a failing `*.test.ts` next to the module first, then
 > implement. Pure decision logic (agent-name resolution, register body, dispatch filter, session
 > id) is factored out so it is testable without a live WebSocket.
+
+### Testing unmerged changes against a preview server
+
+When you want to exercise a branch (e.g. an open PR) end-to-end against a running Collavre preview,
+**do not install from the marketplace** — `claude plugin install collavre@collavre` pulls the code
+that is *merged on GitHub*, so it will not contain your branch. Register the **local checkout's
+`dist/`** instead and load it with the development-channels flag.
+
+#### 1. Build `dist/` yourself
+
+```bash
+cd tools/collavre-claude-plugin
+npm install && npm run build   # produces dist/index.js + dist/pretooluse-hook.js
+```
+
+> ⚠️ The `SessionStart` install/build hook in `hooks/hooks.json` only runs when the plugin is loaded
+> as a **plugin** (`claude plugin install` / `--plugin-dir`). The raw `claude mcp add` path below
+> registers a bare **MCP server** and does **not** load `hooks/hooks.json`, so nothing rebuilds
+> `dist/` for you — build it by hand and rebuild after every source change.
+
+#### 2. Point config at the preview
+
+`~/.config/collavre/config.json` selects *which server and token* the plugin connects to (used when
+no `CLAUDE_PLUGIN_OPTION_*` env vars are set):
+
+```json
+{ "url": "http://localhost:4120", "token": "<preview API token>" }
+```
+
+Make sure the preview server's DB schema is current (run migrations + restart) — a stale schema is
+the most common reason `diagnose.ts` / registration fails.
+
+#### 3. Register the local `dist/` as the `collavre` MCP server
+
+```bash
+# user scope = register once, inherited from every directory (best for multi-folder testing)
+claude mcp add --scope user collavre -- \
+  node /absolute/path/to/plan42-worktreeN/tools/collavre-claude-plugin/dist/index.js
+```
+
+Two gotchas that produce a `✘ Failed to connect` / `already exists` even though the server is fine:
+
+- **`local` shadows `user`.** A `--scope local` entry (stored per-cwd under
+  `~/.claude.json` → `projects[<cwd>]`) takes precedence over a `user` entry in the same directory.
+  If an old local registration exists, `claude mcp add` reports `already exists` and the stale path
+  keeps winning — `claude mcp remove collavre` in that directory first, then re-add.
+- **Stale worktree path.** Registrations pin an **absolute** `dist/index.js` path. After a worktree
+  is deleted (e.g. a merged PR), that path 404s → `Failed to connect`. Re-point it at the current
+  worktree, and after merging back to the marketplace install, **remove the dev registration** so
+  the next session doesn't chase a deleted path.
+
+The two files that govern a dev session — keep them straight:
+
+| File | Holds | Scope |
+|------|-------|-------|
+| `~/.claude.json` | the `collavre` **MCP registration** (`node …/dist/index.js`) | `user` = top-level `mcpServers`; `local` = per-cwd under `projects[<cwd>]` |
+| `~/.config/collavre/config.json` | the **connection** (`url` + `token`) | global |
+
+#### 4. Launch with the development channel loaded
+
+```bash
+claude --dangerously-load-development-channels server:collavre \
+       --allowedTools "mcp__collavre__reply"
+```
+
+- `--dangerously-load-development-channels server:collavre` wires the channel to the
+  already-registered `collavre` MCP server (the production channel path requires a real plugin
+  install; this flag is the dev equivalent).
+- `--allowedTools "mcp__collavre__reply"` is needed **only on this raw-MCP dev path**: the
+  `PreToolUse` reply auto-approve hook ships in `hooks/hooks.json`, which — as in step 1 — is not
+  loaded by `claude mcp add`. Under a real plugin install the hook auto-approves `reply` and this
+  flag is unnecessary. Without either, every channel reply raises a `mcp__collavre__reply`
+  permission prompt.
+
+Then post a comment on the session's inbox topic → it arrives in the session; Claude replies back
+into the topic. Run a second `claude` from a **different directory** (same token, same default
+`agent_name`) to see a second session-topic fan out under the one agent.
 
 ### Diagnosing the pipeline
 
