@@ -15,6 +15,7 @@ import {
 
 import { $createImageNode } from "../../lib/lexical/image_node"
 import { $createAttachmentNode } from "../../lib/lexical/attachment_node"
+import { $createVideoNode } from "../../lib/lexical/video_node"
 
 export const INSERT_IMAGE_COMMAND = createCommand("INSERT_IMAGE_COMMAND")
 export const INSERT_FILE_COMMAND = createCommand("INSERT_FILE_COMMAND")
@@ -23,6 +24,12 @@ function isImageFile(file) {
     if (!file) return false
     if (file.type) return /^image\//i.test(file.type)
     return /\.(bmp|gif|jpe?g|png|svg|webp)$/i.test(file.name || "")
+}
+
+function isVideoFile(file) {
+    if (!file) return false
+    if (file.type) return /^video\//i.test(file.type)
+    return /\.(mp4|webm|mov|m4v)$/i.test(file.name || "")
 }
 
 export default function FileUploadPlugin({
@@ -77,6 +84,11 @@ export default function FileUploadPlugin({
                             src: url,
                             altText: attributes.filename,
                             maxWidth: 800 // Default max width
+                        })
+                    } else if (isVideoFile(file)) {
+                        node = $createVideoNode({
+                            src: url,
+                            filename: attributes.filename
                         })
                     } else {
                         node = $createAttachmentNode({

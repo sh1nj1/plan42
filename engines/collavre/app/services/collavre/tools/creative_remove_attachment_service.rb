@@ -7,7 +7,7 @@ module Tools
     extend ToolMeta
 
     tool_name "creative_remove_attachment_service"
-    tool_description "Remove a single attachment from a Creative by its signed_id. Requires :write permission. The underlying blob is purged asynchronously."
+    tool_description "Remove a single attachment from a Creative by its signed_id. Requires :write permission. Strips the attachment's node from the description and purges the underlying blob asynchronously when nothing else references it."
 
     tool_param :creative_id, description: "ID of the Creative.", required: true
     tool_param :signed_id, description: "signed_id of the blob (from creative_list_attachments_service or creative_attach_files_service response).", required: true
@@ -23,11 +23,13 @@ module Tools
         return { error: "No write permission on Creative", id: creative_id }
       end
 
-      blob = ActiveStorage::Blob.find_signed(signed_id)
-      attachment = blob && creative.files.attachments.find_by(blob_id: blob.id)
-      return { error: "Attachment not found on this Creative" } unless attachment
+      # HTML is the source of truth: strip the node from the description and let
+      # after_save reconcile detach + safe-purge the blob. Removing only the
+      # ActiveStorage attachment would leave a dangling node in the description
+      # (broken asset, or reconciled back into creative.files on the next save).
+      removed = creative.remove_attachment!(signed_id)
+      return { error: "Attachment not found on this Creative" } unless removed
 
-      attachment.purge_later
       { success: true, creative_id: creative.id, removed_signed_id: signed_id }
     end
   end

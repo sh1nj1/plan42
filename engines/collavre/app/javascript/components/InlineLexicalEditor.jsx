@@ -48,6 +48,7 @@ import FileUploadPlugin, {
 } from "./plugins/image_upload_plugin"
 import { ImageNode } from "../lib/lexical/image_node"
 import { AttachmentNode } from "../lib/lexical/attachment_node"
+import { VideoNode } from "../lib/lexical/video_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
@@ -999,7 +1000,8 @@ export default function InlineLexicalEditor({
         LinkNode,
         AutoLinkNode,
         ImageNode,
-        AttachmentNode
+        AttachmentNode,
+        VideoNode
       ],
       onError(error) {
         throw error
