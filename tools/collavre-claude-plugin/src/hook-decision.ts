@@ -11,7 +11,19 @@
 // deliberately left untouched: they keep flowing through the normal permission
 // path, which on the channel surfaces as the structured approval comment.
 
+// The `reply` tool resolves to different fully-qualified names depending on how
+// the MCP server was registered:
+//   - dev install (`claude mcp add --scope local collavre`): mcp__collavre__reply
+//   - marketplace plugin install:               mcp__plugin_collavre_collavre__reply
+// Claude Code derives the prefix from the registration path, not the server, so
+// the auto-approve gate must accept both — otherwise a marketplace install (the
+// production path) prompts on every channel reply.
 export const REPLY_TOOL_NAME = "mcp__collavre__reply";
+export const REPLY_TOOL_NAME_PATTERN = /^mcp__(?:plugin_collavre_)?collavre__reply$/;
+
+export function isReplyTool(toolName: string | undefined | null): boolean {
+  return typeof toolName === "string" && REPLY_TOOL_NAME_PATTERN.test(toolName);
+}
 
 export interface PreToolUseInput {
   tool_name?: string;
@@ -28,7 +40,7 @@ export interface PreToolUseAllow {
 // Returns an allow decision for the channel reply tool, or null for everything
 // else (null = emit nothing, let the normal permission flow proceed).
 export function decidePreToolUse(input: PreToolUseInput | null | undefined): PreToolUseAllow | null {
-  if (input?.tool_name !== REPLY_TOOL_NAME) {
+  if (!isReplyTool(input?.tool_name)) {
     return null;
   }
   return {
