@@ -25,6 +25,5 @@
     {
       "server": "collavre"
     }
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }
