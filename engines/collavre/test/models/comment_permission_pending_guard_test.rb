@@ -7,11 +7,19 @@ module Collavre
   # its in-flight dispatch as a `delegated` task carrying pending_tool_call (set
   # by /agent/notify when the prompt is relayed). The allow/deny decision is made
   # by clicking the approve/deny buttons on the structured permission comment,
-  # which relays the decision out-of-band (see ApprovalActions). While the task
-  # stays parked, an intervening human *text* comment must NOT be dispatched as a
-  # competing turn: the delegated task holds the topic's only concurrency slot
-  # (running_for_topic counts `delegated`), so a competing turn would defer
-  # behind the very task awaiting the decision (the observed "⏳ 대기중" stall).
+  # which relays the decision out-of-band (see ApprovalActions).
+  #
+  # While the task stays parked, an intervening human *text* comment must be
+  # handed to orchestration rather than silently dropped. The scheduler then
+  # *defers* it (the delegated task holds the topic's only concurrency slot, so
+  # topic_max_concurrent_jobs=1 forces a queued task + "⏳ 대기중" notice), and
+  # when the parked task is finalized on /reply, dequeue_next_for_topic promotes
+  # that queued task and refreshes it to the latest comment. So the follow-up
+  # runs as the next turn instead of being lost — defer, never drop. This matters
+  # most when the local Claude TUI answers the prompt before the Collavre
+  # buttons: the server still sees pending_tool_call until /reply, so dropping
+  # would silently discard every follow-up posted during the rest of that
+  # locally-approved tool run.
   class CommentPermissionPendingGuardTest < ActiveSupport::TestCase
     include ActiveJob::TestHelper
     include ActionCable::TestHelper
@@ -47,7 +55,7 @@ module Collavre
       )
     end
 
-    test "an intervening human comment is NOT dispatched while a permission is parked" do
+    test "an intervening human comment is handed to orchestration (deferred, not dropped) while a permission is parked" do
       delegated_task(pending: { "request_id" => "abc", "requested_at" => "t" })
 
       dispatched = false
@@ -55,7 +63,24 @@ module Collavre
         @creative.comments.create!(content: "what does that do?", user: @user, topic: @topic)
       end
 
-      refute dispatched, "a comment must not dispatch a competing turn while a permission is parked"
+      assert dispatched,
+        "a comment posted while a permission is parked must reach orchestration so the scheduler " \
+        "can defer it behind the parked task and redeliver it on /reply — not be silently dropped"
+    end
+
+    test "a follow-up posted during a locally-answered prompt is still handed to orchestration" do
+      # Local Claude TUI answered the prompt, but the server still sees
+      # pending_tool_call until /reply. The follow-up must still be dispatched
+      # (then deferred) so it is not lost during the rest of the tool run.
+      delegated_task(pending: { "request_id" => "abc", "requested_at" => "t" })
+
+      dispatched = false
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true; [] }) do
+        @creative.comments.create!(content: "also rename it while you're there", user: @user, topic: @topic)
+      end
+
+      assert dispatched,
+        "a follow-up during a locally-approved tool run must not be silently dropped"
     end
 
     test "no decision is broadcast for a human text comment (decisions are button-driven)" do

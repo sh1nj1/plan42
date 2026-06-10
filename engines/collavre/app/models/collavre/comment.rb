@@ -180,14 +180,16 @@ module Collavre
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
       # pending_tool_call (stamped by /agent/notify when the prompt is relayed).
-      # The allow/deny decision is made by clicking the approve/deny buttons on
-      # the structured permission comment (see ClaudeChannelPermission below),
-      # which relays the decision out-of-band over the agent stream. While the
-      # task stays parked, an intervening human *text* comment is suppressed
-      # rather than dispatched as a competing turn: the delegated task holds the
-      # topic's only concurrency slot (running_for_topic counts `delegated`), so
-      # a competing turn would defer behind the very task awaiting the decision.
-      return if claude_channel_permission_pending?
+      # An intervening human comment posted while the task is parked is dispatched
+      # normally — not suppressed. The delegated task holds the topic's only
+      # concurrency slot (running_for_topic counts `delegated`,
+      # topic_max_concurrent_jobs=1), so the scheduler defers the comment into a
+      # `queued` task rather than a competing turn, and
+      # AgentOrchestrator.dequeue_next_for_topic promotes it (refreshed to the
+      # latest comment) when the parked task is finalized on /reply. Suppressing
+      # it here would silently drop the follow-up instead of deferring it — worst
+      # when the local Claude TUI answered the prompt, leaving pending_tool_call
+      # set on the server for the rest of a locally-approved tool run.
 
       SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
@@ -211,21 +213,6 @@ module Collavre
     # ClaudeChannelAdapter#session_topic? keys on, so the two stay consistent.
     def claude_channel_session_topic?
       topic&.session_id.present? && topic&.primary_agent&.claude_channel_agent?
-    end
-
-    # True when this topic has a Claude Channel session suspended on a native
-    # tool-permission prompt — a `delegated` task carrying pending_tool_call
-    # whose agent is a claude_channel_agent?. Used by dispatch_to_orchestration
-    # to suppress an intervening human text comment instead of dispatching it as
-    # a competing turn while the session awaits the button decision.
-    def claude_channel_permission_pending?
-      return false unless topic_id
-
-      Task
-        .where(topic_id: topic_id, status: "delegated")
-        .where.not(pending_tool_call: nil)
-        .includes(:agent)
-        .any? { |task| task.agent&.claude_channel_agent? }
     end
 
     def assign_default_user
