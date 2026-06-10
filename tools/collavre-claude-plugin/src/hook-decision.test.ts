@@ -1,16 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decidePreToolUse, REPLY_TOOL_NAME } from "./hook-decision.ts";
+import { decidePreToolUse, isReplyTool, REPLY_TOOL_NAME } from "./hook-decision.ts";
 
-test("auto-approves the Collavre channel reply tool", () => {
-  const decision = decidePreToolUse({ tool_name: REPLY_TOOL_NAME });
-  assert.ok(decision, "reply tool should produce a decision");
-  assert.equal(decision.hookSpecificOutput.hookEventName, "PreToolUse");
-  assert.equal(decision.hookSpecificOutput.permissionDecision, "allow");
-  assert.ok(
-    decision.hookSpecificOutput.permissionDecisionReason.length > 0,
-    "decision should carry a human-readable reason",
-  );
+// The dev install names the tool mcp__collavre__reply; a marketplace plugin
+// install names it mcp__plugin_collavre_collavre__reply. Auto-approval must
+// cover both so the production install path doesn't prompt on every reply.
+const MARKETPLACE_REPLY_TOOL_NAME = "mcp__plugin_collavre_collavre__reply";
+
+for (const toolName of [REPLY_TOOL_NAME, MARKETPLACE_REPLY_TOOL_NAME]) {
+  test(`auto-approves the Collavre channel reply tool (${toolName})`, () => {
+    const decision = decidePreToolUse({ tool_name: toolName });
+    assert.ok(decision, "reply tool should produce a decision");
+    assert.equal(decision.hookSpecificOutput.hookEventName, "PreToolUse");
+    assert.equal(decision.hookSpecificOutput.permissionDecision, "allow");
+    assert.ok(
+      decision.hookSpecificOutput.permissionDecisionReason.length > 0,
+      "decision should carry a human-readable reason",
+    );
+  });
+}
+
+test("isReplyTool matches both install paths and nothing else", () => {
+  assert.ok(isReplyTool(REPLY_TOOL_NAME));
+  assert.ok(isReplyTool(MARKETPLACE_REPLY_TOOL_NAME));
+  // Must not match other servers/tools or partial/substring lookalikes.
+  assert.equal(isReplyTool("mcp__collavre__other"), false);
+  assert.equal(isReplyTool("mcp__plugin_collavre_collavre__cron_create"), false);
+  assert.equal(isReplyTool("mcp__notcollavre__reply"), false);
+  assert.equal(isReplyTool("mcp__collavre__reply_extra"), false);
+  assert.equal(isReplyTool(undefined), false);
+  assert.equal(isReplyTool(null), false);
 });
 
 test("stays silent (null) for side-effecting tools so they remain gated", () => {

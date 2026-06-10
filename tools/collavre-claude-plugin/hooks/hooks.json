@@ -12,7 +12,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "mcp__collavre__reply",
+        "matcher": "^mcp__(plugin_collavre_)?collavre__reply$",
         "hooks": [
           {
             "type": "command",
