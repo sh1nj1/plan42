@@ -9,10 +9,14 @@
   "license": "MIT",
   "userConfig": {
     "url": {
+      "type": "string",
+      "title": "Collavre server URL",
       "description": "Collavre server URL (e.g., https://collavre.com)",
       "sensitive": false
     },
     "token": {
+      "type": "string",
+      "title": "Collavre API token",
       "description": "Collavre API authentication token",
       "sensitive": true
     }
@@ -22,5 +26,5 @@
       "server": "collavre"
     }
   ],
-  "hooks": "hooks/hooks.json"
+  "hooks": "./hooks/hooks.json"
 }
