@@ -110,11 +110,35 @@ module Collavre
     def cancel_pending_tasks
       # Cancel tasks triggered by this comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
-      # existing tasks, so scoping would miss moved-comment tasks)
-      Task.where(status: %w[pending running queued]).find_each do |task|
-        if task.trigger_event_payload&.dig("comment", "id") == id
-          task.update!(status: "cancelled")
+      # existing tasks, so scoping would miss moved-comment tasks).
+      # Include "delegated" so a deleted prompt also cancels Claude Channel
+      # work that's still waiting on an external MCP reply — otherwise the
+      # delegated task keeps holding the topic/agent slot until stuck recovery.
+      Task.where(status: %w[pending running queued delegated]).find_each do |task|
+        next unless task.trigger_event_payload&.dig("comment", "id") == id
+
+        was_delegated = task.status == "delegated"
+        task.update!(status: "cancelled")
+
+        # Delegated tasks live past their job: the AiAgentJob already returned,
+        # holding the agent slot under task.id and counting against the per-topic
+        # serializer. Mirror the cancel path used elsewhere to free both.
+        next unless was_delegated
+        if task.agent
+          Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end
+        if task.parent_task_id.present?
+          begin
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task, error_message: "Triggering comment was deleted"
+            )
+          rescue StandardError => e
+            Rails.logger.error(
+              "[Comment#cancel_pending_tasks] fail_subtask! failed for task #{task.id}: #{e.message}"
+            )
+          end
+        end
+        Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 
       # Cancel queued tasks when their waiting notice (system comment) is deleted
@@ -139,7 +163,29 @@ module Collavre
       return unless user_id        # nil user = system message
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
-      return if creative.inbox?
+      # Inbox creatives hold the user's notifications/DMs and normally must not
+      # trigger AI orchestration. Exception: a Claude Channel agent session
+      # registers its topic *inside* the inbox (Creative.inbox_for) and depends
+      # on the orchestration pipeline (Matcher → Arbiter → AiAgentService) to
+      # deliver comments to the running session. Scope the exception to actual
+      # Claude Channel session topics (primary_agent is a claude_channel_agent?).
+      # An inbox topic can be given any ai_user as primary_agent via
+      # TopicsController#set_primary_agent; gating on mere primary_agent presence
+      # would leak ordinary inbox DMs to the live Claude session, which holds
+      # inbox-wide :feedback + routing_expression="true" and would be selected by
+      # the Matcher for any dispatched inbox comment.
+      return if creative.inbox? && !claude_channel_session_topic?
+
+      # A Claude Channel session suspended on a native tool-permission prompt
+      # parks its in-flight dispatch as a `delegated` task carrying a
+      # pending_tool_call (stamped by /agent/notify when the 🔐 prompt is
+      # relayed). While parked, this human comment is an allow/deny *decision*,
+      # not a new turn — relay it straight to the suspended agent's stream so the
+      # MCP plugin can resolve the prompt, and skip orchestration. Dispatching it
+      # as a competing turn would deadlock: the delegated task holds the topic's
+      # only concurrency slot (running_for_topic counts `delegated`) and is
+      # itself waiting on the decision that would be queued behind that slot.
+      return if relay_permission_decision
 
       SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
@@ -148,6 +194,68 @@ module Collavre
         "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
       )
       raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
+    end
+
+    # True only when this comment's topic is an actual Claude Channel session
+    # topic — it carries the registration marker (session_id) AND its
+    # primary_agent is a claude_channel_agent? (llm_model "claude-code"). Used to
+    # scope the inbox dispatch exception so ordinary inbox threads stay local.
+    #
+    # session_id is required, not just the Claude primary_agent: a Claude
+    # channel ai_user can be assigned as primary_agent on an ordinary inbox
+    # topic via TopicsController#set_primary_agent without ever registering a
+    # session. Gating on the agent alone would dispatch that ordinary thread and
+    # leak it to the live Claude session. session_id is exactly what
+    # ClaudeChannelAdapter#session_topic? keys on, so the two stay consistent.
+    def claude_channel_session_topic?
+      topic&.session_id.present? && topic&.primary_agent&.claude_channel_agent?
+    end
+
+    # Deliver this comment as an allow/deny decision to any Claude Channel
+    # session in this topic that is suspended on a tool-permission prompt
+    # (a `delegated` task with pending_tool_call). Returns true when at least
+    # one suspended session was found (so dispatch_to_orchestration skips normal
+    # routing). The payload mirrors ClaudeChannelAdapter#deliver's dispatch
+    # shape so the MCP plugin's existing event handler consumes it via its
+    # permission coordinator; task_id is nil so the plugin does NOT complete the
+    # in-flight task — the decision only unblocks its paused tool call.
+    def relay_permission_decision
+      return false unless topic_id
+
+      awaiting = Task
+        .where(topic_id: topic_id, status: "delegated")
+        .where.not(pending_tool_call: nil)
+        .includes(:agent)
+        .select { |task| task.agent&.claude_channel_agent? }
+      return false if awaiting.empty?
+
+      payload = permission_decision_payload
+      awaiting.each do |task|
+        AgentChannel.broadcast_to_agent(task.agent_id, payload.merge(agent_id: task.agent_id))
+      end
+      true
+    end
+
+    def permission_decision_payload
+      {
+        type: "dispatch",
+        task_id: nil,
+        # Mirror ClaudeChannelAdapter#deliver: stamp session_topic so the MCP
+        # plugin's sibling-topic filter applies. Without it the flag is absent
+        # (treated as a work topic) and every sibling session sharing this agent
+        # would forward the allow/deny text into its own unrelated Claude turn —
+        # only the owning session holds the pending permission coordinator.
+        session_topic: topic&.session_id.present?,
+        comment: {
+          id: id,
+          content: content,
+          author_id: user_id,
+          author_name: user&.display_name,
+          topic_id: topic_id,
+          creative_id: creative_id,
+          created_at: created_at&.iso8601
+        }
+      }
     end
 
     def assign_default_user

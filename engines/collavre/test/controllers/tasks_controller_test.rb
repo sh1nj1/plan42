@@ -81,4 +81,22 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     post cancel_task_path(@task)
     assert_response :unprocessable_entity
   end
+
+  test "cancel cancels delegated task and releases agent slot" do
+    sign_in_as(@user, password: "password")
+    @task.update!(status: "delegated", topic_id: 12_345)
+
+    tracker = Minitest::Mock.new
+    tracker.expect(:release!, true, [ @task.id ])
+
+    Collavre::Orchestration::ResourceTracker.stub(:for, ->(agent) { agent == @agent ? tracker : nil }) do
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(_t, _c) { nil }) do
+        post cancel_task_path(@task)
+      end
+    end
+
+    assert_response :ok
+    assert_equal "cancelled", @task.reload.status
+    tracker.verify
+  end
 end

@@ -191,6 +191,102 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_not dispatched, "Should not dispatch A2A when no mention present"
   end
 
+  test "delegates to ClaudeChannelAdapter for claude_channel_agent" do
+    claude_agent = User.create!(
+      email: "cc-svc-test@agent.collavre.local",
+      password: SecureRandom.hex(32),
+      name: "Claude CC",
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @user.id,
+      searchable: false
+    )
+
+    topic = @creative.topics.create!(name: "CC Topic", user: @user)
+    comment = @creative.comments.create!(content: "Hello CC", user: @user, topic: topic)
+
+    task = Task.create!(
+      name: "CC Task",
+      status: "running",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: {
+        "comment" => { "id" => comment.id, "content" => comment.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id }
+      },
+      agent: claude_agent
+    )
+
+    initial_count = @creative.comments.count
+
+    # Use the :test adapter so the enqueued ClaudeChannelPresenceJob is recorded
+    # rather than run inline (which, with no live session, would post a disconnect
+    # notice and, with one, recurse on its self-re-enqueue).
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    enqueued = nil
+    broadcasts = []
+    begin
+      ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do
+        result = AiAgentService.new(task).call
+        assert_nil result
+      end
+      enqueued = ActiveJob::Base.queue_adapter.enqueued_jobs
+    ensure
+      ActiveJob::Base.queue_adapter = original_adapter
+    end
+
+    # No reply comment created (reply comes via API)
+    assert_equal initial_count, @creative.comments.count
+
+    # Logs delegated action
+    assert task.task_actions.exists?(action_type: "delegated")
+
+    # Broadcast dispatch event
+    dispatch = broadcasts.find { |b| b[:data][:type] == "dispatch" }
+    assert_not_nil dispatch
+
+    # Drives the chat typing indicator via the presence heartbeat job.
+    assert(enqueued.any? { |j| j[:job] == Collavre::ClaudeChannelPresenceJob && j[:args] == [ task.id ] },
+           "expected ClaudeChannelPresenceJob enqueued for task #{task.id} to drive the typing indicator")
+  end
+
+  test "does not call AiClient for claude_channel_agent" do
+    claude_agent = User.create!(
+      email: "cc-noclient@agent.collavre.local",
+      password: SecureRandom.hex(32),
+      name: "Claude NoClient",
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @user.id,
+      searchable: false
+    )
+
+    topic = @creative.topics.create!(name: "NoClient Topic", user: @user)
+    comment = @creative.comments.create!(content: "Test", user: @user, topic: topic)
+
+    task = Task.create!(
+      name: "NoClient Task",
+      status: "running",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: {
+        "comment" => { "id" => comment.id, "content" => comment.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id }
+      },
+      agent: claude_agent
+    )
+
+    ai_client_called = false
+    AiClient.stub :new, ->(*) { ai_client_called = true; raise "Should not be called" } do
+      ActionCable.server.stub :broadcast, ->(*) { } do
+        AiAgentService.new(task).call
+      end
+    end
+
+    assert_not ai_client_called, "AiClient should not be instantiated for Claude Channel agents"
+  end
+
   test "saves partial content when cancelled" do
     task_id = @task.id
     mock_client = Object.new

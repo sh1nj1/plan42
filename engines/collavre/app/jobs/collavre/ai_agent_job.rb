@@ -9,11 +9,64 @@ module Collavre
         task = agent_id_or_task
         return if task.reload.status == "cancelled"
 
-        task.update!(status: "running")
         agent = task.agent
+
+        # Guard: same offline-session check as the agent_id branch below.
+        # Queued Claude Channel tasks resumed via Orchestration::AgentOrchestrator
+        # .dequeue_next_for_topic enter this branch as AiAgentJob.perform_later(task).
+        # If AgentChannel#unsubscribed cleared routing_expression while the
+        # task was queued (WS drop without DELETE /agent/:id, e.g. SIGKILL or
+        # network blip past the reconnect grace), and another completion later
+        # drains the queue, this task would otherwise be promoted to running →
+        # delegated and broadcast to a clientless agent:user:<id> stream —
+        # held until stuck recovery.
+        if agent.claude_channel_agent? && agent.routing_expression.blank?
+          Rails.logger.info(
+            "[AiAgentJob] Skipping resumed Claude Channel task #{task.id}: " \
+            "session offline (routing_expression blank)"
+          )
+          # Workflow subtasks created by WorkflowExecutor carry parent_task_id and
+          # no topic. If we only cancel the child and return, the parent workflow
+          # stays "running" with its current/pending creative state forever — no
+          # rescue path runs because we never raise. Mirror the StandardError
+          # rescue below: fail the child and notify the parent so the workflow
+          # transitions to "failed" with a failure_reason.
+          if task.parent_task_id.present?
+            task.update!(status: "failed")
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task,
+              error_message: "Claude Channel session offline before dispatch"
+            )
+          else
+            task.update!(status: "cancelled")
+          end
+          if task.trigger_event_payload&.key?("topic")
+            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          end
+          return
+        end
+
+        task.update!(status: "running")
       else
         # Create new task
         agent = User.find(agent_id_or_task)
+
+        # Guard: skip if the Claude Channel session has unregistered (or its WS
+        # dropped) during the window between Scheduler enqueue and this job
+        # firing. AgentsController#destroy / AgentChannel#unsubscribed clear
+        # routing_expression on the per-session ai_user, so a blank value here
+        # means there is no live MCP client to receive the dispatch. Without
+        # this guard, a :delayed (busy / rate-limited) enqueue from
+        # Scheduler#evaluate would materialize a fresh Task, flip it to
+        # "delegated", and broadcast to a clientless agent:user:<id> stream
+        # — holding the topic/agent slot until stuck recovery.
+        if agent.claude_channel_agent? && agent.routing_expression.blank?
+          Rails.logger.info(
+            "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
+            "session offline (routing_expression blank, event=#{event_name})"
+          )
+          return
+        end
 
         # Guard: skip if there's already a running task for the same agent + comment
         comment_id = context&.dig("comment", "id")
@@ -48,15 +101,48 @@ module Collavre
 
       # Reserve resources before starting work
       tracker = Orchestration::ResourceTracker.for(agent)
-      resource_id = job_id || task.id
+      # Claude Channel tasks live past this job (MCP reply happens later), so
+      # reserve under the stable task.id — that's the key reply / cancel /
+      # stuck-recovery will use to release the slot.
+      is_claude_channel_agent = agent.claude_channel_agent?
+      resource_id = is_claude_channel_agent ? task.id : (job_id || task.id)
       tracker.reserve!(resource_id)
       should_release = true
 
       begin
+        # For Claude Channel agents, transition to "delegated" BEFORE dispatching.
+        # The MCP client can receive the broadcast and POST /reply on a different
+        # thread before AiAgentService#call returns; the reply handler only looks
+        # for status: "delegated" tasks, so a late update! would leave the
+        # already-answered task stuck in delegated until stuck recovery.
+        if is_claude_channel_agent
+          # Atomic running -> delegated transition. If AgentsController#destroy
+          # races us between reserve! above and this line and flips the task
+          # to "cancelled", the WHERE filter excludes us, rows_updated == 0,
+          # we skip dispatch, and the ensure block releases the slot. A
+          # separate reload + update! would let the cancel slip in between.
+          rows_updated = Task.where(id: task.id, status: "running").update_all(
+            status: "delegated", updated_at: Time.current
+          )
+          if rows_updated.zero?
+            task.reload
+            Rails.logger.info(
+              "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
+              "(status=#{task.status}); skipping dispatch"
+            )
+            return
+          end
+          task.reload
+        end
+
         response_content = AiAgentService.new(task).call
 
+        # Claude Channel agents delegate via MCP; no immediate response expected
+        if is_claude_channel_agent
+          # Hold agent capacity until reply / cancel / stuck-recovery releases it.
+          should_release = false
         # Workflow subtasks with empty responses should retry, then fail
-        if task.parent_task_id.present? && response_content.blank?
+        elsif task.parent_task_id.present? && response_content.blank?
           max_retries = 2
           current_retry = task.retry_count || 0
 

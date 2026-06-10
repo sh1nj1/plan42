@@ -59,7 +59,7 @@ module Collavre
           next unless stuck_item.type == :task
 
           task = stuck_item.item
-          next unless task.status == "running"
+          next unless %w[running delegated].include?(task.status)
 
           task.update!(status: "failed")
           Rails.logger.info(
@@ -71,6 +71,23 @@ module Collavre
           if task.agent
             tracker = ResourceTracker.for(task.agent)
             tracker.release!(task.id)
+          end
+
+          # If this was a workflow subtask, fail the parent so the workflow
+          # advances instead of staying running with pending_creative_ids
+          # pointing at a child that's been failed underneath it.
+          if task.parent_task_id.present?
+            begin
+              Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+                task,
+                error_message: "Auto-recovered: stuck for " \
+                               "#{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+              )
+            rescue StandardError => e
+              Rails.logger.error(
+                "[StuckDetector] fail_subtask! failed for task #{task.id}: #{e.message}"
+              )
+            end
           end
 
           # Drain the queue for the topic so waiting tasks can execute
@@ -89,7 +106,10 @@ module Collavre
         threshold_minutes = config["task_stuck_threshold_minutes"] || 30
         threshold_time = threshold_minutes.minutes.ago
 
-        stuck_tasks = Task.where(status: "running")
+        # Include delegated tasks: Claude Channel tasks sit in delegated
+        # waiting for an external MCP reply; if the client disconnects, the
+        # task can otherwise stay delegated forever and block the topic queue.
+        stuck_tasks = Task.where(status: %w[running delegated])
                           .where("updated_at < ?", threshold_time)
 
         stuck_tasks.filter_map do |task|
