@@ -1,0 +1,15 @@
+ko:
+  collavre:
+    claude_channel:
+      permission:
+        message: |
+          🔐 **도구 권한 요청**
+
+          Claude Code가 다음 인자로 **%{tool_name}** 도구를 실행하려고 합니다:
+
+          ```json
+          %{arguments}
+          ```
+
+          계속하려면 승인 또는 거부를 선택하세요.
+        no_arguments: "(인자 없음)"

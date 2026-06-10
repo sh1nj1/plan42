@@ -806,7 +806,8 @@ body.chat-fullscreen {
 }
 
 .edit-comment-action-btn,
-.approve-comment-btn {
+.approve-comment-btn,
+.deny-comment-btn {
     padding: 0.15em 0.4em;
     border-radius: var(--radius-2);
     font-size: 0.75rem;
@@ -836,6 +837,18 @@ body.chat-fullscreen {
     border-color: var(--color-success);
 }
 
+.deny-comment-btn {
+    border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
+    background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+    color: var(--color-danger);
+}
+
+.deny-comment-btn:hover {
+    background: var(--color-danger);
+    color: var(--text-on-badge);
+    border-color: var(--color-danger);
+}
+
 .comment-status-label {
     margin-left: 0.4em;
     font-size: 0.75em;
@@ -856,6 +869,11 @@ body.chat-fullscreen {
 .comment-status-label.approved-label {
     background-color: color-mix(in srgb, var(--color-complete) 20%, transparent);
     color: var(--color-complete);
+}
+
+.comment-status-label.denied-label {
+    background-color: color-mix(in srgb, var(--color-danger) 20%, transparent);
+    color: var(--color-danger);
 }
 
 .comment-status-label.pending-label {

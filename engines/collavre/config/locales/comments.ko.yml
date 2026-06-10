@@ -45,6 +45,7 @@ ko:
       copy_link_success: 링크가 복사되었습니다
       copy_link_error: 링크를 복사할 수 없습니다
       approve_button: 승인
+      deny_button: 거부
       approve_not_allowed: 지정된 승인자만 이 댓글을 승인할 수 있습니다.
       approve_invalid_format: 유효하지 않은 액션 형식입니다.
       approve_admin_required: 시스템 관리자 승인이 필요합니다.
@@ -62,6 +63,7 @@ ko:
       approve_invalid_progress: 댓글 작업 진행률은 숫자여야 합니다.
       approve_invalid_description: 댓글 작업 설명은 텍스트여야 합니다.
       approved_label: 승인됨
+      denied_label: 거부됨
       action_summary: Action JSON
       edit_action_button: Action 수정
       action_update_success: Action 이 업데이트되었습니다.

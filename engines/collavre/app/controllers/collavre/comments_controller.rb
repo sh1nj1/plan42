@@ -6,7 +6,7 @@ module Collavre
     include Collavre::Comments::BatchOperations
 
     before_action :set_creative
-    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images, :remove_image ]
+    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
 
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.

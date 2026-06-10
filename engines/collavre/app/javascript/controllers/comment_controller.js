@@ -10,7 +10,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "denyButton", "actionApproveControls"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -164,6 +164,11 @@ export default class extends Controller {
 
     if (canApprove) {
       this.approveButtonTargets.forEach((button) => {
+        button.classList.remove('comment-approve-hidden')
+      })
+      // Deny button (Claude Channel permission prompts only) is gated the same
+      // way as approve.
+      this.denyButtonTargets.forEach((button) => {
         button.classList.remove('comment-approve-hidden')
       })
       // Also show action block approve controls (edit action button, form)

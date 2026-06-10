@@ -36,7 +36,11 @@
       <span class="comment-status-label private-label">🔒 <%= t('collavre.comments.private') %></span>
     <% end %>
     <% if comment.action_executed_at.present? %>
-      <span class="comment-status-label approved-label">✅ <%= t('collavre.comments.approved_label') %></span>
+      <% if comment.claude_channel_permission_denied? %>
+        <span class="comment-status-label denied-label">🚫 <%= t('collavre.comments.denied_label') %></span>
+      <% else %>
+        <span class="comment-status-label approved-label">✅ <%= t('collavre.comments.approved_label') %></span>
+      <% end %>
     <% end %>
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
@@ -57,6 +61,11 @@
         <button class="approve-comment-btn comment-approve-hidden" data-comment-target="approveButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
           <%= t('collavre.comments.approve_button') %>
         </button>
+        <% if comment.claude_channel_permission? %>
+          <button class="deny-comment-btn comment-approve-hidden" data-comment-target="denyButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.deny_button') %>">
+            <%= t('collavre.comments.deny_button') %>
+          </button>
+        <% end %>
       <% end %>
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('collavre.comments.update_comment') %>">
         <%= t('collavre.comments.edit_button') %>

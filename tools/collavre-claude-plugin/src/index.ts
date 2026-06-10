@@ -13,11 +13,7 @@ import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
 import { resolveSessionId, defaultSessionStateDir } from "./session.js";
 import { shouldHandleDispatch } from "./dispatch-filter.js";
-import {
-  PermissionCoordinator,
-  formatPermissionPrompt,
-  type Behavior,
-} from "./permission.js";
+import { PermissionCoordinator, type Behavior } from "./permission.js";
 
 // Native Claude Channel permission relay (CC v2.1.168+). When the
 // `claude/channel/permission` capability is declared, Claude Code relays each
@@ -181,12 +177,6 @@ async function sendPermissionDecision(
   });
 }
 
-function decisionAck(behavior: Behavior): string {
-  return behavior === "allow"
-    ? "🔓 권한 승인됨 — 계속 진행합니다."
-    : "🚫 권한 거부됨.";
-}
-
 function makeEventHandler(
   server: Server,
   client: CollavreClient,
@@ -195,6 +185,34 @@ function makeEventHandler(
   debug: boolean,
 ) {
   return async (event: AgentEvent): Promise<void> => {
+    // A structured permission decision (approve/deny button click relayed by the
+    // server). It carries an explicit request_id + behavior — no text parsing.
+    // The broadcast reaches every session sharing this agent; only the session
+    // that surfaced this request_id claims it and forwards it to Claude Code.
+    if (event.type === "permission_decision") {
+      const { request_id, behavior } = event;
+      if (!request_id || (behavior !== "allow" && behavior !== "deny")) return;
+      if (!coordinator.claim(request_id)) {
+        if (debug) {
+          process.stderr.write(
+            `[collavre] Ignoring permission_decision for unknown/foreign request_id=${request_id}\n`,
+          );
+        }
+        return;
+      }
+      process.stderr.write(
+        `[collavre] Permission decision: ${behavior} (request_id=${request_id})\n`,
+      );
+      try {
+        await sendPermissionDecision(server, request_id, behavior);
+      } catch (err) {
+        process.stderr.write(
+          `[collavre] Failed to send permission decision: ${err instanceof Error ? err.stack : err}\n`,
+        );
+      }
+      return;
+    }
+
     if (event.type !== "dispatch" || !event.comment) {
       if (debug) {
         process.stderr.write(
@@ -222,35 +240,6 @@ function makeEventHandler(
         process.stderr.write(
           `[collavre] Ignoring dispatch for sibling session topic #${topicId} (mine=#${active.sessionTopicId})\n`,
         );
-      }
-      return;
-    }
-
-    // If this comment answers a permission prompt awaiting a decision, consume
-    // it as allow/deny instead of forwarding it to Claude — Claude is suspended
-    // on the permission and cannot act on a normal message. The decision
-    // unblocks the original turn; we then complete the task this reply spawned
-    // so it does not hang delegated.
-    const decision = coordinator.tryResolve(topicId, event.comment.content);
-    if (decision) {
-      process.stderr.write(
-        `[collavre] Permission decision from comment #${event.comment.id}: ${decision.behavior} (request_id=${decision.request_id})\n`,
-      );
-      try {
-        await sendPermissionDecision(server, decision.request_id, decision.behavior);
-      } catch (err) {
-        process.stderr.write(
-          `[collavre] Failed to send permission decision: ${err instanceof Error ? err.stack : err}\n`,
-        );
-      }
-      if (event.task_id != null) {
-        try {
-          await client.reply(topicId, decisionAck(decision.behavior), event.task_id);
-        } catch (err) {
-          process.stderr.write(
-            `[collavre] Failed to complete decision task: ${err instanceof Error ? err.message : err}\n`,
-          );
-        }
       }
       return;
     }
@@ -334,14 +323,15 @@ async function main(): Promise<void> {
         return;
       }
       const taskId = active.taskId;
-      coordinator.add(topicId, request_id);
+      coordinator.add(request_id);
       try {
-        await client.notify(
-          topicId,
-          formatPermissionPrompt({ request_id, tool_name, description, input_preview }),
-          taskId ?? undefined,
-          request_id,
-        );
+        // Send only the structured fields; the server renders the (localized)
+        // prompt text and attaches the approve/deny buttons. No client-side
+        // formatting or free-text parsing.
+        await client.notify(topicId, "", taskId ?? undefined, request_id, {
+          toolName: tool_name,
+          arguments: input_preview,
+        });
         process.stderr.write(
           `[collavre] permission_request relayed to topic #${topicId}: ${tool_name ?? "tool"} (request_id=${request_id})\n`,
         );

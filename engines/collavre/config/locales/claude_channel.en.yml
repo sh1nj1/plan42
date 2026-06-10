@@ -1,0 +1,15 @@
+en:
+  collavre:
+    claude_channel:
+      permission:
+        message: |
+          🔐 **Tool Permission Required**
+
+          Claude Code wants to run **%{tool_name}** with the following arguments:
+
+          ```json
+          %{arguments}
+          ```
+
+          Approve or deny to continue.
+        no_arguments: "(no arguments)"

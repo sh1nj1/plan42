@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 
 export interface AgentEvent {
-  type: "dispatch" | "comment";
+  type: "dispatch" | "comment" | "permission_decision";
   agent_id?: number;
   // task_id is set when the dispatch corresponds to a delegated Task; the
   // MCP client must echo it back via /reply so the server can complete the
@@ -11,7 +11,13 @@ export interface AgentEvent {
   // Used to ignore dispatches belonging to a sibling session that shares this
   // agent's stream. Absent when talking to a legacy server.
   session_topic?: boolean;
-  comment: {
+  // Present on `permission_decision` events: the human's allow/deny on a relayed
+  // tool-permission prompt, correlated by request_id. Delivered over the shared
+  // per-agent stream; the plugin acts only on request_ids it surfaced.
+  request_id?: string;
+  behavior?: "allow" | "deny";
+  // Absent on `permission_decision` events (a decision carries no comment).
+  comment?: {
     id: number;
     content: string;
     author_id: number;

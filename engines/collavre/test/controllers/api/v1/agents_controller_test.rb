@@ -647,6 +647,45 @@ module Collavre
             "the delegated task must be parked as awaiting a permission decision"
         end
 
+        test "notify with permission_request_id builds a structured approval comment" do
+          # The plugin sends only tool_name + arguments; the server renders the
+          # (localized) prompt text server-side and attaches the approve/deny
+          # action payload + approver so the native approval UI surfaces.
+          reg = register_agent("notify-perm-structured-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-99",
+              tool_name: "Bash",
+              arguments: { command: "ls -la" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert comment.claude_channel_permission?, "permission notify must build a structured permission comment"
+          assert_equal "req-99", comment.claude_channel_permission_request_id
+          assert_equal @user.id, comment.approver_id, "the token holder approves their session's prompts"
+          assert_includes comment.content, "Bash"
+          assert_includes comment.content, "ls -la"
+          refute comment.action_executed_at.present?, "a freshly surfaced prompt is undecided"
+        end
+
         test "reply clears pending_tool_call when completing a parked delegated task" do
           reg = register_agent("reply-clears-pending-test")
           topic_id = reg["topic_id"]

@@ -1,61 +1,39 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseDecision, PermissionCoordinator } from "./permission.ts";
+import { PermissionCoordinator } from "./permission.ts";
 
-test("parseDecision recognizes canonical allow/deny words", () => {
-  assert.equal(parseDecision("allow"), "allow");
-  assert.equal(parseDecision("  ALLOW  "), "allow");
-  assert.equal(parseDecision("yes"), "allow");
-  assert.equal(parseDecision("허용"), "allow");
-  assert.equal(parseDecision("승인"), "allow");
-  assert.equal(parseDecision("deny"), "deny");
-  assert.equal(parseDecision("No"), "deny");
-  assert.equal(parseDecision("거부"), "deny");
-});
-
-test("parseDecision returns null for non-decisions (forward as normal message)", () => {
-  assert.equal(parseDecision("what is the session id?"), null);
-  assert.equal(parseDecision("no idea what that means"), null);
-  assert.equal(parseDecision("yes please also run the tests"), null);
-  assert.equal(parseDecision(""), null);
-});
-
-test("coordinator resolves the pending request for a topic with a decision reply", () => {
+test("coordinator claims a request this session surfaced", () => {
   const c = new PermissionCoordinator();
-  c.add(28, "req-1");
-  const decision = c.tryResolve(28, "allow");
-  assert.deepEqual(decision, { request_id: "req-1", behavior: "allow" });
-  // consumed — a second reply finds nothing pending
-  assert.equal(c.tryResolve(28, "deny"), null);
+  c.add("req-1");
+  assert.equal(c.hasPending("req-1"), true);
+  assert.equal(c.claim("req-1"), true);
+  // consumed — a second decision for the same request finds nothing
+  assert.equal(c.claim("req-1"), false);
+  assert.equal(c.hasPending("req-1"), false);
 });
 
-test("coordinator does not resolve a non-decision reply (message forwarded normally)", () => {
+test("coordinator does not claim a request it never surfaced (sibling session)", () => {
   const c = new PermissionCoordinator();
-  c.add(28, "req-1");
-  assert.equal(c.tryResolve(28, "actually, what does that command do?"), null);
-  // still pending — the prompt remains open for a later explicit answer
-  assert.equal(c.hasPending(28), true);
+  c.add("req-mine");
+  assert.equal(c.claim("req-foreign"), false);
+  // still pending — the foreign decision did not consume our request
+  assert.equal(c.hasPending("req-mine"), true);
 });
 
-test("coordinator returns null when no request is pending for the topic", () => {
+test("coordinator tracks multiple concurrent requests independently", () => {
   const c = new PermissionCoordinator();
-  c.add(99, "req-other");
-  assert.equal(c.tryResolve(28, "allow"), null);
-});
-
-test("coordinator resolves multiple pending requests FIFO (sequential tool prompts)", () => {
-  const c = new PermissionCoordinator();
-  c.add(28, "req-1");
-  c.add(28, "req-2");
-  assert.deepEqual(c.tryResolve(28, "allow"), { request_id: "req-1", behavior: "allow" });
-  assert.deepEqual(c.tryResolve(28, "deny"), { request_id: "req-2", behavior: "deny" });
+  c.add("req-1");
+  c.add("req-2");
+  assert.equal(c.claim("req-2"), true);
+  assert.equal(c.claim("req-1"), true);
+  assert.equal(c.claim("req-2"), false);
 });
 
 test("coordinator expires stale pending requests past the TTL", () => {
   let now = 1_000_000;
   const c = new PermissionCoordinator(60_000, () => now);
-  c.add(28, "req-1");
+  c.add("req-1");
   now += 60_001;
-  assert.equal(c.tryResolve(28, "allow"), null, "expired request must not resolve");
-  assert.equal(c.hasPending(28), false);
+  assert.equal(c.claim("req-1"), false, "expired request must not be claimable");
+  assert.equal(c.hasPending("req-1"), false);
 });

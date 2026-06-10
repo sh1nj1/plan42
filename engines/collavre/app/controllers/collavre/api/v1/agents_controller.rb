@@ -247,13 +247,18 @@ module Collavre
             return
           end
 
-          comment = creative.comments.build(
-            content: params[:text].to_s,
-            topic: topic,
-            user: agent,
-            skip_default_user: true,
-            skip_dispatch: true
-          )
+          comment =
+            if params[:permission_request_id].present?
+              build_permission_comment(creative, topic, agent)
+            else
+              creative.comments.build(
+                content: params[:text].to_s,
+                topic: topic,
+                user: agent,
+                skip_default_user: true,
+                skip_dispatch: true
+              )
+            end
 
           if comment.save
             park_pending_permission(topic, agent, params[:task_id], params[:permission_request_id])
@@ -263,6 +268,57 @@ module Collavre
           end
         end
         private
+
+        # Build a structured tool-permission comment that reuses the native
+        # approval UI (approver gate + approve/deny buttons). The prompt text is
+        # rendered server-side via I18n (localized for the viewer), not formatted
+        # by the plugin. The action payload carries the request_id so the
+        # eventual approve/deny relays the exact decision to the suspended
+        # session. approver is the token holder driving this Claude session — the
+        # only human who should resolve its prompts.
+        def build_permission_comment(creative, topic, agent)
+          tool_name = params[:tool_name].to_s.strip.presence || "tool"
+          args_raw = sanitize_permission_arguments(params[:arguments])
+
+          action_payload = {
+            "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
+            "request_id" => params[:permission_request_id].to_s,
+            "tool_name" => tool_name,
+            "arguments" => args_raw
+          }
+
+          content = I18n.t(
+            "collavre.claude_channel.permission.message",
+            tool_name: tool_name,
+            arguments: format_permission_arguments(args_raw)
+          )
+
+          creative.comments.build(
+            content: content,
+            topic: topic,
+            user: agent,
+            approver: current_user,
+            action: JSON.pretty_generate(action_payload),
+            skip_default_user: true,
+            skip_dispatch: true
+          )
+        end
+
+        # Coerce the arguments param into a JSON-safe value: a permitted Hash, a
+        # plain string, or nil. ActionController::Parameters must be unwrapped or
+        # JSON.pretty_generate raises on unpermitted parameters.
+        def sanitize_permission_arguments(arguments)
+          return nil if arguments.blank?
+
+          arguments.respond_to?(:to_unsafe_h) ? arguments.to_unsafe_h : arguments
+        end
+
+        # Render the (already sanitized) tool arguments for the prompt body.
+        def format_permission_arguments(arguments)
+          return I18n.t("collavre.claude_channel.permission.no_arguments") if arguments.blank?
+
+          arguments.is_a?(String) ? arguments : JSON.pretty_generate(arguments)
+        end
 
         # When the relayed comment is a native tool-permission prompt (carries a
         # permission_request_id), park the in-flight dispatch as "awaiting a
