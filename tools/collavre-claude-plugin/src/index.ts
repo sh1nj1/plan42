@@ -327,9 +327,12 @@ async function main(): Promise<void> {
       try {
         // Send only the structured fields; the server renders the (localized)
         // prompt text and attaches the approve/deny buttons. No client-side
-        // formatting or free-text parsing.
+        // formatting or free-text parsing. `description` is Claude Code's
+        // human-readable action summary — forwarded so the approver sees the
+        // same context the local TUI dialog shows when arguments are opaque.
         await client.notify(topicId, "", taskId ?? undefined, request_id, {
           toolName: tool_name,
+          description,
           arguments: input_preview,
         });
         process.stderr.write(

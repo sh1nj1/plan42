@@ -279,11 +279,13 @@ module Collavre
         def build_permission_comment(creative, topic, agent)
           tool_name = params[:tool_name].to_s.strip.presence || "tool"
           args_raw = sanitize_permission_arguments(params[:arguments])
+          description = params[:description].to_s.strip
 
           action_payload = {
             "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
             "request_id" => params[:permission_request_id].to_s,
             "tool_name" => tool_name,
+            "description" => description,
             "arguments" => args_raw
           }
 
@@ -295,6 +297,7 @@ module Collavre
             I18n.t(
               "collavre.claude_channel.permission.message",
               tool_name: tool_name,
+              description: format_permission_description(description),
               arguments: format_permission_arguments(args_raw)
             )
           end
@@ -324,6 +327,16 @@ module Collavre
           return I18n.t("collavre.claude_channel.permission.no_arguments") if arguments.blank?
 
           arguments.is_a?(String) ? arguments : JSON.pretty_generate(arguments)
+        end
+
+        # Render the optional human-readable permission summary Claude Code sends
+        # alongside the structured fields. Absent for most tools, so it collapses
+        # to an empty string (no stray blockquote); when present it is the only
+        # plain-language description of what the approver is allowing.
+        def format_permission_description(description)
+          return "" if description.blank?
+
+          I18n.t("collavre.claude_channel.permission.description", text: description)
         end
 
         # When the relayed comment is a native tool-permission prompt (carries a

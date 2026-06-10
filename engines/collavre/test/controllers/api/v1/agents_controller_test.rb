@@ -721,13 +721,51 @@ module Collavre
 
           comment = Comment.find(JSON.parse(response.body)["comment_id"])
           expected = I18n.t("collavre.claude_channel.permission.message",
-                            tool_name: "Bash", arguments: "", locale: :ko).split("\n").first
+                            tool_name: "Bash", arguments: "", description: "", locale: :ko).split("\n").first
           assert_includes comment.content, expected.strip,
             "permission prompt must be localized to the token holder's locale (ko)"
           refute_includes comment.content,
             I18n.t("collavre.claude_channel.permission.message",
-                   tool_name: "Bash", arguments: "", locale: :en).split("\n").first.strip,
+                   tool_name: "Bash", arguments: "", description: "", locale: :en).split("\n").first.strip,
             "ko approver must not receive the default-locale (en) prompt"
+        end
+
+        test "notify surfaces the permission description in the approval prompt" do
+          # Claude Code includes a human-readable `description` summary in each
+          # permission_request. For tools whose arguments are opaque, omitted, or
+          # truncated, that summary is the only thing telling the approver what
+          # they are about to allow, so it must survive into the persisted prompt
+          # instead of being dropped before the comment is rendered.
+          reg = register_agent("notify-perm-description-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-desc",
+              tool_name: "Bash",
+              description: "Delete all build artifacts under tmp/",
+              arguments: { command: "rm -rf tmp/build" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert_includes comment.content, "Delete all build artifacts under tmp/",
+            "the human-readable permission description must be shown to the approver"
         end
 
         test "reply clears pending_tool_call when completing a parked delegated task" do

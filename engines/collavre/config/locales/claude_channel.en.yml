@@ -5,11 +5,12 @@ en:
         message: |
           🔐 **Tool Permission Required**
 
-          Claude Code wants to run **%{tool_name}** with the following arguments:
+          %{description}Claude Code wants to run **%{tool_name}** with the following arguments:
 
           ```json
           %{arguments}
           ```
 
           Approve or deny to continue.
+        description: "> %{text}\n\n"
         no_arguments: "(no arguments)"

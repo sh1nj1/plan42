@@ -110,7 +110,7 @@ export class CollavreClient {
     text: string,
     taskId?: number,
     permissionRequestId?: string,
-    permission?: { toolName?: string; arguments?: unknown },
+    permission?: { toolName?: string; arguments?: unknown; description?: string },
   ): Promise<{ comment_id: number }> {
     const body: Record<string, unknown> = { topic_id: topicId, text };
     if (taskId !== undefined && taskId !== null) {
@@ -121,6 +121,9 @@ export class CollavreClient {
     }
     if (permission?.toolName !== undefined) {
       body.tool_name = permission.toolName;
+    }
+    if (permission?.description !== undefined) {
+      body.description = permission.description;
     }
     if (permission?.arguments !== undefined) {
       body.arguments = permission.arguments;
