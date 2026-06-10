@@ -322,11 +322,18 @@ module Collavre
           arguments.respond_to?(:to_unsafe_h) ? arguments.to_unsafe_h : arguments
         end
 
-        # Render the (already sanitized) tool arguments for the prompt body.
+        # Render the (already sanitized) tool arguments for the prompt body. The
+        # result is interpolated inside a ```json fence and the comment is later
+        # passed through renderCommentMarkdown, so the value must never be able to
+        # close that fence. A string input_preview (the documented shape for many
+        # tools, e.g. a Bash command) is therefore JSON-serialized rather than
+        # emitted raw: that escapes embedded newlines to \n, collapsing it to a
+        # single line so no payload line can begin a ``` delimiter and break out
+        # into live markdown that misleads the approver.
         def format_permission_arguments(arguments)
           return I18n.t("collavre.claude_channel.permission.no_arguments") if arguments.blank?
 
-          arguments.is_a?(String) ? arguments : JSON.pretty_generate(arguments)
+          JSON.pretty_generate(arguments)
         end
 
         # Render the optional human-readable permission summary Claude Code sends
@@ -336,7 +343,13 @@ module Collavre
         def format_permission_description(description)
           return "" if description.blank?
 
-          I18n.t("collavre.claude_channel.permission.description", text: description)
+          # The description renders into a "> %{text}" blockquote, so any newline
+          # would drop the remainder onto a fresh line where it could open a
+          # heading or ```fence and escape into live markdown. Flatten line breaks
+          # to whitespace so the whole summary stays inside the one blockquote line
+          # (inline backticks there are harmless — a fence must start a line).
+          flattened = description.gsub(/\s*\R\s*/, " ").strip
+          I18n.t("collavre.claude_channel.permission.description", text: flattened)
         end
 
         # When the relayed comment is a native tool-permission prompt (carries a

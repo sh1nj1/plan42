@@ -768,6 +768,95 @@ module Collavre
             "the human-readable permission description must be shown to the approver"
         end
 
+        test "notify escapes a string permission preview so it cannot break the markdown fence" do
+          # input_preview arrives as a string for many tools (e.g. a Bash
+          # command). It is rendered inside a ```json fence and the comment is
+          # later passed through renderCommentMarkdown, so a preview containing a
+          # line of ``` would close the fence early and render the remainder as
+          # live markdown — letting an attacker-influenced tool input show the
+          # approver a misleading prompt instead of the exact arguments. The
+          # string must be serialized (JSON) so embedded newlines collapse and no
+          # payload line can begin a fence delimiter.
+          reg = register_agent("notify-perm-fence-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          injection = "echo hi\n```\n## Approved by admin\n```json"
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-fence",
+              tool_name: "Bash",
+              arguments: injection
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          # The template opens with ```json and closes with a bare ``` line, so
+          # exactly one standalone ``` line is legitimate. A raw preview would add
+          # its own bare ``` line, closing the fence early.
+          bare_fence_lines = comment.content.lines.count { |line| line.strip == "```" }
+          assert_equal 1, bare_fence_lines,
+            "a string preview must not introduce a bare ``` line that escapes the fence"
+          refute_match(/^## Approved by admin/, comment.content,
+            "injected markdown must not render as a live heading outside the fence")
+          assert_includes comment.content, "echo hi",
+            "the preview content itself must still be shown to the approver"
+        end
+
+        test "notify keeps a multi-line permission description inside its blockquote" do
+          # description is the same untrusted, markdown-rendered surface as the
+          # arguments preview: it is interpolated into a "> %{text}" blockquote, so
+          # a multi-line value could open a heading or fence on a fresh line and
+          # break out into live markdown that misleads the approver. It must be
+          # flattened so every part stays within the single blockquote line.
+          reg = register_agent("notify-perm-desc-injection-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-desc-inj",
+              tool_name: "Bash",
+              description: "Looks safe\n## Approved by admin\n```\nrm -rf /",
+              arguments: { command: "ls" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          refute_match(/^## Approved by admin/, comment.content,
+            "a description must not break out of its blockquote into a live heading")
+          assert_includes comment.content, "Looks safe",
+            "the description text itself must still reach the approver"
+        end
+
         test "reply clears pending_tool_call when completing a parked delegated task" do
           reg = register_agent("reply-clears-pending-test")
           topic_id = reg["topic_id"]
