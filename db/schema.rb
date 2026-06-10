@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -50,6 +50,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
     t.index ["created_at"], name: "index_activity_logs_on_created_at"
     t.index ["creative_id"], name: "index_activity_logs_on_creative_id"
     t.index ["user_id"], name: "index_activity_logs_on_user_id"
+  end
+
+  create_table "agent_subscriptions", force: :cascade do |t|
+    t.integer "agent_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "last_seen_at", null: false
+    t.string "session_id"
+    t.string "token", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_id", "session_id"], name: "index_agent_subscriptions_on_agent_id_and_session_id"
+    t.index ["agent_id"], name: "index_agent_subscriptions_on_agent_id"
+    t.index ["last_seen_at"], name: "index_agent_subscriptions_on_last_seen_at"
+    t.index ["token"], name: "index_agent_subscriptions_on_token", unique: true
   end
 
   create_table "calendar_events", force: :cascade do |t|
@@ -747,6 +760,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
     t.string "name", null: false
     t.integer "position", default: 0, null: false
     t.integer "primary_agent_id"
+    t.string "session_id"
     t.integer "source_topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -754,6 +768,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
     t.index ["creative_id", "name"], name: "index_topics_on_creative_id_and_name", unique: true
     t.index ["creative_id", "position"], name: "index_topics_on_creative_id_and_position"
     t.index ["creative_id"], name: "index_topics_on_creative_id"
+    t.index ["primary_agent_id", "session_id"], name: "index_topics_on_primary_agent_and_session"
     t.index ["primary_agent_id"], name: "index_topics_on_primary_agent_id"
     t.index ["source_topic_id"], name: "index_topics_on_source_topic_id"
     t.index ["user_id"], name: "index_topics_on_user_id"
@@ -804,6 +819,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_000000) do
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
     t.text "routing_expression"
+    t.string "routing_subscription_token"
     t.boolean "searchable", default: false, null: false
     t.boolean "system_admin", default: false, null: false
     t.text "system_prompt"

@@ -157,6 +157,10 @@ module Collavre
       llm_vendor.present?
     end
 
+    def claude_channel_agent?
+      llm_model == "claude-code"
+    end
+
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
 
     def self.accessible_ai_agents_for(user)

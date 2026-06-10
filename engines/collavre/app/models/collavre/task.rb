@@ -15,7 +15,7 @@ module Collavre
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
-      rel = where(topic_id: topic_id, status: "running")
+      rel = where(topic_id: topic_id, status: %w[running delegated])
       rel = rel.where(creative_id: creative_id) if creative_id
       rel
     }
@@ -25,19 +25,44 @@ module Collavre
       rel.order(:created_at)
     }
 
-    # Check if agent already has a running task triggered by the same comment
+    # Check if agent already has an in-flight task triggered by the same comment.
+    # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
+    # an external MCP reply is still active work — re-dispatching the same
+    # comment would produce duplicate replies.
     def self.duplicate_running_for_comment?(agent_id, comment_id)
-      where(agent_id: agent_id, status: "running", trigger_event_name: "comment_created")
+      where(agent_id: agent_id, status: %w[running delegated], trigger_event_name: "comment_created")
         .find_each do |task|
         return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end
       false
     end
 
+    # Replay the after_update_commit callbacks when the status transition was
+    # made via an UPDATE that bypassed callbacks (e.g. update_all in an atomic
+    # claim flow). The private callback predicates rely on
+    # saved_change_to_attribute? which is false outside a save lifecycle, so
+    # the callbacks themselves would no-op when called directly. This method
+    # is the supported escape hatch for AgentsController#finalize_claimed_task
+    # to drive the same side effects (trigger-loop continuation + stop-button
+    # broadcast) once the related reply_comment has been persisted.
+    def fire_completion_callbacks_after_external_claim
+      check_trigger_loop_completion if trigger_loop_completion_eligible?
+      broadcast_stop_button_removal if terminal_status?
+    end
+
     private
 
     def trigger_loop_candidate?
-      return false unless saved_change_to_attribute?("status") && status == "done"
+      return false unless saved_change_to_attribute?("status")
+
+      trigger_loop_completion_eligible?
+    end
+
+    # State-only eligibility check (no save-lifecycle dependency).
+    # Reused by trigger_loop_candidate? for the callback path and by
+    # fire_completion_callbacks_after_external_claim for explicit replay.
+    def trigger_loop_completion_eligible?
+      return false unless status == "done"
       return false unless trigger_event_name == "comment_created"
       return false unless creative&.parent&.drop_trigger_enabled?
 
@@ -51,7 +76,11 @@ module Collavre
     end
 
     def became_terminal?
-      saved_change_to_attribute?("status") && status.in?(%w[done cancelled failed])
+      saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    def terminal_status?
+      status.in?(%w[done cancelled failed])
     end
 
     def broadcast_stop_button_removal

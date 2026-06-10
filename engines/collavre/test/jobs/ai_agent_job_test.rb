@@ -333,6 +333,30 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected no new task when duplicate running task exists for same comment"
   end
 
+  test "skips duplicate execution when agent has delegated Claude Channel task for same comment" do
+    # A delegated task is still in-flight (waiting on external MCP reply);
+    # re-dispatching the same comment would produce duplicate replies.
+    Task.create!(
+      name: "Response to comment_created",
+      status: "delegated",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: @context,
+      agent: @agent,
+      topic_id: nil
+    )
+
+    initial_task_count = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      perform_enqueued_jobs do
+        AiAgentJob.perform_later(@agent.id, "comment_created", @context)
+      end
+    end
+
+    assert_equal initial_task_count, Task.where(agent_id: @agent.id).count,
+      "Expected no new task when duplicate delegated task exists for same comment"
+  end
+
   test "releases resources in ensure block on success" do
     AiClient.stub :new, FakeAiClient.new do
       AiAgentJob.perform_now(@agent.id, "test_event", @context)
@@ -391,5 +415,322 @@ class AiAgentJobTest < ActiveJob::TestCase
     # A new task should have been created (the done one doesn't block)
     assert_operator Task.where(agent_id: @agent.id).count, :>, initial_task_count,
       "Expected new task when existing task is done"
+  end
+
+  test "claude channel workflow subtask without topic fails and notifies parent" do
+    claude_agent = User.create!(
+      email: "cc-workflow-agent@agent.collavre.local",
+      name: "Claude Workflow Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      # Online session — without this, the resumed-task offline guard
+      # (commit fixing P2 "Guard queued Claude jobs when session offline")
+      # would short-circuit before the adapter's UndeliverableError fires.
+      routing_expression: "true",
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    parent_creative = Creative.create!(user: @owner, description: "Workflow Parent")
+    parent_task = Task.create!(
+      name: "Workflow Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+
+    # Workflow subtasks are built without a topic — see WorkflowExecutor#build_subtask_context.
+    workflow_context = {
+      "creative" => { "id" => @creative.id },
+      "comment" => { "id" => @comment.id, "content" => "Run subtask" }
+    }
+
+    fail_called_with = nil
+    fake_executor = Class.new do
+      define_method(:fail_subtask!) do |sub_task, error_message: nil|
+        fail_called_with = { sub_task: sub_task, error_message: error_message }
+      end
+    end.new
+
+    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+      assert_raises(Collavre::AiAgent::ClaudeChannelAdapter::UndeliverableError) do
+        # Create the task explicitly with parent_task_id; perform_now exercises the job path.
+        sub_task = Task.create!(
+          name: "Claude subtask",
+          status: "running",
+          agent: claude_agent,
+          parent_task_id: parent_task.id,
+          creative_id: @creative.id,
+          trigger_event_payload: workflow_context
+        )
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    sub_task = Task.where(agent_id: claude_agent.id, parent_task_id: parent_task.id).last
+    assert_equal "failed", sub_task.status
+    assert_not_nil fail_called_with, "Expected WorkflowExecutor#fail_subtask! to be invoked"
+    assert_equal sub_task.id, fail_called_with[:sub_task].id
+    assert_match(/Claude Channel/, fail_called_with[:error_message].to_s)
+  end
+
+  test "claude channel task is delegated before adapter deliver" do
+    claude_agent = User.create!(
+      email: "cc-race-agent@agent.collavre.local",
+      name: "Claude Race Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: "true",
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-race", user: @owner)
+    context = {
+      "creative" => { "id" => @creative.id },
+      "topic" => { "id" => topic.id },
+      "comment" => { "id" => @comment.id, "content" => "Race test" }
+    }
+
+    status_at_deliver = nil
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| @agent = agent; @context = context; @task = task }
+      define_method(:deliver) do
+        status_at_deliver = Task.where(agent_id: @agent.id).order(:created_at).last&.status
+        delivered = true
+        nil
+      end
+    end
+
+    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+      AiAgentJob.perform_now(claude_agent.id, "comment_created", context)
+    end
+
+    assert delivered, "Expected ClaudeChannelAdapter#deliver to be invoked"
+    assert_equal "delegated", status_at_deliver,
+      "Task must be in 'delegated' state before the MCP dispatch so a fast reply can find it"
+
+    task = Task.where(agent_id: claude_agent.id).last
+    assert_equal "delegated", task.status
+  end
+
+  test "claude channel job skips dispatch when task cancelled between reserve and delegated" do
+    # Simulates AgentsController#destroy cancelling a running Claude Channel
+    # task while AiAgentJob#perform is between tracker.reserve! and the
+    # running → delegated transition. The atomic `WHERE status = 'running'`
+    # UPDATE finds no rows to flip when status has already moved to
+    # "cancelled", so the job skips dispatch instead of overwriting the
+    # external cancel and broadcasting to a clientless stream.
+    claude_agent = User.create!(
+      email: "cc-cancel-race-agent@agent.collavre.local",
+      name: "Claude Cancel Race Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-cancel-race", user: @owner)
+    task = Collavre::Task.create!(
+      name: "Pre-existing running task",
+      status: "running",
+      trigger_event_name: "comment_created",
+      agent: claude_agent,
+      topic_id: topic.id,
+      creative_id: @creative.id
+    )
+
+    # Fake tracker that simulates AgentsController#destroy landing between
+    # tracker.reserve! and the running → delegated transition by flipping
+    # the task to "cancelled" inside reserve!.
+    fake_tracker = Object.new
+    fake_tracker.define_singleton_method(:reserve!) do |_resource_id, **_opts|
+      task.update!(status: "cancelled")
+      true
+    end
+    fake_tracker.define_singleton_method(:release!) { |_resource_id, **_opts| true }
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    Collavre::Orchestration::ResourceTracker.stub :for, ->(_agent) { fake_tracker } do
+      Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+        AiAgentJob.perform_now(task)
+      end
+    end
+
+    assert_equal "cancelled", task.reload.status,
+      "task must stay cancelled — job must not overwrite with 'delegated'"
+    refute delivered, "ClaudeChannelAdapter#deliver must not run after external cancel"
+  end
+
+  test "claude channel delayed job skips dispatch when session unregistered during delay" do
+    # Simulates Scheduler returning :delayed for a busy / rate-limited Claude
+    # Channel agent. Scheduler enqueues AiAgentJob with agent.id (no Task row
+    # yet). During the delay, the MCP session unregisters and
+    # AgentsController#destroy / AgentChannel#unsubscribed clears
+    # routing_expression. When the delayed job fires, the agent_id-keyed path
+    # must NOT create a Task, flip it to "delegated", or invoke the adapter —
+    # there is no live client to receive the broadcast.
+    claude_agent = User.create!(
+      email: "cc-delayed-offline-agent@agent.collavre.local",
+      name: "Claude Delayed Offline Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: nil,
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-delayed-offline", user: @owner)
+    context = {
+      "creative" => { "id" => @creative.id },
+      "topic" => { "id" => topic.id },
+      "comment" => { "id" => @comment.id, "content" => "Delayed test" }
+    }
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    tasks_before = Task.where(agent_id: claude_agent.id).count
+
+    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+      AiAgentJob.perform_now(claude_agent.id, "comment_created", context)
+    end
+
+    refute delivered,
+      "ClaudeChannelAdapter#deliver must not run for an unregistered Claude Channel session"
+    assert_equal tasks_before, Task.where(agent_id: claude_agent.id).count,
+      "no Task row should be created for an offline Claude Channel session"
+  end
+
+  test "claude channel queued task skips dispatch when session went offline before dequeue" do
+    # Topic-concurrency queueing path: Scheduler returns :queued, a Task row
+    # is created and held in queued state. Later, dequeue_next_for_topic
+    # (after another task completes or stuck recovery drains the queue)
+    # promotes the task and calls AiAgentJob.perform_later(task) — entering
+    # the Task branch of perform. If AgentChannel#unsubscribed cleared
+    # routing_expression while the task was queued (WS drop without
+    # DELETE /agent/:id), the broadcast would otherwise land in a clientless
+    # agent:user:<id> stream — held until stuck recovery.
+    claude_agent = User.create!(
+      email: "cc-queued-offline-agent@agent.collavre.local",
+      name: "Claude Queued Offline Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: nil,
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    topic = Topic.create!(creative: @creative, name: "cc-queued-offline", user: @owner)
+    queued = Task.create!(
+      name: "Resumed-from-queue",
+      status: "pending",
+      agent: claude_agent,
+      topic_id: topic.id,
+      creative_id: @creative.id,
+      trigger_event_payload: {
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => topic.id },
+        "comment" => { "id" => @comment.id }
+      }
+    )
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+      AiAgentJob.perform_now(queued)
+    end
+
+    refute delivered,
+      "ClaudeChannelAdapter#deliver must not run when the resumed task's session is offline"
+    assert_equal "cancelled", queued.reload.status,
+      "the offline-resumed task must be cancelled so it does not leak slots / queue space"
+  end
+
+  test "claude channel offline-resumed workflow subtask fails parent workflow" do
+    # WorkflowExecutor builds subtasks with parent_task_id and no topic
+    # (see WorkflowExecutor#build_subtask_context). If the resumed task's
+    # session went offline (routing_expression blank) before the job fires,
+    # the offline guard must not only cancel the child but also propagate
+    # failure to the parent via WorkflowExecutor#fail_subtask! — otherwise
+    # the parent workflow stays "running" indefinitely because no rescue
+    # path runs (we never raise).
+    claude_agent = User.create!(
+      email: "cc-offline-subtask-agent@agent.collavre.local",
+      name: "Claude Offline Subtask Agent",
+      password: SecureRandom.hex(32),
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      routing_expression: nil,
+      created_by_id: @owner.id,
+      searchable: false
+    )
+
+    parent_creative = Creative.create!(user: @owner, description: "Offline Workflow Parent")
+    parent_task = Task.create!(
+      name: "Offline Workflow Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+
+    workflow_context = {
+      "creative" => { "id" => @creative.id },
+      "comment" => { "id" => @comment.id, "content" => "Offline subtask" }
+    }
+
+    sub_task = Task.create!(
+      name: "Claude offline subtask",
+      status: "pending",
+      agent: claude_agent,
+      parent_task_id: parent_task.id,
+      creative_id: @creative.id,
+      trigger_event_payload: workflow_context
+    )
+
+    fail_called_with = nil
+    fake_executor = Class.new do
+      define_method(:fail_subtask!) do |child, error_message: nil|
+        fail_called_with = { sub_task: child, error_message: error_message }
+      end
+    end.new
+
+    delivered = false
+    fake_adapter = Class.new do
+      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:deliver) { delivered = true; nil }
+    end
+
+    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+      Collavre::AiAgent::ClaudeChannelAdapter.stub :new, ->(**kw) { fake_adapter.new(**kw) } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    refute delivered, "adapter must not run for offline-resumed Claude Channel subtask"
+    assert_equal "failed", sub_task.reload.status,
+      "subtask must transition to failed so the parent workflow sees a terminal state"
+    assert_not_nil fail_called_with,
+      "Expected WorkflowExecutor#fail_subtask! to be invoked so the parent workflow fails"
+    assert_equal sub_task.id, fail_called_with[:sub_task].id
+    assert_match(/offline/i, fail_called_with[:error_message].to_s)
   end
 end

@@ -1,0 +1,26 @@
+{
+  "name": "collavre",
+  "version": "0.1.0",
+  "description": "Connects Claude Code sessions to Collavre inbox for real-time communication via channels",
+  "author": {
+    "name": "VReRV"
+  },
+  "repository": "https://github.com/sh1nj1/plan42",
+  "license": "MIT",
+  "userConfig": {
+    "url": {
+      "description": "Collavre server URL (e.g., https://collavre.com)",
+      "sensitive": false
+    },
+    "token": {
+      "description": "Collavre API authentication token",
+      "sensitive": true
+    }
+  },
+  "channels": [
+    {
+      "server": "collavre"
+    }
+  ],
+  "hooks": "hooks/hooks.json"
+}
