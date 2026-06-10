@@ -6,7 +6,8 @@ session, and Claude answers back into the same topic — without you switching w
 
 It is an **MCP stdio plugin** that registers Claude Code as a Collavre *agent* and subscribes to a
 *channel* over WebSocket. Mid-turn tool-permission prompts (e.g. "allow this file write?") are also
-relayed to the topic, so you can `allow` / `deny` them by replying from Collavre.
+relayed to the topic as a structured approval comment, so you can **approve / deny** them from
+Collavre.
 
 ---
 
@@ -15,9 +16,13 @@ relayed to the topic, so you can `allow` / `deny` them by replying from Collavre
 ### What you get
 
 - **Two-way chat**: post a comment on a Collavre topic → it lands in the Claude Code session as a
-  channel message; Claude replies into the topic with the `reply` tool.
-- **Remote permission approvals**: when Claude hits a tool that needs permission, a `🔐 permission
-  request` is posted to the topic. Reply `allow` or `deny` to decide it remotely.
+  channel message; Claude replies into the topic with the `reply` tool. The plugin ships a
+  `PreToolUse` hook that auto-approves the `reply` tool, so answering the channel needs **no
+  allowlist setup** — replies go out without a permission prompt. (Only `reply` is auto-approved;
+  side-effecting tools are not — see below.)
+- **Remote permission approvals**: when Claude hits a side-effecting tool that needs permission, a
+  structured approval comment with **approve / deny** buttons is posted to the topic. The topic
+  owner decides it there and the decision is relayed back to the suspended session.
 - **Agent / Session model** (see below): by default all your sessions show up under a single
   `claude` agent, each session mapped to its own topic.
 
@@ -99,7 +104,7 @@ sibling session that is still live under the same agent.
 tools/collavre-claude-plugin/
 ├── .claude-plugin/plugin.json   # Claude Code plugin manifest (channels, hooks, userConfig)
 ├── .mcp.json                    # MCP stdio server entry (node dist/index.js)
-├── hooks/hooks.json             # SessionStart hook: auto npm install + build
+├── hooks/hooks.json             # SessionStart (install+build) + PreToolUse (auto-approve reply)
 ├── src/
 │   ├── index.ts                 # MCP server: tools (`reply`), channel + permission wiring
 │   ├── config.ts                # config + agent-name / session-id resolution
@@ -108,6 +113,8 @@ tools/collavre-claude-plugin/
 │   ├── cable-subscriber.ts      # ActionCable WebSocket subscriber
 │   ├── dispatch-filter.ts       # sibling-session dispatch filtering
 │   ├── permission.ts            # native permission-relay coordinator
+│   ├── hook-decision.ts         # pure PreToolUse decision (auto-approve `reply` only)
+│   ├── pretooluse-hook.ts       # PreToolUse hook entry (stdin → decision → stdout)
 │   └── *.test.ts                # node:test unit tests
 └── scripts/diagnose.ts          # standalone pipeline diagnostic
 ```
@@ -144,9 +151,12 @@ a server running an out-of-date DB schema (restart the server after migrating).
 3. **Dispatch** (`index.ts` + `dispatch-filter.ts`): incoming comments arrive as
    `<channel source="collavre" topic_id="..." task_id="..." .../>`. `shouldHandleDispatch` ignores
    sibling session topics so only the owning session answers.
-4. **Reply** (`reply` tool): Claude calls `reply(topic_id, text, task_id)` to post back.
-5. **Permissions** (`permission.ts`): when CC relays `permission_request`, a coordinator parks it,
-   posts a prompt to the topic, and resolves on the `allow`/`deny` reply.
+4. **Reply** (`reply` tool): Claude calls `reply(topic_id, text, task_id)` to post back. A
+   `PreToolUse` hook (`pretooluse-hook.ts` → `hook-decision.ts`) auto-approves *only* this tool, so
+   the channel answers without a permission prompt; every other tool is left to the normal flow.
+5. **Permissions** (`permission.ts`): when CC relays `permission_request` for a side-effecting tool,
+   a coordinator parks it keyed by `request_id`, posts a structured approval comment, and resolves
+   when the topic owner's approve/deny button broadcasts the decision back.
 
 ### Releasing
 
