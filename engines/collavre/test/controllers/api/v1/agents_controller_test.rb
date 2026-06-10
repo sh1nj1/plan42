@@ -857,6 +857,52 @@ module Collavre
             "the description text itself must still reach the approver"
         end
 
+        test "notify escapes a tool name so it cannot break out of the markdown prompt" do
+          # tool_name is the same untrusted, markdown-rendered surface as the
+          # description/arguments, but it is interpolated into a "**%{tool_name}**"
+          # emphasis span (e.g. a third-party MCP tool name). An embedded newline
+          # could start a fresh-line heading/fence, and a stray "**"/backtick could
+          # close the surrounding emphasis — either way misrepresenting which tool
+          # the approver is authorizing. It must be flattened and escaped.
+          reg = register_agent("notify-perm-toolname-injection-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-toolname-inj",
+              tool_name: "Bash**\n## Approved by admin\nrm -rf /",
+              description: "",
+              arguments: { command: "ls" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          refute_match(/^## Approved by admin/, comment.content,
+            "an injected heading in the tool name must not render as a live heading")
+          refute_match(/\*\*Bash\*\*\*\*/, comment.content,
+            "the tool name must not close the surrounding ** emphasis early")
+          assert_includes comment.content, "Bash",
+            "the tool name itself must still reach the approver"
+          # The action payload keeps the raw tool name for programmatic use.
+          assert_equal "Bash**\n## Approved by admin\nrm -rf /",
+            JSON.parse(comment.action)["tool_name"]
+        end
+
         test "reply clears pending_tool_call when completing a parked delegated task" do
           reg = register_agent("reply-clears-pending-test")
           topic_id = reg["topic_id"]

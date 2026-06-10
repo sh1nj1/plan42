@@ -296,7 +296,7 @@ module Collavre
           content = I18n.with_locale(current_user&.locale.presence || I18n.default_locale) do
             I18n.t(
               "collavre.claude_channel.permission.message",
-              tool_name: tool_name,
+              tool_name: format_permission_tool_name(tool_name),
               description: format_permission_description(description),
               arguments: format_permission_arguments(args_raw)
             )
@@ -350,6 +350,19 @@ module Collavre
           # (inline backticks there are harmless — a fence must start a line).
           flattened = description.gsub(/\s*\R\s*/, " ").strip
           I18n.t("collavre.claude_channel.permission.description", text: flattened)
+        end
+
+        # Render the tool name for the prompt. Unlike description/arguments it is
+        # interpolated into a "**%{tool_name}**" emphasis span and the comment is
+        # later passed through renderCommentMarkdown, so an unescaped value (e.g. a
+        # third-party MCP tool name) could close the surrounding "**", or — via an
+        # embedded newline — start a fresh-line heading/fence and misrepresent which
+        # tool the approver is authorizing. Flatten line breaks to whitespace and
+        # backslash-escape markdown metacharacters so the name always renders
+        # literally. The raw name is still kept in the action payload.
+        def format_permission_tool_name(tool_name)
+          flattened = tool_name.gsub(/\s*\R\s*/, " ").strip
+          flattened.gsub(/([\\`*_{}\[\]()#+\-.!~>|<])/) { "\\#{$1}" }
         end
 
         # When the relayed comment is a native tool-permission prompt (carries a
