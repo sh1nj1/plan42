@@ -1,3 +1,19 @@
+## v0.22.0 (2026-06-10)
+
+### Changes
+- c186206e feat(claude-channel): structured tool-permission approval UI (#1287)
+- 71b3adee fix: dedup OpenClaw agent responses across processes via run_id (#1279)
+- ee3144ce feat: Claude Channel MCP stdio plugin for Collavre integration (#1161)
+- b580bd59 refactor: drop dead action_text_rich_texts table (#1281)
+- dad69dac feat(collavre): HTML-derived attachment upload (bearer endpoint + inline video) (#1280)
+- e5e34f21 feat(collavre): notify when a deleted topic orphans a cron job (#1278)
+- 0c9a3628 fix: bind lexical text color at import time to stop it drifting on reopen (#1276)
+- a28609ef feat: minimize Lexical inline editor HTML output (#1274)
+- efb94602 feat(collavre): FCM service account JSON + WIF via admin UI (#1271)
+- 216b5a38 fix(collavre): allow deleting a topic that has comment snapshots (#1275)
+- eda0c7ba feat(creatives): browsable mini-tree in creative picker popup (#1272)
+- afb933c8 feat: horizontal-scroll typing/badge row with stick-to-end auto-scroll (#1273)
+
 ## v0.21.0 (2026-06-04)
 
 ### Changes

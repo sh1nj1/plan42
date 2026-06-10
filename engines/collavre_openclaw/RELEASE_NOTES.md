@@ -1,3 +1,8 @@
+## v0.6.3 (2026-06-10)
+
+### Changes
+- 71b3adee fix: dedup OpenClaw agent responses across processes via run_id (#1279)
+
 ## v0.6.2 (2026-06-04)
 
 ### Changes
