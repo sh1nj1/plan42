@@ -25,40 +25,48 @@ export interface PermissionRequest {
 // sessions also hear — is acted on only by the session that actually raised it.
 // A decision is correlated by request_id, unique to the Claude Code process
 // that issued the prompt; a sibling that never surfaced it has nothing to
-// claim. Entries expire after a TTL so a prompt abandoned without a decision
-// (e.g. the turn was cancelled) does not leak.
+// claim.
+//
+// A pending permission has NO wall-clock timeout: the approver may click the
+// channel's approve/deny buttons seconds or hours after the prompt is surfaced
+// (the whole point of remote approval is that the human can be away). Expiring
+// by time would silently drop a valid late decision — the server has already
+// persisted action_executed_at and hidden the buttons, so the suspended turn
+// would hang with no retry path. We therefore keep entries until claimed, and
+// bound memory by capacity (FIFO eviction of the oldest, presumably abandoned,
+// entries) rather than by age.
 export class PermissionCoordinator {
-  private pending = new Map<string, number>(); // request_id -> createdAt
-  private readonly ttlMs: number;
-  private readonly now: () => number;
+  // Insertion-ordered set of pending request_ids. Map/Set iteration order is
+  // insertion order, so the first entry is always the oldest.
+  private pending = new Set<string>();
+  private readonly maxEntries: number;
 
-  constructor(ttlMs = 5 * 60_000, now: () => number = () => Date.now()) {
-    this.ttlMs = ttlMs;
-    this.now = now;
+  constructor(maxEntries = 1024) {
+    this.maxEntries = maxEntries;
   }
 
   add(requestId: string): void {
-    this.pending.set(requestId, this.now());
+    // Re-insert so a re-surfaced id moves to the newest position.
+    this.pending.delete(requestId);
+    this.pending.add(requestId);
+    // Bound memory: evict the oldest entries beyond the cap. These are prompts
+    // abandoned without a decision (e.g. the turn was cancelled); a genuinely
+    // pending prompt is never evicted in practice because a single session
+    // raises far fewer than maxEntries concurrent prompts.
+    while (this.pending.size > this.maxEntries) {
+      const oldest = this.pending.values().next().value as string;
+      this.pending.delete(oldest);
+    }
   }
 
   // Consume a pending request by id. Returns true only if THIS session surfaced
-  // it (and it has not expired) — the caller then forwards the decision to
-  // Claude Code. false means the decision belongs to a sibling session or the
-  // request has aged out.
+  // it — the caller then forwards the decision to Claude Code. false means the
+  // decision belongs to a sibling session (which never surfaced this id).
   claim(requestId: string): boolean {
-    this.prune();
     return this.pending.delete(requestId);
   }
 
   hasPending(requestId: string): boolean {
-    this.prune();
     return this.pending.has(requestId);
-  }
-
-  private prune(): void {
-    const cutoff = this.now() - this.ttlMs;
-    for (const [id, createdAt] of this.pending) {
-      if (createdAt < cutoff) this.pending.delete(id);
-    }
   }
 }

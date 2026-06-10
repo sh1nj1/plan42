@@ -29,11 +29,39 @@ test("coordinator tracks multiple concurrent requests independently", () => {
   assert.equal(c.claim("req-2"), false);
 });
 
-test("coordinator expires stale pending requests past the TTL", () => {
-  let now = 1_000_000;
-  const c = new PermissionCoordinator(60_000, () => now);
+test("coordinator never expires a pending request by time (late approval still claimable)", () => {
+  // Regression: a human may click approve/deny minutes or hours after the
+  // prompt is surfaced. The decision must still be claimed — there is no
+  // wall-clock TTL — otherwise the suspended turn hangs with no retry path.
+  const c = new PermissionCoordinator();
   c.add("req-1");
-  now += 60_001;
-  assert.equal(c.claim("req-1"), false, "expired request must not be claimable");
-  assert.equal(c.hasPending("req-1"), false);
+  assert.equal(c.hasPending("req-1"), true);
+  assert.equal(
+    c.claim("req-1"),
+    true,
+    "a late decision must still be claimable",
+  );
+});
+
+test("coordinator bounds memory by capacity, evicting the oldest entries", () => {
+  const c = new PermissionCoordinator(3);
+  c.add("req-1");
+  c.add("req-2");
+  c.add("req-3");
+  c.add("req-4"); // exceeds cap → evicts the oldest (req-1)
+  assert.equal(c.hasPending("req-1"), false, "oldest entry evicted past cap");
+  assert.equal(c.hasPending("req-2"), true);
+  assert.equal(c.hasPending("req-3"), true);
+  assert.equal(c.hasPending("req-4"), true);
+});
+
+test("coordinator re-surfacing an id refreshes its eviction position", () => {
+  const c = new PermissionCoordinator(2);
+  c.add("req-1");
+  c.add("req-2");
+  c.add("req-1"); // re-surface → req-1 becomes newest, req-2 now oldest
+  c.add("req-3"); // exceeds cap → evicts req-2
+  assert.equal(c.hasPending("req-2"), false);
+  assert.equal(c.hasPending("req-1"), true);
+  assert.equal(c.hasPending("req-3"), true);
 });
