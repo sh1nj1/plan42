@@ -41,7 +41,11 @@ function errorResult(message: string) {
   };
 }
 
-function buildServer(client: CollavreClient, active: ActiveContext): Server {
+function buildServer(
+  client: CollavreClient,
+  active: ActiveContext,
+  coordinator: PermissionCoordinator,
+): Server {
   const server = new Server(
     { name: "collavre", version: "0.1.0" },
     {
@@ -129,6 +133,12 @@ function buildServer(client: CollavreClient, active: ActiveContext): Server {
     // leaking into this just-finished work topic.
     active.topicId = active.defaultTopicId;
     active.taskId = null;
+
+    // Drop any permission requests still pending from this finished turn. They
+    // were answered via the local TUI dialog (Claude Code sends no per-request
+    // resolution signal), so a later click on the now-stale Collavre approval
+    // comment must not be claimed and forwarded to a turn that is already over.
+    coordinator.clear();
 
     return {
       content: [
@@ -305,7 +315,7 @@ async function main(): Promise<void> {
     defaultTopicId: null,
     sessionTopicId: null,
   };
-  const server = buildServer(client, active);
+  const server = buildServer(client, active, coordinator);
 
   // Surface relayed tool-permission prompts into the active topic so the user
   // can approve/deny from Collavre. Registered before connect so the handler

@@ -69,4 +69,15 @@ export class PermissionCoordinator {
   hasPending(requestId: string): boolean {
     return this.pending.has(requestId);
   }
+
+  // Drop every pending request. Called when the dispatched turn ends (the reply
+  // tool fires): any request still pending was resolved by the local TUI dialog
+  // (or abandoned), since Claude Code sends no per-request resolution signal and
+  // a turn reaching reply has already settled every tool prompt. Clearing stops
+  // a later click on the now-stale Collavre approval comment from being claimed
+  // and forwarded to a turn that is already over, and frees the ids so they
+  // cannot collide with a future prompt.
+  clear(): void {
+    this.pending.clear();
+  }
 }
