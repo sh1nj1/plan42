@@ -686,6 +686,50 @@ module Collavre
           refute comment.action_executed_at.present?, "a freshly surfaced prompt is undecided"
         end
 
+        test "notify renders the permission prompt in the token holder's locale" do
+          # The prompt text is persisted server-side via I18n at notify time, so
+          # it must be rendered in the token holder's locale — the API base
+          # controller only authenticates the bearer token and never runs the
+          # host app's locale switching, so I18n would otherwise fall back to the
+          # process default and a ko approver would receive an English prompt.
+          @user.update!(locale: "ko")
+          reg = register_agent("notify-perm-locale-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-ko",
+              tool_name: "Bash",
+              arguments: { command: "ls -la" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          expected = I18n.t("collavre.claude_channel.permission.message",
+                            tool_name: "Bash", arguments: "", locale: :ko).split("\n").first
+          assert_includes comment.content, expected.strip,
+            "permission prompt must be localized to the token holder's locale (ko)"
+          refute_includes comment.content,
+            I18n.t("collavre.claude_channel.permission.message",
+                   tool_name: "Bash", arguments: "", locale: :en).split("\n").first.strip,
+            "ko approver must not receive the default-locale (en) prompt"
+        end
+
         test "reply clears pending_tool_call when completing a parked delegated task" do
           reg = register_agent("reply-clears-pending-test")
           topic_id = reg["topic_id"]

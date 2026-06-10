@@ -287,11 +287,17 @@ module Collavre
             "arguments" => args_raw
           }
 
-          content = I18n.t(
-            "collavre.claude_channel.permission.message",
-            tool_name: tool_name,
-            arguments: format_permission_arguments(args_raw)
-          )
+          # The API base controller authenticates the bearer token but does not
+          # run the host app's locale switching, so I18n.locale is the process
+          # default here. Render the persisted prompt in the token holder's
+          # locale explicitly — they are the approver who will read it.
+          content = I18n.with_locale(current_user&.locale.presence || I18n.default_locale) do
+            I18n.t(
+              "collavre.claude_channel.permission.message",
+              tool_name: tool_name,
+              arguments: format_permission_arguments(args_raw)
+            )
+          end
 
           creative.comments.build(
             content: content,
