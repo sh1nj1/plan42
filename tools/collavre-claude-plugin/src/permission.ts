@@ -2,9 +2,14 @@
 // `tengu_harbor_permissions` GrowthBook flag). When Claude Code needs tool
 // permission mid-turn it relays the prompt to every channel server that
 // declares both `claude/channel` and `claude/channel/permission` capabilities,
-// IN ADDITION to the local TUI dialog (first responder wins). This module owns
-// the plugin's side: turning a topic reply into an allow/deny decision and
-// correlating it back to the request that is awaiting an answer.
+// IN ADDITION to the local TUI dialog (first responder wins).
+//
+// The prompt is surfaced as a STRUCTURED approval comment: the server renders
+// the (localized) text and attaches approve/deny buttons. The human's click
+// relays an explicit { request_id, behavior } decision back over the agent
+// stream — there is no free-text allow/deny parsing. This module owns the
+// plugin's side: tracking which prompts this session raised so it only acts on
+// decisions for its own requests.
 
 export type Behavior = "allow" | "deny";
 
@@ -15,100 +20,76 @@ export interface PermissionRequest {
   input_preview?: unknown;
 }
 
-// Strict, whole-message matching. The prompt explicitly tells the user to reply
-// "allow" or "deny", so we only treat an unambiguous one-word answer as a
-// decision — anything else is a normal message and must be forwarded to Claude
-// (e.g. "no idea what that does" must NOT deny).
-const ALLOW_WORDS = new Set([
-  "allow", "yes", "y", "approve", "ok", "okay", "허용", "승인", "네", "예",
-]);
-const DENY_WORDS = new Set([
-  "deny", "no", "n", "reject", "cancel", "거부", "불허", "취소", "아니", "아니오",
-]);
-
-export function parseDecision(text: string): Behavior | null {
-  const t = text.trim().toLowerCase();
-  if (ALLOW_WORDS.has(t)) return "allow";
-  if (DENY_WORDS.has(t)) return "deny";
-  return null;
-}
-
-interface Pending {
-  request_id: string;
-  createdAt: number;
-}
-
-// Correlates incoming permission requests to the topic whose turn triggered
-// them, then maps the user's topic reply back to a decision. Keyed by topic_id:
-// the permission_request payload carries no topic, so index.ts records the
-// active dispatch's topic and we resolve against that. Multiple pending
-// requests on one topic (sequential tool prompts in a single turn) resolve
-// FIFO.
+// Tracks the permission requests THIS session surfaced into Collavre, so an
+// incoming decision — delivered over the shared per-agent stream that sibling
+// sessions also hear — is acted on only by the session that actually raised it.
+// A decision is correlated by request_id, unique to the Claude Code process
+// that issued the prompt; a sibling that never surfaced it has nothing to
+// claim.
+//
+// A pending permission has NO wall-clock timeout: the approver may click the
+// channel's approve/deny buttons seconds or hours after the prompt is surfaced
+// (the whole point of remote approval is that the human can be away). Expiring
+// by time would silently drop a valid late decision — the server has already
+// persisted action_executed_at and hidden the buttons, so the suspended turn
+// would hang with no retry path. We therefore keep entries until claimed, and
+// bound memory by capacity (FIFO eviction of the oldest, presumably abandoned,
+// entries) rather than by age.
 export class PermissionCoordinator {
-  private byTopic = new Map<number, Pending[]>();
-  private readonly ttlMs: number;
-  private readonly now: () => number;
+  // Insertion-ordered set of pending request_ids. Map/Set iteration order is
+  // insertion order, so the first entry is always the oldest.
+  private pending = new Set<string>();
+  private readonly maxEntries: number;
 
-  constructor(ttlMs = 5 * 60_000, now: () => number = () => Date.now()) {
-    this.ttlMs = ttlMs;
-    this.now = now;
+  constructor(maxEntries = 1024) {
+    this.maxEntries = maxEntries;
   }
 
-  add(topicId: number, requestId: string): void {
-    const list = this.byTopic.get(topicId) ?? [];
-    list.push({ request_id: requestId, createdAt: this.now() });
-    this.byTopic.set(topicId, list);
+  add(requestId: string): void {
+    // Re-insert so a re-surfaced id moves to the newest position.
+    this.pending.delete(requestId);
+    this.pending.add(requestId);
+    // Bound memory: evict the oldest entries beyond the cap. These are prompts
+    // abandoned without a decision (e.g. the turn was cancelled); a genuinely
+    // pending prompt is never evicted in practice because a single session
+    // raises far fewer than maxEntries concurrent prompts.
+    while (this.pending.size > this.maxEntries) {
+      const oldest = this.pending.values().next().value as string;
+      this.pending.delete(oldest);
+    }
   }
 
-  // If a live permission request is pending for this topic AND the reply parses
-  // to allow/deny, consume the oldest one and return the decision. Otherwise
-  // null — the caller forwards the comment to Claude as a normal message.
-  tryResolve(
-    topicId: number,
-    text: string,
-  ): { request_id: string; behavior: Behavior } | null {
-    this.prune(topicId);
-    const list = this.byTopic.get(topicId);
-    if (!list || list.length === 0) return null;
-    const behavior = parseDecision(text);
-    if (!behavior) return null;
-    const pending = list.shift()!;
-    if (list.length === 0) this.byTopic.delete(topicId);
-    return { request_id: pending.request_id, behavior };
+  // Consume a pending request by id. Returns true only if THIS session surfaced
+  // it — the caller then forwards the decision to Claude Code. false means the
+  // decision belongs to a sibling session (which never surfaced this id).
+  claim(requestId: string): boolean {
+    return this.pending.delete(requestId);
   }
 
-  hasPending(topicId: number): boolean {
-    this.prune(topicId);
-    return (this.byTopic.get(topicId)?.length ?? 0) > 0;
+  hasPending(requestId: string): boolean {
+    return this.pending.has(requestId);
   }
 
-  private prune(topicId: number): void {
-    const list = this.byTopic.get(topicId);
-    if (!list) return;
-    const cutoff = this.now() - this.ttlMs;
-    const live = list.filter((p) => p.createdAt >= cutoff);
-    if (live.length === 0) this.byTopic.delete(topicId);
-    else this.byTopic.set(topicId, live);
+  // The request_ids this session still holds pending, in insertion order. Sent
+  // after every (re)subscribe (pull-on-resubscribe) so the server re-broadcasts
+  // the recorded decision for exactly these — redelivering a decision that was
+  // broadcast into a subscriber-less stream during a WebSocket reconnect gap.
+  // Because this set is the source of truth for what still needs delivery, the
+  // redelivery is bounded by the plugin's own outstanding prompts rather than a
+  // wall-clock window: an outage of any length is covered, and a decision
+  // already claimed (or cleared on turn end) is simply never requested again.
+  pendingIds(): string[] {
+    return [...this.pending];
   }
-}
 
-// Human-readable prompt posted into the topic so the user can see what is
-// awaiting approval and reply allow/deny.
-export function formatPermissionPrompt(req: PermissionRequest): string {
-  const lines = [`🔐 권한 요청: **${req.tool_name ?? "tool"}**`];
-  if (req.description) lines.push(req.description);
-  const preview = renderPreview(req.input_preview);
-  if (preview) lines.push("```\n" + preview + "\n```");
-  lines.push("승인하려면 `allow`, 거부하려면 `deny` 로 답해주세요.");
-  return lines.join("\n");
-}
-
-function renderPreview(input: unknown): string | null {
-  if (input == null) return null;
-  if (typeof input === "string") return input.slice(0, 2000);
-  try {
-    return JSON.stringify(input, null, 2).slice(0, 2000);
-  } catch {
-    return null;
+  // Drop every pending request. Called when the dispatched turn ends (the reply
+  // tool fires): any request still pending was resolved by the local TUI dialog
+  // (or abandoned), since Claude Code sends no per-request resolution signal and
+  // a turn reaching reply has already settled every tool prompt. Clearing stops
+  // a later click on the now-stale Collavre approval comment from being claimed
+  // and forwarded to a turn that is already over, and frees the ids so they
+  // cannot collide with a future prompt.
+  clear(): void {
+    this.pending.clear();
   }
 }

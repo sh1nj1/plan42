@@ -13,11 +13,7 @@ import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
 import { resolveSessionId, defaultSessionStateDir } from "./session.js";
 import { shouldHandleDispatch } from "./dispatch-filter.js";
-import {
-  PermissionCoordinator,
-  formatPermissionPrompt,
-  type Behavior,
-} from "./permission.js";
+import { PermissionCoordinator, type Behavior } from "./permission.js";
 
 // Native Claude Channel permission relay (CC v2.1.168+). When the
 // `claude/channel/permission` capability is declared, Claude Code relays each
@@ -45,7 +41,11 @@ function errorResult(message: string) {
   };
 }
 
-function buildServer(client: CollavreClient, active: ActiveContext): Server {
+function buildServer(
+  client: CollavreClient,
+  active: ActiveContext,
+  coordinator: PermissionCoordinator,
+): Server {
   const server = new Server(
     { name: "collavre", version: "0.1.0" },
     {
@@ -134,6 +134,12 @@ function buildServer(client: CollavreClient, active: ActiveContext): Server {
     active.topicId = active.defaultTopicId;
     active.taskId = null;
 
+    // Drop any permission requests still pending from this finished turn. They
+    // were answered via the local TUI dialog (Claude Code sends no per-request
+    // resolution signal), so a later click on the now-stale Collavre approval
+    // comment must not be claimed and forwarded to a turn that is already over.
+    coordinator.clear();
+
     return {
       content: [
         { type: "text" as const, text: `Sent (comment #${result.comment_id})` },
@@ -181,12 +187,6 @@ async function sendPermissionDecision(
   });
 }
 
-function decisionAck(behavior: Behavior): string {
-  return behavior === "allow"
-    ? "🔓 권한 승인됨 — 계속 진행합니다."
-    : "🚫 권한 거부됨.";
-}
-
 function makeEventHandler(
   server: Server,
   client: CollavreClient,
@@ -195,6 +195,34 @@ function makeEventHandler(
   debug: boolean,
 ) {
   return async (event: AgentEvent): Promise<void> => {
+    // A structured permission decision (approve/deny button click relayed by the
+    // server). It carries an explicit request_id + behavior — no text parsing.
+    // The broadcast reaches every session sharing this agent; only the session
+    // that surfaced this request_id claims it and forwards it to Claude Code.
+    if (event.type === "permission_decision") {
+      const { request_id, behavior } = event;
+      if (!request_id || (behavior !== "allow" && behavior !== "deny")) return;
+      if (!coordinator.claim(request_id)) {
+        if (debug) {
+          process.stderr.write(
+            `[collavre] Ignoring permission_decision for unknown/foreign request_id=${request_id}\n`,
+          );
+        }
+        return;
+      }
+      process.stderr.write(
+        `[collavre] Permission decision: ${behavior} (request_id=${request_id})\n`,
+      );
+      try {
+        await sendPermissionDecision(server, request_id, behavior);
+      } catch (err) {
+        process.stderr.write(
+          `[collavre] Failed to send permission decision: ${err instanceof Error ? err.stack : err}\n`,
+        );
+      }
+      return;
+    }
+
     if (event.type !== "dispatch" || !event.comment) {
       if (debug) {
         process.stderr.write(
@@ -222,35 +250,6 @@ function makeEventHandler(
         process.stderr.write(
           `[collavre] Ignoring dispatch for sibling session topic #${topicId} (mine=#${active.sessionTopicId})\n`,
         );
-      }
-      return;
-    }
-
-    // If this comment answers a permission prompt awaiting a decision, consume
-    // it as allow/deny instead of forwarding it to Claude — Claude is suspended
-    // on the permission and cannot act on a normal message. The decision
-    // unblocks the original turn; we then complete the task this reply spawned
-    // so it does not hang delegated.
-    const decision = coordinator.tryResolve(topicId, event.comment.content);
-    if (decision) {
-      process.stderr.write(
-        `[collavre] Permission decision from comment #${event.comment.id}: ${decision.behavior} (request_id=${decision.request_id})\n`,
-      );
-      try {
-        await sendPermissionDecision(server, decision.request_id, decision.behavior);
-      } catch (err) {
-        process.stderr.write(
-          `[collavre] Failed to send permission decision: ${err instanceof Error ? err.stack : err}\n`,
-        );
-      }
-      if (event.task_id != null) {
-        try {
-          await client.reply(topicId, decisionAck(decision.behavior), event.task_id);
-        } catch (err) {
-          process.stderr.write(
-            `[collavre] Failed to complete decision task: ${err instanceof Error ? err.message : err}\n`,
-          );
-        }
       }
       return;
     }
@@ -316,7 +315,7 @@ async function main(): Promise<void> {
     defaultTopicId: null,
     sessionTopicId: null,
   };
-  const server = buildServer(client, active);
+  const server = buildServer(client, active, coordinator);
 
   // Surface relayed tool-permission prompts into the active topic so the user
   // can approve/deny from Collavre. Registered before connect so the handler
@@ -334,14 +333,18 @@ async function main(): Promise<void> {
         return;
       }
       const taskId = active.taskId;
-      coordinator.add(topicId, request_id);
+      coordinator.add(request_id);
       try {
-        await client.notify(
-          topicId,
-          formatPermissionPrompt({ request_id, tool_name, description, input_preview }),
-          taskId ?? undefined,
-          request_id,
-        );
+        // Send only the structured fields; the server renders the (localized)
+        // prompt text and attaches the approve/deny buttons. No client-side
+        // formatting or free-text parsing. `description` is Claude Code's
+        // human-readable action summary — forwarded so the approver sees the
+        // same context the local TUI dialog shows when arguments are opaque.
+        await client.notify(topicId, "", taskId ?? undefined, request_id, {
+          toolName: tool_name,
+          description,
+          arguments: input_preview,
+        });
         process.stderr.write(
           `[collavre] permission_request relayed to topic #${topicId}: ${tool_name ?? "tool"} (request_id=${request_id})\n`,
         );
@@ -370,6 +373,20 @@ async function main(): Promise<void> {
     makeEventHandler(server, client, coordinator, active, debug),
     debug,
   );
+
+  // Pull-on-resubscribe: after every (re)subscribe, tell the server the
+  // permission request_ids this session still holds pending so it replays any
+  // decision broadcast into a subscriber-less stream while the WebSocket was
+  // down. The coordinator's pending set is the source of truth — there is no
+  // wall-clock window, so a decision clicked during an outage of any length is
+  // redelivered once the link is back. Empty set (the common case) → no-op.
+  cable.onSubscriptionConfirmed(() => {
+    const pending = coordinator.pendingIds();
+    if (pending.length > 0) {
+      cable.perform("replay_permissions", { request_ids: pending });
+    }
+  });
+
   await cable.connect();
   process.stderr.write("[collavre] WebSocket ready\n");
 

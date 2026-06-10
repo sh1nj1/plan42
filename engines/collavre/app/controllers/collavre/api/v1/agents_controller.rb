@@ -247,13 +247,18 @@ module Collavre
             return
           end
 
-          comment = creative.comments.build(
-            content: params[:text].to_s,
-            topic: topic,
-            user: agent,
-            skip_default_user: true,
-            skip_dispatch: true
-          )
+          comment =
+            if params[:permission_request_id].present?
+              build_permission_comment(creative, topic, agent)
+            else
+              creative.comments.build(
+                content: params[:text].to_s,
+                topic: topic,
+                user: agent,
+                skip_default_user: true,
+                skip_dispatch: true
+              )
+            end
 
           if comment.save
             park_pending_permission(topic, agent, params[:task_id], params[:permission_request_id])
@@ -263,6 +268,102 @@ module Collavre
           end
         end
         private
+
+        # Build a structured tool-permission comment that reuses the native
+        # approval UI (approver gate + approve/deny buttons). The prompt text is
+        # rendered server-side via I18n (localized for the viewer), not formatted
+        # by the plugin. The action payload carries the request_id so the
+        # eventual approve/deny relays the exact decision to the suspended
+        # session. approver is the token holder driving this Claude session — the
+        # only human who should resolve its prompts.
+        def build_permission_comment(creative, topic, agent)
+          tool_name = params[:tool_name].to_s.strip.presence || "tool"
+          args_raw = sanitize_permission_arguments(params[:arguments])
+          description = params[:description].to_s.strip
+
+          action_payload = {
+            "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
+            "request_id" => params[:permission_request_id].to_s,
+            "tool_name" => tool_name,
+            "description" => description,
+            "arguments" => args_raw
+          }
+
+          # The API base controller authenticates the bearer token but does not
+          # run the host app's locale switching, so I18n.locale is the process
+          # default here. Render the persisted prompt in the token holder's
+          # locale explicitly — they are the approver who will read it.
+          content = I18n.with_locale(current_user&.locale.presence || I18n.default_locale) do
+            I18n.t(
+              "collavre.claude_channel.permission.message",
+              tool_name: format_permission_tool_name(tool_name),
+              description: format_permission_description(description),
+              arguments: format_permission_arguments(args_raw)
+            )
+          end
+
+          creative.comments.build(
+            content: content,
+            topic: topic,
+            user: agent,
+            approver: current_user,
+            action: JSON.pretty_generate(action_payload),
+            skip_default_user: true,
+            skip_dispatch: true
+          )
+        end
+
+        # Coerce the arguments param into a JSON-safe value: a permitted Hash, a
+        # plain string, or nil. ActionController::Parameters must be unwrapped or
+        # JSON.pretty_generate raises on unpermitted parameters.
+        def sanitize_permission_arguments(arguments)
+          return nil if arguments.blank?
+
+          arguments.respond_to?(:to_unsafe_h) ? arguments.to_unsafe_h : arguments
+        end
+
+        # Render the (already sanitized) tool arguments for the prompt body. The
+        # result is interpolated inside a ```json fence and the comment is later
+        # passed through renderCommentMarkdown, so the value must never be able to
+        # close that fence. A string input_preview (the documented shape for many
+        # tools, e.g. a Bash command) is therefore JSON-serialized rather than
+        # emitted raw: that escapes embedded newlines to \n, collapsing it to a
+        # single line so no payload line can begin a ``` delimiter and break out
+        # into live markdown that misleads the approver.
+        def format_permission_arguments(arguments)
+          return I18n.t("collavre.claude_channel.permission.no_arguments") if arguments.blank?
+
+          JSON.pretty_generate(arguments)
+        end
+
+        # Render the optional human-readable permission summary Claude Code sends
+        # alongside the structured fields. Absent for most tools, so it collapses
+        # to an empty string (no stray blockquote); when present it is the only
+        # plain-language description of what the approver is allowing.
+        def format_permission_description(description)
+          return "" if description.blank?
+
+          # The description renders into a "> %{text}" blockquote, so any newline
+          # would drop the remainder onto a fresh line where it could open a
+          # heading or ```fence and escape into live markdown. Flatten line breaks
+          # to whitespace so the whole summary stays inside the one blockquote line
+          # (inline backticks there are harmless — a fence must start a line).
+          flattened = description.gsub(/\s*\R\s*/, " ").strip
+          I18n.t("collavre.claude_channel.permission.description", text: flattened)
+        end
+
+        # Render the tool name for the prompt. Unlike description/arguments it is
+        # interpolated into a "**%{tool_name}**" emphasis span and the comment is
+        # later passed through renderCommentMarkdown, so an unescaped value (e.g. a
+        # third-party MCP tool name) could close the surrounding "**", or — via an
+        # embedded newline — start a fresh-line heading/fence and misrepresent which
+        # tool the approver is authorizing. Flatten line breaks to whitespace and
+        # backslash-escape markdown metacharacters so the name always renders
+        # literally. The raw name is still kept in the action payload.
+        def format_permission_tool_name(tool_name)
+          flattened = tool_name.gsub(/\s*\R\s*/, " ").strip
+          flattened.gsub(/([\\`*_{}\[\]()#+\-.!~>|<])/) { "\\#{$1}" }
+        end
 
         # When the relayed comment is a native tool-permission prompt (carries a
         # permission_request_id), park the in-flight dispatch as "awaiting a

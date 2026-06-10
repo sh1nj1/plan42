@@ -46,6 +46,7 @@ module Collavre
     include Broadcastable
     include Notifiable
     include Approvable
+    include ClaudeChannelPermission
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
@@ -178,14 +179,17 @@ module Collavre
 
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
-      # pending_tool_call (stamped by /agent/notify when the 🔐 prompt is
-      # relayed). While parked, this human comment is an allow/deny *decision*,
-      # not a new turn — relay it straight to the suspended agent's stream so the
-      # MCP plugin can resolve the prompt, and skip orchestration. Dispatching it
-      # as a competing turn would deadlock: the delegated task holds the topic's
-      # only concurrency slot (running_for_topic counts `delegated`) and is
-      # itself waiting on the decision that would be queued behind that slot.
-      return if relay_permission_decision
+      # pending_tool_call (stamped by /agent/notify when the prompt is relayed).
+      # An intervening human comment posted while the task is parked is dispatched
+      # normally — not suppressed. The delegated task holds the topic's only
+      # concurrency slot (running_for_topic counts `delegated`,
+      # topic_max_concurrent_jobs=1), so the scheduler defers the comment into a
+      # `queued` task rather than a competing turn, and
+      # AgentOrchestrator.dequeue_next_for_topic promotes it (refreshed to the
+      # latest comment) when the parked task is finalized on /reply. Suppressing
+      # it here would silently drop the follow-up instead of deferring it — worst
+      # when the local Claude TUI answered the prompt, leaving pending_tool_call
+      # set on the server for the rest of a locally-approved tool run.
 
       SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload)
     rescue StandardError => e
@@ -209,53 +213,6 @@ module Collavre
     # ClaudeChannelAdapter#session_topic? keys on, so the two stay consistent.
     def claude_channel_session_topic?
       topic&.session_id.present? && topic&.primary_agent&.claude_channel_agent?
-    end
-
-    # Deliver this comment as an allow/deny decision to any Claude Channel
-    # session in this topic that is suspended on a tool-permission prompt
-    # (a `delegated` task with pending_tool_call). Returns true when at least
-    # one suspended session was found (so dispatch_to_orchestration skips normal
-    # routing). The payload mirrors ClaudeChannelAdapter#deliver's dispatch
-    # shape so the MCP plugin's existing event handler consumes it via its
-    # permission coordinator; task_id is nil so the plugin does NOT complete the
-    # in-flight task — the decision only unblocks its paused tool call.
-    def relay_permission_decision
-      return false unless topic_id
-
-      awaiting = Task
-        .where(topic_id: topic_id, status: "delegated")
-        .where.not(pending_tool_call: nil)
-        .includes(:agent)
-        .select { |task| task.agent&.claude_channel_agent? }
-      return false if awaiting.empty?
-
-      payload = permission_decision_payload
-      awaiting.each do |task|
-        AgentChannel.broadcast_to_agent(task.agent_id, payload.merge(agent_id: task.agent_id))
-      end
-      true
-    end
-
-    def permission_decision_payload
-      {
-        type: "dispatch",
-        task_id: nil,
-        # Mirror ClaudeChannelAdapter#deliver: stamp session_topic so the MCP
-        # plugin's sibling-topic filter applies. Without it the flag is absent
-        # (treated as a work topic) and every sibling session sharing this agent
-        # would forward the allow/deny text into its own unrelated Claude turn —
-        # only the owning session holds the pending permission coordinator.
-        session_topic: topic&.session_id.present?,
-        comment: {
-          id: id,
-          content: content,
-          author_id: user_id,
-          author_name: user&.display_name,
-          topic_id: topic_id,
-          creative_id: creative_id,
-          created_at: created_at&.iso8601
-        }
-      }
     end
 
     def assign_default_user

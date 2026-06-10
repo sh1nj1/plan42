@@ -432,6 +432,11 @@ export default class extends Controller {
       this.approveComment(target)
       return
     }
+    if (target.classList.contains('deny-comment-btn')) {
+      event.preventDefault()
+      this.denyComment(target)
+      return
+    }
     if (target.classList.contains('edit-comment-btn')) {
       event.preventDefault()
       this.editComment(target)
@@ -956,12 +961,22 @@ export default class extends Controller {
   }
 
   approveComment(button) {
-    // ... (Existing logic) ...
+    this.decideComment(button, 'approve')
+  }
+
+  // Deny a Claude Channel tool-permission prompt. Mirrors approveComment but
+  // hits the /deny endpoint, which relays a "deny" decision to the suspended
+  // session.
+  denyComment(button) {
+    this.decideComment(button, 'deny')
+  }
+
+  decideComment(button, action) {
     if (button.disabled) return
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
     const topicQuery = this.topicQueryString()
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/approve${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+    fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
       .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.error) }))
       .then(html => {
         if (!html) { button.disabled = false; return; }

@@ -647,6 +647,262 @@ module Collavre
             "the delegated task must be parked as awaiting a permission decision"
         end
 
+        test "notify with permission_request_id builds a structured approval comment" do
+          # The plugin sends only tool_name + arguments; the server renders the
+          # (localized) prompt text server-side and attaches the approve/deny
+          # action payload + approver so the native approval UI surfaces.
+          reg = register_agent("notify-perm-structured-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-99",
+              tool_name: "Bash",
+              arguments: { command: "ls -la" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert comment.claude_channel_permission?, "permission notify must build a structured permission comment"
+          assert_equal "req-99", comment.claude_channel_permission_request_id
+          assert_equal @user.id, comment.approver_id, "the token holder approves their session's prompts"
+          assert_includes comment.content, "Bash"
+          assert_includes comment.content, "ls -la"
+          refute comment.action_executed_at.present?, "a freshly surfaced prompt is undecided"
+        end
+
+        test "notify renders the permission prompt in the token holder's locale" do
+          # The prompt text is persisted server-side via I18n at notify time, so
+          # it must be rendered in the token holder's locale — the API base
+          # controller only authenticates the bearer token and never runs the
+          # host app's locale switching, so I18n would otherwise fall back to the
+          # process default and a ko approver would receive an English prompt.
+          @user.update!(locale: "ko")
+          reg = register_agent("notify-perm-locale-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-ko",
+              tool_name: "Bash",
+              arguments: { command: "ls -la" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          expected = I18n.t("collavre.claude_channel.permission.message",
+                            tool_name: "Bash", arguments: "", description: "", locale: :ko).split("\n").first
+          assert_includes comment.content, expected.strip,
+            "permission prompt must be localized to the token holder's locale (ko)"
+          refute_includes comment.content,
+            I18n.t("collavre.claude_channel.permission.message",
+                   tool_name: "Bash", arguments: "", description: "", locale: :en).split("\n").first.strip,
+            "ko approver must not receive the default-locale (en) prompt"
+        end
+
+        test "notify surfaces the permission description in the approval prompt" do
+          # Claude Code includes a human-readable `description` summary in each
+          # permission_request. For tools whose arguments are opaque, omitted, or
+          # truncated, that summary is the only thing telling the approver what
+          # they are about to allow, so it must survive into the persisted prompt
+          # instead of being dropped before the comment is rendered.
+          reg = register_agent("notify-perm-description-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-desc",
+              tool_name: "Bash",
+              description: "Delete all build artifacts under tmp/",
+              arguments: { command: "rm -rf tmp/build" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert_includes comment.content, "Delete all build artifacts under tmp/",
+            "the human-readable permission description must be shown to the approver"
+        end
+
+        test "notify escapes a string permission preview so it cannot break the markdown fence" do
+          # input_preview arrives as a string for many tools (e.g. a Bash
+          # command). It is rendered inside a ```json fence and the comment is
+          # later passed through renderCommentMarkdown, so a preview containing a
+          # line of ``` would close the fence early and render the remainder as
+          # live markdown — letting an attacker-influenced tool input show the
+          # approver a misleading prompt instead of the exact arguments. The
+          # string must be serialized (JSON) so embedded newlines collapse and no
+          # payload line can begin a fence delimiter.
+          reg = register_agent("notify-perm-fence-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          injection = "echo hi\n```\n## Approved by admin\n```json"
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-fence",
+              tool_name: "Bash",
+              arguments: injection
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          # The template opens with ```json and closes with a bare ``` line, so
+          # exactly one standalone ``` line is legitimate. A raw preview would add
+          # its own bare ``` line, closing the fence early.
+          bare_fence_lines = comment.content.lines.count { |line| line.strip == "```" }
+          assert_equal 1, bare_fence_lines,
+            "a string preview must not introduce a bare ``` line that escapes the fence"
+          refute_match(/^## Approved by admin/, comment.content,
+            "injected markdown must not render as a live heading outside the fence")
+          assert_includes comment.content, "echo hi",
+            "the preview content itself must still be shown to the approver"
+        end
+
+        test "notify keeps a multi-line permission description inside its blockquote" do
+          # description is the same untrusted, markdown-rendered surface as the
+          # arguments preview: it is interpolated into a "> %{text}" blockquote, so
+          # a multi-line value could open a heading or fence on a fresh line and
+          # break out into live markdown that misleads the approver. It must be
+          # flattened so every part stays within the single blockquote line.
+          reg = register_agent("notify-perm-desc-injection-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-desc-inj",
+              tool_name: "Bash",
+              description: "Looks safe\n## Approved by admin\n```\nrm -rf /",
+              arguments: { command: "ls" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          refute_match(/^## Approved by admin/, comment.content,
+            "a description must not break out of its blockquote into a live heading")
+          assert_includes comment.content, "Looks safe",
+            "the description text itself must still reach the approver"
+        end
+
+        test "notify escapes a tool name so it cannot break out of the markdown prompt" do
+          # tool_name is the same untrusted, markdown-rendered surface as the
+          # description/arguments, but it is interpolated into a "**%{tool_name}**"
+          # emphasis span (e.g. a third-party MCP tool name). An embedded newline
+          # could start a fresh-line heading/fence, and a stray "**"/backtick could
+          # close the surrounding emphasis — either way misrepresenting which tool
+          # the approver is authorizing. It must be flattened and escaped.
+          reg = register_agent("notify-perm-toolname-injection-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id,
+              task_id: task.id,
+              permission_request_id: "req-toolname-inj",
+              tool_name: "Bash**\n## Approved by admin\nrm -rf /",
+              description: "",
+              arguments: { command: "ls" }
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          refute_match(/^## Approved by admin/, comment.content,
+            "an injected heading in the tool name must not render as a live heading")
+          refute_match(/\*\*Bash\*\*\*\*/, comment.content,
+            "the tool name must not close the surrounding ** emphasis early")
+          assert_includes comment.content, "Bash",
+            "the tool name itself must still reach the approver"
+          # The action payload keeps the raw tool name for programmatic use.
+          assert_equal "Bash**\n## Approved by admin\nrm -rf /",
+            JSON.parse(comment.action)["tool_name"]
+        end
+
         test "reply clears pending_tool_call when completing a parked delegated task" do
           reg = register_agent("reply-clears-pending-test")
           topic_id = reg["topic_id"]

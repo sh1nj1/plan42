@@ -102,14 +102,15 @@ export class CollavreClient {
   //
   // permissionRequestId, when present, marks this notify as a native
   // tool-permission prompt: the server parks the in-flight delegated task
-  // (pending_tool_call) so the human's subsequent allow/deny is relayed
-  // straight to this suspended session instead of deadlocking behind the
-  // delegated topic slot.
+  // (pending_tool_call) and builds a STRUCTURED approval comment (localized
+  // prompt text + approve/deny buttons) from `permission.toolName`/`arguments`.
+  // For permission prompts `text` is left empty — the server renders it.
   async notify(
     topicId: number,
     text: string,
     taskId?: number,
     permissionRequestId?: string,
+    permission?: { toolName?: string; arguments?: unknown; description?: string },
   ): Promise<{ comment_id: number }> {
     const body: Record<string, unknown> = { topic_id: topicId, text };
     if (taskId !== undefined && taskId !== null) {
@@ -117,6 +118,15 @@ export class CollavreClient {
     }
     if (permissionRequestId !== undefined && permissionRequestId !== null) {
       body.permission_request_id = permissionRequestId;
+    }
+    if (permission?.toolName !== undefined) {
+      body.tool_name = permission.toolName;
+    }
+    if (permission?.description !== undefined) {
+      body.description = permission.description;
+    }
+    if (permission?.arguments !== undefined) {
+      body.arguments = permission.arguments;
     }
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/notify`, {

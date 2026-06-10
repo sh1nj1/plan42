@@ -543,6 +543,127 @@ module Collavre
         "stale rows must be reaped when a new session subscribes to the agent"
     end
 
+    test "replay_permissions re-broadcasts the recorded decision for a requested pending id" do
+      # Codex P2 (pull-on-resubscribe): broadcast_claude_channel_permission_decision
+      # fires once into the transient agent:user:<id> stream. If the plugin's
+      # WebSocket was mid-reconnect when the approver clicked, the decision lands in
+      # a subscriber-less stream and is lost — the server has already stamped
+      # action_executed_at and hidden the buttons, so the suspended tool hangs with
+      # no retry path. After every (re)subscribe the plugin sends the request_ids it
+      # still holds pending; the server re-broadcasts the recorded decision for
+      # exactly those. The plugin's pending set is the only bound — there is no
+      # wall-clock window, so an outage of any length is covered.
+      agent = create_claude_channel_agent("agent-channel-replay")
+      creative = Collavre::Creative.create!(description: "Replay", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "replay session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-replay-1", decision: "allow",
+        decided_at: 30.seconds.ago
+      )
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        perform :replay_permissions, request_ids: [ "req-replay-1" ]
+      end
+
+      decision = payloads.find { |p| p["type"] == "permission_decision" }
+      assert decision, "a pulled pending id with a recorded decision must be replayed"
+      assert_equal "req-replay-1", decision["request_id"]
+      assert_equal "allow", decision["behavior"]
+      assert_equal agent.id, decision["agent_id"]
+    end
+
+    test "replay_permissions does not replay a still-pending (undecided) permission" do
+      # Only decisions the approver actually made are replayed. An undecided
+      # prompt has no decision to deliver — replaying it would be meaningless and
+      # could mislead the plugin's coordinator.
+      agent = create_claude_channel_agent("agent-channel-replay-pending")
+      creative = Collavre::Creative.create!(description: "Pending", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "pending session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-pending-1", decision: nil, decided_at: nil
+      )
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        perform :replay_permissions, request_ids: [ "req-pending-1" ]
+      end
+
+      refute payloads.any? { |p| p["type"] == "permission_decision" },
+        "an undecided permission prompt has no decision to replay"
+    end
+
+    test "replay_permissions ignores decisions for ids the plugin did not request" do
+      # The bound is the plugin's pending set, not a time window: only ids the
+      # plugin still holds pending are replayed. A decision the plugin already
+      # consumed (so it is absent from the requested set) is never re-broadcast,
+      # so reconnect cannot resurface settled history — and, crucially, a long
+      # outage drops nothing, because the still-pending id is what gets requested.
+      agent = create_claude_channel_agent("agent-channel-replay-unrequested")
+      creative = Collavre::Creative.create!(description: "Other", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "other session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-other-1", decision: "allow", decided_at: 30.seconds.ago
+      )
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        perform :replay_permissions, request_ids: [ "req-some-other-id" ]
+      end
+
+      refute payloads.any? { |p| p["type"] == "permission_decision" },
+        "a decision for an id the plugin did not request must not be re-broadcast"
+    end
+
+    test "replay_permissions with no requested ids broadcasts nothing" do
+      # A fresh (re)subscribe with an empty pending set (the common case) must be a
+      # no-op — no scan, no broadcast.
+      agent = create_claude_channel_agent("agent-channel-replay-empty")
+      creative = Collavre::Creative.create!(description: "Empty", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "empty session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-empty-1", decision: "allow", decided_at: 30.seconds.ago
+      )
+
+      stub_connection current_user: @user
+      subscribe agent_id: agent.id
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        perform :replay_permissions, request_ids: []
+      end
+
+      refute payloads.any? { |p| p["type"] == "permission_decision" },
+        "an empty pending set must replay nothing"
+    end
+
+    test "subscribe alone does not replay any permission decision (pull-only, no window)" do
+      # Replay is now pull-driven: subscribing does not auto-replay. Only an
+      # explicit replay_permissions perform carrying the plugin's pending ids
+      # triggers it, so there is no wall-clock window that could drop a decision
+      # made during a long outage.
+      agent = create_claude_channel_agent("agent-channel-replay-noauto")
+      creative = Collavre::Creative.create!(description: "NoAuto", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "noauto session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-noauto-1", decision: "allow", decided_at: 30.seconds.ago
+      )
+
+      stub_connection current_user: @user
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        subscribe agent_id: agent.id
+      end
+
+      refute payloads.any? { |p| p["type"] == "permission_decision" },
+        "subscribe must not auto-replay; replay is pull-driven via replay_permissions"
+    end
+
     test "heartbeat refreshes the live session's presence last_seen_at" do
       agent = User.create!(
         email: "agent-channel-heartbeat-test@agent.collavre.local",
@@ -564,6 +685,43 @@ module Collavre
 
       assert_operator row.reload.last_seen_at, :>, 1.minute.ago,
         "the periodic heartbeat must keep this session's presence row live"
+    end
+
+    private
+
+    def create_claude_channel_agent(slug)
+      User.create!(
+        email: "#{slug}-#{SecureRandom.hex(4)}@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+    end
+
+    def decided_permission_comment(agent:, creative:, topic:, request_id:, decision:, decided_at:)
+      payload = {
+        "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
+        "request_id" => request_id,
+        "tool_name" => "Bash",
+        "arguments" => { "command" => "ls" }
+      }
+      payload["decision"] = decision if decision
+      comment = Comment.create!(
+        creative: creative,
+        topic: topic,
+        user: agent,
+        approver: @user,
+        content: "needs approval",
+        action: JSON.pretty_generate(payload),
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      comment.update_columns(action_executed_at: decided_at, action_executed_by_id: @user.id) if decided_at
+      comment
     end
   end
 end

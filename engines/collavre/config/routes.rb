@@ -78,6 +78,7 @@ Collavre::Engine.routes.draw do
       member do
         post :convert
         post :approve
+        post :deny
         patch :update_action
         delete :reactions, to: "comments/reactions#destroy"
         get :download_images

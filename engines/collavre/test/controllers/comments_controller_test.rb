@@ -164,6 +164,110 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # --- Claude Channel tool-permission decisions ---
+  #
+  # These reuse the approval comment UI but resolve by relaying the decision to
+  # the suspended Claude Code session over the agent stream — the tool runs in
+  # the remote process, never via ActionExecutor.
+
+  def claude_channel_agent
+    User.create!(
+      email: "ccp_ctrl_agent@agent.collavre.local",
+      name: "Claude Channel Session",
+      password: "password",
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @user.id
+    )
+  end
+
+  def claude_channel_permission_comment(request_id: "req-1")
+    agent = claude_channel_agent
+    payload = {
+      "action" => Collavre::Comment::ClaudeChannelPermission::ACTION_TYPE,
+      "request_id" => request_id,
+      "tool_name" => "Bash",
+      "arguments" => { "command" => "ls" }
+    }
+    @creative.comments.create!(
+      content: "needs approval",
+      user: agent,
+      approver: @user,
+      action: JSON.pretty_generate(payload),
+      skip_default_user: true,
+      skip_dispatch: true
+    )
+  end
+
+  test "approving a Claude Channel permission relays allow and does not run ActionExecutor" do
+    comment = claude_channel_permission_comment(request_id: "req-allow")
+
+    # If ActionExecutor were invoked it would raise on this unknown action type;
+    # a successful 200 proves the channel branch bypassed it.
+    ::Comments::ActionExecutor.stub(:new, ->(*) { raise "ActionExecutor must not run for channel permissions" }) do
+      assert_broadcasts("agent:user:#{comment.user_id}", 1) do
+        post approve_creative_comment_path(@creative, comment)
+      end
+    end
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.approved_label")
+    comment.reload
+    assert_not_nil comment.action_executed_at
+    refute comment.claude_channel_permission_denied?
+  end
+
+  test "denying a Claude Channel permission relays deny and marks the comment denied" do
+    comment = claude_channel_permission_comment(request_id: "req-deny")
+
+    payload = capture_broadcasts("agent:user:#{comment.user_id}") do
+      post deny_creative_comment_path(@creative, comment)
+    end.first
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.denied_label")
+    assert_equal "deny", payload["behavior"]
+    assert_equal "req-deny", payload["request_id"]
+    assert comment.reload.claude_channel_permission_denied?
+  end
+
+  test "a Claude Channel permission cannot be decided twice" do
+    comment = claude_channel_permission_comment
+
+    post approve_creative_comment_path(@creative, comment)
+    assert_response :success
+
+    post deny_creative_comment_path(@creative, comment)
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.comments.approve_already_executed"), JSON.parse(@response.body)["error"]
+  end
+
+  test "non-approver cannot decide a Claude Channel permission" do
+    approver = users(:two)
+    approver.update!(email_verified_at: Time.current)
+    comment = claude_channel_permission_comment
+    comment.update!(approver: approver)
+
+    assert_no_changes -> { comment.reload.action_executed_at } do
+      post approve_creative_comment_path(@creative, comment)
+      assert_response :forbidden
+      post deny_creative_comment_path(@creative, comment)
+      assert_response :forbidden
+    end
+  end
+
+  test "deny is rejected for a non-Claude-Channel approval comment" do
+    comment = @creative.comments.create!(
+      content: "Run action",
+      user: @user,
+      action: JSON.generate({ "action" => "update_creative", "attributes" => { "progress" => 0.9 } }),
+      approver: @user
+    )
+
+    post deny_creative_comment_path(@creative, comment)
+    assert_response :forbidden
+  end
+
   test "approver can execute private comment action" do
     approver = users(:two)
     approver.update!(email_verified_at: Time.current)
