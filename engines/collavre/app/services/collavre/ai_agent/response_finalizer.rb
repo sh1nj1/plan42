@@ -44,9 +44,11 @@ module Collavre
           # Review workflow: update quoted comment in place (no new comment created)
           @review_flow = true
           review_handler.add_completion_reaction
-          reassociate_activity_logs(@reply_comment, @original_comment.quoted_comment)
+          surviving = @original_comment.quoted_comment
+          reassociate_activity_logs(@reply_comment, surviving)
+          # Run row survives via ON DELETE SET NULL, so no run-id bookkeeping here.
           @reply_comment.destroy!
-          @original_comment.quoted_comment
+          surviving
         else
           # Normal comment workflow
           update_reply_comment

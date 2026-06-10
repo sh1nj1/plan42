@@ -24,15 +24,15 @@ module Collavre
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 
-      abort_openclaw_session(task)
+      abort_agent_session(task)
 
       head :ok
     end
 
     private
 
-    def abort_openclaw_session(task)
-      Collavre::OpenclawAbortService.call(agent: task.agent, task: task)
+    def abort_agent_session(task)
+      Collavre::AgentSessionAbort.call(agent: task.agent, task: task)
     end
   end
 end

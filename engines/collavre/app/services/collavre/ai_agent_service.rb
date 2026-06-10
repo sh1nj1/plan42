@@ -32,7 +32,7 @@ module Collavre
       raise
     rescue CancelledError
       handle_cancelled
-      abort_openclaw_if_needed
+      abort_agent_session_if_needed
       raise
     end
 
@@ -266,8 +266,8 @@ module Collavre
       Orchestration::PolicyResolver.new(@context)
     end
 
-    def abort_openclaw_if_needed
-      Collavre::OpenclawAbortService.call(
+    def abort_agent_session_if_needed
+      Collavre::AgentSessionAbort.call(
         agent: @agent,
         task: @task,
         creative: @creative,

@@ -357,6 +357,33 @@ module CollavreOpenclaw
       assert completed_runs.key?("test-key"), "idempotency_key should be in completed_runs"
     end
 
+    test "chat_send invokes on_run_id with the resolved runId before streaming" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      # send_rpc resolves a runId distinct from the idempotency_key, mirroring
+      # the real Gateway which assigns its own runId.
+      client.define_singleton_method(:send_rpc) do |_method, params, **_kwargs|
+        run_queue = instance_variable_get(:@mutex).synchronize do
+          instance_variable_get(:@pending_runs)[params[:idempotencyKey]]
+        end
+        run_queue.push({ state: "final", text: "done", seq: 0 })
+        run_queue.push({ done: true })
+        { runId: "gateway-run-99" }
+      end
+
+      seen = []
+      client.chat_send(
+        session_key: "test-session",
+        message: "Hello",
+        idempotency_key: "test-key",
+        on_run_id: ->(rid) { seen << rid }
+      )
+
+      assert_equal [ "gateway-run-99" ], seen
+    end
+
     private
 
     # Exercises chat_send by stubbing send_rpc / ensure_connected! and

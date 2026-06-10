@@ -468,6 +468,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.index ["user_id"], name: "index_openclaw_pending_callbacks_on_user_id"
   end
 
+  create_table "openclaw_processed_ai_runs", force: :cascade do |t|
+    t.integer "comment_id"
+    t.datetime "created_at", null: false
+    t.string "run_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_openclaw_processed_ai_runs_on_comment_id"
+    t.index ["run_id"], name: "index_openclaw_processed_ai_runs_on_run_id", unique: true
+  end
+
   create_table "orchestrator_policies", force: :cascade do |t|
     t.json "config", default: {}, null: false
     t.datetime "created_at", null: false
@@ -898,6 +907,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
   add_foreign_key "openclaw_pending_callbacks", "users"
+  add_foreign_key "openclaw_processed_ai_runs", "comments", on_delete: :nullify
   add_foreign_key "sessions", "users"
   add_foreign_key "slack_accounts", "users"
   add_foreign_key "slack_channel_links", "creatives"
