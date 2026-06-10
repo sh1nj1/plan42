@@ -543,6 +543,78 @@ module Collavre
         "stale rows must be reaped when a new session subscribes to the agent"
     end
 
+    test "subscribe replays a recently decided permission decision (redelivers across a reconnect gap)" do
+      # Codex P2: broadcast_claude_channel_permission_decision fires once into the
+      # transient agent:user:<id> stream. If the plugin's WebSocket was mid-
+      # reconnect when the approver clicked, the decision lands in a subscriber-
+      # less stream and is lost — the server has already stamped action_executed_at
+      # and hidden the buttons, so the suspended tool hangs with no retry path.
+      # On (re)subscribe the channel must replay decided-but-recent decisions so
+      # the redelivered decision resolves the paused tool.
+      agent = create_claude_channel_agent("agent-channel-replay")
+      creative = Collavre::Creative.create!(description: "Replay", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "replay session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-replay-1", decision: "allow",
+        decided_at: 30.seconds.ago
+      )
+
+      stub_connection current_user: @user
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        subscribe agent_id: agent.id
+      end
+
+      decision = payloads.find { |p| p["type"] == "permission_decision" }
+      assert decision, "a recently decided permission must be replayed on (re)subscribe"
+      assert_equal "req-replay-1", decision["request_id"]
+      assert_equal "allow", decision["behavior"]
+      assert_equal agent.id, decision["agent_id"]
+    end
+
+    test "subscribe does not replay a still-pending (undecided) permission" do
+      # Only decisions the approver actually made are replayed. An undecided
+      # prompt has no decision to deliver — replaying it would be meaningless and
+      # could mislead the plugin's coordinator.
+      agent = create_claude_channel_agent("agent-channel-replay-pending")
+      creative = Collavre::Creative.create!(description: "Pending", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "pending session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-pending-1", decision: nil, decided_at: nil
+      )
+
+      stub_connection current_user: @user
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        subscribe agent_id: agent.id
+      end
+
+      refute payloads.any? { |p| p["type"] == "permission_decision" },
+        "an undecided permission prompt must not be replayed"
+    end
+
+    test "subscribe does not replay a decision older than the replay window" do
+      # The replay is bounded by a recent window: a decision delivered live long
+      # ago (the plugin was connected then) needs no replay, and an unbounded scan
+      # would re-broadcast stale history on every reconnect.
+      agent = create_claude_channel_agent("agent-channel-replay-stale")
+      creative = Collavre::Creative.create!(description: "Stale", user: @user, progress: 0.0)
+      topic = creative.topics.create!(name: "stale session", user: @user)
+      decided_permission_comment(
+        agent: agent, creative: creative, topic: topic,
+        request_id: "req-stale-1", decision: "allow",
+        decided_at: (Comment::ClaudeChannelPermission::PERMISSION_DECISION_REPLAY_WINDOW + 1.minute).ago
+      )
+
+      stub_connection current_user: @user
+      payloads = capture_broadcasts("agent:user:#{agent.id}") do
+        subscribe agent_id: agent.id
+      end
+
+      refute payloads.any? { |p| p["type"] == "permission_decision" },
+        "a decision older than the replay window must not be re-broadcast"
+    end
+
     test "heartbeat refreshes the live session's presence last_seen_at" do
       agent = User.create!(
         email: "agent-channel-heartbeat-test@agent.collavre.local",
@@ -564,6 +636,43 @@ module Collavre
 
       assert_operator row.reload.last_seen_at, :>, 1.minute.ago,
         "the periodic heartbeat must keep this session's presence row live"
+    end
+
+    private
+
+    def create_claude_channel_agent(slug)
+      User.create!(
+        email: "#{slug}-#{SecureRandom.hex(4)}@agent.collavre.local",
+        password: SecureRandom.hex(32),
+        name: "Claude Session Agent",
+        llm_vendor: "anthropic",
+        llm_model: "claude-code",
+        routing_expression: nil,
+        created_by_id: @user.id,
+        searchable: false
+      )
+    end
+
+    def decided_permission_comment(agent:, creative:, topic:, request_id:, decision:, decided_at:)
+      payload = {
+        "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
+        "request_id" => request_id,
+        "tool_name" => "Bash",
+        "arguments" => { "command" => "ls" }
+      }
+      payload["decision"] = decision if decision
+      comment = Comment.create!(
+        creative: creative,
+        topic: topic,
+        user: agent,
+        approver: @user,
+        content: "needs approval",
+        action: JSON.pretty_generate(payload),
+        skip_default_user: true,
+        skip_dispatch: true
+      )
+      comment.update_columns(action_executed_at: decided_at, action_executed_by_id: @user.id) if decided_at
+      comment
     end
   end
 end

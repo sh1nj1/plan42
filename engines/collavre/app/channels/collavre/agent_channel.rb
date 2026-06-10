@@ -170,6 +170,18 @@ module Collavre
             routing_expression: "true"
           )
         end
+
+        # Redeliver any decision broadcast into this agent's stream while the
+        # plugin's WebSocket was down. The live broadcast fires once into the
+        # transient stream with no buffering, so a decision clicked during a
+        # reconnect gap would otherwise never reach the suspended tool call.
+        # stream_from is already attached above, so these reach this session;
+        # the plugin's coordinator drops any request_id it no longer holds
+        # pending, making an already-delivered decision a harmless no-op.
+        Comment.replay_undelivered_claude_channel_permission_decisions(
+          agent.id,
+          since: Comment::ClaudeChannelPermission::PERMISSION_DECISION_REPLAY_WINDOW.ago
+        )
       end
     end
 

@@ -14,9 +14,37 @@ module Collavre
 
       ACTION_TYPE = "claude_channel_permission"
 
+      # How far back a (re)subscribing session replays decided permission prompts.
+      # broadcast_claude_channel_permission_decision fires once into the transient
+      # agent:user:<id> stream; a decision clicked while the plugin's WebSocket was
+      # reconnecting lands in a subscriber-less stream and is lost, leaving the
+      # suspended tool hung with no retry path. On resubscribe we re-broadcast
+      # decisions made within this window so the redelivered decision resolves the
+      # paused call. The window only needs to cover the reconnect gap: a decision
+      # clicked while the plugin is connected is delivered live and never needs
+      # replay. Replay is idempotent (PermissionCoordinator.claim ignores a
+      # request_id it no longer holds pending), so the bound is purely a cost knob.
+      PERMISSION_DECISION_REPLAY_WINDOW = 5.minutes
+
       # Raised when a decision was already recorded, so a double-click (or a
       # concurrent approve+deny) resolves to exactly one decision.
       class AlreadyDecided < StandardError; end
+
+      class_methods do
+        # Re-broadcast every permission decision made for this agent within the
+        # replay window. Called when a Claude Channel session (re)subscribes so a
+        # decision lost during a WebSocket reconnect gap is redelivered. Scoped by
+        # the agent's user_id (the broadcast target) and bounded by
+        # PERMISSION_DECISION_REPLAY_WINDOW; the coarse action LIKE filter is
+        # narrowed by claude_channel_permission? per row before re-broadcasting.
+        def replay_undelivered_claude_channel_permission_decisions(agent_id, since:)
+          where(user_id: agent_id)
+            .where.not(action_executed_at: nil)
+            .where(action_executed_at: since..)
+            .where("action LIKE ?", "%#{ACTION_TYPE}%")
+            .find_each(&:rebroadcast_claude_channel_permission_decision)
+        end
+      end
 
       # True when this comment's action payload is a Claude Channel permission
       # prompt (vs. a native execute_tool/approve_tool action).
@@ -74,6 +102,20 @@ module Collavre
           agent_id: user_id
         })
         true
+      end
+
+      # Replay this comment's already-recorded decision (used by the resubscribe
+      # path). Unlike broadcast_claude_channel_permission_decision the behavior is
+      # read from the persisted payload rather than passed in, and only a comment
+      # that is both a permission prompt and decided re-broadcasts — a still-
+      # pending prompt has no decision to deliver.
+      def rebroadcast_claude_channel_permission_decision
+        return false unless claude_channel_permission?
+
+        decision = claude_channel_permission_action&.dig("decision")
+        return false if decision.blank?
+
+        broadcast_claude_channel_permission_decision(decision)
       end
 
       private
