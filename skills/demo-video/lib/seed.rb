@@ -75,10 +75,22 @@ end
 # surface rather than swallowing them: a silently half-completed delete would
 # leave a stale duplicate tree, and record.mjs's `rowLocator(...).first()` could
 # then pick a stale row with no topic/permissions — reproducing the dark-run
-# waitStream timeout. The Creative dependent: :destroy chain (topics → comments
-# → comment_snapshots) covers the snapshot FK, so destroy_all completes cleanly.
+# waitStream timeout.
+#
+# CreativeShare has a RESTRICT foreign key to creatives and no dependent: :destroy
+# on the Creative side, so the shares granted below (and their permission caches)
+# would block destroy_all with InvalidForeignKey on the second pass of a
+# `--theme light,dark` run: the light seed grants the shares, then the dark seed
+# re-runs this cleanup. Drop the shares + caches for the demo creatives first
+# (delete_all is synchronous — CreativeShare's own cache teardown rides an
+# after_destroy_commit background job that need not run under rails runner). The
+# remaining Creative dependent chain (topics → comments → comment_snapshots)
+# covers the rest, so destroy_all then completes cleanly.
 demo_user_ids = created_users.values.map(&:id)
-Collavre::Creative.where(user_id: demo_user_ids).destroy_all
+demo_creative_ids = Collavre::Creative.where(user_id: demo_user_ids).pluck(:id)
+Collavre::CreativeShare.where(creative_id: demo_creative_ids).delete_all
+Collavre::CreativeSharesCache.where(creative_id: demo_creative_ids).delete_all
+Collavre::Creative.where(id: demo_creative_ids).destroy_all
 
 def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
   Collavre::Creative.create!(
