@@ -34,11 +34,20 @@ mkdir -p "$DATA_DIR"
 
 # Pick the Ruby runtime: an explicit override, then a vendored portable Ruby
 # (present in packaged builds), then whatever `ruby` is on PATH (dev checkout).
-VENDORED_RUBY="$APP_ROOT/tools/desktop-app/vendor/ruby/bin/ruby"
+VENDOR_DIR="$APP_ROOT/tools/desktop-app/vendor"
+VENDORED_RUBY="$VENDOR_DIR/ruby/bin/ruby"
 if [ -n "${COLLAVRE_RUBY:-}" ]; then
   RUBY_BIN="$COLLAVRE_RUBY"
 elif [ -x "$VENDORED_RUBY" ]; then
   RUBY_BIN="$VENDORED_RUBY"
+  # Point Bundler at the vendored gems by absolute path resolved at runtime, so
+  # the bundle works regardless of where the .app was installed (no reliance on
+  # a baked-in .bundle/config path).
+  export PATH="$VENDOR_DIR/ruby/bin:$PATH"
+  export BUNDLE_GEMFILE="$APP_ROOT/Gemfile"
+  export BUNDLE_PATH="$VENDOR_DIR/bundle"
+  export BUNDLE_WITHOUT="development:test:production"
+  export BUNDLE_WITH="desktop"
 else
   RUBY_BIN="ruby"
 fi

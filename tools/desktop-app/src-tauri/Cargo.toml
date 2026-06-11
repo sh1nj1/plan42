@@ -1,0 +1,23 @@
+[package]
+name = "collavre-desktop"
+version = "0.1.0"
+description = "Collavre Desktop — bundled Rails server + SQLite in a native webview"
+authors = ["Collavre"]
+edition = "2021"
+rust-version = "1.77"
+
+# The library the Tauri runtime links against.
+[lib]
+name = "collavre_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+
+[features]
+# Default Tauri custom-protocol for production builds.
+custom-protocol = ["tauri/custom-protocol"]
