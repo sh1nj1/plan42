@@ -1,0 +1,11 @@
+{
+  "name": "collavre-demo-video",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scenario-driven demo/feature video recorder for Collavre",
+  "dependencies": {
+    "playwright": "1.60.0",
+    "yaml": "^2.6.0"
+  }
+}
