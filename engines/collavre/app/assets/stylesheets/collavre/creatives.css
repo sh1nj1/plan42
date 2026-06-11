@@ -271,7 +271,7 @@ creative-tree-row.show-edit .creative-row {
 .creative-content video {
     max-width: 100%;
     height: auto;
-    border-radius: 4px;
+    border-radius: var(--radius-2);
 }
 
 .creative-row:hover .creative-content {
