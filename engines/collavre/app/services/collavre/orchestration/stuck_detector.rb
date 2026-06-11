@@ -56,15 +56,12 @@ module Collavre
       private
 
       # Auto-recover stuck items: fail-and-drain for live tasks, self-heal for
-      # orphaned queued waiters. Orphan recovery is deduped per topic so a single
-      # detection cycle never promotes more waiters than the topic concurrency
-      # limit allows (dequeue_next_for_topic promotes exactly one per call).
+      # orphaned queued waiters.
       def auto_recover_stuck_tasks(stuck_items)
-        healed_topics = Set.new
         stuck_items.each do |stuck_item|
           case stuck_item.type
           when :task          then recover_stuck_task(stuck_item)
-          when :queued_orphan then recover_orphaned_queued_task(stuck_item, healed_topics)
+          when :queued_orphan then recover_orphaned_queued_task(stuck_item)
           end
         end
       end
@@ -72,17 +69,20 @@ module Collavre
       # Self-heal an orphaned queued waiter: its blocker is gone but it was never
       # drained (missed dequeue / enqueue-vs-terminate TOCTOU race / lost
       # cross-process broadcast). Re-check liveness atomically, then drain.
-      def recover_orphaned_queued_task(stuck_item, healed_topics)
+      def recover_orphaned_queued_task(stuck_item)
         task = stuck_item.item.reload
         return unless task.status == "queued"
 
-        topic_key = [ task.topic_id, task.creative_id ]
-        return if healed_topics.include?(topic_key)
         # If the topic is back at capacity since detection, the normal terminal
-        # callback will drain the queue when a slot frees — leave it alone.
+        # callback will drain the queue when a slot frees — leave it alone. This
+        # check also bounds promotions across one detection cycle: dequeue moves
+        # a waiter queued -> pending synchronously, which occupying_topic_slot
+        # counts, so consecutive orphans each fill exactly one free slot until the
+        # topic is full. With topic_max_concurrent_jobs > 1 and several free slots
+        # all are filled this cycle; a per-topic dedupe would instead leave every
+        # waiter past the first orphaned until the next run.
         return if topic_at_capacity?(task)
 
-        healed_topics << topic_key
         Rails.logger.info(
           "[StuckDetector] Self-healing orphaned queued task #{task.id} " \
           "(topic=#{task.topic_id}, creative=#{task.creative_id}): no live blocker, draining queue"

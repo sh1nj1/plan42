@@ -465,14 +465,21 @@ module Collavre
         policy&.destroy
       end
 
-      test "self-heal drains a topic only once even with multiple orphaned waiters" do
+      test "self-heal fills only the free slots when several waiters are orphaned" do
+        # No scheduling policy → the topic serializes (one slot). Each dequeue
+        # moves a waiter queued -> pending synchronously (occupying_topic_slot
+        # counts pending), so the capacity recheck stops after the single free
+        # slot is filled — only one promotion even with two orphaned waiters.
         policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
         create_queued_task(comment_id: 2006)
         create_queued_task(comment_id: 2007)
 
         calls = []
         Collavre::Orchestration::AgentOrchestrator.stub(
-          :dequeue_next_for_topic, ->(t, c) { calls << [ t, c ] }
+          :dequeue_next_for_topic, lambda { |t, c|
+            calls << [ t, c ]
+            Collavre::Task.queued_for_topic(t, c).first&.update!(status: "pending")
+          }
         ) do
           StuckDetector.new.detect_and_escalate
         end
@@ -480,6 +487,33 @@ module Collavre
         assert_equal 1, calls.count
         assert_equal [ @topic.id, @creative.id ], calls.first
       ensure
+        policy&.destroy
+      end
+
+      test "self-heal fills every free slot under topic_max > 1" do
+        # topic_max=2 with no live blocker = two free slots, so two orphaned
+        # waiters must both be promoted in one detection cycle. The capacity
+        # recheck counts each just-promoted pending task, bounding promotions to
+        # the free-slot count; a per-topic dedupe would instead leave the second
+        # waiter orphaned until the next StuckDetector run.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+        create_queued_task(comment_id: 2020)
+        create_queued_task(comment_id: 2021)
+
+        calls = []
+        Collavre::Orchestration::AgentOrchestrator.stub(
+          :dequeue_next_for_topic, lambda { |t, c|
+            calls << [ t, c ]
+            Collavre::Task.queued_for_topic(t, c).first&.update!(status: "pending")
+          }
+        ) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal 2, calls.count
+      ensure
+        sched&.destroy
         policy&.destroy
       end
 
