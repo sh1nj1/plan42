@@ -58,13 +58,16 @@ fn data_dir(app: &tauri::AppHandle) -> PathBuf {
 
 fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
     let launcher = root.join("bin/desktop-server");
+    // Honor a caller-supplied bind host (open mode = 0.0.0.0 for LAN/Tailscale);
+    // default to loopback. COLLAVRE_ALLOWED_HOSTS rides along via the inherited
+    // env, so open mode set on the shell reaches the sidecar intact.
+    let bind_host = std::env::var("COLLAVRE_BIND_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let mut cmd = Command::new("bash");
     cmd.arg(&launcher)
         .current_dir(root)
         .env("PORT", port.to_string())
         .env("COLLAVRE_DATA_DIR", data)
-        // Closed by default; flip to 0.0.0.0 to open to the LAN/Tailscale.
-        .env("COLLAVRE_BIND_HOST", "127.0.0.1");
+        .env("COLLAVRE_BIND_HOST", bind_host);
 
     // Run the sidecar in its own process group so we can signal the whole tree
     // (bash launcher -> ruby/puma -> Solid Queue) on quit, not just bash.

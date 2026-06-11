@@ -43,10 +43,15 @@ echo "[bundle-ruby] $("$VENDORED_RUBY" -v)"
 "$VENDORED_RUBY" -S gem install bundler --no-document
 
 cd "$APP_ROOT"
+# Configure the vendored bundle via env vars, NOT `bundle config set --local`:
+# --local writes desktop-only groups into the checkout's .bundle/config, which
+# later dev/test/rubocop runs in the same checkout would reuse (dev+test gems
+# excluded → spurious failures). Mirrors build-macos.sh and bin/desktop-server.
 # Desktop runs on SQLite; skip Postgres (pg) which needs libpq at runtime.
-"$VENDORED_RUBY" -S bundle config set --local path "$VENDOR_DIR/bundle"
-"$VENDORED_RUBY" -S bundle config set --local without "development test production"
-"$VENDORED_RUBY" -S bundle config set --local with "desktop"
+export BUNDLE_GEMFILE="$APP_ROOT/Gemfile"
+export BUNDLE_PATH="$VENDOR_DIR/bundle"
+export BUNDLE_WITHOUT="development:test:production"
+export BUNDLE_WITH="desktop"
 "$VENDORED_RUBY" -S bundle install --jobs 4
 
 echo "[bundle-ruby] done. Ruby: $RUBY_PREFIX  Gems: $VENDOR_DIR/bundle"
