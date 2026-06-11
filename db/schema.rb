@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_11_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -364,6 +364,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_mcp_tools_on_creative_id"
     t.index ["name"], name: "index_mcp_tools_on_name", unique: true
+  end
+
+  create_table "mobile_voice_refs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "device_id", null: false
+    t.string "kind", null: false
+    t.string "label"
+    t.datetime "last_seen_at"
+    t.integer "ref_number", null: false
+    t.string "request_id"
+    t.string "status", default: "active", null: false
+    t.integer "target_comment_id"
+    t.integer "topic_id"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["target_comment_id"], name: "index_mobile_voice_refs_on_target_comment_id"
+    t.index ["user_id", "device_id", "ref_number"], name: "index_mobile_voice_refs_on_owner_and_number", unique: true
+    t.index ["user_id", "device_id", "status"], name: "index_mobile_voice_refs_on_user_id_and_device_id_and_status"
   end
 
   create_table "notion_accounts", force: :cascade do |t|

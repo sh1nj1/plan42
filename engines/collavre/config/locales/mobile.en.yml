@@ -1,0 +1,28 @@
+en:
+  collavre:
+    mobile:
+      default_task_label: "Task"
+      continue_message: "Please continue."
+      summary:
+        a_tool: "a tool"
+        approval: "Task %{number}, %{label}. Approval requested: %{detail}. Approve it?"
+        reply: "Task %{number}, %{label} says: %{text}"
+      reply:
+        approved: "Approved."
+        denied: "Denied."
+        approved_n: "Approved task %{numbers}."
+        denied_n: "Denied task %{numbers}."
+        stopped_n: "Stopped task %{numbers}."
+        continued_n: "Continuing task %{numbers}."
+        already_decided: "That was already decided."
+        clarify_decision: "Sorry, did you want to approve or deny?"
+        empty_response: "I didn't catch a response."
+        relayed: "Sent your reply to the agent."
+        sent: "Sent."
+        no_match: "I couldn't find that task. Which number did you mean?"
+        confirm: "I heard \"%{text}\". Should I do that? Please say yes or no."
+        status_idle: "Nothing is waiting on you right now."
+        status_header:
+          one: "1 active task."
+          other: "%{count} active tasks."
+        status_line: "Task %{number}, %{label}."
