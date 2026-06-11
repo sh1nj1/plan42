@@ -534,6 +534,56 @@ module Collavre
         policy&.destroy
       end
 
+      def create_topic_scheduling_policy(topic_max:)
+        Collavre::OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          scope_type: "Topic",
+          scope_id: @topic.id,
+          config: { "topic_max_concurrent_jobs" => topic_max }
+        )
+      end
+
+      test "honors topic-scoped topic_max below the global limit" do
+        # Global allows 2 concurrent, but this topic is serialized to 1. A single
+        # live blocker therefore fills the topic — the waiter is legitimately
+        # queued and must NOT be flagged. Resolving against the empty-context
+        # detector resolver would see the global 2 and wrongly self-heal,
+        # violating the topic's serialization.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        global = create_scheduling_policy(topic_max: 2)
+        scoped = create_topic_scheduling_policy(topic_max: 1)
+        create_queued_task(comment_id: 2012)
+        create_running_blocker(name: "Live blocker 1")
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        scoped&.destroy
+        global&.destroy
+        policy&.destroy
+      end
+
+      test "honors topic-scoped topic_max above the global limit" do
+        # Global serializes to 1, but this topic allows 2. A single live blocker
+        # leaves a free slot, so a missed dequeue orphans the waiter — it must be
+        # self-healed, not suppressed by the global limit.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        global = create_scheduling_policy(topic_max: 1)
+        scoped = create_topic_scheduling_policy(topic_max: 2)
+        orphan = create_queued_task(comment_id: 2013)
+        create_running_blocker(name: "Live blocker 1")
+
+        stuck_items = StuckDetector.new.detect
+        orphan_item = stuck_items.find { |i| i.type == :queued_orphan }
+
+        assert_not_nil orphan_item
+        assert_equal orphan.id, orphan_item.item.id
+      ensure
+        scoped&.destroy
+        global&.destroy
+        policy&.destroy
+      end
+
       test "fails parent workflow when auto-recovering delegated subtask" do
         policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
 

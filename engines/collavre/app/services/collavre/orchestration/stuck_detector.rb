@@ -101,11 +101,25 @@ module Collavre
       # scheduler never defers, so fall back to the conservative "any live
       # blocker" check.
       def topic_at_capacity?(task)
-        topic_max = @policy_resolver.topic_max_concurrent_jobs
+        topic_max = scheduling_resolver_for(task).topic_max_concurrent_jobs
         running_count = Task.running_for_topic(task.topic_id, task.creative_id).count
         return running_count.positive? unless topic_max
 
         running_count >= topic_max
+      end
+
+      # Resolve scheduling policy against the queued task's own topic/creative
+      # context — the same context the scheduler used to admit it. The detector's
+      # default resolver is built with an empty context (it only needs the global
+      # stuck_detection policy), so reading topic_max_concurrent_jobs off it would
+      # see only the global default and ignore any topic-/creative-scoped override.
+      # That mismatch would violate a topic's serialization when its scoped limit
+      # is below the global value, or wrongly suppress recovery when it is above.
+      def scheduling_resolver_for(task)
+        context = {}
+        context["creative"] = { "id" => task.creative_id } if task.creative_id
+        context["topic"] = { "id" => task.topic_id } if task.topic_id
+        PolicyResolver.new(context)
       end
 
       # Fail a stuck running/delegated task and drain the topic queue.
