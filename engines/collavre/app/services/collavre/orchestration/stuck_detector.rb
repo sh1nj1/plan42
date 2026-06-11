@@ -32,6 +32,7 @@ module Collavre
 
         stuck_items = []
         stuck_items.concat(detect_stuck_tasks(config))
+        stuck_items.concat(detect_orphaned_queued_tasks(config))
         stuck_items.concat(detect_stalled_creatives(config))
 
         auto_recover_stuck_tasks(stuck_items)
@@ -47,54 +48,88 @@ module Collavre
 
         stuck_items = []
         stuck_items.concat(detect_stuck_tasks(config))
+        stuck_items.concat(detect_orphaned_queued_tasks(config))
         stuck_items.concat(detect_stalled_creatives(config))
         stuck_items
       end
 
       private
 
-      # Auto-recover stuck tasks by marking them as failed and draining the queue.
+      # Auto-recover stuck items: fail-and-drain for live tasks, self-heal for
+      # orphaned queued waiters. Orphan recovery is deduped per topic so a single
+      # detection cycle never promotes more waiters than the topic concurrency
+      # limit allows (dequeue_next_for_topic promotes exactly one per call).
       def auto_recover_stuck_tasks(stuck_items)
+        healed_topics = Set.new
         stuck_items.each do |stuck_item|
-          next unless stuck_item.type == :task
-
-          task = stuck_item.item
-          next unless %w[running delegated].include?(task.status)
-
-          task.update!(status: "failed")
-          Rails.logger.info(
-            "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
-            "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
-          )
-
-          # Release resources held by the stuck task
-          if task.agent
-            tracker = ResourceTracker.for(task.agent)
-            tracker.release!(task.id)
+          case stuck_item.type
+          when :task          then recover_stuck_task(stuck_item)
+          when :queued_orphan then recover_orphaned_queued_task(stuck_item, healed_topics)
           end
-
-          # If this was a workflow subtask, fail the parent so the workflow
-          # advances instead of staying running with pending_creative_ids
-          # pointing at a child that's been failed underneath it.
-          if task.parent_task_id.present?
-            begin
-              Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-                task,
-                error_message: "Auto-recovered: stuck for " \
-                               "#{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
-              )
-            rescue StandardError => e
-              Rails.logger.error(
-                "[StuckDetector] fail_subtask! failed for task #{task.id}: #{e.message}"
-              )
-            end
-          end
-
-          # Drain the queue for the topic so waiting tasks can execute
-          AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
-        rescue StandardError => e
-          Rails.logger.error("[StuckDetector] Auto-recovery failed for task #{task.id}: #{e.message}")
         end
+      end
+
+      # Self-heal an orphaned queued waiter: its blocker is gone but it was never
+      # drained (missed dequeue / enqueue-vs-terminate TOCTOU race / lost
+      # cross-process broadcast). Re-check liveness atomically, then drain.
+      def recover_orphaned_queued_task(stuck_item, healed_topics)
+        task = stuck_item.item.reload
+        return unless task.status == "queued"
+
+        topic_key = [ task.topic_id, task.creative_id ]
+        return if healed_topics.include?(topic_key)
+        # If a live blocker (re)appeared since detection, the normal terminal
+        # callback will drain the queue — leave it alone.
+        return if Task.running_for_topic(task.topic_id, task.creative_id).exists?
+
+        healed_topics << topic_key
+        Rails.logger.info(
+          "[StuckDetector] Self-healing orphaned queued task #{task.id} " \
+          "(topic=#{task.topic_id}, creative=#{task.creative_id}): no live blocker, draining queue"
+        )
+        AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+      rescue StandardError => e
+        Rails.logger.error("[StuckDetector] Self-heal failed for queued task #{stuck_item.item.id}: #{e.message}")
+      end
+
+      # Fail a stuck running/delegated task and drain the topic queue.
+      def recover_stuck_task(stuck_item)
+        task = stuck_item.item
+        return unless %w[running delegated].include?(task.status)
+
+        task.update!(status: "failed")
+        Rails.logger.info(
+          "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
+          "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+        )
+
+        # Release resources held by the stuck task
+        if task.agent
+          tracker = ResourceTracker.for(task.agent)
+          tracker.release!(task.id)
+        end
+
+        # If this was a workflow subtask, fail the parent so the workflow
+        # advances instead of staying running with pending_creative_ids
+        # pointing at a child that's been failed underneath it.
+        if task.parent_task_id.present?
+          begin
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task,
+              error_message: "Auto-recovered: stuck for " \
+                             "#{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+            )
+          rescue StandardError => e
+            Rails.logger.error(
+              "[StuckDetector] fail_subtask! failed for task #{task.id}: #{e.message}"
+            )
+          end
+        end
+
+        # Drain the queue for the topic so waiting tasks can execute
+        AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+      rescue StandardError => e
+        Rails.logger.error("[StuckDetector] Auto-recovery failed for task #{stuck_item.item.id}: #{e.message}")
       end
 
       def stuck_detection_config
@@ -125,6 +160,36 @@ module Collavre
             reason: :no_progress,
             stuck_since: task.updated_at,
             escalation_targets: escalation_targets
+          )
+        end
+      end
+
+      # Detect orphaned queued waiters: tasks left in "queued" for a topic that
+      # has no live running/delegated blocker. A queued task's only path to
+      # execution is dequeue_next_for_topic, which fires when the blocker reaches
+      # a terminal status. If that single hand-off is missed — an
+      # enqueue-vs-terminate TOCTOU race, or a lost cross-process broadcast — the
+      # blocker is already gone and nothing will ever wake the waiter: it shows
+      # "⏳ 대기중" forever. These are invisible to detect_stuck_tasks, which only
+      # scans running/delegated. There is no stop button to press here because the
+      # blocker no longer exists; the fix is to drain the queue (see
+      # recover_orphaned_queued_task), not to escalate.
+      def detect_orphaned_queued_tasks(config)
+        threshold_minutes = config["queued_orphan_threshold_minutes"] || 5
+        threshold_time = threshold_minutes.minutes.ago
+
+        Task.where(status: "queued")
+            .where("updated_at < ?", threshold_time)
+            .filter_map do |task|
+          # Only orphaned if no live blocker remains for the same topic scope.
+          next if Task.running_for_topic(task.topic_id, task.creative_id).exists?
+
+          StuckItem.new(
+            type: :queued_orphan,
+            item: task,
+            reason: :orphaned_waiter,
+            stuck_since: task.updated_at,
+            escalation_targets: []
           )
         end
       end
@@ -216,6 +281,10 @@ module Collavre
         escalated_count = 0
 
         stuck_items.each do |stuck_item|
+          # Orphaned queued waiters are silently self-healed (queue drained),
+          # not escalated to admins — there is no human action to take.
+          next if stuck_item.type == :queued_orphan
+
           escalated = escalate_item(stuck_item, config)
           if escalated
             mark_escalated(stuck_item)
