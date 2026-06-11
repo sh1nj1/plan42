@@ -49,6 +49,9 @@ mkdir -p "$STAGING"
 # Secrets are excluded so a developer's local credentials never get baked into a
 # distributable .app: the desktop env provisions its own SECRET_KEY_BASE at first
 # run and never decrypts credentials, so master.key / .env* are pure liability.
+# .bundle is excluded too: a developer's local `bundle config set --local` writes
+# .bundle/config, which outranks the launcher's BUNDLE_PATH env and would point the
+# packaged app at a dev-only gem path. The launcher sets all bundler env at runtime.
 rsync -a --delete \
   --exclude '.git' \
   --exclude 'node_modules' \
@@ -59,6 +62,7 @@ rsync -a --delete \
   --exclude 'spec' \
   --exclude '.env' \
   --exclude '.env.*' \
+  --exclude '.bundle' \
   --exclude 'config/master.key' \
   --exclude 'config/credentials/*.key' \
   --exclude 'tools/desktop-app/staging' \
