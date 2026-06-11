@@ -85,7 +85,7 @@ echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_H
 # completion_mark. That stale column cache then poisons an in-process seed, so
 # User.create! emits an INSERT naming the dropped columns and SQLite aborts with
 # "table users has no column named display_level". A fresh process re-reads the final
-# schema. Seeds are idempotent, so we seed only on first run to match db:prepare.
+# schema, so seeding must never be folded back into db:migrate.
 DESKTOP_PRIMARY_DB="$DATA_DIR/desktop-primary.sqlite3"
 SEED_MARKER="$DATA_DIR/.seeded"
 
@@ -93,13 +93,20 @@ SEED_MARKER="$DATA_DIR/.seeded"
 [ -f "$DESKTOP_PRIMARY_DB" ] || "$RUBY_BIN" "$APP_ROOT/bin/rails" db:create
 "$RUBY_BIN" "$APP_ROOT/bin/rails" db:migrate
 
-# Seed until it succeeds, tracked by a marker rather than DB existence: a seed that
-# crashed mid-migration still leaves the DB file behind, so a file check would skip
-# the retry and leave the app with no admin user. Seeds are idempotent, so retrying
-# is safe; the marker just avoids a redundant boot once it has succeeded.
-if [ ! -f "$SEED_MARKER" ]; then
+# Re-seed when the bundled seed sources change, not only on first run. The seeds are
+# idempotent and also carry updatable records (channel bot, GitHub analyzer prompt/
+# routing/tools), so an upgraded bundle must re-apply them; a lifetime marker would
+# pin existing installs to their first-run seeds forever. The marker stores a
+# fingerprint of the seed files: seeding re-runs once after a bundle changes them and
+# is otherwise skipped (no redundant Rails boot per launch). Writing the marker only
+# after db:seed succeeds keeps the half-failed-install self-heal — a crashed seed
+# leaves the marker stale and retries next boot. Empty fingerprint (unreadable seeds)
+# falls back to always-seed rather than silently skipping a fresh install.
+SEED_FINGERPRINT="$(find "$APP_ROOT/db" "$APP_ROOT/engines" -type f -path '*/db/seeds.rb' -print0 2>/dev/null \
+  | sort -z | xargs -0 cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1 || true)"
+if [ -z "$SEED_FINGERPRINT" ] || [ "$(cat "$SEED_MARKER" 2>/dev/null || true)" != "$SEED_FINGERPRINT" ]; then
   "$RUBY_BIN" "$APP_ROOT/bin/rails" db:seed
-  touch "$SEED_MARKER"
+  printf '%s\n' "$SEED_FINGERPRINT" > "$SEED_MARKER"
 fi
 
 # Hand off to Puma (Solid Queue runs in-process via SOLID_QUEUE_IN_PUMA).
