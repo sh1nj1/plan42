@@ -77,20 +77,17 @@ end
 # then pick a stale row with no topic/permissions — reproducing the dark-run
 # waitStream timeout.
 #
-# CreativeShare has a RESTRICT foreign key to creatives and no dependent: :destroy
-# on the Creative side, so the shares granted below (and their permission caches)
-# would block destroy_all with InvalidForeignKey on the second pass of a
-# `--theme light,dark` run: the light seed grants the shares, then the dark seed
-# re-runs this cleanup. Drop the shares + caches for the demo creatives first
-# (delete_all is synchronous — CreativeShare's own cache teardown rides an
-# after_destroy_commit background job that need not run under rails runner). The
-# remaining Creative dependent chain (topics → comments → comment_snapshots)
-# covers the rest, so destroy_all then completes cleanly.
+# destroy_all (not delete_all) is required: it instantiates each Creative and
+# fires the dependent associations. Collavre::Creative includes Permissible,
+# which declares `has_many :creative_shares, dependent: :destroy` and
+# `has_many :creative_shares_caches, dependent: :delete_all` — so the @Vrex
+# :feedback shares (and their permission caches) granted below are torn down by
+# the cascade before the creative_shares→creatives RESTRICT FK is evaluated. The
+# rest of the dependent chain (topics → comments → comment_snapshots) covers the
+# snapshot FK, so destroy_all completes cleanly on the second pass of a
+# `--theme light,dark` run.
 demo_user_ids = created_users.values.map(&:id)
-demo_creative_ids = Collavre::Creative.where(user_id: demo_user_ids).pluck(:id)
-Collavre::CreativeShare.where(creative_id: demo_creative_ids).delete_all
-Collavre::CreativeSharesCache.where(creative_id: demo_creative_ids).delete_all
-Collavre::Creative.where(id: demo_creative_ids).destroy_all
+Collavre::Creative.where(user_id: demo_user_ids).destroy_all
 
 def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
   Collavre::Creative.create!(
