@@ -69,8 +69,16 @@ if %w[light dark].include?(demo_theme) && pm_user.respond_to?(:theme=)
   $stdout.puts "Login user theme set to: #{demo_theme}"
 end
 
-# Clean existing demo data (everything except the reserved system/admin users).
-Collavre::Creative.where("user_id > 3").destroy_all rescue nil
+# Clean existing demo data so re-runs don't stack duplicate creative trees.
+# Scope to the exact demo users upserted above instead of a magic id threshold
+# (`user_id > 3` assumed exactly three reserved system users), and let failures
+# surface rather than swallowing them: a silently half-completed delete would
+# leave a stale duplicate tree, and record.mjs's `rowLocator(...).first()` could
+# then pick a stale row with no topic/permissions — reproducing the dark-run
+# waitStream timeout. The Creative dependent: :destroy chain (topics → comments
+# → comment_snapshots) covers the snapshot FK, so destroy_all completes cleanly.
+demo_user_ids = created_users.values.map(&:id)
+Collavre::Creative.where(user_id: demo_user_ids).destroy_all
 
 def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
   Collavre::Creative.create!(

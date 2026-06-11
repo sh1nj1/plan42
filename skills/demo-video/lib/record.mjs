@@ -106,11 +106,17 @@ async function ensureFormVisible(page) {
 
 // Wait until the latest AI comment finishes streaming.
 //
-// Completion is detected when (a) the last AI comment's text has stopped
+// Completion is detected when (a) the last AI comment's body text has stopped
 // growing and (b) the typing indicator (`#typing-indicator`, which shows
 // "<agent> ..." while a reply streams) has cleared. The typing indicator is
 // the authoritative end-of-stream signal; the text-stability check guards
 // against a momentary empty indicator between chunks.
+//
+// We measure the `.comment-content` body element specifically — not the whole
+// `.comment-item`, whose innerText includes button/status chrome (~tens of
+// chars). Measuring the body lets us settle on any non-empty stable text
+// (`len > 0`) instead of an arbitrary char threshold that would wrongly time
+// out on a short scripted reply.
 async function waitStream(page, timeoutMs = 40000) {
   const start = Date.now();
   await page
@@ -125,14 +131,15 @@ async function waitStream(page, timeoutMs = 40000) {
           '#comments-list .comment-item[data-ai-user="true"]'
         );
         const last = items[items.length - 1];
+        const body = last ? last.querySelector('.comment-content') : null;
         const typing = document.getElementById('typing-indicator');
         return {
-          len: last ? (last.innerText || '').trim().length : 0,
+          len: body ? (body.innerText || '').trim().length : 0,
           typing: typing ? (typing.innerText || '').trim().length > 0 : false,
         };
       })
       .catch(() => ({ len: 0, typing: false }));
-    if (state.len > 15 && state.len === lastLen && !state.typing) {
+    if (state.len > 0 && state.len === lastLen && !state.typing) {
       stable += 1;
       if (stable >= 2) return; // ~1s settled with no typing indicator
     } else {
