@@ -61,6 +61,53 @@ module Collavre
             assert_equal first, second, "the ref number must be pinned to the same approval"
           end
 
+          test "an event already delivered is not re-surfaced once the since cursor advances" do
+            create_permission_comment(request_id: "req-once", tool_name: "Edit")
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            first = JSON.parse(response.body)
+            assert_equal 1, first.size
+            cursor = first.first["created_at"]
+
+            # Same poll the client would make next: since = the max created_at it saw.
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
+            assert_response :ok
+            assert_empty JSON.parse(response.body),
+              "a still-pending approval must not be re-emitted every poll (infinite TTS bug)"
+          end
+
+          test "a pending approval keeps a resolvable ref even after it stops being re-emitted" do
+            comment = create_permission_comment(request_id: "req-keepref", tool_name: "Bash")
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            cursor = JSON.parse(response.body).first["created_at"]
+
+            # Drops out of the emitted stream...
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
+            assert_empty JSON.parse(response.body)
+
+            # ...but "1번 승인" must still resolve and decide it.
+            post "/api/v1/mobile/agent_events/#{comment.id}/respond",
+              params: { device_id: DEVICE, response: "approve" }, headers: auth_headers, as: :json
+            assert_response :ok
+            ref = Collavre::MobileVoiceRef.for_device(@user.id, DEVICE).find_by(target_comment_id: comment.id)
+            assert ref.present? && ref.status == "resolved", "the ref is preserved across polls and resolved on decision"
+          end
+
+          test "an event created after the cursor still surfaces" do
+            create_permission_comment(request_id: "req-old", tool_name: "Edit")
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            cursor = JSON.parse(response.body).first["created_at"]
+
+            travel_to 5.seconds.from_now do
+              create_permission_comment(request_id: "req-new", tool_name: "Bash")
+              get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
+            end
+            events = JSON.parse(response.body)
+            assert_equal 1, events.size, "the newer approval surfaces; the older one does not"
+            assert_equal "req-new", Collavre::Comment.find(events.first["id"]).claude_channel_permission_request_id
+          end
+
           test "respond approve decides the permission and broadcasts to the suspended session" do
             comment = create_permission_comment(request_id: "req-approve", tool_name: "Bash")
             # assign its ref

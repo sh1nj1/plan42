@@ -23,19 +23,27 @@ module Collavre
 
             replies = agent_replies(since)
 
+            # Refs + reconcile run over the FULL pending set so a still-pending
+            # approval keeps its spoken number ("1번") even on polls where it is
+            # no longer re-emitted — otherwise reconcile! would resolve its ref.
             registry.reconcile!(
               active_comment_ids: approvals.map(&:id),
               active_topic_ids: running.map(&:topic_id)
             )
 
-            events = approvals.map do |c|
+            # But only EMIT what is newer than the client cursor. Approvals are
+            # otherwise unbounded by `since` (they stay pending until decided),
+            # so without this filter every poll re-speaks the same approval.
+            new_approvals = since ? approvals.select { |c| c.created_at > since } : approvals
+
+            events = new_approvals.map do |c|
               ref = approval_refs[c.id]
               {
                 id: c.id, ref: ref.ref_number, type: "approval_requested",
                 title: ref.label,
                 summary: summarizer.approval_summary(ref_number: ref.ref_number, comment: c, label: ref.label),
                 speak: true, requires_response: true, topic_id: c.topic_id,
-                created_at: c.created_at.iso8601
+                created_at: c.created_at.iso8601(6)
               }
             end
 
@@ -46,7 +54,7 @@ module Collavre
                 title: ref.label,
                 summary: summarizer.reply_summary(ref_number: ref.ref_number, content: c.content, label: ref.label),
                 speak: true, requires_response: c.content.to_s.strip.end_with?("?"),
-                topic_id: c.topic_id, created_at: c.created_at.iso8601
+                topic_id: c.topic_id, created_at: c.created_at.iso8601(6)
               }
             end
 
