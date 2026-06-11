@@ -48,7 +48,8 @@ mkdir -p "$STAGING"
 # Ruby/gems under tools/desktop-app/vendor ARE included (the app needs them).
 # Secrets are excluded so a developer's local credentials never get baked into a
 # distributable .app: the desktop env provisions its own SECRET_KEY_BASE at first
-# run and never decrypts credentials, so master.key / .env* are pure liability.
+# run and never decrypts credentials, so any config/*.key / .env* are pure liability
+# (.gitignore treats every /config/*.key as a local secret, not just master.key).
 # .bundle is excluded too: a developer's local `bundle config set --local` writes
 # .bundle/config, which outranks the launcher's BUNDLE_PATH env and would point the
 # packaged app at a dev-only gem path. The launcher sets all bundler env at runtime.
@@ -63,7 +64,7 @@ rsync -a --delete \
   --exclude '.env' \
   --exclude '.env.*' \
   --exclude '.bundle' \
-  --exclude 'config/master.key' \
+  --exclude 'config/*.key' \
   --exclude 'config/credentials/*.key' \
   --exclude 'tools/desktop-app/staging' \
   --exclude 'tools/desktop-app/src-tauri/target' \

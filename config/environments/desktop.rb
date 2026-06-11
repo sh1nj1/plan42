@@ -38,6 +38,23 @@ Rails.application.configure do
   # user, so there is no email-ownership to prove.
   config.x.auto_verify_email = true
 
+  # Production sets delivery_method = :smtp with SES credentials that are absent
+  # on a desktop install, so inheriting it makes every *other* user-triggered
+  # mail (password reset, share invites) enqueue a Solid Queue job that can never
+  # connect and is retried forever, while the UI claims the mail was sent.
+  # Deliver to a file under the writable data dir instead: deliveries succeed (no
+  # doomed SMTP retries), and the single local owner can open the message to
+  # retrieve a link — e.g. a password-reset URL — the loopback app can't email.
+  # Covers all mail actions, not just the auto-verified signup above.
+  config.action_mailer.delivery_method = :file
+  config.action_mailer.raise_delivery_errors = false
+  if (mail_data_dir = ENV["COLLAVRE_DATA_DIR"]).present?
+    require "fileutils"
+    mail_dir = File.join(mail_data_dir, "mail")
+    FileUtils.mkdir_p(mail_dir)
+    config.action_mailer.file_settings = { location: mail_dir }
+  end
+
   # Ship no known admin credential. The generic seed creates admin@example.com
   # with a public default password, which would be a standing backdoor on every
   # desktop install (worse in open mode). Instead the owner is bootstrapped via
