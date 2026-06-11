@@ -34,6 +34,13 @@ class AgentEventService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         startAsForeground()
 
+        // If push is configured, refresh the registered FCM token now that the
+        // user is (likely) signed in — onNewToken alone can fire before sign-in.
+        // No-op without google-services.json.
+        PushRegistrar.fetchToken(this) { token ->
+            lifecycleScope.launch { runCatching { repository.registerPushToken(token) } }
+        }
+
         lifecycleScope.launch {
             val cfg = settings.snapshot()
             tts.init(cfg.locale, cfg.ttsRate)

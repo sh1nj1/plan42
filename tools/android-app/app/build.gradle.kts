@@ -7,6 +7,15 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Push (FCM) is credential-gated: the Google Services plugin parses
+// google-services.json at build time, so applying it unconditionally would
+// fail any build that doesn't ship Firebase credentials. Apply it only when the
+// file is present — without it the app builds and runs on polling alone, and
+// the FCM code stays dormant (FirebaseApp never initializes). See README.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.collavre.voice"
     compileSdk = 35
@@ -65,4 +74,9 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit.kotlinx.serialization)
+
+    // FCM client. The libraries compile without google-services.json; only the
+    // Google Services plugin (applied conditionally above) needs it.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 }

@@ -51,7 +51,9 @@ The Gradle wrapper pins Gradle 8.9 (AGP 8.6.1, Kotlin 2.0.21, Compose, Hilt).
 
 A foreground service keeps polling `agent_events` while backgrounded and posts a
 notification (with ✓/✗ quick actions) for each new event; tapping it opens the
-app and starts listening for your answer.
+app and starts listening for your answer. **Push (FCM) is wired but dormant** —
+see [Push notifications](#push-notifications-fcm); without credentials the app
+runs on polling alone.
 
 ## Connecting to a local Rails preview (tailscale)
 
@@ -74,6 +76,32 @@ To E2E test against a local preview without https:
    token. The debug build allows cleartext only for the tailscale/localhost
    hosts (see `res/xml/network_security_config.xml`); production stays https.
 
+## Push notifications (FCM)
+
+Event delivery is **polling by default, push when configured**. The push client
+is fully scaffolded but credential-gated: the build skips the Google Services
+plugin and `FirebaseApp` never initializes unless a `google-services.json` is
+present, so the app builds and runs on polling with no Firebase setup.
+
+To light it up (collavre.com only — the sender ID is baked into the build, so
+self-hosted servers stay on polling):
+
+1. Create a Firebase project, add an Android app with package
+   `com.collavre.voice`, and drop the generated `google-services.json` into
+   `tools/android-app/app/`. The next build auto-applies the plugin and push
+   activates — no code change.
+2. On the server, set the FCM v1 service-account credentials
+   (`config.x.fcm_service`) so `Collavre::PushNotificationJob` can send.
+3. Remaining server wiring (one follow-up): enqueue `PushNotificationJob` to the
+   topic owner's devices when a permission-request comment is created (the
+   `approval_requested` source in `AgentEventsController#index`). The device
+   registration endpoint and the app receiver already exist; this is the only
+   missing hop. Send pushes as **data messages** with keys `event_id, ref, type,
+   title, summary, requires_response, topic_id, created_at` — `CollavreMessagingService`
+   maps them to the same notification + spoken summary the poll loop produces.
+
+Polling stays as the self-hosted fallback; do not remove it.
+
 ## Architecture
 
 | Component | Role |
@@ -82,7 +110,9 @@ To E2E test against a local preview without https:
 | `VoiceCommandService` | Single orchestration entry point: push-to-talk + event answers (speak → auto-listen → relay). Future BT media-button driver hooks here |
 | `TtsManager` / `SpeechRecognizerManager` | TextToSpeech / SpeechRecognizer wrappers |
 | `AgentEventRepository` | `/api/v1/mobile/*` calls + `since` polling cursor |
-| `AgentEventService` | Foreground (`dataSync`) poll loop → notifications + spoken summaries |
+| `AgentEventService` | Foreground (`dataSync`) poll loop → notifications + spoken summaries; registers FCM token on start |
+| `CollavreMessagingService` | FCM receiver (push path): `onNewToken` → device registration, `onMessageReceived` → notification + spoken summary. Dormant without `google-services.json` |
+| `PushRegistrar` | Guards Firebase availability so the app no-ops cleanly when push is unconfigured |
 | `QuickResponseReceiver` | Notification ✓/✗ → `agent_events/:id/respond` |
 | `CollavreApi` / `ConfigInterceptor` | Retrofit; rewrites host/scheme/port + Bearer per request from settings |
 | `SettingsRepository` | DataStore (url, token, ttsRate, locale, device id, since cursor) |
@@ -100,7 +130,8 @@ Implemented in `engines/collavre/.../api/v1/mobile/`:
 - `POST /api/v1/mobile/voice_commands` → `{text}` (also accepts a pre-structured
   `{intent}` for a future on-device LLM seam).
 - `GET  /api/v1/mobile/sessions` → active task list.
-- `POST /api/v1/mobile/devices` → FCM registration (push is a follow-up).
+- `POST /api/v1/mobile/devices` → FCM token registration (app client wired; see
+  [Push notifications](#push-notifications-fcm)).
 
 Intent interpretation is server-side and **hybrid**: a deterministic grammar
 fast-path for the bounded, safety-critical commands ("N번 승인/거절/멈춰/계속"),

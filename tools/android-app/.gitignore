@@ -4,3 +4,7 @@ build/
 *.iml
 .idea/
 .kotlin/
+
+# Firebase credentials — provide locally to enable push (see README)
+google-services.json
+app/google-services.json

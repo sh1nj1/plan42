@@ -3,6 +3,8 @@ package com.collavre.voice.events
 import com.collavre.voice.data.SettingsRepository
 import com.collavre.voice.network.CollavreApi
 import com.collavre.voice.network.model.AgentEvent
+import com.collavre.voice.network.model.DeviceBody
+import com.collavre.voice.network.model.DeviceRequest
 import com.collavre.voice.network.model.RespondRequest
 import com.collavre.voice.network.model.SessionDto
 import com.collavre.voice.network.model.VoiceCommandRequest
@@ -58,5 +60,20 @@ class AgentEventRepository @Inject constructor(
         val cfg = settings.snapshot()
         if (cfg.token.isBlank()) return emptyList()
         return api.sessions(cfg.deviceId)
+    }
+
+    /**
+     * Registers the FCM token against the user's Device record so the server can
+     * push agent events. No-op until the user is signed in (the server needs the
+     * bearer token to attach the device to a user); re-run on every app open and
+     * on token rotation. Server upserts by fcm_token, so repeat calls are cheap.
+     */
+    suspend fun registerPushToken(token: String) {
+        val cfg = settings.snapshot()
+        if (cfg.token.isBlank() || token.isBlank()) return
+        val clientId = settings.ensureDeviceId()
+        api.registerDevice(
+            DeviceRequest(DeviceBody(clientId = clientId, fcmToken = token))
+        )
     }
 }
