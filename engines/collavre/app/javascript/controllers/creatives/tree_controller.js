@@ -18,6 +18,7 @@ export default class extends Controller {
     this._sentinel = null
     this._sentinelObserver = null
     this._loadingMore = false
+    this._loadMoreAbort = null
     this._loadMoreIndicator = null
     this.handleResize = this.updateAlignmentOffset.bind(this)
     this.handleTreeUpdated = () => this.queueAlignmentUpdate()
@@ -243,15 +244,25 @@ export default class extends Controller {
     this._loadingMore = true
     this._showLoadMoreIndicator()
 
+    // Tie this request to an AbortController so a fresh load() / teardown (filter
+    // change, archive toggle, sync refetch, disconnect) cancels an in-flight
+    // page fetch. Without this the stale promise could append rows for a
+    // different urlValue into the freshly rendered list and resurrect the
+    // pagination state via _repositionSentinel().
+    if (this._loadMoreAbort) this._loadMoreAbort.abort()
+    this._loadMoreAbort = new AbortController()
+    const signal = this._loadMoreAbort.signal
+
     const url = new URL(this.urlValue, window.location.origin)
     url.searchParams.set('page', String(nextPage))
 
-    fetch(url.pathname + url.search, { headers: { Accept: 'application/json' } })
+    fetch(url.pathname + url.search, { headers: { Accept: 'application/json' }, signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Failed to load more chats: ${response.status}`)
         return response.json()
       })
       .then((data) => {
+        if (signal.aborted) return
         this._hideLoadMoreIndicator()
         const nodes = Array.isArray(data?.creatives) ? data.creatives : []
         if (nodes.length > 0) {
@@ -268,6 +279,7 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
+        if (error.name === 'AbortError') return
         console.error(error)
         this._hideLoadMoreIndicator()
         this._loadingMore = false
@@ -286,6 +298,10 @@ export default class extends Controller {
   }
 
   _teardownPagination() {
+    if (this._loadMoreAbort) {
+      this._loadMoreAbort.abort()
+      this._loadMoreAbort = null
+    }
     if (this._sentinelObserver) {
       this._sentinelObserver.disconnect()
       this._sentinelObserver = null

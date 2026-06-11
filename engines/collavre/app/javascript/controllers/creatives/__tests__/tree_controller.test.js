@@ -213,4 +213,58 @@ describe('CreativesTreeController Chats pagination (load more)', () => {
 
     application.stop()
   })
+
+  test('drops a stale load-more response that resolves after a fresh load', async () => {
+    let resolvePage2
+    const page2Nodes = [{ id: 2 }, { id: 3 }]
+    global.fetch = jest
+      .fn()
+      // initial page-1 (Chats filter, has more)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+      // page-2 stays pending until we resolve it manually
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePage2 = () =>
+              resolve({
+                ok: true,
+                json: async () => ({ creatives: page2Nodes, pagination: { has_more: true, next_page: 3 } }),
+              })
+          })
+      )
+      // the fresh load() re-renders a different (non-paginated) view
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 99 }] }),
+      })
+
+    const { container, application } = installController()
+    await flush()
+    await flush()
+
+    // Sentinel intersects -> page-2 fetch kicks off but stays pending.
+    MockIntersectionObserver.instances[0].triggerIntersect()
+    await flush()
+
+    // A fresh load happens before page 2 resolves (filter change, sync refetch,
+    // archive toggle). load() tears down pagination and aborts the in-flight
+    // load-more.
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load()
+    await flush()
+    await flush()
+
+    // The stale page-2 response finally arrives. It must NOT be appended into
+    // the freshly rendered view.
+    resolvePage2()
+    await flush()
+    await flush()
+
+    expect(appendCreativeNodes).not.toHaveBeenCalled()
+
+    application.stop()
+  })
 })
