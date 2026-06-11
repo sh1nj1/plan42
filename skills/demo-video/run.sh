@@ -95,9 +95,15 @@ if curl -sf "$BASE" >/dev/null 2>&1; then
   echo "→ dev server already up at $BASE"
 else
   echo "→ starting dev server on :$PORT"
-  ( cd "$RAILS_ROOT" && PORT="$PORT" nohup bin/rails server -p "$PORT" -b 0.0.0.0 \
-      > /tmp/demo-video-server-$PORT.log 2>&1 & echo $! > /tmp/demo-video-server-$PORT.pid )
-  SERVER_PID="$(cat /tmp/demo-video-server-$PORT.pid)"
+  # Run the server as the subshell's exec'd image so $! is the Rails/puma PID
+  # itself, not a transient wrapper. A backgrounded `cd && nohup … & echo $!`
+  # captures the wrapper subshell on bash 3.2 (macOS), so the cleanup trap kills
+  # the wrapper and leaks the actual server. `( cd … && exec … ) &` + `$!` binds
+  # SERVER_PID to the process the trap must kill.
+  ( cd "$RAILS_ROOT" && exec env PORT="$PORT" bin/rails server -p "$PORT" -b 0.0.0.0 \
+      > /tmp/demo-video-server-$PORT.log 2>&1 ) &
+  SERVER_PID=$!
+  echo "$SERVER_PID" > /tmp/demo-video-server-$PORT.pid
   for _ in $(seq 1 60); do
     curl -sf "$BASE" >/dev/null 2>&1 && break
     sleep 1

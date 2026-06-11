@@ -319,10 +319,19 @@ async function main() {
     process.exit(1);
   }
   console.log(`  📼 raw: ${rawPath}`);
-  if (!NO_POST) postProcess(rawPath);
+  // postProcess returns null when ffmpeg is missing or exits non-zero. The
+  // documented output of this skill is the post-processed MP4, so a null result
+  // is a run failure: without this gate the process would exit 0 and run.sh
+  // would print "✅ done" with no MP4 produced.
+  let postFailed = false;
+  if (!NO_POST) postFailed = postProcess(rawPath) === null;
 
   if (stepError) {
     console.error('  ❌ recording failed: a scenario step threw — output is partial');
+    process.exit(1);
+  }
+  if (postFailed) {
+    console.error('  ❌ recording failed: ffmpeg post-processing produced no MP4');
     process.exit(1);
   }
 }

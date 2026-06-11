@@ -154,6 +154,24 @@ ms_api.update!(data: { "context_ids" => [ onboard.id ] })
 end
 $stdout.puts "Granted Vrex :feedback on demo roots and rebuilt permission cache"
 
+# ─── Grant the login user (PM) :feedback on every project root ───
+# The descendant tasks are deliberately owned by other team members (designer,
+# lead, be1…) to show multi-user avatars in the tree. But `children_with_permission`
+# only returns children the viewer owns, has a share on, or that are public —
+# owning an *ancestor* does NOT cascade. Without an explicit share the PM sees
+# 0/3 grandchildren under each milestone, and the hierarchy/context scenes record
+# a thin two-level tree instead of the seeded three-level one. The tech_debt root
+# is lead-owned, so the PM wouldn't even see it in the root list without this.
+# A share on each root cascades to the whole subtree via the rebuilt cache.
+[ v2, tech_debt, onboard ].each do |root|
+  share = Collavre::CreativeShare.find_or_initialize_by(creative: root, user: pm_user)
+  share.permission = :feedback
+  share.shared_by = pm_user if share.respond_to?(:shared_by=)
+  share.save!
+  Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: root.id, user_id: pm_user.id)
+end
+$stdout.puts "Granted PM :feedback on all project roots and rebuilt permission cache"
+
 # ─── Topics & seeded conversation ───
 topic_general = Collavre::Topic.create!(creative: v2, user: pm_user, name: "일반", position: 1)
 topic_review  = Collavre::Topic.create!(creative: v2, user: created_users[:lead], name: "코드 리뷰", position: 2)
