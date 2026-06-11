@@ -204,18 +204,36 @@ async function runStep(page, step) {
       return;
     }
     case 'open_chat': {
-      const btn = rowLocator(page, val).locator('.comments-btn').first();
-      await btn.click({ force: true, timeout: 8000 }).catch((e) =>
-        console.log(`  ⚠️ open_chat ${val}: ${e.message.split('\n')[0]}`)
-      );
-      await page.waitForSelector('#comments-popup', { timeout: 8000 }).catch(() => {});
+      // Required by default: the chat/context scenes are meaningless if the
+      // popup never opens. Gate on #comments-popup actually appearing (the
+      // authoritative signal), so a renamed .comments-btn or a hidden row fails
+      // the run instead of recording a scene with no chat UI. Use
+      // `{ row, optional: true }` to tolerate a miss.
+      const row = typeof val === 'string' ? val : val.row;
+      const optional = typeof val === 'object' && val.optional === true;
+      const btn = rowLocator(page, row).locator('.comments-btn').first();
+      try {
+        await btn.click({ force: true, timeout: 8000 });
+        await page.waitForSelector('#comments-popup', { timeout: 8000 });
+      } catch (e) {
+        if (!optional) throw new Error(`open_chat ${row}: ${e.message.split('\n')[0]}`);
+        console.log(`  ⚠️ optional open_chat ${row}: ${e.message.split('\n')[0]}`);
+      }
       return;
     }
     case 'topic': {
-      const tab = page.locator('#comment-topics').locator(`text=${val}`).first();
-      await tab.click({ timeout: 6000 }).catch((e) =>
-        console.log(`  ⚠️ topic ${val}: ${e.message.split('\n')[0]}`)
-      );
+      // Required by default: a silent tab-switch miss records the wrong
+      // discussion in the topic scenes (05-code-review, 06-design). A missing
+      // tab throws; use `{ name, optional: true }` to tolerate.
+      const name = typeof val === 'string' ? val : val.name;
+      const optional = typeof val === 'object' && val.optional === true;
+      const tab = page.locator('#comment-topics').locator(`text=${name}`).first();
+      try {
+        await tab.click({ timeout: 6000 });
+      } catch (e) {
+        if (!optional) throw new Error(`topic ${name}: ${e.message.split('\n')[0]}`);
+        console.log(`  ⚠️ optional topic ${name}: ${e.message.split('\n')[0]}`);
+      }
       await sleep(1200);
       return;
     }
