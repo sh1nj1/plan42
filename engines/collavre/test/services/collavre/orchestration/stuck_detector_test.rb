@@ -483,6 +483,57 @@ module Collavre
         policy&.destroy
       end
 
+      def create_scheduling_policy(topic_max:)
+        Collavre::OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          scope_type: nil,
+          config: { "topic_max_concurrent_jobs" => topic_max }
+        )
+      end
+
+      def create_running_blocker(name:)
+        Collavre::Task.create!(
+          name: name,
+          agent: @ai_agent,
+          status: "running",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+      end
+
+      test "flags orphaned waiter when topic has a free slot under topic_max > 1" do
+        # topic_max=2 with a single live blocker leaves one free slot, so a
+        # missed dequeue orphans the waiter — it must be self-healed rather than
+        # suppressed until the last blocker terminates.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+        orphan = create_queued_task(comment_id: 2010)
+        create_running_blocker(name: "Live blocker 1")
+
+        stuck_items = StuckDetector.new.detect
+        orphan_item = stuck_items.find { |i| i.type == :queued_orphan }
+
+        assert_not_nil orphan_item
+        assert_equal orphan.id, orphan_item.item.id
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      test "does not flag waiter when topic is at capacity under topic_max > 1" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+        create_queued_task(comment_id: 2011)
+        create_running_blocker(name: "Live blocker 1")
+        create_running_blocker(name: "Live blocker 2")
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
       test "fails parent workflow when auto-recovering delegated subtask" do
         policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
 

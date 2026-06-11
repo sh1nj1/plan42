@@ -78,9 +78,9 @@ module Collavre
 
         topic_key = [ task.topic_id, task.creative_id ]
         return if healed_topics.include?(topic_key)
-        # If a live blocker (re)appeared since detection, the normal terminal
-        # callback will drain the queue — leave it alone.
-        return if Task.running_for_topic(task.topic_id, task.creative_id).exists?
+        # If the topic is back at capacity since detection, the normal terminal
+        # callback will drain the queue when a slot frees — leave it alone.
+        return if topic_at_capacity?(task)
 
         healed_topics << topic_key
         Rails.logger.info(
@@ -90,6 +90,22 @@ module Collavre
         AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       rescue StandardError => e
         Rails.logger.error("[StuckDetector] Self-heal failed for queued task #{stuck_item.item.id}: #{e.message}")
+      end
+
+      # Whether a topic holds no free concurrency slot for a queued waiter.
+      # Mirrors the scheduler's admission rule (running count >= topic_max)
+      # rather than treating any single live blocker as full capacity —
+      # otherwise, with topic_max_concurrent_jobs > 1, a missed dequeue would
+      # leave the waiter suppressed until the *last* blocker terminates instead
+      # of the moment a slot frees up. When no topic limit is configured the
+      # scheduler never defers, so fall back to the conservative "any live
+      # blocker" check.
+      def topic_at_capacity?(task)
+        topic_max = @policy_resolver.topic_max_concurrent_jobs
+        running_count = Task.running_for_topic(task.topic_id, task.creative_id).count
+        return running_count.positive? unless topic_max
+
+        running_count >= topic_max
       end
 
       # Fail a stuck running/delegated task and drain the topic queue.
@@ -181,8 +197,9 @@ module Collavre
         Task.where(status: "queued")
             .where("updated_at < ?", threshold_time)
             .filter_map do |task|
-          # Only orphaned if no live blocker remains for the same topic scope.
-          next if Task.running_for_topic(task.topic_id, task.creative_id).exists?
+          # Only orphaned if the topic has a free slot. A waiter is legitimately
+          # queued while the topic is at capacity.
+          next if topic_at_capacity?(task)
 
           StuckItem.new(
             type: :queued_orphan,
