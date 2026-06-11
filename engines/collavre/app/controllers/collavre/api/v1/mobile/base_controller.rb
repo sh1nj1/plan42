@@ -84,6 +84,22 @@ module Collavre
             text = reply_key_or_text.is_a?(Symbol) ? reply(reply_key_or_text) : reply_key_or_text
             render json: { reply: text, speak: speak, action: action }, status: status
           end
+
+          # Gate + decide + broadcast a Claude Channel permission. Routes the
+          # voice path through the same approval_status gate the web path uses
+          # (Comments::ApprovalActions). Without this the caller could decide a
+          # prompt they merely own the authoring agent for but are not the
+          # designated approver of (authorized_comment? lets agent-owned events
+          # through). Returns a symbol: :ok | :unauthorized | :already_decided.
+          def decide_permission(comment, behavior)
+            return :unauthorized unless comment.can_be_approved_by?(current_user)
+
+            comment.decide_claude_channel_permission!(behavior, by: current_user)
+            comment.broadcast_claude_channel_permission_decision(behavior)
+            :ok
+          rescue Collavre::Comment::ClaudeChannelPermission::AlreadyDecided
+            :already_decided
+          end
         end
       end
     end

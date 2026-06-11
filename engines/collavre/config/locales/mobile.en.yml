@@ -15,6 +15,7 @@ en:
         stopped_n: "Stopped task %{numbers}."
         continued_n: "Continuing task %{numbers}."
         already_decided: "That was already decided."
+        not_authorized: "You're not allowed to decide that one — it may need an administrator."
         clarify_decision: "Sorry, did you want to approve or deny?"
         empty_response: "I didn't catch a response."
         relayed: "Sent your reply to the agent."

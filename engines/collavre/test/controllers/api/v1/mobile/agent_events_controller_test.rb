@@ -124,6 +124,27 @@ module Collavre
             assert_equal @topic.id, relayed.topic_id
           end
 
+          test "respond refuses to decide a permission the caller is not the approver for" do
+            # Authored by the caller's own agent — so authorized_comment? lets the
+            # request through — but the designated approver is someone else. The
+            # decision must still be refused (the web path's approval_status gate).
+            other = users(:two)
+            comment = @creative.comments.create!(
+              content: "🔐 Bash permission", user: @agent, topic: @topic, approver: other,
+              action: JSON.pretty_generate("action" => "claude_channel_permission",
+                                           "request_id" => "req-foreign-approver", "tool_name" => "Bash"),
+              skip_default_user: true, skip_dispatch: true
+            )
+
+            post "/api/v1/mobile/agent_events/#{comment.id}/respond",
+              params: { device_id: DEVICE, response: "approve" }, headers: auth_headers, as: :json
+
+            assert_response :forbidden
+            assert_equal "not_authorized", JSON.parse(response.body).dig("action", "type")
+            assert_nil JSON.parse(comment.reload.action)["decision"],
+              "a permission the caller does not approve must not be decided via the voice path"
+          end
+
           test "respond refuses an event the caller does not own" do
             other = users(:two)
             foreign_agent = User.create!(

@@ -60,16 +60,24 @@ module Collavre
 
             behavior = res.behavior == "deny" ? "deny" : "allow"
             decided = []
+            refused = []
             refs.each do |ref|
               comment = ref.target_comment
               next unless comment&.claude_channel_permission?
 
-              comment.decide_claude_channel_permission!(behavior, by: current_user)
-              comment.broadcast_claude_channel_permission_decision(behavior)
-              ref.resolve!
-              decided << ref.ref_number
-            rescue Collavre::Comment::ClaudeChannelPermission::AlreadyDecided
-              ref.resolve!
+              case decide_permission(comment, behavior)
+              when :ok
+                ref.resolve!
+                decided << ref.ref_number
+              when :already_decided
+                ref.resolve!
+              when :unauthorized
+                refused << ref.ref_number
+              end
+            end
+
+            if decided.empty? && refused.any?
+              return render_speak(:not_authorized, action: { type: "not_authorized", refs: refused }, status: :forbidden)
             end
 
             key = behavior == "allow" ? :approved_n : :denied_n

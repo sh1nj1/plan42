@@ -102,16 +102,18 @@ module Collavre
               return render_speak(:clarify_decision, action: { type: "needs_clarification", comment_id: comment.id })
             end
 
-            comment.decide_claude_channel_permission!(behavior, by: current_user)
-            comment.broadcast_claude_channel_permission_decision(behavior)
-            resolve_ref_for(comment)
-
-            render_speak(
-              behavior == "allow" ? :approved : :denied,
-              action: { type: behavior == "allow" ? "approved" : "denied", comment_id: comment.id }
-            )
-          rescue Collavre::Comment::ClaudeChannelPermission::AlreadyDecided
-            render_speak(:already_decided, action: { type: "already_decided", comment_id: comment.id })
+            case decide_permission(comment, behavior)
+            when :unauthorized
+              render_speak(:not_authorized, action: { type: "not_authorized", comment_id: comment.id }, status: :forbidden)
+            when :already_decided
+              render_speak(:already_decided, action: { type: "already_decided", comment_id: comment.id })
+            else
+              resolve_ref_for(comment)
+              render_speak(
+                behavior == "allow" ? :approved : :denied,
+                action: { type: behavior == "allow" ? "approved" : "denied", comment_id: comment.id }
+              )
+            end
           end
 
           # (B) free-form: relay the utterance verbatim as a human reply.

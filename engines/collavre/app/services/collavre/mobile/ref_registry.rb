@@ -72,13 +72,6 @@ module Collavre
         scope.active.order(Arel.sql("COALESCE(last_seen_at, created_at) DESC")).first
       end
 
-      def by_label_fuzzy(query)
-        q = query.to_s.downcase.strip
-        return nil if q.blank?
-
-        active_refs.detect { |r| r.label.to_s.downcase.include?(q) }
-      end
-
       private
 
       def scope
