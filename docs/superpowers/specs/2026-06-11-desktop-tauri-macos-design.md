@@ -63,6 +63,31 @@ Two units with one clear interface (HTTP over loopback):
 - `RAILS_ROOT` stays in the bundle (read-only code); `storage`/DB paths are
   redirected to app-support via env (`DATABASE` paths + Active Storage root).
 
+## Repository layout
+
+Packaging/tooling lives under **`tools/desktop-app/`**, matching the existing
+`tools/collavre-claude-plugin` convention (build/tooling kept out of the Rails
+app tree). Being outside `app/`, `engines/`, `lib/` keeps it off Zeitwerk's
+eager-load path, so the Rust shell and build scripts never interfere with Rails
+boot.
+
+```
+tools/desktop-app/
+  README.md                # build/run instructions
+  src-tauri/               # Tauri Rust shell (sidecar spawn, webview)
+    tauri.conf.json
+    src/main.rs
+  scripts/
+    bundle-ruby.sh         # vendor portable arm64 Ruby
+    build-macos.sh         # bundle --standalone → .app/Contents/Resources
+    provision-secrets.rb   # first-run secret/key generation
+```
+
+**Boundary**: only the *drives/packages it* side (Rust shell, build, vendoring)
+goes here. The `desktop` Rails environment (`config/environments/desktop.rb`)
+and the sidecar boot entry stay in `config/`/`bin/` because Rails itself must
+load them.
+
 ## Packaging (Ruby runtime)
 
 Chosen: **vendored portable Ruby + standalone bundle**, copied into
