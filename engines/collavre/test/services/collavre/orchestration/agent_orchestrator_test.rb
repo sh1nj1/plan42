@@ -211,11 +211,34 @@ module Collavre
                      agent: @ai_agent, topic_id: topic.id, creative: @creative)
         notice = @creative.comments.create!(
           content: "⏳ waiting on the topic", topic_id: topic.id,
-          private: false, skip_default_user: true
+          private: false, skip_default_user: true, topic_concurrency_defer: true
         )
 
         assert_equal blocker.id, notice.topic_blocking_task&.id,
                      "stop button must target the pending_approval slot holder"
+      end
+
+      # Codex P2: gating the button on "any queued task in the topic" leaks — a
+      # :delayed (rate_limited) notice posted in a topic that already has an
+      # unrelated concurrency waiter would expose a stop button for a blocker
+      # whose cancellation does not unblock the delayed job. topic_concurrency_defer
+      # (set only on the :deferred path) is the per-notice discriminator.
+      test "delayed notice shows no blocker button even when an unrelated queued waiter exists" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        # Occupied slot + a genuine concurrency waiter for some OTHER agent.
+        Task.create!(name: "Running blocker", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Unrelated queued waiter", status: "queued",
+                     trigger_event_name: "comment_created",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        # This notice is a :delayed (busy / rate_limited) one — NOT a concurrency defer.
+        delayed_notice = @creative.comments.create!(
+          content: "⏳ rate limited, retrying soon", topic_id: topic.id,
+          private: false, skip_default_user: true, topic_concurrency_defer: false
+        )
+
+        assert_nil delayed_notice.topic_blocking_task,
+                   "a :delayed notice must not borrow another waiter's blocker button"
       end
 
       # dequeue_next_for_topic

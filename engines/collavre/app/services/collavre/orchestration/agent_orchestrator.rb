@@ -45,7 +45,12 @@ module Collavre
 
         Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil)
                .where("content LIKE ?", "⏳%")
-               .destroy_all
+               .find_each do |notice|
+          # System promotion, not user abandonment: do not let the destroy
+          # callback cancel other still-queued waiters in this topic.
+          notice.suppress_waiter_cancellation = true
+          notice.destroy
+        end
       end
       private_class_method :cleanup_waiting_notices!
 
@@ -190,7 +195,10 @@ module Collavre
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
           private: false,
-          skip_default_user: true
+          skip_default_user: true,
+          # Only :deferred queues a topic waiter; mark it so its stop button can
+          # target the blocker. :delayed (busy / rate_limited) notices stay false.
+          topic_concurrency_defer: decision[:timing] == :deferred
         )
       end
 

@@ -517,6 +517,42 @@ module Collavre
         policy&.destroy
       end
 
+      test "self-heal promotes every orphaned waiter without cancelling the rest" do
+        # Real dequeue path (the topic_max>1 test above stubs it). Promoting one
+        # waiter destroys the topic's ⏳ notices, and a notice's destroy callback
+        # cancels a queued waiter — so without suppression the second orphan is
+        # cancelled instead of promoted, dropping its work.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+
+        # A human comment so refresh_deferred_context! keeps the promoted waiters
+        # (it cancels a promoted task that has no eligible triggering comment).
+        @creative.comments.create!(
+          content: "please respond", topic_id: @topic.id,
+          user: @human_user, skip_dispatch: true
+        )
+
+        w1 = create_queued_task(comment_id: 2030)
+        w2 = create_queued_task(comment_id: 2031)
+        2.times do
+          @creative.comments.create!(
+            content: "⏳ waiting on the topic", topic_id: @topic.id,
+            private: false, skip_default_user: true, topic_concurrency_defer: true
+          )
+        end
+
+        Collavre::AiAgentJob.stub(:perform_later, ->(*) { nil }) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal "pending", w1.reload.status, "first orphan must be promoted"
+        assert_equal "pending", w2.reload.status,
+                     "second orphan must be promoted, not cancelled by notice cleanup"
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
       def create_scheduling_policy(topic_max:)
         Collavre::OrchestratorPolicy.create!(
           policy_type: "scheduling",

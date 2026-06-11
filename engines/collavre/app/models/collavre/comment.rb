@@ -27,13 +27,14 @@ module Collavre
     # blocker's reply_comment ambiguous).
     #
     # Two gates keep the button honest:
-    #   1. Only topic-concurrency waiters qualify. The same "⏳" notice is also
-    #      posted for :delayed decisions (busy / rate_limited), which schedule a
-    #      delayed job WITHOUT queuing a topic waiter — cancelling some unrelated
-    #      running task would not unblock them. A queued waiter for this topic is
-    #      the locale-independent marker that this notice is a real concurrency
-    #      defer (AgentOrchestrator#enqueue_jobs only creates the queued Task on
-    #      the :deferred path).
+    #   1. Only THIS notice's own topic-concurrency defer qualifies. The same "⏳"
+    #      notice is also posted for :delayed decisions (busy / rate_limited),
+    #      which schedule a delayed job WITHOUT queuing a topic waiter —
+    #      cancelling some unrelated running task would not unblock them.
+    #      topic_concurrency_defer is set only on the :deferred path, so a
+    #      :delayed notice never shows the button even when an unrelated queued
+    #      waiter happens to share the topic. The queued_for_topic check then
+    #      confirms a waiter is still actually pending on the slot.
     #   2. Resolve the blocker over occupying_topic_slot, not just running/
     #      delegated: a holder paused on pending_approval still occupies the slot
     #      and is cancellable, so the button must stay visible for it.
@@ -43,7 +44,8 @@ module Collavre
       return @topic_blocking_task if defined?(@topic_blocking_task)
 
       @topic_blocking_task =
-        if topic_id && Collavre::Task.queued_for_topic(topic_id, creative_id).exists?
+        if topic_concurrency_defer? && topic_id &&
+           Collavre::Task.queued_for_topic(topic_id, creative_id).exists?
           Collavre::Task.occupying_topic_slot(topic_id, creative_id)
                         .includes(:agent).order(:created_at).first
         end
@@ -90,6 +92,10 @@ module Collavre
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
+    # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
+    # part of *promoting* a waiter does not run the user-delete cancel cascade
+    # (which would cancel other still-queued waiters in the same topic).
+    attribute :suppress_waiter_cancellation, :boolean, default: false
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
@@ -182,8 +188,12 @@ module Collavre
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 
-      # Cancel queued tasks when their waiting notice (system comment) is deleted
-      cancel_queued_tasks_for_waiting_notice if waiting_notice?
+      # Cancel queued tasks when a user DELETES their waiting notice. Skipped
+      # when the notice is removed by promotion cleanup (suppress_waiter_cancellation):
+      # there the waiter is being advanced, not abandoned, and cancelling other
+      # still-queued waiters in the topic would drop their work (e.g. multi-slot
+      # orphan recovery promoting one waiter must not cancel the rest).
+      cancel_queued_tasks_for_waiting_notice if waiting_notice? && !suppress_waiter_cancellation
     end
 
     def cancel_queued_tasks_for_waiting_notice
