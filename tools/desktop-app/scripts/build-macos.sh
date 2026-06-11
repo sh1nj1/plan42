@@ -69,6 +69,13 @@ rsync -a --delete \
   --exclude 'tools/desktop-app/src-tauri/target' \
   "$APP_ROOT/" "$STAGING/"
 
+# tauri-build opens every staged file to bundle it as a resource, which needs the
+# owner-traverse (x) bit on each parent dir. Some vendored gems ship doc/data dirs
+# without it; Ruby never opens those at runtime (so running from source works), but
+# rsync -a preserves the mode and the resource walk aborts with EACCES. Normalize
+# the throwaway staging copy — it becomes read-only .app resources anyway.
+chmod -R u+rwX "$STAGING"
+
 # Generate the Tauri icon set from the existing app icon. tauri.conf.json points
 # at src-tauri/icons/, which is .gitignored (generated, not committed) — without
 # this step `cargo tauri build` fails on a missing icon. Source of truth is the
