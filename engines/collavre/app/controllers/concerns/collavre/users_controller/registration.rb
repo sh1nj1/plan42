@@ -37,7 +37,16 @@ module Collavre
             Collavre::Contact.ensure(user: invitation.inviter, contact_user: @user)
             invitation.creative.create_linked_creative_for_user(@user)
           end
-          Collavre::EmailVerificationMailer.verify(@user).deliver_later
+          # Deployments with no outbound mail (e.g. the local desktop app, which
+          # has no SMTP/SES) would otherwise leave the first user unable to verify
+          # and permanently locked out of login. Such envs opt into auto-verify.
+          # NB: compare to `true` explicitly — an unset config.x.* key reads back
+          # as a truthy empty OrderedOptions, so a bare `if` would fire everywhere.
+          if Rails.application.config.x.auto_verify_email == true
+            @user.update_column(:email_verified_at, Time.current)
+          else
+            Collavre::EmailVerificationMailer.verify(@user).deliver_later
+          end
           session.delete(:return_to_after_authenticating)
           redirect_to new_session_path, notice: I18n.t("collavre.users.new.success_sign_up")
         else

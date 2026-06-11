@@ -31,6 +31,13 @@ Rails.application.configure do
     config.hosts.concat(extra.split(",").map(&:strip).reject(&:empty?))
   end
 
+  # A local desktop install has no SMTP/SES, so the email verification link can
+  # never be delivered. Without this the first locally-created user enqueues a
+  # verification mail that never arrives, and login rejects them as unverified —
+  # a hard lockout. Auto-verify signups here; the machine's owner is the only
+  # user, so there is no email-ownership to prove.
+  config.x.auto_verify_email = true
+
   # Boot must not depend on a checked-in master key. The desktop launcher
   # provisions and persists SECRET_KEY_BASE on first run (see
   # tools/desktop-app/scripts/provision-secrets.rb) and exports it before boot.

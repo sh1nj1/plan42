@@ -46,6 +46,9 @@ rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
 # Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
 # Ruby/gems under tools/desktop-app/vendor ARE included (the app needs them).
+# Secrets are excluded so a developer's local credentials never get baked into a
+# distributable .app: the desktop env provisions its own SECRET_KEY_BASE at first
+# run and never decrypts credentials, so master.key / .env* are pure liability.
 rsync -a --delete \
   --exclude '.git' \
   --exclude 'node_modules' \
@@ -54,6 +57,10 @@ rsync -a --delete \
   --exclude 'storage/*' \
   --exclude 'test' \
   --exclude 'spec' \
+  --exclude '.env' \
+  --exclude '.env.*' \
+  --exclude 'config/master.key' \
+  --exclude 'config/credentials/*.key' \
   --exclude 'tools/desktop-app/staging' \
   --exclude 'tools/desktop-app/src-tauri/target' \
   "$APP_ROOT/" "$STAGING/"
