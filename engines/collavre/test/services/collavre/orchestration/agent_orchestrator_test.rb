@@ -122,7 +122,7 @@ module Collavre
         assert_equal topic.id, queued_task.topic_id
       end
 
-      # The "⏳ 대기중" notice must name the agent holding the running slot, so a
+      # The "⏳" waiting notice must name the agent holding the running slot, so a
       # waiting user sees *who* is blocking them (and can reach that task's stop
       # button) instead of an anonymous "another task is running" dead end.
       test "deferred topic-concurrency notice names the running blocker agent" do

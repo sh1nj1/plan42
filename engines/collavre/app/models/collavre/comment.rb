@@ -3,9 +3,9 @@ module Collavre
     self.table_name = "comments"
 
     STREAMING_PLACEHOLDER_CONTENT = "..."
-    # Authorless "⏳ 대기중 …" system notices posted when an agent is deferred for
-    # topic concurrency. AgentOrchestrator.cleanup_waiting_notices! matches the
-    # same prefix to remove them once the waiter is dequeued.
+    # Authorless "⏳" waiting-notice system messages posted when an agent is
+    # deferred for topic concurrency. AgentOrchestrator.cleanup_waiting_notices!
+    # matches the same prefix to remove them once the waiter is dequeued.
     WAITING_NOTICE_PREFIX = "⏳"
 
     # Use non-namespaced partial path for backward compatibility
@@ -13,7 +13,7 @@ module Collavre
       "comments/comment"
     end
 
-    # A system "⏳ 대기중" notice (no author) telling a user their agent is
+    # A system "⏳" waiting notice (no author) telling a user their agent is
     # deferred because another task holds the topic's running slot.
     def waiting_notice?
       user_id.nil? && content.to_s.start_with?(WAITING_NOTICE_PREFIX)

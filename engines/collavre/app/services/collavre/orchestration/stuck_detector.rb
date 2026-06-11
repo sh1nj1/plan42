@@ -207,7 +207,7 @@ module Collavre
       # a terminal status. If that single hand-off is missed — an
       # enqueue-vs-terminate TOCTOU race, or a lost cross-process broadcast — the
       # blocker is already gone and nothing will ever wake the waiter: it shows
-      # "⏳ 대기중" forever. These are invisible to detect_stuck_tasks, which only
+      # "⏳" waiting notice forever. These are invisible to detect_stuck_tasks, which only
       # scans running/delegated. There is no stop button to press here because the
       # blocker no longer exists; the fix is to drain the queue (see
       # recover_orphaned_queued_task), not to escalate.

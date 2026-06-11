@@ -202,7 +202,7 @@ module Collavre
         )
       end
 
-      # Human-readable reason for the "⏳ 대기중" notice. For topic-concurrency
+      # Human-readable reason for the "⏳" waiting notice. For topic-concurrency
       # deferrals, name the agent(s) actually holding the topic's running slot so
       # a waiting user can see *who* is blocking them (and reach that task's stop
       # button) rather than an anonymous "another task is running" dead end.
