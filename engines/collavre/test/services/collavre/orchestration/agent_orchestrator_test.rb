@@ -122,6 +122,34 @@ module Collavre
         assert_equal topic.id, queued_task.topic_id
       end
 
+      # The "⏳ 대기중" notice must name the agent holding the running slot, so a
+      # waiting user sees *who* is blocking them (and can reach that task's stop
+      # button) instead of an anonymous "another task is running" dead end.
+      test "deferred topic-concurrency notice names the running blocker agent" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => {
+            "content" => "@#{@ai_agent.name}: hello",
+            "mentioned_user" => { "id" => @ai_agent.id }
+          },
+          "comment" => { "content" => "@#{@ai_agent.name}: hello" }
+        }
+
+        # A running task on the same topic forces the topic-concurrency defer.
+        Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+
+        AgentOrchestrator.dispatch("comment_created", context)
+
+        notice = @creative.comments.where(topic_id: topic.id)
+                          .find { |c| c.content.include?("⏳") }
+        assert notice, "expected a ⏳ waiting notice comment"
+        assert_includes notice.content, "@#{@ai_agent.name}",
+                        "waiting notice should name the running blocker agent"
+      end
+
       # dequeue_next_for_topic
       test "dequeue_next_for_topic claims queued task as pending" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)

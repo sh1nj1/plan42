@@ -184,17 +184,35 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
-        reason_key = decision[:reason] || :unknown
-        reason_text = I18n.t(
-          "collavre.orchestration.waiting_reasons.#{reason_key}",
-          default: reason_key.to_s.humanize
-        )
+        reason_text = waiting_reason_text(decision[:reason] || :unknown, topic_id, creative_id)
 
         creative.comments.create!(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
           private: false,
           skip_default_user: true
+        )
+      end
+
+      # Human-readable reason for the "⏳ 대기중" notice. For topic-concurrency
+      # deferrals, name the agent(s) actually holding the topic's running slot so
+      # a waiting user can see *who* is blocking them (and reach that task's stop
+      # button) rather than an anonymous "another task is running" dead end.
+      def waiting_reason_text(reason_key, topic_id, creative_id)
+        if reason_key == :topic_concurrency && topic_id
+          names = Task.running_for_topic(topic_id, creative_id)
+                      .includes(:agent).filter_map { |t| t.agent&.name }.uniq
+          if names.any?
+            return I18n.t(
+              "collavre.orchestration.waiting_reasons.topic_concurrency_with_agent",
+              agent: names.join(", ")
+            )
+          end
+        end
+
+        I18n.t(
+          "collavre.orchestration.waiting_reasons.#{reason_key}",
+          default: reason_key.to_s.humanize
         )
       end
     end
