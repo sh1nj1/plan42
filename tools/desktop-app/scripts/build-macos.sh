@@ -70,12 +70,16 @@ rsync -a --delete \
   --exclude 'tools/desktop-app/src-tauri/target' \
   "$APP_ROOT/" "$STAGING/"
 
-# tauri-build opens every staged file to bundle it as a resource, which needs the
-# owner-traverse (x) bit on each parent dir. Some vendored gems ship doc/data dirs
-# without it; Ruby never opens those at runtime (so running from source works), but
-# rsync -a preserves the mode and the resource walk aborts with EACCES. Normalize
-# the throwaway staging copy — it becomes read-only .app resources anyway.
-chmod -R u+rwX "$STAGING"
+# tauri-build opens every staged file to bundle it as a resource; if any file is
+# not owner-readable the resource walk aborts with EACCES. A mode-only `chmod -R`
+# is not enough: on a managed/corporate Mac the checkout can carry inherited ACLs
+# (and rarely file flags) that deny owner access and SURVIVE chmod's mode bits, so
+# the walk still fails after a mode fix. Strip ACLs and flags first, then normalize
+# mode — those three are the only things that can deny owner read. The staging tree
+# is a throwaway copy that becomes read-only .app resources, so this is safe.
+chmod -RN "$STAGING"                              # drop inherited/explicit ACLs
+chflags -R nouchg "$STAGING" 2>/dev/null || true  # clear immutable flags if present
+chmod -R u+rwX "$STAGING"                          # normalize POSIX mode bits
 
 # Generate the Tauri icon set from the existing app icon. tauri.conf.json points
 # at src-tauri/icons/, which is .gitignored (generated, not committed) — without
