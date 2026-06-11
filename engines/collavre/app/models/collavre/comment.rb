@@ -19,19 +19,32 @@ module Collavre
       user_id.nil? && content.to_s.start_with?(WAITING_NOTICE_PREFIX)
     end
 
-    # The task currently holding this topic's running slot — the in-progress
-    # blocker the waiting notice is about. Lets the notice render a stop button
-    # that cancels the blocker (freeing the topic so the deferred waiter
-    # proceeds) instead of being an anonymous dead end. Resolved at render time
-    # rather than stored on task_id, which Task#reply_comment keys on (a shared
-    # task_id would make the blocker's reply_comment ambiguous). Returns nil once
-    # the blocker is gone — at which point the notice itself is cleaned up.
+    # The task holding this topic's concurrency slot — the blocker this waiting
+    # notice is about. Lets the notice render a stop button that cancels the
+    # blocker (freeing the topic so the deferred waiter proceeds) instead of
+    # being an anonymous dead end. Resolved at render time rather than stored on
+    # task_id, which Task#reply_comment keys on (a shared task_id would make the
+    # blocker's reply_comment ambiguous).
+    #
+    # Two gates keep the button honest:
+    #   1. Only topic-concurrency waiters qualify. The same "⏳" notice is also
+    #      posted for :delayed decisions (busy / rate_limited), which schedule a
+    #      delayed job WITHOUT queuing a topic waiter — cancelling some unrelated
+    #      running task would not unblock them. A queued waiter for this topic is
+    #      the locale-independent marker that this notice is a real concurrency
+    #      defer (AgentOrchestrator#enqueue_jobs only creates the queued Task on
+    #      the :deferred path).
+    #   2. Resolve the blocker over occupying_topic_slot, not just running/
+    #      delegated: a holder paused on pending_approval still occupies the slot
+    #      and is cancellable, so the button must stay visible for it.
+    # Returns nil once no slot holder remains — at which point the notice itself
+    # is cleaned up.
     def topic_blocking_task
       return @topic_blocking_task if defined?(@topic_blocking_task)
 
       @topic_blocking_task =
-        if topic_id
-          Collavre::Task.running_for_topic(topic_id, creative_id)
+        if topic_id && Collavre::Task.queued_for_topic(topic_id, creative_id).exists?
+          Collavre::Task.occupying_topic_slot(topic_id, creative_id)
                         .includes(:agent).order(:created_at).first
         end
     end

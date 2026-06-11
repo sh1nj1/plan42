@@ -181,6 +181,43 @@ module Collavre
                      "stop button must target the running blocker task"
       end
 
+      # A :delayed (busy / rate_limited) notice reuses the same "⏳" content but
+      # does NOT queue a topic waiter; cancelling some unrelated running task in
+      # the topic would not unblock it, so no blocker stop button must be shown.
+      test "non-concurrency waiting notice exposes no blocker stop target" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        # A running task exists in the topic, but there is NO queued waiter —
+        # this notice is a delayed (rate_limited) one, not a concurrency defer.
+        Task.create!(name: "Unrelated running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        notice = @creative.comments.create!(
+          content: "⏳ rate limited, retrying soon", topic_id: topic.id,
+          private: false, skip_default_user: true
+        )
+
+        assert notice.waiting_notice?, "system notice should be flagged as a waiting notice"
+        assert_nil notice.topic_blocking_task,
+                   "delayed notice (no queued waiter) must not surface a blocker stop button"
+      end
+
+      # A blocker paused on pending_approval still occupies the topic slot and is
+      # cancellable, so the waiting notice must keep showing its stop button.
+      test "waiting notice resolves a pending_approval blocker as its stop target" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        blocker = Task.create!(name: "Approval-paused", status: "pending_approval",
+                               trigger_event_name: "e", agent: @ai_agent,
+                               topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Queued waiter", status: "queued", trigger_event_name: "comment_created",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        notice = @creative.comments.create!(
+          content: "⏳ waiting on the topic", topic_id: topic.id,
+          private: false, skip_default_user: true
+        )
+
+        assert_equal blocker.id, notice.topic_blocking_task&.id,
+                     "stop button must target the pending_approval slot holder"
+      end
+
       # dequeue_next_for_topic
       test "dequeue_next_for_topic claims queued task as pending" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
