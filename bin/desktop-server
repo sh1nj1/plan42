@@ -72,6 +72,20 @@ export BOOTSNAP_CACHE_DIR="$DATA_DIR/tmp/cache"
 export SOLID_QUEUE_IN_PUMA=true
 export PORT="${PORT:-3000}"
 BIND_HOST="${COLLAVRE_BIND_HOST:-127.0.0.1}"
+
+# In open mode the app is reached over LAN/Tailscale, so generated mail links
+# (share invites, password resets) must point at the externally reachable host —
+# not the app default of localhost, which would resolve to the *remote* user's own
+# machine and dead-end the flow. application.rb builds default_url_options (mailer +
+# controller + routes) from DEFAULT_URL_HOST, so set it here from the first allowed
+# host. Only when bound to all interfaces with an allowlisted host (the documented
+# open-mode contract); closed loopback mode keeps localhost (the owner's machine),
+# and an explicit DEFAULT_URL_HOST always wins.
+if [ -z "${DEFAULT_URL_HOST:-}" ] && [ "$BIND_HOST" = "0.0.0.0" ] && [ -n "${COLLAVRE_ALLOWED_HOSTS:-}" ]; then
+  DEFAULT_URL_HOST="$(printf '%s' "$COLLAVRE_ALLOWED_HOSTS" | cut -d',' -f1 | tr -d '[:space:]')"
+  [ -n "$DEFAULT_URL_HOST" ] && export DEFAULT_URL_HOST
+fi
+
 mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR" "$BOOTSNAP_CACHE_DIR"
 
 echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_HOST:$PORT" >&2
