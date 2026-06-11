@@ -47,6 +47,14 @@ module Collavre
           else
             Collavre::EmailVerificationMailer.verify(@user).deliver_later
           end
+          # Envs that ship no seeded admin (e.g. desktop) bootstrap one here: the
+          # first registered user becomes system_admin. Guarded by "no admin yet"
+          # so only the very first signup is elevated. `== true` for the same
+          # OrderedOptions reason as above.
+          if Rails.application.config.x.bootstrap_first_admin == true &&
+              !Collavre::User.exists?(system_admin: true)
+            @user.update_column(:system_admin, true)
+          end
           session.delete(:return_to_after_authenticating)
           redirect_to new_session_path, notice: I18n.t("collavre.users.new.success_sign_up")
         else

@@ -38,6 +38,14 @@ Rails.application.configure do
   # user, so there is no email-ownership to prove.
   config.x.auto_verify_email = true
 
+  # Ship no known admin credential. The generic seed creates admin@example.com
+  # with a public default password, which would be a standing backdoor on every
+  # desktop install (worse in open mode). Instead the owner is bootstrapped via
+  # first-run signup: the seed skips the default admin, and the first registered
+  # user is granted system_admin (the default build is loopback-only, so that
+  # first signup is the local owner; open mode is opt-in and set up afterwards).
+  config.x.bootstrap_first_admin = true
+
   # Boot must not depend on a checked-in master key. The desktop launcher
   # provisions and persists SECRET_KEY_BASE on first run (see
   # tools/desktop-app/scripts/provision-secrets.rb) and exports it before boot.
