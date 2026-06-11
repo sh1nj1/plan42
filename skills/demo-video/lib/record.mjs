@@ -180,11 +180,21 @@ async function runStep(page, step) {
     case 'shot':
       await shot(page, val);
       return;
-    case 'click':
-      await page.locator(val).first().click({ timeout: 8000 }).catch((e) =>
-        console.log(`  ⚠️ click ${val}: ${e.message.split('\n')[0]}`)
-      );
+    case 'click': {
+      // Required by default: a missing/renamed selector (e.g. #expand-all-btn,
+      // which reveals the full tree) must fail the run rather than silently
+      // record the wrong scene. Use `{ selector, optional: true }` for clicks
+      // whose miss is genuinely tolerable.
+      const sel = typeof val === 'string' ? val : val.selector;
+      const optional = typeof val === 'object' && val.optional === true;
+      try {
+        await page.locator(sel).first().click({ timeout: 8000 });
+      } catch (e) {
+        if (!optional) throw new Error(`click ${sel}: ${e.message.split('\n')[0]}`);
+        console.log(`  ⚠️ optional click ${sel}: ${e.message.split('\n')[0]}`);
+      }
       return;
+    }
     case 'click_row': {
       const row = rowLocator(page, val);
       const desc = row.locator('.description, [part="description"]').first();
