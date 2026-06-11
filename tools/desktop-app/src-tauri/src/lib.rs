@@ -57,6 +57,51 @@ fn data_dir(app: &tauri::AppHandle) -> PathBuf {
         .join("Collavre")
 }
 
+/// File recording the live sidecar's PID, so a launch that follows a crash can
+/// reap the orphan the graceful exit handler never got to stop.
+fn pidfile_path(data: &PathBuf) -> PathBuf {
+    data.join("desktop-sidecar.pid")
+}
+
+/// Kill a sidecar orphaned by a previous run before spawning a fresh one. The
+/// graceful path (ExitRequested -> stop_sidecar) clears the pidfile on a clean
+/// quit; but if the shell crashed or was SIGKILLed, its sidecar process group
+/// survives and keeps the SQLite write locks held (and a fixed PORT bound in
+/// open mode), which would wedge this launch. Signal that stale group first.
+#[cfg(unix)]
+fn reap_orphan_sidecar(data: &PathBuf) {
+    let path = pidfile_path(data);
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return;
+    };
+    // A negative pid targets the whole process group we created via
+    // process_group(0) (pgid == leader pid). Guard pid > 1 so a corrupt file
+    // can't turn into kill(-1) (every process we may signal).
+    if let Ok(pid) = contents.trim().parse::<i32>() {
+        if pid > 1 && unsafe { libc_kill(-pid, 0) } == 0 {
+            unsafe {
+                libc_kill(-pid, 15); // SIGTERM
+            }
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if unsafe { libc_kill(-pid, 0) } != 0 {
+                    break; // group gone
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            unsafe {
+                libc_kill(-pid, 9); // SIGKILL fallback
+            }
+        }
+    }
+    let _ = fs::remove_file(&path);
+}
+
+#[cfg(not(unix))]
+fn reap_orphan_sidecar(data: &PathBuf) {
+    let _ = fs::remove_file(pidfile_path(data));
+}
+
 fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
     let launcher = root.join("bin/desktop-server");
     // Honor a caller-supplied bind host (open mode = 0.0.0.0 for LAN/Tailscale);
@@ -173,7 +218,11 @@ pub fn run() {
                 .ok()
                 .and_then(|p| p.parse::<u16>().ok())
                 .unwrap_or_else(free_port);
+            // Reap any sidecar orphaned by a prior crash before we spawn — it
+            // still holds this data dir's SQLite write locks.
+            reap_orphan_sidecar(&data);
             let child = spawn_sidecar(&root, &data, port);
+            let _ = fs::write(pidfile_path(&data), child.id().to_string());
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
 
             // Block the splash on health so the webview never loads a refused
@@ -200,6 +249,9 @@ pub fn run() {
                 if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
                     stop_sidecar(&mut child);
                 }
+                // Clear the pidfile so the next launch doesn't try to reap a pid
+                // that is gone (or, worse, reused by an unrelated process).
+                let _ = fs::remove_file(pidfile_path(&data_dir(app)));
             }
         });
 }

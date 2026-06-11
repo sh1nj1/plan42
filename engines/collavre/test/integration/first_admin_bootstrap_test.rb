@@ -49,4 +49,17 @@ class FirstAdminBootstrapTest < ActionDispatch::IntegrationTest
     assert_not second.system_admin?
     assert_equal 1, Collavre::User.where(system_admin: true).count
   end
+
+  # The atomic promotion is a single UPDATE scoped to the new user. Guards against
+  # a mis-scoped update_all elevating every pre-existing non-admin user at once.
+  test "only the new signup is elevated, not existing non-admin users" do
+    bystander = Collavre::User.create!(
+      email: "bystander@example.com", password: TEST_PASSWORD,
+      password_confirmation: TEST_PASSWORD, name: "bystander"
+    )
+    owner = sign_up("owner3@example.com", remote_addr: "127.0.0.1")
+    assert owner.system_admin?, "the first loopback signup should bootstrap admin"
+    assert_not bystander.reload.system_admin?, "a pre-existing user must not be swept into admin"
+    assert_equal 1, Collavre::User.where(system_admin: true).count
+  end
 end

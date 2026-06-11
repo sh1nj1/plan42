@@ -53,10 +53,17 @@ module Collavre
           # that in documented open mode (LAN/Tailscale binding) a remote client
           # cannot race the local owner for the admin account. `== true` for the
           # same OrderedOptions reason as above.
-          if Rails.application.config.x.bootstrap_first_admin == true &&
-              request_from_loopback? &&
-              !Collavre::User.exists?(system_admin: true)
-            @user.update_column(:system_admin, true)
+          if Rails.application.config.x.bootstrap_first_admin == true && request_from_loopback?
+            # Promote atomically rather than exists?-then-update: a separate check
+            # and write is a TOCTOU race where two concurrent first signups both
+            # read "no admin yet" and both elevate. A single UPDATE ... WHERE NOT
+            # EXISTS lets the DB evaluate the guard and write under one lock, so
+            # exactly one wins. This path only runs on desktop (the only env that
+            # sets bootstrap_first_admin), which is always SQLite — and SQLite
+            # serializes writers, so the loser's re-evaluated NOT EXISTS sees the
+            # admin and updates nothing.
+            admin_exists = Collavre::User.where(system_admin: true).arel.exists
+            Collavre::User.where(id: @user.id).where(admin_exists.not).update_all(system_admin: true)
           end
           session.delete(:return_to_after_authenticating)
           redirect_to new_session_path, notice: I18n.t("collavre.users.new.success_sign_up")
