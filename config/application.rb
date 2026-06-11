@@ -30,8 +30,10 @@ end
 module Collavre
   class Application < Rails::Application
     # closure_tree uses lock file if db is not MySQL or PostgreSQL. set FLOCK_DIR to tmp dir.
+    # `||=` so a caller (e.g. the packaged desktop launcher, whose Rails.root is a
+    # read-only .app bundle) can point it at a writable path before boot.
     config.before_initialize do
-      ENV["FLOCK_DIR"] = Rails.root.join("tmp").to_s
+      ENV["FLOCK_DIR"] ||= Rails.root.join("tmp").to_s
     end
 
     # Load environment variables from .env.production if it exists

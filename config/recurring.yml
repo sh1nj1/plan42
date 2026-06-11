@@ -1,8 +1,16 @@
-production:
+production: &production
   daily_inbox_summary:
     class: InboxSummaryJob
     queue: default
     schedule: at 9am every day
+  stuck_detector:
+    class: Collavre::StuckDetectorJob
+    queue: default
+    schedule: every 10 minutes
+
+# Desktop runs non-mail jobs only: it has no SMTP/SES, so daily_inbox_summary's
+# deliver_now would fail every run and the in-Puma Solid Queue supervisor would retry forever.
+desktop:
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default

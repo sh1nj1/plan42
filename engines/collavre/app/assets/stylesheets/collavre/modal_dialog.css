@@ -180,6 +180,27 @@ textarea.modal-dialog-input {
   opacity: 0.9;
 }
 
+/* Destructive confirm action (delete/unlink). Matches .btn-danger convention. */
+.modal-dialog-btn-danger {
+  background: var(--color-danger);
+  color: var(--text-on-badge);
+  border-color: var(--color-danger);
+}
+
+.modal-dialog-btn-danger:hover {
+  opacity: 0.9;
+}
+
+/* ── Confirm dialog message ──
+ * pre-wrap preserves the \n line breaks that native confirm() honored. */
+.confirm-dialog-message {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--text-primary);
+  font-size: var(--text-1);
+  line-height: var(--leading-3, 1.5);
+}
+
 /* ── Footer hints (keyboard shortcuts) ── */
 .modal-dialog-hints {
   display: flex;
