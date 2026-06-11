@@ -99,4 +99,30 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "cancelled", @task.reload.status
     tracker.verify
   end
+
+  test "cancel releases agent slot and drains queue for pending_approval task" do
+    sign_in_as(@user, password: "password")
+    # A pending_approval blocker still holds the topic/agent slot: AiAgentJob
+    # already returned via ApprovalPendingError with should_release = false, so
+    # no live worker will run the ensure-block release. Cancelling it must free
+    # the slot and drain the topic queue, or the stop button leaves the queued
+    # waiter (and agent capacity) stuck until some later recovery path runs.
+    @task.update!(status: "pending_approval", topic_id: 12_345, creative_id: @creative.id)
+
+    tracker = Minitest::Mock.new
+    tracker.expect(:release!, true, [ @task.id ])
+
+    dequeued = []
+    Collavre::Orchestration::ResourceTracker.stub(:for, ->(agent) { agent == @agent ? tracker : nil }) do
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(t, c) { dequeued << [ t, c ] }) do
+        post cancel_task_path(@task)
+      end
+    end
+
+    assert_response :ok
+    assert_equal "cancelled", @task.reload.status
+    tracker.verify
+    assert_equal [ [ 12_345, @creative.id ] ], dequeued,
+      "Expected the topic queue to be drained so the queued waiter is promoted"
+  end
 end

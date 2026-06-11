@@ -393,6 +393,27 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected active_jobs > 0 when approval is pending"
   end
 
+  test "approval-pending slot is keyed by task.id so external cancel can release it" do
+    # The job exits via ApprovalPendingError holding the slot, then later runs
+    # (resume / cancel / stuck recovery) all release! by task.id. The held slot
+    # must therefore be keyed by the stable task.id, not the per-run job_id, or
+    # those releases no-op and the slot leaks until the cache expiry.
+    captured_task = nil
+    fake_service = Minitest::Mock.new
+    fake_service.expect(:call, nil) { raise Collavre::ApprovalPendingError }
+
+    Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service } do
+      AiAgentJob.perform_now(@agent.id, "test_event", @context)
+    end
+
+    tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+    assert_operator tracker.active_jobs, :>, 0, "Expected the slot to be held while approval is pending"
+
+    tracker.release!(captured_task.id)
+    assert_equal 0, tracker.active_jobs,
+      "Expected release!(task.id) to free the approval-pending slot"
+  end
+
   test "allows execution when existing task for same comment is done" do
     # Create a completed task for the same agent + comment
     Task.create!(
