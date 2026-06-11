@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -44,6 +45,7 @@ fun MainScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val exchanges by viewModel.exchanges.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+    val partial by viewModel.partialTranscript.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -69,7 +71,9 @@ fun MainScreen(
 
             MicButton(state = state, onClick = onMicClick)
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(16.dp))
+            LiveCaption(state = state, partial = partial)
+            Spacer(Modifier.height(16.dp))
 
             if (sessions.isNotEmpty()) {
                 SectionLabel("Active tasks")
@@ -99,6 +103,30 @@ private fun StatusChip(state: VoiceState) {
     ) {
         Text(label, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
     }
+}
+
+/** Real-time transcript of what's being spoken, shown live while the mic is open. */
+@Composable
+private fun LiveCaption(state: VoiceState, partial: String) {
+    if (state != VoiceState.LISTENING && partial.isBlank()) return
+    val text = when {
+        partial.isNotBlank() -> partial
+        state == VoiceState.LISTENING -> "말씀하세요…"
+        else -> ""
+    }
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        color = if (partial.isBlank()) {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+    )
 }
 
 @Composable

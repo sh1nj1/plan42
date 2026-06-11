@@ -22,6 +22,7 @@ class VoiceViewModel @Inject constructor(
     val exchanges = voice.exchanges
     val sessions = voice.sessions
     val lastError = voice.lastError
+    val partialTranscript = voice.partialTranscript
 
     val settingsState: StateFlow<AppSettings?> =
         settings.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)

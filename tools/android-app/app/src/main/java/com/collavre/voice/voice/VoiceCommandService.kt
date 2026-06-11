@@ -44,6 +44,9 @@ class VoiceCommandService @Inject constructor(
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError
 
+    // Live transcript of the current utterance, surfaced straight from the recognizer.
+    val partialTranscript: StateFlow<String> = recognizer.partial
+
     private var locale: String = SettingsRepository.DEFAULT_LOCALE
     private var pendingRespondEventId: Long? = null
 

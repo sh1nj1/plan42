@@ -25,6 +25,10 @@ class SpeechRecognizerManager @Inject constructor(
     private val _listening = MutableStateFlow(false)
     val listening: StateFlow<Boolean> = _listening
 
+    // Live partial transcript so the UI can show speech as it's recognized.
+    private val _partial = MutableStateFlow("")
+    val partial: StateFlow<String> = _partial
+
     val isAvailable: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context)
 
     private var onResult: ((String) -> Unit)? = null
@@ -42,9 +46,10 @@ class SpeechRecognizerManager @Inject constructor(
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
+        _partial.value = ""
         _listening.value = true
         recognizer?.startListening(intent)
     }
@@ -66,7 +71,15 @@ class SpeechRecognizerManager @Inject constructor(
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() { _listening.value = false }
-        override fun onPartialResults(partialResults: Bundle?) {}
+
+        override fun onPartialResults(partialResults: Bundle?) {
+            partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { _partial.value = it }
+        }
+
         override fun onEvent(eventType: Int, params: Bundle?) {}
 
         override fun onError(error: Int) {
@@ -76,6 +89,7 @@ class SpeechRecognizerManager @Inject constructor(
 
         override fun onResults(results: Bundle?) {
             _listening.value = false
+            _partial.value = ""
             val text = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()
