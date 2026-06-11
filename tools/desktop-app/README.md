@@ -7,7 +7,15 @@ native webview. No external services.
 
 "Open to the network or not" is a single setting, not two products: the sidecar
 binds `127.0.0.1` by default (closed); set `COLLAVRE_BIND_HOST=0.0.0.0` to open
-it to the LAN/Tailscale.
+it to the LAN/Tailscale. Binding alone is not enough — Rails rejects any request
+whose `Host` header is not loopback, so for open mode you must **also** pass the
+externally reachable host(s) via `COLLAVRE_ALLOWED_HOSTS` (comma-separated),
+otherwise remote clients get a 403 from HostAuthorization even though Puma is
+listening. Example:
+
+```
+COLLAVRE_BIND_HOST=0.0.0.0 COLLAVRE_ALLOWED_HOSTS=192.168.1.42,macbook-pro.tailadceed.ts.net bin/desktop-server
+```
 
 ## Layout
 
