@@ -7,6 +7,7 @@ import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom
 import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
+import { confirmDialog } from '../lib/utils/confirm_dialog'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -2138,14 +2139,14 @@ export function initializeCreativeRowEditor() {
     }
 
     if (archiveBtn) {
-      archiveBtn.addEventListener('click', function () {
+      archiveBtn.addEventListener('click', async function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
         const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`);
         const isArchived = row?.hasAttribute('archived');
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
-        if (confirm(confirmMsg)) {
+        if (await confirmDialog(confirmMsg)) {
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
             if (res.ok) {
@@ -2172,14 +2173,14 @@ export function initializeCreativeRowEditor() {
     }
 
     if (deleteBtn) {
-      deleteBtn.addEventListener('click', function () {
-        if (confirm(deleteBtn.dataset.confirm)) deleteCurrent(false);
+      deleteBtn.addEventListener('click', async function () {
+        if (await confirmDialog(deleteBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
       });
     }
 
     if (deleteWithChildrenBtn) {
-      deleteWithChildrenBtn.addEventListener('click', function () {
-        if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
+      deleteWithChildrenBtn.addEventListener('click', async function () {
+        if (await confirmDialog(deleteWithChildrenBtn.dataset.confirm, { danger: true })) deleteCurrent(true);
       });
     }
 
@@ -2215,17 +2216,17 @@ export function initializeCreativeRowEditor() {
     }
 
     if (unlinkBtn) {
-      unlinkBtn.addEventListener('click', function () {
-        if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
+      unlinkBtn.addEventListener('click', async function () {
+        if (await confirmDialog(unlinkBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
       });
     }
 
     if (unconvertBtn) {
-      unconvertBtn.addEventListener('click', function () {
+      unconvertBtn.addEventListener('click', async function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
         const confirmText = unconvertBtn.dataset.confirm;
-        if (confirmText && !confirm(confirmText)) return;
+        if (confirmText && !(await confirmDialog(confirmText))) return;
         const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
         unconvertBtn.disabled = true;
         saveForm()
@@ -2339,11 +2340,11 @@ export function initializeCreativeRowEditor() {
 
     // Markdown toggle button
     if (toggleMarkdownBtn) {
-      toggleMarkdownBtn.addEventListener('click', function () {
+      toggleMarkdownBtn.addEventListener('click', async function () {
         if (markdownMode) {
           // Switching from Markdown → Rich Text
           const confirmMsg = toggleMarkdownBtn.dataset.confirmToRichtext;
-          if (confirmMsg && !confirm(confirmMsg)) return;
+          if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
           const md = markdownTextarea?.value || '';
           const html = md ? renderMarkdown(md) : '';
           deactivateMarkdownMode();
@@ -2357,7 +2358,7 @@ export function initializeCreativeRowEditor() {
           const currentHtml = descriptionInput.value || '';
           if (!isHtmlEmpty(currentHtml)) {
             const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
-            if (confirmMsg && !confirm(confirmMsg)) return;
+            if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
           }
           activateMarkdownMode('');
           isDirty = true;
