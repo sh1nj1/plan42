@@ -20,8 +20,14 @@ Rails.application.configure do
     policy.worker_src  :self, :blob
     policy.child_src   :self, :blob
 
-    # For ActionCable WebSocket connections
-    policy.connect_src :self, :blob, "wss://#{ENV.fetch('DEFAULT_URL_HOST', 'localhost')}", "https:"
+    # For ActionCable WebSocket connections. Production serves over https (wss);
+    # the desktop app runs over plain http on a loopback port, so its cable
+    # connects via ws:// — which must be allowed explicitly here, or enforcing
+    # CSP for desktop (below) would silently break the realtime UI.
+    cable_host = ENV.fetch("DEFAULT_URL_HOST", "localhost")
+    cable_ws = [ "wss://#{cable_host}" ]
+    cable_ws << "ws://#{cable_host}" unless Rails.env.production?
+    policy.connect_src :self, :blob, *cable_ws, "https:"
 
     # Specify URI for violation reports (optional - enable if you want to collect CSP violations)
     # policy.report_uri "/csp-violation-report-endpoint"
@@ -32,7 +38,9 @@ Rails.application.configure do
   # config.content_security_policy_nonce_generator = ->(request) { SecureRandom.base64(16) }
   # config.content_security_policy_nonce_directives = %w[style-src]
 
-  # Report violations without enforcing the policy (set to true for initial deployment)
-  # Once verified, set to false to enforce the policy
-  config.content_security_policy_report_only = Rails.env.production? ? false : true
+  # Report-only in dev/test; enforce in deployed builds. The desktop app inherits
+  # production hardening (production.rb) and ships as a packaged binary, so its
+  # rendered content must be CSP-enforced, not merely reported. RAILS_ENV=desktop
+  # is not production?, so it must be named explicitly.
+  config.content_security_policy_report_only = !(Rails.env.production? || Rails.env.desktop?)
 end

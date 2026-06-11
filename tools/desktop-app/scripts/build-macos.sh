@@ -109,7 +109,12 @@ done
 echo "[build-macos] 6/6 building the Tauri bundle"
 (
   cd "$DESKTOP_DIR/src-tauri"
-  cargo tauri build
+  # CI=true makes Tauri's bundle_dmg.sh skip the AppleScript step that styles the
+  # DMG's Finder window (icon layout / background). That step sends Apple events to
+  # Finder, which needs Automation (TCC) permission and fails with "failed to run
+  # bundle_dmg.sh" on managed or headless Macs. Skipping it yields a plain but fully
+  # functional .dmg; the .app target is unaffected. Preserve a real CI value if set.
+  CI="${CI:-true}" cargo tauri build
 )
 
 echo "[build-macos] done →"
