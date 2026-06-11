@@ -141,7 +141,13 @@ async function waitStream(page, timeoutMs = 40000) {
     lastLen = state.len;
     await sleep(500);
   }
-  console.log('  ⚠️ waitStream timed out');
+  // The AI streamed reply is the core of the demo. If it never appears or never
+  // settles, the recording is worthless — throw so the step loop marks the run
+  // as failed (exit non-zero) instead of publishing a video missing its payload.
+  throw new Error(
+    `waitStream timed out after ${timeoutMs}ms — no settled AI response ` +
+      `(check mention routing, :feedback permission, ActionCable, or fake LLM)`
+  );
 }
 
 async function runStep(page, step) {
