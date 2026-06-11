@@ -225,20 +225,39 @@ pub fn run() {
             let _ = fs::write(pidfile_path(&data), child.id().to_string());
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
 
-            // Block the splash on health so the webview never loads a refused
-            // connection. 120s covers a cold first-run migration.
-            let healthy = wait_until_healthy(port, Duration::from_secs(120));
-            let url = if healthy {
-                format!("http://127.0.0.1:{port}")
-            } else {
-                // Surface a readable error instead of a blank webview.
-                "data:text/html,<h2>Collavre Desktop failed to start</h2>".to_string()
-            };
-
-            WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url.parse().unwrap()))
+            // Show the branded loading screen (dist/index.html) immediately so the
+            // user sees custom UI while the sidecar boots, instead of a blank or
+            // absent window. We used to block setup on the health check and only
+            // then create the window pointed at the Rails URL — meaning nothing was
+            // on screen during a cold first-run migration. Now we create the window
+            // first and health-gate on a background thread (below).
+            WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title("Collavre Desktop")
                 .inner_size(1280.0, 860.0)
                 .build()?;
+
+            // Health-gate the sidecar OFF the UI thread so the splash keeps
+            // animating. On success, swap the splash for the live app; on timeout,
+            // surface a readable error in the splash instead of a frozen bar. 120s
+            // covers a cold first-run migration.
+            std::thread::spawn(move || {
+                let healthy = wait_until_healthy(port, Duration::from_secs(120));
+                let Some(window) = handle.get_webview_window("main") else {
+                    return;
+                };
+                if healthy {
+                    if let Ok(url) = format!("http://127.0.0.1:{port}").parse::<tauri::Url>() {
+                        let _ = window.navigate(url);
+                    }
+                } else {
+                    // Update the splash DOM in place (same-origin) rather than
+                    // navigating away, so the Collavre branding stays put.
+                    let _ = window.eval(
+                        "window.__collavreSetError && window.__collavreSetError(\
+                         '콜라브 서버를 시작하지 못했어요. 앱을 종료한 뒤 다시 실행해 주세요.')",
+                    );
+                }
+            });
 
             Ok(())
         })
