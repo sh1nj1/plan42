@@ -13,22 +13,24 @@ module Collavre
 
       def approval_summary(ref_number:, comment:, label:)
         payload = parse_action(comment)
-        detail =
-          payload&.dig("description").presence ||
-          payload&.dig("tool_name").presence ||
-          t("a_tool")
-        t("approval", number: ref_number, label: label, detail: flatten(detail))
+        I18n.with_locale(@locale) do
+          detail =
+            payload&.dig("description").presence ||
+            payload&.dig("tool_name").presence ||
+            I18n.t("collavre.mobile.summary.a_tool")
+          I18n.t("collavre.mobile.summary.approval",
+                 number: ref_number, label: label, detail: flatten(detail))
+        end
       end
 
       def reply_summary(ref_number:, content:, label:)
-        t("reply", number: ref_number, label: label, text: truncate(content))
+        I18n.with_locale(@locale) do
+          I18n.t("collavre.mobile.summary.reply",
+                 number: ref_number, label: label, text: truncate(content))
+        end
       end
 
       private
-
-      def t(key, **args)
-        I18n.with_locale(@locale) { I18n.t("collavre.mobile.summary.#{key}", **args) }
-      end
 
       def flatten(text)
         text.to_s.gsub(/\s+/, " ").strip
