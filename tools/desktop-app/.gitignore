@@ -3,3 +3,6 @@ vendor/
 staging/
 src-tauri/target/
 src-tauri/gen/
+# Icon set generated from the app icon by build-macos.sh (single source of truth
+# stays public/icon-*.png), so no duplicate binaries land in the repo.
+src-tauri/icons/

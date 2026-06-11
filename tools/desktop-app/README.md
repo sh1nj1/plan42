@@ -70,6 +70,9 @@ tools/desktop-app/scripts/build-macos.sh
 # → src-tauri/target/release/bundle/macos/Collavre.app
 ```
 
+The app icon is generated during the build from `public/icon-*.png` (the app's
+own brand icon) into the git-ignored `src-tauri/icons/` — nothing to prepare.
+
 First launch: right-click → **Open** (the build is unsigned; Gatekeeper).
 
 ## Known follow-ups (out of v1 scope)

@@ -17,10 +17,10 @@ DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
 
-echo "[build-macos] 1/4 vendoring Ruby + gems"
+echo "[build-macos] 1/5 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
 
-echo "[build-macos] 2/4 precompiling assets (desktop env)"
+echo "[build-macos] 2/5 precompiling assets (desktop env)"
 (
   cd "$APP_ROOT"
   export PATH="$DESKTOP_DIR/vendor/ruby/bin:$PATH"
@@ -31,7 +31,7 @@ echo "[build-macos] 2/4 precompiling assets (desktop env)"
     "$DESKTOP_DIR/vendor/ruby/bin/ruby" -S bundle exec rails assets:precompile
 )
 
-echo "[build-macos] 3/4 staging app tree into $STAGING"
+echo "[build-macos] 3/5 staging app tree into $STAGING"
 rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
 # Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
@@ -48,7 +48,19 @@ rsync -a --delete \
   --exclude 'tools/desktop-app/src-tauri/target' \
   "$APP_ROOT/" "$STAGING/"
 
-echo "[build-macos] 4/4 building the Tauri bundle"
+# Generate the Tauri icon set from the existing app icon. tauri.conf.json points
+# at src-tauri/icons/, which is .gitignored (generated, not committed) — without
+# this step `cargo tauri build` fails on a missing icon. Source of truth is the
+# app's own icon under public/, so the desktop app can't drift from the brand.
+echo "[build-macos] 4/5 generating app icons"
+ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
+[ -n "$ICON_SRC" ] || { echo "no source icon at $APP_ROOT/public/icon-*.png"; exit 1; }
+(
+  cd "$DESKTOP_DIR/src-tauri"
+  cargo tauri icon "$ICON_SRC"
+)
+
+echo "[build-macos] 5/5 building the Tauri bundle"
 (
   cd "$DESKTOP_DIR/src-tauri"
   cargo tauri build
