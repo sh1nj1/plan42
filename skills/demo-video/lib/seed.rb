@@ -83,7 +83,7 @@ def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
   )
 end
 
-# ─── Project: 콜라브 v2.0 릴리즈 ───
+# ─── Project: Collabre v2.0 release ───
 v2 = create_creative(parent: nil, user: pm_user, desc: html("콜라브 v2.0 릴리즈"), progress: 0.68, seq: 1)
 
 ms_design = create_creative(parent: v2, user: pm_user, desc: html("디자인 시스템 리뉴얼"), progress: 0.95, seq: 1)
@@ -108,14 +108,14 @@ create_creative(parent: ms_launch, user: created_users[:qa], desc: html("QA 체�
 create_creative(parent: ms_launch, user: created_users[:devops], desc: html("인프라 스케일링"), progress: 0.2, seq: 3)
 create_creative(parent: ms_launch, user: pm_user, desc: html("마케팅 랜딩 페이지"), progress: 0.1, seq: 4)
 
-# ─── Project: 기술 부채 해소 ───
+# ─── Project: Technical debt cleanup ───
 tech_debt = create_creative(parent: nil, user: created_users[:lead], desc: html("기술 부채 해소"), progress: 0.4, seq: 2)
 create_creative(parent: tech_debt, user: created_users[:be1], desc: html("Ruby 3.4 업그레이드"), progress: 1.0, seq: 1)
 create_creative(parent: tech_debt, user: created_users[:be2], desc: html("레거시 API 제거"), progress: 0.5, seq: 2)
 create_creative(parent: tech_debt, user: created_users[:devops], desc: html("CI/CD 파이프라인 개선"), progress: 0.3, seq: 3)
 create_creative(parent: tech_debt, user: created_users[:fe1], desc: html("테스트 커버리지 80% 달성"), progress: 0.2, seq: 4)
 
-# ─── Project: 온보딩 가이드 ───
+# ─── Project: Onboarding guide ───
 onboard = create_creative(parent: nil, user: pm_user, desc: html("신규 입사자 온보딩"), progress: 0.85, seq: 3)
 create_creative(parent: onboard, user: pm_user, desc: html("개발 환경 셋업 가이드"), progress: 1.0, seq: 1)
 create_creative(parent: onboard, user: created_users[:lead], desc: html("코드 리뷰 프로세스"), progress: 1.0, seq: 2)

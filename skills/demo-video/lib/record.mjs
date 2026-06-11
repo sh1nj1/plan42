@@ -56,7 +56,11 @@ const suffix = THEME === 'dark' ? '-dark' : '';
 const SHOT_DIR = path.join(OUT, `${name}${suffix}-shots`);
 const VIDEO_DIR = path.join(OUT, `${name}${suffix}-raw`);
 
-for (const d of [OUT, SHOT_DIR, VIDEO_DIR]) {
+// OUT is shared across themes (run.sh records light then dark into the same
+// dir), so only reset the per-theme raw/shot dirs — wiping OUT here would
+// delete the previous theme's .mp4/poster.
+fs.mkdirSync(OUT, { recursive: true });
+for (const d of [SHOT_DIR, VIDEO_DIR]) {
   if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
   fs.mkdirSync(d, { recursive: true });
 }
@@ -273,11 +277,17 @@ async function main() {
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
 
+  // A thrown step (missing selector, changed login flow, …) must fail the run:
+  // run.sh keys off this process's exit status, so swallowing the error would
+  // report a broken scenario as a successful demo video. We still finalize the
+  // partial recording below for debugging, then exit non-zero.
+  let stepError = null;
   try {
     for (const step of scenario.steps || []) {
       await runStep(page, step);
     }
   } catch (e) {
+    stepError = e;
     console.error('  ❌ step error:', e.message);
   }
 
@@ -297,6 +307,11 @@ async function main() {
   }
   console.log(`  📼 raw: ${rawPath}`);
   if (!NO_POST) postProcess(rawPath);
+
+  if (stepError) {
+    console.error('  ❌ recording failed: a scenario step threw — output is partial');
+    process.exit(1);
+  }
 }
 
 main().catch((e) => {
