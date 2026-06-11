@@ -45,7 +45,11 @@ echo "[build-macos] 4/6 staging app tree into $STAGING"
 rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
 # Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
-# Ruby/gems under tools/desktop-app/vendor ARE included (the app needs them).
+# Ruby/gems under tools/desktop-app/vendor ARE included (the app needs them) — the
+# --include below protects that whole tree from the unanchored test/spec excludes:
+# rsync matches a bare 'test'/'spec' at ANY depth, which otherwise strips real gem
+# library code living under a dir named test/ (e.g. rack-test's lib/rack/test/ —
+# cookie_jar.rb), corrupting the bundle and crashing boot with a LoadError.
 # Secrets are excluded so a developer's local credentials never get baked into a
 # distributable .app: the desktop env provisions its own SECRET_KEY_BASE at first
 # run and never decrypts credentials, so any config/*.key / .env* are pure liability
@@ -59,6 +63,7 @@ rsync -a --delete \
   --exclude 'log/*' \
   --exclude 'tmp/*' \
   --exclude 'storage/*' \
+  --include 'tools/desktop-app/vendor/**' \
   --exclude 'test' \
   --exclude 'spec' \
   --exclude '.env' \
