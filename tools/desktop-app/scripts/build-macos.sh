@@ -93,6 +93,19 @@ ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
   cargo tauri icon "$ICON_SRC"
 )
 
+# tauri-build (src-tauri/build.rs) copies every staged resource into
+# target/<profile>/app via std::fs::copy, which PRESERVES the source mode bits.
+# Vendored gems ship many 0444 (read-only) doc files, so the copies land read-only.
+# On the next build, fs::copy can't truncate the existing read-only destination and
+# aborts with a path-less "Permission denied (os error 13)" — the staging tree is
+# fine (and re-normalized above); the unwritable files are the copies under target/,
+# which cargo never cleans. Make any prior copy tree owner-writable so the re-copy
+# can overwrite it. chmod (not rm): if the build script doesn't re-run, the existing
+# copies must stay in place or the bundle loses its resources.
+for app_copy in "$DESKTOP_DIR/src-tauri/target"/*/app; do
+  [ -d "$app_copy" ] && chmod -R u+w "$app_copy" 2>/dev/null || true
+done
+
 echo "[build-macos] 6/6 building the Tauri bundle"
 (
   cd "$DESKTOP_DIR/src-tauri"
