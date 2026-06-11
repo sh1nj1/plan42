@@ -67,7 +67,9 @@ module Collavre
               allowed_creative_ids: @allowed_creative_ids,
               progress_map: @progress_map
             )
-            render json: { creatives: @creatives_tree_json }
+            payload = { creatives: @creatives_tree_json }
+            payload[:pagination] = index_result.pagination if index_result.pagination
+            render json: payload
           end
         end
       end
