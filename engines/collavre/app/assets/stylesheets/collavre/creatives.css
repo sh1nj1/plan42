@@ -257,12 +257,21 @@ creative-tree-row.show-edit .creative-row {
     word-break: break-word;
 }
 
-/* Allow attachments and images to be clickable independently of the parent link */
+/* Allow attachments, images, and videos to be interactive independently of the
+   parent link. Without pointer-events on the video, the clickable creative row
+   would swallow clicks on the native playback controls (play/pause/fullscreen). */
 .creative-content a[download],
-.creative-content img {
+.creative-content img,
+.creative-content video {
     pointer-events: auto;
     position: relative;
     z-index: var(--layer-1);
+}
+
+.creative-content video {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
 }
 
 .creative-row:hover .creative-content {
