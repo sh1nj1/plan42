@@ -24,6 +24,17 @@ module Collavre
       rel = rel.where(creative_id: creative_id) if creative_id
       rel.order(:created_at)
     }
+    # Tasks that hold a topic concurrency slot: running/delegated (executing)
+    # plus pending — a task that has been claimed (dequeue_next_for_topic moves a
+    # waiter queued -> pending, a retry re-queues to pending, initial dispatch
+    # creates pending) but whose AiAgentJob has not started yet. Orphan detection
+    # must count pending, otherwise a backed-up job queue makes a claimed-but-not-
+    # started slot look free and a second waiter gets promoted into the same slot.
+    scope :occupying_topic_slot, ->(topic_id, creative_id = nil) {
+      rel = where(topic_id: topic_id, status: %w[running delegated pending])
+      rel = rel.where(creative_id: creative_id) if creative_id
+      rel
+    }
 
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on

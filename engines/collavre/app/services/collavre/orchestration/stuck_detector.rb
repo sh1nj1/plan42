@@ -93,19 +93,25 @@ module Collavre
       end
 
       # Whether a topic holds no free concurrency slot for a queued waiter.
-      # Mirrors the scheduler's admission rule (running count >= topic_max)
-      # rather than treating any single live blocker as full capacity —
-      # otherwise, with topic_max_concurrent_jobs > 1, a missed dequeue would
-      # leave the waiter suppressed until the *last* blocker terminates instead
-      # of the moment a slot frees up. When no topic limit is configured the
-      # scheduler never defers, so fall back to the conservative "any live
-      # blocker" check.
+      # Compares occupied slots against topic_max (the scheduler's admission rule)
+      # rather than treating any single live blocker as full capacity — otherwise,
+      # with topic_max_concurrent_jobs > 1, a missed dequeue would leave the waiter
+      # suppressed until the *last* blocker terminates instead of the moment a slot
+      # frees up. Occupancy counts pending as well as running/delegated: a waiter
+      # that a prior dequeue already claimed sits in "pending" until its AiAgentJob
+      # starts, and the detector fires precisely on the backed-up condition where
+      # that window is wide — counting only running/delegated would see a free slot
+      # and promote a second waiter into a slot that is already claimed (double
+      # dequeue). This is intentionally stricter than the scheduler's reactive
+      # check; being stricter can only suppress recovery, never over-admit. When no
+      # topic limit is configured the scheduler never defers, so fall back to the
+      # conservative "any occupied slot" check.
       def topic_at_capacity?(task)
         topic_max = scheduling_resolver_for(task).topic_max_concurrent_jobs
-        running_count = Task.running_for_topic(task.topic_id, task.creative_id).count
-        return running_count.positive? unless topic_max
+        occupied_count = Task.occupying_topic_slot(task.topic_id, task.creative_id).count
+        return occupied_count.positive? unless topic_max
 
-        running_count >= topic_max
+        occupied_count >= topic_max
       end
 
       # Resolve scheduling policy against the queued task's own topic/creative
@@ -195,7 +201,8 @@ module Collavre
       end
 
       # Detect orphaned queued waiters: tasks left in "queued" for a topic that
-      # has no live running/delegated blocker. A queued task's only path to
+      # holds no occupied slot (no running/delegated blocker and no pending claim).
+      # A queued task's only path to
       # execution is dequeue_next_for_topic, which fires when the blocker reaches
       # a terminal status. If that single hand-off is missed — an
       # enqueue-vs-terminate TOCTOU race, or a lost cross-process broadcast — the

@@ -584,6 +584,33 @@ module Collavre
         policy&.destroy
       end
 
+      def create_pending_claim(name:)
+        Collavre::Task.create!(
+          name: name,
+          agent: @ai_agent,
+          status: "pending",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+      end
+
+      test "does not flag waiter when a prior dequeue is still pending" do
+        # topic_max=1 and a waiter was already dequeued (queued -> pending) but its
+        # AiAgentJob has not started, so running_for_topic is empty. The remaining
+        # queued waiter must NOT be flagged: the pending task is a claimed slot, and
+        # promoting the waiter would double-dequeue into a topic_max=1 topic.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 1)
+        create_pending_claim(name: "Claimed but not started")
+        create_queued_task(comment_id: 2014)
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
       test "fails parent workflow when auto-recovering delegated subtask" do
         policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
 
