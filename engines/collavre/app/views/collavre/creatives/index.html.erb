@@ -102,6 +102,7 @@
 
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <div data-share-modal-target="container"></div>
+    <%= render 'topic_move_members_modal' %>
   <% end %>
 
   <%= render 'import_upload_zone' %>

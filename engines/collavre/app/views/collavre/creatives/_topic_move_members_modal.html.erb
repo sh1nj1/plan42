@@ -1,0 +1,43 @@
+<%#
+  Popup shown after a topic is moved to another creative, offering to re-add
+  members who had access on the source creative but not on the target.
+  Rendered hidden; populated and shown by topic_move_members_popup.js using the
+  `missing_members` payload returned from TopicsController#move.
+%>
+<div id="topic-move-members-modal"
+     class="modal-dialog"
+     style="display: none; position: fixed; inset: 0; z-index: 10001; align-items: center; justify-content: center;"
+     data-shares-url-template="<%= collavre.creative_creative_shares_path('__CREATIVE_ID__') %>"
+     data-adding-text="<%= t('collavre.topics.move.add_members.adding') %>"
+     data-added-one="<%= t('collavre.topics.move.add_members.added.one') %>"
+     data-added-other="<%= t('collavre.topics.move.add_members.added.other', count: '__COUNT__') %>"
+     data-partial-text="<%= t('collavre.topics.move.add_members.partial', added: '__ADDED__', failed: '__FAILED__') %>"
+     data-failed-text="<%= t('collavre.topics.move.add_members.failed') %>"
+     data-description-template="<%= t('collavre.topics.move.add_members.description', creative: '__CREATIVE_NAME__') %>">
+  <div class="popup-box" style="max-width: 460px; width: 90%;">
+    <button type="button" id="topic-move-members-close" class="popup-close" aria-label="Close" style="position: absolute; top: 12px; right: 12px;">&times;</button>
+    <h2><%= t('collavre.topics.move.add_members.title') %></h2>
+    <p id="topic-move-members-description" style="opacity: 0.75; margin: 0.5em 0 1em;"></p>
+    <div id="topic-move-members-message" aria-live="polite"></div>
+    <ul id="topic-move-members-list" class="share-grid"></ul>
+    <div style="display: flex; gap: 0.5em; justify-content: flex-end; margin-top: 1em;">
+      <button type="button" id="topic-move-members-skip" class="btn btn-secondary"><%= t('collavre.topics.move.add_members.skip') %></button>
+      <button type="button" id="topic-move-members-add" class="btn btn-primary"><%= t('collavre.topics.move.add_members.add') %></button>
+    </div>
+  </div>
+
+  <template id="topic-move-member-row">
+    <li class="topic-move-member-row" style="display: flex; align-items: center; gap: 0.5em;">
+      <input type="checkbox" class="tmm-checkbox" checked>
+      <span class="avatar share-avatar tmm-avatar" style="display: inline-block; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-3, #ddd); text-align: center; line-height: 20px; font-size: 10px; overflow: hidden;"></span>
+      <span class="tmm-name"></span>
+      <span class="tmm-email" style="opacity: 0.5; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+      <select class="org-chart-permission-select share-modal-permission-select tmm-permission">
+        <% %w[admin write feedback read].each do |perm| %>
+          <option value="<%= perm %>"><%= t("collavre.creatives.index.permission_#{perm}") %></option>
+        <% end %>
+      </select>
+      <span class="tmm-status" style="width: 16px; text-align: center;"></span>
+    </li>
+  </template>
+</div>
