@@ -8,10 +8,11 @@
 //!   4. Show the app in a native webview at `http://127.0.0.1:<port>`.
 //!   5. Gracefully stop the sidecar (and its process group) on quit.
 
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -68,6 +69,19 @@ fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
         .env("PORT", port.to_string())
         .env("COLLAVRE_DATA_DIR", data)
         .env("COLLAVRE_BIND_HOST", bind_host);
+
+    // Capture the sidecar's stdout/stderr to a boot log. A Finder-launched .app has
+    // no terminal, so without this any startup failure (db migrate/seed, Puma) is
+    // discarded and the app just "quits unexpectedly" with no trail to debug from.
+    // Rails' own request logger writes to log/desktop.log once booted; this catches
+    // everything before that.
+    let log_dir = data.join("log");
+    let _ = fs::create_dir_all(&log_dir);
+    if let Ok(out) = File::create(log_dir.join("desktop-boot.log")) {
+        if let Ok(err) = out.try_clone() {
+            cmd.stdout(Stdio::from(out)).stderr(Stdio::from(err));
+        }
+    }
 
     // Run the sidecar in its own process group so we can signal the whole tree
     // (bash launcher -> ruby/puma -> Solid Queue) on quit, not just bash.

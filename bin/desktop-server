@@ -77,7 +77,30 @@ mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR" "$BOOTSNAP_CACHE_DIR"
 echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_HOST:$PORT" >&2
 
 # Create + migrate the SQLite databases on first run; idempotent afterwards.
-"$RUBY_BIN" "$APP_ROOT/bin/rails" db:prepare
+#
+# Seeding runs in a SEPARATE process from the migration, on purpose. `db:prepare`
+# would create+migrate+seed in one process, but a fresh desktop DB replays the full
+# migration history — and a historical data migration loads the User model mid-run,
+# caching the users columns before a later migration drops display_level/
+# completion_mark. That stale column cache then poisons an in-process seed, so
+# User.create! emits an INSERT naming the dropped columns and SQLite aborts with
+# "table users has no column named display_level". A fresh process re-reads the final
+# schema. Seeds are idempotent, so we seed only on first run to match db:prepare.
+DESKTOP_PRIMARY_DB="$DATA_DIR/desktop-primary.sqlite3"
+SEED_MARKER="$DATA_DIR/.seeded"
+
+# Create the databases on first run (db:create is per-db idempotent).
+[ -f "$DESKTOP_PRIMARY_DB" ] || "$RUBY_BIN" "$APP_ROOT/bin/rails" db:create
+"$RUBY_BIN" "$APP_ROOT/bin/rails" db:migrate
+
+# Seed until it succeeds, tracked by a marker rather than DB existence: a seed that
+# crashed mid-migration still leaves the DB file behind, so a file check would skip
+# the retry and leave the app with no admin user. Seeds are idempotent, so retrying
+# is safe; the marker just avoids a redundant boot once it has succeeded.
+if [ ! -f "$SEED_MARKER" ]; then
+  "$RUBY_BIN" "$APP_ROOT/bin/rails" db:seed
+  touch "$SEED_MARKER"
+fi
 
 # Hand off to Puma (Solid Queue runs in-process via SOLID_QUEUE_IN_PUMA).
 exec "$RUBY_BIN" "$APP_ROOT/bin/rails" server -b "$BIND_HOST" -p "$PORT"
