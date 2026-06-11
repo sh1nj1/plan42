@@ -1,4 +1,4 @@
-production:
+production: &production
   daily_inbox_summary:
     class: InboxSummaryJob
     queue: default
@@ -7,6 +7,9 @@ production:
     class: Collavre::StuckDetectorJob
     queue: default
     schedule: every 10 minutes
+
+# Desktop app runs the same recurring jobs as production.
+desktop: *production
 
 development:
   daily_inbox_summary:

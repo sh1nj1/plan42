@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Collavre desktop sidecar launcher.
+#
+# Boots the bundled Rails app in the `desktop` environment: SQLite + local-disk
+# Active Storage + no SSL, with all mutable state under a writable data dir
+# (the .app bundle itself is read-only). Spawned by the Tauri shell, but also
+# runnable directly from a dev checkout to validate the desktop env without
+# packaging:
+#
+#   PORT=4000 bin/desktop-server
+#
+# Env knobs:
+#   COLLAVRE_DATA_DIR   where DBs/blobs/secrets/logs live
+#                       (default: ~/Library/Application Support/Collavre)
+#   PORT                listen port (default: 3000)
+#   COLLAVRE_BIND_HOST  127.0.0.1 (closed, default) or 0.0.0.0 (open to LAN)
+#   COLLAVRE_RUBY       ruby binary to use (default: vendored if present, else `ruby`)
+set -euo pipefail
+
+# Resolve the app root (parent of this bin/ dir), following symlinks.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+BIN_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+APP_ROOT="$(cd -P "$BIN_DIR/.." >/dev/null 2>&1 && pwd)"
+cd "$APP_ROOT"
+
+# Data dir: writable home for DBs, blobs, secrets, logs.
+DATA_DIR="${COLLAVRE_DATA_DIR:-$HOME/Library/Application Support/Collavre}"
+mkdir -p "$DATA_DIR"
+
+# Pick the Ruby runtime: an explicit override, then a vendored portable Ruby
+# (present in packaged builds), then whatever `ruby` is on PATH (dev checkout).
+VENDORED_RUBY="$APP_ROOT/tools/desktop-app/vendor/ruby/bin/ruby"
+if [ -n "${COLLAVRE_RUBY:-}" ]; then
+  RUBY_BIN="$COLLAVRE_RUBY"
+elif [ -x "$VENDORED_RUBY" ]; then
+  RUBY_BIN="$VENDORED_RUBY"
+else
+  RUBY_BIN="ruby"
+fi
+
+# Provision (or load) the stable SECRET_KEY_BASE. Encryption keys derive from it.
+SECRET_KEY_BASE="$(COLLAVRE_DATA_DIR="$DATA_DIR" "$RUBY_BIN" "$APP_ROOT/tools/desktop-app/scripts/provision-secrets.rb")"
+export SECRET_KEY_BASE
+
+export RAILS_ENV=desktop
+export COLLAVRE_DATA_DIR="$DATA_DIR"
+export ACTIVE_STORAGE_DISK_ROOT="$DATA_DIR/storage"
+# Run Solid Queue jobs in-process so the desktop app is a single process.
+export SOLID_QUEUE_IN_PUMA=true
+export PORT="${PORT:-3000}"
+BIND_HOST="${COLLAVRE_BIND_HOST:-127.0.0.1}"
+mkdir -p "$ACTIVE_STORAGE_DISK_ROOT"
+
+echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_HOST:$PORT" >&2
+
+# Create + migrate the SQLite databases on first run; idempotent afterwards.
+"$RUBY_BIN" "$APP_ROOT/bin/rails" db:prepare
+
+# Hand off to Puma (Solid Queue runs in-process via SOLID_QUEUE_IN_PUMA).
+exec "$RUBY_BIN" "$APP_ROOT/bin/rails" server -b "$BIND_HOST" -p "$PORT"

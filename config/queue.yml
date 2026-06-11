@@ -22,3 +22,7 @@ test:
 
 production:
   <<: *default
+
+# Desktop app runs the same in-process Solid Queue workers as production.
+desktop:
+  <<: *default
