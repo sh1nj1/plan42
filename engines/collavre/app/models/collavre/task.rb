@@ -27,11 +27,15 @@ module Collavre
     # Tasks that hold a topic concurrency slot: running/delegated (executing)
     # plus pending — a task that has been claimed (dequeue_next_for_topic moves a
     # waiter queued -> pending, a retry re-queues to pending, initial dispatch
-    # creates pending) but whose AiAgentJob has not started yet. Orphan detection
-    # must count pending, otherwise a backed-up job queue makes a claimed-but-not-
-    # started slot look free and a second waiter gets promoted into the same slot.
+    # creates pending) but whose AiAgentJob has not started yet — plus
+    # pending_approval — a task paused awaiting tool approval that intentionally
+    # keeps its resource (AiAgentJob sets should_release = false) and does NOT
+    # drain the topic queue (dequeue_next_for_topic only fires on terminal
+    # statuses done/failed/cancelled/escalated). Orphan detection must count all
+    # of these, otherwise a claimed-but-not-started or approval-paused slot looks
+    # free and a second waiter gets promoted into the same slot.
     scope :occupying_topic_slot, ->(topic_id, creative_id = nil) {
-      rel = where(topic_id: topic_id, status: %w[running delegated pending])
+      rel = where(topic_id: topic_id, status: %w[running delegated pending pending_approval])
       rel = rel.where(creative_id: creative_id) if creative_id
       rel
     }

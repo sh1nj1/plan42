@@ -611,6 +611,35 @@ module Collavre
         policy&.destroy
       end
 
+      def create_pending_approval(name:)
+        Collavre::Task.create!(
+          name: name,
+          agent: @ai_agent,
+          status: "pending_approval",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+      end
+
+      test "does not flag waiter when a task is paused awaiting tool approval" do
+        # topic_max=1 and the slot holder is paused on pending_approval: it keeps
+        # its resource (should_release = false) and does NOT drain the queue
+        # (dequeue only fires on terminal statuses). running_for_topic is empty,
+        # but the queued waiter is still legitimately blocked — promoting it would
+        # run a second task concurrently with the approval-paused one, violating
+        # topic serialization. The waiter must NOT be flagged.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 1)
+        create_pending_approval(name: "Paused awaiting approval")
+        create_queued_task(comment_id: 2015)
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
       test "fails parent workflow when auto-recovering delegated subtask" do
         policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
 
