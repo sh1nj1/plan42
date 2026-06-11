@@ -2,7 +2,7 @@
 # Build the Collavre macOS .app: stage the Rails app, vendor Ruby + gems,
 # precompile assets, then run `tauri build` to produce the bundle.
 #
-# Output: tools/desktop-app/src-tauri/target/release/bundle/macos/Collavre.app
+# Output: "tools/desktop-app/src-tauri/target/release/bundle/macos/Collavre Desktop.app"
 #
 # Prerequisites:
 #   - Rust toolchain (cargo) + Tauri CLI (`cargo install tauri-cli --version '^2'`)
@@ -88,5 +88,5 @@ echo "[build-macos] 6/6 building the Tauri bundle"
 )
 
 echo "[build-macos] done →"
-echo "  $DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre.app"
+echo "  $DESKTOP_DIR/src-tauri/target/release/bundle/macos/Collavre Desktop.app"
 echo "Run it once via: right-click → Open (unsigned, Gatekeeper)."

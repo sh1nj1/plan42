@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Collavre",
+  "productName": "Collavre Desktop",
   "version": "0.1.0",
   "identifier": "net.collavre.desktop",
   "build": {

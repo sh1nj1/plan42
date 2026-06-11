@@ -169,11 +169,11 @@ pub fn run() {
                 format!("http://127.0.0.1:{port}")
             } else {
                 // Surface a readable error instead of a blank webview.
-                "data:text/html,<h2>Collavre failed to start</h2>".to_string()
+                "data:text/html,<h2>Collavre Desktop failed to start</h2>".to_string()
             };
 
             WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url.parse().unwrap()))
-                .title("Collavre")
+                .title("Collavre Desktop")
                 .inner_size(1280.0, 860.0)
                 .build()?;
 

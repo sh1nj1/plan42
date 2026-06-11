@@ -67,7 +67,7 @@ This is the de-risk step and is verified working end-to-end.
 brew install ruby-build vips node
 cargo install tauri-cli --version '^2'
 tools/desktop-app/scripts/build-macos.sh
-# → src-tauri/target/release/bundle/macos/Collavre.app
+# → "src-tauri/target/release/bundle/macos/Collavre Desktop.app"
 ```
 
 The build runs `npm ci` before `assets:precompile` because jsbundling-rails
@@ -88,4 +88,4 @@ First launch: right-click → **Open** (the build is unsigned; Gatekeeper).
 - **Windows / Linux** — deferred (the Rust shell and Rails env are already
   cross-platform; packaging scripts are macOS-only for now).
 - **Relocatable Ruby** — the vendored Ruby is happiest when the app lives at a
-  stable path (`/Applications/Collavre.app`).
+  stable path (`/Applications/Collavre Desktop.app`).
