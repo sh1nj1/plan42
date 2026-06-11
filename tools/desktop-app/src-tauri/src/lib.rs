@@ -151,7 +151,14 @@ pub fn run() {
             let data = data_dir(&handle);
             std::fs::create_dir_all(&data).ok();
 
-            let port = free_port();
+            // Honor a caller-supplied PORT so open mode gets a stable URL/firewall
+            // rule; fall back to an ephemeral loopback port for the default
+            // single-user case. The same `port` feeds the sidecar, health check,
+            // and webview URL, so reading it here keeps all three consistent.
+            let port = std::env::var("PORT")
+                .ok()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or_else(free_port);
             let child = spawn_sidecar(&root, &data, port);
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
 
