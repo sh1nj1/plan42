@@ -65,11 +65,14 @@ export ACTIVE_STORAGE_DISK_ROOT="$DATA_DIR/storage"
 # closure_tree writes a flock lock file (SQLite isn't MySQL/PG). Keep it under the
 # writable data dir — Rails.root is the read-only .app bundle in packaged builds.
 export FLOCK_DIR="$DATA_DIR/tmp"
+# boot.rb requires bootsnap/setup, which caches to Rails.root/tmp/cache by default —
+# also unwritable in the bundle. Point it at the data dir before Rails boots.
+export BOOTSNAP_CACHE_DIR="$DATA_DIR/tmp/cache"
 # Run Solid Queue jobs in-process so the desktop app is a single process.
 export SOLID_QUEUE_IN_PUMA=true
 export PORT="${PORT:-3000}"
 BIND_HOST="${COLLAVRE_BIND_HOST:-127.0.0.1}"
-mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR"
+mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR" "$BOOTSNAP_CACHE_DIR"
 
 echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_HOST:$PORT" >&2
 
