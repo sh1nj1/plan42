@@ -328,6 +328,13 @@ body.chat-fullscreen {
     margin-top: 0.2em;
 }
 
+.comment-content img,
+.comment-content video {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-2);
+}
+
 .comment-content pre {
     white-space: pre-wrap;
     word-break: break-word;
