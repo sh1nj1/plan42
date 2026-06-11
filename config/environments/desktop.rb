@@ -19,12 +19,17 @@ Rails.application.configure do
   # present in the environment, a desktop install must never reach for S3.
   config.active_storage.service = :local
 
-  # Single-user desktop install: allow the loopback hosts the Tauri shell may
-  # bind to (127.0.0.1 / localhost / 0.0.0.0 in "open" mode). Empty host
-  # authorization (production default) already permits these; this is explicit
-  # so DNS-rebinding protection can be tightened later without surprise.
-  config.hosts.clear
-  config.host_authorization = { exclude: ->(_request) { true } }
+  # Keep DNS-rebinding protection ON. The webview talks to the sidecar over
+  # loopback, so only loopback Host headers are allowed by default. A malicious
+  # page that rebinds its own domain to 127.0.0.1 still sends *its* hostname as
+  # the Host header, which is rejected here. Open mode (0.0.0.0 / Tailscale) is
+  # reached via a non-loopback hostname, so the launcher passes the externally
+  # reachable host(s) through COLLAVRE_ALLOWED_HOSTS to widen the allowlist.
+  require "ipaddr"
+  config.hosts = [ "localhost", IPAddr.new("127.0.0.0/8"), IPAddr.new("::1") ]
+  if (extra = ENV["COLLAVRE_ALLOWED_HOSTS"]).present?
+    config.hosts.concat(extra.split(",").map(&:strip).reject(&:empty?))
+  end
 
   # Boot must not depend on a checked-in master key. The desktop launcher
   # provisions and persists SECRET_KEY_BASE on first run (see

@@ -14,6 +14,9 @@
 #                       (default: ~/Library/Application Support/Collavre)
 #   PORT                listen port (default: 3000)
 #   COLLAVRE_BIND_HOST  127.0.0.1 (closed, default) or 0.0.0.0 (open to LAN)
+#   COLLAVRE_ALLOWED_HOSTS  comma-separated extra Host headers to accept in open
+#                       mode (e.g. macbook-pro.tailadceed.ts.net). Loopback is
+#                       always allowed; required when reaching the app by hostname.
 #   COLLAVRE_RUBY       ruby binary to use (default: vendored if present, else `ruby`)
 set -euo pipefail
 
