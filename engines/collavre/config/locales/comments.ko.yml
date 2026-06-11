@@ -197,6 +197,7 @@ ko:
         delete_confirm: 이 버전을 삭제하시겠습니까?
         select: 선택
       stop_agent: 중지
+      stop_blocking_agent: 실행 중 작업 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
       table_download:

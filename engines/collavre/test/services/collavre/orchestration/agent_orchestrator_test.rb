@@ -150,6 +150,37 @@ module Collavre
                         "waiting notice should name the running blocker agent"
       end
 
+      # The waiting notice must expose a stop button for the *blocker* so a user
+      # can cancel a hung in-progress task and unstick their deferred waiter.
+      # The button targets the running blocker resolved at render time, NOT the
+      # notice's own task_id (which would collide with Task#reply_comment).
+      test "deferred topic-concurrency notice exposes the running blocker as its stop target" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => {
+            "content" => "@#{@ai_agent.name}: hello",
+            "mentioned_user" => { "id" => @ai_agent.id }
+          },
+          "comment" => { "content" => "@#{@ai_agent.name}: hello" }
+        }
+
+        blocker = Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                               agent: @ai_agent, topic_id: topic.id, creative: @creative)
+
+        AgentOrchestrator.dispatch("comment_created", context)
+
+        notice = @creative.comments.where(topic_id: topic.id)
+                          .find { |c| c.content.include?("⏳") }
+        assert notice, "expected a ⏳ waiting notice comment"
+        assert notice.waiting_notice?, "system notice should be flagged as a waiting notice"
+        assert_nil notice.task_id,
+                   "notice must not borrow task_id (would shadow the blocker's reply_comment)"
+        assert_equal blocker.id, notice.topic_blocking_task&.id,
+                     "stop button must target the running blocker task"
+      end
+
       # dequeue_next_for_topic
       test "dequeue_next_for_topic claims queued task as pending" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)

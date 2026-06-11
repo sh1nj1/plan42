@@ -3,10 +3,37 @@ module Collavre
     self.table_name = "comments"
 
     STREAMING_PLACEHOLDER_CONTENT = "..."
+    # Authorless "⏳ 대기중 …" system notices posted when an agent is deferred for
+    # topic concurrency. AgentOrchestrator.cleanup_waiting_notices! matches the
+    # same prefix to remove them once the waiter is dequeued.
+    WAITING_NOTICE_PREFIX = "⏳"
 
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
+    end
+
+    # A system "⏳ 대기중" notice (no author) telling a user their agent is
+    # deferred because another task holds the topic's running slot.
+    def waiting_notice?
+      user_id.nil? && content.to_s.start_with?(WAITING_NOTICE_PREFIX)
+    end
+
+    # The task currently holding this topic's running slot — the in-progress
+    # blocker the waiting notice is about. Lets the notice render a stop button
+    # that cancels the blocker (freeing the topic so the deferred waiter
+    # proceeds) instead of being an anonymous dead end. Resolved at render time
+    # rather than stored on task_id, which Task#reply_comment keys on (a shared
+    # task_id would make the blocker's reply_comment ambiguous). Returns nil once
+    # the blocker is gone — at which point the notice itself is cleaned up.
+    def topic_blocking_task
+      return @topic_blocking_task if defined?(@topic_blocking_task)
+
+      @topic_blocking_task =
+        if topic_id
+          Collavre::Task.running_for_topic(topic_id, creative_id)
+                        .includes(:agent).order(:created_at).first
+        end
     end
 
     belongs_to :creative, class_name: "Collavre::Creative"
@@ -144,10 +171,6 @@ module Collavre
 
       # Cancel queued tasks when their waiting notice (system comment) is deleted
       cancel_queued_tasks_for_waiting_notice if waiting_notice?
-    end
-
-    def waiting_notice?
-      user_id.nil? && content&.start_with?("⏳")
     end
 
     def cancel_queued_tasks_for_waiting_notice
