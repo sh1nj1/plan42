@@ -57,9 +57,24 @@ module Collavre
 
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
+          next false unless eligible_in_inbox?(agent)
 
           evaluate_routing_expression(agent)
         end
+      end
+
+      # A Claude Channel session agent holds inbox-wide :feedback +
+      # routing_expression="true", so within the user's Inbox it would otherwise
+      # match EVERY topic. Confine it to its own registered session topic (the
+      # topic it is primary_agent on, carrying a session_id) so ordinary inbox
+      # topics — Main, Content, user threads — stay identical to a normal topic
+      # and are never absorbed by a live session. Only the inbox is affected: on
+      # work/project creatives the agent still matches via routing_expression.
+      def eligible_in_inbox?(agent)
+        return true unless matched_creative&.inbox?
+        return true unless agent.claude_channel_agent?
+
+        matched_topic&.session_id.present? && matched_topic.primary_agent_id == agent.id
       end
 
       def evaluate_routing_expression(agent)
@@ -85,13 +100,24 @@ module Collavre
       def has_creative_permission?(agent)
         # All agents need feedback permission on the creative to respond
         # searchable only affects discoverability, not response permission
-        creative_id = @context.dig("creative", "id") || @context.dig(:creative, :id)
-        return false unless creative_id
-
-        creative = Creative.find_by(id: creative_id)
+        creative = matched_creative
         return false unless creative
 
         creative.has_permission?(agent, :feedback)
+      end
+
+      def matched_creative
+        return @matched_creative if defined?(@matched_creative)
+
+        creative_id = @context.dig("creative", "id") || @context.dig(:creative, :id)
+        @matched_creative = creative_id && Creative.find_by(id: creative_id)
+      end
+
+      def matched_topic
+        return @matched_topic if defined?(@matched_topic)
+
+        topic_id = @context.dig("topic", "id") || @context.dig(:topic, :id)
+        @matched_topic = topic_id && Topic.find_by(id: topic_id)
       end
     end
   end
