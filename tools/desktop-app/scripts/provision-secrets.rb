@@ -30,12 +30,22 @@ secret =
   else
     FileUtils.mkdir_p(cred_dir)
     generated = SecureRandom.hex(64)
-    # Write atomically with owner-only perms so the secret can't leak via a
-    # half-written file or world-readable mode.
+    # Write to a private tmp file with owner-only perms (no half-written or
+    # world-readable secret), then publish via link(2). link is atomic AND
+    # no-clobber: if two first launches race, only one link succeeds; the loser
+    # gets EEXIST and re-reads the winner's key instead of overwriting it (a
+    # plain rename would clobber, orphaning the secret the winner already booted
+    # with and making that session's encrypted rows undecryptable).
     tmp = "#{key_file}.tmp.#{Process.pid}"
     File.open(tmp, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |f| f.write(generated) }
-    File.rename(tmp, key_file)
-    generated
+    begin
+      File.link(tmp, key_file)
+      generated
+    rescue Errno::EEXIST
+      File.read(key_file).strip
+    ensure
+      File.delete(tmp) if File.exist?(tmp)
+    end
   end
 
 # Defensive: re-assert restrictive perms in case the file predates this code.
