@@ -64,11 +64,14 @@ This is the de-risk step and is verified working end-to-end.
 ## Build the .app (follow-up — heavy)
 
 ```bash
-brew install ruby-build vips
+brew install ruby-build vips node
 cargo install tauri-cli --version '^2'
 tools/desktop-app/scripts/build-macos.sh
 # → src-tauri/target/release/bundle/macos/Collavre.app
 ```
+
+The build runs `npm ci` before `assets:precompile` because jsbundling-rails
+drives esbuild from `node_modules` — Node.js is a build prerequisite.
 
 The app icon is generated during the build from `public/icon-*.png` (the app's
 own brand icon) into the git-ignored `src-tauri/icons/` — nothing to prepare.

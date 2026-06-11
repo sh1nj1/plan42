@@ -7,6 +7,7 @@
 # Prerequisites:
 #   - Rust toolchain (cargo) + Tauri CLI (`cargo install tauri-cli --version '^2'`)
 #   - ruby-build (brew install ruby-build)
+#   - Node.js + npm (jsbundling-rails/esbuild needs node_modules for precompile)
 #   - libvips (brew install vips) for image_processing native build
 # Code signing / notarization are intentionally NOT done here (v1 runs locally;
 # right-click → Open to bypass Gatekeeper). See README.
@@ -17,10 +18,19 @@ DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
 
-echo "[build-macos] 1/5 vendoring Ruby + gems"
+echo "[build-macos] 1/6 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
 
-echo "[build-macos] 2/5 precompiling assets (desktop env)"
+# jsbundling-rails drives esbuild from node_modules during assets:precompile, so
+# the JS deps must be installed first (same as the Dockerfile/Render build). A
+# clean checkout or CI runner has no node_modules, so precompile fails without this.
+echo "[build-macos] 2/6 installing Node packages (npm ci)"
+(
+  cd "$APP_ROOT"
+  npm ci
+)
+
+echo "[build-macos] 3/6 precompiling assets (desktop env)"
 (
   cd "$APP_ROOT"
   export PATH="$DESKTOP_DIR/vendor/ruby/bin:$PATH"
@@ -31,7 +41,7 @@ echo "[build-macos] 2/5 precompiling assets (desktop env)"
     "$DESKTOP_DIR/vendor/ruby/bin/ruby" -S bundle exec rails assets:precompile
 )
 
-echo "[build-macos] 3/5 staging app tree into $STAGING"
+echo "[build-macos] 4/6 staging app tree into $STAGING"
 rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
 # Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
@@ -52,7 +62,7 @@ rsync -a --delete \
 # at src-tauri/icons/, which is .gitignored (generated, not committed) — without
 # this step `cargo tauri build` fails on a missing icon. Source of truth is the
 # app's own icon under public/, so the desktop app can't drift from the brand.
-echo "[build-macos] 4/5 generating app icons"
+echo "[build-macos] 5/6 generating app icons"
 ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
 [ -n "$ICON_SRC" ] || { echo "no source icon at $APP_ROOT/public/icon-*.png"; exit 1; }
 (
@@ -60,7 +70,7 @@ ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
   cargo tauri icon "$ICON_SRC"
 )
 
-echo "[build-macos] 5/5 building the Tauri bundle"
+echo "[build-macos] 6/6 building the Tauri bundle"
 (
   cd "$DESKTOP_DIR/src-tauri"
   cargo tauri build
