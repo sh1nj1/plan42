@@ -8,8 +8,13 @@ production: &production
     queue: default
     schedule: every 10 minutes
 
-# Desktop app runs the same recurring jobs as production.
-desktop: *production
+# Desktop runs non-mail jobs only: it has no SMTP/SES, so daily_inbox_summary's
+# deliver_now would fail every run and the in-Puma Solid Queue supervisor would retry forever.
+desktop:
+  stuck_detector:
+    class: Collavre::StuckDetectorJob
+    queue: default
+    schedule: every 10 minutes
 
 development:
   daily_inbox_summary:
