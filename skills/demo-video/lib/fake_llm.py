@@ -152,10 +152,19 @@ class Handler(BaseHTTPRequestHandler):
             )
 
         # Streaming (SSE) response.
+        #
+        # The body length is unknown up front and we emit no Content-Length or
+        # Transfer-Encoding: chunked, so the ONLY way the client can detect the
+        # end of the stream is the connection closing (EOF). Advertise (and
+        # force) Connection: close — otherwise an HTTP/1.1 keep-alive client
+        # (RubyLLM/Faraday) keeps the socket open after `data: [DONE]` and
+        # blocks on its read timeout (~24s), inflating the agent turn and
+        # tripping the recorder's wait_stream guard.
+        self.close_connection = True
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
+        self.send_header("Connection", "close")
         self.end_headers()
 
         created = _now()
