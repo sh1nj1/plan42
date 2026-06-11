@@ -17,6 +17,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+# Parse the optional desktop config.json in the data dir. Already in the tree as
+# a transitive Tauri dependency; named here so the shell can read it directly.
+serde_json = "1"
 
 [features]
 # Default Tauri custom-protocol for production builds.

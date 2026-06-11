@@ -200,6 +200,180 @@ extern "C" {
     fn libc_kill(pid: i32, sig: i32) -> i32;
 }
 
+/// Normalize an `allowed_hosts` JSON value into a comma-joined host string.
+/// Accepts either an array of strings (`["a", "b"]`) or a single comma-separated
+/// string (`"a, b"`); trims each entry and drops blanks. Any other JSON type
+/// (number, bool, object) returns `None` so the key is skipped, not misread.
+fn json_to_host_list(v: &serde_json::Value) -> Option<String> {
+    let parts: Vec<String> = match v {
+        serde_json::Value::Array(items) => items
+            .iter()
+            .filter_map(|i| i.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+        serde_json::Value::String(s) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect(),
+        _ => return None,
+    };
+    Some(parts.join(","))
+}
+
+/// Map recognized keys in the desktop `config.json` to the (env var, value)
+/// pairs the sidecar already understands. Pure (no env/fs) so the mapping is
+/// unit-tested in isolation. The result order is fixed (allowed_hosts, bind_host,
+/// port) regardless of key order in the file.
+///
+/// Recognized keys — all optional, unknown keys and wrong-typed values ignored:
+///   "allowed_hosts": ["host", ...] | "host,host"  -> COLLAVRE_ALLOWED_HOSTS
+///   "bind_host":      "0.0.0.0"                    -> COLLAVRE_BIND_HOST
+///   "port":           4000 | "4000"               -> PORT
+///
+/// Malformed JSON (or a non-object top level) yields no overrides: a bad config
+/// file degrades to the built-in closed-loopback defaults rather than failing
+/// the launch.
+fn config_env_overrides(json: &str) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return out;
+    };
+    let Some(obj) = value.as_object() else {
+        return out;
+    };
+
+    if let Some(hosts) = obj.get("allowed_hosts").and_then(json_to_host_list) {
+        if !hosts.is_empty() {
+            out.push(("COLLAVRE_ALLOWED_HOSTS", hosts));
+        }
+    }
+
+    if let Some(host) = obj.get("bind_host").and_then(|v| v.as_str()) {
+        let host = host.trim();
+        if !host.is_empty() {
+            out.push(("COLLAVRE_BIND_HOST", host.to_string()));
+        }
+    }
+
+    if let Some(port) = obj.get("port").and_then(|v| match v {
+        serde_json::Value::Number(n) => n.as_u64().map(|n| n.to_string()),
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        }
+        _ => None,
+    }) {
+        out.push(("PORT", port));
+    }
+
+    out
+}
+
+/// Read the optional `config.json` from the data dir and export its recognized
+/// settings into the process environment — but only for keys not already set, so
+/// an explicit env var (dev/test override, or a launcher that already exported
+/// the value) always wins.
+///
+/// This is the fix for the tailscale-serve UX gap: a Finder-launched `.app`
+/// inherits an empty environment, so there was no way to hand it
+/// COLLAVRE_ALLOWED_HOSTS / COLLAVRE_BIND_HOST and open-mode 403'd. Writing this
+/// file once (alongside the DBs, secrets, and logs the app already keeps here)
+/// lets every later launch pick the settings up. No file is the normal
+/// closed-loopback case and a no-op.
+fn apply_desktop_config(data: &PathBuf) {
+    let path = data.join("config.json");
+    let Ok(json) = fs::read_to_string(&path) else {
+        return;
+    };
+    for (key, value) in config_env_overrides(&json) {
+        if std::env::var_os(key).is_none() {
+            std::env::set_var(key, value);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::config_env_overrides;
+
+    fn pairs(json: &str) -> Vec<(&'static str, String)> {
+        config_env_overrides(json)
+    }
+
+    #[test]
+    fn allowed_hosts_array_joins_with_commas() {
+        let got = pairs(r#"{"allowed_hosts": ["a.ts.net", "b.ts.net"]}"#);
+        assert_eq!(
+            got,
+            vec![("COLLAVRE_ALLOWED_HOSTS", "a.ts.net,b.ts.net".to_string())]
+        );
+    }
+
+    #[test]
+    fn allowed_hosts_comma_string_is_normalized() {
+        let got = pairs(r#"{"allowed_hosts": " a.ts.net , b.ts.net "}"#);
+        assert_eq!(
+            got,
+            vec![("COLLAVRE_ALLOWED_HOSTS", "a.ts.net,b.ts.net".to_string())]
+        );
+    }
+
+    #[test]
+    fn bind_host_string_maps_to_env() {
+        let got = pairs(r#"{"bind_host": "0.0.0.0"}"#);
+        assert_eq!(got, vec![("COLLAVRE_BIND_HOST", "0.0.0.0".to_string())]);
+    }
+
+    #[test]
+    fn port_number_and_string_both_map() {
+        assert_eq!(
+            pairs(r#"{"port": 4000}"#),
+            vec![("PORT", "4000".to_string())]
+        );
+        assert_eq!(
+            pairs(r#"{"port": "4000"}"#),
+            vec![("PORT", "4000".to_string())]
+        );
+    }
+
+    #[test]
+    fn all_three_keys_preserve_a_stable_order() {
+        let got = pairs(r#"{"port": 4000, "bind_host": "0.0.0.0", "allowed_hosts": ["h"]}"#);
+        assert_eq!(
+            got,
+            vec![
+                ("COLLAVRE_ALLOWED_HOSTS", "h".to_string()),
+                ("COLLAVRE_BIND_HOST", "0.0.0.0".to_string()),
+                ("PORT", "4000".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_and_blank_values_are_dropped() {
+        assert!(pairs(r#"{"allowed_hosts": []}"#).is_empty());
+        assert!(pairs(r#"{"allowed_hosts": "  ,  "}"#).is_empty());
+        assert!(pairs(r#"{"bind_host": "   "}"#).is_empty());
+        assert!(pairs(r#"{"port": ""}"#).is_empty());
+    }
+
+    #[test]
+    fn unknown_keys_and_wrong_types_are_ignored() {
+        assert!(pairs(r#"{"nope": 1, "bind_host": 123, "allowed_hosts": 5}"#).is_empty());
+    }
+
+    #[test]
+    fn malformed_json_yields_no_overrides() {
+        assert!(pairs("not json at all").is_empty());
+        assert!(pairs("").is_empty());
+        assert!(pairs("[1,2,3]").is_empty());
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -209,6 +383,14 @@ pub fn run() {
             let root = app_root(&handle);
             let data = data_dir(&handle);
             std::fs::create_dir_all(&data).ok();
+
+            // Load persisted open-mode settings from the data dir's config.json
+            // into the env before anything reads it. A Finder-launched .app has
+            // no way to receive COLLAVRE_ALLOWED_HOSTS / COLLAVRE_BIND_HOST / PORT
+            // otherwise; explicit env vars still win (see apply_desktop_config).
+            // Must precede the PORT read and spawn_sidecar's COLLAVRE_BIND_HOST
+            // read below so the values actually take effect this launch.
+            apply_desktop_config(&data);
 
             // Honor a caller-supplied PORT so open mode gets a stable URL/firewall
             // rule; fall back to an ephemeral loopback port for the default
