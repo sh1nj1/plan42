@@ -6,7 +6,6 @@ en:
       summary:
         a_tool: "a tool"
         approval: "Task %{number}, %{label}. Approval requested: %{detail}. Approve it?"
-        reply: "Task %{number}, %{label} says: %{text}"
       reply:
         approved: "Approved."
         denied: "Denied."

@@ -6,7 +6,6 @@ ko:
       summary:
         a_tool: "도구 실행"
         approval: "작업 %{number}, %{label}. 승인 요청: %{detail}. 승인할까요?"
-        reply: "작업 %{number}, %{label}: %{text}"
       reply:
         approved: "승인했습니다."
         denied: "거절했습니다."

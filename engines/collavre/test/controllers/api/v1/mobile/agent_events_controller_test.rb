@@ -161,6 +161,61 @@ module Collavre
             assert_equal "allow", JSON.parse(comment.reload.action)["decision"], "first decision wins"
           end
 
+          test "a message in the user's Inbox#System surfaces as an event read aloud" do
+            origin = @creative.comments.create!(
+              content: "주말 여행으로 어디가 좋을까요? 추천해줘", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true
+            )
+            notice = create_system_inbox_notice(
+              quoted: origin,
+              content: "AI 님이 \"[테스트](/creatives/6?open_comments=true)\" 에서 당신을 언급했습니다: \"주말 여행으로 어디가 좋을까요?\""
+            )
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            assert_response :ok
+            ev = JSON.parse(response.body).find { |e| e["id"] == notice.id }
+
+            assert ev, "Inbox#System alarms must surface as events (the bug: they never did → never read)"
+            assert_equal "OpenClaw PR review work#OpenClaw PR 검토", ev["title"],
+              "title is the ORIGIN thread (크리에이티브#토픽), not Inbox#System"
+            assert_equal @topic.id, ev["topic_id"], "the event points at the origin thread"
+            assert ev["requires_response"], "after reading, the app listens for a reply"
+            assert_includes ev["summary"], "당신을 언급했습니다", "the full message content is spoken"
+            refute_includes ev["summary"], "](", "markdown link syntax is stripped so TTS doesn't read URLs"
+          end
+
+          test "responding to an Inbox#System message routes the reply to the origin topic" do
+            origin = @creative.comments.create!(
+              content: "어느 브랜치에 머지할까요?", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true
+            )
+            notice = create_system_inbox_notice(quoted: origin, content: "언급: 어느 브랜치에 머지할까요?")
+
+            assert_difference -> { Comment.count }, 1 do
+              post "/api/v1/mobile/agent_events/#{notice.id}/respond",
+                params: { device_id: DEVICE, response: "메인에 머지해" }, headers: auth_headers, as: :json
+            end
+            assert_response :ok
+            assert_equal "relayed", JSON.parse(response.body).dig("action", "type")
+
+            relayed = Comment.order(:id).last
+            assert_equal "메인에 머지해", relayed.content
+            assert_equal @user.id, relayed.user_id, "the human authors the reply"
+            assert_equal @topic.id, relayed.topic_id, "reply lands on the ORIGIN thread, not the (non-dispatching) System topic"
+            assert_equal origin.id, relayed.quoted_comment_id, "reply quotes the origin comment so the agent threads it"
+          end
+
+          test "an approval's Inbox#System FYI is not read a second time (pending_approvals owns it)" do
+            perm = create_permission_comment(request_id: "req-dup", tool_name: "Edit", description: "Edit 3 files")
+            create_system_inbox_notice(quoted: perm, content: "승인 요청: Edit")
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            events = JSON.parse(response.body)
+
+            assert_equal 1, events.size, "the approval surfaces once (actionable), not again as a System FYI duplicate"
+            assert_equal "approval_requested", events.first["type"]
+          end
+
           test "respond to a free-form agent message relays the utterance verbatim" do
             agent_reply = @creative.comments.create!(
               content: "어떤 브랜치에 머지할까요?", user: @agent, topic: @topic,
@@ -228,6 +283,16 @@ module Collavre
               email: "voice-agent-#{SecureRandom.hex(4)}@collavre.local",
               password: SecureRandom.hex(16), name: "Claude Channel (voice)",
               llm_vendor: "anthropic", llm_model: "claude-code", created_by_id: @user.id
+            )
+          end
+
+          # Mirrors Notifiable#create_inbox_comment: a system-authored (user_id nil)
+          # comment in the user's Inbox#System topic that QUOTES the origin comment.
+          def create_system_inbox_notice(quoted:, content:)
+            inbox = Collavre::Creative.inbox_for(@user)
+            Comment.create!(
+              creative: inbox, topic: inbox.system_topic, content: content,
+              user: nil, skip_default_user: true, quoted_comment: quoted
             )
           end
 

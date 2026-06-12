@@ -23,22 +23,10 @@ module Collavre
         end
       end
 
-      def reply_summary(ref_number:, content:, label:)
-        I18n.with_locale(@locale) do
-          I18n.t("collavre.mobile.summary.reply",
-                 number: ref_number, label: label, text: truncate(content))
-        end
-      end
-
       private
 
       def flatten(text)
         text.to_s.gsub(/\s+/, " ").strip
-      end
-
-      def truncate(text, limit = 280)
-        s = flatten(text)
-        s.length > limit ? "#{s[0, limit]}…" : s
       end
 
       def parse_action(comment)

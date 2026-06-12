@@ -21,7 +21,7 @@ module Collavre
             running = running_tasks.to_a
             running.each { |task| registry.ref_for_session(task.topic_id, label: task.name) }
 
-            replies = agent_replies(since)
+            notices = system_inbox_messages(since)
 
             # Refs + reconcile run over the FULL pending set so a still-pending
             # approval keeps its spoken number ("1번") even on polls where it is
@@ -47,14 +47,17 @@ module Collavre
               }
             end
 
-            events += replies.map do |c|
-              ref = registry.ref_for_session(c.topic_id, label: label_for_topic(c.topic_id))
+            events += notices.map do |c|
+              # The notice stands in for the origin comment it quotes; the app
+              # lists/reads it against the ORIGIN thread and replies route there.
+              origin_topic_id = c.quoted_comment&.topic_id || c.topic_id
+              ref = registry.ref_for_session(origin_topic_id, label: label_for_topic(origin_topic_id))
               {
                 id: c.id, ref: ref.ref_number, type: "agent_reply",
-                title: title_for_topic(c.topic_id),
-                summary: summarizer.reply_summary(ref_number: ref.ref_number, content: c.content, label: ref.label),
-                speak: true, requires_response: c.content.to_s.strip.end_with?("?"),
-                topic_id: c.topic_id, created_at: c.created_at.iso8601(6)
+                title: title_for_topic(origin_topic_id),
+                summary: speakable(c.content),
+                speak: true, requires_response: c.quoted_comment_id.present?,
+                topic_id: origin_topic_id, created_at: c.created_at.iso8601(6)
               }
             end
 
@@ -84,22 +87,52 @@ module Collavre
             nil
           end
 
-          def agent_replies(since)
-            return Collavre::Comment.none if agent_ids.empty?
+          # The user's Inbox → System topic is the per-user alarm stream: mentions,
+          # agent replies, share notices, … land here as system-authored
+          # (user_id: nil) comments that QUOTE the origin comment. This is the
+          # canonical, agent-ownership-independent feed the voice loop reads aloud.
+          # (The old agent_replies scope keyed on user-owned agents, so it missed
+          # everything authored by agents the token holder doesn't own.)
+          def system_inbox_messages(since)
+            inbox = current_user_inbox or return []
 
-            scope = Collavre::Comment.where(user_id: agent_ids, action: nil)
-                                     .where.not(topic_id: nil)
+            scope = Collavre::Comment.where(creative_id: inbox.id, topic_id: inbox.system_topic.id)
                                      .order(:created_at)
                                      .limit(50)
             scope = scope.where("comments.created_at > ?", since) if since
-            scope
+            # Approval prompts are surfaced (actionably) by pending_approvals; their
+            # System-topic FYI duplicate must not be read a second time.
+            scope.reject { |c| c.quoted_comment&.claude_channel_permission? }
+          end
+
+          def current_user_inbox
+            return @current_user_inbox if defined?(@current_user_inbox)
+
+            @current_user_inbox = Collavre::Creative.inbox_for(current_user)
+          end
+
+          # Read the whole message aloud, but spoken: strip markdown link syntax to
+          # its text and collapse whitespace so TTS doesn't read raw URLs.
+          def speakable(text)
+            text.to_s.gsub(/\[([^\]]+)\]\([^)]*\)/, '\1').gsub(/\s+/, " ").strip
           end
 
           def authorized_comment?(comment)
             return true if comment.approver_id == current_user.id
+            return true if own_inbox_notice?(comment)
 
             author = comment.user
             author.respond_to?(:created_by_id) && agent_ids.include?(author.id)
+          end
+
+          # A system-authored notice in the caller's own Inbox#System topic. Owning
+          # the inbox is the authorization proof (the notice has no approver/author).
+          def own_inbox_notice?(comment)
+            inbox = current_user_inbox or return false
+
+            comment.user_id.nil? &&
+              comment.creative_id == inbox.id &&
+              comment.topic_id == inbox.system_topic.id
           end
 
           # (A) bounded decision: spoken response IS the approve/deny button.
@@ -129,9 +162,13 @@ module Collavre
             text = params[:response].to_s.strip
             return render_speak(:empty_response, action: { type: "noop" }) if text.blank?
 
-            topic = comment.topic
-            creative = topic&.creative&.effective_origin || comment.creative
-            reply = creative.comments.create!(content: text, user: current_user, topic: topic, quoted_comment: comment)
+            # A System-inbox notice is a stand-in for the origin comment it quotes;
+            # the reply must land on that origin thread (the System topic itself
+            # never dispatches AI), not on the notice.
+            target = comment.quoted_comment || comment
+            topic = target.topic
+            creative = topic&.creative&.effective_origin || target.creative
+            reply = creative.comments.create!(content: text, user: current_user, topic: topic, quoted_comment: target)
 
             render_speak(:relayed, action: { type: "relayed", comment_id: reply.id, topic_id: topic&.id })
           end
