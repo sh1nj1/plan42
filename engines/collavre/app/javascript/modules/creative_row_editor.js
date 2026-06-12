@@ -7,7 +7,7 @@ import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom
 import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
-import { confirmDialog } from '../lib/utils/confirm_dialog'
+import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -62,7 +62,7 @@ export function initializeCreativeRowEditor() {
       const isPatch = item && item.method === 'PATCH';
 
       if (!(is404 && isPatch)) {
-        alert(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+        alertDialog(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
       }
 
       // If the failed item matches the current creative, mark it as dirty so it can be retried
@@ -2053,7 +2053,7 @@ export function initializeCreativeRowEditor() {
           completionCascadePending = true;
           const alertMessage = progressInput.dataset.childrenAlertMessage;
           if (alertMessage) {
-            alert(alertMessage);
+            alertDialog(alertMessage);
           }
         }
         updateProgressInputAvailability(readProgressValue());
@@ -2236,7 +2236,7 @@ export function initializeCreativeRowEditor() {
                 .json()
                 .catch(function () { return {}; })
                 .then(function (data) {
-                  alert(data && data.error ? data.error : errorMessage);
+                  alertDialog(data && data.error ? data.error : errorMessage);
                   const error = new Error('Save failed');
                   error._handled = true;
                   throw error;
@@ -2253,12 +2253,12 @@ export function initializeCreativeRowEditor() {
               .json()
               .catch(function () { return {}; })
               .then(function (data) {
-                alert(data && data.error ? data.error : errorMessage);
+                alertDialog(data && data.error ? data.error : errorMessage);
               });
           })
           .catch(function (error) {
             if (error && error._handled) return;
-            alert(errorMessage);
+            alertDialog(errorMessage);
           })
           .finally(function () {
             unconvertBtn.disabled = false;
@@ -2277,7 +2277,7 @@ export function initializeCreativeRowEditor() {
         })
         .catch(function (error) {
           console.error('Failed to load metadata:', error);
-          alert('Failed to load metadata');
+          alertDialog('Failed to load metadata');
         });
     }
 
@@ -2322,17 +2322,17 @@ export function initializeCreativeRowEditor() {
                   metadataPopup.style.display = 'none';
                 } else {
                   return response.json().then(function (data) {
-                    alert('Failed to save metadata: ' + (data.error || 'Unknown error'));
+                    alertDialog('Failed to save metadata: ' + (data.error || 'Unknown error'));
                   });
                 }
               })
               .catch(function (error) {
                 console.error('Failed to save metadata:', error);
-                alert('Failed to save metadata');
+                alertDialog('Failed to save metadata');
               });
           } catch (error) {
             console.error('YAML parse error:', error);
-            alert('Invalid YAML format: ' + error.message);
+            alertDialog('Invalid YAML format: ' + error.message);
           }
         });
       }

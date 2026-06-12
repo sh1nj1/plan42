@@ -1,6 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
+import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
@@ -378,7 +379,7 @@ export default class extends Controller {
     async deleteTopic(event) {
         event.stopPropagation()
         const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
-        if (!confirm(confirmText)) return
+        if (!(await confirmDialog(confirmText, { danger: true }))) return
 
         const topicId = event.currentTarget.dataset.id
         if (!topicId) return
@@ -398,7 +399,7 @@ export default class extends Controller {
                 }
                 this.loadTopics()
             } else {
-                alert("Failed to delete topic")
+                alertDialog("Failed to delete topic")
             }
         } catch (e) {
             console.error("Error deleting topic", e)
@@ -425,7 +426,7 @@ export default class extends Controller {
                 }
                 this.loadTopics()
             } else {
-                alert("Failed to archive topic")
+                alertDialog("Failed to archive topic")
             }
         } catch (e) {
             console.error("Error archiving topic", e)
@@ -448,7 +449,7 @@ export default class extends Controller {
             if (response.ok) {
                 this.loadTopics()
             } else {
-                alert("Failed to restore topic")
+                alertDialog("Failed to restore topic")
             }
         } catch (e) {
             console.error("Error restoring topic", e)
@@ -608,7 +609,7 @@ export default class extends Controller {
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             } else {
-                alert("Failed to update topic")
+                alertDialog("Failed to update topic")
                 this.loadTopics() // Reload to restore state
             }
         } catch (e) {
@@ -699,7 +700,7 @@ export default class extends Controller {
                 // Dispatch change event manually since we skipped the click handler
                 this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
-                alert("Failed to create topic")
+                alertDialog("Failed to create topic")
             }
         } catch (e) {
             console.error("Error creating topic", e)
@@ -943,7 +944,7 @@ export default class extends Controller {
             )
             if (listController) listController.clearSelection()
         } else {
-            alert(result.error)
+            alertDialog(result.error)
         }
     }
 
