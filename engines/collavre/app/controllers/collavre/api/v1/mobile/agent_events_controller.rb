@@ -168,7 +168,15 @@ module Collavre
             target = comment.quoted_comment || comment
             topic = target.topic
             creative = topic&.creative&.effective_origin || target.creative
-            reply = creative.comments.create!(content: text, user: current_user, topic: topic, quoted_comment: target)
+            # quoted_comment threads the reply to the message being answered, but
+            # review_type: :question keeps review_message? false — otherwise the
+            # agent's response would update the quoted comment IN PLACE (review flow)
+            # instead of posting a new reply, so no new comment is created and the
+            # Inbox#System alarm never fires. Same guard as InboxReplyService (#1301).
+            reply = creative.comments.create!(
+              content: text, user: current_user, topic: topic,
+              quoted_comment: target, review_type: :question
+            )
 
             render_speak(:relayed, action: { type: "relayed", comment_id: reply.id, topic_id: topic&.id })
           end

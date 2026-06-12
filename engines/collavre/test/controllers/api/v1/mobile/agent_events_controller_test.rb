@@ -205,6 +205,26 @@ module Collavre
             assert_equal origin.id, relayed.quoted_comment_id, "reply quotes the origin comment so the agent threads it"
           end
 
+          test "the relayed reply is a question, not a review, so the agent posts a new reply (firing the alarm)" do
+            origin = @creative.comments.create!(
+              content: "어느 브랜치에 머지할까요?", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true
+            )
+            notice = create_system_inbox_notice(quoted: origin, content: "언급: 어느 브랜치에 머지할까요?")
+
+            post "/api/v1/mobile/agent_events/#{notice.id}/respond",
+              params: { device_id: DEVICE, response: "메인에 머지해" }, headers: auth_headers, as: :json
+            assert_response :ok
+
+            relayed = Comment.order(:id).last
+            # quoted_comment is set only for threading. Without review_type: :question
+            # the reply is a review_message? → the agent UPDATES the quoted comment in
+            # place (review flow) instead of posting a new reply, so no new comment is
+            # created and the Inbox#System alarm never fires. See Comment#review_message?.
+            assert relayed.review_type_question?, "the relay must be a question so the agent threads a NEW reply"
+            refute relayed.review_message?, "a review_message? would be overwritten in place, suppressing the alarm"
+          end
+
           test "an approval's Inbox#System FYI is not read a second time (pending_approvals owns it)" do
             perm = create_permission_comment(request_id: "req-dup", tool_name: "Edit", description: "Edit 3 files")
             create_system_inbox_notice(quoted: perm, content: "승인 요청: Edit")
