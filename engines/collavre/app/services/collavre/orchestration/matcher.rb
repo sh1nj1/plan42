@@ -47,6 +47,11 @@ module Collavre
         # Permission check for mentioned AI agent
         return [] unless has_creative_permission?(mentioned_user)
 
+        # Inbox confinement applies to mentions too: a live Claude Channel
+        # session agent must not be pulled into an ordinary inbox topic, even by
+        # an explicit @mention (see #eligible_in_inbox?).
+        return [] unless eligible_in_inbox?(mentioned_user)
+
         [ mentioned_user ]
       end
 
