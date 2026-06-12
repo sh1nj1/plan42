@@ -59,6 +59,11 @@ class SpeechRecognizerManager @Inject constructor(
         _listening.value = false
     }
 
+    /** Clear the on-screen transcript before a new turn (e.g. reading a new message). */
+    fun reset() {
+        _partial.value = ""
+    }
+
     fun destroy() {
         recognizer?.destroy()
         recognizer = null
@@ -84,16 +89,19 @@ class SpeechRecognizerManager @Inject constructor(
 
         override fun onError(error: Int) {
             _listening.value = false
+            _partial.value = ""
             onError?.invoke(error)
         }
 
         override fun onResults(results: Bundle?) {
             _listening.value = false
-            _partial.value = ""
             val text = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.firstOrNull()
                 .orEmpty()
+            // Keep the final transcript on screen so the user sees their complete
+            // utterance (partials often omit the last words); cleared on the next turn.
+            _partial.value = text
             if (text.isBlank()) onError?.invoke(SpeechRecognizer.ERROR_NO_MATCH)
             else onResult?.invoke(text)
         }

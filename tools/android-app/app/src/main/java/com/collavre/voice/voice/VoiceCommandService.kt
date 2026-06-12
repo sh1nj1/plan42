@@ -131,6 +131,7 @@ class VoiceCommandService @Inject constructor(
 
     /** Read a message aloud, auto-select it, then listen for a reply to its topic. */
     private fun readThenListen(msg: VoiceMessage) {
+        recognizer.reset() // start the turn with a clean caption (drop prior utterance)
         _activeEventId.value = msg.eventId
         speak(msg.text) {
             pendingRespondEventId = msg.eventId
