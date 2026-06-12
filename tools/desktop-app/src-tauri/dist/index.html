@@ -1,8 +1,17 @@
 <!doctype html>
 <!--
-  Placeholder frontend. Tauri requires a frontendDist, but Collavre's real UI is
-  the server-rendered Rails app loaded over loopback HTTP by src/lib.rs. This
-  page is only shown if the webview is created before the sidecar is healthy.
+  Collavre Desktop loading screen.
+
+  This is Tauri's frontendDist. It is the FIRST thing the user sees: src/lib.rs
+  creates the window pointed at this page immediately, then health-gates the
+  Rails sidecar on a background thread and navigates here -> the real app once
+  `GET /up` answers 200. Until then, this branded splash is shown instead of a
+  blank window (cold first-run migrations can take a while).
+
+  Self-contained on purpose — it must render before the server exists, so it
+  references no network assets (icon.png is bundled alongside this file) and
+  carries its own CSS/JS. Rust drives state via the window.__collavre* hooks
+  below (status updates, and the error screen if the server never comes up).
 -->
 <html lang="en">
   <head>
@@ -10,10 +19,194 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Collavre</title>
     <style>
-      body { font-family: -apple-system, sans-serif; display: grid; place-items: center; height: 100vh; margin: 0; color: #444; }
+      :root {
+        --brand: #185abc;
+        --brand-soft: #4a83e0;
+        --bg: #f6f7f9;
+        --bg-grad: radial-gradient(120% 120% at 50% 0%, #ffffff 0%, #eef1f5 100%);
+        --fg: #1d1d1f;
+        --muted: #8a9099;
+        --track: rgba(24, 90, 188, 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --brand: #4a83e0;
+          --brand-soft: #79a6ee;
+          --bg: #0c0e12;
+          --bg-grad: radial-gradient(120% 120% at 50% 0%, #161a21 0%, #0a0c10 100%);
+          --fg: #f2f3f5;
+          --muted: #6b727c;
+          --track: rgba(122, 166, 238, 0.16);
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: var(--bg);
+        background-image: var(--bg-grad);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+          "Pretendard", "Segoe UI", system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+        height: 100vh;
+        margin: 0;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        cursor: default;
+        overflow: hidden;
+      }
+
+      .stage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        text-align: center;
+        padding: 0 32px;
+        animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      .logo {
+        width: 92px;
+        height: 92px;
+        filter: drop-shadow(0 14px 30px rgba(24, 90, 188, 0.28));
+        animation: breathe 2.8s ease-in-out infinite;
+      }
+
+      .wordmark {
+        font-size: 27px;
+        font-weight: 650;
+        letter-spacing: -0.015em;
+        margin: 0;
+      }
+
+      /* Indeterminate progress bar */
+      .bar {
+        position: relative;
+        width: 184px;
+        height: 4px;
+        border-radius: 999px;
+        background: var(--track);
+        overflow: hidden;
+      }
+      .bar::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, var(--brand), var(--brand-soft));
+        animation: slide 1.25s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+
+      .status {
+        font-size: 13.5px;
+        color: var(--muted);
+        margin: 0;
+        min-height: 1.2em;
+        transition: color 0.3s ease;
+        max-width: 320px;
+        line-height: 1.5;
+      }
+
+      /* Error state */
+      body.is-error .logo {
+        animation: none;
+        filter: grayscale(0.4) drop-shadow(0 10px 24px rgba(0, 0, 0, 0.18));
+        opacity: 0.85;
+      }
+      body.is-error .bar { display: none; }
+      body.is-error .status { color: #d04545; font-weight: 500; }
+
+      @keyframes slide {
+        0%   { left: -40%; }
+        100% { left: 100%; }
+      }
+      @keyframes breathe {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.045); }
+      }
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .logo, .stage { animation: none; }
+        .bar::after { animation-duration: 2.2s; }
+      }
     </style>
   </head>
   <body>
-    <p>Starting Collavre…</p>
+    <main class="stage">
+      <img class="logo" src="icon.png" alt="" draggable="false" />
+      <h1 class="wordmark"></h1>
+      <div class="bar" role="progressbar"></div>
+      <p class="status" id="status"></p>
+    </main>
+
+    <script>
+      (function () {
+        // AGENTS.md: all user-facing text must be EN + KO. This splash renders
+        // before Rails (and its i18n) exists, so it carries its own EN/KO map
+        // and picks by the OS/browser locale. Runs synchronously during parse,
+        // before first paint, so there is no Korean-then-English flash.
+        var ko = /^ko\b/i.test(navigator.language || navigator.userLanguage || "");
+        var T = ko
+          ? {
+              app: "콜라브",
+              starting: "시작하는 중",
+              status: "시작하는 중이에요…",
+              slow: "처음 실행은 준비에 시간이 조금 걸릴 수 있어요…",
+              error: "콜라브를 시작하지 못했어요. 앱을 종료한 뒤 다시 실행해 주세요.",
+            }
+          : {
+              app: "Collavre",
+              starting: "Starting",
+              status: "Starting up…",
+              slow: "First launch can take a moment to get ready…",
+              error: "Couldn’t start Collavre. Please quit the app and open it again.",
+            };
+
+        document.documentElement.lang = ko ? "ko" : "en";
+        document.title = T.app;
+        var logo = document.querySelector(".logo");
+        if (logo) logo.alt = T.app;
+        var wordmark = document.querySelector(".wordmark");
+        if (wordmark) wordmark.textContent = T.app;
+        var bar = document.querySelector(".bar");
+        if (bar) bar.setAttribute("aria-label", T.starting);
+
+        var statusEl = document.getElementById("status");
+        if (statusEl) statusEl.textContent = T.status;
+
+        // Rust (src/lib.rs) drives these while it health-gates the sidecar.
+        // It calls __collavreSetError() with no argument, so the localized
+        // default below is used — keeping the failure copy out of Rust.
+        window.__collavreSetStatus = function (msg) {
+          if (statusEl) statusEl.textContent = msg;
+        };
+        window.__collavreSetError = function (msg) {
+          document.body.classList.add("is-error");
+          if (statusEl) statusEl.textContent = msg || T.error;
+        };
+
+        // Reassure on a slow cold start (first-run DB migrations) even if Rust
+        // sends nothing — purely client-side, so it works before/without IPC.
+        setTimeout(function () {
+          if (document.body.classList.contains("is-error")) return;
+          window.__collavreSetStatus(T.slow);
+        }, 7000);
+      })();
+    </script>
   </body>
 </html>
