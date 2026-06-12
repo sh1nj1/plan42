@@ -127,17 +127,20 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal initial_inbox_comment_count, inbox.comments.count
   end
 
-  test "inbox comments do not dispatch to orchestration" do
+  # Only the inbox System topic (alarms/notifications) is silenced; every other
+  # inbox topic dispatches like a normal topic (see comment_inbox_dispatch_test).
+  test "inbox System-topic comments do not dispatch to orchestration" do
     owner = User.create!(email: "inbox-orch-owner@example.com", password: TEST_PASSWORD, name: "InboxOrchOwner")
     commenter = User.create!(email: "inbox-orch-commenter@example.com", password: TEST_PASSWORD, name: "InboxOrchCommenter")
     inbox = Creative.inbox_for(owner)
+    system_topic = inbox.system_topic(fallback_user: owner)
 
     dispatched = false
     SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true }) do
-      inbox.comments.create!(user: commenter, content: "reply in inbox")
+      inbox.comments.create!(user: commenter, content: "alarm note", topic: system_topic)
     end
 
-    refute dispatched, "Expected no orchestration dispatch for inbox comments"
+    refute dispatched, "Expected no orchestration dispatch for inbox System-topic comments"
   end
 
   test "creating an inbox notification broadcasts inbox badge immediately" do

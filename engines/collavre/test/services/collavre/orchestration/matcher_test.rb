@@ -204,6 +204,69 @@ module Collavre
       ensure
         other_agent&.destroy
       end
+
+      # --- Inbox mention confinement (live Claude Channel session) ---
+      #
+      # A live Claude Channel session agent holds inbox-wide :feedback +
+      # routing_expression="true". The expression path confines it to its own
+      # registered session topic so ordinary inbox topics stay identical to a
+      # normal topic. The mention path must apply the SAME confinement —
+      # otherwise @mentioning the session agent in an ordinary inbox topic would
+      # absorb that thread into the live session.
+
+      def build_claude_inbox_session_agent(inbox)
+        claude = User.create!(
+          email: "matcher_claude_session@agent.collavre.local",
+          name: "Claude Session",
+          password: "password",
+          llm_vendor: "anthropic",
+          llm_model: "claude-code",
+          routing_expression: "true",
+          created_by_id: @user.id
+        )
+        CreativeShare.find_or_create_by!(creative: inbox, user: claude).update!(permission: "feedback")
+        CreativeSharesCache.find_or_create_by!(
+          creative_id: inbox.id, user_id: claude.id, permission: :feedback
+        )
+        claude
+      end
+
+      test "mentioned Claude session agent is confined out of an ordinary inbox topic" do
+        inbox = Creative.create!(
+          description: "Inbox", data: { "kind" => "inbox" }, user: @user, progress: 0.0
+        )
+        claude = build_claude_inbox_session_agent(inbox)
+        ordinary_topic = inbox.topics.create!(name: "Main thread", user: @user)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => inbox.id },
+          "topic" => { "id" => ordinary_topic.id },
+          "chat" => { "mentioned_user" => { "id" => claude.id } }
+        }
+
+        # Even on an explicit @mention, an ordinary inbox topic must not route
+        # to the live session agent.
+        assert_empty Matcher.new(context).match
+      end
+
+      test "mentioned Claude session agent matches in its own registered session topic" do
+        inbox = Creative.create!(
+          description: "Inbox", data: { "kind" => "inbox" }, user: @user, progress: 0.0
+        )
+        claude = build_claude_inbox_session_agent(inbox)
+        session_topic = inbox.topics.create!(name: "Claude session-y", user: @user, session_id: "sess-y")
+        session_topic.set_primary_agent!(claude)
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => inbox.id },
+          "topic" => { "id" => session_topic.id },
+          "chat" => { "mentioned_user" => { "id" => claude.id } }
+        }
+
+        assert_equal [ claude ], Matcher.new(context).match
+      end
     end
   end
 end
