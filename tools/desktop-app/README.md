@@ -14,7 +14,7 @@ otherwise remote clients get a 403 from HostAuthorization even though Puma is
 listening. Example:
 
 ```
-COLLAVRE_BIND_HOST=0.0.0.0 COLLAVRE_ALLOWED_HOSTS=192.168.1.42,macbook-pro.tailadceed.ts.net bin/desktop-server
+COLLAVRE_BIND_HOST=0.0.0.0 COLLAVRE_ALLOWED_HOSTS=192.168.1.42,xxx.tailadceed.ts.net bin/desktop-server
 ```
 
 A **Finder-launched `.app` inherits an empty environment**, so those env vars
@@ -27,7 +27,7 @@ commas):
 
 ```json
 {
-  "allowed_hosts": ["macbook-pro.tailadceed.ts.net"],
+  "allowed_hosts": ["xxx.tailadceed.ts.net"],
   "bind_host": "0.0.0.0",
   "port": 4000
 }
