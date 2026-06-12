@@ -3,6 +3,7 @@ import { renderCommentMarkdown, renderMermaidDiagrams } from '../lib/utils/markd
 import { addTableDownloadButtons } from '../lib/utils/table_download'
 import CommonPopup from '../lib/common_popup'
 import csrfFetch from '../lib/api/csrf_fetch'
+import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 
 // Global tracker: persists streaming state across Turbo replacements
 // (each replacement creates a new controller instance, losing instance state)
@@ -248,7 +249,7 @@ export default class extends Controller {
       const data = await response.json()
       this.updateReactionsUI(data)
     } catch (error) {
-      alert(error?.message || 'Failed to update reaction')
+      alertDialog(error?.message || 'Failed to update reaction')
     }
   }
 
@@ -495,7 +496,7 @@ export default class extends Controller {
     const creativeId = button.dataset.creativeId
     const confirmText = button.dataset.confirmText || 'Restore original messages?'
 
-    if (!confirm(confirmText)) return
+    if (!(await confirmDialog(confirmText, { danger: true }))) return
 
     button.disabled = true
     try {
@@ -511,12 +512,12 @@ export default class extends Controller {
         // the summary comment (this one) will be destroyed via broadcast too
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to restore')
+        alertDialog(data.error || 'Failed to restore')
         button.disabled = false
       }
     } catch (error) {
       console.error('Error restoring snapshot:', error)
-      alert('Failed to restore')
+      alertDialog('Failed to restore')
       button.disabled = false
     }
   }

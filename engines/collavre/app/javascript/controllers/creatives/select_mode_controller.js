@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../../lib/api/csrf_fetch'
+import { confirmDialog } from '../../lib/utils/confirm_dialog'
 
 export default class extends Controller {
   static targets = [
@@ -84,7 +85,7 @@ export default class extends Controller {
     if (ids.length === 0) return
 
     const confirmMessage = this.hasDeleteButtonTarget ? this.deleteButtonTarget.dataset.confirm : undefined
-    if (confirmMessage && !window.confirm(confirmMessage)) {
+    if (confirmMessage && !(await confirmDialog(confirmMessage, { danger: true }))) {
       return
     }
 

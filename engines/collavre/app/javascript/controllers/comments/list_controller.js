@@ -5,6 +5,7 @@ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
+import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
@@ -595,7 +596,7 @@ export default class extends Controller {
   async deleteSelectedComments() {
     if (this.selection.size === 0) return
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
-    if (!confirm(confirmText)) return
+    if (!(await confirmDialog(confirmText, { danger: true }))) return
 
     const commentIds = Array.from(this.selection)
     try {
@@ -615,18 +616,18 @@ export default class extends Controller {
         this.clearSelection()
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to delete comments')
+        alertDialog(data.error || 'Failed to delete comments')
       }
     } catch (error) {
       console.error('Error deleting comments:', error)
-      alert('Failed to delete comments')
+      alertDialog('Failed to delete comments')
     }
   }
 
   async mergeSelectedComments() {
     if (this.selection.size < 2) return
     const confirmText = this.element.dataset.mergeConfirmText || 'Merge the selected messages into one?'
-    if (!confirm(confirmText)) return
+    if (!(await confirmDialog(confirmText, { danger: true }))) return
 
     const commentIds = Array.from(this.selection)
     try {
@@ -643,11 +644,11 @@ export default class extends Controller {
         // Job is async — the merged comment will update via broadcast
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to merge comments')
+        alertDialog(data.error || 'Failed to merge comments')
       }
     } catch (error) {
       console.error('Error merging comments:', error)
-      alert('Failed to merge comments')
+      alertDialog('Failed to merge comments')
     }
   }
 
@@ -676,11 +677,11 @@ export default class extends Controller {
         }
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to branch comments')
+        alertDialog(data.error || 'Failed to branch comments')
       }
     } catch (error) {
       console.error('Error branching comments:', error)
-      alert('Failed to branch comments')
+      alertDialog('Failed to branch comments')
     }
   }
 
@@ -808,11 +809,11 @@ export default class extends Controller {
         this.loadInitialComments()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to move comments')
+        alertDialog(data.error || 'Failed to move comments')
       }
     } catch (error) {
       console.error('Error moving comments to topic:', error)
-      alert('Failed to move comments')
+      alertDialog('Failed to move comments')
     }
   }
 
@@ -902,8 +903,8 @@ export default class extends Controller {
 
   // API Methods
 
-  deleteComment(button) {
-    if (!confirm(this.element.dataset.deleteConfirmText)) return
+  async deleteComment(button) {
+    if (!(await confirmDialog(this.element.dataset.deleteConfirmText, { danger: true }))) return
     const commentId = button.getAttribute('data-comment-id')
     fetch(`/creatives/${this.creativeId}/comments/${commentId}`, {
       method: 'DELETE',
@@ -919,9 +920,9 @@ export default class extends Controller {
     })
   }
 
-  convertComment(button) {
+  async convertComment(button) {
     // ... (Existing logic) ...
-    if (!confirm(this.element.dataset.convertConfirmText)) return
+    if (!(await confirmDialog(this.element.dataset.convertConfirmText))) return
     const commentId = button.getAttribute('data-comment-id')
     fetch(`/creatives/${this.creativeId}/comments/${commentId}/convert`, {
       method: 'POST',
@@ -983,7 +984,7 @@ export default class extends Controller {
         const existing = document.getElementById(`comment_${commentId}`)
         if (existing) existing.outerHTML = html
       })
-      .catch(e => { alert(e.message); button.disabled = false; })
+      .catch(e => { alertDialog(e.message); button.disabled = false; })
   }
 
   editComment(button) {
@@ -1013,7 +1014,7 @@ export default class extends Controller {
       })
       .catch((error) => {
         console.error(error)
-        alert(this.element.dataset.updateErrorText || 'Failed to update action')
+        alertDialog(this.element.dataset.updateErrorText || 'Failed to update action')
       })
       .finally(() => { if (submitButton) submitButton.disabled = false })
   }
@@ -1022,7 +1023,7 @@ export default class extends Controller {
   openMoveModal(event) {
     if (this.movingComments) return
     if (this.selection.size === 0) {
-      alert(this.element.dataset.moveNoSelectionText || "No Selection")
+      alertDialog(this.element.dataset.moveNoSelectionText || "No Selection")
       return
     }
     this.movingComments = true

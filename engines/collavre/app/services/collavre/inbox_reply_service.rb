@@ -64,6 +64,11 @@ module Collavre
         content: @comment.content,
         user: @comment.user,
         quoted_comment: original,
+        # quoted_comment is set only for linkage to the message being answered.
+        # Mark it as a "question" so review_message? stays false — otherwise the
+        # agent's response would update the quoted comment in place (the review
+        # flow) instead of posting a new reply. See Comment#review_message?.
+        review_type: :question,
         private: false
       )
 
