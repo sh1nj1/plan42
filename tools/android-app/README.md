@@ -2,26 +2,38 @@
 
 A voice-only Android companion for Collavre. Its one job — the part no OS
 assistant can take, because it needs Collavre's internal agent state — is the
-**hands-free agent decision loop**:
+**hands-free agent message loop**:
 
 ```
-agent needs approval
-  → app polls agent_events → TTS: "작업 1, OpenClaw PR 검토. 파일 3개 수정 승인할까요?"
-  → speech auto-resumes → "1번 승인"
-  → server resolves ref 1 → decide_claude_channel_permission! → "승인했습니다."
+agent replies in a topic → notification lands in the user's Inbox#System
+  → app receives it as an event → TTS reads the full message aloud
+  → speech auto-resumes → user speaks a reply
+  → reply is relayed to that message's ORIGIN topic
 ```
 
 Music / YouTube / article-reading are intentionally **out of scope** (the OS
-assistant does them better). This app is the wedge: speak a command, control
-Collavre agents, and hear agent events as decision-ready summaries.
+assistant does them better). This app is the wedge: hear agent messages read
+aloud, answer by voice, and have answers land on the right thread.
 
-## Why a stable spoken number ("1번")
+## The message queue
 
-Collavre's internal identifiers are UUIDs/DB ids — unspeakable. The server's
-`mobile_voice_refs` table assigns each pending approval / running session a
-short ordinal that is **pinned across polling cycles**, so "1번 승인" always
-means the same task between two utterances. The app just speaks the number the
-server gives it and sends the number back.
+Inbox#System is the source of truth. Every agent reply the user should hear
+arrives there (mention, or write-access user who hasn't seen it) and surfaces in
+the app as an event. The app:
+
+- **lists** each event by its origin **`Creative#Topic`** title (not the
+  System topic itself), newest first;
+- **reads** events one at a time through a **sequential queue** — a new event
+  arriving while one is being read/answered waits its turn rather than
+  interrupting;
+- after reading, **auto-listens**; if the user speaks, the reply is relayed to
+  that event's **origin topic**; if the user stays silent, nothing is sent and
+  the next queued event is read.
+
+Tapping a row reads that thread's latest message and listens. A plain mic press
+with nothing selected routes the utterance to **Inbox#Main** (a new piece of
+work), exactly like typing in the inbox chat. Identifiers are event ids and
+topic ids — never spoken — so there are no ordinals to track.
 
 ## Build
 
@@ -45,9 +57,11 @@ The Gradle wrapper pins Gradle 8.9 (AGP 8.6.1, Kotlin 2.0.21, Compose, Hilt).
      self-hosted instance or a local preview (see below).
    - **API token** — a Doorkeeper access token for your Collavre user.
    - TTS speed, language (`ko-KR` / `en-US`), and "speak agent events" toggle.
-3. Tap the big mic button and speak. Examples:
-   - "OpenClaw PR 검토해" (start work) · "상태 알려줘" (status)
-   - "1번 승인" / "2번 거절" · "1번 멈춰" / "2번 계속"
+3. Tap the big mic button and speak:
+   - With a message selected (or just-read), your words reply to that thread.
+   - With nothing selected, your words start new work in Inbox#Main
+     (e.g. "OpenClaw PR 검토해").
+   - For a permission prompt, answer with allow/deny ("승인" / "거절").
 
 A foreground service keeps polling `agent_events` while backgrounded and posts a
 notification (with ✓/✗ quick actions) for each new event; tapping it opens the
@@ -96,8 +110,8 @@ self-hosted servers stay on polling):
    topic owner's devices when a permission-request comment is created (the
    `approval_requested` source in `AgentEventsController#index`). The device
    registration endpoint and the app receiver already exist; this is the only
-   missing hop. Send pushes as **data messages** with keys `event_id, ref, type,
-   title, summary, requires_response, topic_id, created_at` — `CollavreMessagingService`
+   missing hop. Send pushes as **data messages** with keys `event_id, type,
+   title, summary, speak, requires_response, topic_id, created_at` — `CollavreMessagingService`
    maps them to the same notification + spoken summary the poll loop produces.
 
 Polling stays as the self-hosted fallback; do not remove it.
@@ -106,8 +120,8 @@ Polling stays as the self-hosted fallback; do not remove it.
 
 | Component | Role |
 |---|---|
-| `MainActivity` / `MainScreen` / `SettingsScreen` | Compose UI: one mic button, status chip, active-task list, recent exchanges, settings |
-| `VoiceCommandService` | Single orchestration entry point: push-to-talk + event answers (speak → auto-listen → relay). Future BT media-button driver hooks here |
+| `MainActivity` / `MainScreen` / `SettingsScreen` | Compose UI: one mic button, status chip, live caption, `Creative#Topic` message list, settings |
+| `VoiceCommandService` | Single orchestration entry point: the sequential message queue (read → auto-listen → relay to origin topic) + cold mic to Inbox#Main. Future BT media-button driver hooks here |
 | `TtsManager` / `SpeechRecognizerManager` | TextToSpeech / SpeechRecognizer wrappers |
 | `AgentEventRepository` | `/api/v1/mobile/*` calls + `since` polling cursor |
 | `AgentEventService` | Foreground (`dataSync`) poll loop → notifications + spoken summaries; registers FCM token on start |
@@ -122,19 +136,19 @@ Polling stays as the self-hosted fallback; do not remove it.
 
 Implemented in `engines/collavre/.../api/v1/mobile/`:
 
-- `GET  /api/v1/mobile/agent_events?since=&device_id=` → events with stable `ref`
-  + decision summary.
+- `GET  /api/v1/mobile/agent_events?since=&device_id=` → events sourced from the
+  user's Inbox#System stream. Each carries the origin `Creative#Topic` title, the
+  full message as `summary` (markdown links flattened for TTS), `topic_id`, and
+  `requires_response`. `since` is a microsecond-precision (`iso8601(6)`) cursor.
 - `POST /api/v1/mobile/agent_events/:id/respond` → `{response}` branches by event
   kind: permission comment ⇒ allow/deny (button-by-voice); ordinary agent message
-  ⇒ free text relayed verbatim.
-- `POST /api/v1/mobile/voice_commands` → `{text}` (also accepts a pre-structured
-  `{intent}` for a future on-device LLM seam).
-- `GET  /api/v1/mobile/sessions` → active task list.
+  ⇒ free text relayed to the event's origin topic as a `question` reply (so it
+  posts a new comment and re-notifies, rather than updating in place).
+- `POST /api/v1/mobile/voice_commands` → `{text}` → posts to Inbox#Main; dispatch
+  then matches an agent via `routing_expression`.
 - `POST /api/v1/mobile/devices` → FCM token registration (app client wired; see
   [Push notifications](#push-notifications-fcm)).
 
-Intent interpretation is server-side and **hybrid**: a deterministic grammar
-fast-path for the bounded, safety-critical commands ("N번 승인/거절/멈춰/계속"),
-falling back to a seeded `voice-intent-resolver` AI agent (swap vendor/model in
-the existing edit_ai UI — no model id is hardcoded) for natural variants and
-aliases ("방금/마지막/전부").
+Response routing is server-side and explicit: a reply targets the event's origin
+topic by id — there is no spoken-ordinal grammar or intent classifier (that
+subsystem was removed; selection is by tap, identifiers are ids).
