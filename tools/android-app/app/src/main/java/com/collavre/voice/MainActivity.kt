@@ -26,17 +26,18 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    private var openAndListen by mutableStateOf(false)
+    // Event id to reply to when launched from a notification (-1 = plain mic turn).
+    private var openEventId by mutableStateOf(-1L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Notifications.ensureChannels(this)
-        openAndListen = intent.getBooleanExtra(EXTRA_OPEN_AND_LISTEN, false)
+        openEventId = pendingEventId(intent)
 
         setContent {
             CollavreVoiceTheme {
                 AppRoot(
-                    consumeOpenAndListen = { val v = openAndListen; openAndListen = false; v },
+                    consumeOpenEvent = { val v = openEventId; openEventId = -1L; v },
                     startEventService = ::startEventService
                 )
             }
@@ -46,7 +47,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_OPEN_AND_LISTEN, false)) openAndListen = true
+        openEventId = pendingEventId(intent)
+    }
+
+    /** Returns the event id to reply to (>=0), 0 for "listen but no specific event", or -1 for none. */
+    private fun pendingEventId(intent: Intent): Long {
+        if (!intent.getBooleanExtra(EXTRA_OPEN_AND_LISTEN, false)) return -1L
+        return intent.getLongExtra(EXTRA_EVENT_ID, 0L)
     }
 
     private fun startEventService() {
@@ -63,7 +70,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppRoot(
-    consumeOpenAndListen: () -> Boolean,
+    consumeOpenEvent: () -> Long,
     startEventService: () -> Unit
 ) {
     val viewModel: VoiceViewModel = hiltViewModel()
@@ -81,10 +88,13 @@ private fun AppRoot(
         launcher.launch(PermissionManager.required())
     }
 
-    // Notification tap → start a hands-free turn immediately.
+    // Notification tap → reply straight to that event (or a plain mic turn).
     LaunchedEffect(permissionsGranted) {
-        if (permissionsGranted && consumeOpenAndListen()) {
-            viewModel.pushToTalk()
+        if (!permissionsGranted) return@LaunchedEffect
+        val eventId = consumeOpenEvent()
+        when {
+            eventId > 0L -> viewModel.replyTo(eventId)
+            eventId == 0L -> viewModel.pushToTalk()
         }
     }
 

@@ -80,6 +80,15 @@ module Collavre
             topic&.name.presence || I18n.t("collavre.mobile.default_task_label")
           end
 
+          # List/display title for an event: "Creative#Topic" so the app can show
+          # which thread a message belongs to (spec: 제목을 크리에이티브#토픽 형태로).
+          def title_for_topic(topic_id)
+            topic = topic_id && Collavre::Topic.find_by(id: topic_id)
+            name = topic&.name.presence || I18n.t("collavre.mobile.default_task_label")
+            creative = topic&.creative&.effective_origin || topic&.creative
+            creative&.description.present? ? "#{creative.description}##{name}" : name
+          end
+
           def render_speak(reply_key_or_text, action: {}, speak: true, status: :ok)
             text = reply_key_or_text.is_a?(Symbol) ? reply(reply_key_or_text) : reply_key_or_text
             render json: { reply: text, speak: speak, action: action }, status: status

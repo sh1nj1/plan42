@@ -40,7 +40,7 @@ module Collavre
               ref = approval_refs[c.id]
               {
                 id: c.id, ref: ref.ref_number, type: "approval_requested",
-                title: ref.label,
+                title: title_for_topic(c.topic_id),
                 summary: summarizer.approval_summary(ref_number: ref.ref_number, comment: c, label: ref.label),
                 speak: true, requires_response: true, topic_id: c.topic_id,
                 created_at: c.created_at.iso8601(6)
@@ -51,7 +51,7 @@ module Collavre
               ref = registry.ref_for_session(c.topic_id, label: label_for_topic(c.topic_id))
               {
                 id: c.id, ref: ref.ref_number, type: "agent_reply",
-                title: ref.label,
+                title: title_for_topic(c.topic_id),
                 summary: summarizer.reply_summary(ref_number: ref.ref_number, content: c.content, label: ref.label),
                 speak: true, requires_response: c.content.to_s.strip.end_with?("?"),
                 topic_id: c.topic_id, created_at: c.created_at.iso8601(6)

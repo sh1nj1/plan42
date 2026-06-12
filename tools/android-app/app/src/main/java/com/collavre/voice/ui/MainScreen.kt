@@ -1,6 +1,6 @@
 package com.collavre.voice.ui
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -31,8 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.collavre.voice.network.model.SessionDto
-import com.collavre.voice.voice.Exchange
+import com.collavre.voice.voice.VoiceMessage
 import com.collavre.voice.voice.VoiceState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,8 +43,8 @@ fun MainScreen(
     onMicClick: () -> Unit
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val exchanges by viewModel.exchanges.collectAsStateWithLifecycle()
-    val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+    val messages by viewModel.messages.collectAsStateWithLifecycle()
+    val activeEventId by viewModel.activeEventId.collectAsStateWithLifecycle()
     val partial by viewModel.partialTranscript.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -75,15 +75,15 @@ fun MainScreen(
             LiveCaption(state = state, partial = partial)
             Spacer(Modifier.height(16.dp))
 
-            if (sessions.isNotEmpty()) {
-                SectionLabel("Active tasks")
-                sessions.forEach { SessionRow(it) }
-                Spacer(Modifier.height(16.dp))
-            }
-
-            if (exchanges.isNotEmpty()) {
-                SectionLabel("Recent")
-                exchanges.forEach { ExchangeRow(it) }
+            if (messages.isNotEmpty()) {
+                SectionLabel("Messages")
+                messages.forEach { msg ->
+                    MessageRow(
+                        message = msg,
+                        selected = msg.eventId == activeEventId,
+                        onClick = { viewModel.selectMessage(msg.eventId) }
+                    )
+                }
             }
         }
     }
@@ -158,30 +158,37 @@ private fun SectionLabel(text: String) {
     )
 }
 
+/**
+ * One arrived message. Title is "Creative#Topic". Tapping reads the thread's
+ * last message aloud and listens for a reply; the active row is highlighted.
+ */
 @Composable
-private fun SessionRow(session: SessionDto) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+private fun MessageRow(message: VoiceMessage, selected: Boolean, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick),
+        colors = if (selected) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        }
+    ) {
         Column(Modifier.padding(12.dp)) {
             Text(
-                "${session.ref}. ${session.label ?: session.agentName ?: "Task"}",
-                style = MaterialTheme.typography.bodyLarge,
+                message.title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(session.status, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun ExchangeRow(exchange: Exchange) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Column(
-            Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text("🗣 ${exchange.command}", style = MaterialTheme.typography.bodyMedium)
-            Text("💬 ${exchange.reply}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                message.text,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

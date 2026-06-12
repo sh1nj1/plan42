@@ -6,16 +6,17 @@ import android.os.Build
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.collavre.voice.data.SettingsRepository
-import com.collavre.voice.voice.TtsManager
+import com.collavre.voice.voice.VoiceCommandService
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Foreground service that keeps polling agent_events while the app is
- * backgrounded, surfacing each new event as a notification and (optionally)
- * speaking the decision summary. MVP transport is polling; FCM is a drop-in
+ * Foreground service that keeps the process alive so the shared voice loop in
+ * VoiceCommandService can keep polling agent_events (read → listen → reply) and
+ * posting notifications while the app is backgrounded. The loop is owned by the
+ * singleton VoiceCommandService and started idempotently, so the Activity and
+ * this service never double-poll. MVP transport is polling; FCM is a drop-in
  * replacement later (registration already wired via DevicesController).
  */
 @AndroidEntryPoint
@@ -23,7 +24,7 @@ class AgentEventService : LifecycleService() {
 
     @Inject lateinit var repository: AgentEventRepository
     @Inject lateinit var settings: SettingsRepository
-    @Inject lateinit var tts: TtsManager
+    @Inject lateinit var voice: VoiceCommandService
 
     override fun onCreate() {
         super.onCreate()
@@ -43,14 +44,8 @@ class AgentEventService : LifecycleService() {
 
         lifecycleScope.launch {
             val cfg = settings.snapshot()
-            tts.init(cfg.locale, cfg.ttsRate)
-            repository.poll().collectLatest { batch ->
-                val speakEnabled = settings.snapshot().eventVoiceEnabled
-                batch.forEach { event ->
-                    Notifications.postEvent(this@AgentEventService, event)
-                    if (speakEnabled && event.speak) tts.speak(event.summary)
-                }
-            }
+            voice.configure(cfg.locale, cfg.ttsRate)
+            voice.startEventLoop()
         }
         return START_STICKY
     }

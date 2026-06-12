@@ -49,6 +49,15 @@ module Collavre
             assert_includes ev["summary"], "Edit 3 files"
           end
 
+          test "event title is the Creative#Topic the message belongs to" do
+            create_permission_comment(request_id: "req-title", tool_name: "Edit")
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            ev = JSON.parse(response.body).first
+            assert_equal "OpenClaw PR review work#OpenClaw PR 검토", ev["title"],
+              "the app lists messages titled 크리에이티브#토픽 so the user knows the thread"
+          end
+
           test "the same approval keeps its number across polling cycles" do
             create_permission_comment(request_id: "req-stable", tool_name: "Bash")
 

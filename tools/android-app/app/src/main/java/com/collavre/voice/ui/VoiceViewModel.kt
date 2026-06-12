@@ -19,6 +19,8 @@ class VoiceViewModel @Inject constructor(
 ) : ViewModel() {
 
     val state = voice.state
+    val messages = voice.messages
+    val activeEventId = voice.activeEventId
     val exchanges = voice.exchanges
     val sessions = voice.sessions
     val lastError = voice.lastError
@@ -32,13 +34,18 @@ class VoiceViewModel @Inject constructor(
             settings.ensureDeviceId()
             val cfg = settings.snapshot()
             voice.configure(cfg.locale, cfg.ttsRate)
+            voice.startEventLoop()
             voice.refreshSessions()
         }
     }
 
     fun pushToTalk() = voice.pushToTalk()
 
-    fun respondToEvent(eventId: Long, summary: String) = voice.respondToEvent(eventId, summary)
+    /** Tap a listed message: read its thread's last message, then listen for a reply. */
+    fun selectMessage(eventId: Long) = voice.selectMessage(eventId)
+
+    /** Notification tap carrying an event id: reply straight to it. */
+    fun replyTo(eventId: Long) = voice.replyTo(eventId)
 
     fun refreshSessions() = voice.refreshSessions()
 
