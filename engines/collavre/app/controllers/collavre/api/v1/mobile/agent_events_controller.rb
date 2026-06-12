@@ -12,36 +12,28 @@ module Collavre
         #   (B) ordinary agent message → the spoken response is FREE TEXT passed
         #       verbatim back to the agent as a reply comment (no server parsing).
         class AgentEventsController < BaseController
+          # Spoken decision verbs. The app no longer addresses approvals by
+          # ordinal, so a reply to an approval event is just an allow/deny verb;
+          # anything else asks for clarification rather than firing a decision.
+          APPROVE = /(승인|허용|적용|approve|allow|confirm|네|좋아|오케이|\bok\b|\byes\b)/i
+          DENY    = /(거절|거부|반려|deny|reject|취소|아니|\bno\b)/i
+
           def index
             since = parse_since(params[:since])
 
             approvals = pending_approvals
-            approval_refs = approvals.to_h { |c| [ c.id, registry.ref_for_approval(c, label: label_for_topic(c.topic_id), topic_id: c.topic_id) ] }
-
-            running = running_tasks.to_a
-            running.each { |task| registry.ref_for_session(task.topic_id, label: task.name) }
-
             notices = system_inbox_messages(since)
 
-            # Refs + reconcile run over the FULL pending set so a still-pending
-            # approval keeps its spoken number ("1번") even on polls where it is
-            # no longer re-emitted — otherwise reconcile! would resolve its ref.
-            registry.reconcile!(
-              active_comment_ids: approvals.map(&:id),
-              active_topic_ids: running.map(&:topic_id)
-            )
-
-            # But only EMIT what is newer than the client cursor. Approvals are
+            # Only EMIT what is newer than the client cursor. Approvals are
             # otherwise unbounded by `since` (they stay pending until decided),
             # so without this filter every poll re-speaks the same approval.
             new_approvals = since ? approvals.select { |c| c.created_at > since } : approvals
 
             events = new_approvals.map do |c|
-              ref = approval_refs[c.id]
               {
-                id: c.id, ref: ref.ref_number, type: "approval_requested",
+                id: c.id, type: "approval_requested",
                 title: title_for_topic(c.topic_id),
-                summary: summarizer.approval_summary(ref_number: ref.ref_number, comment: c, label: ref.label),
+                summary: summarizer.approval_summary(comment: c, label: label_for_topic(c.topic_id)),
                 speak: true, requires_response: true, topic_id: c.topic_id,
                 created_at: c.created_at.iso8601(6)
               }
@@ -51,9 +43,8 @@ module Collavre
               # The notice stands in for the origin comment it quotes; the app
               # lists/reads it against the ORIGIN thread and replies route there.
               origin_topic_id = c.quoted_comment&.topic_id || c.topic_id
-              ref = registry.ref_for_session(origin_topic_id, label: label_for_topic(origin_topic_id))
               {
-                id: c.id, ref: ref.ref_number, type: "agent_reply",
+                id: c.id, type: "agent_reply",
                 title: title_for_topic(origin_topic_id),
                 summary: speakable(c.content),
                 speak: true, requires_response: c.quoted_comment_id.present?,
@@ -149,7 +140,6 @@ module Collavre
             when :already_decided
               render_speak(:already_decided, action: { type: "already_decided", comment_id: comment.id })
             else
-              resolve_ref_for(comment)
               render_speak(
                 behavior == "allow" ? :approved : :denied,
                 action: { type: behavior == "allow" ? "approved" : "denied", comment_id: comment.id }
@@ -182,19 +172,11 @@ module Collavre
           end
 
           def behavior_from(response)
-            case response.to_s.strip.downcase
-            when "approve", "allow", "yes" then "allow"
-            when "deny", "reject", "no"    then "deny"
-            else
-              res = command_resolver.resolve(response.to_s)
-              res.behavior if %w[approve deny].include?(res.intent)
-            end
-          end
+            text = response.to_s.strip
+            return "allow" if text.match?(APPROVE)
+            return "deny"  if text.match?(DENY)
 
-          def resolve_ref_for(comment)
-            ref = Collavre::MobileVoiceRef.for_device(current_user.id, device_id)
-                                          .active.find_by(target_comment_id: comment.id)
-            ref&.resolve!
+            nil
           end
         end
       end

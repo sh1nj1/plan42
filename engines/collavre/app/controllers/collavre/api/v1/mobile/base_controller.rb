@@ -32,34 +32,13 @@ module Collavre
             I18n.available_locales.include?(base) ? base : I18n.default_locale
           end
 
-          # Refs are stable per device; fall back to a single bucket if the app
-          # somehow omits its client_id so the loop still works in a pinch.
-          def device_id
-            params[:device_id].presence || params.dig(:device, :client_id).presence || "default"
-          end
-
-          def registry
-            @registry ||= Collavre::Mobile::RefRegistry.new(current_user, device_id)
-          end
-
           def summarizer
             @summarizer ||= Collavre::Mobile::EventSummarizer.new(locale: I18n.locale)
-          end
-
-          def command_resolver
-            @command_resolver ||= Collavre::Mobile::CommandResolver.new(registry: registry, locale: I18n.locale)
           end
 
           # User-owned AI agents (Claude Channel sessions, etc.).
           def agent_ids
             @agent_ids ||= Collavre::User.ai_agents.where(created_by_id: current_user.id).pluck(:id)
-          end
-
-          def running_tasks
-            return Collavre::Task.none if agent_ids.empty?
-
-            Collavre::Task.where(agent_id: agent_ids, status: %w[queued pending running delegated])
-                          .order(:created_at)
           end
 
           # Undecided permission prompts the token holder is the approver for.

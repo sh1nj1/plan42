@@ -11,15 +11,14 @@ module Collavre
         @locale = (locale.presence || I18n.default_locale).to_s
       end
 
-      def approval_summary(ref_number:, comment:, label:)
+      def approval_summary(comment:, label:)
         payload = parse_action(comment)
         I18n.with_locale(@locale) do
           detail =
             payload&.dig("description").presence ||
             payload&.dig("tool_name").presence ||
             I18n.t("collavre.mobile.summary.a_tool")
-          I18n.t("collavre.mobile.summary.approval",
-                 number: ref_number, label: label, detail: flatten(detail))
+          I18n.t("collavre.mobile.summary.approval", label: label, detail: flatten(detail))
         end
       end
 

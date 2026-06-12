@@ -33,7 +33,7 @@ module Collavre
             assert_response :unauthorized
           end
 
-          test "agent_events surfaces a pending approval with a spoken ref and a decision summary" do
+          test "agent_events surfaces a pending approval with a decision summary" do
             create_permission_comment(request_id: "req-1", tool_name: "Edit", description: "Edit 3 files")
 
             get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
@@ -43,10 +43,8 @@ module Collavre
             assert_equal 1, events.size
             ev = events.first
             assert_equal "approval_requested", ev["type"]
-            assert_equal 1, ev["ref"], "first surfaced item is task 1"
             assert ev["requires_response"]
-            assert_includes ev["summary"], "작업 1"
-            assert_includes ev["summary"], "Edit 3 files"
+            assert_includes ev["summary"], "Edit 3 files", "the spoken summary names what is being approved"
           end
 
           test "event title is the Creative#Topic the message belongs to" do
@@ -56,18 +54,6 @@ module Collavre
             ev = JSON.parse(response.body).first
             assert_equal "OpenClaw PR review work#OpenClaw PR 검토", ev["title"],
               "the app lists messages titled 크리에이티브#토픽 so the user knows the thread"
-          end
-
-          test "the same approval keeps its number across polling cycles" do
-            create_permission_comment(request_id: "req-stable", tool_name: "Bash")
-
-            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
-            first = JSON.parse(response.body).first["ref"]
-
-            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
-            second = JSON.parse(response.body).first["ref"]
-
-            assert_equal first, second, "the ref number must be pinned to the same approval"
           end
 
           test "an event already delivered is not re-surfaced once the since cursor advances" do
@@ -85,22 +71,21 @@ module Collavre
               "a still-pending approval must not be re-emitted every poll (infinite TTS bug)"
           end
 
-          test "a pending approval keeps a resolvable ref even after it stops being re-emitted" do
+          test "a pending approval is still decidable after it stops being re-emitted" do
             comment = create_permission_comment(request_id: "req-keepref", tool_name: "Bash")
 
             get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
             cursor = JSON.parse(response.body).first["created_at"]
 
-            # Drops out of the emitted stream...
+            # Drops out of the emitted stream (already delivered)...
             get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
             assert_empty JSON.parse(response.body)
 
-            # ...but "1번 승인" must still resolve and decide it.
+            # ...but responding to it by event id must still decide the permission.
             post "/api/v1/mobile/agent_events/#{comment.id}/respond",
               params: { device_id: DEVICE, response: "approve" }, headers: auth_headers, as: :json
             assert_response :ok
-            ref = Collavre::MobileVoiceRef.for_device(@user.id, DEVICE).find_by(target_comment_id: comment.id)
-            assert ref.present? && ref.status == "resolved", "the ref is preserved across polls and resolved on decision"
+            assert_equal "allow", JSON.parse(comment.reload.action)["decision"]
           end
 
           test "an event created after the cursor still surfaces" do
@@ -119,8 +104,6 @@ module Collavre
 
           test "respond approve decides the permission and broadcasts to the suspended session" do
             comment = create_permission_comment(request_id: "req-approve", tool_name: "Bash")
-            # assign its ref
-            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
 
             broadcasts = []
             ActionCable.server.stub :broadcast, ->(channel, data) { broadcasts << { channel: channel, data: data } } do

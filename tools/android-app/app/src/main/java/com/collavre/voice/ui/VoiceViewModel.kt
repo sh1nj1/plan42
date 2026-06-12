@@ -22,7 +22,6 @@ class VoiceViewModel @Inject constructor(
     val messages = voice.messages
     val activeEventId = voice.activeEventId
     val exchanges = voice.exchanges
-    val sessions = voice.sessions
     val lastError = voice.lastError
     val partialTranscript = voice.partialTranscript
 
@@ -35,7 +34,6 @@ class VoiceViewModel @Inject constructor(
             val cfg = settings.snapshot()
             voice.configure(cfg.locale, cfg.ttsRate)
             voice.startEventLoop()
-            voice.refreshSessions()
         }
     }
 
@@ -46,8 +44,6 @@ class VoiceViewModel @Inject constructor(
 
     /** Notification tap carrying an event id: reply straight to it. */
     fun replyTo(eventId: Long) = voice.replyTo(eventId)
-
-    fun refreshSessions() = voice.refreshSessions()
 
     fun saveSettings(
         serverUrl: String,

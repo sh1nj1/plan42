@@ -5,7 +5,6 @@ import com.collavre.voice.data.SettingsRepository
 import com.collavre.voice.events.AgentEventRepository
 import com.collavre.voice.events.Notifications
 import com.collavre.voice.network.model.AgentEvent
-import com.collavre.voice.network.model.SessionDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,9 +68,6 @@ class VoiceCommandService @Inject constructor(
 
     private val _exchanges = MutableStateFlow<List<Exchange>>(emptyList())
     val exchanges: StateFlow<List<Exchange>> = _exchanges
-
-    private val _sessions = MutableStateFlow<List<SessionDto>>(emptyList())
-    val sessions: StateFlow<List<SessionDto>> = _sessions
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError
@@ -169,12 +165,6 @@ class VoiceCommandService @Inject constructor(
         }
     }
 
-    fun refreshSessions() {
-        scope.launch {
-            runCatching { repository.sessions() }.onSuccess { _sessions.value = it }
-        }
-    }
-
     private fun listen() {
         if (!recognizer.isAvailable) {
             _lastError.value = "Speech recognition unavailable"
@@ -212,7 +202,6 @@ class VoiceCommandService @Inject constructor(
                 addExchange(text, resp.reply)
                 if (eventId != null && _activeEventId.value == eventId) _activeEventId.value = null
                 if (resp.speak) speak(resp.reply) else { _state.value = VoiceState.IDLE; pump() }
-                refreshSessions()
             }.onFailure {
                 _lastError.value = it.message
                 _state.value = VoiceState.IDLE

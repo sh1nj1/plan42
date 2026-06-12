@@ -3,7 +3,6 @@ package com.collavre.voice.network
 import com.collavre.voice.network.model.AgentEvent
 import com.collavre.voice.network.model.DeviceRequest
 import com.collavre.voice.network.model.RespondRequest
-import com.collavre.voice.network.model.SessionDto
 import com.collavre.voice.network.model.VoiceCommandRequest
 import com.collavre.voice.network.model.VoiceResponse
 import retrofit2.Response
@@ -29,9 +28,6 @@ interface CollavreApi {
 
     @POST("api/v1/mobile/voice_commands")
     suspend fun voiceCommand(@Body body: VoiceCommandRequest): VoiceResponse
-
-    @GET("api/v1/mobile/sessions")
-    suspend fun sessions(@Query("device_id") deviceId: String): List<SessionDto>
 
     @POST("api/v1/mobile/devices")
     suspend fun registerDevice(@Body body: DeviceRequest): Response<Unit>

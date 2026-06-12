@@ -6,7 +6,6 @@ import com.collavre.voice.network.model.AgentEvent
 import com.collavre.voice.network.model.DeviceBody
 import com.collavre.voice.network.model.DeviceRequest
 import com.collavre.voice.network.model.RespondRequest
-import com.collavre.voice.network.model.SessionDto
 import com.collavre.voice.network.model.VoiceCommandRequest
 import com.collavre.voice.network.model.VoiceResponse
 import kotlinx.coroutines.delay
@@ -16,10 +15,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Owns talking to the api/v1/mobile endpoints: a polling cursor for agent_events plus the
- * voice_command / respond / sessions calls. The server assigns stable ref
- * numbers, so the cursor only governs which events are NEW — refs are preserved
- * across polls server-side.
+ * Owns talking to the api/v1/mobile endpoints: a polling cursor for agent_events
+ * plus the voice_command (cold mic → Inbox#Main) and respond (reply to a specific
+ * message) calls. The cursor governs which events are NEW.
  */
 @Singleton
 class AgentEventRepository @Inject constructor(
@@ -54,12 +52,6 @@ class AgentEventRepository @Inject constructor(
     suspend fun respond(eventId: Long, response: String): VoiceResponse {
         val cfg = settings.snapshot()
         return api.respond(eventId, RespondRequest(deviceId = cfg.deviceId, response = response))
-    }
-
-    suspend fun sessions(): List<SessionDto> {
-        val cfg = settings.snapshot()
-        if (cfg.token.isBlank()) return emptyList()
-        return api.sessions(cfg.deviceId)
     }
 
     /**

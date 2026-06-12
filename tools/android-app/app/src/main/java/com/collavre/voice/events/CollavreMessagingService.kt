@@ -23,7 +23,7 @@ import javax.inject.Inject
  *   summary the poll loop produces, reusing [Notifications] and [TtsManager].
  *
  * Server contract: push as a DATA message (not notification-only) so this fires
- * even in the background, with keys: event_id, ref, type, title, summary,
+ * even in the background, with keys: event_id, type, title, summary,
  * requires_response, topic_id, created_at.
  */
 @AndroidEntryPoint
@@ -58,7 +58,6 @@ class CollavreMessagingService : FirebaseMessagingService() {
         val id = (data["event_id"] ?: data["id"])?.toLongOrNull() ?: return null
         return AgentEvent(
             id = id,
-            ref = data["ref"]?.toIntOrNull() ?: 0,
             type = data["type"] ?: "agent_reply",
             title = data["title"] ?: notification?.title,
             summary = summary,

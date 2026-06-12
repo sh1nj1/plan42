@@ -12,8 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class AgentEvent(
     val id: Long,
-    val ref: Int,
-    val type: String,                       // approval_requested | agent_reply | status
+    val type: String,                       // approval_requested | agent_reply
     val title: String? = null,
     val summary: String,
     val speak: Boolean = true,
@@ -51,15 +50,6 @@ data class ActionDto(
     @SerialName("comment_id") val commentId: Long? = null,
     @SerialName("topic_id") val topicId: Long? = null,
     @SerialName("agent_session_id") val agentSessionId: String? = null
-)
-
-@Serializable
-data class SessionDto(
-    val ref: Int,
-    val label: String? = null,
-    @SerialName("agent_name") val agentName: String? = null,
-    val status: String,
-    @SerialName("topic_id") val topicId: Long? = null
 )
 
 @Serializable
