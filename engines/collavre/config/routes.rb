@@ -152,6 +152,7 @@ Collavre::Engine.routes.draw do
         post "voice_commands", to: "voice_commands#create"
         get  "agent_events", to: "agent_events#index"
         post "agent_events/:id/respond", to: "agent_events#respond"
+        post "agent_events/:id/read", to: "agent_events#read"
         post "devices", to: "devices#create"
       end
     end

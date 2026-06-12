@@ -22,7 +22,7 @@ module Collavre
             since = parse_since(params[:since])
 
             approvals = pending_approvals
-            notices = system_inbox_messages(since)
+            notices = system_inbox_messages
 
             # Only EMIT what is newer than the client cursor. Approvals are
             # otherwise unbounded by `since` (they stay pending until decided),
@@ -61,11 +61,30 @@ module Collavre
               return render json: { error: "Event not found" }, status: :not_found
             end
 
+            # Acting on a notice means the user has heard it — clear it from the
+            # unread inbox set so it isn't read again on the next poll.
+            mark_inbox_read(comment)
+
             if comment.claude_channel_permission?
               decide_on(comment)
             else
               relay_free_text(comment)
             end
+          end
+
+          # The app calls this when it finishes reading a message ALOUD (whether or
+          # not the user then replies). Reading = hearing it, so the inbox read
+          # pointer advances and the notice stops surfacing — the SAME read-state
+          # the inbox badge uses. A crash before this call leaves the notice unread,
+          # so the next poll re-reads it (at-least-once, not the lossy old cursor).
+          def read
+            comment = Collavre::Comment.find_by(id: params[:id])
+            unless comment && authorized_comment?(comment)
+              return render json: { error: "Event not found" }, status: :not_found
+            end
+
+            mark_inbox_read(comment)
+            head :ok
           end
 
           private
@@ -82,18 +101,45 @@ module Collavre
           # agent replies, share notices, … land here as system-authored
           # (user_id: nil) comments that QUOTE the origin comment. This is the
           # canonical, agent-ownership-independent feed the voice loop reads aloud.
-          # (The old agent_replies scope keyed on user-owned agents, so it missed
-          # everything authored by agents the token holder doesn't own.)
-          def system_inbox_messages(since)
+          #
+          # Emission is gated by the inbox's OWN read-state — the CommentReadPointer
+          # (comments with id > last_read_comment_id are unread) that also drives the
+          # inbox badge — NOT by the client's `since` cursor. A `since` cursor is a
+          # fetch-time high-water-mark: any notice fetched-but-never-spoken (crash,
+          # background, busy queue, restart) gets burned past and is lost forever,
+          # even though it stays unread in the inbox. Driving off the read pointer
+          # makes "unread in the inbox" and "read aloud by the app" the same set; the
+          # app marks a notice read (POST :id/read) only after actually speaking it.
+          def system_inbox_messages
             inbox = current_user_inbox or return []
+            last_read = inbox_read_pointer&.last_read_comment_id || 0
 
             scope = Collavre::Comment.where(creative_id: inbox.id, topic_id: inbox.system_topic.id)
-                                     .order(:created_at)
+                                     .where("comments.id > ?", last_read)
+                                     .order(:id)
                                      .limit(50)
-            scope = scope.where("comments.created_at > ?", since) if since
             # Approval prompts are surfaced (actionably) by pending_approvals; their
             # System-topic FYI duplicate must not be read a second time.
             scope.reject { |c| c.quoted_comment&.claude_channel_permission? }
+          end
+
+          def inbox_read_pointer
+            inbox = current_user_inbox or return nil
+
+            Collavre::CommentReadPointer.find_by(user: current_user, creative: inbox)
+          end
+
+          # Advance the inbox read pointer to (at least) this notice — forward-only,
+          # so a later message is never un-read. Only inbox-creative comments move the
+          # inbox pointer; calling this for an approval (which lives in the origin
+          # creative and is owned by pending_approvals) is a harmless no-op.
+          def mark_inbox_read(comment)
+            inbox = current_user_inbox or return
+            return unless comment.creative_id == inbox.id
+
+            pointer = Collavre::CommentReadPointer.find_or_initialize_by(user: current_user, creative: inbox)
+            new_id = [pointer.last_read_comment_id || 0, comment.id].max
+            pointer.update(last_read_comment_id: new_id)
           end
 
           def current_user_inbox

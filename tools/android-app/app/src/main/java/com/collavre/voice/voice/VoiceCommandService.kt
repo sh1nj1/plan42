@@ -130,6 +130,9 @@ class VoiceCommandService @Inject constructor(
         recognizer.reset() // start the turn with a clean caption (drop prior utterance)
         _activeEventId.value = msg.eventId
         speak(msg.text) {
+            // Heard it → mark read so the server stops re-emitting it. Done only
+            // after TTS completes, so a crash mid-read leaves it unread to re-read.
+            scope.launch { runCatching { repository.markRead(msg.eventId) } }
             pendingRespondEventId = msg.eventId
             listen()
         }

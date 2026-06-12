@@ -55,6 +55,17 @@ class AgentEventRepository @Inject constructor(
     }
 
     /**
+     * Mark a notice read once it has actually been spoken aloud. The server gates
+     * emission on the inbox read pointer, so this is what stops a heard message from
+     * being read again — and skipping it (crash before this lands) means the message
+     * stays unread and is re-read next poll (at-least-once delivery).
+     */
+    suspend fun markRead(eventId: Long) {
+        if (settings.snapshot().token.isBlank()) return
+        api.markEventRead(eventId)
+    }
+
+    /**
      * Registers the FCM token against the user's Device record so the server can
      * push agent events. No-op until the user is signed in (the server needs the
      * bearer token to attach the device to a user); re-run on every app open and

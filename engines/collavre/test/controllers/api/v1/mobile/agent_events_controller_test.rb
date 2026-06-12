@@ -219,6 +219,69 @@ module Collavre
             assert_equal "approval_requested", events.first["type"]
           end
 
+          test "an unread Inbox#System message surfaces regardless of the client since cursor" do
+            # The bug: the app advances a private created_at `since` cursor at fetch
+            # time, so a notice fetched-but-never-spoken (crash/background/queue) is
+            # burned past and never re-emitted — it sits unread in the inbox forever.
+            # Emission must be driven by the inbox's OWN read-state (CommentReadPointer),
+            # not the client cursor: an UNREAD notice surfaces even if `since` is ahead.
+            origin = @creative.comments.create!(
+              content: "원본 메세지", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true
+            )
+            notice = create_system_inbox_notice(quoted: origin, content: "언급: 원본 메세지")
+
+            future = (notice.created_at + 1.hour).iso8601(6)
+            get "/api/v1/mobile/agent_events",
+              params: { device_id: DEVICE, since: future }, headers: auth_headers, as: :json
+            assert_response :ok
+            ids = JSON.parse(response.body).map { |e| e["id"] }
+            assert_includes ids, notice.id,
+              "an unread notice must surface even when the client cursor is ahead of it"
+          end
+
+          test "reading a notice (POST read) marks it read so it stops surfacing" do
+            origin = @creative.comments.create!(
+              content: "원본", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true
+            )
+            notice = create_system_inbox_notice(quoted: origin, content: "언급: 원본")
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            assert_includes JSON.parse(response.body).map { |e| e["id"] }, notice.id
+
+            post "/api/v1/mobile/agent_events/#{notice.id}/read",
+              params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            assert_response :ok
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            refute_includes JSON.parse(response.body).map { |e| e["id"] }, notice.id,
+              "once read aloud (marked read) the notice no longer surfaces"
+
+            inbox = Collavre::Creative.inbox_for(@user)
+            pointer = Collavre::CommentReadPointer.find_by(user: @user, creative: inbox)
+            assert pointer && pointer.last_read_comment_id >= notice.id,
+              "marking read advances the inbox read pointer (same state as the badge)"
+          end
+
+          test "a newer unread notice still surfaces after an older one is marked read" do
+            o1 = @creative.comments.create!(content: "첫째", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true)
+            n1 = create_system_inbox_notice(quoted: o1, content: "언급: 첫째")
+            o2 = @creative.comments.create!(content: "둘째", user: @agent, topic: @topic,
+              skip_default_user: true, skip_dispatch: true)
+            n2 = create_system_inbox_notice(quoted: o2, content: "언급: 둘째")
+
+            post "/api/v1/mobile/agent_events/#{n1.id}/read",
+              params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            assert_response :ok
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            ids = JSON.parse(response.body).map { |e| e["id"] }
+            refute_includes ids, n1.id, "the read notice is gone"
+            assert_includes ids, n2.id, "the newer unread notice still surfaces"
+          end
+
           test "respond to a free-form agent message relays the utterance verbatim" do
             agent_reply = @creative.comments.create!(
               content: "어떤 브랜치에 머지할까요?", user: @agent, topic: @topic,

@@ -26,6 +26,11 @@ interface CollavreApi {
         @Body body: RespondRequest
     ): VoiceResponse
 
+    // Mark a notice read once it has been spoken aloud, so the server (driven by
+    // the inbox read pointer) stops re-emitting it. No body: auth is the bearer token.
+    @POST("api/v1/mobile/agent_events/{id}/read")
+    suspend fun markEventRead(@Path("id") id: Long): Response<Unit>
+
     @POST("api/v1/mobile/voice_commands")
     suspend fun voiceCommand(@Body body: VoiceCommandRequest): VoiceResponse
 
