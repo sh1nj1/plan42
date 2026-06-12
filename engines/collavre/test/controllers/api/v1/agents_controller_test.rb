@@ -1011,7 +1011,11 @@ module Collavre
           refute_includes 200..299, response.status,
             "second reply for an already-completed task must not return 2xx"
 
-          assert_equal comments_before + 1, creative.comments.count,
+          # Count only the agent's own reply comments. An agent reply in an inbox
+          # creative now also creates a system-authored (user: nil) notification in
+          # the System topic (#1301 alignment), so total creative.comments would be
+          # +2; the dedup invariant is "exactly one reply from the agent".
+          assert_equal 1, creative.comments.where(user: ai_user).count,
             "exactly one comment should be linked to one delegated dispatch"
           assert_equal first_comment_id, Comment.where(task_id: task.id).pluck(:id).first,
             "only the winning reply's comment should be linked to the task"

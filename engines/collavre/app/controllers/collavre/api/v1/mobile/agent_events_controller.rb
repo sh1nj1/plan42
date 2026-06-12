@@ -138,7 +138,7 @@ module Collavre
             return unless comment.creative_id == inbox.id
 
             pointer = Collavre::CommentReadPointer.find_or_initialize_by(user: current_user, creative: inbox)
-            new_id = [pointer.last_read_comment_id || 0, comment.id].max
+            new_id = [ pointer.last_read_comment_id || 0, comment.id ].max
             pointer.update(last_read_comment_id: new_id)
           end
 
