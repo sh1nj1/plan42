@@ -18,19 +18,24 @@ COLLAVRE_BIND_HOST=0.0.0.0 COLLAVRE_ALLOWED_HOSTS=192.168.1.42,macbook-pro.taila
 ```
 
 A **Finder-launched `.app` inherits an empty environment**, so those env vars
-can't reach it that way. For the installed app, put the same settings in a
-`config.json` in the data dir (below) — the Tauri shell reads it on launch and
-exports the recognized keys into the sidecar's environment **only when they
-aren't already set**, so an explicit env var still wins:
+can't reach it that way. For the installed app, put the same settings in
+`~/Library/Application Support/net.collavre.desktop/Collavre/config.json` — the
+Tauri shell reads it on launch and exports the recognized keys into the
+sidecar's environment **only when they aren't already set**, so an explicit env
+var still wins. The file is parsed as strict JSON (no comments or trailing
+commas):
 
-```jsonc
-// ~/Library/Application Support/net.collavre.desktop/Collavre/config.json
+```json
 {
-  "allowed_hosts": ["macbook-pro.tailadceed.ts.net"],  // array or "a,b" string
-  "bind_host": "0.0.0.0",                               // omit to stay loopback
-  "port": 4000                                          // omit for an ephemeral port
+  "allowed_hosts": ["macbook-pro.tailadceed.ts.net"],
+  "bind_host": "0.0.0.0",
+  "port": 4000
 }
 ```
+
+- `allowed_hosts` — a JSON array, or a `"a,b"` comma-separated string.
+- `bind_host` — omit to stay on loopback (`127.0.0.1`); set `"0.0.0.0"` to open.
+- `port` — omit for an ephemeral port.
 
 A missing or malformed file is the normal closed-loopback case and is ignored
 (the app never fails to launch over a bad config).
