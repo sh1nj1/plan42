@@ -13,11 +13,11 @@
   carries its own CSS/JS. Rust drives state via the window.__collavre* hooks
   below (status updates, and the error screen if the server never comes up).
 -->
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>콜라브</title>
+    <title>Collavre</title>
     <style>
       :root {
         --brand: #185abc;
@@ -148,30 +148,63 @@
   </head>
   <body>
     <main class="stage">
-      <img class="logo" src="icon.png" alt="콜라브" draggable="false" />
-      <h1 class="wordmark">콜라브</h1>
-      <div class="bar" role="progressbar" aria-label="시작하는 중"></div>
-      <p class="status" id="status">시작하는 중이에요…</p>
+      <img class="logo" src="icon.png" alt="" draggable="false" />
+      <h1 class="wordmark"></h1>
+      <div class="bar" role="progressbar"></div>
+      <p class="status" id="status"></p>
     </main>
 
     <script>
       (function () {
+        // AGENTS.md: all user-facing text must be EN + KO. This splash renders
+        // before Rails (and its i18n) exists, so it carries its own EN/KO map
+        // and picks by the OS/browser locale. Runs synchronously during parse,
+        // before first paint, so there is no Korean-then-English flash.
+        var ko = /^ko\b/i.test(navigator.language || navigator.userLanguage || "");
+        var T = ko
+          ? {
+              app: "콜라브",
+              starting: "시작하는 중",
+              status: "시작하는 중이에요…",
+              slow: "처음 실행은 준비에 시간이 조금 걸릴 수 있어요…",
+              error: "콜라브를 시작하지 못했어요. 앱을 종료한 뒤 다시 실행해 주세요.",
+            }
+          : {
+              app: "Collavre",
+              starting: "Starting",
+              status: "Starting up…",
+              slow: "First launch can take a moment to get ready…",
+              error: "Couldn’t start Collavre. Please quit the app and open it again.",
+            };
+
+        document.documentElement.lang = ko ? "ko" : "en";
+        document.title = T.app;
+        var logo = document.querySelector(".logo");
+        if (logo) logo.alt = T.app;
+        var wordmark = document.querySelector(".wordmark");
+        if (wordmark) wordmark.textContent = T.app;
+        var bar = document.querySelector(".bar");
+        if (bar) bar.setAttribute("aria-label", T.starting);
+
         var statusEl = document.getElementById("status");
+        if (statusEl) statusEl.textContent = T.status;
 
         // Rust (src/lib.rs) drives these while it health-gates the sidecar.
+        // It calls __collavreSetError() with no argument, so the localized
+        // default below is used — keeping the failure copy out of Rust.
         window.__collavreSetStatus = function (msg) {
           if (statusEl) statusEl.textContent = msg;
         };
         window.__collavreSetError = function (msg) {
           document.body.classList.add("is-error");
-          if (statusEl) statusEl.textContent = msg || "콜라브를 시작하지 못했어요.";
+          if (statusEl) statusEl.textContent = msg || T.error;
         };
 
         // Reassure on a slow cold start (first-run DB migrations) even if Rust
         // sends nothing — purely client-side, so it works before/without IPC.
         setTimeout(function () {
           if (document.body.classList.contains("is-error")) return;
-          window.__collavreSetStatus("처음 실행은 준비에 시간이 조금 걸릴 수 있어요…");
+          window.__collavreSetStatus(T.slow);
         }, 7000);
       })();
     </script>

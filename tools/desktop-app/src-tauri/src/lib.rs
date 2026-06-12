@@ -251,11 +251,10 @@ pub fn run() {
                     }
                 } else {
                     // Update the splash DOM in place (same-origin) rather than
-                    // navigating away, so the Collavre branding stays put.
-                    let _ = window.eval(
-                        "window.__collavreSetError && window.__collavreSetError(\
-                         '콜라브 서버를 시작하지 못했어요. 앱을 종료한 뒤 다시 실행해 주세요.')",
-                    );
+                    // navigating away, so the Collavre branding stays put. No
+                    // message is passed: the splash supplies its own locale-aware
+                    // (EN/KO) default, keeping user-facing copy out of Rust.
+                    let _ = window.eval("window.__collavreSetError && window.__collavreSetError()");
                 }
             });
 
