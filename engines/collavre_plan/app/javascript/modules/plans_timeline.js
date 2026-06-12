@@ -1,3 +1,5 @@
+import { alertDialog, confirmDialog } from "collavre/lib/utils/dialog";
+
 let plansTimelineScriptInitialized = false;
 
 if (!plansTimelineScriptInitialized) {
@@ -90,9 +92,9 @@ if (!plansTimelineScriptInitialized) {
         del.textContent = '×';
         del.className = 'delete-plan-btn';
         el.appendChild(del);
-        del.addEventListener('click', function (e) {
+        del.addEventListener('click', async function (e) {
           e.stopPropagation();
-          if (!confirm(container.dataset.deleteConfirm)) return;
+          if (!(await confirmDialog(container.dataset.deleteConfirm, { danger: true }))) return;
           var deleteUrl;
           if (String(plan.id).indexOf('calendar_event_') === 0) {
             deleteUrl = '/calendar_events/' + String(plan.id).replace('calendar_event_', '');
@@ -398,7 +400,7 @@ if (!plansTimelineScriptInitialized) {
           if (addPlanBtn) addPlanBtn.disabled = true;
         }).catch(function (err) {
           if (err && err.errors) {
-            alert(err.errors.join(', '));
+            alertDialog(err.errors.join(', '));
           } else {
             console.error(err);
           }

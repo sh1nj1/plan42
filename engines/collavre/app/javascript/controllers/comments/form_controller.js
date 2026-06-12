@@ -3,6 +3,7 @@ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
+import { alertDialog } from '../../lib/utils/dialog'
 
 export default class extends Controller {
   static targets = [
@@ -358,7 +359,7 @@ export default class extends Controller {
           this._renderReviewQuoteChips()
           this._updateSubmitButton()
         }
-        alert(error?.message || 'Failed to submit comment')
+        alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
         this._hasRetried = false
@@ -403,7 +404,7 @@ export default class extends Controller {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert(this.element.dataset.speechUnavailableText || 'Speech recognition not supported')
+      alertDialog(this.element.dataset.speechUnavailableText || 'Speech recognition not supported')
       return false
     }
 
@@ -809,7 +810,7 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
-        alert(error?.message || 'Failed to send question')
+        alertDialog(error?.message || 'Failed to send question')
       })
       .finally(() => {
         this._hasRetried = false
