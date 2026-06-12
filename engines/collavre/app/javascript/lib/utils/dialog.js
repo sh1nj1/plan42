@@ -75,7 +75,13 @@ function runDialog(config) {
     const overlay = document.createElement('div')
     overlay.className = 'modal-dialog-overlay open'
 
-    const dialog = document.createElement('div')
+    // A real <dialog> (not a <div>): showModal() promotes it into the browser
+    // top layer so it renders ABOVE native <dialog> lightboxes (also top layer)
+    // and z-index:9999 fullscreen popups. A plain z-index can never beat the
+    // top layer, so an in-app confirm gated behind those surfaces would be
+    // invisible and look hung — the exact silent-no-op failure this module
+    // exists to remove.
+    const dialog = document.createElement('dialog')
     dialog.className = 'modal-dialog modal-dialog-compact open'
     dialog.setAttribute('role', 'alertdialog')
     dialog.setAttribute('aria-modal', 'true')
@@ -150,7 +156,13 @@ function runDialog(config) {
       const i = stack.indexOf(entry)
       if (i !== -1) stack.splice(i, 1)
       document.removeEventListener('keydown', onKeydown, true)
-      overlay.remove()
+      overlay.remove() // no-op when never appended (top-layer path)
+      // Exit the top layer before detaching (close event is not observed here).
+      try {
+        if (dialog.open && typeof dialog.close === 'function') dialog.close()
+      } catch (_) {
+        /* unsupported — removal below still drops it from the top layer */
+      }
       dialog.remove()
       // Restore focus to whatever triggered the dialog.
       try {
@@ -180,12 +192,36 @@ function runDialog(config) {
 
     if (cancelBtn) cancelBtn.addEventListener('click', () => close(false))
     confirmBtn.addEventListener('click', () => close(true))
-    overlay.addEventListener('click', () => close(false))
+    // Click on the ::backdrop (its event target is the <dialog> itself, since
+    // the panel content is nested) dismisses — parity with the old overlay.
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) close(false)
+    })
+    // Escape on a modal <dialog> fires `cancel`; route it through our teardown
+    // (focus restore + promise resolution) instead of the bare native close.
+    dialog.addEventListener('cancel', (e) => {
+      e.preventDefault()
+      close(false)
+    })
     document.addEventListener('keydown', onKeydown, true)
 
-    document.body.appendChild(overlay)
     document.body.appendChild(dialog)
     stack.push(entry)
+
+    // Promote into the top layer. Fall back to a z-index overlay backdrop only
+    // where showModal is unavailable (jsdom under tests, very old webviews).
+    let topLayer = false
+    try {
+      dialog.showModal()
+      topLayer = true
+    } catch (_) {
+      /* no showModal — manual backdrop + stacking below */
+    }
+    if (!topLayer) {
+      dialog.setAttribute('open', '')
+      overlay.addEventListener('click', () => close(false))
+      document.body.insertBefore(overlay, dialog)
+    }
 
     // Focus the input (prompt) or the confirm button (alert/confirm) so Enter
     // accepts, matching native dialog behavior.
