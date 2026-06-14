@@ -145,6 +145,16 @@ Collavre::Engine.routes.draw do
       post "agent/reply", to: "agents#reply"
       post "agent/notify", to: "agents#notify"
       delete "agent/:id", to: "agents#destroy"
+
+      # Mobile voice companion (Android): poll Inbox#System messages, read aloud,
+      # reply to the origin topic; a cold mic press starts work in Inbox#Main.
+      namespace :mobile do
+        post "voice_commands", to: "voice_commands#create"
+        get  "agent_events", to: "agent_events#index"
+        post "agent_events/:id/respond", to: "agent_events#respond"
+        post "agent_events/:id/read", to: "agent_events#read"
+        post "devices", to: "devices#create"
+      end
     end
   end
 
