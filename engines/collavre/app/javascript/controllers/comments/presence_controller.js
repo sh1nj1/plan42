@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import { createSubscription } from '../../services/cable'
 import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
+import { alertDialog } from '../../lib/utils/dialog'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
@@ -156,7 +157,7 @@ export default class extends Controller {
         this.renderTypingIndicator()
 
         if (closeOnForbidden) {
-          alert(error.message)
+          alertDialog(error.message)
           this.popupController?.close()
         }
       })

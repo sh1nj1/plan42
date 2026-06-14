@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../../lib/api/csrf_fetch'
+import { alertDialog } from '../../lib/utils/dialog'
 
 export default class extends Controller {
   static targets = ['area', 'dropzone', 'input', 'progress', 'toggle']
@@ -66,7 +67,7 @@ export default class extends Controller {
     const isPpt = lower.endsWith('.ppt') || lower.endsWith('.pptx')
 
     if (!isMarkdown && !isPpt) {
-      window.alert(this.onlyMarkdownValue)
+      alertDialog(this.onlyMarkdownValue)
       return
     }
 

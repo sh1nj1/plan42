@@ -27,6 +27,7 @@ import { createMoveContext, applyMove, revertMove } from './operations';
 import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
+import { alertDialog } from '../../lib/utils/dialog';
 
 const childZoneRatio = 0.3;
 const coordPrecision = 5;
@@ -501,9 +502,7 @@ function getDraggedContext(event) {
 
 function notifyInvalidDrop() {
   console.error('Rejected invalid creative drop payload');
-  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-    window.alert(INVALID_DROP_MESSAGE);
-  }
+  alertDialog(INVALID_DROP_MESSAGE);
 }
 
 import { attachBundleDragImage } from '../../utils/drag_bundle_image.js';
@@ -658,7 +657,7 @@ export function handleDrop(event) {
         })
         .catch((error) => {
           console.error('Failed to move topic', error);
-          alert(error.message || 'Failed to move topic');
+          alertDialog(error.message || 'Failed to move topic');
         });
     } catch (error) {
       console.error('Failed to parse topic move data', error);

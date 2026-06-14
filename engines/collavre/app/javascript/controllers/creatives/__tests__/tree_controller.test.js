@@ -6,6 +6,7 @@ import { jest } from '@jest/globals'
 
 jest.unstable_mockModule('../../../creatives/tree_renderer', () => ({
   renderCreativeTree: jest.fn(),
+  appendCreativeNodes: jest.fn(),
   dispatchCreativeTreeUpdated: jest.fn(),
   applyRowProperties: jest.fn(),
 }))
@@ -16,6 +17,7 @@ jest.unstable_mockModule('../../../utils/emoji_parser', () => ({
 
 const { Application } = await import('@hotwired/stimulus')
 const TreeController = (await import('../tree_controller')).default
+const { appendCreativeNodes } = await import('../../../creatives/tree_renderer')
 
 const TRANSIENT_RETRY_DELAYS = [200, 600]
 
@@ -114,6 +116,154 @@ describe('CreativesTreeController retry on transient network errors', () => {
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
     expect(collectRetryDelays(setTimeoutSpy)).toEqual(TRANSIENT_RETRY_DELAYS)
+
+    application.stop()
+  })
+})
+
+describe('CreativesTreeController Chats pagination (load more)', () => {
+  let originalFetch
+  let originalIO
+
+  class MockIntersectionObserver {
+    constructor(callback) {
+      this.callback = callback
+      MockIntersectionObserver.instances.push(this)
+    }
+    observe(el) { this.observed = el }
+    disconnect() { this.disconnected = true }
+    triggerIntersect() { this.callback([{ isIntersecting: true }]) }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+    originalIO = global.IntersectionObserver
+    MockIntersectionObserver.instances = []
+    global.IntersectionObserver = MockIntersectionObserver
+    appendCreativeNodes.mockClear()
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    global.IntersectionObserver = originalIO
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('observes a sentinel only when the response carries has_more pagination', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+    })
+
+    const { container, application } = installController()
+    await flush()
+    await flush()
+
+    expect(MockIntersectionObserver.instances).toHaveLength(1)
+    expect(container.querySelector('.creative-chats-load-sentinel')).not.toBeNull()
+
+    application.stop()
+  })
+
+  test('does NOT set up pagination for a plain tree response (no pagination key)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ creatives: [{ id: 1 }] }),
+    })
+
+    const { container, application } = installController()
+    await flush()
+    await flush()
+
+    expect(MockIntersectionObserver.instances).toHaveLength(0)
+    expect(container.querySelector('.creative-chats-load-sentinel')).toBeNull()
+
+    application.stop()
+  })
+
+  test('fetches the next page and appends rows when the sentinel intersects', async () => {
+    const page2Nodes = [{ id: 2 }, { id: 3 }]
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: page2Nodes, pagination: { has_more: false, next_page: null } }),
+      })
+
+    const { application } = installController()
+    await flush()
+    await flush()
+
+    const observer = MockIntersectionObserver.instances[0]
+    observer.triggerIntersect()
+    await flush()
+    await flush()
+
+    const secondCallUrl = global.fetch.mock.calls[1][0]
+    expect(secondCallUrl).toContain('page=2')
+    expect(appendCreativeNodes).toHaveBeenCalledTimes(1)
+    expect(appendCreativeNodes.mock.calls[0][1]).toEqual(page2Nodes)
+    // has_more:false on page 2 tears the observer down.
+    expect(observer.disconnected).toBe(true)
+
+    application.stop()
+  })
+
+  test('drops a stale load-more response that resolves after a fresh load', async () => {
+    let resolvePage2
+    const page2Nodes = [{ id: 2 }, { id: 3 }]
+    global.fetch = jest
+      .fn()
+      // initial page-1 (Chats filter, has more)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+      // page-2 stays pending until we resolve it manually
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePage2 = () =>
+              resolve({
+                ok: true,
+                json: async () => ({ creatives: page2Nodes, pagination: { has_more: true, next_page: 3 } }),
+              })
+          })
+      )
+      // the fresh load() re-renders a different (non-paginated) view
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 99 }] }),
+      })
+
+    const { container, application } = installController()
+    await flush()
+    await flush()
+
+    // Sentinel intersects -> page-2 fetch kicks off but stays pending.
+    MockIntersectionObserver.instances[0].triggerIntersect()
+    await flush()
+
+    // A fresh load happens before page 2 resolves (filter change, sync refetch,
+    // archive toggle). load() tears down pagination and aborts the in-flight
+    // load-more.
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load()
+    await flush()
+    await flush()
+
+    // The stale page-2 response finally arrives. It must NOT be appended into
+    // the freshly rendered view.
+    resolvePage2()
+    await flush()
+    await flush()
+
+    expect(appendCreativeNodes).not.toHaveBeenCalled()
 
     application.stop()
   })

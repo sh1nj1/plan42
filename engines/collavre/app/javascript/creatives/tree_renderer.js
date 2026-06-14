@@ -308,6 +308,14 @@ export function renderCreativeTree(container, nodes, { replace = true } = {}) {
   reconcileNodes(container, nodes)
 }
 
+// Append a page of flat nodes to an already-rendered list without clearing the
+// existing rows. Used by the "Chats" feed's load-more, where each page is added
+// below the previous one rather than replacing it.
+export function appendCreativeNodes(container, nodes) {
+  if (!container) return
+  appendNodes(container, nodes)
+}
+
 export function dispatchCreativeTreeUpdated(container) {
   if (!container) return
   const event = new CustomEvent('creative-tree:updated', { bubbles: true })

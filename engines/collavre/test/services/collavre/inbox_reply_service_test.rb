@@ -53,6 +53,30 @@ module Collavre
       assert_equal @original_comment.id, cross_posted.quoted_comment_id
     end
 
+    # An inbox cross-post quotes the original comment purely for linkage. It must
+    # NOT be treated as a review message: review_message? drives the in-place
+    # ReviewHandler flow that OVERWRITES the quoted comment with the agent's
+    # reply. When the quoted comment is the agent's own (e.g. it asked a
+    # question), that flow would update the question in place instead of posting
+    # a new answer. The cross-post must reply normally.
+    test "cross-posted reply is not a review message (does not overwrite the quoted comment)" do
+      reply = Comment.create!(
+        creative: @inbox,
+        topic: @system_topic,
+        content: "My reply from inbox",
+        user: @user,
+        skip_dispatch: true
+      )
+
+      InboxReplyService.call(reply)
+
+      cross_posted = @creative.comments.where(user: @user, content: "My reply from inbox").last
+      assert cross_posted, "Expected cross-posted comment in original creative"
+      assert_equal @original_comment.id, cross_posted.quoted_comment_id, "quote linkage preserved"
+      assert_not cross_posted.review_message?,
+                 "inbox cross-post must reply normally, not trigger the in-place review-update flow"
+    end
+
     test "does not cross-post for non-inbox creatives" do
       reply = Comment.create!(
         creative: @creative,
