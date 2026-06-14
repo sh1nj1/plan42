@@ -15,22 +15,28 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Owns talking to the api/v1/mobile endpoints: a polling cursor for agent_events
- * plus the voice_command (cold mic → Inbox#Main) and respond (reply to a specific
- * message) calls. The cursor governs which events are NEW.
+ * Owns talking to the api/v1/mobile endpoints: polling agent_events plus the
+ * voice_command (cold mic → Inbox#Main) and respond (reply to a specific
+ * message) calls.
+ *
+ * There is NO client cursor. The server emits the full set of currently-relevant
+ * events each poll — unread Inbox#System notices (gated by the inbox read pointer)
+ * and every still-pending approval. Dedup is the consumer's job: VoiceCommandService
+ * keeps an in-memory "already spoken" set so a re-emitted event is not re-read,
+ * while a crash/restart correctly re-surfaces anything still unread/undecided
+ * (at-least-once). A fetch-time `since` high-water-mark could burn past an event
+ * that was fetched but never spoken, losing it forever — hence its removal.
  */
 @Singleton
 class AgentEventRepository @Inject constructor(
     private val api: CollavreApi,
     private val settings: SettingsRepository
 ) {
-    /** One poll for new events; advances the persisted `since` cursor. */
+    /** One poll for the current set of events to surface. */
     suspend fun pollOnce(): List<AgentEvent> {
         val cfg = settings.snapshot()
         if (cfg.token.isBlank()) return emptyList()
-        val events = api.agentEvents(deviceId = cfg.deviceId, since = cfg.sinceCursor)
-        events.maxByOrNull { it.createdAt }?.let { settings.setSinceCursor(it.createdAt) }
-        return events
+        return api.agentEvents(deviceId = cfg.deviceId)
     }
 
     /** Continuous poll loop; emits each batch of newly-surfaced events. */
