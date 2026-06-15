@@ -85,7 +85,6 @@ class VoiceCommandService @Inject constructor(
     val partialTranscript: StateFlow<String> = recognizer.partial
 
     private var locale: String = SettingsRepository.DEFAULT_LOCALE
-    private var pendingRespondEventId: Long? = null
 
     // FIFO of unread incoming messages; drained one at a time while IDLE.
     private val queue = ArrayDeque<VoiceMessage>()
@@ -142,14 +141,16 @@ class VoiceCommandService @Inject constructor(
             // Heard it → mark read so the server stops re-emitting it. Done only
             // after TTS completes, so a crash mid-read leaves it unread to re-read.
             scope.launch { runCatching { repository.markRead(msg.eventId) } }
-            pendingRespondEventId = msg.eventId
             listen()
         }
     }
 
-    /** Tap a list row: just mark it the selection (highlight). Reading/replying are
-     *  the explicit per-row play/reply buttons now. The Inbox#Main row is selectable
-     *  too — with it active, the mic/reply routes a cold utterance to Main. */
+    /** Tap a list row: mark it the selection (highlight). Reading/replying are the
+     *  explicit per-row play/reply buttons now. The Inbox#Main row is selectable too
+     *  — with it active, the mic/reply routes a cold utterance to Main. The reply
+     *  target is derived from this selection at transcript time, so re-selecting mid
+     *  read/listen redirects the in-flight reply to the highlighted row (never to a
+     *  thread other than the one shown as selected). */
     fun selectMessage(eventId: Long) {
         _activeEventId.value = eventId
     }
@@ -190,7 +191,6 @@ class VoiceCommandService @Inject constructor(
             _state.value = VoiceState.IDLE
         }
         _activeEventId.value = eventId
-        pendingRespondEventId = eventId.takeIf { it != INBOX_MAIN_ID }
         listen()
     }
 
@@ -199,11 +199,9 @@ class VoiceCommandService @Inject constructor(
         when (_state.value) {
             VoiceState.SPEAKING -> { tts.stop(); _state.value = VoiceState.IDLE; pump() }
             VoiceState.LISTENING -> { recognizer.stop(); _state.value = VoiceState.IDLE; pump() }
-            else -> {
-                // Inbox#Main (or nothing) selected → cold utterance to Main.
-                pendingRespondEventId = _activeEventId.value?.takeIf { it != INBOX_MAIN_ID }
-                listen()
-            }
+            // Reply to the highlighted message, or cold-start to Inbox#Main when the
+            // Main row (or nothing) is selected — resolved from _activeEventId in onTranscript.
+            else -> listen()
         }
     }
 
@@ -220,7 +218,6 @@ class VoiceCommandService @Inject constructor(
             onError = {
                 // No speech / cancelled: don't send a reply, just advance the queue.
                 // (spec: 사용자가 아무 발화를 하지 않으면 그 메시지는 응답이 안 감)
-                pendingRespondEventId = null
                 _state.value = VoiceState.IDLE
                 pump()
             }
@@ -228,8 +225,10 @@ class VoiceCommandService @Inject constructor(
     }
 
     private fun onTranscript(text: String) {
-        val eventId = pendingRespondEventId
-        pendingRespondEventId = null
+        // Resolve the reply target from the currently highlighted row (single source
+        // of truth): re-selecting mid read/listen redirects the reply to match the
+        // visible selection. Inbox#Main / no selection → cold utterance to Main.
+        val eventId = _activeEventId.value?.takeIf { it != INBOX_MAIN_ID }
         if (text.isBlank()) {
             _state.value = VoiceState.IDLE
             pump()
