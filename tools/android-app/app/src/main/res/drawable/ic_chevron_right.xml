@@ -1,0 +1,18 @@
+<!--
+  Chevron (갈매기) — mirrors Collavre's web chevron-right.svg (Lucide: M9 6L15 12L9 18)
+  so the app's expand/collapse toggle matches the chat UI's iconography. Rotated 90°
+  in Compose to point down when a row is expanded. Tinted via the Icon composable.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M9,6L15,12L9,18"
+        android:strokeColor="#000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent" />
+</vector>

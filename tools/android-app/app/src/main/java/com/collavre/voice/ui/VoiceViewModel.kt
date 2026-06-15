@@ -39,10 +39,13 @@ class VoiceViewModel @Inject constructor(
 
     fun pushToTalk() = voice.pushToTalk()
 
-    /** Tap a listed message: read its thread's last message, then listen for a reply. */
+    /** Tap a listed message: mark it the selection (highlight). */
     fun selectMessage(eventId: Long) = voice.selectMessage(eventId)
 
-    /** Notification tap carrying an event id: reply straight to it. */
+    /** Play/stop toggle on a row: read that message aloud, or stop if already reading. */
+    fun playMessage(eventId: Long) = voice.playMessage(eventId)
+
+    /** Reply button / notification tap carrying an event id: listen and reply to it. */
     fun replyTo(eventId: Long) = voice.replyTo(eventId)
 
     fun saveSettings(

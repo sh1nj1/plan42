@@ -53,6 +53,15 @@ class VoiceCommandService @Inject constructor(
     private val repository: AgentEventRepository,
     private val settings: SettingsRepository
 ) {
+    companion object {
+        /**
+         * Sentinel "event id" for the always-present Inbox#Main row. It is not a real
+         * agent_event — selecting it (or replying with it active) routes a cold
+         * utterance to Inbox#Main via sendCommand instead of respond(eventId).
+         */
+        const val INBOX_MAIN_ID = -1L
+    }
+
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private val _state = MutableStateFlow(VoiceState.IDLE)
@@ -138,21 +147,50 @@ class VoiceCommandService @Inject constructor(
         }
     }
 
-    /** Tap a list row: interrupt any in-flight turn and read that thread's last message. */
+    /** Tap a list row: just mark it the selection (highlight). Reading/replying are
+     *  the explicit per-row play/reply buttons now. The Inbox#Main row is selectable
+     *  too — with it active, the mic/reply routes a cold utterance to Main. */
     fun selectMessage(eventId: Long) {
+        _activeEventId.value = eventId
+    }
+
+    /** Play/stop toggle for a row: read this message aloud, or stop if it's already
+     *  speaking. Inbox#Main has nothing to read, so it's a no-op there. */
+    fun playMessage(eventId: Long) {
+        if (eventId == INBOX_MAIN_ID) return
+        // Already reading this one → stop and let the queue advance.
+        if (_state.value == VoiceState.SPEAKING && _activeEventId.value == eventId) {
+            tts.stop()
+            _state.value = VoiceState.IDLE
+            pump()
+            return
+        }
         val msg = _messages.value.firstOrNull { it.eventId == eventId } ?: return
         if (_state.value != VoiceState.IDLE) {
             tts.stop()
             recognizer.stop()
             _state.value = VoiceState.IDLE
         }
-        readThenListen(msg)
+        recognizer.reset()
+        _activeEventId.value = eventId
+        speak(msg.text) {
+            // Heard it → mark read (at-least-once): only after TTS finishes.
+            scope.launch { runCatching { repository.markRead(eventId) } }
+            _state.value = VoiceState.IDLE
+            pump()
+        }
     }
 
-    /** Notification tap with an explicit event id: reply to it without re-reading. */
+    /** Reply button (and notification tap): listen for a spoken reply to this event.
+     *  With the Inbox#Main sentinel active, the reply is a cold utterance to Main. */
     fun replyTo(eventId: Long) {
+        if (_state.value != VoiceState.IDLE) {
+            tts.stop()
+            recognizer.stop()
+            _state.value = VoiceState.IDLE
+        }
         _activeEventId.value = eventId
-        pendingRespondEventId = eventId
+        pendingRespondEventId = eventId.takeIf { it != INBOX_MAIN_ID }
         listen()
     }
 
@@ -162,7 +200,8 @@ class VoiceCommandService @Inject constructor(
             VoiceState.SPEAKING -> { tts.stop(); _state.value = VoiceState.IDLE; pump() }
             VoiceState.LISTENING -> { recognizer.stop(); _state.value = VoiceState.IDLE; pump() }
             else -> {
-                pendingRespondEventId = _activeEventId.value
+                // Inbox#Main (or nothing) selected → cold utterance to Main.
+                pendingRespondEventId = _activeEventId.value?.takeIf { it != INBOX_MAIN_ID }
                 listen()
             }
         }

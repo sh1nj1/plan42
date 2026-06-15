@@ -61,11 +61,15 @@ module Collavre
 
           # List/display title for an event: "Creative#Topic" so the app can show
           # which thread a message belongs to (spec: 제목을 크리에이티브#토픽 형태로).
+          # The creative half uses #creative_snippet — the SAME helper the web chat
+          # header renders (HTML-stripped, unescaped, truncated to 24 chars) — so a
+          # description full of markup/markdown is shown as readable plain text and
+          # the app title matches what users see in Collavre's chat UI.
           def title_for_topic(topic_id)
             topic = topic_id && Collavre::Topic.find_by(id: topic_id)
             name = topic&.name.presence || I18n.t("collavre.mobile.default_task_label")
-            creative = topic&.creative&.effective_origin || topic&.creative
-            creative&.description.present? ? "#{creative.description}##{name}" : name
+            snippet = topic&.creative&.creative_snippet.presence
+            snippet ? "#{snippet}##{name}" : name
           end
 
           def render_speak(reply_key_or_text, action: {}, speak: true, status: :ok)
