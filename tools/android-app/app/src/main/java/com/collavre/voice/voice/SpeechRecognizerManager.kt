@@ -54,9 +54,18 @@ class SpeechRecognizerManager @Inject constructor(
         recognizer?.startListening(intent)
     }
 
-    fun stop() {
-        recognizer?.stopListening()
+    /**
+     * Abandon the current session WITHOUT delivering a final transcript. Calling
+     * stopListening() would still fire onResults with the buffered audio (which
+     * could post as a reply to the wrong thread), so for interruptions we drop the
+     * session's callbacks and call cancel() instead.
+     */
+    fun cancel() {
+        onResult = null
+        onError = null
+        recognizer?.cancel()
         _listening.value = false
+        _partial.value = ""
     }
 
     /** Clear the on-screen transcript before a new turn (e.g. reading a new message). */

@@ -169,7 +169,7 @@ class VoiceCommandService @Inject constructor(
         val msg = _messages.value.firstOrNull { it.eventId == eventId } ?: return
         if (_state.value != VoiceState.IDLE) {
             tts.stop()
-            recognizer.stop()
+            recognizer.cancel() // discard any in-flight utterance; don't post it as a reply
             _state.value = VoiceState.IDLE
         }
         recognizer.reset()
@@ -187,7 +187,7 @@ class VoiceCommandService @Inject constructor(
     fun replyTo(eventId: Long) {
         if (_state.value != VoiceState.IDLE) {
             tts.stop()
-            recognizer.stop()
+            recognizer.cancel() // drop the prior listen so its tail can't post to the old thread
             _state.value = VoiceState.IDLE
         }
         _activeEventId.value = eventId
@@ -198,7 +198,7 @@ class VoiceCommandService @Inject constructor(
     fun pushToTalk() {
         when (_state.value) {
             VoiceState.SPEAKING -> { tts.stop(); _state.value = VoiceState.IDLE; pump() }
-            VoiceState.LISTENING -> { recognizer.stop(); _state.value = VoiceState.IDLE; pump() }
+            VoiceState.LISTENING -> { recognizer.cancel(); _state.value = VoiceState.IDLE; pump() }
             // Reply to the highlighted message, or cold-start to Inbox#Main when the
             // Main row (or nothing) is selected — resolved from _activeEventId in onTranscript.
             else -> listen()
