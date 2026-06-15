@@ -16,8 +16,7 @@ interface CollavreApi {
 
     @GET("api/v1/mobile/agent_events")
     suspend fun agentEvents(
-        @Query("device_id") deviceId: String,
-        @Query("since") since: String? = null
+        @Query("device_id") deviceId: String
     ): List<AgentEvent>
 
     @POST("api/v1/mobile/agent_events/{id}/respond")

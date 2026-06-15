@@ -56,50 +56,62 @@ module Collavre
               "the app lists messages titled 크리에이티브#토픽 so the user knows the thread"
           end
 
-          test "an event already delivered is not re-surfaced once the since cursor advances" do
+          test "a still-pending approval keeps surfacing on every poll (server holds no cursor)" do
             create_permission_comment(request_id: "req-once", tool_name: "Edit")
 
             get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
-            first = JSON.parse(response.body)
-            assert_equal 1, first.size
-            cursor = first.first["created_at"]
+            assert_equal 1, JSON.parse(response.body).size
 
-            # Same poll the client would make next: since = the max created_at it saw.
-            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
+            # The server keeps no per-client cursor: an undecided approval is emitted
+            # again next poll. Re-speaking is suppressed on the client (in-memory
+            # "already spoken" set), and a restart correctly re-surfaces it.
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
             assert_response :ok
-            assert_empty JSON.parse(response.body),
-              "a still-pending approval must not be re-emitted every poll (infinite TTS bug)"
+            assert_equal 1, JSON.parse(response.body).size,
+              "a pending approval stays in the stream until it is decided"
           end
 
-          test "a pending approval is still decidable after it stops being re-emitted" do
+          test "a pending approval stops surfacing once it is decided" do
             comment = create_permission_comment(request_id: "req-keepref", tool_name: "Bash")
 
             get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
-            cursor = JSON.parse(response.body).first["created_at"]
+            assert_equal 1, JSON.parse(response.body).size
 
-            # Drops out of the emitted stream (already delivered)...
-            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
-            assert_empty JSON.parse(response.body)
-
-            # ...but responding to it by event id must still decide the permission.
+            # Deciding it (clearing action_executed_at) drops it from pending_approvals.
             post "/api/v1/mobile/agent_events/#{comment.id}/respond",
               params: { device_id: DEVICE, response: "approve" }, headers: auth_headers, as: :json
             assert_response :ok
             assert_equal "allow", JSON.parse(comment.reload.action)["decision"]
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            assert_empty JSON.parse(response.body), "a decided approval no longer surfaces"
           end
 
-          test "an event created after the cursor still surfaces" do
+          test "all undecided approvals surface together, newest and oldest alike" do
             create_permission_comment(request_id: "req-old", tool_name: "Edit")
-            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
-            cursor = JSON.parse(response.body).first["created_at"]
 
             travel_to 5.seconds.from_now do
               create_permission_comment(request_id: "req-new", tool_name: "Bash")
-              get "/api/v1/mobile/agent_events", params: { device_id: DEVICE, since: cursor }, headers: auth_headers, as: :json
+              get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
             end
-            events = JSON.parse(response.body)
-            assert_equal 1, events.size, "the newer approval surfaces; the older one does not"
-            assert_equal "req-new", Collavre::Comment.find(events.first["id"]).claude_channel_permission_request_id
+            request_ids = JSON.parse(response.body).map do |e|
+              Collavre::Comment.find(e["id"]).claude_channel_permission_request_id
+            end
+            assert_equal %w[req-new req-old], request_ids.sort,
+              "no server cursor drops the older approval; both pending prompts surface"
+          end
+
+          test "an unknown since param from an older client is harmlessly ignored" do
+            create_permission_comment(request_id: "req-back-compat", tool_name: "Edit")
+
+            # Old APKs still send a `since` cursor; the server no longer reads it and
+            # must not error or suppress anything.
+            get "/api/v1/mobile/agent_events",
+              params: { device_id: DEVICE, since: 1.hour.from_now.iso8601(6) },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            assert_equal 1, JSON.parse(response.body).size,
+              "a stale since cursor no longer hides a pending approval"
           end
 
           test "respond approve decides the permission and broadcasts to the suspended session" do

@@ -19,17 +19,18 @@ module Collavre
           DENY    = /(거절|거부|반려|deny|reject|취소|아니|\bno\b)/i
 
           def index
-            since = parse_since(params[:since])
-
             approvals = pending_approvals
             notices = system_inbox_messages
 
-            # Only EMIT what is newer than the client cursor. Approvals are
-            # otherwise unbounded by `since` (they stay pending until decided),
-            # so without this filter every poll re-speaks the same approval.
-            new_approvals = since ? approvals.select { |c| c.created_at > since } : approvals
-
-            events = new_approvals.map do |c|
+            # Every undecided approval is emitted on every poll — the server keeps
+            # no per-client cursor. Re-speaking is prevented on the CLIENT (an
+            # in-memory "already spoken" set), the same at-least-once shape as
+            # notices: a pending approval keeps surfacing until it is decided
+            # (which clears it from pending_approvals) or the app restarts (when a
+            # still-pending approval SHOULD be re-surfaced). The old `since` cursor
+            # filtered here, but a batch high-water-mark could burn past an approval
+            # whose created_at trailed a newer notice, losing it forever.
+            events = approvals.map do |c|
               {
                 id: c.id, type: "approval_requested",
                 title: title_for_topic(c.topic_id),
@@ -88,14 +89,6 @@ module Collavre
           end
 
           private
-
-          def parse_since(value)
-            return nil if value.blank?
-
-            Time.iso8601(value.to_s)
-          rescue ArgumentError
-            nil
-          end
 
           # The user's Inbox → System topic is the per-user alarm stream: mentions,
           # agent replies, share notices, … land here as system-authored
