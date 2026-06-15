@@ -378,10 +378,15 @@ export default class extends Controller {
 
     async deleteTopic(event) {
         event.stopPropagation()
+        // Capture the topic id BEFORE awaiting the dialog: once the click
+        // dispatch completes, event.currentTarget is reset to null, so reading
+        // it after `await` throws. confirmDialog made this handler async, which
+        // exposed the latent stale-currentTarget hazard (the old sync confirm()
+        // never yielded the event loop).
+        const topicId = event.currentTarget.dataset.id
         const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
         if (!(await confirmDialog(confirmText, { danger: true }))) return
 
-        const topicId = event.currentTarget.dataset.id
         if (!topicId) return
 
         try {
