@@ -19,6 +19,7 @@ import "./components/creative_tree_row"
 // Import and re-export lib utilities
 import "./lib/apply_lexical_styles"
 import "./lib/turbo_stream_actions"
+import "./lib/turbo_confirm"
 
 // Export controller registration
 export { registerControllers } from "./controllers"
