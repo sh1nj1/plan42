@@ -21,6 +21,10 @@ module Collavre
 
       # Returns Array of User (AI agents) that are qualified to respond
       def match
+        # Priority 0: Review routing (exclusive)
+        review_result = match_by_review_author
+        return review_result unless review_result.nil?
+
         # Priority 1: Mention-based routing (exclusive)
         mentioned_result = match_by_mention
         return mentioned_result unless mentioned_result.nil?
@@ -30,6 +34,27 @@ module Collavre
       end
 
       private
+
+      # Returns [author] if this is a review message, nil otherwise.
+      #
+      # A review message can ONLY be handled by the author of the quoted comment:
+      # ReviewHandler#eligible? requires quoted_comment.user_id == agent.id, so any
+      # other agent would post a stray reply instead of the in-place review update.
+      # Route exclusively to that author — independent of mention or
+      # routing_expression — so the Review button is reliable even when the author
+      # has none (e.g. /compress summaries authored by a primary agent resolved via
+      # primary_agent_id). Without this the button renders but the feedback no-ops.
+      def match_by_review_author
+        return nil unless matched_comment&.review_message?
+
+        author = matched_comment.quoted_comment&.user
+        return nil unless author&.ai_user?
+
+        return [] unless has_creative_permission?(author)
+        return [] unless eligible_in_inbox?(author)
+
+        [ author ]
+      end
 
       # Returns Array of agents if mention found, nil if no mention
       # When mention IS found, this is exclusive routing
@@ -123,6 +148,13 @@ module Collavre
 
         topic_id = @context.dig("topic", "id") || @context.dig(:topic, :id)
         @matched_topic = topic_id && Topic.find_by(id: topic_id)
+      end
+
+      def matched_comment
+        return @matched_comment if defined?(@matched_comment)
+
+        comment_id = @context.dig("comment", "id") || @context.dig(:comment, :id)
+        @matched_comment = comment_id && Comment.find_by(id: comment_id)
       end
     end
   end
