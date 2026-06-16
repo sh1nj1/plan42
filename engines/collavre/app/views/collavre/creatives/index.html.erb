@@ -104,6 +104,17 @@
     <div data-share-modal-target="container"></div>
   <% end %>
 
+  <%# The "re-add dropped members" modal must be present wherever a topic can be
+      dropped onto another creative — including the top-level index, where
+      @parent_creative/@creative are nil (moving a topic between root-level
+      creatives). Gating it on the write check above hid it exactly there, so
+      getModal() returned null and the popup silently never appeared. It stays
+      hidden until populated, and share creation is permission-checked
+      server-side, so rendering it for any authenticated user is safe. %>
+  <% if authenticated? %>
+    <%= render 'topic_move_members_modal' %>
+  <% end %>
+
   <%= render 'import_upload_zone' %>
 
 <% if can_manage_integrations %>

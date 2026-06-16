@@ -18,6 +18,17 @@ en:
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
+        add_members:
+          title: Add members to the new location?
+          description: These people had access where the topic used to live, but not in "%{creative}". Add them so they keep access.
+          add: Add selected
+          skip: Not now
+          adding: Adding…
+          added:
+            one: 1 member added.
+            other: "%{count} members added."
+          partial: "%{added} added, %{failed} failed."
+          failed: Could not add members. Please try again.
     github_auth:
       login_first: Please sign in first.
       connected: Github account connected successfully.
