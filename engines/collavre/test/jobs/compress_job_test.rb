@@ -37,6 +37,28 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert_includes summary.content, I18n.t("collavre.comments.compress_command.summary_title", topic: @topic.name)
   end
 
+  test "summary comment is authored by the AI agent so the review button shows" do
+    agent = create_ai_agent_for_creative
+
+    summary_text = "This is the AI summary of the conversation."
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    summary = @creative.comments.where(topic: @topic).last
+    assert summary.present?
+    # Authored by the AI agent, not the human who ran /compress.
+    assert_equal agent, summary.user
+    # ai_user? is what gates the "Review" button in _comment.html.erb.
+    assert summary.user.ai_user?, "summary author must be an AI user for the review button to render"
+  end
+
   test "does nothing when only one comment" do
     @comment2.destroy
     @comment3.destroy
