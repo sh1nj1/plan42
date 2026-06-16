@@ -435,17 +435,29 @@ module Collavre
         # When task_id is absent, fall back to topic.primary_agent for
         # back-compat with older plugin builds that don't echo task_id.
         #
-        # If task_id IS supplied but the delegated task lookup fails (late
-        # reply after cancel/timeout, stale id, wrong topic), do NOT fall
-        # through to primary_agent — a present-but-unresolved task_id means
-        # the client believes it is answering a specific dispatch that no
-        # longer exists. Saving the reply against primary_agent would create
-        # an unlinked comment while complete_delegated_task finds nothing,
-        # potentially duplicating a reply after the task was already
-        # completed/cancelled. Return nil so reply renders 403.
+        # If task_id IS supplied but no task with that id exists on this topic
+        # (stale id, wrong topic) — or it belongs to a different/non-Claude
+        # agent — do NOT fall through to primary_agent. A present-but-foreign
+        # task_id means the client believes it is answering a dispatch it does
+        # not actually own; saving against primary_agent would create an
+        # unlinked comment. Return nil → reply renders 403.
+        #
+        # BUT do NOT gate this lookup on status == "delegated". Multiple Claude
+        # Channel sessions sharing one agent (the default AGENT_NAME case: two
+        # `claude --channels` sessions in the same working directory) all stream
+        # from agent:user:<id>, so a single work-topic dispatch fans out to every
+        # session and each calls /reply with the same task_id. The intended dedup
+        # is the atomic claim in claim_delegated_task (WHERE status='delegated'),
+        # which yields a clean 409 "already completed" for the loser — a signal
+        # the MCP plugin treats as benign. Filtering on status HERE made the loser
+        # fail one layer too early: the sibling already flipped the task to "done",
+        # this lookup returned nil, and reply rendered a misleading 403 "Not
+        # authorized" that the plugin surfaced as a hard error. Resolve the agent
+        # for any task on THIS topic owned by the caller's Claude Channel agent,
+        # regardless of status, and let claim_delegated_task decide actionability.
         def resolve_reply_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 

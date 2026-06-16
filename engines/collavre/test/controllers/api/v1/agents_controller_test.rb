@@ -998,18 +998,20 @@ module Collavre
           assert_equal "done", task.reload.status
 
           # Second reply (same task_id) arrives after the first has completed.
-          # The task is no longer in delegated state — resolve_reply_agent
-          # cannot find it, returns nil, and reply renders 403. Either way,
-          # no duplicate comment is created.
+          # This is the multi-session dedup case: two Claude Channel sessions
+          # sharing one agent both /reply to the same fanned-out dispatch. The
+          # loser must reach the atomic-claim layer and get a clean 409 "already
+          # completed" — NOT a 403. resolve_reply_agent no longer gates on
+          # status: "delegated", so the already-done task still resolves the
+          # agent, and claim_delegated_task returns the 409. (Before the fix the
+          # loser failed at resolve_reply_agent with a misleading 403 that the
+          # MCP plugin surfaced as a hard error.) No duplicate comment either way.
           post "/api/v1/agent/reply",
             params: { topic_id: topic_id, text: "Duplicate reply", task_id: task.id },
             headers: auth_headers,
             as: :json
-          # The post-completion lookup falls through resolve_reply_agent (which
-          # scopes to status: "delegated") → 403. Either way, the second
-          # request must not produce a 2xx.
-          refute_includes 200..299, response.status,
-            "second reply for an already-completed task must not return 2xx"
+          assert_response :conflict,
+            "loser of the shared-agent dispatch race must get 409 (benign dedup), not 403"
 
           # Count only the agent's own reply comments. An agent reply in an inbox
           # creative now also creates a system-authored (user: nil) notification in

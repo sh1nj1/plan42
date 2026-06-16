@@ -127,7 +127,8 @@ function buildServer(
 
     const result = await client.reply(topicId, text, taskId);
 
-    // The dispatched turn is concluding (Claude has replied). Reset the active
+    // The dispatched turn is concluding (Claude has replied, or a sibling
+    // session already answered this fanned-out dispatch). Reset the active
     // context to the registration inbox default so a subsequent locally-
     // initiated turn's permission prompt surfaces in the inbox rather than
     // leaking into this just-finished work topic.
@@ -139,6 +140,21 @@ function buildServer(
     // resolution signal), so a later click on the now-stale Collavre approval
     // comment must not be claimed and forwarded to a turn that is already over.
     coordinator.clear();
+
+    // Benign dedup: another session sharing this agent already claimed and
+    // answered this dispatch (server returned 409). Nothing was posted by us,
+    // and that is correct — report it as a non-error so the model doesn't treat
+    // a normal multi-session race as a failed reply.
+    if (!result.handled) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Already answered by another session sharing this agent — nothing to send.",
+          },
+        ],
+      };
+    }
 
     return {
       content: [

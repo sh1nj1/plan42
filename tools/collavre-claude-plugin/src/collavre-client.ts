@@ -73,7 +73,7 @@ export class CollavreClient {
     topicId: number,
     text: string,
     taskId: number,
-  ): Promise<{ comment_id: number }> {
+  ): Promise<{ handled: true; comment_id: number } | { handled: false; reason: string }> {
     const body: Record<string, unknown> = { topic_id: topicId, text, task_id: taskId };
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/reply`, {
@@ -85,12 +85,25 @@ export class CollavreClient {
       body: JSON.stringify(body),
     });
 
+    // 409 Conflict is the server's benign dedup signal, not an error. Multiple
+    // Claude Code sessions in the SAME working directory share one Collavre
+    // agent; a work-topic dispatch fans out to all of them and each session's
+    // turn calls reply with the same task_id. The server's atomic task claim
+    // lets exactly one win — the others get 409 "already completed". The message
+    // was already delivered by a sibling, so this is success-with-nothing-to-do,
+    // not a failure to surface to the model.
+    if (res.status === 409) {
+      const respBody = await res.text();
+      return { handled: false, reason: respBody };
+    }
+
     if (!res.ok) {
       const respBody = await res.text();
       throw new Error(`Reply failed (${res.status}): ${respBody}`);
     }
 
-    return res.json() as Promise<{ comment_id: number }>;
+    const json = (await res.json()) as { comment_id: number };
+    return { handled: true, comment_id: json.comment_id };
   }
 
   // Post an out-of-band informational comment to a topic WITHOUT completing a
