@@ -307,7 +307,15 @@ if (!plansTimelineScriptInitialized) {
 
     // Listen for plan creation from delegated handler
     const onPlanCreated = function (e) {
-      addPlan(e.detail);
+      // While a chip is active, the planned creative's derived
+      // registration/modification marker stops being eligible (plan anchors
+      // are excluded server-side), so re-fetch the authoritative view to drop
+      // the now-stale marker. Appending alone would leave it as a duplicate.
+      if (registrationsEnabled || modificationsEnabled) {
+        reloadCurrentView();
+      } else {
+        addPlan(e.detail);
+      }
     };
     document.addEventListener('plan:created', onPlanCreated);
 
