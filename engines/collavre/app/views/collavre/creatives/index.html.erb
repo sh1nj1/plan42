@@ -170,6 +170,7 @@
     title_effective_origin = @parent_creative.effective_origin(Set.new)
     title_content_type = title_effective_origin.data&.dig("content_type")
     title_markdown_source = title_can_write ? title_effective_origin.data&.dig("markdown_source") : nil
+    title_markdown_editor = title_effective_origin.data&.dig("editor")
   %>
   <%= content_tag(
         "creative-tree-row",
@@ -183,7 +184,8 @@
         "data-progress-value": @parent_creative.progress,
         "data-origin-id": @parent_creative.origin_id,
         "data-content-type": title_content_type,
-        "data-markdown-source": title_markdown_source
+        "data-markdown-source": title_markdown_source,
+        "data-markdown-editor": title_markdown_editor
       ) %>
 <% else %>
   <%= content_tag(
