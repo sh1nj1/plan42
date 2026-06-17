@@ -240,11 +240,17 @@ module Collavre
       # inserted images/videos/files as raw blob-URL tags inside markdown_source,
       # which markdown_to_html renders into `description`. So reconcile must run
       # for markdown mode too, otherwise rich-editor uploads never reach
-      # creative.files (and the attachment list/remove services miss them). But
-      # markdown reconcile is ATTACH-ONLY: markdown creatives may carry out-of-band
-      # / legacy blobs attached directly (never embedded in the derived
-      # description), and the explicit remove path strips + demotes to HTML before
-      # detaching — so auto-detaching here would purge blobs that are still wanted.
+      # creative.files (and the attachment list/remove services miss them).
+      #
+      # Markdown detach is narrowed (not skipped): markdown creatives may carry
+      # legacy blobs attached directly but never embedded in the derived
+      # description (AttachmentBackfill skips markdown, so reconcile is their only
+      # touch point) — those must survive. But media the user actually removed
+      # in-editor WAS referenced in the prior description and no longer is; that
+      # must detach, or creative.files keeps listing a deleted file (the editor's
+      # purge DELETE can't compensate while the attachment still exists). So for
+      # markdown we detach only blobs that were previously referenced. HTML keeps
+      # full detach (backfill embeds its orphans, so none should linger).
       def reconcile_description_attachments
         # Linked creatives don't own their description (it lives on the origin)
         # and their own column is blank, so reconcile would treat every legacy
@@ -262,9 +268,16 @@ module Collavre
         current = files.includes(:blob).to_a
         current_blob_ids = current.map(&:blob_id).to_set
 
-        attach_only = data&.dig("content_type") == "markdown"
+        markdown = data&.dig("content_type") == "markdown"
         to_attach = referenced.reject { |b| current_blob_ids.include?(b.id) }
-        to_detach = attach_only ? [] : current.reject { |a| referenced_ids.include?(a.blob_id) }
+        unreferenced = current.reject { |a| referenced_ids.include?(a.blob_id) }
+        to_detach =
+          if markdown
+            prev_referenced_ids = blob_ids_referenced_in(description_before_last_save)
+            unreferenced.select { |a| prev_referenced_ids.include?(a.blob_id) }
+          else
+            unreferenced
+          end
         return if to_attach.empty? && to_detach.empty?
 
         to_attach.each { |blob| files.attach(blob) }
@@ -317,15 +330,30 @@ module Collavre
       end
 
       def extract_signed_ids_from_description
-        return [] if description.blank?
+        extract_signed_ids_from(description)
+      end
 
-        html = description.to_s
+      def extract_signed_ids_from(html)
+        return [] if html.blank?
+
+        html = html.to_s
 
         ids = html.scan(%r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/?#]+)}).flatten
         ids += html.scan(%r{/rails/active_storage/blobs/([^/?#]+)}).flatten
         ids += html.scan(%r{/public-assets/blobs/([^/?#]+)}).flatten
 
         ids.uniq
+      end
+
+      # Blob ids that `html` references, resolving each signed id to its blob.
+      # Used to tell user-removed media (was referenced, now gone) apart from
+      # legacy orphans (never referenced) during markdown reconcile.
+      def blob_ids_referenced_in(html)
+        extract_signed_ids_from(html).filter_map do |sid|
+          ActiveStorage::Blob.find_signed(sid)&.id
+        rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+          nil
+        end.to_set
       end
 
       def description_cannot_change_if_has_origin

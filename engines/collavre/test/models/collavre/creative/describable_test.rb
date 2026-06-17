@@ -278,9 +278,12 @@ module Collavre
       end
 
       test "markdown save does not detach an out-of-band attached blob" do
-        # Markdown reconcile is attach-only: a blob attached directly (legacy /
-        # backfill) but not referenced in the derived description must survive a
-        # normal markdown save, since markdown creatives may carry such blobs.
+        # A blob attached directly (legacy / backfill) but never referenced in
+        # the derived description must survive a normal markdown save:
+        # AttachmentBackfill skips markdown creatives, so reconcile is their only
+        # touch point and would otherwise purge a blob the user never removed.
+        # The guard: only blobs that WERE referenced in the prior description get
+        # detached, so an orphan that was never referenced is left alone.
         creative = Creative.create!(
           user: @user, content_type_input: "markdown", markdown_source: "# hi"
         )
@@ -294,6 +297,27 @@ module Collavre
 
         assert_includes creative.reload.files.map(&:blob_id), blob.id
         assert ActiveStorage::Blob.exists?(blob.id)
+      end
+
+      test "rich-editor removing an embedded media node detaches its blob" do
+        # The rich (Lexical) editor embeds an upload as a raw <img> blob URL in
+        # markdown_source. When the user deletes that node, the blob is gone from
+        # the re-rendered description but still attached — and the editor's purge
+        # DELETE can't compensate while the attachment exists. It was referenced
+        # in the prior description, so reconcile must detach (and purge) it.
+        blob = make_blob
+        with_image = %(text\n\n<img src="#{asset_url(blob)}" alt="a.png">)
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: with_image
+        )
+        assert_includes creative.reload.files.map(&:blob_id), blob.id
+
+        perform_enqueued_jobs do
+          creative.update!(content_type_input: "markdown", markdown_editor: "rich", markdown_source: "text")
+        end
+
+        refute_includes creative.reload.files.map(&:blob_id), blob.id
+        refute ActiveStorage::Blob.exists?(blob.id)
       end
 
       # --- Sanitizer: media tags ---
