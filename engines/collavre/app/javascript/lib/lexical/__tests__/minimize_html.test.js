@@ -20,7 +20,12 @@ const theme = {
   paragraph: "lexical-paragraph",
   quote: "lexical-quote",
   heading: { h1: "lexical-heading-h1", h2: "lexical-heading-h2", h3: "lexical-heading-h3" },
-  list: { ul: "lexical-list-ul", ol: "lexical-list-ol", listitem: "lexical-list-item" },
+  list: {
+    ul: "lexical-list-ul",
+    ol: "lexical-list-ol",
+    listitem: "lexical-list-item",
+    nested: { listitem: "lexical-nested-list-item" }
+  },
   code: "lexical-code-block",
   link: "lexical-link",
   text: {
@@ -149,9 +154,11 @@ describe("minimizeContentHtml", () => {
 
   test("nested list (Tab indent) preserves the nested <ul> structure", () => {
     const out = minimize(serialize("<ul><li>a<ul><li>b</li></ul></li></ul>"))
+    // The wrapper <li> carries `lexical-nested-list-item` so CSS can suppress
+    // its (empty) bullet — otherwise a stray marker renders above the sub-list.
     expect(out).toBe(
       '<ul class="lexical-list-ul"><li value="1" class="lexical-list-item">a</li>' +
-      '<li value="2" class="lexical-list-item">' +
+      '<li value="2" class="lexical-list-item lexical-nested-list-item">' +
       '<ul class="lexical-list-ul"><li value="1" class="lexical-list-item">b</li></ul>' +
       "</li></ul>"
     )

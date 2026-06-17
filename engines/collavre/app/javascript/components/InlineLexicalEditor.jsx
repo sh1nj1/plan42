@@ -74,7 +74,11 @@ const theme = {
   list: {
     ul: "lexical-list-ul",
     ol: "lexical-list-ol",
-    listitem: "lexical-list-item"
+    listitem: "lexical-list-item",
+    // Tag the wrapper <li> that only holds a nested list so its bullet marker
+    // can be hidden — without this Lexical reuses the plain item class and the
+    // empty wrapper renders a stray bullet above the indented sub-list.
+    nested: { listitem: "lexical-nested-list-item" }
   },
   code: "lexical-code-block",
   codeHighlight: {
