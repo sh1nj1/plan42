@@ -372,10 +372,38 @@
 
 .lexical-code-block {
   display: block;
-  background: var(--color-code-bg);
-  border: 1px solid var(--border-color);
+  /*
+   * The persisted creative is rendered server-side by commonmarker, whose
+   * default syntect highlighter bakes the `base16-ocean.dark` theme into the
+   * code block as inline styles (dark `#2b303b` background, fixed token hues,
+   * regardless of light/dark mode). The editor tokenizes with a different
+   * engine (Prism via @lexical/code), so the only way to stop the colors from
+   * jumping when you leave edit mode is to paint the editor block with that
+   * exact same palette. These `--code-ocean-*` vars mirror syntect's
+   * base16-ocean.dark output and are the single source the token rules below
+   * read from. (A theme-aware unification would instead switch the renderer
+   * off syntect — bigger change, tracked separately.)
+   */
+  /* stylelint-disable color-no-hex --
+     These are not theme colors but the literal base16-ocean.dark values syntect
+     emits inline into the rendered creative; they must match byte-for-byte, so a
+     design token would be wrong here. Defined once as the single source the
+     token rules below read from (same approach as --syntax-* in code_highlight.css). */
+  --code-ocean-bg: #2b303b;
+  --code-ocean-fg: #c0c5ce;
+  --code-ocean-comment: #65737e;
+  --code-ocean-red: #bf616a;
+  --code-ocean-orange: #d08770;
+  --code-ocean-yellow: #ebcb8b;
+  --code-ocean-green: #a3be8c;
+  --code-ocean-cyan: #96b5b4;
+  --code-ocean-blue: #8fa1b3;
+  --code-ocean-purple: #b48ead;
+  /* stylelint-enable color-no-hex */
+  background: var(--code-ocean-bg);
+  border: 1px solid var(--code-ocean-bg);
   border-radius: var(--radius-2);
-  color: var(--color-code-text);
+  color: var(--code-ocean-fg);
   font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.9em;
   line-height: 1.5;
@@ -398,96 +426,68 @@
 /*
  * Code block syntax highlighting inside the Lexical editor.
  *
- * The editor tokenizes code with Prism (@lexical/code) and tags each token
- * with a `.lexical-token-*` class, while the persisted/rendered creative is
- * highlighted with highlight.js (`.hljs-*`, see code_highlight.css). To keep
- * the editing view identical to the rendered view, both surfaces share the
- * single GitHub-style palette defined as `--syntax-*` in code_highlight.css
- * (loaded alongside this sheet via collavre_stylesheets). Each Prism token
- * below maps to the same `--syntax-*` color its highlight.js equivalent uses,
- * so light/dark/auto themes stay in sync with one source of truth — no
- * duplicate `--lexical-token-*` variables to drift.
+ * Each Prism `.lexical-token-*` class maps to the base16-ocean.dark hue that
+ * syntect assigns the equivalent scope, so the editor block matches the
+ * server-rendered creative. syntect doesn't italicize comments, so neither do
+ * we. Cross-engine tokenization isn't identical token-for-token, but the
+ * shared palette + dark background removes the visible color jump.
  */
 .lexical-token-comment,
 .lexical-token-prolog,
 .lexical-token-doctype,
 .lexical-token-cdata {
-  color: var(--syntax-comment);
-  font-style: italic;
+  color: var(--code-ocean-comment);
 }
 
 .lexical-token-keyword,
 .lexical-token-atrule,
-.lexical-token-namespace {
-  color: var(--syntax-keyword);
+.lexical-token-namespace,
+.lexical-token-important {
+  color: var(--code-ocean-purple);
 }
 
 .lexical-token-string,
 .lexical-token-char,
-.lexical-token-url {
-  color: var(--syntax-string);
+.lexical-token-url,
+.lexical-token-symbol,
+.lexical-token-inserted {
+  color: var(--code-ocean-green);
 }
 
 .lexical-token-number,
 .lexical-token-boolean,
 .lexical-token-constant,
-.lexical-token-symbol {
-  color: var(--syntax-number);
-}
-
-.lexical-token-builtin {
-  color: var(--syntax-builtin);
-}
-
-.lexical-token-function,
-.lexical-token-class,
-.lexical-token-classname {
-  color: var(--syntax-title);
-}
-
+.lexical-token-builtin,
 .lexical-token-attr,
 .lexical-token-property {
-  color: var(--syntax-attr);
+  color: var(--code-ocean-orange);
 }
 
-.lexical-token-variable {
-  color: var(--syntax-variable);
+.lexical-token-class,
+.lexical-token-classname {
+  color: var(--code-ocean-yellow);
+}
+
+.lexical-token-function {
+  color: var(--code-ocean-blue);
+}
+
+.lexical-token-variable,
+.lexical-token-tag,
+.lexical-token-selector,
+.lexical-token-deleted {
+  color: var(--code-ocean-red);
 }
 
 .lexical-token-regex {
-  color: var(--syntax-regexp);
+  color: var(--code-ocean-cyan);
 }
 
-.lexical-token-tag {
-  color: var(--syntax-tag);
-}
-
-.lexical-token-selector {
-  color: var(--syntax-selector);
-}
-
-/* highlight.js renders `.hljs-meta` (CSS !important) with color only, no
-   bold — match that so the editor doesn't diverge from the rendered view. */
-.lexical-token-important {
-  color: var(--syntax-meta);
-}
-
-/* highlight.js leaves operators and punctuation at the default code color;
-   match that here instead of the old custom operator hue. */
+/* syntect leaves operators and punctuation at the default foreground. */
 .lexical-token-punctuation,
 .lexical-token-operator,
 .lexical-token-entity {
-  color: var(--color-code-text);
-}
-
-.lexical-token-deleted {
-  color: var(--syntax-deletion-text);
-  background: var(--syntax-deletion-bg);
-}
-
-.lexical-token-inserted {
-  color: var(--syntax-addition-text);
-  background: var(--syntax-addition-bg);
+  color: var(--code-ocean-fg);
 }
 
 .lexical-attachment {
