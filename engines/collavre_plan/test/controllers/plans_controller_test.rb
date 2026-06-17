@@ -305,6 +305,38 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_equal creative.reload.updated_at.to_date.to_s, entry["target_date"], "Marker should sit at updated_at, not created_at"
   end
 
+  test "registration markers exclude plan-anchor creatives" do
+    # Plan#start_date= overwrites the anchor creative's created_at, so its
+    # created_at is plan-managed (it already renders as a plan bar), not a true
+    # registration — it must not also show a registration marker.
+    creative = Creative.create!(user: @owner, description: "Plan anchor creative")
+    plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
+    plan.start_date = Date.current - 3
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "registration_#{creative.id}",
+                        "Plan-anchor creatives must not show a registration marker"
+  end
+
+  test "modification markers exclude plan-anchor creatives" do
+    # Backdating start_date moves created_at into the past while update_column
+    # leaves updated_at stale, so updated_at > created_at falsely looks "modified".
+    # Excluding plan-anchor creatives prevents that false marker.
+    creative = Creative.create!(user: @owner, description: "Plan anchor creative")
+    plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
+    plan.start_date = Date.current - 3
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{creative.id}",
+                        "Plan-anchor creatives must not show a false modification marker"
+  end
+
   test "should return stripped html in json" do
     creative = creatives(:tshirt)
     creative.update!(description: "<b>T-Shirt</b> <i>Design</i>")

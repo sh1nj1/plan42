@@ -145,9 +145,19 @@ module CollavrePlan
       Collavre::Creative.active
                         .where(user_id: Current.user.id)
                         .where(created_at: start_date.beginning_of_day..end_date.end_of_day)
+                        .where.not(id: plan_anchor_creative_ids)
                         .order(created_at: :desc)
                         .limit(REGISTRATION_LIMIT)
                         .to_a
+    end
+
+    # Plan#start_date= overwrites the anchor creative's created_at (via
+    # update_column, which also leaves updated_at stale), so for these creatives
+    # created_at/updated_at no longer mean "registered"/"modified". They already
+    # render as plan bars, so exclude them from both chips to avoid mislabeled
+    # markers (e.g. a backdated start makes updated_at > created_at look "modified").
+    def plan_anchor_creative_ids
+      Collavre::Plan.where.not(creative_id: nil).select(:creative_id)
     end
 
     def registration_json(creative)
@@ -172,6 +182,7 @@ module CollavrePlan
                         .where(user_id: Current.user.id)
                         .where(updated_at: start_date.beginning_of_day..end_date.end_of_day)
                         .where("creatives.updated_at > creatives.created_at")
+                        .where.not(id: plan_anchor_creative_ids)
                         .order(updated_at: :desc)
                         .limit(MODIFICATION_LIMIT)
                         .to_a
