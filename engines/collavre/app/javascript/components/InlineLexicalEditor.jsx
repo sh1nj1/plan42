@@ -21,6 +21,9 @@ import {
 } from "@lexical/code"
 import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
+import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -114,7 +117,18 @@ const theme = {
     underline: "lexical-text-underline",
     strikethrough: "lexical-text-strike",
     code: "lexical-text-code"
-  }
+  },
+  table: "lexical-table",
+  tableScrollableWrapper: "lexical-table-wrapper",
+  tableRow: "lexical-table-row",
+  tableCell: "lexical-table-cell",
+  tableCellHeader: "lexical-table-cell-header",
+  tableSelected: "lexical-table-selected",
+  tableSelection: "lexical-table-selection",
+  tableAddRows: "lexical-table-add-rows",
+  tableAddColumns: "lexical-table-add-columns",
+  tableCellActionButtonContainer: "lexical-table-cell-action-container",
+  tableCellActionButton: "lexical-table-cell-action-button"
 }
 
 function Placeholder({ text }) {
@@ -476,6 +490,14 @@ function Toolbar() {
     [editor]
   )
 
+  const insertTable = useCallback(() => {
+    editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+      columns: "3",
+      rows: "3",
+      includeHeaders: true
+    })
+  }, [editor])
+
   const toggleLink = useCallback(() => {
     let hasLink = false
     let selectionText = ""
@@ -714,6 +736,14 @@ function Toolbar() {
         title="Numbered list">
         1.
       </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={insertTable}
+        title="Insert table"
+        aria-label="Insert table">
+        ▦
+      </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
         type="button"
@@ -903,6 +933,8 @@ function EditorInner({
         <HistoryPlugin />
         <CodeHighlightingPlugin />
         <ListPlugin />
+        <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
+        <TableHoverActionsPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
         <OnChangePlugin
@@ -1009,7 +1041,10 @@ export default function InlineLexicalEditor({
         AutoLinkNode,
         ImageNode,
         AttachmentNode,
-        VideoNode
+        VideoNode,
+        TableNode,
+        TableRowNode,
+        TableCellNode
       ],
       onError(error) {
         throw error
