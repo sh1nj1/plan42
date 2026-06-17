@@ -5,6 +5,17 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "title row emits markdown editor flag so cached rich rows reopen in Lexical" do
+    rich = Creative.create!(
+      user: users(:one), content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"
+    )
+
+    get creatives_path(id: rich.id)
+
+    assert_response :success
+    assert_match(/data-markdown-editor="rich"/, response.body)
+  end
+
   test "unconvert moves creative tree into parent comment" do
     creative = creatives(:unconvert_target)
     parent = creative.parent

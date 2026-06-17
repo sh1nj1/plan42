@@ -18,6 +18,22 @@ module Collavre
       assert_equal "", MarkdownConverter.markdown_to_html(nil)
     end
 
+    test "markdown_to_html renders a single newline as a hard break" do
+      # Mirrors the JS renderer (marked breaks:true): consecutive rich-editor
+      # lines are stored one-per-line and must render as <br>, not be joined.
+      html = MarkdownConverter.markdown_to_html("abc\ndef")
+      assert_includes html, "<br"
+      assert_includes html, "abc"
+      assert_includes html, "def"
+      # Stays a single paragraph (line break, not a paragraph break).
+      assert_equal 1, html.scan("<p>").length
+    end
+
+    test "markdown_to_html keeps a blank line as a paragraph break" do
+      html = MarkdownConverter.markdown_to_html("abc\n\ndef")
+      assert_equal 2, html.scan("<p>").length
+    end
+
     test "html_to_markdown handles nil" do
       assert_equal "", MarkdownConverter.html_to_markdown(nil)
     end

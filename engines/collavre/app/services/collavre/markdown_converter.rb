@@ -48,10 +48,13 @@ module Collavre
           source
         end
 
-        # Render with commonmarker (GFM extensions: table, strikethrough, autolink, tasklist, tagfilter)
+        # Render with commonmarker (GFM extensions: table, strikethrough, autolink, tasklist, tagfilter).
+        # hardbreaks: a single newline becomes <br>, mirroring the JS renderer (marked breaks:true)
+        # and the canonical markdown_source, which stores consecutive rich-editor lines one-per-line
+        # rather than separated by a blank line.
         html = Commonmarker.to_html(input, options: {
           parse: { smart: true },
-          render: { unsafe: true },
+          render: { unsafe: true, hardbreaks: true },
           extension: { table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true }
         })
 
