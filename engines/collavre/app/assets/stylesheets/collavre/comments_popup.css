@@ -1996,3 +1996,108 @@ body.chat-fullscreen {
 li:hover .topic-create-option {
     text-decoration: underline;
 }
+
+/* ── Inline typo correction (volatile overlay; never serialized) ───────────── */
+/* The backdrop mirrors the textarea text exactly and paints <mark> spans behind
+   it. The textarea sits on top with a transparent background so the highlight
+   underlines show through around the real (opaque) glyphs. */
+.typo-input-wrap {
+    position: relative;
+    display: block;
+}
+
+.typo-input-wrap > textarea {
+    position: relative;
+    background: transparent;
+    z-index: 1;
+}
+
+.typo-backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.typo-highlights {
+    margin: 0;
+    color: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+/* Two states, distinguished by BOTH shape and colour (colour-blind safe). */
+.typo-mark {
+    background: transparent;
+    color: transparent;
+    pointer-events: auto;
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+/* Auto-applied (>= threshold): faint straight underline — resolved, dim. */
+.typo-mark-applied {
+    text-decoration: underline solid var(--color-link, #185ABC);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    opacity: 0.55;
+}
+
+/* Candidate (< threshold): wavy dotted amber underline — needs a decision. */
+.typo-mark-candidate {
+    text-decoration: underline wavy var(--color-warning, #f59e0b);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+
+/* Creatable combobox reusing CommonPopup positioning. */
+.typo-popup {
+    position: absolute;
+    z-index: 100000;
+    min-width: 180px;
+    max-width: 320px;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+    padding: 6px;
+}
+
+.typo-popup-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 6px;
+    font: inherit;
+    margin-bottom: 6px;
+}
+
+.typo-popup-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.typo-popup-list .common-popup-item {
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.typo-popup-list .common-popup-item.active,
+.typo-popup-list .common-popup-item:hover {
+    background: var(--hover-bg, #f1f5f9);
+}
+
+.typo-popup-role {
+    color: var(--text-secondary, #6b7280);
+    font-size: 0.85em;
+}

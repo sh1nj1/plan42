@@ -5,6 +5,7 @@
 import "./modules/creatives"
 import "./modules/creative_row_swipe"
 import "./modules/mention_menu"
+import "./modules/typo_corrector"
 import "./modules/command_menu"
 import "./modules/modal_dialog"
 import "./modules/export_to_markdown"
