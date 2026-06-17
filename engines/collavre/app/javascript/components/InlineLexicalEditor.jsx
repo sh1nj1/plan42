@@ -126,9 +126,7 @@ const theme = {
   tableSelected: "lexical-table-selected",
   tableSelection: "lexical-table-selection",
   tableAddRows: "lexical-table-add-rows",
-  tableAddColumns: "lexical-table-add-columns",
-  tableCellActionButtonContainer: "lexical-table-cell-action-container",
-  tableCellActionButton: "lexical-table-cell-action-button"
+  tableAddColumns: "lexical-table-add-columns"
 }
 
 function Placeholder({ text }) {
