@@ -187,6 +187,18 @@ module CollavrePlan
     # against the earliest plan's created_at for anchors; COALESCE falls back to
     # created_at for ordinary creatives. This surfaces genuine post-setup edits to
     # planned creatives while still suppressing the setup-only false positive.
+    #
+    # Accepted tradeoff: an edit made *before* the creative was planned (a real
+    # updated_at between created_at and the plan label's created_at) is not
+    # surfaced for anchors. This is unavoidable here, not an oversight: the
+    # setup-only false positive (created_at backdated, never content-edited) and a
+    # genuine pre-plan edit are indistinguishable from these timestamps alone --
+    # both yield created_at < updated_at < plan_label.created_at, and the only
+    # discriminator (whether created_at was rewritten) is recorded nowhere. With
+    # created_at mutable and no separate edit-tracking column (intentionally, to
+    # avoid a migration), we prioritize the owner's stated requirement -- never
+    # show an unmodified creative as modified -- over recall of pre-plan edits.
+    # Surfacing those would require a real immutable edit signal (a migration).
     def modification_creatives(start_date, end_date)
       Collavre::Creative.active
                         .where(user_id: Current.user.id)
