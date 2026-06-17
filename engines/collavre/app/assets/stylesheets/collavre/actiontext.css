@@ -329,25 +329,36 @@
   margin: 0.35rem 0;
 }
 
-.lexical-link {
+/* Content links only — the clickable creative-row anchor is an ancestor of
+   .creative-content, not a descendant, so this never restyles the row wrapper.
+   a[download] is excluded: attachment chips carry their own .lexical-attachment style. */
+.lexical-link,
+.creative-content a:not([download]) {
   color: var(--color-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
 
-.lexical-text-bold {
+.lexical-text-bold,
+.creative-content strong,
+.creative-content b {
   font-weight: var(--weight-6);
 }
 
-.lexical-text-italic {
+.lexical-text-italic,
+.creative-content em,
+.creative-content i {
   font-style: italic;
 }
 
-.lexical-text-underline {
+.lexical-text-underline,
+.creative-content u {
   text-decoration: underline;
 }
 
-.lexical-text-strike {
+.lexical-text-strike,
+.creative-content s,
+.creative-content del {
   text-decoration: line-through;
 }
 
