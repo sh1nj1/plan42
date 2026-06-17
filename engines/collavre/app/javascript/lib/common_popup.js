@@ -15,6 +15,14 @@ export default class CommonPopup {
   showAt(anchorRect) {
     if (!this.element) return
 
+    // Re-opening while already open (e.g. clicking the same typo mark twice):
+    // a listener from the previous open is still live, so the opening mousedown
+    // would bubble to it and hide() the popup right after we set display:block,
+    // leaving it stuck (the rAF below only re-flips visibility, not display).
+    // Drop stale listeners first so the opening event can't self-close it.
+    document.removeEventListener('mousedown', this.handleOutsideClick)
+    document.removeEventListener('touchstart', this.handleOutsideClick)
+
     this.element.style.display = 'block'
     this.element.style.visibility = 'hidden'
 

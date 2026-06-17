@@ -196,6 +196,37 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(tc.popupEl.style.display).toBe('block')
   })
 
+  test('a mark re-opens the popup on a second click while it is still open', () => {
+    // Regression: showAt registers the document outside-click listener one frame
+    // after opening. Clicking the (still-open) mark again sends a mousedown that
+    // bubbles to that live listener, which hid the popup — and showAt's fresh rAF
+    // only re-flips visibility, never display, so the popup stayed display:none
+    // and every later click repeated the cycle (permanently dead after click 1).
+    // Use queued rAF so the listener registers AFTER the opening mousedown, as in
+    // a real browser.
+    const rafs = []
+    const realRaf = window.requestAnimationFrame
+    window.requestAnimationFrame = (cb) => { rafs.push(cb); return rafs.length }
+    const flush = () => rafs.splice(0).forEach((cb) => cb())
+    try {
+      const { textarea, tc } = mount('teh cat')
+      tc._applyResult({
+        edits: [{ original: 'teh', suggestion: 'the', confidence: 0.4 }],
+        threshold: 80,
+      })
+      const mark = () => textarea.parentNode.querySelector('.typo-mark-candidate')
+      mark().dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      flush() // showAt's rAF registers the outside-click listener
+      expect(tc.popup.isOpen()).toBe(true)
+
+      mark().dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      flush()
+      expect(tc.popup.isOpen()).toBe(true)
+    } finally {
+      window.requestAnimationFrame = realRaf
+    }
+  })
+
   test('opening the popup focuses and selects the input (desktop) for instant replace', () => {
     // showAt keeps the popup visibility:hidden until its own rAF, and a hidden
     // element is not focusable — so focus/select are deferred into a rAF that
