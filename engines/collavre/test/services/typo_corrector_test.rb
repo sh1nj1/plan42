@@ -137,6 +137,22 @@ module Collavre
       assert_empty correct("teh dog", "not json at all")
     end
 
+    test "does not log the raw model response on a parse error (draft text could be echoed)" do
+      # A failing model can echo the user's unsubmitted draft in its reply; logging
+      # it would leak private text to application logs despite log_interactions: false.
+      draft = "my secret unsubmitted draft text"
+      logged = []
+      fake_logger = Object.new
+      fake_logger.define_singleton_method(:warn) { |msg| logged << msg }
+
+      Rails.stub :logger, fake_logger do
+        assert_empty correct(draft, "garbage #{draft} not json")
+      end
+
+      assert_equal 1, logged.size
+      refute logged.any? { |msg| msg.include?(draft) }, "parse-error log must not contain the draft text"
+    end
+
     test "skips edits inside an HTML/span-style markup region" do
       text = %(<span style="color:recieve">x</span>)
       response = { edits: [ { original: "recieve", suggestion: "receive", confidence: 0.9 } ] }.to_json

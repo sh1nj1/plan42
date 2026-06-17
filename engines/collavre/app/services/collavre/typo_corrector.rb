@@ -71,7 +71,9 @@ module Collavre
       edits = parsed.is_a?(Hash) ? parsed["edits"] : parsed
       edits.is_a?(Array) ? edits : []
     rescue JSON::ParserError => e
-      Rails.logger.warn("[TypoCorrector] JSON parse error: #{e.message}. Content: #{content.to_s.truncate(200)}")
+      # Never log the raw response: it can echo the user's unsubmitted draft,
+      # which would leak private text to application logs despite log_interactions: false.
+      Rails.logger.warn("[TypoCorrector] JSON parse error: #{e.message} (#{content.to_s.length} chars)")
       []
     end
 
