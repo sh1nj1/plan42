@@ -185,6 +185,177 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "registration markers are excluded by default" do
+    creative = Creative.create!(user: @owner, description: "Registered creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json)
+
+    assert_response :success
+    assert_not_includes json_ids, "registration_#{creative.id}", "Registrations should be off by default"
+  end
+
+  test "registration markers are included when chip is enabled" do
+    creative = Creative.create!(user: @owner, description: "Registered creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_includes json_ids, "registration_#{creative.id}", "Registrations should appear when requested"
+  end
+
+  test "registration markers are owner-scoped" do
+    others_creative = Creative.create!(user: @collaborator, description: "Other user creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "registration_#{others_creative.id}", "Should not show other users' registrations"
+  end
+
+  test "registration markers include day-edge creatives in the user's time zone" do
+    @owner.update!(timezone: "Asia/Seoul")
+    edge_creative = nil
+    Time.use_zone("Asia/Seoul") do
+      window_start = Date.current - 30
+      edge_creative = Creative.create!(user: @owner, description: "Edge creative")
+      # Local midnight on the window-start date stores as the previous UTC day;
+      # the old DATE(created_at) cast dropped it, the local range keeps it.
+      edge_creative.update_column(:created_at, window_start.beginning_of_day)
+    end
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_includes json_ids, "registration_#{edge_creative.id}",
+                    "Day-edge creative at local midnight should be included"
+  end
+
+  test "registration marker uses localized fallback when description strips to blank" do
+    # HTML-only description (e.g. attachment markup) passes presence but strips to "".
+    creative = Creative.create!(user: @owner, description: "<p></p>")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    entry = JSON.parse(response.body).find { |i| i["id"] == "registration_#{creative.id}" }
+    assert_not_nil entry, "Blank-description creative should still render a marker"
+    assert_equal "Creative ##{creative.id}", entry["name"]
+  end
+
+  test "modification markers are excluded by default" do
+    creative = Creative.create!(user: @owner, description: "Modified creative")
+    creative.update_column(:updated_at, creative.created_at + 1.day)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{creative.id}", "Modifications should be off by default"
+  end
+
+  test "modification markers are included when chip is enabled" do
+    creative = Creative.create!(user: @owner, description: "Modified creative")
+    creative.update_column(:updated_at, creative.created_at + 1.day)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_includes json_ids, "modification_#{creative.id}", "Modifications should appear when requested"
+  end
+
+  test "modification markers exclude never-modified creatives" do
+    # updated_at == created_at (just created, never touched) — not a modification.
+    creative = Creative.create!(user: @owner, description: "Untouched creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{creative.id}", "Never-modified creatives should not appear"
+  end
+
+  test "modification markers are owner-scoped" do
+    others_creative = Creative.create!(user: @collaborator, description: "Other user creative")
+    others_creative.update_column(:updated_at, others_creative.created_at + 1.day)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{others_creative.id}", "Should not show other users' modifications"
+  end
+
+  test "modification marker is drawn at updated_at" do
+    creative = Creative.create!(user: @owner, description: "Modified creative")
+    creative.update_column(:created_at, Date.current - 10)
+    creative.update_column(:updated_at, Time.current)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    entry = JSON.parse(response.body).find { |i| i["id"] == "modification_#{creative.id}" }
+    assert_not_nil entry, "Modified creative should render a marker"
+    assert_equal creative.reload.updated_at.to_date.to_s, entry["target_date"], "Marker should sit at updated_at, not created_at"
+  end
+
+  test "registration markers exclude plan-anchor creatives" do
+    # Plan#start_date= overwrites the anchor creative's created_at, so its
+    # created_at is plan-managed (it already renders as a plan bar), not a true
+    # registration — it must not also show a registration marker.
+    creative = Creative.create!(user: @owner, description: "Plan anchor creative")
+    plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
+    plan.start_date = Date.current - 3
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "registration_#{creative.id}",
+                        "Plan-anchor creatives must not show a registration marker"
+  end
+
+  test "modification markers exclude plan-anchor creatives untouched since setup" do
+    # Backdating start_date moves created_at into the past while update_column
+    # leaves updated_at at the creation time, so updated_at > created_at falsely
+    # looks "modified". The plan label's created_at is after the creative was
+    # saved, so updated_at <= plan.created_at correctly reads as "not edited".
+    creative = Creative.create!(user: @owner, description: "Plan anchor creative")
+    plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
+    plan.start_date = Date.current - 3
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{creative.id}",
+                        "Plan-anchor creatives untouched since setup must not show a false modification marker"
+  end
+
+  test "modification markers include plan-anchor creatives edited after plan setup" do
+    # A genuine edit after the plan was set up bumps updated_at past the plan
+    # label's immutable created_at, so it must surface as a real modification
+    # (the plan bar sits at start_date, not the edit date, so excluding it would
+    # lose the marker entirely).
+    creative = Creative.create!(user: @owner, description: "Plan anchor creative")
+    plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
+    plan.start_date = Date.current - 3
+    creative.update_column(:updated_at, plan.reload.created_at + 1.hour)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_includes json_ids, "modification_#{creative.id}",
+                    "Plan-anchor creatives edited after setup should show a modification marker"
+  end
+
   test "should return stripped html in json" do
     creative = creatives(:tshirt)
     creative.update!(description: "<b>T-Shirt</b> <i>Design</i>")
