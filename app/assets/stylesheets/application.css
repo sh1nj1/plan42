@@ -384,11 +384,12 @@ button {
 }
 
 .timeline-chip {
-    /* Inactive chips need a visible surface so the off-state still reads as a
-       toggle (transparent made it blend into the timeline background). */
+    /* Inactive chips sit on a neutral surface (not transparent) so the off-state
+       still reads as a toggle against the timeline background, without looking
+       active. */
     border: 1px solid var(--color-border);
-    background: var(--color-chip-bg);
-    color: var(--color-muted);
+    background: var(--surface-secondary);
+    color: var(--color-text);
     border-radius: var(--radius-round);
     padding: 0.1em 0.7em;
     font-size: 0.75em;
