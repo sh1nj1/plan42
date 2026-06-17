@@ -370,11 +370,17 @@ export class TypoCorrector {
     this.popupInput.value = edit.currentValue
     this._refreshPopupItems('')
     this.popup.showAt(anchorEl.getBoundingClientRect())
-    // Desktop: select-all so a keystroke replaces. Mobile keyboard is left to an
-    // explicit tap on the input (no auto-focus) — chip taps are the primary path.
+    // Desktop: focus + select-all so a keystroke immediately replaces the word.
+    // Mobile keyboard is left to an explicit tap on the input (no auto-focus) —
+    // chip taps are the primary path.
+    // showAt() keeps the popup visibility:hidden until its own rAF (so it can
+    // position off-screen first); focus()/select() are no-ops while hidden, so
+    // defer them into a rAF that runs after showAt's (FIFO, registered later).
     if (!this._isCoarsePointer()) {
-      this.popupInput.focus()
-      this.popupInput.select()
+      requestAnimationFrame(() => {
+        this.popupInput.focus()
+        this.popupInput.select()
+      })
     }
   }
 

@@ -196,6 +196,27 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(tc.popupEl.style.display).toBe('block')
   })
 
+  test('opening the popup focuses and selects the input (desktop) for instant replace', () => {
+    // showAt keeps the popup visibility:hidden until its own rAF, and a hidden
+    // element is not focusable — so focus/select are deferred into a rAF that
+    // runs after showAt's. Flush rAF synchronously to exercise that path.
+    const realRaf = window.requestAnimationFrame
+    window.requestAnimationFrame = (cb) => { cb(); return 0 }
+    try {
+      const { textarea, tc } = mount('teh cat')
+      tc._applyResult({
+        edits: [{ original: 'teh', suggestion: 'the', confidence: 0.4 }],
+        threshold: 80,
+      })
+      const mark = textarea.parentNode.querySelector('.typo-mark-candidate')
+      mark.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      expect(document.activeElement).toBe(tc.popupInput)
+      expect(tc.popupInput.value).toBe('teh') // current word, pre-filled
+    } finally {
+      window.requestAnimationFrame = realRaf
+    }
+  })
+
   test('popup input carries a localized aria-label', () => {
     document.body.innerHTML = '<form><textarea></textarea></form>'
     const textarea = document.querySelector('textarea')
