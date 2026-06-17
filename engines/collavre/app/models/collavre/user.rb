@@ -228,6 +228,11 @@ module Collavre
     validates :timezone,
               inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
               allow_nil: true
+    # Column is NOT NULL; clearing the profile field (or a crafted PATCH) casts to
+    # nil and would raise a DB error on save. Validate so the form re-renders.
+    validates :typo_correction_threshold,
+              presence: true,
+              numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
     generates_token_for :email_verification, expires_in: 1.day do
       email

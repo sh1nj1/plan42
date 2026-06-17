@@ -1998,9 +1998,13 @@ li:hover .topic-create-option {
 }
 
 /* ── Inline typo correction (volatile overlay; never serialized) ───────────── */
-/* The backdrop mirrors the textarea text exactly and paints <mark> spans behind
-   it. The textarea sits on top with a transparent background so the highlight
-   underlines show through around the real (opaque) glyphs. */
+/* The backdrop mirrors the textarea text exactly and paints <mark> spans over
+   it. The backdrop sits ON TOP of the textarea (higher z-index) but is
+   pointer-events:none, so clicks pass through to the textarea everywhere EXCEPT
+   over a <mark> (pointer-events:auto) — that's what makes the marks clickable.
+   If the textarea were on top, the browser would hit-test it first and the mark
+   click handlers would never fire. The backdrop's text is transparent, so the
+   textarea's real (opaque) glyphs show through and only the underlines paint. */
 .typo-input-wrap {
     position: relative;
     display: block;
@@ -2009,7 +2013,7 @@ li:hover .topic-create-option {
 .typo-input-wrap > textarea {
     position: relative;
     background: transparent;
-    z-index: 1;
+    z-index: 0;
 }
 
 .typo-backdrop {
@@ -2017,7 +2021,7 @@ li:hover .topic-create-option {
     inset: 0;
     overflow: hidden;
     pointer-events: none;
-    z-index: 0;
+    z-index: 1;
 }
 
 .typo-highlights {
@@ -2039,7 +2043,7 @@ li:hover .topic-create-option {
 
 /* Auto-applied (>= threshold): faint straight underline — resolved, dim. */
 .typo-mark-applied {
-    text-decoration: underline solid var(--color-link, #185ABC);
+    text-decoration: underline solid var(--color-link);
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
     opacity: 0.55;
@@ -2047,7 +2051,7 @@ li:hover .topic-create-option {
 
 /* Candidate (< threshold): wavy dotted amber underline — needs a decision. */
 .typo-mark-candidate {
-    text-decoration: underline wavy var(--color-warning, #f59e0b);
+    text-decoration: underline wavy var(--color-warning);
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
 }
@@ -2058,8 +2062,8 @@ li:hover .topic-create-option {
     z-index: 100000;
     min-width: 180px;
     max-width: 320px;
-    background: var(--surface, #fff);
-    border: 1px solid var(--border, #d1d5db);
+    background: var(--surface-section);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
     padding: 6px;
@@ -2069,7 +2073,7 @@ li:hover .topic-create-option {
     width: 100%;
     box-sizing: border-box;
     padding: 6px 8px;
-    border: 1px solid var(--border, #d1d5db);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     font: inherit;
     margin-bottom: 6px;
@@ -2094,10 +2098,10 @@ li:hover .topic-create-option {
 
 .typo-popup-list .common-popup-item.active,
 .typo-popup-list .common-popup-item:hover {
-    background: var(--hover-bg, #f1f5f9);
+    background: var(--surface-hover);
 }
 
 .typo-popup-role {
-    color: var(--text-secondary, #6b7280);
+    color: var(--text-muted);
     font-size: 0.85em;
 }

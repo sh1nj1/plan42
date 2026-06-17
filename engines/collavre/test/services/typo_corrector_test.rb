@@ -87,6 +87,26 @@ module Collavre
       assert_equal "teh", text[edits.first["offset"], "teh".length]
     end
 
+    test "emits the offset in UTF-16 code units so JS slicing stays aligned past astral chars" do
+      # An emoji (astral, 2 UTF-16 code units but 1 Ruby char) precedes the typo.
+      # The client slices the string in JS (UTF-16) coordinates, so a raw Ruby
+      # char index would be off by one and fall back to indexOf — which could
+      # bind the skipped occurrence inside the backticks. The valid "teh" is the
+      # plain-text one at Ruby char index 17, i.e. UTF-16 index 18 (emoji = +1).
+      text = "😊 use `teh` then teh"
+      response = { edits: [ { original: "teh", suggestion: "the", confidence: 0.9 } ] }.to_json
+
+      edits = correct(text, response)
+      assert_equal 1, edits.size
+      offset = edits.first["offset"]
+      assert_equal 18, offset, "offset must count the emoji as two UTF-16 code units"
+
+      # Verify against JS string semantics: slice the UTF-16 buffer by code units.
+      utf16 = text.encode(Encoding::UTF_16LE)
+      js_slice = utf16.byteslice(offset * 2, 3 * 2).force_encoding(Encoding::UTF_16LE).encode(Encoding::UTF_8)
+      assert_equal "teh", js_slice
+    end
+
     test "defaults confidence to 0.5 when missing or non-numeric" do
       text = "teh dog"
       response = { edits: [ { original: "teh", suggestion: "the", reason: "spelling" } ] }.to_json

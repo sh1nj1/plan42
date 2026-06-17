@@ -58,7 +58,11 @@ export class TypoCorrector {
     this.location = location
     this.endpoint = endpoint
     this.getVoiceActive = getVoiceActive
-    this.labels = { keep: labels.keep || 'keep', custom: labels.custom || 'custom' }
+    this.labels = {
+      keep: labels.keep || 'keep',
+      custom: labels.custom || 'custom',
+      inputLabel: labels.inputLabel || 'correction',
+    }
 
     this.edits = [] // anchored edits currently painted: {start,end,original,suggestion,confidence,state}
     this.lastPrintableKeydownAt = null
@@ -113,6 +117,15 @@ export class TypoCorrector {
       this.lastInputAt = performance.now()
       this._syncScroll()
       this._repaint() // keep existing highlights aligned with edited text
+      // Our own auto-apply dispatches a synthetic `input` so other listeners
+      // (auto-resize, draft save, send-button state) update. We must NOT let it
+      // re-trigger detection: the corrected text has no typos, so the follow-up
+      // would return [] and wipe the just-applied underline/undo affordance
+      // before the user can click it. Real keystrokes still schedule detection.
+      if (this.suppressNextDetect) {
+        this.suppressNextDetect = false
+        return
+      }
       this._scheduleDetect()
     }
     this._onScroll = () => this._syncScroll()
@@ -232,6 +245,9 @@ export class TypoCorrector {
     if (out !== original) {
       this.textarea.value = out
       this.textarea.setSelectionRange(caret, caret)
+      // Our own mutation: notify other listeners but don't re-run detection (it
+      // would return [] on the now-clean text and wipe these fresh highlights).
+      this.suppressNextDetect = true
       this.textarea.dispatchEvent(new Event('input', { bubbles: true }))
     }
     this._repaint()
@@ -289,11 +305,14 @@ export class TypoCorrector {
     el.className = 'typo-popup common-popup'
     el.style.display = 'none'
     el.innerHTML = `
-      <input type="text" class="typo-popup-input" aria-label="correction" />
+      <input type="text" class="typo-popup-input" />
       <ul class="typo-popup-list" data-popup-list></ul>`
     document.body.appendChild(el)
     this.popupEl = el
     this.popupInput = el.querySelector('.typo-popup-input')
+    // Localized assistive label (set via setAttribute, not innerHTML, so the
+    // value is never parsed as markup).
+    this.popupInput.setAttribute('aria-label', this.labels.inputLabel)
 
     this.popup = new CommonPopup(el, {
       listElement: el.querySelector('.typo-popup-list'),
@@ -382,6 +401,9 @@ export class TypoCorrector {
         edit.start,
         delta,
       )
+      // Our own mutation: don't re-detect (it would overwrite the remaining
+      // candidate highlights we just shifted to keep them aligned).
+      this.suppressNextDetect = true
       this.textarea.dispatchEvent(new Event('input', { bubbles: true }))
     } else {
       // "Keep" — user resolved it; remove the highlight.
@@ -424,7 +446,11 @@ export function initTypoCorrector() {
     settings,
     location: 'chat',
     getVoiceActive: () => voiceButton?.dataset.voiceState === 'listening',
-    labels: { keep: root.dataset.typoKeepLabel, custom: root.dataset.typoCustomLabel },
+    labels: {
+      keep: root.dataset.typoKeepLabel,
+      custom: root.dataset.typoCustomLabel,
+      inputLabel: root.dataset.typoInputLabel,
+    },
   })
 }
 

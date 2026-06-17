@@ -10,13 +10,18 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {})
+    # log_interactions: persist each call to ActivityLog. Default true. Pass false
+    # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
+    # inline typo correction on debounced typing) so private drafts are never
+    # written to server-side activity logs.
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true)
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
       @gateway_url = gateway_url
       @context = context
+      @log_interactions = log_interactions
       @last_input_tokens = 0
       @last_output_tokens = 0
     end
@@ -72,14 +77,16 @@ module Collavre
     ensure
       @last_input_tokens = input_tokens || 0
       @last_output_tokens = output_tokens || 0
-      log_interaction(
-        messages: @conversation&.messages&.to_a || Array(contents),
-        tools: @conversation&.tools&.to_a || [],
-        response_content: response_content.presence,
-        error_message: error_message,
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      )
+      if @log_interactions
+        log_interaction(
+          messages: @conversation&.messages&.to_a || Array(contents),
+          tools: @conversation&.tools&.to_a || [],
+          response_content: response_content.presence,
+          error_message: error_message,
+          input_tokens: input_tokens,
+          output_tokens: output_tokens
+        )
+      end
     end
 
     # Ask a follow-up question using the existing conversation context.

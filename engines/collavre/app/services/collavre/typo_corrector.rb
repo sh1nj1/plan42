@@ -51,7 +51,10 @@ module Collavre
         model: agent&.llm_model.presence || ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3-flash-preview"),
         system_prompt: agent&.system_prompt.presence || FALLBACK_SYSTEM_PROMPT,
         llm_api_key: agent&.llm_api_key,
-        gateway_url: agent&.gateway_url
+        gateway_url: agent&.gateway_url,
+        # Runs on debounced typing of *unsubmitted* text — never persist the draft
+        # to ActivityLog (RubyLlmInteractionLogger writes `messages` there).
+        log_interactions: false
       )
     end
 
@@ -100,7 +103,12 @@ module Collavre
           "suggestion" => suggestion,
           "reason" => edit["reason"].presence || "spelling",
           "confidence" => clamp_confidence(edit["confidence"]),
-          "offset" => offset
+          # Emit the offset in UTF-16 code units, the coordinate space JS string
+          # indexing uses. A Ruby character index would be off by one per astral
+          # character (emoji, etc.) before the typo, so the client's substring
+          # check at `offset` would fail and fall back to indexOf — which can bind
+          # to a protected occurrence the server already excluded.
+          "offset" => utf16_offset(text, offset)
         }
       end
     end
@@ -144,6 +152,14 @@ module Collavre
         pos = idx + 1
       end
       nil
+    end
+
+    # Convert a Ruby character index into a UTF-16 code-unit offset (JS string
+    # coordinates). Characters outside the BMP count as two code units in JS.
+    def utf16_offset(text, char_index)
+      text[0, char_index].to_s.encode("UTF-16LE").bytesize / 2
+    rescue Encoding::UndefinedConversionError, Encoding::InvalidByteSequenceError
+      char_index
     end
 
     # Iterative Levenshtein distance.

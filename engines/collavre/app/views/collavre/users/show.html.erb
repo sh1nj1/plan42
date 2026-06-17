@@ -113,7 +113,7 @@
 
           <div>
             <%= f.label :typo_correction_threshold, t('collavre.users.typo_correction.threshold') %>
-            <%= f.number_field :typo_correction_threshold, in: 0..100, step: 1 %>
+            <%= f.number_field :typo_correction_threshold, in: 0..100, step: 1, required: true %>
             <small class="text-muted"><%= t('collavre.users.typo_correction.threshold_hint') %></small>
           </div>
 

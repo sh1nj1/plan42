@@ -158,4 +158,31 @@ describe('TypoCorrector DOM orchestration', () => {
     tc._chooseValue('teh') // undo back to the original
     expect(textarea.value).toBe('the teh')
   })
+
+  test('auto-apply does not re-trigger detection, so the undo affordance survives (P2)', () => {
+    const { textarea, tc } = mount('잇습니다')
+    let detectCalls = 0
+    tc._scheduleDetect = () => { detectCalls += 1 }
+    tc._applyResult({
+      edits: [{ original: '잇습니다', suggestion: '있습니다', confidence: 0.95 }],
+      threshold: 80,
+    })
+    // The synthetic `input` event from our own auto-apply must be swallowed: a
+    // re-detect would return [] on the now-clean text and wipe the highlight.
+    expect(detectCalls).toBe(0)
+    expect(textarea.parentNode.querySelector('.typo-mark-applied')).not.toBeNull()
+
+    // A *real* keystroke afterwards still schedules detection.
+    textarea.value = '있습니다 어쩌구'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(detectCalls).toBe(1)
+  })
+
+  test('popup input carries a localized aria-label', () => {
+    document.body.innerHTML = '<form><textarea></textarea></form>'
+    const textarea = document.querySelector('textarea')
+    const tc = new TypoCorrector(textarea, { settings, labels: { inputLabel: '교정' } })
+    tc._ensurePopup()
+    expect(tc.popupInput.getAttribute('aria-label')).toBe('교정')
+  })
 })
