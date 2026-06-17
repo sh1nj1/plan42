@@ -69,7 +69,13 @@ module Collavre
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
       error_message = "[#{e.class.name}] #{e.message}"
-      Rails.logger.error "AI Client error: #{error_message}"
+      # When log_interactions is false (inline typo correction runs on the user's
+      # *unsubmitted* draft), the LLM error message can echo the request text. Log
+      # only the error class to app logs so private drafts never leak — matching the
+      # no-log guarantee already enforced on the parse path (TypoCorrector) and the
+      # ActivityLog gate below. error_message stays intact for the gated ensure log
+      # and the streamed yield (which goes back to the same user).
+      Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
       Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
       Rails.logger.debug e.backtrace.join("\n")
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
