@@ -17,7 +17,10 @@ import { $isParagraphNode, $isTextNode } from "lexical"
 // tables to GFM and reconstructs them when markdown is parsed back.
 
 const TABLE_ROW_REG_EXP = /^(?:\|)(.+)(?:\|)\s?$/
-const TABLE_ROW_DIVIDER_REG_EXP = /^(\| ?:?-*:? ?)+\|\s?$/
+// -+ (not -*) is required per cell: a GFM divider must have at least one dash,
+// and the mandatory dash run anchors the surrounding :? colons so they can't both
+// compete for the same character — which would cause exponential backtracking.
+const TABLE_ROW_DIVIDER_REG_EXP = /^(\| ?:?-+:? ?)+\|\s?$/
 
 // Each table cell is (de)serialized with the full transformer list (which
 // includes this TABLE transformer). markdown_serialize.js injects the list once

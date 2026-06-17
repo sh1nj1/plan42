@@ -67,4 +67,23 @@ describe("TABLE markdown transformer", () => {
     const md = "Just a sentence."
     expect(roundTrip(md).trim()).toBe("Just a sentence.")
   })
+
+  it("treats an alignment divider (leading/trailing colons) as a header", () => {
+    const md = "| L | R |\n| :--- | ---: |\n| a | b |"
+    const out = roundTrip(md)
+    // A divider row promotes the prior row to a header, which re-exports as "---".
+    expect(out).toContain("| L | R |")
+    expect(out).toContain("| --- | --- |")
+    expect(out).toContain("| a | b |")
+  })
+
+  it("does not hang on a pathological colon/pipe row (ReDoS guard)", () => {
+    // Before the -+ fix, the divider regex backtracked exponentially on rows of
+    // alternating colons and pipes. This must complete effectively instantly.
+    const evil = "|" + Array(40).fill(":").join("|") + "|x"
+    const start = process.hrtime.bigint()
+    roundTrip(evil)
+    const ms = Number(process.hrtime.bigint() - start) / 1e6
+    expect(ms).toBeLessThan(1000)
+  })
 })
