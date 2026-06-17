@@ -384,19 +384,38 @@ button {
 }
 
 .timeline-chip {
+    /* Inactive chips need a visible surface so the off-state still reads as a
+       toggle (transparent made it blend into the timeline background). */
     border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text);
-    border-radius: 999px;
+    background: var(--color-chip-bg);
+    color: var(--color-muted);
+    border-radius: var(--radius-round);
     padding: 0.1em 0.7em;
     font-size: 0.75em;
     line-height: 1.6;
     cursor: pointer;
+    transition: background-color 0.15s var(--ease-2), color 0.15s var(--ease-2), border-color 0.15s var(--ease-2);
+}
+
+.timeline-chip:hover {
+    background: var(--surface-hover);
+    color: var(--color-text);
+}
+
+.timeline-chip:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 1px;
 }
 
 .timeline-chip--active {
     background: var(--color-link);
     border-color: var(--color-link);
+    color: var(--color-bg);
+}
+
+/* Keep the active chip filled on hover — don't fall back to the inactive surface. */
+.timeline-chip--active:hover {
+    background: var(--color-link);
     color: var(--color-bg);
 }
 
