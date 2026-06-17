@@ -26,6 +26,10 @@ if (!plansTimelineScriptInitialized) {
     var endDate = new Date(container.dataset.endDate || new Date());
     container.dataset.lastLoadedDate = new Date().toISOString().slice(0, 10);
 
+    // "Registered" chip: when on, the timeline also draws creatives at their
+    // created_at. Default-off, so registrations are fetched lazily on toggle.
+    var registrationsEnabled = container.dataset.registrations === 'true';
+
     var scroll = document.createElement('div');
     scroll.className = 'timeline-scroll';
     container.appendChild(scroll);
@@ -66,7 +70,7 @@ if (!plansTimelineScriptInitialized) {
 
     function createPlanBar(plan, idx) {
       var el = document.createElement('div');
-      el.className = 'plan-bar';
+      el.className = plan.type === 'registration' ? 'plan-bar plan-bar--registration' : 'plan-bar';
       el.dataset.path = plan.path;
       el.dataset.id = plan.id;
       var startDateValue = plan.start_date || plan.created_at;
@@ -199,7 +203,9 @@ if (!plansTimelineScriptInitialized) {
       var listArea = document.getElementById('plans-list-area')
       var basePlansUrl = (listArea && listArea.dataset.plansUrl) || '/plans.json'
       var separator = basePlansUrl.indexOf('?') >= 0 ? '&' : '?'
-      fetch(basePlansUrl + separator + 'date=' + dateStr)
+      var requestUrl = basePlansUrl + separator + 'date=' + dateStr
+      if (registrationsEnabled) requestUrl += '&registrations=1'
+      fetch(requestUrl)
         .then(function (r) { return r.json(); })
         .then(function (newPlans) {
           plans = newPlans.map(function (p) {
@@ -235,6 +241,27 @@ if (!plansTimelineScriptInitialized) {
     var todayBtn = document.getElementById('timeline-today-btn');
     if (todayBtn) {
       todayBtn.addEventListener('click', function () { scrollToDate(new Date()); });
+    }
+
+    // Re-fetch the currently centered window, bypassing the lastLoadedDate guard
+    // (used when toggling a chip changes WHAT we request for the same date).
+    function reloadCurrentView() {
+      var centerOffset = container.scrollLeft + container.clientWidth / 2;
+      var daysFromStart = centerOffset / dayWidth;
+      var centerDate = new Date(startDate.getTime() + Math.round(daysFromStart) * 86400000);
+      container.dataset.lastLoadedDate = '';
+      loadPlans(centerDate);
+    }
+
+    var registrationsChip = document.getElementById('chip-registrations');
+    if (registrationsChip) {
+      registrationsChip.addEventListener('click', function () {
+        registrationsEnabled = !registrationsEnabled;
+        container.dataset.registrations = registrationsEnabled ? 'true' : 'false';
+        registrationsChip.classList.toggle('timeline-chip--active', registrationsEnabled);
+        registrationsChip.setAttribute('aria-pressed', registrationsEnabled ? 'true' : 'false');
+        reloadCurrentView();
+      });
     }
 
     scrollToDate(new Date());

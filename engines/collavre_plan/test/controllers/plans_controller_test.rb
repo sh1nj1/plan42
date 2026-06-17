@@ -185,6 +185,36 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "registration markers are excluded by default" do
+    creative = Creative.create!(user: @owner, description: "Registered creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json)
+
+    assert_response :success
+    assert_not_includes json_ids, "registration_#{creative.id}", "Registrations should be off by default"
+  end
+
+  test "registration markers are included when chip is enabled" do
+    creative = Creative.create!(user: @owner, description: "Registered creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_includes json_ids, "registration_#{creative.id}", "Registrations should appear when requested"
+  end
+
+  test "registration markers are owner-scoped" do
+    others_creative = Creative.create!(user: @collaborator, description: "Other user creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "registration_#{others_creative.id}", "Should not show other users' registrations"
+  end
+
   test "should return stripped html in json" do
     creative = creatives(:tshirt)
     creative.update!(description: "<b>T-Shirt</b> <i>Design</i>")

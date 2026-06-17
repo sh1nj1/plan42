@@ -359,6 +359,47 @@ button {
     color: var(--color-bg);
 }
 
+/* Registration markers: creatives drawn at their created_at (single day). */
+.plan-bar--registration {
+    background: var(--color-link);
+    opacity: 0.85;
+    min-width: 6px;
+}
+
+.plan-bar--registration .plan-progress {
+    background: transparent;
+}
+
+/* Timeline chip filters (Registered, ...) — default-off toggles. */
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.25em;
+}
+
+.timeline-chips {
+    display: flex;
+    gap: 0.25em;
+}
+
+.timeline-chip {
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text);
+    border-radius: 999px;
+    padding: 0.1em 0.7em;
+    font-size: 0.75em;
+    line-height: 1.6;
+    cursor: pointer;
+}
+
+.timeline-chip--active {
+    background: var(--color-link);
+    border-color: var(--color-link);
+    color: var(--color-bg);
+}
+
 input[type="password"] {
     max-width: 80%;
 }

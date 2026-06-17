@@ -1,5 +1,9 @@
 module CollavrePlan
   class PlansController < ApplicationController
+    # Cap how many registration markers we draw so a busy window never floods
+    # the timeline (or the JSON payload). Most recent within the window win.
+    REGISTRATION_LIMIT = 300
+
     def index
       center = if params[:date].present?
                   Date.parse(params[:date]) rescue Date.current
@@ -20,14 +24,21 @@ module CollavrePlan
       shared_events = events_in_scope.reject { |event| event.user_id == Current.user.id }
                                      .select { |event| event.creative&.has_permission?(Current.user, :write) }
       @calendar_events = (own_events + shared_events).uniq.sort_by(&:start_time)
+
+      # "Registered" chip is default-off, so registrations are only gathered when
+      # the client explicitly asks for them (lazy, zero cost on normal loads).
+      @show_registrations = ActiveModel::Type::Boolean.new.cast(params[:registrations]) == true
+      @registrations = @show_registrations ? registration_creatives(start_date, end_date) : []
+
       respond_to do |format|
         format.html do
-          render html: render_to_string(Collavre::PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events), layout: false)
+          render html: render_to_string(Collavre::PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events, registrations: @registrations, show_registrations: @show_registrations), layout: false)
         end
         format.json do
           plan_jsons = @plans.map { |p| plan_json(p) }
           event_jsons = @calendar_events.map { |e| calendar_json(e) }
-          render json: plan_jsons + event_jsons
+          registration_jsons = @registrations.map { |c| registration_json(c) }
+          render json: plan_jsons + event_jsons + registration_jsons
         end
       end
     end
@@ -117,6 +128,31 @@ module CollavrePlan
       return false unless @plan.tags.exists?(creative_id: tagged_creative.id)
 
       tagged_creative.has_permission?(Current.user, :write)
+    end
+
+    # Registered creatives owned by the current user, drawn at their created_at.
+    # Owner-scoped (cheap, indexed) and capped — readable-but-shared creatives are
+    # intentionally a follow-up to avoid a per-creative permission fan-out here.
+    def registration_creatives(start_date, end_date)
+      Collavre::Creative.active
+                        .where(user_id: Current.user.id)
+                        .where("DATE(creatives.created_at) >= ? AND DATE(creatives.created_at) <= ?", start_date, end_date)
+                        .order(created_at: :desc)
+                        .limit(REGISTRATION_LIMIT)
+                        .to_a
+    end
+
+    def registration_json(creative)
+      {
+        id: "registration_#{creative.id}",
+        type: "registration",
+        name: (creative.effective_description(nil, false).presence || "Creative ##{creative.id}"),
+        created_at: creative.created_at.to_date,
+        target_date: creative.created_at.to_date,
+        progress: creative.progress,
+        path: Collavre::Engine.routes.url_helpers.creative_path(creative),
+        deletable: false
+      }
     end
 
     def plan_json(plan, creative_id: nil)
