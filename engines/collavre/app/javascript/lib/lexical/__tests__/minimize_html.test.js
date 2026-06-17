@@ -147,6 +147,18 @@ describe("minimizeContentHtml", () => {
     )
   })
 
+  test("nested list (Tab indent) preserves the nested <ul> structure", () => {
+    const out = minimize(serialize("<ul><li>a<ul><li>b</li></ul></li></ul>"))
+    expect(out).toBe(
+      '<ul class="lexical-list-ul"><li value="1" class="lexical-list-item">a</li>' +
+      '<li value="2" class="lexical-list-item">' +
+      '<ul class="lexical-list-ul"><li value="1" class="lexical-list-item">b</li></ul>' +
+      "</li></ul>"
+    )
+    // Reopen path: re-importing the minimized HTML must be byte-stable.
+    expect(minimize(reimportFormats(out))).toBe(out)
+  })
+
   test("link keeps href + class, drops inner span", () => {
     const out = minimize(serialize('<p><a href="https://a.com">x</a></p>'))
     expect(out).toContain('href="https://a.com"')
