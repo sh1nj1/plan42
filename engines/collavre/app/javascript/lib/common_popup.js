@@ -67,15 +67,7 @@ export default class CommonPopup {
       const li = document.createElement('li')
       li.className = 'common-popup-item'
       li.dataset.index = String(index)
-      // renderItem may return a DOM node (preferred when the content includes
-      // user-controlled text — build it with textContent so nothing is ever
-      // reinterpreted as HTML) or a trusted HTML string (legacy callers).
-      const rendered = this.renderItem(item, index)
-      if (rendered instanceof Node) {
-        li.appendChild(rendered)
-      } else {
-        li.innerHTML = rendered
-      }
+      li.innerHTML = this.renderItem(item, index)
       li.addEventListener('mouseenter', () => this.setActiveIndex(index))
       li.addEventListener('mousedown', (event) => event.preventDefault())
       li.addEventListener('click', () => this.handleItemSelect(index))

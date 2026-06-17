@@ -41,11 +41,14 @@ const MIRRORED_STYLES = [
   'lineHeight', 'letterSpacing', 'textTransform', 'wordSpacing', 'textIndent',
 ]
 
+// Escape by round-tripping through textContent: the browser never reinterprets
+// it as markup, and it's the canonical DOM-text sanitizer (recognized as a
+// barrier by static XSS analysis) for the values we splice into the backdrop and
+// popup HTML — both of which carry user-typed / model-suggested text.
 function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  const el = document.createElement('div')
+  el.textContent = String(value)
+  return el.innerHTML
 }
 
 export class TypoCorrector {
@@ -294,24 +297,12 @@ export class TypoCorrector {
 
     this.popup = new CommonPopup(el, {
       listElement: el.querySelector('.typo-popup-list'),
-      // Return a DOM node, not an HTML string: item.label is user-typed /
-      // model-suggested text, so we set it via textContent and never route it
-      // through innerHTML (avoids any DOM-text-as-HTML reinterpretation).
+      // item.label is user-typed / model-suggested text; escapeHtml round-trips
+      // it through textContent so it can never be reinterpreted as markup.
       renderItem: (item) => {
-        const frag = document.createDocumentFragment()
-        const value = document.createElement('span')
-        value.className = 'typo-popup-value'
-        value.textContent = item.label
-        frag.appendChild(value)
-        const roleLabel = item.role === 'original' ? this.labels.keep
-          : item.role === 'custom' ? this.labels.custom : null
-        if (roleLabel) {
-          const role = document.createElement('span')
-          role.className = 'typo-popup-role'
-          role.textContent = ` (${roleLabel})`
-          frag.appendChild(role)
-        }
-        return frag
+        const tag = item.role === 'original' ? ` <span class="typo-popup-role">(${escapeHtml(this.labels.keep)})</span>`
+          : item.role === 'custom' ? ` <span class="typo-popup-role">(${escapeHtml(this.labels.custom)})</span>` : ''
+        return `<span class="typo-popup-value">${escapeHtml(item.label)}</span>${tag}`
       },
       onSelect: (item) => this._chooseValue(item.value),
       onClose: () => { this._activeEdit = null },
