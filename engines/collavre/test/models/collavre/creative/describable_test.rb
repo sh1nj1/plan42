@@ -265,6 +265,37 @@ module Collavre
         assert ActiveStorage::Blob.exists?(blob.id), "linked-row legacy blob must survive a save"
       end
 
+      test "rich-editor markdown upload attaches the referenced blob on save" do
+        blob = make_blob
+        # The rich (Lexical) editor is Markdown-canonical: an inserted image is
+        # serialized as a raw <img> blob URL inside markdown_source.
+        source = %(text\n\n<img src="#{asset_url(blob)}" alt="a.png">)
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: source
+        )
+
+        assert_includes creative.reload.files.map { |f| f.blob.signed_id }, blob.signed_id
+      end
+
+      test "markdown save does not detach an out-of-band attached blob" do
+        # Markdown reconcile is attach-only: a blob attached directly (legacy /
+        # backfill) but not referenced in the derived description must survive a
+        # normal markdown save, since markdown creatives may carry such blobs.
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_source: "# hi"
+        )
+        blob = make_blob
+        creative.files.attach(blob)
+        assert_includes creative.reload.files.map(&:blob_id), blob.id
+
+        perform_enqueued_jobs do
+          creative.update!(content_type_input: "markdown", markdown_source: "# hi\n\nmore")
+        end
+
+        assert_includes creative.reload.files.map(&:blob_id), blob.id
+        assert ActiveStorage::Blob.exists?(blob.id)
+      end
+
       # --- Sanitizer: media tags ---
 
       test "video tag with controls/src survives sanitization" do

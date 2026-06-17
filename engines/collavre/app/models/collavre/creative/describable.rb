@@ -232,14 +232,20 @@ module Collavre
         end
       end
 
-      # Sync creative.files to exactly the blobs referenced in the description
-      # HTML (attach new, detach removed). Must never raise during save —
-      # malformed HTML yields [] and a no-op.
+      # Sync creative.files to the blobs referenced in the description HTML
+      # (attach new, detach removed). Must never raise during save — malformed
+      # HTML yields [] and a no-op.
       #
-      # Markdown-mode creatives manage their own blobs via MarkdownConverter;
-      # the embed paths demote markdown -> html first, so uploads still reconcile.
+      # The rich (Lexical) editor is now Markdown-canonical and serializes
+      # inserted images/videos/files as raw blob-URL tags inside markdown_source,
+      # which markdown_to_html renders into `description`. So reconcile must run
+      # for markdown mode too, otherwise rich-editor uploads never reach
+      # creative.files (and the attachment list/remove services miss them). But
+      # markdown reconcile is ATTACH-ONLY: markdown creatives may carry out-of-band
+      # / legacy blobs attached directly (never embedded in the derived
+      # description), and the explicit remove path strips + demotes to HTML before
+      # detaching — so auto-detaching here would purge blobs that are still wanted.
       def reconcile_description_attachments
-        return if data&.dig("content_type") == "markdown"
         # Linked creatives don't own their description (it lives on the origin)
         # and their own column is blank, so reconcile would treat every legacy
         # attachment as an orphan and purge it on the next save (e.g. a
@@ -256,8 +262,9 @@ module Collavre
         current = files.includes(:blob).to_a
         current_blob_ids = current.map(&:blob_id).to_set
 
+        attach_only = data&.dig("content_type") == "markdown"
         to_attach = referenced.reject { |b| current_blob_ids.include?(b.id) }
-        to_detach = current.reject { |a| referenced_ids.include?(a.blob_id) }
+        to_detach = attach_only ? [] : current.reject { |a| referenced_ids.include?(a.blob_id) }
         return if to_attach.empty? && to_detach.empty?
 
         to_attach.each { |blob| files.attach(blob) }

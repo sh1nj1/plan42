@@ -67,7 +67,12 @@ export function colorSpanMarkup(styleText, inner) {
   const decls = []
   if (color) decls.push(`color: ${color}`)
   if (background) decls.push(`background-color: ${background}`)
-  return `<span style="${decls.join("; ")}">${inner}</span>`
+  // `inner` is the Markdown-formatted text of a colored node. Lexical's export
+  // escapes Markdown punctuation but NOT HTML metacharacters, so colored text
+  // like `<foo>` would become raw markup inside the <span> and get reinterpreted
+  // (and stripped) by the Markdown renderer/sanitizer. Escape <, >, & so user
+  // text stays text. Markdown syntax chars (*, _, `, ~) are left untouched.
+  return `<span style="${decls.join("; ")}">${escapeHtmlText(inner)}</span>`
 }
 
 // Canonical inline HTML for the decorator nodes, matching the shapes the import

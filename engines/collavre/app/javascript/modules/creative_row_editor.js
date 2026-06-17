@@ -1399,6 +1399,10 @@ export function initializeCreativeRowEditor() {
           }
           row.dataset.contentType = capturedContentType;
           row.dataset.markdownSource = isMarkdownSave ? capturedMarkdownSource : '';
+          // Persist which surface authored this save so a row re-opened from this
+          // cached payload (before any full GET refresh) reopens in the right
+          // editor — without it, rich-authored Markdown falls back to the textarea.
+          row.dataset.markdownEditor = isMarkdownSave ? capturedMarkdownEditor : '';
           if (currentParentId) {
             tree.dataset.parentId = currentParentId;
             row.parentId = currentParentId;

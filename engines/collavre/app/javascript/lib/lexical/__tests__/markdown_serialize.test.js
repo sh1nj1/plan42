@@ -72,6 +72,15 @@ describe("colorSpanMarkup", () => {
     expect(colorSpanMarkup('color: red"><script>', "n")).toBeNull()
     expect(colorSpanMarkup("color: expression(alert(1))", "n")).toBeNull()
   })
+
+  it("HTML-escapes the inner text so it can't become raw markup", () => {
+    expect(colorSpanMarkup("color: #ff0000", "<img src=x onerror=alert(1)>")).toBe(
+      '<span style="color: #ff0000">&lt;img src=x onerror=alert(1)&gt;</span>'
+    )
+    expect(colorSpanMarkup("color: #ff0000", "a & b < c")).toBe(
+      '<span style="color: #ff0000">a &amp; b &lt; c</span>'
+    )
+  })
 })
 
 describe("decorator markup", () => {
@@ -222,6 +231,11 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
       "bold + color",
       '<p><span style="color: rgb(255, 0, 0)"><strong>hot</strong></span></p>',
       '<span style="color: rgb(255, 0, 0)">**hot**</span>'
+    ],
+    [
+      "colored text with HTML metacharacters",
+      '<p><span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span></p>',
+      '<span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span>'
     ]
   ]
 
