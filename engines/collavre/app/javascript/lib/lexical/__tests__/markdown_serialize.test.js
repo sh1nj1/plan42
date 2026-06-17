@@ -338,6 +338,8 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
     ["bold", "<p><strong>bold</strong></p>", "**bold**"],
     ["italic", "<p><em>nice</em></p>", "*nice*"],
     ["unordered list", "<ul><li>a</li><li>b</li></ul>", "- a\n- b"],
+    // Nested list produced by Tab indentation (markdown-canonical store).
+    ["nested unordered list", "<ul><li>a<ul><li>b</li></ul></li></ul>", "- a\n    - b"],
     [
       "colored text",
       '<p><span style="color: rgb(255, 0, 0)">red</span></p>',

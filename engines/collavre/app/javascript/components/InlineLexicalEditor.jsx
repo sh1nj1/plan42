@@ -51,6 +51,7 @@ import { AttachmentNode } from "../lib/lexical/attachment_node"
 import { VideoNode } from "../lib/lexical/video_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
+import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
@@ -73,7 +74,11 @@ const theme = {
   list: {
     ul: "lexical-list-ul",
     ol: "lexical-list-ol",
-    listitem: "lexical-list-item"
+    listitem: "lexical-list-item",
+    // Tag the wrapper <li> that only holds a nested list so its bullet marker
+    // can be hidden — without this Lexical reuses the plain item class and the
+    // empty wrapper renders a stray bullet above the indented sub-list.
+    nested: { listitem: "lexical-nested-list-item" }
   },
   code: "lexical-code-block",
   codeHighlight: {
@@ -903,6 +908,7 @@ function EditorInner({
         <HistoryPlugin />
         <CodeHighlightingPlugin />
         <ListPlugin />
+        <ListTabIndentPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
         <OnChangePlugin
