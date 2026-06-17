@@ -21,12 +21,17 @@ export default class CommonPopup {
     requestAnimationFrame(() => {
       this.updatePosition(anchorRect)
       this.element.style.visibility = 'visible'
+      // Register the outside-click listeners only after the opening event has
+      // finished propagating. When a popup is opened from a mousedown handler
+      // (e.g. clicking a typo highlight), registering synchronously here would
+      // let that same mousedown keep bubbling to document, hit handleOutsideClick
+      // (target is outside the popup), and immediately hide() it — the popup
+      // would open and instantly vanish. Deferring one frame avoids that race.
+      if (this.closeOnOutsideClick) {
+        document.addEventListener('mousedown', this.handleOutsideClick)
+        document.addEventListener('touchstart', this.handleOutsideClick)
+      }
     })
-
-    if (this.closeOnOutsideClick) {
-      document.addEventListener('mousedown', this.handleOutsideClick)
-      document.addEventListener('touchstart', this.handleOutsideClick)
-    }
   }
 
   updatePosition(anchorRect) {

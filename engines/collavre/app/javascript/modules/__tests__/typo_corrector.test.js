@@ -178,6 +178,24 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(detectCalls).toBe(1)
   })
 
+  test('clicking a mark opens the popup and the opening mousedown does not close it', () => {
+    // Regression: the popup opens on a mousedown. CommonPopup.showAt registered
+    // its document-level outside-click mousedown listener synchronously, so the
+    // very mousedown that opened the popup kept bubbling to document, hit that
+    // listener (target = the mark, outside the popup), and called hide() — the
+    // popup opened and instantly closed, so the user never saw it.
+    const { textarea, tc } = mount('teh cat')
+    tc._applyResult({
+      edits: [{ original: 'teh', suggestion: 'the', confidence: 0.4 }],
+      threshold: 80,
+    })
+    const mark = textarea.parentNode.querySelector('.typo-mark-candidate')
+    expect(mark).not.toBeNull()
+    mark.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(tc.popup.isOpen()).toBe(true)
+    expect(tc.popupEl.style.display).toBe('block')
+  })
+
   test('popup input carries a localized aria-label', () => {
     document.body.innerHTML = '<form><textarea></textarea></form>'
     const textarea = document.querySelector('textarea')
