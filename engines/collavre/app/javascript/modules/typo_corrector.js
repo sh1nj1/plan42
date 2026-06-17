@@ -59,6 +59,7 @@ export class TypoCorrector {
 
     this.edits = [] // anchored edits currently painted: {start,end,original,suggestion,confidence,state}
     this.lastPrintableKeydownAt = null
+    this.lastInputAt = null
     this.debounceTimer = null
     this.requestSeq = 0
 
@@ -102,6 +103,11 @@ export class TypoCorrector {
       }
     }
     this._onInput = () => {
+      // Stamp the input time *now*, while the keydown→input relationship is still
+      // fresh. Classifying at detect time (after the debounce) would read a
+      // ~600ms gap and misread every physical keypress as a soft keyboard,
+      // defeating the default-off physical-keyboard gate.
+      this.lastInputAt = performance.now()
       this._syncScroll()
       this._repaint() // keep existing highlights aligned with edited text
       this._scheduleDetect()
@@ -129,7 +135,7 @@ export class TypoCorrector {
     return detectDevice({
       voiceActive: !!this.getVoiceActive(),
       lastPrintableKeydownAt: this.lastPrintableKeydownAt,
-      inputAt: performance.now(),
+      inputAt: this.lastInputAt,
     })
   }
 
@@ -172,66 +178,60 @@ export class TypoCorrector {
   }
 
   _applyResult({ edits = [], threshold = 80 } = {}) {
-    const anchored = anchorEdits(this.textarea.value, edits)
+    const original = this.textarea.value
+    const anchored = anchorEdits(original, edits)
     const { autoApplied, candidates } = partitionByThreshold(anchored, threshold)
 
-    // Auto-apply high-confidence edits to the textarea value, right-to-left so
-    // earlier offsets stay valid, preserving the caret.
-    const applied = []
-    let text = this.textarea.value
-    let caret = this.textarea.selectionStart
-    ;[...autoApplied].sort((a, b) => b.start - a.start).forEach((edit) => {
-      const { text: next } = applyEditAt(text, { start: edit.start, end: edit.end, replacement: edit.suggestion })
-      const delta = edit.suggestion.length - (edit.end - edit.start)
-      if (edit.start < caret) caret += delta
-      text = next
-      // Record where the corrected word now sits for the undo highlight.
-      applied.push({
-        original: edit.original,
-        suggestion: edit.suggestion,
-        confidence: edit.confidence,
-        state: 'applied',
-        currentValue: edit.suggestion,
-      })
-    })
-    if (text !== this.textarea.value) {
-      this.textarea.value = text
+    // Walk all edits left-to-right in one pass, rebuilding the text while
+    // tracking a running delta. This assigns each tracked edit an *exact* final
+    // span, rather than re-searching the corrected word by value afterwards —
+    // that search would bind to an earlier identical word (e.g. correcting the
+    // second "teh" in "the teh" lands the highlight on the first "the", so undo
+    // would rewrite the wrong word).
+    const events = [
+      ...autoApplied.map((e) => ({ ...e, kind: 'applied' })),
+      ...candidates.map((e) => ({ ...e, kind: 'candidate' })),
+    ].sort((a, b) => a.start - b.start)
+
+    const originalCaret = this.textarea.selectionStart
+    let out = ''
+    let cursor = 0
+    let delta = 0
+    let caret = originalCaret
+    const tracked = []
+    for (const e of events) {
+      if (e.start < cursor) continue // overlapping span; skip defensively
+      out += original.slice(cursor, e.start)
+      const finalStart = e.start + delta
+      if (e.kind === 'applied') {
+        out += e.suggestion
+        const d = e.suggestion.length - (e.end - e.start)
+        if (e.start < originalCaret) caret += d
+        delta += d
+        tracked.push({
+          original: e.original, suggestion: e.suggestion, confidence: e.confidence,
+          state: 'applied', currentValue: e.suggestion,
+          start: finalStart, end: finalStart + e.suggestion.length,
+        })
+      } else {
+        out += original.slice(e.start, e.end)
+        tracked.push({
+          original: e.original, suggestion: e.suggestion, confidence: e.confidence,
+          state: 'candidate', currentValue: e.original,
+          start: finalStart, end: finalStart + e.original.length,
+        })
+      }
+      cursor = e.end
+    }
+    out += original.slice(cursor)
+
+    this.edits = tracked
+    if (out !== original) {
+      this.textarea.value = out
       this.textarea.setSelectionRange(caret, caret)
       this.textarea.dispatchEvent(new Event('input', { bubbles: true }))
     }
-
-    const candidateEntries = candidates.map((edit) => ({
-      original: edit.original,
-      suggestion: edit.suggestion,
-      confidence: edit.confidence,
-      state: 'candidate',
-      currentValue: edit.original,
-    }))
-
-    // Re-anchor everything against the (possibly mutated) final text.
-    this.edits = this._reanchorAll([...applied, ...candidateEntries])
     this._repaint()
-  }
-
-  // Re-find each tracked edit's span in the current text by its current value
-  // (corrected word for applied, original for candidate). Entries that no longer
-  // exist are dropped.
-  _reanchorAll(entries) {
-    const text = this.textarea.value
-    const out = []
-    let cursor = 0
-    // Keep input order but anchor monotonically so duplicate words bind distinctly.
-    const ordered = entries
-      .map((e) => ({ e, idx: text.indexOf(e.currentValue) }))
-      .filter((x) => x.idx !== -1)
-      .sort((a, b) => a.idx - b.idx)
-    for (const { e } of ordered) {
-      const idx = text.indexOf(e.currentValue, cursor)
-      if (idx === -1) continue
-      out.push({ ...e, start: idx, end: idx + e.currentValue.length })
-      cursor = idx + e.currentValue.length
-    }
-    return out
   }
 
   _clear() {

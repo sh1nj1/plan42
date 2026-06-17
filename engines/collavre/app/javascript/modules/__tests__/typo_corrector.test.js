@@ -99,4 +99,51 @@ describe('TypoCorrector DOM orchestration', () => {
     tc._repaint()
     expect(tc.edits).toHaveLength(0)
   })
+
+  test('device classification uses the input-time stamp, surviving the debounce (P1)', () => {
+    // Before the fix, the device was classified at detect time (after the 600ms
+    // debounce), so the keydown→detect gap read ~600ms and every physical
+    // keypress was misread as a soft keyboard — bypassing the default-off gate.
+    const realNow = performance.now
+    let t = 1000
+    performance.now = () => t
+    try {
+      const { textarea, tc } = mount('')
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' })) // physical keydown @1000
+      t = 1002
+      textarea.value = 'a'
+      textarea.dispatchEvent(new Event('input', { bubbles: true })) // input @1002 → lastInputAt
+      t = 1700 // debounce fires ~700ms later, when _detect calls _currentDevice
+      expect(tc._currentDevice()).toBe('physical_keyboard')
+    } finally {
+      performance.now = realNow
+    }
+  })
+
+  test('auto-applied edit anchors to the corrected span, not an earlier twin (P2)', () => {
+    // "the teh" → correct the 2nd word. The highlight/undo must bind the second
+    // word (offset 4), not the pre-existing "the" at offset 0.
+    const { textarea, tc } = mount('the teh')
+    tc._applyResult({
+      edits: [{ original: 'teh', suggestion: 'the', confidence: 0.95, offset: 4 }],
+      threshold: 80,
+    })
+    expect(textarea.value).toBe('the the')
+    const edit = tc.edits.find((e) => e.state === 'applied')
+    expect(edit.start).toBe(4)
+    expect(edit.end).toBe(7)
+  })
+
+  test('undo of an auto-applied edit rewrites the corrected span, not an earlier twin (P2)', () => {
+    const { textarea, tc } = mount('the teh')
+    tc._applyResult({
+      edits: [{ original: 'teh', suggestion: 'the', confidence: 0.95, offset: 4 }],
+      threshold: 80,
+    })
+    const edit = tc.edits.find((e) => e.state === 'applied')
+    tc._ensurePopup()
+    tc._activeEdit = edit
+    tc._chooseValue('teh') // undo back to the original
+    expect(textarea.value).toBe('the teh')
+  })
 })

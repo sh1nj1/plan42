@@ -127,6 +127,22 @@ describe('anchorEdits', () => {
     const edits = anchorEdits('hello world', [{ original: 'xyz', suggestion: 'abc' }])
     expect(edits).toEqual([])
   })
+
+  test('honors the server offset so a duplicate inside a protected span is skipped', () => {
+    // "teh" appears first inside backticks (a region the server excludes) and
+    // again in plain text at offset 15. A plain search would bind the protected
+    // one; the offset pins us to the valid occurrence.
+    const text = 'use `teh` then teh'
+    const edits = anchorEdits(text, [{ original: 'teh', suggestion: 'the', offset: 15 }])
+    expect(edits[0].start).toBe(15)
+    expect(text.slice(edits[0].start, edits[0].end)).toBe('teh')
+  })
+
+  test('falls back to search when the offset no longer matches the text', () => {
+    const text = 'hello teh'
+    const edits = anchorEdits(text, [{ original: 'teh', suggestion: 'the', offset: 99 }])
+    expect(edits[0].start).toBe(6)
+  })
 })
 
 describe('applyEditAt + shiftEditsAfter (re-anchoring)', () => {

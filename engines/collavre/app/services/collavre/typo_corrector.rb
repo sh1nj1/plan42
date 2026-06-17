@@ -79,9 +79,13 @@ module Collavre
         next if original.empty? || suggestion.empty? || original == suggestion
         next if original.length > MAX_ORIGINAL_LENGTH
 
-        # `original` must appear verbatim in the text, at least once outside any
-        # skip region (code/URL/mention/markup).
-        next unless occurs_outside_skip_ranges?(text, original, skip_ranges)
+        # `original` must appear verbatim in the text, outside any skip region
+        # (code/URL/mention/markup). We return the offset of that first *valid*
+        # occurrence so the client anchors there — otherwise the client's own
+        # left-to-right search would bind to an earlier occurrence sitting inside
+        # a protected span and edit it (a markdown-canonical/code-safety hole).
+        offset = first_offset_outside_skip_ranges(text, original, skip_ranges)
+        next if offset.nil?
 
         # Reject big rewrites — keep only minimal in-place fixes.
         cap = [ MIN_EDIT_DISTANCE_CAP, (original.length * EDIT_DISTANCE_RATIO).ceil ].max
@@ -95,7 +99,8 @@ module Collavre
           "original" => original,
           "suggestion" => suggestion,
           "reason" => edit["reason"].presence || "spelling",
-          "confidence" => clamp_confidence(edit["confidence"])
+          "confidence" => clamp_confidence(edit["confidence"]),
+          "offset" => offset
         }
       end
     end
@@ -127,16 +132,18 @@ module Collavre
       ranges
     end
 
-    def occurs_outside_skip_ranges?(text, needle, skip_ranges)
+    # First character offset where `needle` occurs entirely outside every skip
+    # range, or nil if every occurrence overlaps a protected span.
+    def first_offset_outside_skip_ranges(text, needle, skip_ranges)
       pos = 0
       while (idx = text.index(needle, pos))
         finish = idx + needle.length
         inside = skip_ranges.any? { |(s, e)| idx < e && finish > s }
-        return true unless inside
+        return idx unless inside
 
         pos = idx + 1
       end
-      false
+      nil
     end
 
     # Iterative Levenshtein distance.

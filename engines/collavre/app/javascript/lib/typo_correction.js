@@ -78,20 +78,32 @@ export function buildCandidateList({ currentValue, originalWord, suggestions = [
   return list
 }
 
-// Attach character offsets to each edit by locating its `original` substring in
-// `text`. Scanning left-to-right and advancing the cursor past each match keeps
-// repeated words from all anchoring to the first occurrence. Edits whose
-// original can no longer be found (the user already changed that span) are
-// dropped — the caller re-runs the detector for fresh suggestions.
+// Attach character offsets to each edit. Prefer the server-supplied `offset`
+// (the first occurrence the server verified is *outside* a protected span) so a
+// duplicate word sitting inside code/URL/markup is never anchored — anchoring by
+// our own search would bind the first textual occurrence, which can be the
+// protected one the server already excluded. We only trust `offset` if the
+// substring still matches there (text is identical to what the server saw).
+// Without an offset we fall back to a left-to-right search, advancing the cursor
+// so repeated words bind to distinct occurrences. Edits whose original can no
+// longer be found are dropped — the caller re-runs the detector.
 export function anchorEdits(text, edits = []) {
   const anchored = []
   let cursor = 0
   for (const edit of edits) {
     if (!edit || !edit.original) continue
-    const idx = text.indexOf(edit.original, cursor)
+    let idx
+    if (
+      Number.isInteger(edit.offset)
+      && text.slice(edit.offset, edit.offset + edit.original.length) === edit.original
+    ) {
+      idx = edit.offset
+    } else {
+      idx = text.indexOf(edit.original, cursor)
+    }
     if (idx === -1) continue
     anchored.push({ ...edit, start: idx, end: idx + edit.original.length })
-    cursor = idx + edit.original.length
+    cursor = Math.max(cursor, idx + edit.original.length)
   }
   return anchored
 }

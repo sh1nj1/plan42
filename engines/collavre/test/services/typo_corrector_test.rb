@@ -76,6 +76,17 @@ module Collavre
       assert_equal 1, edits.size
     end
 
+    test "returns the offset of the first occurrence outside a skip region" do
+      # The first "teh" sits inside inline code; the valid one is in plain text.
+      text = "use `teh` then teh"
+      response = { edits: [ { original: "teh", suggestion: "the", confidence: 0.9 } ] }.to_json
+
+      edits = correct(text, response)
+      assert_equal 1, edits.size
+      assert_equal 15, edits.first["offset"]
+      assert_equal "teh", text[edits.first["offset"], "teh".length]
+    end
+
     test "defaults confidence to 0.5 when missing or non-numeric" do
       text = "teh dog"
       response = { edits: [ { original: "teh", suggestion: "the", reason: "spelling" } ] }.to_json
