@@ -273,30 +273,43 @@
   top: 0.6rem;
 }
 
-.lexical-paragraph {
+/* The .lexical-* classes are the editor theme (contenteditable). Markdown is now
+   the canonical persisted/displayed form, so .creative-content renders plain
+   semantic tags without those classes — mirror each rule onto the matching
+   element so the display view matches the editor. .lexical-* kept for the
+   editor and for legacy class-bearing HTML saved before the markdown switch. */
+.lexical-paragraph,
+.creative-content p {
   margin: 0 0 0 0;
 }
 
 .lexical-heading-h1,
 .lexical-heading-h2,
-.lexical-heading-h3 {
+.lexical-heading-h3,
+.creative-content h1,
+.creative-content h2,
+.creative-content h3 {
   font-weight: var(--weight-6);
   margin: 0 0 var(--space-2) 0;
 }
 
-.lexical-heading-h1 {
+.lexical-heading-h1,
+.creative-content h1 {
   font-size: 1.35rem;
 }
 
-.lexical-heading-h2 {
+.lexical-heading-h2,
+.creative-content h2 {
   font-size: 1.2rem;
 }
 
-.lexical-heading-h3 {
+.lexical-heading-h3,
+.creative-content h3 {
   font-size: 1.1rem;
 }
 
-.lexical-quote {
+.lexical-quote,
+.creative-content blockquote {
   border-left: var(--space-1) solid var(--border-color);
   color: var(--text-muted);
   margin: 0 0 0.75rem 0;
@@ -304,12 +317,15 @@
 }
 
 .lexical-list-ul,
-.lexical-list-ol {
+.lexical-list-ol,
+.creative-content ul,
+.creative-content ol {
   margin: 0 0 0.75rem 1.25rem;
   padding: 0;
 }
 
-.lexical-list-item {
+.lexical-list-item,
+.creative-content li {
   margin: 0.35rem 0;
 }
 
