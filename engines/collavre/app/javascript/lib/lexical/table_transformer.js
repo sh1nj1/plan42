@@ -48,26 +48,30 @@ function $createTableCell(textContent) {
   return cell
 }
 
-// Split a row's inner text on cell boundaries (unescaped pipes only). A pipe a
-// user typed inside a cell is stored GFM-escaped as "\|"; String.split("|")
-// would break the cell at that pipe. Walk the string, treat "\|" as a literal
-// pipe inside the cell, and split only on bare pipes. (The per-cell markdown
-// parser does NOT unescape "\|" itself, so we drop the backslash here.)
+// Split a row's inner text on cell boundaries and reverse the export escaping in
+// one left-to-right pass. Export escapes (in order) backslash -> "\\" then pipe
+// -> "\|", so here every backslash starts a 2-char escape: it consumes the next
+// char ("\\" -> "\", "\|" -> a literal in-cell pipe). Only a *bare* pipe is a
+// column boundary. The result still carries CommonMark's own backslash escapes,
+// which $convertFromMarkdownString decodes per cell. Undoing the backslash escape
+// here (not just "\|") is what keeps the escaping complete and unambiguous
+// (CodeQL js/incomplete-sanitization #43). Each cell is trimmed because GFM treats
+// the spaces around "| cell |" as insignificant padding (export re-adds them).
 function splitRowCells(inner) {
   const cells = []
   let current = ""
   for (let i = 0; i < inner.length; i++) {
-    if (inner[i] === "\\" && inner[i + 1] === "|") {
-      current += "|"
+    if (inner[i] === "\\" && i + 1 < inner.length) {
+      current += inner[i + 1] // "\\" -> "\", "\|" -> "|" (any other "\x" -> "x")
       i++
     } else if (inner[i] === "|") {
-      cells.push(current)
+      cells.push(current.trim())
       current = ""
     } else {
       current += inner[i]
     }
   }
-  cells.push(current)
+  cells.push(current.trim())
   return cells
 }
 
@@ -95,10 +99,11 @@ export const TABLE = {
               // that re-imported as a literal backslash-n and then mis-decoded
               // back to a newline, corrupting genuine "a\nb" text (CodeQL #42).
               .replace(/\n+/g, " ")
-              // Escape pipes so cell content (e.g. "a|b") isn't reparsed as an
-              // extra column; splitRowCells reverses this on import. Backslashes
-              // are left to CommonMark (the per-cell convert above already
-              // escapes them), so we must not double-escape here.
+              // Escape the escape char FIRST, then pipes, so the escaping is
+              // complete and unambiguous (CodeQL js/incomplete-sanitization #43).
+              // splitRowCells reverses both ("\\"->"\", "\|"->"|") on import,
+              // restoring exactly what CommonMark emitted before re-decoding it.
+              .replace(/\\/g, "\\\\")
               .replace(/\|/g, "\\|")
               .trim()
           )

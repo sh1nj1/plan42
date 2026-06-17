@@ -1,6 +1,14 @@
-import { createEditor } from "lexical"
+import { createEditor, $getRoot, $createParagraphNode, $createTextNode } from "lexical"
 import { $convertFromMarkdownString, $convertToMarkdownString } from "@lexical/markdown"
-import { TableNode, TableRowNode, TableCellNode } from "@lexical/table"
+import {
+  TableNode,
+  TableRowNode,
+  TableCellNode,
+  $createTableNode,
+  $createTableRowNode,
+  $createTableCellNode,
+  TableCellHeaderStates
+} from "@lexical/table"
 import { HeadingNode, QuoteNode } from "@lexical/rich-text"
 import { ListNode, ListItemNode } from "@lexical/list"
 import { LinkNode } from "@lexical/link"
@@ -9,8 +17,8 @@ import { MARKDOWN_TRANSFORMERS } from "../markdown_serialize"
 
 // Drives a headless editor through markdown -> Lexical -> markdown so the TABLE
 // transformer's import (replace) and export paths are exercised together.
-function roundTrip(markdown) {
-  const editor = createEditor({
+function makeEditor() {
+  return createEditor({
     namespace: "table-test",
     onError(error) {
       throw error
@@ -28,6 +36,10 @@ function roundTrip(markdown) {
       TableCellNode
     ]
   })
+}
+
+function roundTrip(markdown) {
+  const editor = makeEditor()
   editor.update(
     () => {
       $convertFromMarkdownString(markdown, MARKDOWN_TRANSFORMERS)
@@ -39,6 +51,43 @@ function roundTrip(markdown) {
     result = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
   })
   return result
+}
+
+// Build a 1x1 table whose only cell holds the given literal text, export it to
+// markdown, then re-import and read the cell back — i.e. a true save -> reopen
+// cycle that never assumes how the text is escaped on the wire.
+function saveReopenCellText(cellText) {
+  const writer = makeEditor()
+  let markdown = ""
+  writer.update(
+    () => {
+      const cell = $createTableCellNode(TableCellHeaderStates.NO_STATUS)
+      cell.append($createParagraphNode().append($createTextNode(cellText)))
+      const table = $createTableNode()
+      table.append($createTableRowNode().append(cell))
+      $getRoot().append(table)
+    },
+    { discrete: true }
+  )
+  writer.getEditorState().read(() => {
+    markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
+  })
+
+  const reader = makeEditor()
+  reader.update(
+    () => {
+      $convertFromMarkdownString(markdown, MARKDOWN_TRANSFORMERS)
+    },
+    { discrete: true }
+  )
+  let text = null
+  reader.getEditorState().read(() => {
+    const table = $getRoot()
+      .getChildren()
+      .find((n) => n.getType() === "table")
+    text = table ? table.getFirstChild().getFirstChild().getTextContent() : null
+  })
+  return text
 }
 
 describe("TABLE markdown transformer", () => {
@@ -85,20 +134,21 @@ describe("TABLE markdown transformer", () => {
     expect(out).toContain("| a\\|b | ok |")
   })
 
-  it("round-trips a literal backslash-n (escaped) without corrupting it to a newline", () => {
-    // Canonical storage holds a cell whose text is the literal chars a \ n b as
-    // the escaped "a\\nb". Before backslash escaping, import's \n->newline
-    // unescape misfired and split the cell across two lines. Round-trip must be
-    // idempotent (CodeQL alert #42, incomplete string escaping).
-    const cell = "a\\\\nb" // renders as: a \ \ n b  => one literal backslash + "nb"
-    const md = `| H |\n| --- |\n| ${cell} |`
-    expect(roundTrip(md)).toContain(`| ${cell} |`)
+  it("save->reopen preserves a literal backslash-n (not a newline) in a cell", () => {
+    // "a\nb" is the literal chars a, backslash, n, b (e.g. a regex or path), NOT
+    // a newline. A prior bug decoded the backslash-n into a real newline, splitting
+    // the cell (CodeQL #42). The escape must be complete (CodeQL #43, backslash).
+    expect(saveReopenCellText("a\\nb")).toBe("a\\nb")
   })
 
-  it("round-trips a literal backslash (escaped) without losing or doubling it", () => {
-    const cell = "C:\\\\path" // renders as: C : \ \ p... => one literal backslash
-    const md = `| H |\n| --- |\n| ${cell} |`
-    expect(roundTrip(md)).toContain(`| ${cell} |`)
+  it("save->reopen preserves a literal backslash in a cell", () => {
+    expect(saveReopenCellText("C:\\path")).toBe("C:\\path")
+  })
+
+  it("save->reopen preserves a backslash directly before a pipe in a cell", () => {
+    // The adversarial case for incomplete escaping: a backslash adjacent to the
+    // pipe that gets escaped. Both must survive intact.
+    expect(saveReopenCellText("a\\|b")).toBe("a\\|b")
   })
 
   it("does not hang on a pathological colon/pipe row (ReDoS guard)", () => {
