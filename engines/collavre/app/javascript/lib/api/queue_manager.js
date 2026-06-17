@@ -1,7 +1,18 @@
 import csrfFetch from './csrf_fetch'
+import { apiErrorFromResponse } from './api_error'
 
 const STORAGE_KEY = 'api_queue'
 const MAX_RETRIES = 3
+
+// Client errors that will never succeed on retry (validation, auth, conflict,
+// not-found). Retrying them just delays the real error and wastes round-trips,
+// so they fail fast straight to failedItems. 408 (timeout) and 429 (rate limit)
+// are intentionally excluded — those are worth retrying.
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 409, 422])
+
+function isRetryable(error) {
+    return !(error && NON_RETRYABLE_STATUSES.has(error.status))
+}
 
 /**
  * API Queue Manager
@@ -267,8 +278,10 @@ class ApiQueueManager {
             } catch (error) {
                 console.error('API request failed:', error, item)
 
-                // Retry logic
-                if (item.retries < MAX_RETRIES) {
+                // Retry logic — skip retries for client errors that can't
+                // succeed on a repeat (e.g. 422 validation): fail fast so the
+                // user sees the real error immediately.
+                if (isRetryable(error) && item.retries < MAX_RETRIES) {
                     item.retries++
                     // Move to end of queue for retry
                     this.queue.shift()
@@ -353,7 +366,9 @@ class ApiQueueManager {
         const response = await csrfFetch(url, options)
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+            // Surface the server's error payload (e.g. Rails { errors: [...] })
+            // instead of an opaque "HTTP 422" so the UI can show the real reason.
+            throw await apiErrorFromResponse(response)
         }
 
         return response

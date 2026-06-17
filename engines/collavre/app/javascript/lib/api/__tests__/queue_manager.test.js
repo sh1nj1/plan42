@@ -177,4 +177,53 @@ describe('ApiQueueManager', () => {
         expect(failedItems[0].path).toBe('/fail');
         expect(failedItems[0].failedAt).toBeDefined();
     });
+
+    test('executeRequest throws an ApiError carrying the server error payload', async () => {
+        mockCsrfFetch.mockResolvedValue({
+            ok: false,
+            status: 422,
+            statusText: 'Unprocessable Entity',
+            text: async () => JSON.stringify({
+                errors: ['Description cannot be changed directly for GitHub synced content'],
+            }),
+        });
+
+        await expect(apiQueue.executeRequest({ path: '/creatives/42', method: 'PATCH' }))
+            .rejects.toMatchObject({
+                status: 422,
+                errors: ['Description cannot be changed directly for GitHub synced content'],
+                message: 'Description cannot be changed directly for GitHub synced content',
+            });
+    });
+
+    test('does not retry non-retryable client errors (422)', async () => {
+        apiQueue.processQueue.mockRestore();
+
+        const eventSpy = jest.spyOn(window, 'dispatchEvent');
+
+        // A 422 validation error will never succeed on retry — it must fail fast.
+        mockCsrfFetch.mockResolvedValue({
+            ok: false,
+            status: 422,
+            statusText: 'Unprocessable Entity',
+            text: async () => JSON.stringify({ errors: ['Cannot do that'] }),
+        });
+
+        const item = { path: '/creatives/42', method: 'PATCH', retries: 0 };
+        apiQueue.queue = [item];
+
+        await apiQueue.processQueue();
+
+        // Exactly one attempt — no retries.
+        expect(mockCsrfFetch).toHaveBeenCalledTimes(1);
+
+        const failureEvent = eventSpy.mock.calls
+            .map(([event]) => event)
+            .find((event) => event.type === 'api-queue-request-failed');
+        expect(failureEvent).toBeDefined();
+        expect(failureEvent.detail.error.errors).toEqual(['Cannot do that']);
+
+        const failedItems = JSON.parse(localStorage.getItem('api_queue_test_user_failed'));
+        expect(failedItems).toHaveLength(1);
+    });
 });
