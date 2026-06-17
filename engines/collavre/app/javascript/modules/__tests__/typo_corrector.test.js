@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { TypoCorrector } from '../typo_corrector'
+import { TypoCorrector, initTypoCorrector } from '../typo_corrector'
 
 // Exercises the DOM orchestration that the pure-logic tests don't reach:
 // auto-applying high-confidence edits into the textarea (caret preserved),
@@ -336,5 +336,30 @@ describe('TypoCorrector DOM orchestration', () => {
     const byWord = Object.fromEntries(tc.edits.map((e) => [e.currentValue, e]))
     expect(textarea.value.slice(byWord['있습니다'].start, byWord['있습니다'].end)).toBe('있습니다')
     expect(textarea.value.slice(byWord['the'].start, byWord['the'].end)).toBe('the')
+  })
+})
+
+describe('initTypoCorrector endpoint wiring', () => {
+  afterEach(() => { document.body.innerHTML = '' })
+
+  function mountPopup(endpoint) {
+    document.body.innerHTML =
+      '<div id="comments-popup" data-typo-enabled="true" data-typo-threshold="80"' +
+      (endpoint == null ? '' : ' data-typo-endpoint="' + endpoint + '"') + '></div>' +
+      '<form id="new-comment-form"><textarea></textarea></form>'
+  }
+
+  // The engine can be mounted at a subpath (e.g. /collavre), so a root-relative
+  // default would 404. The endpoint must come from the engine-rendered dataset.
+  test('uses the mounted engine endpoint from the dataset', () => {
+    mountPopup('/collavre/typo_corrections')
+    const tc = initTypoCorrector()
+    expect(tc.endpoint).toBe('/collavre/typo_corrections')
+  })
+
+  test('falls back to the root-relative path when no endpoint is provided', () => {
+    mountPopup(null)
+    const tc = initTypoCorrector()
+    expect(tc.endpoint).toBe('/typo_corrections')
   })
 })

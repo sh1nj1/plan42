@@ -505,6 +505,9 @@ export function initTypoCorrector() {
   activeInstance = new TypoCorrector(textarea, {
     settings,
     location: 'chat',
+    // Use the mounted engine path (e.g. /collavre/typo_corrections) so requests
+    // don't 404 when Collavre is mounted at a subpath instead of root.
+    endpoint: root.dataset.typoEndpoint || '/typo_corrections',
     getVoiceActive: () => voiceButton?.dataset.voiceState === 'listening',
     labels: {
       keep: root.dataset.typoKeepLabel,
