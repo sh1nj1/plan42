@@ -321,10 +321,11 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
                         "Plan-anchor creatives must not show a registration marker"
   end
 
-  test "modification markers exclude plan-anchor creatives" do
+  test "modification markers exclude plan-anchor creatives untouched since setup" do
     # Backdating start_date moves created_at into the past while update_column
-    # leaves updated_at stale, so updated_at > created_at falsely looks "modified".
-    # Excluding plan-anchor creatives prevents that false marker.
+    # leaves updated_at at the creation time, so updated_at > created_at falsely
+    # looks "modified". The plan label's created_at is after the creative was
+    # saved, so updated_at <= plan.created_at correctly reads as "not edited".
     creative = Creative.create!(user: @owner, description: "Plan anchor creative")
     plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
     plan.start_date = Date.current - 3
@@ -334,7 +335,25 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_not_includes json_ids, "modification_#{creative.id}",
-                        "Plan-anchor creatives must not show a false modification marker"
+                        "Plan-anchor creatives untouched since setup must not show a false modification marker"
+  end
+
+  test "modification markers include plan-anchor creatives edited after plan setup" do
+    # A genuine edit after the plan was set up bumps updated_at past the plan
+    # label's immutable created_at, so it must surface as a real modification
+    # (the plan bar sits at start_date, not the edit date, so excluding it would
+    # lose the marker entirely).
+    creative = Creative.create!(user: @owner, description: "Plan anchor creative")
+    plan = Plan.create!(creative: creative, target_date: Date.current + 5.days, owner: @owner)
+    plan.start_date = Date.current - 3
+    creative.update_column(:updated_at, plan.reload.created_at + 1.hour)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_includes json_ids, "modification_#{creative.id}",
+                    "Plan-anchor creatives edited after setup should show a modification marker"
   end
 
   test "should return stripped html in json" do

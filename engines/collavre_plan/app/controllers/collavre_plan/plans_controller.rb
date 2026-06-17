@@ -152,10 +152,11 @@ module CollavrePlan
     end
 
     # Plan#start_date= overwrites the anchor creative's created_at (via
-    # update_column, which also leaves updated_at stale), so for these creatives
-    # created_at/updated_at no longer mean "registered"/"modified". They already
-    # render as plan bars, so exclude them from both chips to avoid mislabeled
-    # markers (e.g. a backdated start makes updated_at > created_at look "modified").
+    # update_column), repurposing it as the plan start date — so these creatives
+    # already render as plan bars at that date and their created_at is not a true
+    # registration. Exclude them from the Registered chip to avoid a duplicate,
+    # mislabeled marker. (The Modified chip handles anchors via the immutable
+    # plan-label created_at instead; see modification_creatives.)
     def plan_anchor_creative_ids
       Collavre::Plan.where.not(creative_id: nil).select(:creative_id)
     end
@@ -174,15 +175,29 @@ module CollavrePlan
     end
 
     # Modified creatives owned by the current user, drawn at their updated_at.
-    # We exclude never-touched creatives (updated_at == created_at) so the
-    # "Modified" chip stays distinct from "Registered" instead of duplicating it.
-    # Owner-scoped and capped, mirroring registration_creatives.
+    # We only include creatives genuinely edited after they came into being, so
+    # the "Modified" chip stays distinct from "Registered" rather than duplicating
+    # it. Owner-scoped and capped, mirroring registration_creatives.
+    #
+    # Plan#start_date= rewrites an anchor creative's created_at to the chosen plan
+    # start date (via update_column, leaving updated_at untouched), so for anchors
+    # created_at is the plan start, not a creation time, and updated_at > created_at
+    # can't signal a real edit (it's true for almost every anchor). The plan
+    # label's own created_at is immutable, so we measure "edited since setup"
+    # against the earliest plan's created_at for anchors; COALESCE falls back to
+    # created_at for ordinary creatives. This surfaces genuine post-setup edits to
+    # planned creatives while still suppressing the setup-only false positive.
     def modification_creatives(start_date, end_date)
       Collavre::Creative.active
                         .where(user_id: Current.user.id)
                         .where(updated_at: start_date.beginning_of_day..end_date.end_of_day)
-                        .where("creatives.updated_at > creatives.created_at")
-                        .where.not(id: plan_anchor_creative_ids)
+                        .where(
+                          "creatives.updated_at > COALESCE(" \
+                          "(SELECT MIN(plan_labels.created_at) FROM labels plan_labels " \
+                          "WHERE plan_labels.creative_id = creatives.id " \
+                          "AND plan_labels.type = ?), creatives.created_at)",
+                          Collavre::Plan.sti_name
+                        )
                         .order(updated_at: :desc)
                         .limit(MODIFICATION_LIMIT)
                         .to_a
