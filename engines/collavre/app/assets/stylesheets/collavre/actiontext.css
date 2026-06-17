@@ -466,9 +466,10 @@
   color: var(--syntax-selector);
 }
 
+/* highlight.js renders `.hljs-meta` (CSS !important) with color only, no
+   bold — match that so the editor doesn't diverge from the rendered view. */
 .lexical-token-important {
   color: var(--syntax-meta);
-  font-weight: var(--weight-7);
 }
 
 /* highlight.js leaves operators and punctuation at the default code color;
