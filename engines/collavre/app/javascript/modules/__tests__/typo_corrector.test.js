@@ -264,4 +264,38 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(form.querySelector('.typo-input-wrap')).toBeNull()
     expect(form.querySelector('.typo-backdrop')).toBeNull()
   })
+
+  test('earlier corrections stay clickable across detection rounds (not just the last)', () => {
+    // Each detection round used to replace this.edits wholesale, and the server
+    // is stateless — it never re-reports an already-corrected word. So a second
+    // round (triggered by typing more) wiped the first correction's undo mark,
+    // leaving only the most recent correction clickable. Earlier corrections must
+    // keep their mark so the user can still undo them.
+    const { textarea, tc } = mount('잇습니다 hello')
+
+    // Round 1: auto-correct 잇습니다 → 있습니다 (high confidence).
+    tc._applyResult({
+      edits: [{ original: '잇습니다', suggestion: '있습니다', confidence: 0.95 }],
+      threshold: 80,
+    })
+    expect(textarea.value).toBe('있습니다 hello')
+    expect(textarea.parentNode.querySelectorAll('.typo-mark')).toHaveLength(1)
+
+    // User types another typo; a fresh detection round returns only the NEW word.
+    textarea.value = '있습니다 hello teh'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    tc._applyResult({
+      edits: [{ original: 'teh', suggestion: 'the', confidence: 0.95 }],
+      threshold: 80,
+    })
+    expect(textarea.value).toBe('있습니다 hello the')
+
+    // Both corrections must be present and anchored to their own word.
+    const marks = [...textarea.parentNode.querySelectorAll('.typo-mark')]
+    expect(marks.map((m) => m.textContent).sort()).toEqual(['the', '있습니다'])
+    // And each mark resolves to its own edit (not all pointing at the last one).
+    const byWord = Object.fromEntries(tc.edits.map((e) => [e.currentValue, e]))
+    expect(textarea.value.slice(byWord['있습니다'].start, byWord['있습니다'].end)).toBe('있습니다')
+    expect(textarea.value.slice(byWord['the'].start, byWord['the'].end)).toBe('the')
+  })
 })

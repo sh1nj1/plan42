@@ -223,16 +223,31 @@ export class TypoCorrector {
     const anchored = anchorEdits(original, edits)
     const { autoApplied, candidates } = partitionByThreshold(anchored, threshold)
 
+    // This round's edits. `apply` rewrites the word; `keep` leaves the text as-is
+    // (a low-confidence candidate awaiting a decision).
+    const incoming = [
+      ...autoApplied.map((e) => ({ ...e, kind: 'apply' })),
+      ...candidates.map((e) => ({ ...e, kind: 'keep', state: 'candidate', currentValue: e.original })),
+    ]
+
+    // Carry forward earlier corrections that are still anchored in the live text
+    // and don't collide with this round. The server is stateless and never
+    // re-reports an already-corrected word, so without this every detection round
+    // would wipe the prior correction's mark and leave only the most recent one
+    // clickable. Already-applied survivors sit in the text unchanged, so they're
+    // re-emitted in place (kind 'keep'), not re-applied.
+    const survivors = this.edits
+      .filter((p) => original.slice(p.start, p.end) === p.currentValue)
+      .filter((p) => !incoming.some((n) => n.start < p.end && p.start < n.end))
+      .map((p) => ({ ...p, kind: 'keep' }))
+
     // Walk all edits left-to-right in one pass, rebuilding the text while
     // tracking a running delta. This assigns each tracked edit an *exact* final
     // span, rather than re-searching the corrected word by value afterwards —
     // that search would bind to an earlier identical word (e.g. correcting the
     // second "teh" in "the teh" lands the highlight on the first "the", so undo
     // would rewrite the wrong word).
-    const events = [
-      ...autoApplied.map((e) => ({ ...e, kind: 'applied' })),
-      ...candidates.map((e) => ({ ...e, kind: 'candidate' })),
-    ].sort((a, b) => a.start - b.start)
+    const events = [...incoming, ...survivors].sort((a, b) => a.start - b.start)
 
     const originalCaret = this.textarea.selectionStart
     let out = ''
@@ -244,7 +259,7 @@ export class TypoCorrector {
       if (e.start < cursor) continue // overlapping span; skip defensively
       out += original.slice(cursor, e.start)
       const finalStart = e.start + delta
-      if (e.kind === 'applied') {
+      if (e.kind === 'apply') {
         out += e.suggestion
         const d = e.suggestion.length - (e.end - e.start)
         if (e.start < originalCaret) caret += d
@@ -255,11 +270,14 @@ export class TypoCorrector {
           start: finalStart, end: finalStart + e.suggestion.length,
         })
       } else {
-        out += original.slice(e.start, e.end)
+        // 'keep': a new candidate or a carried-forward survivor — text unchanged,
+        // so re-emit the current slice and preserve its existing state.
+        const slice = original.slice(e.start, e.end)
+        out += slice
         tracked.push({
           original: e.original, suggestion: e.suggestion, confidence: e.confidence,
-          state: 'candidate', currentValue: e.original,
-          start: finalStart, end: finalStart + e.original.length,
+          state: e.state, currentValue: e.currentValue,
+          start: finalStart, end: finalStart + slice.length,
         })
       }
       cursor = e.end
