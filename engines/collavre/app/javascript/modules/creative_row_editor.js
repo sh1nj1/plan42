@@ -113,6 +113,7 @@ export function initializeCreativeRowEditor() {
 
     // Markdown editor elements
     const contentTypeInput = document.getElementById('inline-content-type');
+    const markdownEditorInput = document.getElementById('inline-markdown-editor');
     const markdownSourceInput = document.getElementById('inline-markdown-source');
     const markdownWrapper = document.getElementById('markdown-editor-wrapper');
     const markdownTextarea = document.getElementById('markdown-editor-textarea');
@@ -259,6 +260,9 @@ export function initializeCreativeRowEditor() {
       if (Object.prototype.hasOwnProperty.call(data, 'markdown_source')) {
         setRowDatasetValue(row, 'markdownSource', data.markdown_source ?? '');
       }
+      if (Object.prototype.hasOwnProperty.call(data, 'markdown_editor')) {
+        setRowDatasetValue(row, 'markdownEditor', data.markdown_editor ?? '');
+      }
       if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
         if (data.has_children) {
           row.setAttribute('has-children', '');
@@ -299,6 +303,7 @@ export function initializeCreativeRowEditor() {
         parent_id: parentId,
         progress: Number.isNaN(progressValue) ? 0 : progressValue,
         content_type: row.dataset?.contentType || null,
+        markdown_editor: row.dataset?.markdownEditor || null,
         markdown_source: row.dataset?.markdownSource || null
       };
     }
@@ -310,6 +315,7 @@ export function initializeCreativeRowEditor() {
     function activateMarkdownMode(source) {
       markdownMode = true;
       if (contentTypeInput) contentTypeInput.value = 'markdown';
+      if (markdownEditorInput) markdownEditorInput.value = 'source';
       if (markdownTextarea) markdownTextarea.value = source || '';
       if (markdownWrapper) markdownWrapper.style.display = '';
       if (editorContainer) editorContainer.style.display = 'none';
@@ -324,6 +330,7 @@ export function initializeCreativeRowEditor() {
     function deactivateMarkdownMode() {
       markdownMode = false;
       if (contentTypeInput) contentTypeInput.value = 'html';
+      if (markdownEditorInput) markdownEditorInput.value = '';
       if (markdownSourceInput) markdownSourceInput.value = '';
       if (markdownWrapper) markdownWrapper.style.display = 'none';
       if (editorContainer) editorContainer.style.display = '';
@@ -350,20 +357,33 @@ export function initializeCreativeRowEditor() {
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
 
-      // Handle markdown vs rich text mode
+      // Markdown is the canonical storage format for BOTH editors now. Which
+      // surface opens is decided by the persisted editor preference: only
+      // explicitly rich-authored Markdown reopens in Lexical; "source" and
+      // legacy (no preference) Markdown reopen in the advanced textarea.
       const isMarkdown = data.content_type === 'markdown';
-      if (isMarkdown) {
+      const useTextarea = isMarkdown && data.markdown_editor !== 'rich';
+      if (useTextarea) {
         activateMarkdownMode(data.markdown_source || '');
         // Also load Lexical with HTML for fallback/switching
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       } else {
         deactivateMarkdownMode();
+        if (isMarkdown) {
+          // Rich-authored Markdown: prime the hidden fields so a no-edit save
+          // (move, progress toggle) preserves Markdown canonical instead of
+          // demoting back to HTML before the first Lexical change fires.
+          if (contentTypeInput) contentTypeInput.value = 'markdown';
+          if (markdownSourceInput) markdownSourceInput.value = data.markdown_source || '';
+          if (markdownEditorInput) markdownEditorInput.value = 'rich';
+        }
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       }
 
       pendingSave = false;
-      // Track original content for dirty state detection
-      originalContent = isMarkdown ? (data.markdown_source || '') : content;
+      // Dirty detection is HTML-based for the rich surface (compares the editor's
+      // HTML projection), and Markdown-source-based for the textarea surface.
+      originalContent = useTextarea ? (data.markdown_source || '') : content;
       isDirty = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
@@ -1289,8 +1309,12 @@ export function initializeCreativeRowEditor() {
 
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
-      const isMarkdownSave = markdownMode;
-      if (isMarkdownSave) syncMarkdownToForm();
+      // Both editor surfaces persist Markdown now. The textarea surface
+      // (markdownMode) syncs its value to the hidden fields here; the rich
+      // surface already kept them current via onLexicalChange/applyCreativeData.
+      if (markdownMode) syncMarkdownToForm();
+      const capturedContentType = contentTypeInput ? contentTypeInput.value : 'html';
+      const isMarkdownSave = capturedContentType === 'markdown';
       let currentContent = descriptionInput.value;
       let currentProgress = readProgressValue();
       let shouldPersistProgress = progressValueChanged();
@@ -1298,8 +1322,8 @@ export function initializeCreativeRowEditor() {
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
       const startCreativeId = creativeId;
-      let capturedMarkdownSource = isMarkdownSave ? (markdownTextarea?.value || '') : '';
-      const capturedContentType = isMarkdownSave ? 'markdown' : 'html';
+      let capturedMarkdownSource = isMarkdownSave ? (markdownSourceInput ? markdownSourceInput.value : '') : '';
+      const capturedMarkdownEditor = markdownEditorInput ? markdownEditorInput.value : '';
 
       // Prevent saving empty content, matching saveForm behavior
       // This avoids overwriting existing descriptions with empty strings during quick navigation
@@ -1321,9 +1345,12 @@ export function initializeCreativeRowEditor() {
       // so we must re-sync and re-capture the latest textarea value too — otherwise edits
       // made during the upload wait get overwritten by the stale pre-wait source.
       if (form.dataset.creativeId === startCreativeId) {
-        if (isMarkdownSave) {
+        if (markdownMode) {
           syncMarkdownToForm();
-          capturedMarkdownSource = markdownTextarea?.value || '';
+          capturedMarkdownSource = markdownSourceInput ? markdownSourceInput.value : '';
+        } else if (isMarkdownSave && markdownSourceInput) {
+          // Rich surface: re-capture any Markdown produced by edits during the wait.
+          capturedMarkdownSource = markdownSourceInput.value;
         }
         currentContent = descriptionInput.value;
         currentProgress = readProgressValue();
@@ -1339,6 +1366,9 @@ export function initializeCreativeRowEditor() {
       };
       if (isMarkdownSave) {
         body['creative[markdown_source]'] = capturedMarkdownSource;
+        if (capturedMarkdownEditor) {
+          body['creative[markdown_editor]'] = capturedMarkdownEditor;
+        }
       }
 
       if (shouldPersistProgress) {
@@ -1930,10 +1960,18 @@ export function initializeCreativeRowEditor() {
       saveTimer = setTimeout(saveForm, 5000);
     }
 
-    function onLexicalChange(html) {
-      if (markdownMode) return; // Ignore Lexical changes in markdown mode
+    function onLexicalChange(payload) {
+      if (markdownMode) return; // Ignore Lexical changes when the textarea is active
+      const html = (payload && payload.html) || '';
+      const markdown = (payload && payload.markdown) || '';
       descriptionInput.value = html;
-      // Mark as dirty if content changed from original
+      // The rich editor is now a Markdown-canonical surface: persist the Markdown
+      // projection (text color/background as normalized <span> fragments) and
+      // record that the rich surface authored it, so it reopens in Lexical.
+      if (contentTypeInput) contentTypeInput.value = 'markdown';
+      if (markdownSourceInput) markdownSourceInput.value = markdown;
+      if (markdownEditorInput) markdownEditorInput.value = 'rich';
+      // Mark as dirty if the HTML projection changed from original
       isDirty = (html !== originalContent);
       scheduleSave();
     }
@@ -2342,25 +2380,35 @@ export function initializeCreativeRowEditor() {
     if (toggleMarkdownBtn) {
       toggleMarkdownBtn.addEventListener('click', async function () {
         if (markdownMode) {
-          // Switching from Markdown → Rich Text
+          // Switching from Markdown (advanced textarea) → Rich Text. The Markdown
+          // stays canonical; we only flip the authoring surface to rich so it
+          // reopens in Lexical, and render it to HTML for the editor view.
           const confirmMsg = toggleMarkdownBtn.dataset.confirmToRichtext;
           if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
           const md = markdownTextarea?.value || '';
           const html = md ? renderMarkdown(md) : '';
           deactivateMarkdownMode();
           descriptionInput.value = html;
+          if (md) {
+            if (contentTypeInput) contentTypeInput.value = 'markdown';
+            if (markdownSourceInput) markdownSourceInput.value = md;
+            if (markdownEditorInput) markdownEditorInput.value = 'rich';
+          }
           lexicalEditor.load(html, `creative-switch-${Date.now()}`);
           lexicalEditor.focus();
           isDirty = true;
           scheduleSave();
         } else {
-          // Switching from Rich Text → Markdown
+          // Switching from Rich Text → Markdown (advanced textarea). Preserve the
+          // content by seeding the textarea with the rich surface's current
+          // Markdown projection instead of discarding it.
           const currentHtml = descriptionInput.value || '';
           if (!isHtmlEmpty(currentHtml)) {
             const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
             if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
           }
-          activateMarkdownMode('');
+          const existingMarkdown = markdownSourceInput ? markdownSourceInput.value : '';
+          activateMarkdownMode(existingMarkdown);
           isDirty = true;
           scheduleSave();
         }

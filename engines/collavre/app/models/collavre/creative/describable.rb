@@ -5,6 +5,11 @@ module Collavre
 
       included do
         attr_accessor :content_type_input
+        # Which editing surface authored this Markdown: "rich" (Lexical) reopens
+        # in the rich editor, "source" (or absent/legacy) reopens in the advanced
+        # textarea. Stored in data["editor"]; decoupled from the storage format
+        # (content_type), which is now Markdown for both surfaces.
+        attr_accessor :markdown_editor
         attr_reader :markdown_source
 
         def markdown_source=(value)
@@ -128,6 +133,9 @@ module Collavre
           prev_source = data["markdown_source"].to_s
           prev_type = data["content_type"]
           self.data["content_type"] = "markdown"
+          # Remember which surface authored this. Absent param (MCP/tool writes)
+          # keeps the prior choice, defaulting to the advanced textarea.
+          self.data["editor"] = markdown_editor.presence || data["editor"] || "source"
           if new_source != prev_source || prev_type != "markdown"
             # Rewrite inline data-URI images to freshly-uploaded blob paths
             # FIRST, then persist the rewritten source. Subsequent edits
@@ -149,6 +157,7 @@ module Collavre
           self.data ||= {}
           self.data.delete("content_type")
           self.data.delete("markdown_source")
+          self.data.delete("editor")
         elsif !new_record? && description_changed? && data&.dig("content_type") == "markdown"
           # Description was rewritten through a non-markdown path (tool/MCP
           # update, direct base.update(description: ...), etc.) on a creative
@@ -158,6 +167,7 @@ module Collavre
           # Demote to HTML mode so the persisted source matches description.
           self.data.delete("content_type")
           self.data.delete("markdown_source")
+          self.data.delete("editor")
         end
       end
 
@@ -181,11 +191,45 @@ module Collavre
           end
         end
 
+        # The Lexical editor stores text color / background as inline <span
+        # style="...">. Tighten every style attribute to ONLY validated color /
+        # background-color declarations BEFORE sanitization, so allowing `style`
+        # in the safelist can't smuggle layout/position/url() payloads.
+        scrub_inline_color_styles(scrubbed)
+
         self.description = ActionController::Base.helpers.sanitize(
           scrubbed.to_html,
           tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input],
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical]
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical style]
         )
+      end
+
+      # Only these CSS color values may appear in a stored inline style — mirrors
+      # the JS markdown serializer's allowlist (markdown_serialize.js). Blocks
+      # url(), expression(), javascript:, and angle brackets.
+      SAFE_COLOR_VALUE = /\A(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,%\s]+\)|hsla?\([0-9.,%\s]+\)|var\(--[a-zA-Z0-9\-_]+\)|[a-zA-Z]+)\z/
+
+      def scrub_inline_color_styles(fragment)
+        fragment.css("[style]").each do |node|
+          declarations = node["style"].to_s.split(";").filter_map do |decl|
+            key, value = decl.split(":", 2)
+            next if key.nil? || value.nil?
+
+            key = key.strip.downcase
+            value = value.strip
+            next unless %w[color background-color].include?(key)
+            next if value =~ /url\(|expression|javascript:|@import|[<>]/i
+            next unless value =~ SAFE_COLOR_VALUE
+
+            "#{key}: #{value}"
+          end
+
+          if declarations.any?
+            node["style"] = declarations.join("; ")
+          else
+            node.remove_attribute("style")
+          end
+        end
       end
 
       # Sync creative.files to exactly the blobs referenced in the description

@@ -167,6 +167,7 @@ module Collavre
               has_children: children_count > 0,
               data: sanitized_data,
               content_type: effective.data&.dig("content_type"),
+              markdown_editor: effective.data&.dig("editor"),
               markdown_source: can_edit ? effective.data&.dig("markdown_source") : nil,
               trigger_loop: trigger_loop_data,
               is_trigger_task: parent_trigger_enabled,
@@ -212,6 +213,7 @@ module Collavre
         render json: {
           id: @creative.id,
           content_type: @creative.data&.dig("content_type"),
+          markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
         }
       else
@@ -283,7 +285,8 @@ module Collavre
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
               has_children: base.children.exists?,
-              content_type: base.data&.dig("content_type")
+              content_type: base.data&.dig("content_type"),
+              markdown_editor: base.data&.dig("editor")
             }
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
@@ -545,7 +548,7 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
       end
 
       def any_filter_active?

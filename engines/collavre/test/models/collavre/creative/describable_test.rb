@@ -65,6 +65,82 @@ module Collavre
         assert_match %r{<input[^>]*checked[^>]*}, creative.description
       end
 
+      test "markdown_editor persists the authoring surface in data[editor]" do
+        rich = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"
+        )
+        assert_equal "rich", rich.data["editor"]
+
+        source = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "source", markdown_source: "# hi"
+        )
+        assert_equal "source", source.data["editor"]
+      end
+
+      test "markdown_editor defaults to source when absent" do
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# hi")
+        assert_equal "source", creative.data["editor"]
+      end
+
+      test "demoting markdown to html clears the editor preference" do
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"
+        )
+        assert_equal "rich", creative.data["editor"]
+
+        creative.update!(content_type_input: "html", description: "<p>plain</p>")
+        creative.reload
+        assert_nil creative.data["editor"]
+      end
+
+      test "color span survives sanitization in markdown mode" do
+        source = '<span style="color: rgb(255, 0, 0)">red</span> and ' \
+                 '<span style="background-color: #ffff00">hl</span>'
+        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.last
+
+        # Canonical markdown_source is preserved verbatim (sanitizer only touches
+        # the rendered description).
+        assert_equal source, creative.data["markdown_source"]
+        # Rendered description keeps the colors (spacing is normalized by the CSS scrubber).
+        assert_match(/color:\s*rgb\(255, 0, 0\)/, creative.description)
+        assert_match(/background-color:\s*#ffff00/, creative.description)
+        assert_includes creative.description, "red"
+        assert_includes creative.description, "hl"
+      end
+
+      test "color span survives sanitization in html mode" do
+        Creative.create!(user: @user, description: '<p><span style="color: #ff0000">hi</span></p>')
+        creative = Creative.last
+
+        assert_match(/color:\s*#ff0000/, creative.description)
+        assert_includes creative.description, "hi"
+      end
+
+      test "non-color style declarations are scrubbed from spans" do
+        Creative.create!(
+          user: @user,
+          description: '<p><span style="color: red; position: fixed; font-size: 99px">x</span></p>'
+        )
+        creative = Creative.last
+
+        assert_match(/color:\s*red/, creative.description)
+        refute_includes creative.description, "position"
+        refute_includes creative.description, "font-size"
+      end
+
+      test "dangerous style values are dropped, leaving no style attribute" do
+        Creative.create!(
+          user: @user,
+          description: '<p><span style="background: url(javascript:alert(1))">x</span></p>'
+        )
+        creative = Creative.last
+
+        refute_includes creative.description, "javascript"
+        refute_includes creative.description, "url("
+        assert_includes creative.description, "x"
+      end
+
       test "non-checkbox input tags are stripped from description" do
         Creative.create!(
           user: @user,

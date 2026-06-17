@@ -54,6 +54,8 @@ import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
+import { MARKDOWN_TRANSFORMERS } from "../lib/lexical/markdown_serialize"
+import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
 const URL_MATCHERS = [
@@ -907,6 +909,7 @@ function EditorInner({
           onChange={(editorState, editorInstance) => {
             if (!onChange) return
             let serialized = ""
+            let markdown = ""
             editorState.read(() => {
               const innerHtml = $generateHtmlFromNodes(editorInstance)
               const parser = new DOMParser()
@@ -924,9 +927,11 @@ function EditorInner({
               // Strip Lexical's verbose markup (extra <div>, white-space spans,
               // duplicate format wrappers, single-line <p>) before persisting.
               serialized = minimizeContentHtml(doc.body.firstElementChild)
+              // Canonical Markdown projection (color/bg -> normalized <span>).
+              markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
             })
-            // No Trix wrapper
-            onChange(serialized)
+            // html: client-side preview/fallback; markdown: canonical storage.
+            onChange({ html: serialized, markdown })
           }}
         />
         <InitialContentPlugin html={initialHtml} />
