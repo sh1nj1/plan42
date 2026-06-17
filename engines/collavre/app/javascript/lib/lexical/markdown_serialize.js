@@ -1,4 +1,4 @@
-import { $isTextNode } from "lexical"
+import { $isTextNode, $isParagraphNode } from "lexical"
 import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown"
 
 // Serializes the Lexical editor state to Markdown as the canonical storage
@@ -141,6 +141,25 @@ function decoratorMarkup(node) {
   return null
 }
 
+// A paragraph the user left blank (pressed Enter on an empty line). Decorator-
+// or text-bearing paragraphs are NOT blank, so media and whitespace-with-content
+// keep their normal export.
+function isBlankParagraph(node) {
+  if (!$isParagraphNode(node)) return false
+  return node.getChildren().every((child) => $isTextNode(child) && !child.getTextContent().trim())
+}
+
+// Blank paragraphs -> a non-breaking-space line (U+00A0). The default export
+// collapses an empty paragraph to "" (indistinguishable from the blank line the
+// upstream join inserts between two normal paragraphs), so collapseParagraphBreaks
+// would erase a deliberately-typed empty line. A NBSP line is non-blank Markdown,
+// so the hard-break renderer keeps it as a visible empty line inside one <p>
+// instead of collapsing it — and N empty paragraphs render as N blank lines.
+const EMPTY_PARAGRAPH_TRANSFORMER = exportOnlyTransformer(
+  (node) => (isBlankParagraph(node) ? "\u00A0" : null),
+  { type: "element" }
+)
+
 // Colored / highlighted text -> normalized <span>. Falls through (returns null)
 // for uncolored text so the default text-format export still applies.
 const COLOR_TRANSFORMER = exportOnlyTransformer((node, _exportChildren, exportFormat) => {
@@ -169,6 +188,7 @@ const DECORATOR_ELEMENT_TRANSFORMER = exportOnlyTransformer((node) => decoratorM
 // claimed before the upstream defaults (which would drop their style/content).
 export const MARKDOWN_TRANSFORMERS = [
   DECORATOR_ELEMENT_TRANSFORMER,
+  EMPTY_PARAGRAPH_TRANSFORMER,
   DECORATOR_TEXT_TRANSFORMER,
   COLOR_TRANSFORMER,
   ...TRANSFORMERS
@@ -196,6 +216,11 @@ function isPlainParagraph(block) {
 // never typed. Headings, lists, quotes, code fences, tables and media keep their
 // standard blank-line separation.
 export function collapseParagraphBreaks(markdown) {
+  // A document made only of blank paragraphs (each now a U+00A0 line) carries no
+  // real content — keep it empty so the empty-state contract (placeholders,
+  // description presence) is unchanged. trim() drops the nbsp too.
+  if (!String(markdown).trim()) return ""
+
   const fences = []
   const guarded = String(markdown).replace(FENCE_BLOCK, (match) => {
     fences.push(match)
