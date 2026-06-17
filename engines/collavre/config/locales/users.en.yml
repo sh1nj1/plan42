@@ -120,6 +120,19 @@ en:
         en: English
         ko: Korean
       timezone: Timezone
+      typo_correction:
+        legend: Typo correction
+        description: Automatically suggest and fix typos as you type. Suggestions run only when both the typing device and the input location below are enabled.
+        enabled: Enable typo correction
+        threshold: Auto-apply threshold
+        threshold_hint: Edits at or above this confidence (0-100) are applied automatically; lower-confidence edits are only suggested.
+        device_legend: Typing devices
+        on_voice: Voice input
+        on_soft_keyboard: On-screen (soft) keyboard
+        on_physical_keyboard: Physical keyboard (Bluetooth/wired)
+        location_legend: Input locations
+        in_chat: Chat message input
+        in_editor: Inline editor (Lexical / markdown)
       profile_updated: Profile updated successfully.
       avatar_updated: Avatar updated successfully.
       password_updated: Password updated successfully.

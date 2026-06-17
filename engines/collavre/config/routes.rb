@@ -51,6 +51,8 @@ Collavre::Engine.routes.draw do
     end
   end
 
+  resources :typo_corrections, only: [ :create ]
+
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
     member do

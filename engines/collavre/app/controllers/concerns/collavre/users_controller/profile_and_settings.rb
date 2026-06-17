@@ -89,7 +89,14 @@ module Collavre
         :notifications_enabled,
         :calendar_id,
         :timezone,
-        :locale
+        :locale,
+        :typo_correction_enabled,
+        :typo_correction_threshold,
+        :typo_correction_on_soft_keyboard,
+        :typo_correction_on_voice,
+        :typo_correction_on_physical_keyboard,
+        :typo_correction_in_chat,
+        :typo_correction_in_editor
       ).tap do |p|
         p[:locale] = normalize_supported_locale(p[:locale]) if p.key?(:locale)
       end

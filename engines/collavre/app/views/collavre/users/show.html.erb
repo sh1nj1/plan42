@@ -101,6 +101,51 @@
           <%= f.label :timezone, t('collavre.users.timezone') %>
           <%= f.select :timezone, ActiveSupport::TimeZone.all.map { |tz| [tz.to_s, tz.tzinfo.name] } %>
         </div>
+
+        <fieldset class="typo-correction-settings">
+          <legend><%= t('collavre.users.typo_correction.legend') %></legend>
+          <p class="text-muted"><%= t('collavre.users.typo_correction.description') %></p>
+
+          <div class="checkbox-field">
+            <%= f.check_box :typo_correction_enabled %>
+            <%= f.label :typo_correction_enabled, t('collavre.users.typo_correction.enabled') %>
+          </div>
+
+          <div>
+            <%= f.label :typo_correction_threshold, t('collavre.users.typo_correction.threshold') %>
+            <%= f.number_field :typo_correction_threshold, in: 0..100, step: 1 %>
+            <small class="text-muted"><%= t('collavre.users.typo_correction.threshold_hint') %></small>
+          </div>
+
+          <fieldset>
+            <legend><%= t('collavre.users.typo_correction.device_legend') %></legend>
+            <div class="checkbox-field">
+              <%= f.check_box :typo_correction_on_voice %>
+              <%= f.label :typo_correction_on_voice, t('collavre.users.typo_correction.on_voice') %>
+            </div>
+            <div class="checkbox-field">
+              <%= f.check_box :typo_correction_on_soft_keyboard %>
+              <%= f.label :typo_correction_on_soft_keyboard, t('collavre.users.typo_correction.on_soft_keyboard') %>
+            </div>
+            <div class="checkbox-field">
+              <%= f.check_box :typo_correction_on_physical_keyboard %>
+              <%= f.label :typo_correction_on_physical_keyboard, t('collavre.users.typo_correction.on_physical_keyboard') %>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend><%= t('collavre.users.typo_correction.location_legend') %></legend>
+            <div class="checkbox-field">
+              <%= f.check_box :typo_correction_in_chat %>
+              <%= f.label :typo_correction_in_chat, t('collavre.users.typo_correction.in_chat') %>
+            </div>
+            <div class="checkbox-field">
+              <%= f.check_box :typo_correction_in_editor %>
+              <%= f.label :typo_correction_in_editor, t('collavre.users.typo_correction.in_editor') %>
+            </div>
+          </fieldset>
+        </fieldset>
+
         <%= f.submit t('collavre.users.update_profile') %>
       <% end %>
 
