@@ -134,6 +134,18 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(edit.end).toBe(7)
   })
 
+  test('popup renders option labels as text, never as HTML (DOM-XSS safe)', () => {
+    const { tc } = mount('teh cat')
+    tc._applyResult({ edits: [{ original: 'teh', suggestion: 'the', confidence: 0.4 }], threshold: 80 })
+    tc._ensurePopup()
+    tc._activeEdit = tc.edits[0]
+    const payload = '<img src=x onerror=alert(1)>'
+    tc.popup.setItems([{ value: payload, label: payload, role: 'custom' }])
+    const list = tc.popupEl.querySelector('.typo-popup-list')
+    expect(list.querySelector('img')).toBeNull() // not parsed as markup
+    expect(list.textContent).toContain(payload) // shown verbatim as text
+  })
+
   test('undo of an auto-applied edit rewrites the corrected span, not an earlier twin (P2)', () => {
     const { textarea, tc } = mount('the teh')
     tc._applyResult({
