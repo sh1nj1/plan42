@@ -196,6 +196,7 @@ if (!plansTimelineScriptInitialized) {
     renderPlans();
     updatePlanPositions();
 
+    var loadSeq = 0;
     function loadPlans(centerDate) {
       var dateStr = centerDate.toISOString().slice(0, 10);
       if (container.dataset.lastLoadedDate === dateStr) return;
@@ -205,9 +206,13 @@ if (!plansTimelineScriptInitialized) {
       var separator = basePlansUrl.indexOf('?') >= 0 ? '&' : '?'
       var requestUrl = basePlansUrl + separator + 'date=' + dateStr
       if (registrationsEnabled) requestUrl += '&registrations=1'
+      // Discard out-of-order responses: a slower registrations fetch must not
+      // overwrite the result of a later request (e.g. rapid chip on/off).
+      var seq = ++loadSeq;
       fetch(requestUrl)
         .then(function (r) { return r.json(); })
         .then(function (newPlans) {
+          if (seq !== loadSeq) return;
           plans = newPlans.map(function (p) {
             if (p.start_date) {
               p.start_date = new Date(p.start_date);
