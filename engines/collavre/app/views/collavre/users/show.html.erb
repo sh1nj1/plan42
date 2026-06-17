@@ -101,6 +101,7 @@
           <%= f.label :timezone, t('collavre.users.timezone') %>
           <%= f.select :timezone, ActiveSupport::TimeZone.all.map { |tz| [tz.to_s, tz.tzinfo.name] } %>
         </div>
+
         <%= f.submit t('collavre.users.update_profile') %>
       <% end %>
 
@@ -108,6 +109,8 @@
         <%= link_to t('collavre.users.change_password'), collavre.edit_password_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
+        <br>
+        <%= link_to t('collavre.users.typo_correction.manage'), collavre.typo_correction_user_path(@user) %>
         <br>
         <%= link_to t('doorkeeper.my_applications'), main_app.oauth_applications_path %>
         <% if @user.system_admin? %>

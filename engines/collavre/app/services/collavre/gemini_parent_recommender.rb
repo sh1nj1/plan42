@@ -55,7 +55,7 @@ module Collavre
     def default_client
       AiClient.new(
         vendor: "google",
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite",
         system_prompt: nil
       )
     end

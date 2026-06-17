@@ -123,6 +123,40 @@ class AiClientTest < ActiveSupport::TestCase
     mock_config.verify
   end
 
+  test "build_conversation supplies a placeholder key for a keyless local gateway" do
+    # Local OpenAI-compatible gateways (Ollama / LM Studio) need no real key, but
+    # RubyLLM raises ConfigurationError if openai_api_key is blank. We inject a
+    # placeholder so the request proceeds; otherwise the call silently returns nil.
+    client = AiClient.new(
+      vendor: "openai",
+      model: "gemma3",
+      system_prompt: nil,
+      llm_api_key: nil,
+      gateway_url: "http://localhost:11434/v1"
+    )
+
+    fake_chat = FakeConversation.new
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    mock_config = Minitest::Mock.new
+    mock_config.expect(:openai_api_key=, nil, [ "local-gateway" ])
+    mock_config.expect(:openai_api_base=, nil, [ "http://localhost:11434/v1" ])
+
+    context_stub = proc do |&block|
+      block.call(mock_config) if block
+      mock_context
+    end
+
+    Collavre::IntegrationSettings.stub(:fetch, nil) do
+      RubyLLM.stub(:context, context_stub) do
+        client.send(:build_conversation)
+      end
+    end
+
+    assert mock_config.verify
+  end
+
   test "build_conversation sets X-Session-Id header from creative and topic" do
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: 7)
@@ -382,5 +416,40 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal 1, ActivityLog.count
     assert_equal "[StandardError] boom", log_entry.log["error_message"]
     assert_nil log_entry.log["response_content"]
+  end
+
+  test "does not log raw error message to app log when log_interactions is false" do
+    # Inline typo correction passes log_interactions: false because it runs on the
+    # user's *unsubmitted* draft. An LLM error whose message echoes that draft must
+    # not leak to Rails.logger — only the error class may be logged.
+    draft = "my-secret-unsubmitted-draft-xyzzy"
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      raise StandardError, "Gemini 400: bad request for input '#{draft}'"
+    end
+
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key",
+      log_interactions: false
+    )
+
+    logged = []
+    fake_logger = Object.new
+    fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
+    fake_logger.define_singleton_method(:warn) { |msg| logged << msg.to_s }
+    fake_logger.define_singleton_method(:debug) { |*_| }
+
+    Rails.stub(:logger, fake_logger) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: draft } ] } ])
+      end
+    end
+
+    joined = logged.join("\n")
+    assert_not_includes joined, draft, "draft text leaked to app log on error path"
+    assert(logged.any? { |m| m.include?("StandardError") }, "error class should still be logged")
   end
 end

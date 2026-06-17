@@ -15,18 +15,31 @@ export default class CommonPopup {
   showAt(anchorRect) {
     if (!this.element) return
 
+    // Re-opening while already open (e.g. clicking the same typo mark twice):
+    // a listener from the previous open is still live, so the opening mousedown
+    // would bubble to it and hide() the popup right after we set display:block,
+    // leaving it stuck (the rAF below only re-flips visibility, not display).
+    // Drop stale listeners first so the opening event can't self-close it.
+    document.removeEventListener('mousedown', this.handleOutsideClick)
+    document.removeEventListener('touchstart', this.handleOutsideClick)
+
     this.element.style.display = 'block'
     this.element.style.visibility = 'hidden'
 
     requestAnimationFrame(() => {
       this.updatePosition(anchorRect)
       this.element.style.visibility = 'visible'
+      // Register the outside-click listeners only after the opening event has
+      // finished propagating. When a popup is opened from a mousedown handler
+      // (e.g. clicking a typo highlight), registering synchronously here would
+      // let that same mousedown keep bubbling to document, hit handleOutsideClick
+      // (target is outside the popup), and immediately hide() it — the popup
+      // would open and instantly vanish. Deferring one frame avoids that race.
+      if (this.closeOnOutsideClick) {
+        document.addEventListener('mousedown', this.handleOutsideClick)
+        document.addEventListener('touchstart', this.handleOutsideClick)
+      }
     })
-
-    if (this.closeOnOutsideClick) {
-      document.addEventListener('mousedown', this.handleOutsideClick)
-      document.addEventListener('touchstart', this.handleOutsideClick)
-    }
   }
 
   updatePosition(anchorRect) {

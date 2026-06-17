@@ -61,7 +61,20 @@
      data-remove-from-history-label="<%= t('collavre.comments.remove_from_history') %>"
      data-inbox-reply-button="<%= t('collavre.comments.inbox_reply_button') %>"
      data-table-download-csv-text="<%= t('collavre.comments.table_download.csv') %>"
-     data-table-download-excel-text="<%= t('collavre.comments.table_download.excel') %>">
+     data-table-download-excel-text="<%= t('collavre.comments.table_download.excel') %>"
+     <% if Current.user %>
+     data-typo-enabled="<%= Current.user.typo_correction_enabled %>"
+     data-typo-threshold="<%= Current.user.typo_correction_threshold %>"
+     data-typo-on-voice="<%= Current.user.typo_correction_on_voice %>"
+     data-typo-on-soft-keyboard="<%= Current.user.typo_correction_on_soft_keyboard %>"
+     data-typo-on-physical-keyboard="<%= Current.user.typo_correction_on_physical_keyboard %>"
+     data-typo-in-chat="<%= Current.user.typo_correction_in_chat %>"
+     data-typo-in-editor="<%= Current.user.typo_correction_in_editor %>"
+     data-typo-endpoint="<%= collavre.typo_corrections_path %>"
+     data-typo-keep-label="<%= t('collavre.comments.typo_keep_label') %>"
+     data-typo-custom-label="<%= t('collavre.comments.typo_custom_label') %>"
+     data-typo-input-label="<%= t('collavre.comments.typo_input_label') %>"
+     <% end %>>
   <div class="resize-handle resize-handle-left" data-comments--popup-target="leftHandle"></div>
   <div class="resize-handle resize-handle-right" data-comments--popup-target="rightHandle"></div>
   <div class="comments-popup-header" data-comments--popup-target="header">
