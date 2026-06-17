@@ -230,18 +230,6 @@ button {
     cursor: pointer;
 }
 
-#plans-list-area {
-    max-width: var(--max-width);
-    width: min(100%, var(--max-width));
-    margin: 0.5em auto;
-    box-sizing: border-box;
-}
-
-#plans-list-area hr {
-    border: 0;
-    border-top: 1px solid var(--color-border);
-}
-
 .timeline {
     position: relative;
     padding-left: 1.5em;
@@ -277,86 +265,6 @@ button {
     height: 0.6em;
     background: var(--color-btn-bg);
     border-radius: 50%;
-}
-
-.horizontal-timeline {
-    overflow-x: auto;
-    position: relative;
-    padding-bottom: 1em;
-    width: 100%;
-}
-
-.plans-timeline-wrapper {
-    position: relative;
-    width: 100%;
-}
-
-.plans-timeline-wrapper #timeline-today-btn {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 1;
-}
-
-.horizontal-timeline .timeline-scroll {
-    position: relative;
-    white-space: nowrap;
-    height: 120px;
-}
-
-.horizontal-timeline .timeline-day {
-    display: inline-block;
-    width: 80px;
-    box-sizing: border-box;
-    border-right: 1px solid var(--color-border);
-    text-align: center;
-    font-size: 0.8em;
-}
-
-.plan-form-container {
-    padding: 0.5em;
-    display: flex;
-    justify-content: flex-end;
-}
-
-.plan-form-container form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--paragraph-space-1);
-    max-width: min(28rem, 100%);
-}
-
-.plan-bar {
-    position: absolute;
-    height: 20px;
-    background: var(--color-border);
-    border-radius: var(--radius-2);
-    overflow: hidden;
-    cursor: pointer;
-}
-
-.plan-bar .plan-progress {
-    background: var(--color-complete);
-    height: 100%;
-}
-
-.plan-bar .plan-label {
-    position: absolute;
-    left: 2px;
-    top: 2px;
-    font-size: 0.75em;
-    color: var(--color-text);
-}
-
-.plan-bar .delete-plan-btn {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    border: none;
-    background: none;
-    font-weight: bold;
-    cursor: pointer;
-    color: var(--color-bg);
 }
 
 input[type="password"] {

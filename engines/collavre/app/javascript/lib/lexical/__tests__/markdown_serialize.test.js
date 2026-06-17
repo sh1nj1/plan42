@@ -266,6 +266,61 @@ describe("lexicalToMarkdown", () => {
     })
     expect(lexicalToMarkdown(editor)).toBe("intro\n\n## Sec")
   })
+
+  it("preserves a single blank line (empty paragraph) as a non-breaking space line", () => {
+    const editor = buildEditor((root) => {
+      const a = $createParagraphNode()
+      a.append($createTextNode("abc"))
+      root.append(a)
+      root.append($createParagraphNode()) // user pressed Enter on an empty line
+      const b = $createParagraphNode()
+      b.append($createTextNode("def"))
+      root.append(b)
+    })
+    // The empty line must survive: renderers run with hard breaks, so the
+    // line renders as a visible blank line inside one <p> instead of collapsing.
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\u00A0\ndef")
+  })
+
+  it("preserves multiple consecutive blank lines, one nbsp line each", () => {
+    const editor = buildEditor((root) => {
+      const a = $createParagraphNode()
+      a.append($createTextNode("abc"))
+      root.append(a)
+      root.append($createParagraphNode())
+      root.append($createParagraphNode())
+      const b = $createParagraphNode()
+      b.append($createTextNode("def"))
+      root.append(b)
+    })
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\u00A0\n\u00A0\ndef")
+  })
+
+  it("serializes an editor that holds only empty paragraphs as empty Markdown", () => {
+    const editor = buildEditor((root) => {
+      root.append($createParagraphNode())
+      root.append($createParagraphNode())
+    })
+    // A document with no real content stays empty (no stray nbsp), matching the
+    // pre-existing empty-state contract so placeholders/presence checks hold.
+    expect(lexicalToMarkdown(editor)).toBe("")
+  })
+
+  it("keeps tight lines tight and only the empty line spaced", () => {
+    const editor = buildEditor((root) => {
+      const a = $createParagraphNode()
+      a.append($createTextNode("abc"))
+      root.append(a)
+      const b = $createParagraphNode()
+      b.append($createTextNode("def"))
+      root.append(b)
+      root.append($createParagraphNode())
+      const c = $createParagraphNode()
+      c.append($createTextNode("ghi"))
+      root.append(c)
+    })
+    expect(lexicalToMarkdown(editor)).toBe("abc\ndef\n\u00A0\nghi")
+  })
 })
 
 describe("collapseParagraphBreaks", () => {
@@ -338,6 +393,8 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
     ["bold", "<p><strong>bold</strong></p>", "**bold**"],
     ["italic", "<p><em>nice</em></p>", "*nice*"],
     ["unordered list", "<ul><li>a</li><li>b</li></ul>", "- a\n- b"],
+    // Nested list produced by Tab indentation (markdown-canonical store).
+    ["nested unordered list", "<ul><li>a<ul><li>b</li></ul></li></ul>", "- a\n    - b"],
     [
       "colored text",
       '<p><span style="color: rgb(255, 0, 0)">red</span></p>',
@@ -357,7 +414,10 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
       "colored text with HTML metacharacters",
       '<p><span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span></p>',
       '<span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span>'
-    ]
+    ],
+    // A preserved blank line round-trips: markdown_to_html renders the nbsp line
+    // as <br> <br> inside one <p>; re-importing keeps the same canonical form.
+    ["blank line", "<p>abc<br>\u00A0<br>def</p>", "abc\n\u00A0\ndef"]
   ]
 
   it.each(cases)("round-trips %s", (_name, html, expected) => {

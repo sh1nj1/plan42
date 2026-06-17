@@ -400,6 +400,12 @@
   margin: 0.35rem 0;
 }
 
+/* The wrapper <li> Lexical emits for a nested list holds no text of its own;
+   hiding its marker prevents a stray bullet from appearing above the sub-list. */
+.lexical-nested-list-item {
+  list-style-type: none;
+}
+
 /* Content links only — the clickable creative-row anchor is an ancestor of
    .creative-content, not a descendant, so this never restyles the row wrapper.
    a[download] is excluded: attachment chips carry their own .lexical-attachment style. */
