@@ -34,6 +34,20 @@ module Collavre
       assert_equal 2, html.scan("<p>").length
     end
 
+    test "markdown_to_html renders a non-breaking-space line as a visible blank line" do
+      # The Lexical serializer stores a user's empty line as a U+00A0 line so it
+      # survives Markdown rendering instead of collapsing. With hardbreaks the
+      # nbsp line becomes a blank visual row inside one paragraph (a<br>nbsp<br>b),
+      # and N empty lines render as N blank rows.
+      html = MarkdownConverter.markdown_to_html("abc\n\u00A0\ndef")
+      assert_equal 1, html.scan("<p>").length
+      assert_equal 2, html.scan("<br").length
+      assert_includes html, "\u00A0"
+
+      two = MarkdownConverter.markdown_to_html("abc\n\u00A0\n\u00A0\ndef")
+      assert_equal 3, two.scan("<br").length
+    end
+
     test "html_to_markdown handles nil" do
       assert_equal "", MarkdownConverter.html_to_markdown(nil)
     end
