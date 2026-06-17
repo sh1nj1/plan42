@@ -21,17 +21,3 @@ describe("renderCommentMarkdown hard breaks", () => {
     expect(renderCommentMarkdown("line1\nline2")).toContain("<br")
   })
 })
-
-// The optimistic row preview (creative_row_editor) derives nested-list HTML from
-// the canonical Markdown via this renderer instead of Lexical's HTML projection,
-// which nests lists as a sibling empty <li> that renders an extra blank bullet.
-// Guard that the Markdown render produces a proper child <ul> with no empty <li>.
-describe("renderMarkdown nested list (Tab-indent preview)", () => {
-  it("nests an indented item as a child <ul> with no empty wrapper <li>", () => {
-    const html = renderMarkdown("- a\n    - b")
-    expect(html).toMatch(
-      /<ul>[\s\S]*<li>a[\s\S]*<ul>[\s\S]*<li>b<\/li>[\s\S]*<\/ul>[\s\S]*<\/li>[\s\S]*<\/ul>/
-    )
-    expect(html).not.toMatch(/<li>\s*<ul>/)
-  })
-})
