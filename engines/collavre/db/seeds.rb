@@ -56,7 +56,7 @@ module Collavre
         email_verified_at: Time.current,
         searchable: false,
         llm_vendor: ENV.fetch("COLLAVRE_DEFAULT_LLM_VENDOR", "gemini"),
-        llm_model: ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3-flash-preview"),
+        llm_model: ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite"),
         system_prompt: SYSTEM_PROMPT,
         tools: []
       )

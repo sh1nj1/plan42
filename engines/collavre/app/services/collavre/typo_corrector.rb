@@ -48,7 +48,7 @@ module Collavre
       agent = Collavre.user_class.find_by(email: AGENT_EMAIL)
       AiClient.new(
         vendor: agent&.llm_vendor.presence || ENV.fetch("COLLAVRE_DEFAULT_LLM_VENDOR", "gemini"),
-        model: agent&.llm_model.presence || ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3-flash-preview"),
+        model: agent&.llm_model.presence || ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite"),
         system_prompt: agent&.system_prompt.presence || FALLBACK_SYSTEM_PROMPT,
         llm_api_key: agent&.llm_api_key,
         gateway_url: agent&.gateway_url,
