@@ -101,10 +101,10 @@ export function attachmentMarkup({ src, filename, filesize }) {
   return `${html}>${escapeHtmlText(filename)}</a>`
 }
 
-// Boilerplate so a TextMatchTransformer can be export-only: import never fires.
+// Boilerplate so a transformer can be export-only: import never fires.
 const NEVER = /(?!)/
 
-function exportOnlyTransformer(exportFn, dependencies = []) {
+function exportOnlyTransformer(exportFn, { dependencies = [], type = "text-match" } = {}) {
   return {
     dependencies,
     export: exportFn,
@@ -112,22 +112,13 @@ function exportOnlyTransformer(exportFn, dependencies = []) {
     regExp: NEVER,
     replace: () => false,
     trigger: "",
-    type: "text-match"
+    type
   }
 }
 
-// Colored / highlighted text -> normalized <span>. Falls through (returns null)
-// for uncolored text so the default text-format export still applies.
-const COLOR_TRANSFORMER = exportOnlyTransformer((node, _exportChildren, exportFormat) => {
-  if (!$isTextNode(node)) return null
-  const style = node.getStyle ? node.getStyle() : ""
-  if (!style) return null
-  return colorSpanMarkup(style, exportFormat(node, node.getTextContent()))
-})
-
 // Decorator nodes -> raw HTML. Duck-typed via getType() so this module stays
 // free of the .jsx node classes (kept importable under native-ESM Jest).
-const DECORATOR_TRANSFORMER = exportOnlyTransformer((node) => {
+function decoratorMarkup(node) {
   const type = node.getType ? node.getType() : null
   if (type === "image") {
     return imageMarkup({
@@ -148,11 +139,40 @@ const DECORATOR_TRANSFORMER = exportOnlyTransformer((node) => {
     })
   }
   return null
+}
+
+// Colored / highlighted text -> normalized <span>. Falls through (returns null)
+// for uncolored text so the default text-format export still applies.
+const COLOR_TRANSFORMER = exportOnlyTransformer((node, _exportChildren, exportFormat) => {
+  if (!$isTextNode(node)) return null
+  const style = node.getStyle ? node.getStyle() : ""
+  if (!style) return null
+  return colorSpanMarkup(style, exportFormat(node, node.getTextContent()))
 })
 
-// Our custom text-match transformers run first so colored text and decorator
-// nodes are claimed before the upstream defaults (which would drop their style).
-export const MARKDOWN_TRANSFORMERS = [DECORATOR_TRANSFORMER, COLOR_TRANSFORMER, ...TRANSFORMERS]
+// Decorator handler registered as a TEXT-MATCH transformer for media that lives
+// INLINE inside a paragraph (claimed during exportChildren).
+const DECORATOR_TEXT_TRANSFORMER = exportOnlyTransformer((node) => decoratorMarkup(node))
+
+// The SAME handler registered as an ELEMENT transformer for media that is a
+// direct child of the root (the upload plugin's no-selection append path, and
+// imported block-level <img> nodes). $convertToMarkdownString only runs element
+// transformers on top-level nodes — a top-level decorator that matches no element
+// transformer falls back to DecoratorNode#getTextContent() (empty for media),
+// silently dropping it from markdown_source. Without this, the first rich save
+// loses every top-level image/video/file.
+const DECORATOR_ELEMENT_TRANSFORMER = exportOnlyTransformer((node) => decoratorMarkup(node), {
+  type: "element"
+})
+
+// Our custom transformers run first so colored text and decorator nodes are
+// claimed before the upstream defaults (which would drop their style/content).
+export const MARKDOWN_TRANSFORMERS = [
+  DECORATOR_ELEMENT_TRANSFORMER,
+  DECORATOR_TEXT_TRANSFORMER,
+  COLOR_TRANSFORMER,
+  ...TRANSFORMERS
+]
 
 // Read the editor state and return canonical Markdown.
 export function lexicalToMarkdown(editor) {

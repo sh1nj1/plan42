@@ -2,7 +2,8 @@ import {
   createEditor,
   $getRoot,
   $createParagraphNode,
-  $createTextNode
+  $createTextNode,
+  DecoratorNode
 } from "lexical"
 import { HeadingNode, QuoteNode, $createHeadingNode } from "@lexical/rich-text"
 import { ListNode, ListItemNode } from "@lexical/list"
@@ -18,13 +19,62 @@ import {
   lexicalToMarkdown
 } from "../markdown_serialize"
 
-function buildEditor(builder) {
+// Minimal DecoratorNode stand-in: the production image/video/attachment nodes
+// are .jsx and can't load under native-ESM Jest, but the serializer only
+// duck-types getType()/getSrc()/etc., so a plain-JS DecoratorNode subclass
+// exercises the same export path — including the top-level (root child) case.
+class TestImageNode extends DecoratorNode {
+  static getType() {
+    return "image"
+  }
+
+  static clone(node) {
+    return new TestImageNode(node.__src, node.__altText, node.__key)
+  }
+
+  constructor(src = "", altText = "", key) {
+    super(key)
+    this.__src = src
+    this.__altText = altText
+  }
+
+  getSrc() {
+    return this.__src
+  }
+
+  getAltText() {
+    return this.__altText
+  }
+
+  createDOM() {
+    return document.createElement("span")
+  }
+
+  updateDOM() {
+    return false
+  }
+
+  decorate() {
+    return null
+  }
+}
+
+function buildEditor(builder, extraNodes = []) {
   const editor = createEditor({
     namespace: "test",
     onError(error) {
       throw error
     },
-    nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, LinkNode, CodeNode, CodeHighlightNode]
+    nodes: [
+      HeadingNode,
+      QuoteNode,
+      ListNode,
+      ListItemNode,
+      LinkNode,
+      CodeNode,
+      CodeHighlightNode,
+      ...extraNodes
+    ]
   })
   editor.update(
     () => {
@@ -158,6 +208,25 @@ describe("lexicalToMarkdown", () => {
       root.append(p)
     })
     expect(lexicalToMarkdown(editor)).toBe('<span style="color: #ff0000">**hot**</span>')
+  })
+
+  it("serializes a top-level media decorator (root child, not inside a paragraph)", () => {
+    const editor = buildEditor((root) => {
+      root.append(new TestImageNode("/u.png", "up"))
+    }, [TestImageNode])
+    // Without an element-type transformer, a top-level decorator falls back to
+    // getTextContent() ("") and the image is silently dropped from markdown_source.
+    expect(lexicalToMarkdown(editor)).toBe('<img src="/u.png" alt="up">')
+  })
+
+  it("serializes a top-level media decorator alongside text", () => {
+    const editor = buildEditor((root) => {
+      const p = $createParagraphNode()
+      p.append($createTextNode("before"))
+      root.append(p)
+      root.append(new TestImageNode("/u.png", "up"))
+    }, [TestImageNode])
+    expect(lexicalToMarkdown(editor)).toBe('before\n\n<img src="/u.png" alt="up">')
   })
 
   it("leaves uncolored neighbours as plain markdown", () => {

@@ -63,7 +63,12 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     creative = Creative.create!(
       description: "<p>html</p>",
       user: @user,
-      data: { "markdown_source" => "current source", "content_type" => "markdown", "foo" => "bar" }
+      data: {
+        "markdown_source" => "current source",
+        "content_type" => "markdown",
+        "editor" => "rich",
+        "foo" => "bar"
+      }
     )
 
     patch update_metadata_creative_url(creative), params: {
@@ -78,6 +83,9 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     creative.reload
     assert_equal "current source", creative.data["markdown_source"]
     assert_equal "markdown", creative.data["content_type"]
+    # A metadata save that omits "editor" must not drop the rich authoring flag,
+    # else the Lexical-authored creative would reopen in the advanced textarea.
+    assert_equal "rich", creative.data["editor"]
     assert_equal "baz", creative.data["foo"]
   end
 
@@ -85,13 +93,14 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     creative = Creative.create!(description: "<p>html</p>", user: @user, data: { "foo" => "bar" })
 
     patch update_metadata_creative_url(creative), params: {
-      data: { markdown_source: "injected", content_type: "markdown", foo: "baz" }.to_json
+      data: { markdown_source: "injected", content_type: "markdown", editor: "rich", foo: "baz" }.to_json
     }
 
     assert_response :success
     creative.reload
     assert_not creative.data.key?("markdown_source")
     assert_not creative.data.key?("content_type")
+    assert_not creative.data.key?("editor")
     assert_equal "baz", creative.data["foo"]
   end
 

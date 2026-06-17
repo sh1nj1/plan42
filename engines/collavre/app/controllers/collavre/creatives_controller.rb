@@ -399,9 +399,11 @@ module Collavre
         return
       end
       # Reserved markdown fields are not editable via metadata; preserve current values so a stale
-      # YAML payload from the metadata popup can't overwrite a concurrent markdown edit.
+      # YAML payload from the metadata popup (or an API client that omits them) can't overwrite a
+      # concurrent markdown edit. "editor" must be reserved too: dropping it would erase the "rich"
+      # authoring flag and make a Lexical-authored creative reopen in the advanced textarea.
       current_data = creative.data || {}
-      %w[markdown_source content_type].each do |key|
+      %w[markdown_source content_type editor].each do |key|
         if current_data.key?(key)
           new_data[key] = current_data[key]
         else
