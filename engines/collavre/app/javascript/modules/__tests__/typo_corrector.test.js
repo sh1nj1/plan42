@@ -224,4 +224,44 @@ describe('TypoCorrector DOM orchestration', () => {
     tc._ensurePopup()
     expect(tc.popupInput.getAttribute('aria-label')).toBe('교정')
   })
+
+  test('form reset clears stale marks off the now-empty composer', () => {
+    // form.reset() empties the textarea without an `input` event, so without the
+    // reset listener the previous draft's marks would linger and stay clickable.
+    const realRaf = window.requestAnimationFrame
+    window.requestAnimationFrame = (cb) => { cb(); return 0 }
+    try {
+      document.body.innerHTML = '<form><textarea></textarea></form>'
+      const form = document.querySelector('form')
+      const textarea = document.querySelector('textarea')
+      const tc = new TypoCorrector(textarea, { settings })
+      textarea.value = 'teh cat'
+      tc._applyResult({ edits: [{ original: 'teh', suggestion: 'the', confidence: 0.4 }], threshold: 80 })
+      expect(textarea.parentNode.querySelector('.typo-mark')).not.toBeNull()
+
+      form.reset()
+      expect(tc.edits).toHaveLength(0)
+      expect(textarea.parentNode.querySelector('.typo-mark')).toBeNull()
+    } finally {
+      window.requestAnimationFrame = realRaf
+    }
+  })
+
+  test('destroy unwraps the textarea and clears the bind marker (Turbo before-cache)', () => {
+    // Turbo caches the DOM but not JS listeners; the snapshot must not keep the
+    // injected backdrop or typoBound, or the restored page would duplicate the
+    // overlay / skip re-init and leave correction dead until a full reload.
+    document.body.innerHTML = '<form><textarea></textarea></form>'
+    const form = document.querySelector('form')
+    const textarea = document.querySelector('textarea')
+    textarea.dataset.typoBound = 'true'
+    const tc = new TypoCorrector(textarea, { settings })
+    expect(textarea.parentNode.classList.contains('typo-input-wrap')).toBe(true)
+
+    tc.destroy()
+    expect(textarea.dataset.typoBound).toBeUndefined()
+    expect(textarea.parentNode).toBe(form) // unwrapped back to the form
+    expect(form.querySelector('.typo-input-wrap')).toBeNull()
+    expect(form.querySelector('.typo-backdrop')).toBeNull()
+  })
 })

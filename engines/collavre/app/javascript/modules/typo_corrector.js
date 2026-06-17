@@ -129,10 +129,23 @@ export class TypoCorrector {
       this._scheduleDetect()
     }
     this._onScroll = () => this._syncScroll()
+    // form.reset() (after a comment sends, or on cancel) empties the textarea
+    // WITHOUT firing an `input` event, so our repaint never runs and stale marks
+    // would linger over the now-empty composer — still clickable, applying stale
+    // offsets to the empty value. The `reset` event fires before the control is
+    // cleared, so drop the edits now and repaint next frame once it's empty.
+    this._onReset = () => {
+      clearTimeout(this.debounceTimer)
+      this.requestSeq++ // invalidate any in-flight detection response
+      this.edits = []
+      requestAnimationFrame(() => this._repaint())
+    }
 
+    this.form = this.textarea.form
     this.textarea.addEventListener('keydown', this._onKeydown)
     this.textarea.addEventListener('input', this._onInput)
     this.textarea.addEventListener('scroll', this._onScroll)
+    this.form?.addEventListener('reset', this._onReset)
   }
 
   destroy() {
@@ -140,6 +153,18 @@ export class TypoCorrector {
     this.textarea.removeEventListener('keydown', this._onKeydown)
     this.textarea.removeEventListener('input', this._onInput)
     this.textarea.removeEventListener('scroll', this._onScroll)
+    this.form?.removeEventListener('reset', this._onReset)
+    // Unwrap the textarea and drop the injected backdrop so a Turbo page-cache
+    // snapshot doesn't serialize stale overlay DOM (it would duplicate on the
+    // next build) or the bind marker (a restored snapshot keeps typoBound=true
+    // but loses the JS listeners, so re-init is skipped and correction stays
+    // dead until a full reload).
+    const wrap = this.backdrop?.parentNode
+    if (wrap && wrap.parentNode) {
+      wrap.parentNode.insertBefore(this.textarea, wrap)
+      wrap.remove()
+    }
+    delete this.textarea.dataset.typoBound
   }
 
   _syncScroll() {
@@ -439,6 +464,8 @@ function readSettings(root) {
   }
 }
 
+let activeInstance = null
+
 export function initTypoCorrector() {
   const textarea = document.querySelector('#new-comment-form textarea')
   const root = document.getElementById('comments-popup')
@@ -448,7 +475,7 @@ export function initTypoCorrector() {
   textarea.dataset.typoBound = 'true'
 
   const voiceButton = document.getElementById('voice-comments-btn')
-  return new TypoCorrector(textarea, {
+  activeInstance = new TypoCorrector(textarea, {
     settings,
     location: 'chat',
     getVoiceActive: () => voiceButton?.dataset.voiceState === 'listening',
@@ -458,9 +485,20 @@ export function initTypoCorrector() {
       inputLabel: root.dataset.typoInputLabel,
     },
   })
+  return activeInstance
+}
+
+export function teardownTypoCorrector() {
+  if (!activeInstance) return
+  activeInstance.destroy()
+  activeInstance = null
 }
 
 if (!initialized) {
   initialized = true
   document.addEventListener('turbo:load', initTypoCorrector)
+  // Turbo caches a DOM snapshot on navigation but not the JS listeners. Tear the
+  // instance down (clearing the bind marker + injected DOM) before the snapshot
+  // is taken so a restored page re-initializes cleanly instead of skipping init.
+  document.addEventListener('turbo:before-cache', teardownTypoCorrector)
 }
