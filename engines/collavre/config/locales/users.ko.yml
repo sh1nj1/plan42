@@ -97,6 +97,7 @@ ko:
       current_avatar: 현재 아바타
       new_avatar_preview: 새 아바타 미리보기
       update_profile: 프로파일 업데이트
+      update: 업데이트
       delete: 삭제
       make_system_admin: 시스템 관리자 지정
       make_normal_user: 일반 사용자로 변경

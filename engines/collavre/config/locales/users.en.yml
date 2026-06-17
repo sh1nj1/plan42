@@ -102,6 +102,7 @@ en:
       current_avatar: Current avatar
       new_avatar_preview: New avatar preview
       update_profile: Update Profile
+      update: Update
       delete: Delete
       make_system_admin: Make system admin
       make_normal_user: Make normal user
