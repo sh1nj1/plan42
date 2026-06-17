@@ -122,6 +122,7 @@ en:
       timezone: Timezone
       typo_correction:
         legend: Typo correction
+        manage: Typo correction settings
         description: Automatically suggest and fix typos as you type. Suggestions run only when both the typing device and the input location below are enabled.
         enabled: Enable typo correction
         threshold: Auto-apply threshold

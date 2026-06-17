@@ -23,6 +23,7 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
+      get :typo_correction
     end
   end
   get "/email_verification/:token", to: "email_verifications#show", as: :email_verification

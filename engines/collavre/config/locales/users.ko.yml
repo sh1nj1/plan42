@@ -117,6 +117,7 @@ ko:
       timezone: 시간대
       typo_correction:
         legend: 오타 자동 수정
+        manage: 오타 자동 수정 설정
         description: 입력하는 동안 오타를 자동으로 제안하고 수정합니다. 아래의 타이핑 장치와 입력 위치가 모두 켜져 있을 때만 동작합니다.
         enabled: 오타 자동 수정 사용
         threshold: 자동 적용 기준

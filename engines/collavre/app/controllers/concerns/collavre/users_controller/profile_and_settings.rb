@@ -58,6 +58,14 @@ module Collavre
       end
     end
 
+    def typo_correction
+      @user = Collavre::User.find(params[:id])
+
+      unless @user == Current.user || Current.user.system_admin?
+        redirect_to user_path(Current.user), alert: I18n.t("collavre.users.destroy.not_authorized")
+      end
+    end
+
     def update_password
       @user = Collavre::User.find(params[:id])
       if @user.authenticate(params[:user][:current_password])
