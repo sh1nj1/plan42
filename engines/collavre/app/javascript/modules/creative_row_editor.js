@@ -1391,8 +1391,17 @@ export function initializeCreativeRowEditor() {
       if (tree) {
         const row = treeRowElement(tree);
         if (row) {
-          row.dataset.descriptionHtml = currentContent;
-          row.descriptionHtml = currentContent;
+          // The displayed preview must match the server's Markdown render, not the
+          // Lexical HTML projection. Lexical nests lists as a sibling empty <li>
+          // wrapping the child list, which renders an extra blank bullet; the
+          // canonical Markdown renders nested lists as a proper child <ul>. So for
+          // Markdown saves derive the preview from the Markdown (same renderer the
+          // server uses) and keep the Lexical HTML only for reopen (descriptionRawHtml).
+          const previewHtml = isMarkdownSave
+            ? renderMarkdown(capturedMarkdownSource || '')
+            : currentContent;
+          row.dataset.descriptionHtml = previewHtml;
+          row.descriptionHtml = previewHtml;
           row.dataset.descriptionRawHtml = currentContent;
           if (shouldPersistProgress) {
             row.dataset.progressValue = String(currentProgress);
