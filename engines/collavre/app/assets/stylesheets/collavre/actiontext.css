@@ -284,8 +284,7 @@
 .creative-content table {
   border-collapse: collapse;
   table-layout: fixed;
-  width: fit-content;
-  max-width: 100%;
+  width: 100%;
   margin: 0.75rem 0;
 }
 
