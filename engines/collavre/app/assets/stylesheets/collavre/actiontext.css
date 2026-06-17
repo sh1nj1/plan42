@@ -303,7 +303,7 @@
 .lexical-table-cell-header,
 .creative-content th {
   background-color: var(--surface-hover);
-  font-weight: 600;
+  font-weight: var(--weight-6);
 }
 
 .lexical-table-selected {

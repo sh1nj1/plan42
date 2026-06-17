@@ -77,6 +77,14 @@ describe("TABLE markdown transformer", () => {
     expect(out).toContain("| a | b |")
   })
 
+  it("preserves a literal pipe typed inside a cell", () => {
+    // A user types "a|b" into a cell. Without escaping, export emits an
+    // unescaped pipe which GFM re-parses as an extra column on the next render.
+    const md = "| H1 | H2 |\n| --- | --- |\n| a\\|b | ok |"
+    const out = roundTrip(md)
+    expect(out).toContain("| a\\|b | ok |")
+  })
+
   it("does not hang on a pathological colon/pipe row (ReDoS guard)", () => {
     // Before the -+ fix, the divider regex backtracked exponentially on rows of
     // alternating colons and pipes. This must complete effectively instantly.

@@ -215,7 +215,7 @@ function TableHoverActionsContainer({ anchorElem }) {
   }, [shouldListenMouseMove, debouncedOnMouseMove])
 
   useEffect(() => {
-    return mergeRegister(
+    const unregister = mergeRegister(
       editor.registerMutationListener(
         TableNode,
         (mutations) => {
@@ -235,7 +235,9 @@ function TableHoverActionsContainer({ anchorElem }) {
                 tableResizeObserver.disconnect()
                 for (const tableKey of tableSetRef.current) {
                   const { tableElement } = $getTableAndElementByKey(tableKey)
-                  tableResizeObserver.observe(tableElement)
+                  // Guard: the key may be destroyed between the mutation batch
+                  // and this read, leaving no element to observe.
+                  if (tableElement) tableResizeObserver.observe(tableElement)
                 }
                 setShouldListenMouseMove(tableSetRef.current.size > 0)
               }
@@ -246,6 +248,13 @@ function TableHoverActionsContainer({ anchorElem }) {
         { skipInitialization: false }
       )
     )
+    // Disconnect the observer on unmount; mergeRegister only unregisters the
+    // mutation listener, so without this the observer leaks table DOM refs
+    // across editor open/close cycles.
+    return () => {
+      unregister()
+      tableResizeObserver.disconnect()
+    }
   }, [editor, tableResizeObserver])
 
   const insertAction = (insertRow) => {

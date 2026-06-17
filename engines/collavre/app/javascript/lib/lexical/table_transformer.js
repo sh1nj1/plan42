@@ -43,10 +43,33 @@ function $createTableCell(textContent) {
   return cell
 }
 
+// Split a row's inner text on cell boundaries (unescaped pipes only). A pipe a
+// user typed inside a cell is stored GFM-escaped as "\|"; String.split("|")
+// would break the cell at that pipe. Walk the string, treat "\|" as a literal
+// pipe inside the cell, and split only on bare pipes. (The per-cell markdown
+// parser does NOT unescape "\|" itself, so we drop the backslash here.)
+function splitRowCells(inner) {
+  const cells = []
+  let current = ""
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "\\" && inner[i + 1] === "|") {
+      current += "|"
+      i++
+    } else if (inner[i] === "|") {
+      cells.push(current)
+      current = ""
+    } else {
+      current += inner[i]
+    }
+  }
+  cells.push(current)
+  return cells
+}
+
 function mapToTableCells(textContent) {
   const match = textContent.match(TABLE_ROW_REG_EXP)
   if (!match || !match[1]) return null
-  return match[1].split("|").map((text) => $createTableCell(text))
+  return splitRowCells(match[1]).map((text) => $createTableCell(text))
 }
 
 export const TABLE = {
@@ -61,7 +84,12 @@ export const TABLE = {
       for (const cell of row.getChildren()) {
         if ($isTableCellNode(cell)) {
           rowOutput.push(
-            $convertToMarkdownString(cellTransformers, cell).replace(/\n/g, "\\n").trim()
+            $convertToMarkdownString(cellTransformers, cell)
+              .replace(/\n/g, "\\n")
+              // Escape pipes so cell content (e.g. "a|b") isn't reparsed as an
+              // extra column; splitRowCells reverses this on import.
+              .replace(/\|/g, "\\|")
+              .trim()
           )
           if (cell.__headerState === TableCellHeaderStates.ROW) {
             isHeaderRow = true
