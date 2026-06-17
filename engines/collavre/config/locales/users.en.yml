@@ -132,7 +132,7 @@ en:
         on_physical_keyboard: Physical keyboard (Bluetooth/wired)
         location_legend: Input locations
         in_chat: Chat message input
-        in_editor: Inline editor (Lexical / markdown)
+        in_editor: Creative editor
       profile_updated: Profile updated successfully.
       avatar_updated: Avatar updated successfully.
       password_updated: Password updated successfully.

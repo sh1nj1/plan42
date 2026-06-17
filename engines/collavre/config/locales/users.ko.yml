@@ -127,7 +127,7 @@ ko:
         on_physical_keyboard: 물리 키보드(블루투스/유선)
         location_legend: 입력 위치
         in_chat: 채팅 메시지 입력
-        in_editor: 인라인 에디터(Lexical / 마크다운)
+        in_editor: 크리에이티브 편집기
       profile_updated: 프로파일이 업데이트되었습니다.
       avatar_updated: 아바타가 변경되었습니다.
       password_updated: 비밀번호가 성공적으로 변경되었습니다.
