@@ -8,7 +8,11 @@ export function createInlineEditor(container, {
   onChange,
   onKeyDown,
   onEnterKey,
-  onUploadStateChange
+  onUploadStateChange,
+  typoSettings = null,
+  typoEndpoint = null,
+  typoLabels = null,
+  getVoiceActive = null
 } = {}) {
   if (!container) {
     throw new Error("Lexical editor container not found")
@@ -74,6 +78,10 @@ export function createInlineEditor(container, {
         directUploadUrl={directUploadUrl}
         blobUrlTemplate={blobUrlTemplate}
         deletedAttachmentsRef={deletedAttachmentsRef}
+        typoSettings={typoSettings}
+        typoEndpoint={typoEndpoint}
+        typoLabels={typoLabels}
+        getVoiceActive={getVoiceActive}
       />
     )
   }

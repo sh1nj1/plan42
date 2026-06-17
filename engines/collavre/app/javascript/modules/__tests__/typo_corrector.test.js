@@ -6,7 +6,7 @@ import { TypoCorrector, initTypoCorrector } from '../typo_corrector'
 // Exercises the DOM orchestration that the pure-logic tests don't reach:
 // auto-applying high-confidence edits into the textarea (caret preserved),
 // painting the two highlight states onto the backdrop, and resolving an edit
-// through _chooseValue. Network is bypassed by calling _applyResult directly.
+// through the shared TypoPopup. Network is bypassed by calling _applyResult directly.
 
 const settings = {
   enabled: true,
@@ -67,9 +67,9 @@ describe('TypoCorrector DOM orchestration', () => {
       threshold: 80,
     })
     const edit = tc.edits[0]
-    tc._ensurePopup()
-    tc._activeEdit = edit
-    tc._chooseValue('the')
+    tc.popup._ensure()
+    tc.popup.activeEdit = edit
+    tc.popup._choose('the')
     expect(textarea.value).toBe('the cat')
     expect(textarea.parentNode.querySelector('.typo-mark')).toBeNull()
   })
@@ -81,9 +81,9 @@ describe('TypoCorrector DOM orchestration', () => {
       threshold: 80,
     })
     const edit = tc.edits[0]
-    tc._ensurePopup()
-    tc._activeEdit = edit
-    tc._chooseValue('teh') // keep
+    tc.popup._ensure()
+    tc.popup.activeEdit = edit
+    tc.popup._choose('teh') // keep
     expect(textarea.value).toBe('teh cat')
     expect(tc.edits).toHaveLength(0)
   })
@@ -137,11 +137,11 @@ describe('TypoCorrector DOM orchestration', () => {
   test('popup renders option labels as text, never as HTML (DOM-XSS safe)', () => {
     const { tc } = mount('teh cat')
     tc._applyResult({ edits: [{ original: 'teh', suggestion: 'the', confidence: 0.4 }], threshold: 80 })
-    tc._ensurePopup()
-    tc._activeEdit = tc.edits[0]
+    tc.popup._ensure()
+    tc.popup.activeEdit = tc.edits[0]
     const payload = '<img src=x onerror=alert(1)>'
-    tc.popup.setItems([{ value: payload, label: payload, role: 'custom' }])
-    const list = tc.popupEl.querySelector('.typo-popup-list')
+    tc.popup.popup.setItems([{ value: payload, label: payload, role: 'custom' }])
+    const list = tc.popup.popupEl.querySelector('.typo-popup-list')
     expect(list.querySelector('img')).toBeNull() // not parsed as markup
     expect(list.textContent).toContain(payload) // shown verbatim as text
   })
@@ -153,9 +153,9 @@ describe('TypoCorrector DOM orchestration', () => {
       threshold: 80,
     })
     const edit = tc.edits.find((e) => e.state === 'applied')
-    tc._ensurePopup()
-    tc._activeEdit = edit
-    tc._chooseValue('teh') // undo back to the original
+    tc.popup._ensure()
+    tc.popup.activeEdit = edit
+    tc.popup._choose('teh') // undo back to the original
     expect(textarea.value).toBe('the teh')
   })
 
@@ -193,7 +193,7 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(mark).not.toBeNull()
     mark.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(tc.popup.isOpen()).toBe(true)
-    expect(tc.popupEl.style.display).toBe('block')
+    expect(tc.popup.popupEl.style.display).toBe('block')
   })
 
   test('a mark re-opens the popup on a second click while it is still open', () => {
@@ -241,8 +241,8 @@ describe('TypoCorrector DOM orchestration', () => {
       })
       const mark = textarea.parentNode.querySelector('.typo-mark-candidate')
       mark.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-      expect(document.activeElement).toBe(tc.popupInput)
-      expect(tc.popupInput.value).toBe('teh') // current word, pre-filled
+      expect(document.activeElement).toBe(tc.popup.popupInput)
+      expect(tc.popup.popupInput.value).toBe('teh') // current word, pre-filled
     } finally {
       window.requestAnimationFrame = realRaf
     }
@@ -252,8 +252,8 @@ describe('TypoCorrector DOM orchestration', () => {
     document.body.innerHTML = '<form><textarea></textarea></form>'
     const textarea = document.querySelector('textarea')
     const tc = new TypoCorrector(textarea, { settings, labels: { inputLabel: '교정' } })
-    tc._ensurePopup()
-    expect(tc.popupInput.getAttribute('aria-label')).toBe('교정')
+    tc.popup._ensure()
+    expect(tc.popup.popupInput.getAttribute('aria-label')).toBe('교정')
   })
 
   test('form reset clears stale marks off the now-empty composer', () => {
@@ -292,7 +292,7 @@ describe('TypoCorrector DOM orchestration', () => {
     // The combobox popup lives on document.body, so destroy() must remove it too;
     // otherwise the Turbo snapshot serializes an orphan popup and the next
     // corrector appends a duplicate.
-    tc._ensurePopup()
+    tc.popup._ensure()
     expect(document.body.querySelector('.typo-popup')).not.toBeNull()
 
     tc.destroy()
@@ -301,7 +301,7 @@ describe('TypoCorrector DOM orchestration', () => {
     expect(form.querySelector('.typo-input-wrap')).toBeNull()
     expect(form.querySelector('.typo-backdrop')).toBeNull()
     expect(document.body.querySelector('.typo-popup')).toBeNull()
-    expect(tc.popupEl).toBeNull()
+    expect(tc.popup.popupEl).toBeNull()
   })
 
   test('earlier corrections stay clickable across detection rounds (not just the last)', () => {

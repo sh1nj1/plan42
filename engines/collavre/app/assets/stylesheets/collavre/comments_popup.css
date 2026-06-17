@@ -2056,6 +2056,39 @@ li:hover .topic-create-option {
     text-underline-offset: 2px;
 }
 
+/* Phase 2: editor overlay. A volatile layer over the contenteditable; its marks
+   are empty, absolutely-positioned boxes drawn from DOM Range rects (no text), so
+   the underline is a border-bottom instead of text-decoration. The layer never
+   serializes — the editor state holds no highlight. */
+.typo-editor-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.typo-editor-overlay .typo-mark {
+    position: absolute;
+    background: transparent;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+/* Two states, distinguished by BOTH shape and colour (colour-blind safe):
+   applied = solid link-blue, candidate = dotted amber. */
+.typo-editor-overlay .typo-mark-applied {
+    text-decoration: none;
+    border-bottom: 1px solid var(--color-link);
+    opacity: 0.55;
+}
+
+.typo-editor-overlay .typo-mark-candidate {
+    text-decoration: none;
+    border-bottom: 2px dotted var(--color-warning);
+}
+
 /* Creatable combobox reusing CommonPopup positioning. */
 .typo-popup {
     position: absolute;

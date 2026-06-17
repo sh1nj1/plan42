@@ -8,6 +8,7 @@ import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
+import { readTypoSettings, readTypoLabels, readTypoEndpoint } from '../lib/typo_settings'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -125,11 +126,19 @@ export function initializeCreativeRowEditor() {
     let lexicalEditor = null;
     if (editorContainer) {
       try {
+        // Typo correction profile (server-rendered on #comments-popup). The
+        // plugin self-gates on settings.enabled + the editor location toggle.
+        const typoRoot = document.getElementById('comments-popup');
+        const voiceButton = document.getElementById('voice-comments-btn');
         lexicalEditor = createInlineEditor(editorContainer, {
           onChange: onLexicalChange,
           onKeyDown: handleEditorKeyDown,
           onEnterKey: handleEditorEnterKey,
-          onUploadStateChange: handleUploadStateChange
+          onUploadStateChange: handleUploadStateChange,
+          typoSettings: readTypoSettings(typoRoot),
+          typoEndpoint: readTypoEndpoint(typoRoot),
+          typoLabels: readTypoLabels(typoRoot),
+          getVoiceActive: () => voiceButton?.dataset.voiceState === 'listening'
         });
       } catch (e) {
         console.error('CreativeRowEditor: Failed to create inline editor', e);

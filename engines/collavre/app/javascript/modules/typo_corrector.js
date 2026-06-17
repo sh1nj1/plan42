@@ -15,12 +15,12 @@
 // document, so Enter = keep. Typing adds the typed word as an always-present,
 // auto-selected custom option.
 
-import CommonPopup from '../lib/common_popup'
 import csrfFetch from '../lib/api/csrf_fetch'
+import { TypoPopup } from '../lib/typo_popup'
+import { readTypoSettings, readTypoLabels, readTypoEndpoint } from '../lib/typo_settings'
 import {
   detectDevice,
   shouldRun,
-  buildCandidateList,
   anchorEdits,
   applyEditAt,
   shiftEditsAfter,
@@ -69,6 +69,11 @@ export class TypoCorrector {
     this.lastInputAt = null
     this.debounceTimer = null
     this.requestSeq = 0
+
+    this.popup = new TypoPopup({
+      labels: this.labels,
+      onChoose: (value, edit) => this._applyChoice(value, edit),
+    })
 
     this._buildBackdrop()
     this._bind()
@@ -156,13 +161,8 @@ export class TypoCorrector {
     this.form?.removeEventListener('reset', this._onReset)
     // Drop the combobox popup: it lives on document.body, so without this a Turbo
     // page-cache snapshot serializes an orphan popup (stale options, no live
-    // instance) and the next corrector appends a duplicate. hide() also detaches
-    // CommonPopup's document-level outside-click listeners.
-    this.popup?.hide()
-    this.popupEl?.remove()
-    this.popupEl = null
-    this.popupInput = null
-    this.popup = null
+    // instance) and the next corrector appends a duplicate.
+    this.popup?.destroy()
     // Unwrap the textarea and drop the injected backdrop so a Turbo page-cache
     // snapshot doesn't serialize stale overlay DOM (it would duplicate on the
     // next build) or the bind marker (a restored snapshot keeps typoBound=true
@@ -346,103 +346,20 @@ export class TypoCorrector {
       if (!edit) return
       mark.addEventListener('mousedown', (event) => {
         event.preventDefault()
-        this._openPopup(edit, mark)
+        this.popup.open(edit, mark.getBoundingClientRect(), { coarsePointer: this._isCoarsePointer() })
       })
     })
-  }
-
-  _ensurePopup() {
-    if (this.popupEl) return
-    const el = document.createElement('div')
-    el.className = 'typo-popup common-popup'
-    el.style.display = 'none'
-    el.innerHTML = `
-      <input type="text" class="typo-popup-input" />
-      <ul class="typo-popup-list" data-popup-list></ul>`
-    document.body.appendChild(el)
-    this.popupEl = el
-    this.popupInput = el.querySelector('.typo-popup-input')
-    // Localized assistive label (set via setAttribute, not innerHTML, so the
-    // value is never parsed as markup).
-    this.popupInput.setAttribute('aria-label', this.labels.inputLabel)
-
-    this.popup = new CommonPopup(el, {
-      listElement: el.querySelector('.typo-popup-list'),
-      // item.label is user-typed / model-suggested text; escapeHtml round-trips
-      // it through textContent so it can never be reinterpreted as markup.
-      renderItem: (item) => {
-        const tag = item.role === 'original' ? ` <span class="typo-popup-role">(${escapeHtml(this.labels.keep)})</span>`
-          : item.role === 'custom' ? ` <span class="typo-popup-role">(${escapeHtml(this.labels.custom)})</span>` : ''
-        return `<span class="typo-popup-value">${escapeHtml(item.label)}</span>${tag}`
-      },
-      onSelect: (item) => this._chooseValue(item.value),
-      onClose: () => { this._activeEdit = null },
-    })
-
-    // Typing builds a creatable option and keeps input ↔ list bound.
-    this.popupInput.addEventListener('input', () => this._refreshPopupItems(this.popupInput.value))
-    this.popupInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault()
-        this._chooseValue(this.popupInput.value)
-        return
-      }
-      if (this.popup.handleKey(event)) {
-        // Sync the input to the active list item (arrow navigation).
-        const active = this.popup.items[this.popup.activeIndex]
-        if (active) this.popupInput.value = active.value
-      }
-    })
-  }
-
-  _refreshPopupItems(typed) {
-    const edit = this._activeEdit
-    if (!edit) return
-    let items = buildCandidateList({
-      currentValue: edit.currentValue,
-      originalWord: edit.original,
-      suggestions: [{ suggestion: edit.suggestion, confidence: edit.confidence }],
-    })
-    const trimmed = (typed || '').trim()
-    if (trimmed && !items.some((i) => i.value === trimmed)) {
-      // Creatable: the typed word is always present and auto-selected.
-      items = [{ value: trimmed, label: trimmed, role: 'custom', isCurrent: false }, ...items]
-    }
-    this.popup.setItems(items)
-    // Auto-select the typed custom entry, else the current document value.
-    const selectIndex = trimmed
-      ? Math.max(0, items.findIndex((i) => i.value === trimmed))
-      : Math.max(0, items.findIndex((i) => i.isCurrent))
-    this.popup.setActiveIndex(selectIndex)
-  }
-
-  _openPopup(edit, anchorEl) {
-    this._ensurePopup()
-    this._activeEdit = edit
-    this.popupInput.value = edit.currentValue
-    this._refreshPopupItems('')
-    this.popup.showAt(anchorEl.getBoundingClientRect())
-    // Desktop: focus + select-all so a keystroke immediately replaces the word.
-    // Mobile keyboard is left to an explicit tap on the input (no auto-focus) —
-    // chip taps are the primary path.
-    // showAt() keeps the popup visibility:hidden until its own rAF (so it can
-    // position off-screen first); focus()/select() are no-ops while hidden, so
-    // defer them into a rAF that runs after showAt's (FIFO, registered later).
-    if (!this._isCoarsePointer()) {
-      requestAnimationFrame(() => {
-        this.popupInput.focus()
-        this.popupInput.select()
-      })
-    }
   }
 
   _isCoarsePointer() {
     return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
   }
 
-  _chooseValue(value) {
-    const edit = this._activeEdit
-    if (edit == null || value == null) { this.popup?.hide(); return }
+  // Apply the value chosen in the combobox to the textarea (the popup has
+  // already closed). Replacing rewrites the word and shifts the remaining marks;
+  // choosing the current value ("keep") just clears this one's highlight.
+  _applyChoice(value, edit) {
+    if (edit == null || value == null) return
     const replacement = String(value)
 
     if (replacement !== edit.currentValue) {
@@ -468,7 +385,6 @@ export class TypoCorrector {
       this.edits = this.edits.filter((e) => e !== edit)
     }
 
-    this.popup?.hide()
     this._repaint()
     this.textarea.focus()
   }
@@ -476,27 +392,12 @@ export class TypoCorrector {
 
 // Module-scope init, mirroring mention_menu.js. Reads settings exposed by the
 // server on #comments-popup and only attaches when the master switch is on.
-function readSettings(root) {
-  if (!root) return null
-  const d = root.dataset
-  if (d.typoEnabled == null) return null
-  return {
-    enabled: d.typoEnabled === 'true',
-    threshold: parseInt(d.typoThreshold, 10) || 80,
-    onVoice: d.typoOnVoice === 'true',
-    onSoftKeyboard: d.typoOnSoftKeyboard === 'true',
-    onPhysicalKeyboard: d.typoOnPhysicalKeyboard === 'true',
-    inChat: d.typoInChat === 'true',
-    inEditor: d.typoInEditor === 'true',
-  }
-}
-
 let activeInstance = null
 
 export function initTypoCorrector() {
   const textarea = document.querySelector('#new-comment-form textarea')
   const root = document.getElementById('comments-popup')
-  const settings = readSettings(root)
+  const settings = readTypoSettings(root)
   if (!textarea || !settings || !settings.enabled) return null
   if (textarea.dataset.typoBound === 'true') return null
   textarea.dataset.typoBound = 'true'
@@ -505,15 +406,9 @@ export function initTypoCorrector() {
   activeInstance = new TypoCorrector(textarea, {
     settings,
     location: 'chat',
-    // Use the mounted engine path (e.g. /collavre/typo_corrections) so requests
-    // don't 404 when Collavre is mounted at a subpath instead of root.
-    endpoint: root.dataset.typoEndpoint || '/typo_corrections',
+    endpoint: readTypoEndpoint(root),
     getVoiceActive: () => voiceButton?.dataset.voiceState === 'listening',
-    labels: {
-      keep: root.dataset.typoKeepLabel,
-      custom: root.dataset.typoCustomLabel,
-      inputLabel: root.dataset.typoInputLabel,
-    },
+    labels: readTypoLabels(root),
   })
   return activeInstance
 }

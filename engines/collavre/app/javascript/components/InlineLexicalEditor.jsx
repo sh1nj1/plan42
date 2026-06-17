@@ -52,6 +52,7 @@ import { VideoNode } from "../lib/lexical/video_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
+import TypoCorrectionPlugin from "./plugins/typo_correction_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
@@ -875,7 +876,11 @@ function EditorInner({
   directUploadUrl,
   blobUrlTemplate,
   placeholderText,
-  deletedAttachmentsRef
+  deletedAttachmentsRef,
+  typoSettings,
+  typoEndpoint,
+  typoLabels,
+  getVoiceActive
 }) {
   const [editor] = useLexicalComposerContext()
 
@@ -953,6 +958,12 @@ function EditorInner({
         />
         <AttachmentCleanupPlugin deletedAttachmentsRef={deletedAttachmentsRef} />
         <MarkdownShortcutsPlugin />
+        <TypoCorrectionPlugin
+          settings={typoSettings}
+          endpoint={typoEndpoint}
+          labels={typoLabels}
+          getVoiceActive={getVoiceActive}
+        />
         {onEnterKey && <EnterKeyPlugin onEnterKey={onEnterKey} />}
       </div>
     </div>
@@ -999,7 +1010,11 @@ export default function InlineLexicalEditor({
   blobUrlTemplate,
   editorKey,
   placeholderText,
-  deletedAttachmentsRef
+  deletedAttachmentsRef,
+  typoSettings,
+  typoEndpoint,
+  typoLabels,
+  getVoiceActive
 }) {
   const initialConfig = useMemo(
     () => ({
@@ -1039,6 +1054,10 @@ export default function InlineLexicalEditor({
         blobUrlTemplate={blobUrlTemplate}
         placeholderText={placeholderText}
         deletedAttachmentsRef={deletedAttachmentsRef}
+        typoSettings={typoSettings}
+        typoEndpoint={typoEndpoint}
+        typoLabels={typoLabels}
+        getVoiceActive={getVoiceActive}
       />
     </LexicalComposer>
   )
