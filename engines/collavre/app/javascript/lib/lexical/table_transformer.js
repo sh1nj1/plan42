@@ -37,9 +37,14 @@ function getTableColumnsSize(table) {
 }
 
 function $createTableCell(textContent) {
-  const text = textContent.replace(/\\n/g, "\n")
+  // Backslashes are governed by CommonMark and round-trip through the per-cell
+  // $convertFromMarkdownString below; we must NOT pre-decode them here. An earlier
+  // ".replace(/\\n/g, \"\\n\")" mis-fired on literal "a\nb" (backslash + n typed by
+  // the user, e.g. a regex or Windows path), corrupting it into a real newline
+  // that breaks the single-line row (CodeQL alert #42). Cells are single-line, so
+  // no newline decoding is needed at all.
   const cell = $createTableCellNode(TableCellHeaderStates.NO_STATUS)
-  $convertFromMarkdownString(text, cellTransformers, cell)
+  $convertFromMarkdownString(textContent, cellTransformers, cell)
   return cell
 }
 
@@ -85,9 +90,15 @@ export const TABLE = {
         if ($isTableCellNode(cell)) {
           rowOutput.push(
             $convertToMarkdownString(cellTransformers, cell)
-              .replace(/\n/g, "\\n")
+              // A GFM row is one line, so collapse any real newline to a space
+              // (multi-line cells aren't representable in GFM anyway). NOT "\\n":
+              // that re-imported as a literal backslash-n and then mis-decoded
+              // back to a newline, corrupting genuine "a\nb" text (CodeQL #42).
+              .replace(/\n+/g, " ")
               // Escape pipes so cell content (e.g. "a|b") isn't reparsed as an
-              // extra column; splitRowCells reverses this on import.
+              // extra column; splitRowCells reverses this on import. Backslashes
+              // are left to CommonMark (the per-cell convert above already
+              // escapes them), so we must not double-escape here.
               .replace(/\|/g, "\\|")
               .trim()
           )

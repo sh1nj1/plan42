@@ -85,6 +85,22 @@ describe("TABLE markdown transformer", () => {
     expect(out).toContain("| a\\|b | ok |")
   })
 
+  it("round-trips a literal backslash-n (escaped) without corrupting it to a newline", () => {
+    // Canonical storage holds a cell whose text is the literal chars a \ n b as
+    // the escaped "a\\nb". Before backslash escaping, import's \n->newline
+    // unescape misfired and split the cell across two lines. Round-trip must be
+    // idempotent (CodeQL alert #42, incomplete string escaping).
+    const cell = "a\\\\nb" // renders as: a \ \ n b  => one literal backslash + "nb"
+    const md = `| H |\n| --- |\n| ${cell} |`
+    expect(roundTrip(md)).toContain(`| ${cell} |`)
+  })
+
+  it("round-trips a literal backslash (escaped) without losing or doubling it", () => {
+    const cell = "C:\\\\path" // renders as: C : \ \ p... => one literal backslash
+    const md = `| H |\n| --- |\n| ${cell} |`
+    expect(roundTrip(md)).toContain(`| ${cell} |`)
+  })
+
   it("does not hang on a pathological colon/pipe row (ReDoS guard)", () => {
     // Before the -+ fix, the divider regex backtracked exponentially on rows of
     // alternating colons and pipes. This must complete effectively instantly.
