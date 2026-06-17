@@ -144,6 +144,18 @@ module Collavre
       assert_empty correct(text, response)
     end
 
+    test "passes the resolved typo agent as context user so vendor adapters can resolve it" do
+      # OpenClaw (and any context-driven adapter) reads the gateway/key from the
+      # context user, not the llm_api_key/gateway_url kwargs. Without this, the
+      # adapter is built with user: nil and silently returns no edits.
+      agent = Struct.new(:llm_vendor, :llm_model, :system_prompt, :llm_api_key, :gateway_url).new
+
+      Collavre.user_class.stub :find_by, agent do
+        client = TypoCorrector.new.send(:build_client)
+        assert_same agent, client.send(:context)[:user]
+      end
+    end
+
     test "stays linear on a long run of unmatched '<' (no polynomial ReDoS)" do
       text = "#{'<' * 50_000} teh"
       response = { edits: [ { original: "teh", suggestion: "the", confidence: 0.9 } ] }.to_json

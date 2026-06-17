@@ -52,6 +52,11 @@ module Collavre
         system_prompt: agent&.system_prompt.presence || FALLBACK_SYSTEM_PROMPT,
         llm_api_key: agent&.llm_api_key,
         gateway_url: agent&.gateway_url,
+        # Vendor adapters (e.g. OpenClaw) resolve the gateway/key from the context
+        # user, not the llm_api_key/gateway_url kwargs. Pass the agent so an
+        # OpenClaw-backed typo agent isn't built with user: nil (which makes the
+        # adapter bail with "Gateway URL not configured" and silently return no edits).
+        context: { user: agent },
         # Runs on debounced typing of *unsubmitted* text — never persist the draft
         # to ActivityLog (RubyLlmInteractionLogger writes `messages` there).
         log_interactions: false
