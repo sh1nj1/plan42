@@ -59,6 +59,22 @@ module Collavre
         assert_includes @creative.description, "<li>a</li>"
       end
 
+      test "tool description update forces the source editor over a prior rich preference" do
+        @creative.update!(content_type_input: "markdown", markdown_source: "rich body", markdown_editor: "rich")
+        assert_equal "rich", @creative.reload.data["editor"]
+
+        service = CreativeUpdateService.new
+        result = service.call(
+          id: @creative.id,
+          description: "| a | b |\n| - | - |\n| 1 | 2 |"
+        )
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        @creative.reload
+        assert_equal "markdown", @creative.data["content_type"]
+        assert_equal "source", @creative.data["editor"]
+      end
+
       test "updates progress without a description change keeps Markdown source" do
         @creative.update!(content_type_input: "markdown", markdown_source: "# Keep me")
         assert_equal "markdown", @creative.reload.data["content_type"]

@@ -36,10 +36,19 @@ module Tools
       # Handle description update. The description is authored as Markdown: set it
       # as the canonical markdown_source on the base/origin and let
       # Describable#convert_markdown_to_html render the HTML description on save.
+      #
+      # Force the "source" editing surface (like create does) rather than letting
+      # convert_markdown_to_html preserve a prior "rich" preference: this update
+      # replaces the whole body with fresh tool/MCP-authored GFM, so the old
+      # rich-authored content the preference belonged to is gone. Tool writes can
+      # contain tables/raw HTML the Lexical nodes don't fully model; reopening in
+      # the source textarea preserves that structure, whereas a rich-editor
+      # round-trip could silently rewrite it.
       description_provided = description.present?
       if description_provided
         base.content_type_input = "markdown"
         base.markdown_source = description
+        base.markdown_editor = "source"
       end
 
       # Handle progress update
