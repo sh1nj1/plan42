@@ -1,8 +1,10 @@
 module CollavrePlan
   class PlansController < ApplicationController
-    # Cap how many registration markers we draw so a busy window never floods
-    # the timeline (or the JSON payload). Most recent within the window win.
+    # Cap how many registration/modification markers we draw so a busy window
+    # never floods the timeline (or the JSON payload). Most recent within the
+    # window win.
     REGISTRATION_LIMIT = 300
+    MODIFICATION_LIMIT = 300
 
     def index
       center = if params[:date].present?
@@ -25,20 +27,23 @@ module CollavrePlan
                                      .select { |event| event.creative&.has_permission?(Current.user, :write) }
       @calendar_events = (own_events + shared_events).uniq.sort_by(&:start_time)
 
-      # "Registered" chip is default-off, so registrations are only gathered when
-      # the client explicitly asks for them (lazy, zero cost on normal loads).
+      # "Registered"/"Modified" chips are default-off, so their creatives are
+      # only gathered when the client explicitly asks (lazy, zero cost normally).
       @show_registrations = ActiveModel::Type::Boolean.new.cast(params[:registrations]) == true
       @registrations = @show_registrations ? registration_creatives(start_date, end_date) : []
+      @show_modifications = ActiveModel::Type::Boolean.new.cast(params[:modifications]) == true
+      @modifications = @show_modifications ? modification_creatives(start_date, end_date) : []
 
       respond_to do |format|
         format.html do
-          render html: render_to_string(Collavre::PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events, registrations: @registrations, show_registrations: @show_registrations), layout: false)
+          render html: render_to_string(Collavre::PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events, registrations: @registrations, show_registrations: @show_registrations, modifications: @modifications, show_modifications: @show_modifications), layout: false)
         end
         format.json do
           plan_jsons = @plans.map { |p| plan_json(p) }
           event_jsons = @calendar_events.map { |e| calendar_json(e) }
           registration_jsons = @registrations.map { |c| registration_json(c) }
-          render json: plan_jsons + event_jsons + registration_jsons
+          modification_jsons = @modifications.map { |c| modification_json(c) }
+          render json: plan_jsons + event_jsons + registration_jsons + modification_jsons
         end
       end
     end
@@ -152,6 +157,33 @@ module CollavrePlan
         name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.registration_fallback", id: creative.id)),
         created_at: creative.created_at.to_date,
         target_date: creative.created_at.to_date,
+        progress: creative.progress,
+        path: Collavre::Engine.routes.url_helpers.creative_path(creative),
+        deletable: false
+      }
+    end
+
+    # Modified creatives owned by the current user, drawn at their updated_at.
+    # We exclude never-touched creatives (updated_at == created_at) so the
+    # "Modified" chip stays distinct from "Registered" instead of duplicating it.
+    # Owner-scoped and capped, mirroring registration_creatives.
+    def modification_creatives(start_date, end_date)
+      Collavre::Creative.active
+                        .where(user_id: Current.user.id)
+                        .where(updated_at: start_date.beginning_of_day..end_date.end_of_day)
+                        .where("creatives.updated_at > creatives.created_at")
+                        .order(updated_at: :desc)
+                        .limit(MODIFICATION_LIMIT)
+                        .to_a
+    end
+
+    def modification_json(creative)
+      {
+        id: "modification_#{creative.id}",
+        type: "modification",
+        name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.modification_fallback", id: creative.id)),
+        created_at: creative.updated_at.to_date,
+        target_date: creative.updated_at.to_date,
         progress: creative.progress,
         path: Collavre::Engine.routes.url_helpers.creative_path(creative),
         deletable: false

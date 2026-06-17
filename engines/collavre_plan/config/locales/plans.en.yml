@@ -15,4 +15,6 @@ en:
       today: Today
       select_creative: Select Creative
       chip_registrations: Registered
+      chip_modifications: Modified
       registration_fallback: 'Creative #%{id}'
+      modification_fallback: 'Creative #%{id}'

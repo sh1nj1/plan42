@@ -370,6 +370,18 @@ button {
     background: transparent;
 }
 
+/* Modification markers: creatives drawn at their updated_at (single day).
+   Amber to read as distinct from the blue registration markers. */
+.plan-bar--modification {
+    background: var(--color-warning);
+    opacity: 0.85;
+    min-width: 6px;
+}
+
+.plan-bar--modification .plan-progress {
+    background: transparent;
+}
+
 /* Timeline chip filters (Registered, ...) — default-off toggles. */
 .timeline-controls {
     display: flex;

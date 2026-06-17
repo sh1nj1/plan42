@@ -247,6 +247,64 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Creative ##{creative.id}", entry["name"]
   end
 
+  test "modification markers are excluded by default" do
+    creative = Creative.create!(user: @owner, description: "Modified creative")
+    creative.update_column(:updated_at, creative.created_at + 1.day)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{creative.id}", "Modifications should be off by default"
+  end
+
+  test "modification markers are included when chip is enabled" do
+    creative = Creative.create!(user: @owner, description: "Modified creative")
+    creative.update_column(:updated_at, creative.created_at + 1.day)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_includes json_ids, "modification_#{creative.id}", "Modifications should appear when requested"
+  end
+
+  test "modification markers exclude never-modified creatives" do
+    # updated_at == created_at (just created, never touched) — not a modification.
+    creative = Creative.create!(user: @owner, description: "Untouched creative")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{creative.id}", "Never-modified creatives should not appear"
+  end
+
+  test "modification markers are owner-scoped" do
+    others_creative = Creative.create!(user: @collaborator, description: "Other user creative")
+    others_creative.update_column(:updated_at, others_creative.created_at + 1.day)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    assert_not_includes json_ids, "modification_#{others_creative.id}", "Should not show other users' modifications"
+  end
+
+  test "modification marker is drawn at updated_at" do
+    creative = Creative.create!(user: @owner, description: "Modified creative")
+    creative.update_column(:created_at, Date.current - 10)
+    creative.update_column(:updated_at, Time.current)
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, modifications: 1)
+
+    assert_response :success
+    entry = JSON.parse(response.body).find { |i| i["id"] == "modification_#{creative.id}" }
+    assert_not_nil entry, "Modified creative should render a marker"
+    assert_equal creative.reload.updated_at.to_date.to_s, entry["target_date"], "Marker should sit at updated_at, not created_at"
+  end
+
   test "should return stripped html in json" do
     creative = creatives(:tshirt)
     creative.update!(description: "<b>T-Shirt</b> <i>Design</i>")

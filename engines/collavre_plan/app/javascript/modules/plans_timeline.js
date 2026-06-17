@@ -29,6 +29,8 @@ if (!plansTimelineScriptInitialized) {
     // "Registered" chip: when on, the timeline also draws creatives at their
     // created_at. Default-off, so registrations are fetched lazily on toggle.
     var registrationsEnabled = container.dataset.registrations === 'true';
+    // "Modified" chip: same idea, drawing modified creatives at their updated_at.
+    var modificationsEnabled = container.dataset.modifications === 'true';
 
     var scroll = document.createElement('div');
     scroll.className = 'timeline-scroll';
@@ -70,7 +72,9 @@ if (!plansTimelineScriptInitialized) {
 
     function createPlanBar(plan, idx) {
       var el = document.createElement('div');
-      el.className = plan.type === 'registration' ? 'plan-bar plan-bar--registration' : 'plan-bar';
+      el.className = 'plan-bar';
+      if (plan.type === 'registration') el.className += ' plan-bar--registration';
+      else if (plan.type === 'modification') el.className += ' plan-bar--modification';
       el.dataset.path = plan.path;
       el.dataset.id = plan.id;
       var startDateValue = plan.start_date || plan.created_at;
@@ -206,6 +210,7 @@ if (!plansTimelineScriptInitialized) {
       var separator = basePlansUrl.indexOf('?') >= 0 ? '&' : '?'
       var requestUrl = basePlansUrl + separator + 'date=' + dateStr
       if (registrationsEnabled) requestUrl += '&registrations=1'
+      if (modificationsEnabled) requestUrl += '&modifications=1'
       // Discard out-of-order responses: a slower registrations fetch must not
       // overwrite the result of a later request (e.g. rapid chip on/off).
       var seq = ++loadSeq;
@@ -265,6 +270,17 @@ if (!plansTimelineScriptInitialized) {
         container.dataset.registrations = registrationsEnabled ? 'true' : 'false';
         registrationsChip.classList.toggle('timeline-chip--active', registrationsEnabled);
         registrationsChip.setAttribute('aria-pressed', registrationsEnabled ? 'true' : 'false');
+        reloadCurrentView();
+      });
+    }
+
+    var modificationsChip = document.getElementById('chip-modifications');
+    if (modificationsChip) {
+      modificationsChip.addEventListener('click', function () {
+        modificationsEnabled = !modificationsEnabled;
+        container.dataset.modifications = modificationsEnabled ? 'true' : 'false';
+        modificationsChip.classList.toggle('timeline-chip--active', modificationsEnabled);
+        modificationsChip.setAttribute('aria-pressed', modificationsEnabled ? 'true' : 'false');
         reloadCurrentView();
       });
     }
