@@ -5,13 +5,12 @@ module Tools
   class CreativeUpdateService
     extend T::Sig
     extend ToolMeta
-    include DescriptionNormalizable
 
     tool_name "creative_update_service"
     tool_description "Update an existing Creative's content, progress, or parent. Use this to:\n- Modify the description/title of a Creative\n- Mark a leaf Creative as complete (progress = 1.0)\n- Move a Creative to a different parent\n\nProgress constraints:\n- Only 1.0 (100%) is allowed — partial progress updates are not supported\n- Only leaf Creatives (with no children) can have their progress updated\n- Parent Creative progress is automatically calculated from children\n\nUse creative_retrieval_service to find the correct Creative before updating."
 
     tool_param :id, description: "The ID of the Creative to update.", required: true
-    tool_param :description, description: "New content/title for the Creative. Accepts HTML format. If omitted, description remains unchanged.", required: false
+    tool_param :description, description: "New content/title for the Creative, written in Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Replaces the whole body. If omitted, the description remains unchanged.", required: false
     tool_param :progress, description: "Set to 1.0 to mark a leaf Creative as complete. Only 1.0 is allowed; partial progress and updates on parent Creatives are rejected.", required: false
     tool_param :parent_id, description: "New parent Creative ID to move this Creative under. If omitted, nil, or 0, the parent remains unchanged.", required: false
 
@@ -34,9 +33,13 @@ module Tools
       updates = {}
       parent_updates = {}
 
-      # Handle description update
-      if description.present?
-        updates[:description] = normalize_description(description)
+      # Handle description update. The description is authored as Markdown: set it
+      # as the canonical markdown_source on the base/origin and let
+      # Describable#convert_markdown_to_html render the HTML description on save.
+      description_provided = description.present?
+      if description_provided
+        base.content_type_input = "markdown"
+        base.markdown_source = description
       end
 
       # Handle progress update
@@ -89,9 +92,12 @@ module Tools
         success &&= creative.update(parent_updates)
       end
 
-      # Update content on the base/origin
-      if updates.present?
-        success &&= base.update(updates)
+      # Update content on the base/origin. markdown_source is set on `base`
+      # directly (above), so save it whenever a description was provided even if
+      # `updates` (progress) is empty.
+      if updates.present? || description_provided
+        base.assign_attributes(updates) if updates.present?
+        success &&= base.save
 
         # Note: progress updates are only allowed on leaf Creatives (validated above).
         # Parent progress is automatically calculated from children.

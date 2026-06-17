@@ -38,7 +38,40 @@ module Collavre
         assert_equal 0, creative.progress
       end
 
-      test "creates a creative with HTML description" do
+      test "stores the description as Markdown-canonical" do
+        service = CreativeCreateService.new
+
+        result = service.call(
+          parent_id: @parent_creative.id,
+          description: "New task item"
+        )
+
+        assert result[:success]
+        creative = Creative.find(result[:id])
+        assert_equal "markdown", creative.data["content_type"]
+        assert_equal "New task item", creative.data["markdown_source"]
+        # Tool/MCP writes default to the advanced (source) editing surface.
+        assert_equal "source", creative.data["editor"]
+      end
+
+      test "renders Markdown formatting in the description" do
+        service = CreativeCreateService.new
+
+        result = service.call(
+          parent_id: @parent_creative.id,
+          description: "# Heading\n\n- one\n- two\n\n**bold** text"
+        )
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        creative = Creative.find(result[:id])
+        assert_includes creative.description, "Heading</h1>"
+        assert_includes creative.description, "<li>one</li>"
+        assert_includes creative.description, "<li>two</li>"
+        assert_includes creative.description, "<strong>bold</strong>"
+        assert_equal "# Heading\n\n- one\n- two\n\n**bold** text", creative.data["markdown_source"]
+      end
+
+      test "passes raw HTML through (backward compatible)" do
         service = CreativeCreateService.new
 
         result = service.call(

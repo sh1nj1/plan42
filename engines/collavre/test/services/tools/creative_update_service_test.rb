@@ -43,6 +43,36 @@ module Collavre
         assert_equal "<p>Plain text update</p>", @creative.description
       end
 
+      test "stores the updated description as Markdown-canonical" do
+        service = CreativeUpdateService.new
+
+        result = service.call(
+          id: @creative.id,
+          description: "# Updated\n\n- a\n- b"
+        )
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        @creative.reload
+        assert_equal "markdown", @creative.data["content_type"]
+        assert_equal "# Updated\n\n- a\n- b", @creative.data["markdown_source"]
+        assert_includes @creative.description, "Updated</h1>"
+        assert_includes @creative.description, "<li>a</li>"
+      end
+
+      test "updates progress without a description change keeps Markdown source" do
+        @creative.update!(content_type_input: "markdown", markdown_source: "# Keep me")
+        assert_equal "markdown", @creative.reload.data["content_type"]
+
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, progress: 1.0)
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        @creative.reload
+        assert_in_delta 1.0, @creative.progress, 0.01
+        assert_equal "markdown", @creative.data["content_type"]
+        assert_equal "# Keep me", @creative.data["markdown_source"]
+      end
+
       test "updates progress to 1.0 on leaf creative" do
         service = CreativeUpdateService.new
 
