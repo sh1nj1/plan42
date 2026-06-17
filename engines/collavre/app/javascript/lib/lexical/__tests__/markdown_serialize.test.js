@@ -16,7 +16,8 @@ import {
   imageMarkup,
   videoMarkup,
   attachmentMarkup,
-  lexicalToMarkdown
+  lexicalToMarkdown,
+  collapseParagraphBreaks
 } from "../markdown_serialize"
 
 // Minimal DecoratorNode stand-in: the production image/video/attachment nodes
@@ -239,6 +240,57 @@ describe("lexicalToMarkdown", () => {
       root.append(p)
     })
     expect(lexicalToMarkdown(editor)).toBe('plain <span style="color: blue">blue</span>')
+  })
+
+  it("joins consecutive plain paragraphs with a single newline", () => {
+    const editor = buildEditor((root) => {
+      const a = $createParagraphNode()
+      a.append($createTextNode("abc"))
+      root.append(a)
+      const b = $createParagraphNode()
+      b.append($createTextNode("def"))
+      root.append(b)
+    })
+    // No blank line inserted between rich-editor lines (the user's request).
+    expect(lexicalToMarkdown(editor)).toBe("abc\ndef")
+  })
+
+  it("keeps a blank line between a paragraph and a heading", () => {
+    const editor = buildEditor((root) => {
+      const p = $createParagraphNode()
+      p.append($createTextNode("intro"))
+      root.append(p)
+      const h = $createHeadingNode("h2")
+      h.append($createTextNode("Sec"))
+      root.append(h)
+    })
+    expect(lexicalToMarkdown(editor)).toBe("intro\n\n## Sec")
+  })
+})
+
+describe("collapseParagraphBreaks", () => {
+  it("collapses the blank line between two plain paragraphs", () => {
+    expect(collapseParagraphBreaks("a\n\nb")).toBe("a\nb")
+    expect(collapseParagraphBreaks("a\n\nb\n\nc")).toBe("a\nb\nc")
+  })
+
+  it("keeps blank lines around non-paragraph blocks", () => {
+    expect(collapseParagraphBreaks("p\n\n## h")).toBe("p\n\n## h")
+    expect(collapseParagraphBreaks("note\n\n- a\n- b")).toBe("note\n\n- a\n- b")
+    expect(collapseParagraphBreaks("- a\n- b\n\ntail")).toBe("- a\n- b\n\ntail")
+    expect(collapseParagraphBreaks("p\n\n> quote")).toBe("p\n\n> quote")
+    expect(collapseParagraphBreaks('p\n\n<img src="/x.png" alt="x">')).toBe(
+      'p\n\n<img src="/x.png" alt="x">'
+    )
+  })
+
+  it("never collapses blank lines inside a fenced code block", () => {
+    const md = "```js\nconst a = 1\n\nconst b = 2\n```"
+    expect(collapseParagraphBreaks(md)).toBe(md)
+    // ...and still collapses paragraphs around the protected fence
+    expect(collapseParagraphBreaks("a\n\nb\n\n```\nx\n\ny\n```")).toBe(
+      "a\nb\n\n```\nx\n\ny\n```"
+    )
   })
 })
 

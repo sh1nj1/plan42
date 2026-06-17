@@ -54,7 +54,7 @@ import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
-import { MARKDOWN_TRANSFORMERS } from "../lib/lexical/markdown_serialize"
+import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/markdown_serialize"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 
@@ -928,7 +928,10 @@ function EditorInner({
               // duplicate format wrappers, single-line <p>) before persisting.
               serialized = minimizeContentHtml(doc.body.firstElementChild)
               // Canonical Markdown projection (color/bg -> normalized <span>).
-              markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
+              // collapseParagraphBreaks joins consecutive plain paragraphs with a
+              // single newline so multi-line rich text doesn't gain a blank line;
+              // the renderers run with hard breaks so the line break is preserved.
+              markdown = collapseParagraphBreaks($convertToMarkdownString(MARKDOWN_TRANSFORMERS))
             })
             // html: client-side preview/fallback; markdown: canonical storage.
             onChange({ html: serialized, markdown })

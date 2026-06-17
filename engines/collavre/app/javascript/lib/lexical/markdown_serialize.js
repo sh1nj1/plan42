@@ -174,11 +174,49 @@ export const MARKDOWN_TRANSFORMERS = [
   ...TRANSFORMERS
 ]
 
+// A block that must keep a blank line before/after it (i.e. is NOT a plain
+// paragraph): heading, blockquote, list item, fenced code, table row, thematic
+// break, or a top-level media tag. Anything else is treated as paragraph text.
+const NON_PARAGRAPH_LEAD =
+  /^(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|`{3,}|~{3,}|\||<(?:img|video|a)\b|(?:-{3,}|\*{3,}|_{3,})\s*$)/
+
+// Fenced code blocks may legitimately contain blank lines; guard them so the
+// paragraph collapse below never joins lines inside a code sample.
+const FENCE_BLOCK = /(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1[ \t]*(?=\n|$)/g
+
+function isPlainParagraph(block) {
+  if (!block || block.includes("\x00MDFENCE")) return false
+  return !NON_PARAGRAPH_LEAD.test(block.split("\n", 1)[0])
+}
+
+// Collapse the blank line between two consecutive plain paragraphs so multi-line
+// rich text serializes as `a\nb` instead of `a\n\nb`. The renderers run with
+// hard breaks (a single `\n` becomes <br>), so the visual line break is
+// preserved while markdown_source stays free of the inserted blank line the user
+// never typed. Headings, lists, quotes, code fences, tables and media keep their
+// standard blank-line separation.
+export function collapseParagraphBreaks(markdown) {
+  const fences = []
+  const guarded = String(markdown).replace(FENCE_BLOCK, (match) => {
+    fences.push(match)
+    return `\x00MDFENCE${fences.length - 1}\x00`
+  })
+
+  const blocks = guarded.split("\n\n")
+  let out = blocks.length ? blocks[0] : ""
+  for (let i = 1; i < blocks.length; i++) {
+    const join = isPlainParagraph(blocks[i - 1]) && isPlainParagraph(blocks[i]) ? "\n" : "\n\n"
+    out += join + blocks[i]
+  }
+
+  return out.replace(/\x00MDFENCE(\d+)\x00/g, (_, n) => fences[Number(n)])
+}
+
 // Read the editor state and return canonical Markdown.
 export function lexicalToMarkdown(editor) {
   let markdown = ""
   editor.getEditorState().read(() => {
     markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
   })
-  return markdown
+  return collapseParagraphBreaks(markdown)
 }

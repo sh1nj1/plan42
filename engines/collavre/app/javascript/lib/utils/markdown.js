@@ -68,6 +68,12 @@ function sanitizeLang(lang) {
   return lang.replace(/[^a-zA-Z0-9_-]/g, '')
 }
 
+// `breaks: true` so a single newline renders as <br> (GitHub/Slack style),
+// matching the canonical markdown_source where consecutive rich-editor lines are
+// stored one-per-line instead of separated by a blank line. Applies app-wide
+// (creative descriptions and comments) so a line break always means a line break.
+marked.use({ breaks: true })
+
 // Custom renderer for code blocks with syntax highlighting + mermaid
 marked.use({
   renderer: {
