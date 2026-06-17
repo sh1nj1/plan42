@@ -171,3 +171,13 @@
     background: var(--color-link);
     color: var(--color-bg);
 }
+
+/* The Modified chip's active fill matches its amber timeline markers
+   (.plan-bar--modification) so the filter color maps to the dots it controls.
+   --text-on-badge is the codebase convention for text over --color-warning. */
+#chip-modifications.timeline-chip--active,
+#chip-modifications.timeline-chip--active:hover {
+    background: var(--color-warning);
+    border-color: var(--color-warning);
+    color: var(--text-on-badge);
+}
