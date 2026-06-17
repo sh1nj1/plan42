@@ -154,6 +154,15 @@ export class TypoCorrector {
     this.textarea.removeEventListener('input', this._onInput)
     this.textarea.removeEventListener('scroll', this._onScroll)
     this.form?.removeEventListener('reset', this._onReset)
+    // Drop the combobox popup: it lives on document.body, so without this a Turbo
+    // page-cache snapshot serializes an orphan popup (stale options, no live
+    // instance) and the next corrector appends a duplicate. hide() also detaches
+    // CommonPopup's document-level outside-click listeners.
+    this.popup?.hide()
+    this.popupEl?.remove()
+    this.popupEl = null
+    this.popupInput = null
+    this.popup = null
     // Unwrap the textarea and drop the injected backdrop so a Turbo page-cache
     // snapshot doesn't serialize stale overlay DOM (it would duplicate on the
     // next build) or the bind marker (a restored snapshot keeps typoBound=true

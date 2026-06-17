@@ -289,11 +289,19 @@ describe('TypoCorrector DOM orchestration', () => {
     const tc = new TypoCorrector(textarea, { settings })
     expect(textarea.parentNode.classList.contains('typo-input-wrap')).toBe(true)
 
+    // The combobox popup lives on document.body, so destroy() must remove it too;
+    // otherwise the Turbo snapshot serializes an orphan popup and the next
+    // corrector appends a duplicate.
+    tc._ensurePopup()
+    expect(document.body.querySelector('.typo-popup')).not.toBeNull()
+
     tc.destroy()
     expect(textarea.dataset.typoBound).toBeUndefined()
     expect(textarea.parentNode).toBe(form) // unwrapped back to the form
     expect(form.querySelector('.typo-input-wrap')).toBeNull()
     expect(form.querySelector('.typo-backdrop')).toBeNull()
+    expect(document.body.querySelector('.typo-popup')).toBeNull()
+    expect(tc.popupEl).toBeNull()
   })
 
   test('earlier corrections stay clickable across detection rounds (not just the last)', () => {
