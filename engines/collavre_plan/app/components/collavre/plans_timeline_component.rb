@@ -50,7 +50,7 @@ class PlansTimelineComponent < ViewComponent::Base
     {
       id: "registration_#{creative.id}",
       type: "registration",
-      name: (creative.effective_description(nil, false).presence || "Creative ##{creative.id}"),
+      name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.registration_fallback", id: creative.id)),
       created_at: creative.created_at.to_date,
       target_date: creative.created_at.to_date,
       progress: creative.progress,

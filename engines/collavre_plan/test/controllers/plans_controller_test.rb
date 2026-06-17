@@ -215,6 +215,38 @@ class PlansControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes json_ids, "registration_#{others_creative.id}", "Should not show other users' registrations"
   end
 
+  test "registration markers include day-edge creatives in the user's time zone" do
+    @owner.update!(timezone: "Asia/Seoul")
+    edge_creative = nil
+    Time.use_zone("Asia/Seoul") do
+      window_start = Date.current - 30
+      edge_creative = Creative.create!(user: @owner, description: "Edge creative")
+      # Local midnight on the window-start date stores as the previous UTC day;
+      # the old DATE(created_at) cast dropped it, the local range keeps it.
+      edge_creative.update_column(:created_at, window_start.beginning_of_day)
+    end
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    assert_includes json_ids, "registration_#{edge_creative.id}",
+                    "Day-edge creative at local midnight should be included"
+  end
+
+  test "registration marker uses localized fallback when description strips to blank" do
+    # HTML-only description (e.g. attachment markup) passes presence but strips to "".
+    creative = Creative.create!(user: @owner, description: "<p></p>")
+
+    login_as(@owner)
+    get collavre_plan_engine.plans_path(format: :json, registrations: 1)
+
+    assert_response :success
+    entry = JSON.parse(response.body).find { |i| i["id"] == "registration_#{creative.id}" }
+    assert_not_nil entry, "Blank-description creative should still render a marker"
+    assert_equal "Creative ##{creative.id}", entry["name"]
+  end
+
   test "should return stripped html in json" do
     creative = creatives(:tshirt)
     creative.update!(description: "<b>T-Shirt</b> <i>Design</i>")

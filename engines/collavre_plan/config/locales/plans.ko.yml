@@ -15,6 +15,7 @@ ko:
       today: 오늘
       select_creative: 크리에이티브 선택
       chip_registrations: 등록
+      registration_fallback: '크리에이티브 #%{id}'
     activerecord:
       errors:
         models:

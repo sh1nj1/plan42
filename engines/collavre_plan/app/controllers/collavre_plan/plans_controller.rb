@@ -134,9 +134,12 @@ module CollavrePlan
     # Owner-scoped (cheap, indexed) and capped — readable-but-shared creatives are
     # intentionally a follow-up to avoid a per-creative permission fan-out here.
     def registration_creatives(start_date, end_date)
+      # Range-compare in the user's zone (set_time_zone wraps the request in
+      # Time.use_zone) so day-edge creatives match the local created_at.to_date
+      # we render the marker at; also stays sargable (no DATE() cast on the column).
       Collavre::Creative.active
                         .where(user_id: Current.user.id)
-                        .where("DATE(creatives.created_at) >= ? AND DATE(creatives.created_at) <= ?", start_date, end_date)
+                        .where(created_at: start_date.beginning_of_day..end_date.end_of_day)
                         .order(created_at: :desc)
                         .limit(REGISTRATION_LIMIT)
                         .to_a
@@ -146,7 +149,7 @@ module CollavrePlan
       {
         id: "registration_#{creative.id}",
         type: "registration",
-        name: (creative.effective_description(nil, false).presence || "Creative ##{creative.id}"),
+        name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.registration_fallback", id: creative.id)),
         created_at: creative.created_at.to_date,
         target_date: creative.created_at.to_date,
         progress: creative.progress,
