@@ -123,6 +123,40 @@ class AiClientTest < ActiveSupport::TestCase
     mock_config.verify
   end
 
+  test "build_conversation supplies a placeholder key for a keyless local gateway" do
+    # Local OpenAI-compatible gateways (Ollama / LM Studio) need no real key, but
+    # RubyLLM raises ConfigurationError if openai_api_key is blank. We inject a
+    # placeholder so the request proceeds; otherwise the call silently returns nil.
+    client = AiClient.new(
+      vendor: "openai",
+      model: "gemma3",
+      system_prompt: nil,
+      llm_api_key: nil,
+      gateway_url: "http://localhost:11434/v1"
+    )
+
+    fake_chat = FakeConversation.new
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    mock_config = Minitest::Mock.new
+    mock_config.expect(:openai_api_key=, nil, [ "local-gateway" ])
+    mock_config.expect(:openai_api_base=, nil, [ "http://localhost:11434/v1" ])
+
+    context_stub = proc do |&block|
+      block.call(mock_config) if block
+      mock_context
+    end
+
+    Collavre::IntegrationSettings.stub(:fetch, nil) do
+      RubyLLM.stub(:context, context_stub) do
+        client.send(:build_conversation)
+      end
+    end
+
+    assert mock_config.verify
+  end
+
   test "build_conversation sets X-Session-Id header from creative and topic" do
     creative = OpenStruct.new(id: 42)
     comment = OpenStruct.new(topic_id: 7)

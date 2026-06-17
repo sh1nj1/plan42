@@ -122,6 +122,11 @@ module Collavre
       when "openai"
         api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
         base_url = @gateway_url.presence
+        # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
+        # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
+        # if openai_api_key is blank. Supply a placeholder so keyless local gateways
+        # work; hosted OpenAI (no gateway) still requires a real key.
+        api_key = "local-gateway" if api_key.blank? && base_url
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
