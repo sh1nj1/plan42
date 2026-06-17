@@ -117,7 +117,9 @@ module Collavre
         /`[^`]*`/,                # inline code
         %r{https?://\S+},         # URLs
         /@[^\s@]+/,               # @mentions
-        /<[^>]+>/                 # HTML / span-style markup
+        # `[^<>]` (not just `[^>]`) keeps this linear: a stray run of "<<<<" can't
+        # make scan re-walk the tail from every "<" (CodeQL polynomial-ReDoS).
+        /<[^<>]+>/                # HTML / span-style markup
       ]
       patterns.each do |pattern|
         text.scan(pattern) { ranges << Regexp.last_match.offset(0) }

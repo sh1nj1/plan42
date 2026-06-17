@@ -1,4 +1,5 @@
 require "test_helper"
+require "benchmark"
 
 module Collavre
   class TypoCorrectorTest < ActiveSupport::TestCase
@@ -103,6 +104,23 @@ module Collavre
 
     test "returns empty array on unparseable LLM output" do
       assert_empty correct("teh dog", "not json at all")
+    end
+
+    test "skips edits inside an HTML/span-style markup region" do
+      text = %(<span style="color:recieve">x</span>)
+      response = { edits: [ { original: "recieve", suggestion: "receive", confidence: 0.9 } ] }.to_json
+
+      assert_empty correct(text, response)
+    end
+
+    test "stays linear on a long run of unmatched '<' (no polynomial ReDoS)" do
+      text = "#{'<' * 50_000} teh"
+      response = { edits: [ { original: "teh", suggestion: "the", confidence: 0.9 } ] }.to_json
+
+      edits = nil
+      elapsed = Benchmark.realtime { edits = correct(text, response) }
+      assert_equal 1, edits.size
+      assert_operator elapsed, :<, 1.0, "skip_ranges scan should be linear, took #{elapsed}s"
     end
   end
 end
