@@ -32,7 +32,7 @@ Create a new Creative.
 
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `description` | String | **Yes** | — | Content/title (HTML or plain text) |
+| `description` | String | **Yes** | — | Content/title, written as Markdown (GFM) |
 | `parent_id` | Integer | No | — | Parent Creative ID (omit for root) |
 | `progress` | Float | No | 0 | Initial progress (0.0–1.0) |
 | `after_id` | Integer | No | — | Sibling ID to insert after |
@@ -47,7 +47,7 @@ Update an existing Creative.
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `id` | Integer | **Yes** | — | Creative ID to update |
-| `description` | String | No | — | New content/title |
+| `description` | String | No | — | New content/title, written as Markdown (GFM); replaces the whole body |
 | `progress` | Float | No | — | Only `1.0` allowed; leaf Creatives only |
 | `parent_id` | Integer | No | — | New parent ID (0 = make root) |
 
