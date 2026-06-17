@@ -395,101 +395,98 @@
   white-space: inherit;
 }
 
-/* stylelint-disable color-no-hex -- syntax highlight theme colors are intentionally hardcoded */
-:root {
-  --lexical-token-comment: #6a737d;
-  --lexical-token-punctuation: #393a34;
-  --lexical-token-property: #b31d28;
-  --lexical-token-string: #1a7f37;
-  --lexical-token-operator: #9a6e3a;
-  --lexical-token-keyword: #0550ae;
-  --lexical-token-function: #bc4c00;
-  --lexical-token-regex: #1a7f37;
-}
-
-body.dark-mode {
-  --lexical-token-comment: #8b949e;
-  --lexical-token-punctuation: #c9d1d9;
-  --lexical-token-property: #ff7b72;
-  --lexical-token-string: #7ee787;
-  --lexical-token-operator: #ffa657;
-  --lexical-token-keyword: #79c0ff;
-  --lexical-token-function: #d2a8ff;
-  --lexical-token-regex: #7ee787;
-}
-
-@media (prefers-color-scheme: dark) {
-  body:not(.light-mode):not(.dark-mode) {
-    --lexical-token-comment: #8b949e;
-    --lexical-token-punctuation: #c9d1d9;
-    --lexical-token-property: #ff7b72;
-    --lexical-token-string: #7ee787;
-    --lexical-token-operator: #ffa657;
-    --lexical-token-keyword: #79c0ff;
-    --lexical-token-function: #d2a8ff;
-    --lexical-token-regex: #7ee787;
-  }
-}
-/* stylelint-enable color-no-hex */
-
+/*
+ * Code block syntax highlighting inside the Lexical editor.
+ *
+ * The editor tokenizes code with Prism (@lexical/code) and tags each token
+ * with a `.lexical-token-*` class, while the persisted/rendered creative is
+ * highlighted with highlight.js (`.hljs-*`, see code_highlight.css). To keep
+ * the editing view identical to the rendered view, both surfaces share the
+ * single GitHub-style palette defined as `--syntax-*` in code_highlight.css
+ * (loaded alongside this sheet via collavre_stylesheets). Each Prism token
+ * below maps to the same `--syntax-*` color its highlight.js equivalent uses,
+ * so light/dark/auto themes stay in sync with one source of truth — no
+ * duplicate `--lexical-token-*` variables to drift.
+ */
 .lexical-token-comment,
 .lexical-token-prolog,
 .lexical-token-doctype,
 .lexical-token-cdata {
-  color: var(--lexical-token-comment);
+  color: var(--syntax-comment);
+  font-style: italic;
 }
 
-.lexical-token-punctuation {
-  color: var(--lexical-token-punctuation);
+.lexical-token-keyword,
+.lexical-token-atrule,
+.lexical-token-namespace {
+  color: var(--syntax-keyword);
 }
 
-.lexical-token-property,
-.lexical-token-tag,
-.lexical-token-constant,
-.lexical-token-symbol,
-.lexical-token-deleted,
-.lexical-token-boolean,
-.lexical-token-number {
-  color: var(--lexical-token-property);
-}
-
-.lexical-token-selector,
-.lexical-token-attr,
 .lexical-token-string,
 .lexical-token-char,
-.lexical-token-builtin,
-.lexical-token-inserted {
-  color: var(--lexical-token-string);
+.lexical-token-url {
+  color: var(--syntax-string);
 }
 
-.lexical-token-operator,
-.lexical-token-entity,
-.lexical-token-url,
-.lexical-token-variable {
-  color: var(--lexical-token-operator);
+.lexical-token-number,
+.lexical-token-boolean,
+.lexical-token-constant,
+.lexical-token-symbol {
+  color: var(--syntax-number);
 }
 
-.lexical-token-atrule,
-.lexical-token-keyword,
-.lexical-token-class,
-.lexical-token-classname,
-.lexical-token-namespace {
-  color: var(--lexical-token-keyword);
+.lexical-token-builtin {
+  color: var(--syntax-builtin);
 }
 
 .lexical-token-function,
-.lexical-token-important {
-  color: var(--lexical-token-function);
+.lexical-token-class,
+.lexical-token-classname {
+  color: var(--syntax-title);
+}
+
+.lexical-token-attr,
+.lexical-token-property {
+  color: var(--syntax-attr);
+}
+
+.lexical-token-variable {
+  color: var(--syntax-variable);
 }
 
 .lexical-token-regex {
-  color: var(--lexical-token-regex);
+  color: var(--syntax-regexp);
 }
 
-.lexical-token-tag,
-.lexical-token-selector,
-.lexical-token-keyword {
-  font-weight: var(--weight-6);
+.lexical-token-tag {
+  color: var(--syntax-tag);
+}
+
+.lexical-token-selector {
+  color: var(--syntax-selector);
+}
+
+.lexical-token-important {
+  color: var(--syntax-meta);
+  font-weight: var(--weight-7);
+}
+
+/* highlight.js leaves operators and punctuation at the default code color;
+   match that here instead of the old custom operator hue. */
+.lexical-token-punctuation,
+.lexical-token-operator,
+.lexical-token-entity {
+  color: var(--color-code-text);
+}
+
+.lexical-token-deleted {
+  color: var(--syntax-deletion-text);
+  background: var(--syntax-deletion-bg);
+}
+
+.lexical-token-inserted {
+  color: var(--syntax-addition-text);
+  background: var(--syntax-addition-bg);
 }
 
 .lexical-attachment {
