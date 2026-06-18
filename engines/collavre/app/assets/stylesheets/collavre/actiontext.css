@@ -370,18 +370,23 @@
   padding: 0.1em 0.3em;
 }
 
+/* Match the rendered/preview/comment code-block container in code_highlight.css
+ * (.creative-content pre et al.) exactly — same font, size, line-height, padding,
+ * border — so a code block looks identical in the editor and every rendered surface.
+ * Token colors are already shared via the global `.lexical-token-*` rules; this
+ * aligns the box so edit mode and view mode no longer diverge in font/size. */
 .lexical-code-block {
   display: block;
   background: var(--color-code-bg);
-  border: 1px solid var(--border-color);
+  border: var(--border-1) solid var(--border-color);
   border-radius: var(--radius-2);
   color: var(--color-code-text);
-  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.9em;
-  line-height: 1.5;
-  margin: 0 0 0.75rem 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-0);
+  line-height: var(--leading-3);
+  margin: var(--space-2) 0;
   overflow-x: auto;
-  padding: 0.75rem;
+  padding: var(--space-2) var(--space-3);
   white-space: pre;
 }
 
