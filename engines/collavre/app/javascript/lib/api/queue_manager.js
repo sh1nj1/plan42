@@ -1,4 +1,4 @@
-import csrfFetch from './csrf_fetch'
+import csrfFetch, { refreshCsrfToken } from './csrf_fetch'
 import { apiErrorFromResponse } from './api_error'
 
 const STORAGE_KEY = 'api_queue'
@@ -8,10 +8,23 @@ const MAX_RETRIES = 3
 // not-found). Retrying them just delays the real error and wastes round-trips,
 // so they fail fast straight to failedItems. 408 (timeout) and 429 (rate limit)
 // are intentionally excluded — those are worth retrying.
-const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 409, 422])
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 409])
+
+// A 422 is ambiguous. A validation failure carries a server error payload
+// (e.g. { errors: [...] }) and will never succeed on retry. A stale CSRF token
+// (the meta-tag token drifts out of sync after the tab is backgrounded — see
+// Application#set_csrf_token_header) also returns 422 but with no payload, and
+// IS recoverable by refreshing the token and retrying.
+function isStaleCsrf(error) {
+    return !!error && error.status === 422 && !(error.errors && error.errors.length)
+}
 
 function isRetryable(error) {
-    return !(error && NON_RETRYABLE_STATUSES.has(error.status))
+    if (!error) return true
+    if (NON_RETRYABLE_STATUSES.has(error.status)) return false
+    // Validation 422 (has payload) fails fast; payload-less 422 (stale CSRF) retries.
+    if (error.status === 422) return isStaleCsrf(error)
+    return true
 }
 
 /**
@@ -283,6 +296,12 @@ class ApiQueueManager {
                 // user sees the real error immediately.
                 if (isRetryable(error) && item.retries < MAX_RETRIES) {
                     item.retries++
+                    // A payload-less 422 is a stale CSRF token; refresh it first
+                    // so the retry has a fresh token (the failed response itself
+                    // carries none — the forgery exception skips the after_action).
+                    if (isStaleCsrf(error)) {
+                        await refreshCsrfToken()
+                    }
                     // Move to end of queue for retry
                     this.queue.shift()
                     this.queue.push(item)
