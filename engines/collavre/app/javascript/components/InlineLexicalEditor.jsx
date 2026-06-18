@@ -58,7 +58,7 @@ import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/m
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
-import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages } from "../lib/editor/code_languages"
+import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -103,6 +103,9 @@ function InitialContentPlugin({ html }) {
     lastApplied.current = html
     editor.update(() => {
       const root = $getRoot()
+      // Re-importing replaces the tree; drop stale resolved-language keys so the
+      // registry only tracks nodes from this import.
+      clearLanguageResolved(editor)
       // Explicitly remove all children to ensure it's empty
       root.getChildren().forEach((child) => child.remove())
 
@@ -130,6 +133,23 @@ function InitialContentPlugin({ html }) {
       // otherwise). Must run after the sync above materializes data-lexical-*.
       normalizeColoredContainers(container)
       const nodes = $generateNodesFromDOM(editor, container)
+
+      // Mark code blocks whose language came from an explicit source label as
+      // resolved BEFORE registerCodeHighlighting bakes the "javascript" default
+      // onto unlabeled ones. At this point a non-empty language can only be one
+      // the bridge set from a real fence/attribute, so the detection transform
+      // will honor it verbatim (incl. an explicit "javascript") and only
+      // re-detect the still-unlabeled blocks.
+      const markExplicitCodeLanguages = (list) => {
+        list.forEach((node) => {
+          if ($isCodeNode(node)) {
+            if (node.getLanguage()) markLanguageResolved(editor, node.getKey())
+          } else if ($isElementNode(node) && typeof node.getChildren === "function") {
+            markExplicitCodeLanguages(node.getChildren())
+          }
+        })
+      }
+      markExplicitCodeLanguages(nodes)
 
       // Filter out duplicate image nodes if any
       const uniqueNodes = []
@@ -240,6 +260,11 @@ function CodeHighlightingPlugin() {
     // the javascript default) and corrects the node, so the editor shows — and
     // saves — the right language. An explicit non-default language is left alone.
     const unregisterDetect = editor.registerNodeTransform(CodeNode, (node) => {
+      // A language that came from an explicit source label on import is honored
+      // verbatim — including "javascript" — so auto-detection never overrides a
+      // deliberate choice. Only unlabeled/new blocks (baked to the javascript
+      // default) are re-detected from their content.
+      if (isLanguageResolved(editor, node.getKey())) return
       const current = node.getLanguage()
       const norm = normalizeFenceLang(current)
       if (norm && norm !== "javascript") return

@@ -49,6 +49,37 @@ const DETECT_SUBSET = Object.keys(DETECT_LANGUAGES)
 export const DEFAULT_CODE_LANGUAGE = "javascript"
 const RE_DETECTABLE = new Set(["", "javascript"])
 
+// Tracks which CodeNodes received their language from an EXPLICIT source label
+// (a fence ```ruby / ```javascript, a <pre lang>, a <code class="language-X">)
+// during import, keyed per editor by node key. Detection must skip these so an
+// explicit choice is never overridden by content auto-detection.
+//
+// This is the linchpin for honoring "javascript": @lexical/code bakes
+// "javascript" onto unlabeled/new code blocks (its tokenizer default), making
+// "javascript" ambiguous — it could be the baked default OR a deliberate
+// choice. The source label disambiguates them, but only at import time, before
+// baking. We capture that signal here so the post-bake detection transform can
+// tell "user wrote ```javascript" (honor) from "baked default" (re-detect).
+const importResolvedLanguages = new WeakMap()
+
+export function markLanguageResolved(editor, key) {
+  let keys = importResolvedLanguages.get(editor)
+  if (!keys) {
+    keys = new Set()
+    importResolvedLanguages.set(editor, keys)
+  }
+  keys.add(key)
+}
+
+export function isLanguageResolved(editor, key) {
+  const keys = importResolvedLanguages.get(editor)
+  return Boolean(keys && keys.has(key))
+}
+
+export function clearLanguageResolved(editor) {
+  importResolvedLanguages.delete(editor)
+}
+
 // Canonicalize fence aliases to the Prism grammar name. highlight.js uses a few
 // different names (xml↔markup, shell↔bash) so detection results are mapped too.
 const FENCE_ALIAS = {
