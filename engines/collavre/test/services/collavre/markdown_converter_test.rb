@@ -18,6 +18,18 @@ module Collavre
       assert_equal "", MarkdownConverter.markdown_to_html(nil)
     end
 
+    test "markdown_to_html emits fenced code blocks without inline syntect styles" do
+      # comrak's default highlighter bakes a fixed base16-ocean.dark theme inline,
+      # which overrides our theme-aware CSS. We disable it and let the client
+      # re-tokenize, so the stored HTML must carry no inline color styles but keep
+      # the language hint for highlight.js.
+      html = MarkdownConverter.markdown_to_html("```ruby\nputs :hi\n```")
+      assert_includes html, '<pre lang="ruby">'
+      assert_includes html, "puts :hi"
+      refute_includes html, "background-color"
+      refute_includes html, "style=\"color"
+    end
+
     test "markdown_to_html renders a single newline as a hard break" do
       # Mirrors the JS renderer (marked breaks:true): consecutive rich-editor
       # lines are stored one-per-line and must render as <br>, not be joined.

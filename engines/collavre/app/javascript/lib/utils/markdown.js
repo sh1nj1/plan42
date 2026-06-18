@@ -143,6 +143,37 @@ export function renderCommentMarkdown(text) {
   return sanitize(html.trim())
 }
 
+// Re-tokenize server-rendered creative description code blocks with highlight.js.
+//
+// Creative descriptions are rendered server-side by commonmarker. We disable its
+// built-in syntect highlighter (which bakes a fixed dark theme inline), so the
+// stored HTML arrives as plain `<pre lang="ruby"><code>raw source</code></pre>`.
+// This pass tokenizes that source with the same hljs + `--syntax-*` palette the
+// editor (Prism) and comments use, so edit mode and rendered mode match and the
+// colors follow light/dark theme.
+//
+// Reading `textContent` (not innerHTML) means legacy descriptions whose stored
+// HTML still carries baked-in inline-styled spans get re-highlighted too — no
+// data migration needed. Idempotent via the `data-hljs-highlighted` marker.
+export function highlightCodeBlocks(container) {
+  if (!container) return
+  const blocks = container.querySelectorAll('pre code:not([data-hljs-highlighted])')
+  blocks.forEach((code) => {
+    const pre = code.closest('pre')
+    let lang = sanitizeLang(pre && pre.getAttribute('lang'))
+    if (!lang) {
+      const match = /(?:^|\s)language-([\w-]+)/.exec(code.className || '')
+      if (match) lang = sanitizeLang(match[1])
+    }
+    code.innerHTML = highlightCode(code.textContent, lang)
+    code.classList.add('hljs')
+    code.dataset.hljsHighlighted = 'true'
+    // Drop any baked-in inline background (e.g. syntect's dark `<pre style=…>`)
+    // so the theme-aware --color-code-bg from code_highlight.css wins.
+    if (pre) pre.removeAttribute('style')
+  })
+}
+
 // Lazy-load mermaid and render diagrams in a container
 let mermaidReady = false
 
