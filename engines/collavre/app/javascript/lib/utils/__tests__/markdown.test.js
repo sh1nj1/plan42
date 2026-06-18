@@ -22,6 +22,34 @@ describe("renderCommentMarkdown hard breaks", () => {
   })
 })
 
+// Markdown-mode preview and chat/comment code blocks must use the SAME Prism
+// engine + `lexical-token-*` classes as the editor and rendered creative view —
+// not highlight.js's `hljs-*` — so a fenced block looks identical everywhere it
+// is rendered. (highlight.js produces a different palette/tokenization, which is
+// why these surfaces visibly diverged from the editor.)
+describe("markdown renderers use the shared Prism token classes", () => {
+  it("renderMarkdown (preview) tokenizes a fenced ruby block with lexical-token classes", () => {
+    const html = renderMarkdown("```ruby\ndef foo\n  true\nend\n```")
+    expect(html).toContain("lexical-token-")
+    expect(html).not.toContain("hljs-")
+    const keywords = (html.match(/lexical-token-keyword/g) || [])
+    expect(keywords.length).toBeGreaterThan(0) // def / end
+  })
+
+  it("renderCommentMarkdown tokenizes a fenced javascript block with lexical-token classes", () => {
+    const html = renderCommentMarkdown("```javascript\nconst x = true\n```")
+    expect(html).toContain("lexical-token-")
+    expect(html).not.toContain("hljs-")
+  })
+
+  it("honors an explicit fence language instead of re-detecting it (matches the editor)", () => {
+    // ruby fence over JS-looking content: detection alone would pick javascript;
+    // the editor/view honor the explicit fence, so the preview must too.
+    const html = renderMarkdown("```ruby\nconst x = function() {}\n```")
+    expect(html).toContain('lang="ruby"')
+  })
+})
+
 // Creative descriptions arrive as server-rendered `<pre lang="ruby"><code>raw</code></pre>`
 // (commonmarker's inline highlighter is disabled). highlightCodeBlocks re-tokenizes
 // them client-side with the SAME Prism + `lexical-token-*` classes the editor uses,
