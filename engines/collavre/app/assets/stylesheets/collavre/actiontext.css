@@ -344,6 +344,87 @@
   background-color: var(--surface-hover);
 }
 
+/* Per-cell action menu: a chevron button parked at the active cell's top-right
+   corner that opens a row/column insert+delete dropdown (portaled to <body>). */
+.lexical-table-cell-action-button-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.lexical-table-cell-action-button-container--inactive {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.lexical-table-cell-action-button-container--active {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.lexical-table-cell-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Tuck the button just inside the cell's top-right corner. */
+  transform: translate(-100%, 4px);
+  margin: 0 4px;
+  width: var(--space-5);
+  height: var(--space-5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-1);
+  background-color: var(--surface-section);
+  color: var(--text-muted);
+  font-size: var(--text-0);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lexical-table-cell-action-button:hover {
+  background-color: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.lexical-table-action-menu-dropdown {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+  padding: var(--space-1);
+  background-color: var(--surface-section, var(--surface-bg));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-3);
+  /* Set to 1 once positioned, so it never flashes at the wrong spot first. */
+  opacity: 0;
+}
+
+.lexical-table-action-menu-dropdown hr {
+  margin: var(--space-1) 0;
+  border: none;
+  border-top: 1px solid var(--border-color);
+}
+
+.lexical-table-action-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--text-0);
+  text-align: start;
+  cursor: pointer;
+}
+
+.lexical-table-action-menu-item:hover {
+  background-color: var(--surface-hover);
+}
+
 /* The .lexical-* classes are the editor theme (contenteditable). Markdown is now
    the canonical persisted/displayed form, so .creative-content renders plain
    semantic tags without those classes — mirror each rule onto the matching

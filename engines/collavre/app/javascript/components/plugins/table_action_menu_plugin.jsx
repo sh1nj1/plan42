@@ -1,0 +1,346 @@
+import { useCallback, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
+import { useLexicalEditable } from "@lexical/react/useLexicalEditable"
+import {
+  $deleteTableColumnAtSelection,
+  $deleteTableRowAtSelection,
+  $getTableCellNodeFromLexicalNode,
+  $getTableNodeFromLexicalNodeOrThrow,
+  $insertTableColumnAtSelection,
+  $insertTableRowAtSelection,
+  $isTableCellNode,
+  $isTableSelection,
+  getTableElement,
+  getTableObserverFromTableElement
+} from "@lexical/table"
+import { mergeRegister } from "@lexical/utils"
+import {
+  $getSelection,
+  $isRangeSelection,
+  $setSelection,
+  COMMAND_PRIORITY_CRITICAL,
+  getDOMSelection,
+  isDOMNode,
+  SELECTION_CHANGE_COMMAND
+} from "lexical"
+
+// Per-cell action menu: a chevron button appears at the active cell's top-right
+// corner; clicking it opens a dropdown to insert/delete rows and columns or
+// delete the table. Trimmed from the Lexical playground's TableActionMenuPlugin
+// to only the actions that survive GFM markdown round-trip — merge, cell color,
+// striping, vertical-align, freeze and header toggles are intentionally dropped
+// (they cannot be represented in a pipe table, our canonical storage form).
+
+function computeSelectionCount(selection) {
+  const shape = selection.getShape()
+  return {
+    columns: shape.toX - shape.fromX + 1,
+    rows: shape.toY - shape.fromY + 1
+  }
+}
+
+function TableActionMenu({ onClose, tableCellNode, setIsMenuOpen, contextRef }) {
+  const [editor] = useLexicalComposerContext()
+  const dropDownRef = useRef(null)
+  const [selectionCounts, updateSelectionCounts] = useState({ columns: 1, rows: 1 })
+
+  useEffect(() => {
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if ($isTableSelection(selection)) {
+        updateSelectionCounts(computeSelectionCount(selection))
+      }
+    })
+  }, [editor])
+
+  // Position the dropdown next to the chevron button, flipping to the left and
+  // clamping vertically when it would overflow the viewport.
+  useEffect(() => {
+    const menuButtonElement = contextRef.current
+    const dropDownElement = dropDownRef.current
+    const rootElement = editor.getRootElement()
+
+    if (menuButtonElement != null && dropDownElement != null && rootElement != null) {
+      const rootEleRect = rootElement.getBoundingClientRect()
+      const menuButtonRect = menuButtonElement.getBoundingClientRect()
+      dropDownElement.style.opacity = "1"
+      const dropDownElementRect = dropDownElement.getBoundingClientRect()
+      const margin = 5
+      let leftPosition = menuButtonRect.right + margin
+      if (
+        leftPosition + dropDownElementRect.width > window.innerWidth ||
+        leftPosition + dropDownElementRect.width > rootEleRect.right
+      ) {
+        const position = menuButtonRect.left - dropDownElementRect.width - margin
+        leftPosition = (position < 0 ? margin : position) + window.pageXOffset
+      }
+      dropDownElement.style.left = `${leftPosition + window.pageXOffset}px`
+
+      let topPosition = menuButtonRect.top
+      if (topPosition + dropDownElementRect.height > window.innerHeight) {
+        const position = menuButtonRect.bottom - dropDownElementRect.height
+        topPosition = position < 0 ? margin : position
+      }
+      dropDownElement.style.top = `${topPosition}px`
+    }
+  }, [contextRef, editor])
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        dropDownRef.current != null &&
+        contextRef.current != null &&
+        isDOMNode(event.target) &&
+        !dropDownRef.current.contains(event.target) &&
+        !contextRef.current.contains(event.target)
+      ) {
+        setIsMenuOpen(false)
+      }
+    }
+    window.addEventListener("click", handleClickOutside)
+    return () => window.removeEventListener("click", handleClickOutside)
+  }, [setIsMenuOpen, contextRef])
+
+  const clearTableSelection = useCallback(() => {
+    editor.update(() => {
+      if (tableCellNode.isAttached()) {
+        const tableNode = $getTableNodeFromLexicalNodeOrThrow(tableCellNode)
+        const tableElement = getTableElement(tableNode, editor.getElementByKey(tableNode.getKey()))
+        const tableObserver =
+          tableElement && getTableObserverFromTableElement(tableElement)
+        if (tableObserver) tableObserver.$clearHighlight()
+        tableNode.markDirty()
+      }
+      $setSelection(null)
+    })
+  }, [editor, tableCellNode])
+
+  const insertTableRow = useCallback(
+    (shouldInsertAfter) => {
+      editor.update(() => {
+        for (let i = 0; i < selectionCounts.rows; i++) {
+          $insertTableRowAtSelection(shouldInsertAfter)
+        }
+        onClose()
+      })
+    },
+    [editor, onClose, selectionCounts.rows]
+  )
+
+  const insertTableColumn = useCallback(
+    (shouldInsertAfter) => {
+      editor.update(() => {
+        for (let i = 0; i < selectionCounts.columns; i++) {
+          $insertTableColumnAtSelection(shouldInsertAfter)
+        }
+        onClose()
+      })
+    },
+    [editor, onClose, selectionCounts.columns]
+  )
+
+  const deleteTableRow = useCallback(() => {
+    editor.update(() => {
+      $deleteTableRowAtSelection()
+      onClose()
+    })
+  }, [editor, onClose])
+
+  const deleteTableColumn = useCallback(() => {
+    editor.update(() => {
+      $deleteTableColumnAtSelection()
+      onClose()
+    })
+  }, [editor, onClose])
+
+  const deleteTable = useCallback(() => {
+    editor.update(() => {
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(tableCellNode)
+      tableNode.remove()
+      clearTableSelection()
+      onClose()
+    })
+  }, [editor, tableCellNode, clearTableSelection, onClose])
+
+  return createPortal(
+    <div
+      className="lexical-table-action-menu-dropdown"
+      ref={dropDownRef}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button type="button" className="lexical-table-action-menu-item" onClick={() => insertTableRow(false)}>
+        <span>Insert row above</span>
+      </button>
+      <button type="button" className="lexical-table-action-menu-item" onClick={() => insertTableRow(true)}>
+        <span>Insert row below</span>
+      </button>
+      <hr />
+      <button type="button" className="lexical-table-action-menu-item" onClick={() => insertTableColumn(false)}>
+        <span>Insert column left</span>
+      </button>
+      <button type="button" className="lexical-table-action-menu-item" onClick={() => insertTableColumn(true)}>
+        <span>Insert column right</span>
+      </button>
+      <hr />
+      <button type="button" className="lexical-table-action-menu-item" onClick={deleteTableRow}>
+        <span>Delete row</span>
+      </button>
+      <button type="button" className="lexical-table-action-menu-item" onClick={deleteTableColumn}>
+        <span>Delete column</span>
+      </button>
+      <button type="button" className="lexical-table-action-menu-item" onClick={deleteTable}>
+        <span>Delete table</span>
+      </button>
+    </div>,
+    document.body
+  )
+}
+
+function TableCellActionMenuContainer({ anchorElem }) {
+  const [editor] = useLexicalComposerContext()
+  const menuButtonRef = useRef(null)
+  const menuRootRef = useRef(null)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [tableCellNode, setTableMenuCellNode] = useState(null)
+
+  // Track the cell under the caret and park the chevron button at its top-right.
+  const $moveMenu = useCallback(() => {
+    const menu = menuButtonRef.current
+    const selection = $getSelection()
+    const nativeSelection = getDOMSelection(editor._window)
+    const activeElement = document.activeElement
+
+    function disable() {
+      if (menu) {
+        menu.classList.remove("lexical-table-cell-action-button-container--active")
+        menu.classList.add("lexical-table-cell-action-button-container--inactive")
+      }
+      setTableMenuCellNode(null)
+    }
+
+    if (selection == null || menu == null) return disable()
+
+    const rootElement = editor.getRootElement()
+    let tableObserver = null
+    let tableCellParentNodeDOM = null
+
+    if (
+      $isRangeSelection(selection) &&
+      rootElement !== null &&
+      nativeSelection !== null &&
+      rootElement.contains(nativeSelection.anchorNode)
+    ) {
+      const tableCellNodeFromSelection = $getTableCellNodeFromLexicalNode(
+        selection.anchor.getNode()
+      )
+      if (tableCellNodeFromSelection == null) return disable()
+
+      tableCellParentNodeDOM = editor.getElementByKey(tableCellNodeFromSelection.getKey())
+      if (tableCellParentNodeDOM == null || !tableCellNodeFromSelection.isAttached()) {
+        return disable()
+      }
+
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(tableCellNodeFromSelection)
+      const tableElement = getTableElement(tableNode, editor.getElementByKey(tableNode.getKey()))
+      if (tableElement === null) return disable()
+
+      tableObserver = getTableObserverFromTableElement(tableElement)
+      setTableMenuCellNode(tableCellNodeFromSelection)
+    } else if ($isTableSelection(selection)) {
+      const anchorNode = $getTableCellNodeFromLexicalNode(selection.anchor.getNode())
+      if (!$isTableCellNode(anchorNode)) return disable()
+      const tableNode = $getTableNodeFromLexicalNodeOrThrow(anchorNode)
+      const tableElement = getTableElement(tableNode, editor.getElementByKey(tableNode.getKey()))
+      if (tableElement === null) return disable()
+      tableObserver = getTableObserverFromTableElement(tableElement)
+      tableCellParentNodeDOM = editor.getElementByKey(anchorNode.getKey())
+      if (tableCellParentNodeDOM === null) return disable()
+    } else if (!activeElement) {
+      return disable()
+    }
+
+    if (tableObserver === null || tableCellParentNodeDOM === null) return disable()
+
+    const enabled = !tableObserver || !tableObserver.isSelecting
+    menu.classList.toggle("lexical-table-cell-action-button-container--active", enabled)
+    menu.classList.toggle("lexical-table-cell-action-button-container--inactive", !enabled)
+    if (enabled) {
+      const tableCellRect = tableCellParentNodeDOM.getBoundingClientRect()
+      const anchorRect = anchorElem.getBoundingClientRect()
+      const top = tableCellRect.top - anchorRect.top
+      const left = tableCellRect.right - anchorRect.left
+      menu.style.transform = `translate(${left}px, ${top}px)`
+    }
+  }, [editor, anchorElem])
+
+  useEffect(() => {
+    // Re-evaluate the menu position on every selection change, once up front, and
+    // once after each pointerUp (table selections settle on pointer release).
+    let timeoutId
+    const callback = () => {
+      timeoutId = undefined
+      editor.getEditorState().read($moveMenu)
+    }
+    const delayedCallback = () => {
+      if (timeoutId === undefined) timeoutId = setTimeout(callback, 0)
+      return false
+    }
+    return mergeRegister(
+      editor.registerUpdateListener(delayedCallback),
+      editor.registerCommand(SELECTION_CHANGE_COMMAND, delayedCallback, COMMAND_PRIORITY_CRITICAL),
+      editor.registerRootListener((rootElement, prevRootElement) => {
+        if (prevRootElement) prevRootElement.removeEventListener("pointerup", delayedCallback)
+        if (rootElement) {
+          rootElement.addEventListener("pointerup", delayedCallback)
+          delayedCallback()
+        }
+      }),
+      () => clearTimeout(timeoutId)
+    )
+  })
+
+  // Close the dropdown whenever the active cell changes out from under it.
+  const prevTableCellDOM = useRef(tableCellNode)
+  useEffect(() => {
+    if (prevTableCellDOM.current !== tableCellNode) setIsMenuOpen(false)
+    prevTableCellDOM.current = tableCellNode
+  }, [prevTableCellDOM, tableCellNode])
+
+  return (
+    <div className="lexical-table-cell-action-button-container" ref={menuButtonRef}>
+      {tableCellNode != null && (
+        <>
+          <button
+            type="button"
+            className="lexical-table-cell-action-button"
+            aria-label="Table row and column actions"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsMenuOpen(!isMenuOpen)
+            }}
+            ref={menuRootRef}
+          >
+            <span aria-hidden="true">▾</span>
+          </button>
+          {isMenuOpen && (
+            <TableActionMenu
+              contextRef={menuRootRef}
+              setIsMenuOpen={setIsMenuOpen}
+              onClose={() => setIsMenuOpen(false)}
+              tableCellNode={tableCellNode}
+            />
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+export default function TableActionMenuPlugin({ anchorElem = document.body } = {}) {
+  const isEditable = useLexicalEditable()
+  return createPortal(
+    isEditable ? <TableCellActionMenuContainer anchorElem={anchorElem} /> : null,
+    anchorElem
+  )
+}

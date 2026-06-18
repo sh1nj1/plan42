@@ -24,6 +24,7 @@ import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@l
 import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
+import TableActionMenuPlugin from "./plugins/table_action_menu_plugin"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -938,6 +939,7 @@ function EditorInner({
         <ListPlugin />
         <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
         <TableHoverActionsPlugin />
+        <TableActionMenuPlugin />
         <ListTabIndentPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
