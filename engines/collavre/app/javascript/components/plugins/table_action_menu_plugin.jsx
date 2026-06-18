@@ -176,6 +176,9 @@ function TableActionMenu({ onClose, tableCellNode, setIsMenuOpen, contextRef, an
       className="lexical-table-action-menu-dropdown"
       ref={dropDownRef}
       onClick={(e) => e.stopPropagation()}
+      // Same focus-steal guard as the chevron: keep the table selection intact
+      // so the insert/delete editor.update operates on the right cells.
+      onMouseDown={(e) => e.preventDefault()}
     >
       <button type="button" className="lexical-table-action-menu-item" onClick={() => insertTableRow(false)}>
         <span>Insert row above</span>
@@ -323,6 +326,17 @@ function TableCellActionMenuContainer({ anchorElem }) {
             type="button"
             className="lexical-table-cell-action-button"
             aria-label="Table row and column actions"
+            // Keep the editor's selection put. A bare button click fires
+            // mousedown first, which on desktop steals focus from the
+            // contenteditable and collapses the native selection out of the
+            // editor root. That makes the very next $moveMenu (fired by the
+            // resulting selectionchange) find no cell under the selection, call
+            // disable() → null the cell → close the menu and shift the chevron
+            // (the "flash then vanish" + bounce). Touch devices don't do the
+            // mousedown focus-steal, which is why it only broke on PC.
+            // preventDefault on mousedown blocks the focus-steal; onClick still
+            // fires so the toggle works.
+            onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => {
               e.stopPropagation()
               setIsMenuOpen(!isMenuOpen)
