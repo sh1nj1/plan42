@@ -50,6 +50,18 @@ describe("highlightCodeBlocks", () => {
     expect(code.classList.contains("hljs")).toBe(true)
   })
 
+  it("does not reinterpret code text as live HTML (no XSS via innerHTML)", () => {
+    const el = document.createElement("div")
+    // The decoded source text contains an XSS payload; after re-highlighting it
+    // must remain inert text, never a live <img> element.
+    el.innerHTML = '<pre lang="text"><code>&lt;img src=x onerror=alert(1)&gt;</code></pre>'
+    highlightCodeBlocks(el)
+    const code = el.querySelector("pre code")
+    // The payload survives only as inert text, never as a live element.
+    expect(code.querySelector("img")).toBeNull()
+    expect(code.textContent).toBe("<img src=x onerror=alert(1)>")
+  })
+
   it("is idempotent — already-highlighted blocks are skipped", () => {
     const el = document.createElement("div")
     el.innerHTML = '<pre lang="ruby"><code>puts :hi</code></pre>'

@@ -165,7 +165,10 @@ export function highlightCodeBlocks(container) {
       const match = /(?:^|\s)language-([\w-]+)/.exec(code.className || '')
       if (match) lang = sanitizeLang(match[1])
     }
-    code.innerHTML = highlightCode(code.textContent, lang)
+    // Sanitize before innerHTML: hljs escapes its own output, but the
+    // highlightAuto fallback can return raw source — DOMPurify keeps the
+    // hljs spans (via the class hooks) and neutralizes any meta-characters.
+    code.innerHTML = sanitize(highlightCode(code.textContent, lang))
     code.classList.add('hljs')
     code.dataset.hljsHighlighted = 'true'
     // Drop any baked-in inline background (e.g. syntect's dark `<pre style=…>`)
