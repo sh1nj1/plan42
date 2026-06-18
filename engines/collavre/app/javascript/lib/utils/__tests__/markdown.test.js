@@ -50,26 +50,40 @@ describe("highlightCodeBlocks", () => {
     expect(keywords).toContain("end")
   })
 
-  it("re-detects a Ruby block mislabeled as javascript (the default) and tokenizes as ruby", () => {
-    // Reproduces the real bug: the editor baked ```javascript onto Ruby content.
-    // The view re-detects the real language from the source so it matches edit mode.
+  const RUBY_SRC =
+    '# frozen_string_literal: true\n' +
+    'module CollavreCompat\n' +
+    '  module_function\n' +
+    '  def call(receiver, method_name, *args, **kwargs)\n' +
+    '    receiver.public_send(method_name, *args, **kwargs)\n' +
+    '  end\n' +
+    'end'
+
+  it("honors an explicit javascript label instead of re-detecting it (matches the editor)", () => {
+    // The user can deliberately choose ```javascript. The view must honor it
+    // verbatim — same as the editor, which honors any import-resolved language —
+    // so edit and view never disagree. (Previously the view re-detected this to
+    // Ruby, which contradicted an explicit choice.)
     const el = document.createElement("div")
-    el.innerHTML =
-      '<pre lang="javascript"><code>' +
-      '# frozen_string_literal: true\n' +
-      'module CollavreCompat\n' +
-      '  module_function\n' +
-      '  def call(receiver, method_name, *args, **kwargs)\n' +
-      '    receiver.public_send(method_name, *args, **kwargs)\n' +
-      '  end\n' +
-      'end</code></pre>'
+    el.innerHTML = '<pre lang="javascript"><code>' + RUBY_SRC + '</code></pre>'
     highlightCodeBlocks(el)
     const code = el.querySelector("pre code")
     const keywords = Array.from(code.querySelectorAll(".lexical-token-keyword")).map((s) => s.textContent)
-    // Ruby `def`/`module`/`end` keywords — proof it tokenized as Ruby, not JS.
+    // Ruby's `def`/`end` are NOT JavaScript keywords — proof it tokenized as JS,
+    // i.e. the explicit label was honored rather than overridden to Ruby.
+    expect(keywords).not.toContain("def")
+    expect(keywords).not.toContain("end")
+  })
+
+  it("content-detects an UNLABELED Ruby block and tokenizes as ruby", () => {
+    // No fence language → fall back to content detection so the block is colored.
+    const el = document.createElement("div")
+    el.innerHTML = '<pre><code>' + RUBY_SRC + '</code></pre>'
+    highlightCodeBlocks(el)
+    const code = el.querySelector("pre code")
+    const keywords = Array.from(code.querySelectorAll(".lexical-token-keyword")).map((s) => s.textContent)
     expect(keywords).toContain("def")
     expect(keywords).toContain("end")
-    // The `#` line is a Ruby comment (JavaScript would not treat `#` as a comment).
     expect(code.querySelector(".lexical-token-comment")).toBeTruthy()
   })
 

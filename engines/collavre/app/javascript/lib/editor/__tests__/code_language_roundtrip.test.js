@@ -125,3 +125,28 @@ describe("code-block language round-trip (markdown ↔ rich)", () => {
     expect(codeLang(editor)).toBe("javascript")
   })
 })
+
+import { highlightCodeBlocks } from "../../utils/markdown"
+
+function renderView(html) {
+  const div = document.createElement("div")
+  div.innerHTML = html
+  highlightCodeBlocks(div)
+  return div.querySelector("pre code").innerHTML
+}
+
+describe("rendered view honors explicit language (edit/view parity)", () => {
+  const RUBY_TOKENS = `module M\n  def call(x)\n  end\nend`
+  test("explicit javascript is NOT silently re-detected to ruby in the view", () => {
+    const asJs = renderView('<pre lang="javascript"><code>' + RUBY_TOKENS + "</code></pre>")
+    const asRuby = renderView('<pre lang="ruby"><code>' + RUBY_TOKENS + "</code></pre>")
+    // Different tokenizers → different markup. If js were re-detected to ruby
+    // they would be identical (the old bug).
+    expect(asJs).not.toBe(asRuby)
+  })
+  test("unlabeled block is content-detected (matches the ruby tokenization)", () => {
+    const unlabeled = renderView("<pre><code>" + RUBY_TOKENS + "</code></pre>")
+    const asRuby = renderView('<pre lang="ruby"><code>' + RUBY_TOKENS + "</code></pre>")
+    expect(unlabeled).toBe(asRuby)
+  })
+})

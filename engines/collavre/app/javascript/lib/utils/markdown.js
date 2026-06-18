@@ -48,7 +48,7 @@ import 'prismjs/components/prism-typescript'
 import 'prismjs/components/prism-java'
 import 'prismjs/components/prism-cpp'
 import { CODE_TOKEN_THEME } from '../editor/code_token_theme'
-import { detectCodeLanguage } from '../editor/code_languages'
+import { detectCodeLanguage, normalizeFenceLang } from '../editor/code_languages'
 
 // We tokenize manually; stop Prism from auto-highlighting `code[class*=language-]`
 // on DOMContentLoaded (which would double-process comment code blocks).
@@ -256,10 +256,14 @@ export function highlightCodeBlocks(container) {
       const match = /(?:^|\s)language-([\w-]+)/.exec(code.className || '')
       if (match) lang = sanitizeLang(match[1])
     }
-    // Resolve the language the same way the editor does: honor an explicit fence
-    // language, but re-detect blocks left on the "javascript" default (e.g. Ruby
-    // saved as ```javascript) so edit and view agree on the real language.
-    const resolved = detectCodeLanguage(code.textContent, lang)
+    // Resolve the language the same way the editor does. In the rendered view the
+    // language always comes from the stored source (a real fence / <pre lang>), so
+    // an explicit label is honored verbatim — including "javascript" — exactly as
+    // the editor honors an import-resolved language. Only genuinely unlabeled
+    // blocks are content-detected. This keeps edit and view in lock-step; without
+    // it the view would re-detect an explicit ```javascript to ruby while the
+    // editor honored javascript, and the two would disagree.
+    const resolved = lang ? normalizeFenceLang(lang) : detectCodeLanguage(code.textContent, '')
     // Build the markup ourselves with escaped text and only `lexical-token-*`
     // classes, then sanitize as defense-in-depth (DOMPurify keeps those spans
     // via the class hook and neutralizes anything unexpected).
