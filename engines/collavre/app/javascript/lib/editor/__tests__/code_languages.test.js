@@ -1,4 +1,4 @@
-import { detectCodeLanguage, normalizeFenceLang, DEFAULT_CODE_LANGUAGE } from "../code_languages"
+import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, DEFAULT_CODE_LANGUAGE } from "../code_languages"
 
 const RUBY = `# frozen_string_literal: true
 module CollavreCompat
@@ -50,5 +50,44 @@ describe("detectCodeLanguage", () => {
 
   it("exposes the javascript default constant", () => {
     expect(DEFAULT_CODE_LANGUAGE).toBe("javascript")
+  })
+})
+
+describe("bridgeCodeFenceLanguages", () => {
+  function parse(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html")
+    return doc.body
+  }
+
+  it("bridges commonmarker's <pre lang> to data-language", () => {
+    const c = parse('<pre lang="ruby"><code>x = 1</code></pre>')
+    bridgeCodeFenceLanguages(c)
+    expect(c.querySelector("pre").getAttribute("data-language")).toBe("ruby")
+  })
+
+  it("bridges marked's <code class=\"language-X\"> to data-language on <pre>", () => {
+    // This is the markdown→rich toggle case: renderMarkdown emits the fence
+    // language on the <code>, not the <pre>, so it was dropped on reopen.
+    const c = parse('<pre><code class="hljs language-ruby">x = 1</code></pre>')
+    bridgeCodeFenceLanguages(c)
+    expect(c.querySelector("pre").getAttribute("data-language")).toBe("ruby")
+  })
+
+  it("canonicalizes aliases while bridging", () => {
+    const c = parse('<pre><code class="language-rb">x = 1</code></pre>')
+    bridgeCodeFenceLanguages(c)
+    expect(c.querySelector("pre").getAttribute("data-language")).toBe("ruby")
+  })
+
+  it("does not overwrite an existing data-language", () => {
+    const c = parse('<pre lang="python" data-language="ruby"><code>x = 1</code></pre>')
+    bridgeCodeFenceLanguages(c)
+    expect(c.querySelector("pre").getAttribute("data-language")).toBe("ruby")
+  })
+
+  it("leaves a language-less block alone (detection handles it later)", () => {
+    const c = parse("<pre><code>x = 1</code></pre>")
+    bridgeCodeFenceLanguages(c)
+    expect(c.querySelector("pre").hasAttribute("data-language")).toBe(false)
   })
 })

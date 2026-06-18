@@ -75,6 +75,31 @@ export function normalizeFenceLang(lang) {
   return FENCE_ALIAS[l] || l
 }
 
+// Bridge an imported HTML fragment so @lexical/code's importer picks up the
+// fence language whichever renderer produced the HTML. @lexical/code's
+// $convertPreElement reads ONLY `data-language` on the <pre>, but the two
+// renderers that feed the editor encode the language differently:
+//   - commonmarker (server reopen):      <pre lang="ruby">…
+//   - marked / renderMarkdown (the       <pre><code class="language-ruby">…
+//     markdown→rich toggle in the editor)
+// Without this, the markdown→rich switch dropped the explicit fence language
+// (it lived on the <code>, not the <pre>), so the block fell back to content
+// detection / the javascript default — i.e. it reverted to the previous result.
+// We normalize either form onto `data-language`. Unlabeled blocks are left
+// alone for the content-detection transform to handle.
+export function bridgeCodeFenceLanguages(container) {
+  if (!container) return
+  container.querySelectorAll("pre:not([data-language])").forEach((pre) => {
+    let lang = normalizeFenceLang(pre.getAttribute("lang"))
+    if (!lang) {
+      const code = pre.querySelector('code[class*="language-"]')
+      const match = code && /(?:^|\s)language-([\w+-]+)/.exec(code.className || "")
+      if (match) lang = normalizeFenceLang(match[1])
+    }
+    if (lang) pre.setAttribute("data-language", lang)
+  })
+}
+
 // Minimum margin by which the detected language's relevance must beat plain
 // JavaScript's own relevance for the SAME text before we override the
 // JavaScript default. This keeps real JS as JS (margin 0) while confidently

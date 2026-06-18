@@ -58,7 +58,7 @@ import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/m
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
-import { detectCodeLanguage, normalizeFenceLang } from "../lib/editor/code_languages"
+import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages } from "../lib/editor/code_languages"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -111,14 +111,14 @@ function InitialContentPlugin({ html }) {
       // No more .trix-content wrapper
       const container = doc.body
 
-      // commonmarker renders fenced code as `<pre lang="ruby">`, but
-      // @lexical/code's importer only reads `data-language`. Bridge the two so an
-      // explicit fence language survives reopen instead of being dropped (and
-      // then defaulted to javascript). Detection still corrects unlabeled blocks.
-      container.querySelectorAll("pre[lang]:not([data-language])").forEach((pre) => {
-        const lang = normalizeFenceLang(pre.getAttribute("lang"))
-        if (lang) pre.setAttribute("data-language", lang)
-      })
+      // @lexical/code's importer only reads `data-language`, but the language is
+      // encoded differently depending on which renderer produced this HTML:
+      // commonmarker (server reopen) uses `<pre lang>`, while renderMarkdown (the
+      // markdown→rich toggle) puts it on `<pre><code class="language-X">`. Bridge
+      // both onto `data-language` so an explicit fence language survives reopen
+      // instead of being dropped (and then defaulted to javascript). Detection
+      // still corrects unlabeled blocks.
+      bridgeCodeFenceLanguages(container)
 
       // Color / background-color are bound to text nodes during import by the
       // colorAwareSpanImport html config (see lib/lexical/color_import). We no
