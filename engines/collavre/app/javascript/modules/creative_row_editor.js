@@ -8,6 +8,7 @@ import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
+import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -58,11 +59,15 @@ export function initializeCreativeRowEditor() {
       // In a real app, use a toast notification. For now, alert is safe.
       // Suppress 404 errors for PATCH requests, as this likely means the item was deleted
       // and we don't need to alert the user about it.
-      const is404 = error && error.toString().includes('404');
+      const is404 = (error && error.status === 404) || (error && error.toString().includes('404'));
       const isPatch = item && item.method === 'PATCH';
 
       if (!(is404 && isPatch)) {
-        alertDialog(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+        // Prefer the server's own error message (e.g. "Description cannot be
+        // changed directly for GitHub synced content") and fall back to the
+        // generic copy only when the failure carries no usable payload.
+        const serverMessage = serverErrorMessage(error);
+        alertDialog(serverMessage || 'Failed to save changes. Please check your connection and try again.');
       }
 
       // If the failed item matches the current creative, mark it as dirty so it can be retried
