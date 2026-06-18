@@ -57,6 +57,7 @@ import { minimizeContentHtml } from "../lib/lexical/minimize_html"
 import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/markdown_serialize"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
+import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -76,37 +77,7 @@ const theme = {
     listitem: "lexical-list-item"
   },
   code: "lexical-code-block",
-  codeHighlight: {
-    atrule: "lexical-token-atrule",
-    attr: "lexical-token-attr",
-    boolean: "lexical-token-boolean",
-    builtin: "lexical-token-builtin",
-    cdata: "lexical-token-cdata",
-    char: "lexical-token-char",
-    class: "lexical-token-class",
-    comment: "lexical-token-comment",
-    constant: "lexical-token-constant",
-    deleted: "lexical-token-deleted",
-    doctype: "lexical-token-doctype",
-    entity: "lexical-token-entity",
-    function: "lexical-token-function",
-    important: "lexical-token-important",
-    inserted: "lexical-token-inserted",
-    keyword: "lexical-token-keyword",
-    namespace: "lexical-token-namespace",
-    number: "lexical-token-number",
-    operator: "lexical-token-operator",
-    prolog: "lexical-token-prolog",
-    property: "lexical-token-property",
-    punctuation: "lexical-token-punctuation",
-    regex: "lexical-token-regex",
-    selector: "lexical-token-selector",
-    string: "lexical-token-string",
-    symbol: "lexical-token-symbol",
-    tag: "lexical-token-tag",
-    url: "lexical-token-url",
-    variable: "lexical-token-variable"
-  },
+  codeHighlight: CODE_TOKEN_THEME,
   link: "lexical-link",
   text: {
     bold: "lexical-text-bold",

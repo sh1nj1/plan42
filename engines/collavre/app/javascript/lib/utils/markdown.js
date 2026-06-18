@@ -21,6 +21,41 @@ import go from 'highlight.js/lib/languages/go'
 import java from 'highlight.js/lib/languages/java'
 import plaintext from 'highlight.js/lib/languages/plaintext'
 
+// Prism syntax highlighting for rendered creative code blocks. The Lexical
+// editor highlights code with Prism (@lexical/code) and tags each token with a
+// `lexical-token-*` class (see lib/editor/code_token_theme.js). To make the
+// rendered creative byte-for-byte identical to edit mode, the view re-tokenizes
+// with the SAME Prism instance, the SAME language components @lexical/code
+// loads, and the SAME token→class map. Matching the component set keeps the two
+// tokenizers aligned — e.g. neither registers a `ruby` grammar, so Ruby code
+// falls back to JavaScript on both sides instead of diverging. (highlight.js is
+// still used for comment rendering below, a separate surface.)
+import Prism from 'prismjs'
+import 'prismjs/components/prism-clike'
+import 'prismjs/components/prism-javascript'
+import 'prismjs/components/prism-markup'
+import 'prismjs/components/prism-markdown'
+import 'prismjs/components/prism-c'
+import 'prismjs/components/prism-css'
+import 'prismjs/components/prism-objectivec'
+import 'prismjs/components/prism-sql'
+import 'prismjs/components/prism-powershell'
+import 'prismjs/components/prism-python'
+import 'prismjs/components/prism-rust'
+import 'prismjs/components/prism-swift'
+import 'prismjs/components/prism-typescript'
+import 'prismjs/components/prism-java'
+import 'prismjs/components/prism-cpp'
+import { CODE_TOKEN_THEME } from '../editor/code_token_theme'
+
+// We tokenize manually; stop Prism from auto-highlighting `code[class*=language-]`
+// on DOMContentLoaded (which would double-process comment code blocks).
+Prism.manual = true
+
+// Matches @lexical/code's DEFAULT_CODE_LANGUAGE: unlabeled or unknown-language
+// blocks tokenize as JavaScript in both the editor and the rendered view.
+const DEFAULT_CODE_LANGUAGE = 'javascript'
+
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('js', javascript)
 hljs.registerLanguage('typescript', typescript)
@@ -94,7 +129,9 @@ marked.use({
 DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
   if (node.tagName === 'SPAN' && data.attrName === 'class') {
     const classes = data.attrValue.split(/\s+/)
-    const safe = classes.filter(c => c.startsWith('hljs-'))
+    // hljs-* for comment code blocks, lexical-token-* for rendered creative
+    // descriptions (which now share the editor's Prism token classes).
+    const safe = classes.filter(c => c.startsWith('hljs-') || c.startsWith('lexical-token-'))
     if (safe.length > 0) {
       data.attrValue = safe.join(' ')
       data.forceKeepAttr = true
@@ -143,14 +180,67 @@ export function renderCommentMarkdown(text) {
   return sanitize(html.trim())
 }
 
-// Re-tokenize server-rendered creative description code blocks with highlight.js.
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function wrapToken(text, type) {
+  const cls = type ? CODE_TOKEN_THEME[type] : undefined
+  if (!cls) return escapeHtml(text)
+  // Mirror @lexical/code, which splits a token's text on newlines/tabs into
+  // separate highlight nodes (the whitespace between them carries no token
+  // class), so the rendered span structure matches the editor exactly — not
+  // just the colors.
+  return text
+    .split(/(\n|\t)/)
+    .map((piece) =>
+      piece === '\n' || piece === '\t' || piece === ''
+        ? escapeHtml(piece)
+        : `<span class="${cls}">${escapeHtml(piece)}</span>`
+    )
+    .join('')
+}
+
+// Flatten a Prism token stream into `lexical-token-*` span HTML, mirroring how
+// @lexical/code's registerCodeHighlighting assigns exactly ONE class (the
+// nearest enclosing token type) to each leaf text node. `type` is the enclosing
+// token type handed down to bare string leaves, so the rendered view tokenizes
+// and classes identically to the editor.
+function tokensToLexicalHtml(tokens, type) {
+  let html = ''
+  for (const token of tokens) {
+    if (typeof token === 'string') {
+      html += wrapToken(token, type)
+    } else if (typeof token.content === 'string') {
+      const leafType = token.type === 'prefix' && typeof token.alias === 'string'
+        ? token.alias
+        : token.type
+      html += wrapToken(token.content, leafType)
+    } else if (Array.isArray(token.content)) {
+      html += tokensToLexicalHtml(token.content, token.type === 'unchanged' ? undefined : token.type)
+    }
+  }
+  return html
+}
+
+function highlightToLexicalHtml(code, lang) {
+  const grammar = Prism.languages[lang] || Prism.languages[DEFAULT_CODE_LANGUAGE]
+  if (!grammar) return escapeHtml(code)
+  return tokensToLexicalHtml(Prism.tokenize(code, grammar), undefined)
+}
+
+// Re-tokenize server-rendered creative description code blocks with Prism.
 //
 // Creative descriptions are rendered server-side by commonmarker. We disable its
 // built-in syntect highlighter (which bakes a fixed dark theme inline), so the
 // stored HTML arrives as plain `<pre lang="ruby"><code>raw source</code></pre>`.
-// This pass tokenizes that source with the same hljs + `--syntax-*` palette the
-// editor (Prism) and comments use, so edit mode and rendered mode match and the
-// colors follow light/dark theme.
+// This pass re-tokenizes that source with the SAME Prism instance, language set,
+// and `lexical-token-*` token classes the editor uses, so edit mode and rendered
+// mode are colored token-for-token identically (not just the same palette) and
+// follow the light/dark theme via the shared `--syntax-*` variables.
 //
 // Reading `textContent` (not innerHTML) means legacy descriptions whose stored
 // HTML still carries baked-in inline-styled spans get re-highlighted too — no
@@ -165,11 +255,10 @@ export function highlightCodeBlocks(container) {
       const match = /(?:^|\s)language-([\w-]+)/.exec(code.className || '')
       if (match) lang = sanitizeLang(match[1])
     }
-    // Sanitize before innerHTML: hljs escapes its own output, but the
-    // highlightAuto fallback can return raw source — DOMPurify keeps the
-    // hljs spans (via the class hooks) and neutralizes any meta-characters.
-    code.innerHTML = sanitize(highlightCode(code.textContent, lang))
-    code.classList.add('hljs')
+    // Build the markup ourselves with escaped text and only `lexical-token-*`
+    // classes, then sanitize as defense-in-depth (DOMPurify keeps those spans
+    // via the class hook and neutralizes anything unexpected).
+    code.innerHTML = sanitize(highlightToLexicalHtml(code.textContent, lang || DEFAULT_CODE_LANGUAGE))
     code.dataset.hljsHighlighted = 'true'
     // Drop any baked-in inline background (e.g. syntect's dark `<pre style=…>`)
     // so the theme-aware --color-code-bg from code_highlight.css wins.
