@@ -40,7 +40,7 @@ function computeSelectionCount(selection) {
   }
 }
 
-function TableActionMenu({ onClose, tableCellNode, setIsMenuOpen, contextRef }) {
+function TableActionMenu({ onClose, tableCellNode, setIsMenuOpen, contextRef, anchorElem }) {
   const [editor] = useLexicalComposerContext()
   const dropDownRef = useRef(null)
   const [selectionCounts, updateSelectionCounts] = useState({ columns: 1, rows: 1 })
@@ -54,37 +54,45 @@ function TableActionMenu({ onClose, tableCellNode, setIsMenuOpen, contextRef }) 
     })
   }, [editor])
 
-  // Position the dropdown next to the chevron button, flipping to the left and
-  // clamping vertically when it would overflow the viewport.
+  // Position the dropdown next to the chevron, in coordinates relative to the
+  // anchor (.lexical-editor-inner) the menu is portaled into — NOT viewport
+  // coords against document.body. A body-portaled position:fixed menu only
+  // resolves to the viewport when no ancestor has a transform/filter/will-change;
+  // the desktop app layout establishes such a context (mobile's media-query layout
+  // does not), so fixed coords landed the menu off-screen on PC and the off-bounds
+  // element forced a reflow that bounced the chevron. Anchoring to the editor's own
+  // box — the same proven pattern as the hover "+" buttons — sidesteps all of it.
   useEffect(() => {
     const menuButtonElement = contextRef.current
     const dropDownElement = dropDownRef.current
-    const rootElement = editor.getRootElement()
 
-    if (menuButtonElement != null && dropDownElement != null && rootElement != null) {
-      const rootEleRect = rootElement.getBoundingClientRect()
+    if (menuButtonElement != null && dropDownElement != null && anchorElem != null) {
+      const anchorRect = anchorElem.getBoundingClientRect()
       const menuButtonRect = menuButtonElement.getBoundingClientRect()
       dropDownElement.style.opacity = "1"
       const dropDownElementRect = dropDownElement.getBoundingClientRect()
       const margin = 5
-      let leftPosition = menuButtonRect.right + margin
-      if (
-        leftPosition + dropDownElementRect.width > window.innerWidth ||
-        leftPosition + dropDownElementRect.width > rootEleRect.right
-      ) {
-        const position = menuButtonRect.left - dropDownElementRect.width - margin
-        leftPosition = (position < 0 ? margin : position) + window.pageXOffset
-      }
-      dropDownElement.style.left = `${leftPosition + window.pageXOffset}px`
 
-      let topPosition = menuButtonRect.top
-      if (topPosition + dropDownElementRect.height > window.innerHeight) {
-        const position = menuButtonRect.bottom - dropDownElementRect.height
-        topPosition = position < 0 ? margin : position
+      // Default: just right of the chevron. Flip left if it would overflow the
+      // anchor's right edge or the viewport.
+      let left = menuButtonRect.right - anchorRect.left + margin
+      if (
+        menuButtonRect.right + margin + dropDownElementRect.width > window.innerWidth ||
+        left + dropDownElementRect.width > anchorRect.width
+      ) {
+        left = menuButtonRect.left - anchorRect.left - dropDownElementRect.width - margin
+        if (left < margin) left = margin
       }
-      dropDownElement.style.top = `${topPosition}px`
+      dropDownElement.style.left = `${left}px`
+
+      let top = menuButtonRect.top - anchorRect.top
+      if (menuButtonRect.top + dropDownElementRect.height > window.innerHeight) {
+        top = menuButtonRect.bottom - anchorRect.top - dropDownElementRect.height
+        if (top < margin) top = margin
+      }
+      dropDownElement.style.top = `${top}px`
     }
-  }, [contextRef, editor])
+  }, [contextRef, editor, anchorElem])
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -193,7 +201,7 @@ function TableActionMenu({ onClose, tableCellNode, setIsMenuOpen, contextRef }) 
         <span>Delete table</span>
       </button>
     </div>,
-    document.body
+    anchorElem
   )
 }
 
@@ -329,6 +337,7 @@ function TableCellActionMenuContainer({ anchorElem }) {
               setIsMenuOpen={setIsMenuOpen}
               onClose={() => setIsMenuOpen(false)}
               tableCellNode={tableCellNode}
+              anchorElem={anchorElem}
             />
           )}
         </>

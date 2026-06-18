@@ -387,11 +387,13 @@
 }
 
 .lexical-table-action-menu-dropdown {
-  /* Fixed, not absolute: the dropdown is portaled to document.body and positioned
-     from the chevron's viewport rect (getBoundingClientRect). With position:absolute
-     those viewport coords are read as document coords, so on a scrolled editor the
-     menu lands off-screen; fixed makes the viewport math correct. */
-  position: fixed;
+  /* Absolute within .lexical-editor-inner (the portal anchor), positioned in
+     anchor-relative coords. Body-portaled position:fixed broke on PC because the
+     desktop layout's transformed ancestor made "fixed" resolve to that ancestor,
+     not the viewport — landing the menu off-screen and bouncing the chevron via
+     reflow. Anchoring to the editor's own box keeps it in the editor's stacking
+     and scroll context, matching the working hover "+" buttons. */
+  position: absolute;
   z-index: 100;
   display: flex;
   flex-direction: column;
