@@ -273,6 +273,109 @@
   top: 0.6rem;
 }
 
+/* Tables: editor theme classes plus the matching display tags, mirroring the
+   pattern used for the other .lexical-* rules below. */
+.lexical-table-wrapper {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.lexical-table,
+.creative-content table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.75rem 0;
+}
+
+.lexical-table-cell,
+.creative-content th,
+.creative-content td {
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.5rem;
+  min-width: 4.5rem;
+  vertical-align: top;
+  text-align: start;
+  position: relative;
+  word-break: break-word;
+}
+
+.lexical-table-cell-header,
+.creative-content th {
+  background-color: var(--surface-hover);
+  font-weight: var(--weight-6);
+}
+
+.lexical-table-selected {
+  outline: 2px solid var(--color-link);
+  outline-offset: -1px;
+}
+
+.lexical-table-selection *::selection {
+  background-color: transparent;
+}
+
+/* Cell-boundary add-row / add-column buttons (portaled to <body>). */
+.lexical-table-add-rows,
+.lexical-table-add-columns {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-section);
+  cursor: pointer;
+  padding: 0;
+}
+
+.lexical-table-add-rows::after,
+.lexical-table-add-columns::after {
+  content: "+";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.lexical-table-add-rows:hover,
+.lexical-table-add-columns:hover {
+  background-color: var(--surface-hover);
+}
+
+/* Cell-gutter delete-row / delete-column buttons. Shown on cell hover in the
+   hovered row's left gutter / column's top gutter (mousemove-driven, same proven
+   mechanism as the "+" buttons — no focus/selection dependency). */
+.lexical-table-delete-rows,
+.lexical-table-delete-columns {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-section);
+  cursor: pointer;
+  padding: 0;
+}
+
+.lexical-table-delete-rows::after,
+.lexical-table-delete-columns::after {
+  content: "×";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.lexical-table-delete-rows:hover,
+.lexical-table-delete-columns:hover {
+  background-color: var(--danger-surface, var(--surface-hover));
+  color: var(--danger-text, var(--text-primary));
+}
+
 /* The .lexical-* classes are the editor theme (contenteditable). Markdown is now
    the canonical persisted/displayed form, so .creative-content renders plain
    semantic tags without those classes — mirror each rule onto the matching

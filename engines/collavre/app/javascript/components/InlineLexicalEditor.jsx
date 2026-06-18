@@ -21,6 +21,9 @@ import {
 } from "@lexical/code"
 import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
+import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -119,7 +122,18 @@ const theme = {
     underline: "lexical-text-underline",
     strikethrough: "lexical-text-strike",
     code: "lexical-text-code"
-  }
+  },
+  table: "lexical-table",
+  tableScrollableWrapper: "lexical-table-wrapper",
+  tableRow: "lexical-table-row",
+  tableCell: "lexical-table-cell",
+  tableCellHeader: "lexical-table-cell-header",
+  tableSelected: "lexical-table-selected",
+  tableSelection: "lexical-table-selection",
+  tableAddRows: "lexical-table-add-rows",
+  tableAddColumns: "lexical-table-add-columns",
+  tableDeleteRows: "lexical-table-delete-rows",
+  tableDeleteColumns: "lexical-table-delete-columns"
 }
 
 function Placeholder({ text }) {
@@ -481,6 +495,14 @@ function Toolbar() {
     [editor]
   )
 
+  const insertTable = useCallback(() => {
+    editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+      columns: "3",
+      rows: "3",
+      includeHeaders: true
+    })
+  }, [editor])
+
   const toggleLink = useCallback(() => {
     let hasLink = false
     let selectionText = ""
@@ -719,6 +741,14 @@ function Toolbar() {
         title="Numbered list">
         1.
       </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={insertTable}
+        title="Insert table"
+        aria-label="Insert table">
+        ▦
+      </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
         type="button"
@@ -879,6 +909,16 @@ function EditorInner({
 }) {
   const [editor] = useLexicalComposerContext()
 
+  // Anchor for the floating table plugins (hover "+" and the cell action menu).
+  // Portaling into the editor's own subtree (not document.body) ties the floating
+  // UI's lifetime to the editor DOM: when the editor is torn down — including
+  // Turbo/host teardown that removes the container without a React unmount — the
+  // chevron button is removed with it instead of being orphaned in document.body.
+  const [floatingAnchorElem, setFloatingAnchorElem] = useState(null)
+  const onAnchorRef = useCallback((el) => {
+    if (el !== null) setFloatingAnchorElem(el)
+  }, [])
+
   // File drop is handled by FileUploadPlugin's DROP_COMMAND handler.
   // We only need dragOver to allow the browser to accept file drops.
   const handleDragOver = useCallback((event) => {
@@ -890,7 +930,7 @@ function EditorInner({
   return (
     <div className="lexical-editor-shell">
       <Toolbar />
-      <div className="lexical-editor-inner">
+      <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
@@ -908,6 +948,10 @@ function EditorInner({
         <HistoryPlugin />
         <CodeHighlightingPlugin />
         <ListPlugin />
+        <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
+        {floatingAnchorElem && (
+          <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
+        )}
         <ListTabIndentPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
@@ -1015,7 +1059,10 @@ export default function InlineLexicalEditor({
         AutoLinkNode,
         ImageNode,
         AttachmentNode,
-        VideoNode
+        VideoNode,
+        TableNode,
+        TableRowNode,
+        TableCellNode
       ],
       onError(error) {
         throw error
