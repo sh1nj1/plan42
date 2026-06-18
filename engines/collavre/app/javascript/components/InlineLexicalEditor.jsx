@@ -24,7 +24,6 @@ import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@l
 import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
-import TableActionMenuPlugin from "./plugins/table_action_menu_plugin"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -132,7 +131,9 @@ const theme = {
   tableSelected: "lexical-table-selected",
   tableSelection: "lexical-table-selection",
   tableAddRows: "lexical-table-add-rows",
-  tableAddColumns: "lexical-table-add-columns"
+  tableAddColumns: "lexical-table-add-columns",
+  tableDeleteRows: "lexical-table-delete-rows",
+  tableDeleteColumns: "lexical-table-delete-columns"
 }
 
 function Placeholder({ text }) {
@@ -949,10 +950,7 @@ function EditorInner({
         <ListPlugin />
         <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
         {floatingAnchorElem && (
-          <>
-            <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
-            <TableActionMenuPlugin anchorElem={floatingAnchorElem} />
-          </>
+          <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
         )}
         <ListTabIndentPlugin />
         <LinkPlugin />
