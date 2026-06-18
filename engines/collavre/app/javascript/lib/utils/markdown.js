@@ -26,10 +26,11 @@ import plaintext from 'highlight.js/lib/languages/plaintext'
 // `lexical-token-*` class (see lib/editor/code_token_theme.js). To make the
 // rendered creative byte-for-byte identical to edit mode, the view re-tokenizes
 // with the SAME Prism instance, the SAME language components @lexical/code
-// loads, and the SAME token→class map. Matching the component set keeps the two
-// tokenizers aligned — e.g. neither registers a `ruby` grammar, so Ruby code
-// falls back to JavaScript on both sides instead of diverging. (highlight.js is
-// still used for comment rendering below, a separate surface.)
+// loads, and the SAME token→class map. The shared code_languages module below
+// registers the extra grammars @lexical/code omits (ruby, bash, …) on the same
+// Prism singleton and resolves each block's language identically to the editor,
+// so the two tokenizers stay aligned. (highlight.js is still used for comment
+// rendering below, a separate surface.)
 import Prism from 'prismjs'
 import 'prismjs/components/prism-clike'
 import 'prismjs/components/prism-javascript'
@@ -47,14 +48,11 @@ import 'prismjs/components/prism-typescript'
 import 'prismjs/components/prism-java'
 import 'prismjs/components/prism-cpp'
 import { CODE_TOKEN_THEME } from '../editor/code_token_theme'
+import { detectCodeLanguage } from '../editor/code_languages'
 
 // We tokenize manually; stop Prism from auto-highlighting `code[class*=language-]`
 // on DOMContentLoaded (which would double-process comment code blocks).
 Prism.manual = true
-
-// Matches @lexical/code's DEFAULT_CODE_LANGUAGE: unlabeled or unknown-language
-// blocks tokenize as JavaScript in both the editor and the rendered view.
-const DEFAULT_CODE_LANGUAGE = 'javascript'
 
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('js', javascript)
@@ -227,7 +225,10 @@ function tokensToLexicalHtml(tokens, type) {
 }
 
 function highlightToLexicalHtml(code, lang) {
-  const grammar = Prism.languages[lang] || Prism.languages[DEFAULT_CODE_LANGUAGE]
+  // No grammar (unlabeled / unsupported language) → render as plaintext rather
+  // than forcing JavaScript, so a block we can't confidently classify isn't
+  // mis-colored as JS.
+  const grammar = lang ? Prism.languages[lang] : null
   if (!grammar) return escapeHtml(code)
   return tokensToLexicalHtml(Prism.tokenize(code, grammar), undefined)
 }
@@ -255,10 +256,14 @@ export function highlightCodeBlocks(container) {
       const match = /(?:^|\s)language-([\w-]+)/.exec(code.className || '')
       if (match) lang = sanitizeLang(match[1])
     }
+    // Resolve the language the same way the editor does: honor an explicit fence
+    // language, but re-detect blocks left on the "javascript" default (e.g. Ruby
+    // saved as ```javascript) so edit and view agree on the real language.
+    const resolved = detectCodeLanguage(code.textContent, lang)
     // Build the markup ourselves with escaped text and only `lexical-token-*`
     // classes, then sanitize as defense-in-depth (DOMPurify keeps those spans
     // via the class hook and neutralizes anything unexpected).
-    code.innerHTML = sanitize(highlightToLexicalHtml(code.textContent, lang || DEFAULT_CODE_LANGUAGE))
+    code.innerHTML = sanitize(highlightToLexicalHtml(code.textContent, resolved))
     code.dataset.hljsHighlighted = 'true'
     // Drop any baked-in inline background (e.g. syntect's dark `<pre style=…>`)
     // so the theme-aware --color-code-bg from code_highlight.css wins.

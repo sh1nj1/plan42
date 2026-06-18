@@ -58,6 +58,7 @@ import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/m
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
+import { detectCodeLanguage, normalizeFenceLang } from "../lib/editor/code_languages"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -109,6 +110,15 @@ function InitialContentPlugin({ html }) {
       const doc = parser.parseFromString(html || "", "text/html")
       // No more .trix-content wrapper
       const container = doc.body
+
+      // commonmarker renders fenced code as `<pre lang="ruby">`, but
+      // @lexical/code's importer only reads `data-language`. Bridge the two so an
+      // explicit fence language survives reopen instead of being dropped (and
+      // then defaulted to javascript). Detection still corrects unlabeled blocks.
+      container.querySelectorAll("pre[lang]:not([data-language])").forEach((pre) => {
+        const lang = normalizeFenceLang(pre.getAttribute("lang"))
+        if (lang) pre.setAttribute("data-language", lang)
+      })
 
       // Color / background-color are bound to text nodes during import by the
       // colorAwareSpanImport html config (see lib/lexical/color_import). We no
@@ -220,7 +230,29 @@ function CodeHighlightingPlugin() {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
-    return registerCodeHighlighting(editor)
+    const unregisterHighlight = registerCodeHighlighting(editor)
+
+    // registerCodeHighlighting bakes "javascript" onto any code block without a
+    // language (its tokenizer default), which then serializes into the canonical
+    // markdown as ```javascript — so Ruby/Python/etc. blocks get permanently
+    // mislabeled on the first edit. This transform re-detects the real language
+    // from the block's content whenever it's unconfirmed (missing or stuck on
+    // the javascript default) and corrects the node, so the editor shows — and
+    // saves — the right language. An explicit non-default language is left alone.
+    const unregisterDetect = editor.registerNodeTransform(CodeNode, (node) => {
+      const current = node.getLanguage()
+      const norm = normalizeFenceLang(current)
+      if (norm && norm !== "javascript") return
+      const detected = detectCodeLanguage(node.getTextContent(), current)
+      if (detected && detected !== "javascript" && detected !== current) {
+        node.setLanguage(detected)
+      }
+    })
+
+    return () => {
+      unregisterHighlight()
+      unregisterDetect()
+    }
   }, [editor])
 
   return null

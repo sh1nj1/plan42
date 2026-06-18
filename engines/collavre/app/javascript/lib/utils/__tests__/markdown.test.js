@@ -36,14 +36,41 @@ describe("highlightCodeBlocks", () => {
     expect(code.querySelector(".lexical-token-boolean")).toBeTruthy() // true
   })
 
-  it("falls back to the default language (javascript) when Prism lacks the grammar", () => {
-    // Prism (matching @lexical/code) registers no `ruby` grammar, so Ruby code
-    // tokenizes as JavaScript here exactly as it does in the editor.
+  it("honors an explicit ruby fence and tokenizes with the ruby grammar", () => {
+    // The shared code_languages module registers the ruby grammar on the same
+    // Prism instance the editor uses, so an explicit ```ruby fence is honored
+    // instead of falling back to JavaScript.
     const el = document.createElement("div")
-    el.innerHTML = '<pre lang="ruby"><code>const x = false</code></pre>'
+    el.innerHTML = '<pre lang="ruby"><code>def foo\n  nil\nend</code></pre>'
     highlightCodeBlocks(el)
     const code = el.querySelector("pre code")
-    expect(code.querySelector(".lexical-token-keyword")).toBeTruthy()
+    // `def`/`end` are Ruby keywords; JavaScript tokenization would not mark them.
+    const keywords = Array.from(code.querySelectorAll(".lexical-token-keyword")).map((s) => s.textContent)
+    expect(keywords).toContain("def")
+    expect(keywords).toContain("end")
+  })
+
+  it("re-detects a Ruby block mislabeled as javascript (the default) and tokenizes as ruby", () => {
+    // Reproduces the real bug: the editor baked ```javascript onto Ruby content.
+    // The view re-detects the real language from the source so it matches edit mode.
+    const el = document.createElement("div")
+    el.innerHTML =
+      '<pre lang="javascript"><code>' +
+      '# frozen_string_literal: true\n' +
+      'module CollavreCompat\n' +
+      '  module_function\n' +
+      '  def call(receiver, method_name, *args, **kwargs)\n' +
+      '    receiver.public_send(method_name, *args, **kwargs)\n' +
+      '  end\n' +
+      'end</code></pre>'
+    highlightCodeBlocks(el)
+    const code = el.querySelector("pre code")
+    const keywords = Array.from(code.querySelectorAll(".lexical-token-keyword")).map((s) => s.textContent)
+    // Ruby `def`/`module`/`end` keywords — proof it tokenized as Ruby, not JS.
+    expect(keywords).toContain("def")
+    expect(keywords).toContain("end")
+    // The `#` line is a Ruby comment (JavaScript would not treat `#` as a comment).
+    expect(code.querySelector(".lexical-token-comment")).toBeTruthy()
   })
 
   it("re-highlights legacy blocks from textContent, dropping baked inline styles", () => {
