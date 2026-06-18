@@ -387,8 +387,12 @@
 }
 
 .lexical-table-action-menu-dropdown {
-  position: absolute;
-  z-index: 10;
+  /* Fixed, not absolute: the dropdown is portaled to document.body and positioned
+     from the chevron's viewport rect (getBoundingClientRect). With position:absolute
+     those viewport coords are read as document coords, so on a scrolled editor the
+     menu lands off-screen; fixed makes the viewport math correct. */
+  position: fixed;
+  z-index: 100;
   display: flex;
   flex-direction: column;
   min-width: 9rem;

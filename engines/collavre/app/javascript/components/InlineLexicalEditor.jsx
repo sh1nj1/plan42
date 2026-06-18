@@ -908,6 +908,16 @@ function EditorInner({
 }) {
   const [editor] = useLexicalComposerContext()
 
+  // Anchor for the floating table plugins (hover "+" and the cell action menu).
+  // Portaling into the editor's own subtree (not document.body) ties the floating
+  // UI's lifetime to the editor DOM: when the editor is torn down — including
+  // Turbo/host teardown that removes the container without a React unmount — the
+  // chevron button is removed with it instead of being orphaned in document.body.
+  const [floatingAnchorElem, setFloatingAnchorElem] = useState(null)
+  const onAnchorRef = useCallback((el) => {
+    if (el !== null) setFloatingAnchorElem(el)
+  }, [])
+
   // File drop is handled by FileUploadPlugin's DROP_COMMAND handler.
   // We only need dragOver to allow the browser to accept file drops.
   const handleDragOver = useCallback((event) => {
@@ -919,7 +929,7 @@ function EditorInner({
   return (
     <div className="lexical-editor-shell">
       <Toolbar />
-      <div className="lexical-editor-inner">
+      <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
@@ -938,8 +948,12 @@ function EditorInner({
         <CodeHighlightingPlugin />
         <ListPlugin />
         <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
-        <TableHoverActionsPlugin />
-        <TableActionMenuPlugin />
+        {floatingAnchorElem && (
+          <>
+            <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
+            <TableActionMenuPlugin anchorElem={floatingAnchorElem} />
+          </>
+        )}
         <ListTabIndentPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
