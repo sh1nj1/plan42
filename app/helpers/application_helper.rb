@@ -64,7 +64,12 @@ module ApplicationHelper
   # sanitizer's media safelist so attached video nodes keep their native
   # playback controls (play/pause/fullscreen) when displayed.
   EMBED_ALLOWED_TAGS = %w[iframe a p div span br strong em b i u ul ol li h1 h2 h3 h4 h5 h6 blockquote code pre img hr table thead tbody tr th td figure figcaption action-text-attachment video source].freeze
-  EMBED_ALLOWED_ATTRS = %w[src title frameborder allow allowfullscreen style href class alt width height target rel sgid content-type filename colspan rowspan controls preload poster].freeze
+  # `lang` carries the code-fence language on <pre lang="…">. The rendered body
+  # child-row description goes through this sanitizer (tree_builder), so dropping
+  # `lang` here makes the body row lose the language and content-detect it — out
+  # of step with the editor/heading, which keep it. Keep it so every surface
+  # honors the one explicit language.
+  EMBED_ALLOWED_ATTRS = %w[src title frameborder allow allowfullscreen style href class alt width height target rel sgid content-type filename colspan rowspan controls preload poster lang].freeze
 
   def embed_youtube_iframe(html)
     return html if html.blank?

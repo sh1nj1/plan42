@@ -37,6 +37,20 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes result, "<script"
   end
 
+  # The display sanitizer must preserve the explicit code-fence language on
+  # <pre lang>. tree_builder renders the body child-row description through
+  # embed_youtube_iframe, while the editor and the current-creative heading use
+  # the raw description. If lang is stripped here, the body row loses the
+  # language and the client content-detects it — turning a ```javascript block
+  # of ruby-ish source into Ruby in the body while the heading and editor stay
+  # JavaScript (same code, two colors).
+  test "embed_youtube_iframe keeps the code-fence language on <pre lang>" do
+    html = %(<pre lang="javascript"><code>def call; end</code></pre>)
+    result = embed_youtube_iframe(html)
+
+    assert_includes result, %(lang="javascript")
+  end
+
   test "embed_youtube_iframe returns blank input unchanged" do
     assert_equal "", embed_youtube_iframe("")
     assert_nil embed_youtube_iframe(nil)
