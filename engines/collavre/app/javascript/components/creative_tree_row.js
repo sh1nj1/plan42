@@ -2,6 +2,7 @@ import { LitElement, html, svg, nothing } from "lit";
 import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
+import { highlightCodeBlocks } from "../lib/utils/markdown";
 import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -77,6 +78,12 @@ class CreativeTreeRow extends LitElement {
 
   updated(changedProperties) {
     this._attachHandlers();
+
+    // Re-tokenize the server-rendered description code blocks with hljs so they
+    // match the editor's palette and follow light/dark theme. Idempotent: only
+    // unmarked blocks are processed, and lit re-renders description DOM (dropping
+    // the marker) only when descriptionHtml actually changes.
+    highlightCodeBlocks(this);
 
     if (changedProperties.has('loadingChildren')) {
       if (this.loadingChildren) {
