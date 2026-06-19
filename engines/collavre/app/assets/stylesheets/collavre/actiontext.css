@@ -380,9 +380,13 @@
    the canonical persisted/displayed form, so .creative-content renders plain
    semantic tags without those classes — mirror each rule onto the matching
    element so the display view matches the editor. .lexical-* kept for the
-   editor and for legacy class-bearing HTML saved before the markdown switch. */
+   editor and for legacy class-bearing HTML saved before the markdown switch.
+   .creative-title-content is the title (h1) display of the same description HTML,
+   so it needs the identical mirror — otherwise a markdown title renders a plain
+   <p> with the browser-default margin and the single-line title style breaks. */
 .lexical-paragraph,
-.creative-content p {
+.creative-content p,
+.creative-title-content p {
   margin: 0 0 0 0;
 }
 
@@ -391,28 +395,35 @@
 .lexical-heading-h3,
 .creative-content h1,
 .creative-content h2,
-.creative-content h3 {
+.creative-content h3,
+.creative-title-content h1,
+.creative-title-content h2,
+.creative-title-content h3 {
   font-weight: var(--weight-6);
   margin: 0 0 var(--space-2) 0;
 }
 
 .lexical-heading-h1,
-.creative-content h1 {
+.creative-content h1,
+.creative-title-content h1 {
   font-size: 1.35rem;
 }
 
 .lexical-heading-h2,
-.creative-content h2 {
+.creative-content h2,
+.creative-title-content h2 {
   font-size: 1.2rem;
 }
 
 .lexical-heading-h3,
-.creative-content h3 {
+.creative-content h3,
+.creative-title-content h3 {
   font-size: 1.1rem;
 }
 
 .lexical-quote,
-.creative-content blockquote {
+.creative-content blockquote,
+.creative-title-content blockquote {
   border-left: var(--space-1) solid var(--border-color);
   color: var(--text-muted);
   margin: 0 0 0.75rem 0;
@@ -422,13 +433,16 @@
 .lexical-list-ul,
 .lexical-list-ol,
 .creative-content ul,
-.creative-content ol {
+.creative-content ol,
+.creative-title-content ul,
+.creative-title-content ol {
   margin: 0 0 0.75rem 1.25rem;
   padding: 0;
 }
 
 .lexical-list-item,
-.creative-content li {
+.creative-content li,
+.creative-title-content li {
   margin: 0.35rem 0;
 }
 
@@ -442,7 +456,8 @@
    .creative-content, not a descendant, so this never restyles the row wrapper.
    a[download] is excluded: attachment chips carry their own .lexical-attachment style. */
 .lexical-link,
-.creative-content a:not([download]) {
+.creative-content a:not([download]),
+.creative-title-content a:not([download]) {
   color: var(--color-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -450,24 +465,31 @@
 
 .lexical-text-bold,
 .creative-content strong,
-.creative-content b {
+.creative-content b,
+.creative-title-content strong,
+.creative-title-content b {
   font-weight: var(--weight-6);
 }
 
 .lexical-text-italic,
 .creative-content em,
-.creative-content i {
+.creative-content i,
+.creative-title-content em,
+.creative-title-content i {
   font-style: italic;
 }
 
 .lexical-text-underline,
-.creative-content u {
+.creative-content u,
+.creative-title-content u {
   text-decoration: underline;
 }
 
 .lexical-text-strike,
 .creative-content s,
-.creative-content del {
+.creative-content del,
+.creative-title-content s,
+.creative-title-content del {
   text-decoration: line-through;
 }
 
