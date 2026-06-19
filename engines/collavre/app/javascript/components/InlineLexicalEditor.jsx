@@ -21,6 +21,9 @@ import {
 } from "@lexical/code"
 import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
+import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
 import {
   $createParagraphNode,
   $createTextNode,
@@ -59,6 +62,8 @@ import { minimizeContentHtml } from "../lib/lexical/minimize_html"
 import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/markdown_serialize"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
+import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
+import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -82,37 +87,7 @@ const theme = {
     nested: { listitem: "lexical-nested-list-item" }
   },
   code: "lexical-code-block",
-  codeHighlight: {
-    atrule: "lexical-token-atrule",
-    attr: "lexical-token-attr",
-    boolean: "lexical-token-boolean",
-    builtin: "lexical-token-builtin",
-    cdata: "lexical-token-cdata",
-    char: "lexical-token-char",
-    class: "lexical-token-class",
-    comment: "lexical-token-comment",
-    constant: "lexical-token-constant",
-    deleted: "lexical-token-deleted",
-    doctype: "lexical-token-doctype",
-    entity: "lexical-token-entity",
-    function: "lexical-token-function",
-    important: "lexical-token-important",
-    inserted: "lexical-token-inserted",
-    keyword: "lexical-token-keyword",
-    namespace: "lexical-token-namespace",
-    number: "lexical-token-number",
-    operator: "lexical-token-operator",
-    prolog: "lexical-token-prolog",
-    property: "lexical-token-property",
-    punctuation: "lexical-token-punctuation",
-    regex: "lexical-token-regex",
-    selector: "lexical-token-selector",
-    string: "lexical-token-string",
-    symbol: "lexical-token-symbol",
-    tag: "lexical-token-tag",
-    url: "lexical-token-url",
-    variable: "lexical-token-variable"
-  },
+  codeHighlight: CODE_TOKEN_THEME,
   link: "lexical-link",
   text: {
     bold: "lexical-text-bold",
@@ -120,7 +95,18 @@ const theme = {
     underline: "lexical-text-underline",
     strikethrough: "lexical-text-strike",
     code: "lexical-text-code"
-  }
+  },
+  table: "lexical-table",
+  tableScrollableWrapper: "lexical-table-wrapper",
+  tableRow: "lexical-table-row",
+  tableCell: "lexical-table-cell",
+  tableCellHeader: "lexical-table-cell-header",
+  tableSelected: "lexical-table-selected",
+  tableSelection: "lexical-table-selection",
+  tableAddRows: "lexical-table-add-rows",
+  tableAddColumns: "lexical-table-add-columns",
+  tableDeleteRows: "lexical-table-delete-rows",
+  tableDeleteColumns: "lexical-table-delete-columns"
 }
 
 function Placeholder({ text }) {
@@ -137,6 +123,9 @@ function InitialContentPlugin({ html }) {
     lastApplied.current = html
     editor.update(() => {
       const root = $getRoot()
+      // Re-importing replaces the tree; drop stale resolved-language keys so the
+      // registry only tracks nodes from this import.
+      clearLanguageResolved(editor)
       // Explicitly remove all children to ensure it's empty
       root.getChildren().forEach((child) => child.remove())
 
@@ -144,6 +133,15 @@ function InitialContentPlugin({ html }) {
       const doc = parser.parseFromString(html || "", "text/html")
       // No more .trix-content wrapper
       const container = doc.body
+
+      // @lexical/code's importer only reads `data-language`, but the language is
+      // encoded differently depending on which renderer produced this HTML:
+      // commonmarker (server reopen) uses `<pre lang>`, while renderMarkdown (the
+      // markdown→rich toggle) puts it on `<pre><code class="language-X">`. Bridge
+      // both onto `data-language` so an explicit fence language survives reopen
+      // instead of being dropped (and then defaulted to javascript). Detection
+      // still corrects unlabeled blocks.
+      bridgeCodeFenceLanguages(container)
 
       // Color / background-color are bound to text nodes during import by the
       // colorAwareSpanImport html config (see lib/lexical/color_import). We no
@@ -155,6 +153,23 @@ function InitialContentPlugin({ html }) {
       // otherwise). Must run after the sync above materializes data-lexical-*.
       normalizeColoredContainers(container)
       const nodes = $generateNodesFromDOM(editor, container)
+
+      // Mark code blocks whose language came from an explicit source label as
+      // resolved BEFORE registerCodeHighlighting bakes the "javascript" default
+      // onto unlabeled ones. At this point a non-empty language can only be one
+      // the bridge set from a real fence/attribute, so the detection transform
+      // will honor it verbatim (incl. an explicit "javascript") and only
+      // re-detect the still-unlabeled blocks.
+      const markExplicitCodeLanguages = (list) => {
+        list.forEach((node) => {
+          if ($isCodeNode(node)) {
+            if (node.getLanguage()) markLanguageResolved(editor, node.getKey())
+          } else if ($isElementNode(node) && typeof node.getChildren === "function") {
+            markExplicitCodeLanguages(node.getChildren())
+          }
+        })
+      }
+      markExplicitCodeLanguages(nodes)
 
       // Filter out duplicate image nodes if any
       const uniqueNodes = []
@@ -255,7 +270,34 @@ function CodeHighlightingPlugin() {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
-    return registerCodeHighlighting(editor)
+    const unregisterHighlight = registerCodeHighlighting(editor)
+
+    // registerCodeHighlighting bakes "javascript" onto any code block without a
+    // language (its tokenizer default), which then serializes into the canonical
+    // markdown as ```javascript — so Ruby/Python/etc. blocks get permanently
+    // mislabeled on the first edit. This transform re-detects the real language
+    // from the block's content whenever it's unconfirmed (missing or stuck on
+    // the javascript default) and corrects the node, so the editor shows — and
+    // saves — the right language. An explicit non-default language is left alone.
+    const unregisterDetect = editor.registerNodeTransform(CodeNode, (node) => {
+      // A language that came from an explicit source label on import is honored
+      // verbatim — including "javascript" — so auto-detection never overrides a
+      // deliberate choice. Only unlabeled/new blocks (baked to the javascript
+      // default) are re-detected from their content.
+      if (isLanguageResolved(editor, node.getKey())) return
+      const current = node.getLanguage()
+      const norm = normalizeFenceLang(current)
+      if (norm && norm !== "javascript") return
+      const detected = detectCodeLanguage(node.getTextContent(), current)
+      if (detected && detected !== "javascript" && detected !== current) {
+        node.setLanguage(detected)
+      }
+    })
+
+    return () => {
+      unregisterHighlight()
+      unregisterDetect()
+    }
   }, [editor])
 
   return null
@@ -481,6 +523,14 @@ function Toolbar() {
     },
     [editor]
   )
+
+  const insertTable = useCallback(() => {
+    editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+      columns: "3",
+      rows: "3",
+      includeHeaders: true
+    })
+  }, [editor])
 
   const toggleLink = useCallback(() => {
     let hasLink = false
@@ -720,6 +770,14 @@ function Toolbar() {
         title="Numbered list">
         1.
       </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={insertTable}
+        title="Insert table"
+        aria-label="Insert table">
+        ▦
+      </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
         type="button"
@@ -884,6 +942,16 @@ function EditorInner({
 }) {
   const [editor] = useLexicalComposerContext()
 
+  // Anchor for the floating table plugins (hover "+" and the cell action menu).
+  // Portaling into the editor's own subtree (not document.body) ties the floating
+  // UI's lifetime to the editor DOM: when the editor is torn down — including
+  // Turbo/host teardown that removes the container without a React unmount — the
+  // chevron button is removed with it instead of being orphaned in document.body.
+  const [floatingAnchorElem, setFloatingAnchorElem] = useState(null)
+  const onAnchorRef = useCallback((el) => {
+    if (el !== null) setFloatingAnchorElem(el)
+  }, [])
+
   // File drop is handled by FileUploadPlugin's DROP_COMMAND handler.
   // We only need dragOver to allow the browser to accept file drops.
   const handleDragOver = useCallback((event) => {
@@ -895,7 +963,7 @@ function EditorInner({
   return (
     <div className="lexical-editor-shell">
       <Toolbar />
-      <div className="lexical-editor-inner">
+      <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
@@ -913,6 +981,10 @@ function EditorInner({
         <HistoryPlugin />
         <CodeHighlightingPlugin />
         <ListPlugin />
+        <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
+        {floatingAnchorElem && (
+          <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
+        )}
         <ListTabIndentPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
@@ -1030,7 +1102,10 @@ export default function InlineLexicalEditor({
         AutoLinkNode,
         ImageNode,
         AttachmentNode,
-        VideoNode
+        VideoNode,
+        TableNode,
+        TableRowNode,
+        TableCellNode
       ],
       onError(error) {
         throw error

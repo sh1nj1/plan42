@@ -1,4 +1,5 @@
 import { createSubscription } from '../services/cable'
+import { highlightCodeBlocks } from '../lib/utils/markdown'
 import DOMPurify from 'dompurify'
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -24,6 +25,9 @@ document.addEventListener('DOMContentLoaded', function() {
     load(index, false);
   } else {
     updateUrl(index);
+    // Initial slide is server-rendered (static ERB): re-tokenize its code blocks
+    // so they match the editor palette, same as the JS-loaded slides below.
+    highlightCodeBlocks(contentEl);
   }
 
   function updateUrl(idx) {
@@ -60,8 +64,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         contentEl.innerHTML = '';
         var el = document.createElement(tag);
+        el.className = 'creative-content';
         el.innerHTML = DOMPurify.sanitize(data.description);
         contentEl.appendChild(el);
+        highlightCodeBlocks(el);
         if (captionEl) {
           captionEl.textContent = data.prompt || '';
         }

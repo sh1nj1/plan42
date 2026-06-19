@@ -1,5 +1,6 @@
 import { $isTextNode, $isParagraphNode } from "lexical"
 import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown"
+import { TABLE, setCellTransformers } from "./table_transformer"
 
 // Serializes the Lexical editor state to Markdown as the canonical storage
 // format. Standard block/inline features (headings, lists, quotes, code,
@@ -187,12 +188,17 @@ const DECORATOR_ELEMENT_TRANSFORMER = exportOnlyTransformer((node) => decoratorM
 // Our custom transformers run first so colored text and decorator nodes are
 // claimed before the upstream defaults (which would drop their style/content).
 export const MARKDOWN_TRANSFORMERS = [
+  TABLE,
   DECORATOR_ELEMENT_TRANSFORMER,
   EMPTY_PARAGRAPH_TRANSFORMER,
   DECORATOR_TEXT_TRANSFORMER,
   COLOR_TRANSFORMER,
   ...TRANSFORMERS
 ]
+
+// Tables serialize their cell content with the same transformer set. Injected
+// here (rather than imported into table_transformer.js) to break the cycle.
+setCellTransformers(MARKDOWN_TRANSFORMERS)
 
 // A block that must keep a blank line before/after it (i.e. is NOT a plain
 // paragraph): heading, blockquote, list item, fenced code, table row, thematic

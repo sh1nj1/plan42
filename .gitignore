@@ -63,3 +63,6 @@ engines/collavre/app/assets/videos/
 
 db/videos/
 db/videos-dark/
+
+.DS_Store
+

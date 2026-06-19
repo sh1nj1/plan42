@@ -52,11 +52,18 @@ module Collavre
         # hardbreaks: a single newline becomes <br>, mirroring the JS renderer (marked breaks:true)
         # and the canonical markdown_source, which stores consecutive rich-editor lines one-per-line
         # rather than separated by a blank line.
+        #
+        # syntax_highlighter: nil disables comrak's built-in syntect highlighter, which otherwise
+        # bakes a fixed base16-ocean.dark theme into the stored HTML as inline `style=` attributes
+        # (e.g. `<pre style="background-color:#2b303b"><span style="color:#bf616a">`). Those inline
+        # styles override our theme-aware code_highlight.css palette and are blind to light/dark mode.
+        # Disabling it emits a plain `<pre lang="ruby"><code>…</code></pre>`; the client re-tokenizes
+        # with highlight.js so the rendered creative matches the editor (and respects the theme).
         html = Commonmarker.to_html(input, options: {
           parse: { smart: true },
           render: { unsafe: true, hardbreaks: true },
           extension: { table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true }
-        })
+        }, plugins: { syntax_highlighter: nil })
 
         html.strip!
         html
