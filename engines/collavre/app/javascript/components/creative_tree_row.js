@@ -1,8 +1,8 @@
 import { LitElement, html, svg, nothing } from "lit";
-import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
+import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -106,8 +106,10 @@ class CreativeTreeRow extends LitElement {
 
   set descriptionHtml(value) {
     const oldValue = this._descriptionHtml;
-    // Always sanitize when setting new HTML
-    const sanitized = DOMPurify.sanitize(value ?? "");
+    // Always sanitize when setting new HTML. Uses the shared sanitizer so the
+    // server-generated YouTube preview iframe survives (default DOMPurify config
+    // strips all iframes, which is what broke the YouTube link preview).
+    const sanitized = sanitizeDescriptionHtml(value);
     this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
     this.requestUpdate("descriptionHtml", oldValue);
