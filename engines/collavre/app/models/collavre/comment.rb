@@ -3,10 +3,52 @@ module Collavre
     self.table_name = "comments"
 
     STREAMING_PLACEHOLDER_CONTENT = "..."
+    # Authorless "⏳" waiting-notice system messages posted when an agent is
+    # deferred for topic concurrency. AgentOrchestrator.cleanup_waiting_notices!
+    # matches the same prefix to remove them once the waiter is dequeued.
+    WAITING_NOTICE_PREFIX = "⏳"
 
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
+    end
+
+    # A system "⏳" waiting notice (no author) telling a user their agent is
+    # deferred because another task holds the topic's running slot.
+    def waiting_notice?
+      user_id.nil? && content.to_s.start_with?(WAITING_NOTICE_PREFIX)
+    end
+
+    # The task holding this topic's concurrency slot — the blocker this waiting
+    # notice is about. Lets the notice render a stop button that cancels the
+    # blocker (freeing the topic so the deferred waiter proceeds) instead of
+    # being an anonymous dead end. Resolved at render time rather than stored on
+    # task_id, which Task#reply_comment keys on (a shared task_id would make the
+    # blocker's reply_comment ambiguous).
+    #
+    # Two gates keep the button honest:
+    #   1. Only THIS notice's own topic-concurrency defer qualifies. The same "⏳"
+    #      notice is also posted for :delayed decisions (busy / rate_limited),
+    #      which schedule a delayed job WITHOUT queuing a topic waiter —
+    #      cancelling some unrelated running task would not unblock them.
+    #      topic_concurrency_defer is set only on the :deferred path, so a
+    #      :delayed notice never shows the button even when an unrelated queued
+    #      waiter happens to share the topic. The queued_for_topic check then
+    #      confirms a waiter is still actually pending on the slot.
+    #   2. Resolve the blocker over occupying_topic_slot, not just running/
+    #      delegated: a holder paused on pending_approval still occupies the slot
+    #      and is cancellable, so the button must stay visible for it.
+    # Returns nil once no slot holder remains — at which point the notice itself
+    # is cleaned up.
+    def topic_blocking_task
+      return @topic_blocking_task if defined?(@topic_blocking_task)
+
+      @topic_blocking_task =
+        if topic_concurrency_defer? && topic_id &&
+           Collavre::Task.queued_for_topic(topic_id, creative_id).exists?
+          Collavre::Task.occupying_topic_slot(topic_id, creative_id)
+                        .includes(:agent).order(:created_at).first
+        end
     end
 
     belongs_to :creative, class_name: "Collavre::Creative"
@@ -50,6 +92,10 @@ module Collavre
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
+    # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
+    # part of *promoting* a waiter does not run the user-delete cancel cascade
+    # (which would cancel other still-queued waiters in the same topic).
+    attribute :suppress_waiter_cancellation, :boolean, default: false
 
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
@@ -142,12 +188,18 @@ module Collavre
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 
-      # Cancel queued tasks when their waiting notice (system comment) is deleted
-      cancel_queued_tasks_for_waiting_notice if waiting_notice?
-    end
-
-    def waiting_notice?
-      user_id.nil? && content&.start_with?("⏳")
+      # Cancel queued tasks when a user DELETES their waiting notice. Gated to
+      # topic_concurrency_defer notices: only the :deferred path queues a topic
+      # waiter, so a :delayed (busy / rate_limited) "⏳" notice — which shares the
+      # prefix but has no waiter of its own — must not cancel an unrelated queued
+      # waiter that happens to share the topic. Also skipped when the notice is
+      # removed by promotion cleanup (suppress_waiter_cancellation): there the
+      # waiter is being advanced, not abandoned, and cancelling other still-queued
+      # waiters would drop their work (multi-slot orphan recovery must not cancel
+      # the rest).
+      if waiting_notice? && topic_concurrency_defer? && !suppress_waiter_cancellation
+        cancel_queued_tasks_for_waiting_notice
+      end
     end
 
     def cancel_queued_tasks_for_waiting_notice

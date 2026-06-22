@@ -49,6 +49,11 @@
         <button class="comment-stop-btn" type="button" data-action="click->comment#cancelTask" data-task-id="<%= comment.task_id %>" title="<%= t('collavre.comments.stop_agent') %>">
           <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_agent') %>
         </button>
+      <% elsif comment.waiting_notice? && (blocking_task = comment.topic_blocking_task) %>
+        <%# Stop the in-progress blocker so the deferred waiter can proceed (stuck recovery). %>
+        <button class="comment-stop-btn" type="button" data-action="click->comment#cancelTask" data-task-id="<%= blocking_task.id %>" title="<%= t('collavre.comments.stop_blocking_agent') %>">
+          <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_blocking_agent') %>
+        </button>
       <% end %>
       <button class="add-reaction-btn" type="button" data-action="click->comment#triggerReactionPicker" title="<%= t('collavre.comments.add_reaction') %>">
         <span class="grayscale-emoji">☺</span>

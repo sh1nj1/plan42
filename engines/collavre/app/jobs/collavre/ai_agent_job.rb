@@ -101,11 +101,14 @@ module Collavre
 
       # Reserve resources before starting work
       tracker = Orchestration::ResourceTracker.for(agent)
-      # Claude Channel tasks live past this job (MCP reply happens later), so
-      # reserve under the stable task.id — that's the key reply / cancel /
-      # stuck-recovery will use to release the slot.
+      # Reserve under the stable task.id, not the per-run job_id: a task can
+      # outlive the job that reserved its slot (Claude Channel tasks wait on an
+      # MCP reply, pending_approval tasks pause on ApprovalPendingError), and
+      # every external release path — TasksController#cancel, stuck recovery,
+      # agent teardown — releases! by task.id. A job_id key would leave those
+      # releases unmatched, leaking the slot until the cache expiry.
       is_claude_channel_agent = agent.claude_channel_agent?
-      resource_id = is_claude_channel_agent ? task.id : (job_id || task.id)
+      resource_id = task.id
       tracker.reserve!(resource_id)
       should_release = true
 

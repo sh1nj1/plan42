@@ -164,6 +164,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_17_090000) do
     t.integer "review_type", limit: 1
     t.integer "selected_version_id"
     t.integer "task_id"
+    t.boolean "topic_concurrency_defer", default: false, null: false
     t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id"
