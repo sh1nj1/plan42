@@ -10,6 +10,11 @@ module Creatives
     # than its entire match set.
     PERMISSION_FILTER_BATCH = 200
 
+    # Page size for the top-nav "Chats" feed (the comment filter). The list is
+    # unbounded by nature (it grows with every commented creative), so it is
+    # paginated instead of materialized whole.
+    COMMENT_CHATS_PER_PAGE = 30
+
     Result = Struct.new(
       :creatives,
       :parent_creative,
@@ -18,6 +23,7 @@ module Creatives
       :overall_progress,
       :allowed_creative_ids,
       :progress_map,
+      :pagination,
       keyword_init: true
     )
 
@@ -38,7 +44,8 @@ module Creatives
         shared_list: shared_list,
         overall_progress: result[:overall_progress] || 0,
         allowed_creative_ids: result[:allowed_ids],
-        progress_map: result[:progress_map]
+        progress_map: result[:progress_map],
+        pagination: result[:pagination]
       )
     end
 
@@ -83,29 +90,46 @@ module Creatives
 
       result = pipeline.call
 
-      return empty_result if result.matched_ids.empty?
+      # The comment ("Chats") path still returns a pagination object on an empty
+      # match so the client gets consistent metadata; other filters short-circuit.
+      return empty_result if result.matched_ids.empty? && params[:comment] != "true"
 
       # For search/comment filters, return matched items directly (flat results sorted by relevance)
       # Unless search_mode=tree is specified, which returns tree structure instead
       # For other filters (tags, progress), return tree start nodes
       if (params[:search].present? || params[:comment] == "true") && params[:search_mode] != "tree"
-        matched_creatives = Creative.where(id: result.matched_ids.to_a)
-          .order(:sequence)
-          .select { |c| readable?(c) }
-
-        # Sort by comment updated_at for comment filter
-        if params[:comment] == "true"
-          matched_creatives = matched_creatives.sort_by { |c| c.comments.maximum(:updated_at) || c.updated_at }.reverse
-        end
-
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
-        {
-          creatives: matched_creatives,
-          parent: parent,
-          allowed_ids: result.allowed_ids,
-          overall_progress: result.overall_progress,
-          progress_map: result.progress_map
-        }
+
+        if params[:comment] == "true"
+          # Top-nav "Chats" list: one page of commented creatives, newest chat
+          # first. The matched set is permission-filtered in a single batch and
+          # the recency ordering is computed by the DB (LIMIT/OFFSET over a
+          # grouped MAX(comments.updated_at)), so response cost is a fixed page
+          # regardless of how many chats exist. This replaces an unbounded load
+          # that ran a per-row readable? query and a per-row MAX(updated_at)
+          # aggregate (two N+1s that grew with the chat count).
+          page = comment_chats_page(result.matched_ids)
+          {
+            creatives: page[:creatives],
+            parent: parent,
+            allowed_ids: result.allowed_ids,
+            overall_progress: result.overall_progress,
+            progress_map: result.progress_map,
+            pagination: page[:pagination]
+          }
+        else
+          matched_creatives = Creative.where(id: result.matched_ids.to_a)
+            .order(:sequence)
+            .select { |c| readable?(c) }
+
+          {
+            creatives: matched_creatives,
+            parent: parent,
+            allowed_ids: result.allowed_ids,
+            overall_progress: result.overall_progress,
+            progress_map: result.progress_map
+          }
+        end
       else
         start_nodes = determine_start_nodes(result.allowed_ids)
         parent = params[:id] ? Creative.find_by(id: params[:id]) : nil
@@ -117,6 +141,51 @@ module Creatives
           progress_map: result.progress_map
         }
       end
+    end
+
+    # One page of the "Chats" feed from the comment-matched id set, ordered by
+    # most-recent comment. Permission filtering is batched (PermissionFilter does
+    # a handful of IN queries, not one per row) and the recency sort + windowing
+    # happen in SQL, so neither cost scales with the total number of chats.
+    def comment_chats_page(matched_ids)
+      per_page = comment_chats_per_page
+      page = comment_chats_page_number
+      offset = (page - 1) * per_page
+
+      readable_ids = PermissionFilter.new(user: user).readable_ids(matched_ids.to_a)
+      return { creatives: [], pagination: pagination_meta(page, false) } if readable_ids.empty?
+
+      # Fetch one extra row to detect whether a further page exists. id is the
+      # tiebreaker so the order is total and stable across page boundaries.
+      page_ids = Creative.where(id: readable_ids)
+        .joins(:comments)
+        .group("creatives.id")
+        .order(Arel.sql("MAX(comments.updated_at) DESC, creatives.id DESC"))
+        .offset(offset)
+        .limit(per_page + 1)
+        .pluck("creatives.id")
+
+      has_more = page_ids.size > per_page
+      page_ids = page_ids.first(per_page)
+
+      by_id = Creative.where(id: page_ids).index_by(&:id)
+      creatives = page_ids.filter_map { |id| by_id[id] }
+
+      { creatives: creatives, pagination: pagination_meta(page, has_more) }
+    end
+
+    def comment_chats_per_page
+      per = params[:per_page].presence&.to_i || COMMENT_CHATS_PER_PAGE
+      per <= 0 || per > 100 ? COMMENT_CHATS_PER_PAGE : per
+    end
+
+    def comment_chats_page_number
+      page = params[:page].presence&.to_i || 1
+      page < 1 ? 1 : page
+    end
+
+    def pagination_meta(page, has_more)
+      { page: page, next_page: has_more ? page + 1 : nil, has_more: has_more }
     end
 
     def simple_search?

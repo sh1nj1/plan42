@@ -372,7 +372,10 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    assert_includes response.body, I18n.t("collavre.users.edit_ai.link")
+    # Assert the actual edit-AI link, not the word "Edit" — that text also appears
+    # in unrelated copy (e.g. the typo-correction settings hint), so a bare
+    # substring match would pass even if the link were gone.
+    assert_includes response.body, collavre.edit_ai_user_path(ai_user)
   end
 
   test "non creator does not see edit button for ai user in org chart" do
@@ -402,7 +405,10 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.user_path(@regular_user, tab: "contacts")
     assert_response :success
-    refute_includes response.body, I18n.t("collavre.users.edit_ai.link")
+    # Match the actual edit-AI link, not the word "Edit": that text also appears
+    # in unrelated copy (typo-correction settings hint), so a bare substring
+    # match would spuriously fail even though the link is correctly hidden.
+    refute_includes response.body, collavre.edit_ai_user_path(ai_user)
   end
   test "search with scope contacts returns contact users" do
     sign_in_as(@admin, password: "password")
@@ -484,6 +490,33 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     get collavre.passkeys_user_path(@regular_user)
     assert_response :success
   end
+  test "non admin user cannot access other user's typo correction page" do
+    sign_in_as(@regular_user, password: "password")
+    other_user = users(:one) # admin user
+
+    get collavre.typo_correction_user_path(other_user)
+
+    assert_redirected_to collavre.user_path(@regular_user)
+    assert_equal I18n.t("collavre.users.destroy.not_authorized"), flash[:alert]
+  end
+
+  test "user can access their own typo correction page" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.typo_correction_user_path(@regular_user)
+    assert_response :success
+    assert_select "input[name=?]", "user[typo_correction_enabled]"
+    assert_select "input[name=?]", "user[typo_correction_threshold]"
+  end
+
+  test "profile page links to the typo correction settings page" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+    assert_response :success
+    assert_select "a[href=?]", collavre.typo_correction_user_path(@regular_user)
+  end
+
   test "admin link appears in profile for system admin" do
     sign_in_as(@admin, password: "password")
     get collavre.user_path(@admin)

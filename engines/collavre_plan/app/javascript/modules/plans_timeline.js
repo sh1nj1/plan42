@@ -1,3 +1,5 @@
+import { alertDialog, confirmDialog } from "collavre/lib/utils/dialog";
+
 let plansTimelineScriptInitialized = false;
 
 if (!plansTimelineScriptInitialized) {
@@ -23,6 +25,12 @@ if (!plansTimelineScriptInitialized) {
     var startDate = new Date(container.dataset.startDate || new Date());
     var endDate = new Date(container.dataset.endDate || new Date());
     container.dataset.lastLoadedDate = new Date().toISOString().slice(0, 10);
+
+    // "Registered" chip: when on, the timeline also draws creatives at their
+    // created_at. Default-off, so registrations are fetched lazily on toggle.
+    var registrationsEnabled = container.dataset.registrations === 'true';
+    // "Modified" chip: same idea, drawing modified creatives at their updated_at.
+    var modificationsEnabled = container.dataset.modifications === 'true';
 
     var scroll = document.createElement('div');
     scroll.className = 'timeline-scroll';
@@ -65,6 +73,8 @@ if (!plansTimelineScriptInitialized) {
     function createPlanBar(plan, idx) {
       var el = document.createElement('div');
       el.className = 'plan-bar';
+      if (plan.type === 'registration') el.className += ' plan-bar--registration';
+      else if (plan.type === 'modification') el.className += ' plan-bar--modification';
       el.dataset.path = plan.path;
       el.dataset.id = plan.id;
       var startDateValue = plan.start_date || plan.created_at;
@@ -90,9 +100,9 @@ if (!plansTimelineScriptInitialized) {
         del.textContent = '×';
         del.className = 'delete-plan-btn';
         el.appendChild(del);
-        del.addEventListener('click', function (e) {
+        del.addEventListener('click', async function (e) {
           e.stopPropagation();
-          if (!confirm(container.dataset.deleteConfirm)) return;
+          if (!(await confirmDialog(container.dataset.deleteConfirm, { danger: true }))) return;
           var deleteUrl;
           if (String(plan.id).indexOf('calendar_event_') === 0) {
             deleteUrl = '/calendar_events/' + String(plan.id).replace('calendar_event_', '');
@@ -190,6 +200,7 @@ if (!plansTimelineScriptInitialized) {
     renderPlans();
     updatePlanPositions();
 
+    var loadSeq = 0;
     function loadPlans(centerDate) {
       var dateStr = centerDate.toISOString().slice(0, 10);
       if (container.dataset.lastLoadedDate === dateStr) return;
@@ -197,9 +208,16 @@ if (!plansTimelineScriptInitialized) {
       var listArea = document.getElementById('plans-list-area')
       var basePlansUrl = (listArea && listArea.dataset.plansUrl) || '/plans.json'
       var separator = basePlansUrl.indexOf('?') >= 0 ? '&' : '?'
-      fetch(basePlansUrl + separator + 'date=' + dateStr)
+      var requestUrl = basePlansUrl + separator + 'date=' + dateStr
+      if (registrationsEnabled) requestUrl += '&registrations=1'
+      if (modificationsEnabled) requestUrl += '&modifications=1'
+      // Discard out-of-order responses: a slower registrations fetch must not
+      // overwrite the result of a later request (e.g. rapid chip on/off).
+      var seq = ++loadSeq;
+      fetch(requestUrl)
         .then(function (r) { return r.json(); })
         .then(function (newPlans) {
+          if (seq !== loadSeq) return;
           plans = newPlans.map(function (p) {
             if (p.start_date) {
               p.start_date = new Date(p.start_date);
@@ -235,6 +253,38 @@ if (!plansTimelineScriptInitialized) {
       todayBtn.addEventListener('click', function () { scrollToDate(new Date()); });
     }
 
+    // Re-fetch the currently centered window, bypassing the lastLoadedDate guard
+    // (used when toggling a chip changes WHAT we request for the same date).
+    function reloadCurrentView() {
+      var centerOffset = container.scrollLeft + container.clientWidth / 2;
+      var daysFromStart = centerOffset / dayWidth;
+      var centerDate = new Date(startDate.getTime() + Math.round(daysFromStart) * 86400000);
+      container.dataset.lastLoadedDate = '';
+      loadPlans(centerDate);
+    }
+
+    var registrationsChip = document.getElementById('chip-registrations');
+    if (registrationsChip) {
+      registrationsChip.addEventListener('click', function () {
+        registrationsEnabled = !registrationsEnabled;
+        container.dataset.registrations = registrationsEnabled ? 'true' : 'false';
+        registrationsChip.classList.toggle('timeline-chip--active', registrationsEnabled);
+        registrationsChip.setAttribute('aria-pressed', registrationsEnabled ? 'true' : 'false');
+        reloadCurrentView();
+      });
+    }
+
+    var modificationsChip = document.getElementById('chip-modifications');
+    if (modificationsChip) {
+      modificationsChip.addEventListener('click', function () {
+        modificationsEnabled = !modificationsEnabled;
+        container.dataset.modifications = modificationsEnabled ? 'true' : 'false';
+        modificationsChip.classList.toggle('timeline-chip--active', modificationsEnabled);
+        modificationsChip.setAttribute('aria-pressed', modificationsEnabled ? 'true' : 'false');
+        reloadCurrentView();
+      });
+    }
+
     scrollToDate(new Date());
 
     var scrollTimer;
@@ -257,7 +307,15 @@ if (!plansTimelineScriptInitialized) {
 
     // Listen for plan creation from delegated handler
     const onPlanCreated = function (e) {
-      addPlan(e.detail);
+      // While a chip is active, the planned creative's derived
+      // registration/modification marker stops being eligible (plan anchors
+      // are excluded server-side), so re-fetch the authoritative view to drop
+      // the now-stale marker. Appending alone would leave it as a duplicate.
+      if (registrationsEnabled || modificationsEnabled) {
+        reloadCurrentView();
+      } else {
+        addPlan(e.detail);
+      }
     };
     document.addEventListener('plan:created', onPlanCreated);
 
@@ -398,7 +456,7 @@ if (!plansTimelineScriptInitialized) {
           if (addPlanBtn) addPlanBtn.disabled = true;
         }).catch(function (err) {
           if (err && err.errors) {
-            alert(err.errors.join(', '));
+            alertDialog(err.errors.join(', '));
           } else {
             console.error(err);
           }

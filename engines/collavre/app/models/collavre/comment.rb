@@ -210,18 +210,21 @@ module Collavre
       return unless user_id        # nil user = system message
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
-      # Inbox creatives hold the user's notifications/DMs and normally must not
-      # trigger AI orchestration. Exception: a Claude Channel agent session
-      # registers its topic *inside* the inbox (Creative.inbox_for) and depends
-      # on the orchestration pipeline (Matcher → Arbiter → AiAgentService) to
-      # deliver comments to the running session. Scope the exception to actual
-      # Claude Channel session topics (primary_agent is a claude_channel_agent?).
-      # An inbox topic can be given any ai_user as primary_agent via
-      # TopicsController#set_primary_agent; gating on mere primary_agent presence
-      # would leak ordinary inbox DMs to the live Claude session, which holds
-      # inbox-wide :feedback + routing_expression="true" and would be selected by
-      # the Matcher for any dispatched inbox comment.
-      return if creative.inbox? && !claude_channel_session_topic?
+      # Inbox creatives hold the user's notifications AND ordinary conversations.
+      # Only the System topic is special: it carries alarms/notifications (stuck
+      # recovery, share notices, …) and must never trigger AI. Every OTHER inbox
+      # topic — Main, Content, user threads, Claude Channel session topics — is an
+      # ordinary conversation surface and dispatches exactly like a normal
+      # (non-inbox) topic.
+      #
+      # A live Claude Channel session holds inbox-wide :feedback +
+      # routing_expression="true", so it would otherwise be selected by the
+      # Matcher for *every* dispatched inbox comment (leaking ordinary inbox
+      # threads into the live session). That confinement now lives in
+      # Orchestration::Matcher, which scopes a Claude session agent to its own
+      # registered session topic — keeping non-System topics truly identical to a
+      # normal topic whether or not a session is live.
+      return if creative.inbox? && inbox_system_topic?
 
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
@@ -246,19 +249,12 @@ module Collavre
       raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
     end
 
-    # True only when this comment's topic is an actual Claude Channel session
-    # topic — it carries the registration marker (session_id) AND its
-    # primary_agent is a claude_channel_agent? (llm_model "claude-code"). Used to
-    # scope the inbox dispatch exception so ordinary inbox threads stay local.
-    #
-    # session_id is required, not just the Claude primary_agent: a Claude
-    # channel ai_user can be assigned as primary_agent on an ordinary inbox
-    # topic via TopicsController#set_primary_agent without ever registering a
-    # session. Gating on the agent alone would dispatch that ordinary thread and
-    # leak it to the live Claude session. session_id is exactly what
-    # ClaudeChannelAdapter#session_topic? keys on, so the two stay consistent.
-    def claude_channel_session_topic?
-      topic&.session_id.present? && topic&.primary_agent&.claude_channel_agent?
+    # The inbox System topic is the alarm/notification stream and must never
+    # trigger AI orchestration. Matched by name (Creative::SYSTEM_TOPIC_NAME),
+    # the same topic Creative#system_topic finds/creates and that stuck-recovery
+    # and share notices post into.
+    def inbox_system_topic?
+      topic&.name == Creative::SYSTEM_TOPIC_NAME
     end
 
     def assign_default_user

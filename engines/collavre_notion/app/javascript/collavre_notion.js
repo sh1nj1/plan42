@@ -1,4 +1,5 @@
 import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
 
 let notionIntegrationInitialized = false;
 
@@ -337,8 +338,8 @@ if (!notionIntegrationInitialized) {
         });
     }
 
-    function performDelete() {
-      if (!confirm(modal.dataset.deleteConfirm)) return;
+    async function performDelete() {
+      if (!(await confirmDialog(modal.dataset.deleteConfirm))) return;
 
       deleteBtn.disabled = true;
       deleteBtn.textContent = modal.dataset.removing;
@@ -372,7 +373,7 @@ if (!notionIntegrationInitialized) {
     openBtn.addEventListener('click', function () {
       creativeId = this.dataset.creativeId;
       if (!creativeId) {
-        alert(modal.dataset.noCreative);
+        alertDialog(modal.dataset.noCreative);
         return;
       }
       modal.style.display = 'flex';

@@ -52,7 +52,8 @@ export function createInlineEditor(container, {
             suppressNextChange = false
             return
           }
-          currentHtml = value
+          // value is { html, markdown }; keep currentHtml for the render fallback.
+          currentHtml = value?.html ?? ""
           onChange?.(value)
         }}
         onReady={(api) => {

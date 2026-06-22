@@ -18,6 +18,17 @@ en:
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
+        add_members:
+          title: Add members to the new location?
+          description: These people had access where the topic used to live, but not in "%{creative}". Add them so they keep access.
+          add: Add selected
+          skip: Not now
+          adding: Adding…
+          added:
+            one: 1 member added.
+            other: "%{count} members added."
+          partial: "%{added} added, %{failed} failed."
+          failed: Could not add members. Please try again.
     github_auth:
       login_first: Please sign in first.
       connected: Github account connected successfully.
@@ -131,6 +142,9 @@ en:
       topic_main: All Messages
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
+      typo_keep_label: keep
+      typo_custom_label: custom
+      typo_input_label: correction
       move_invalid_target: Select a valid creative to move messages to.
       move_invalid_topic: Invalid topic selected.
       move_not_allowed: You do not have permission to move these messages.

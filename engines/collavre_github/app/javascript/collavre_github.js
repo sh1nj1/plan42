@@ -1,4 +1,5 @@
 import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
 
 let githubIntegrationInitialized = false;
 
@@ -513,7 +514,7 @@ if (!githubIntegrationInitialized) {
           
           
           updateSummary();
-          alert(modal.dataset.successMessage);
+          alertDialog(modal.dataset.successMessage);
         })
         .catch(function () {
           showError('연동 정보를 저장하지 못했습니다.');
@@ -523,7 +524,7 @@ if (!githubIntegrationInitialized) {
     openBtn.addEventListener('click', function () {
       creativeId = openBtn.dataset.creativeId;
       if (!creativeId) {
-        alert(modal.dataset.noCreative);
+        alertDialog(modal.dataset.noCreative);
         return;
       }
       resetWizard();
@@ -598,9 +599,9 @@ if (!githubIntegrationInitialized) {
       });
     });
 
-    deleteBtn?.addEventListener('click', function () {
+    deleteBtn?.addEventListener('click', async function () {
       if (!creativeId) {
-        alert(modal.dataset.noCreative);
+        alertDialog(modal.dataset.noCreative);
         return;
       }
       clearError();
@@ -609,7 +610,7 @@ if (!githubIntegrationInitialized) {
         showError(deleteSelectWarning);
         return;
       }
-      if (!window.confirm(deleteConfirm)) return;
+      if (!(await confirmDialog(deleteConfirm, { danger: true }))) return;
 
       fetch(`/github/creatives/${creativeId}/integration`, {
         method: 'DELETE',
@@ -648,7 +649,7 @@ if (!githubIntegrationInitialized) {
         });
     });
 
-    resyncBtn?.addEventListener('click', function () {
+    resyncBtn?.addEventListener('click', async function () {
       if (!creativeId) return;
       clearError();
       const checkboxes = existingList ? existingList.querySelectorAll('.github-existing-repo-checkbox:checked') : [];
@@ -657,7 +658,7 @@ if (!githubIntegrationInitialized) {
         showError(resyncSelectWarning);
         return;
       }
-      if (!window.confirm(resyncConfirm)) return;
+      if (!(await confirmDialog(resyncConfirm))) return;
 
       resyncBtn.disabled = true;
       let completed = 0;

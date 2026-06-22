@@ -14,7 +14,6 @@ describe('CommentsPresenceController', () => {
   beforeEach(async () => {
     document.body.dataset.currentUserId = '7'
     global.fetch = jest.fn()
-    global.alert = jest.fn()
 
     container = document.createElement('div')
     container.innerHTML = `
@@ -91,7 +90,9 @@ describe('CommentsPresenceController', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(global.alert).toHaveBeenCalledWith('No permission')
+    // alertDialog renders an in-app modal (replacing native alert for the
+    // Tauri webview); assert the message surfaced there instead.
+    expect(document.querySelector('.confirm-dialog-message')?.textContent).toBe('No permission')
     expect(close).toHaveBeenCalled()
   })
 

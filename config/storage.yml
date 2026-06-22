@@ -4,7 +4,10 @@ test:
 
 local:
   service: Disk
-  root: <%= Rails.root.join("storage") %>
+  # ACTIVE_STORAGE_DISK_ROOT lets the desktop app relocate uploaded blobs out of
+  # the read-only .app bundle into the writable data dir. Unset everywhere else,
+  # so server deploys keep using Rails.root/storage.
+  root: <%= ENV.fetch("ACTIVE_STORAGE_DISK_ROOT") { Rails.root.join("storage").to_s } %>
 
 <%
   # Pre-warm encryption fallback keys so the calls below can decrypt

@@ -10,13 +10,18 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {})
+    # log_interactions: persist each call to ActivityLog. Default true. Pass false
+    # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
+    # inline typo correction on debounced typing) so private drafts are never
+    # written to server-side activity logs.
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true)
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
       @gateway_url = gateway_url
       @context = context
+      @log_interactions = log_interactions
       @last_input_tokens = 0
       @last_output_tokens = 0
     end
@@ -64,7 +69,13 @@ module Collavre
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
       error_message = "[#{e.class.name}] #{e.message}"
-      Rails.logger.error "AI Client error: #{error_message}"
+      # When log_interactions is false (inline typo correction runs on the user's
+      # *unsubmitted* draft), the LLM error message can echo the request text. Log
+      # only the error class to app logs so private drafts never leak — matching the
+      # no-log guarantee already enforced on the parse path (TypoCorrector) and the
+      # ActivityLog gate below. error_message stays intact for the gated ensure log
+      # and the streamed yield (which goes back to the same user).
+      Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
       Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
       Rails.logger.debug e.backtrace.join("\n")
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
@@ -72,14 +83,16 @@ module Collavre
     ensure
       @last_input_tokens = input_tokens || 0
       @last_output_tokens = output_tokens || 0
-      log_interaction(
-        messages: @conversation&.messages&.to_a || Array(contents),
-        tools: @conversation&.tools&.to_a || [],
-        response_content: response_content.presence,
-        error_message: error_message,
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      )
+      if @log_interactions
+        log_interaction(
+          messages: @conversation&.messages&.to_a || Array(contents),
+          tools: @conversation&.tools&.to_a || [],
+          response_content: response_content.presence,
+          error_message: error_message,
+          input_tokens: input_tokens,
+          output_tokens: output_tokens
+        )
+      end
     end
 
     # Ask a follow-up question using the existing conversation context.
@@ -115,6 +128,11 @@ module Collavre
       when "openai"
         api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
         base_url = @gateway_url.presence
+        # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
+        # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
+        # if openai_api_key is blank. Supply a placeholder so keyless local gateways
+        # work; hosted OpenAI (no gateway) still requires a real key.
+        api_key = "local-gateway" if api_key.blank? && base_url
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url

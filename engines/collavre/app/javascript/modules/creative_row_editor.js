@@ -1,12 +1,15 @@
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
-import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
+import { $getSelection } from 'lexical'
+import { isSelectionAtDocumentStart, isSelectionAtDocumentEnd } from '../lib/lexical/selection_boundary'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
+import { confirmDialog, alertDialog } from '../lib/utils/dialog'
+import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
@@ -57,11 +60,15 @@ export function initializeCreativeRowEditor() {
       // In a real app, use a toast notification. For now, alert is safe.
       // Suppress 404 errors for PATCH requests, as this likely means the item was deleted
       // and we don't need to alert the user about it.
-      const is404 = error && error.toString().includes('404');
+      const is404 = (error && error.status === 404) || (error && error.toString().includes('404'));
       const isPatch = item && item.method === 'PATCH';
 
       if (!(is404 && isPatch)) {
-        alert(`Failed to save changes. Please check your connection and try again.\nError: ${error}`);
+        // Prefer the server's own error message (e.g. "Description cannot be
+        // changed directly for GitHub synced content") and fall back to the
+        // generic copy only when the failure carries no usable payload.
+        const serverMessage = serverErrorMessage(error);
+        alertDialog(serverMessage || 'Failed to save changes. Please check your connection and try again.');
       }
 
       // If the failed item matches the current creative, mark it as dirty so it can be retried
@@ -112,6 +119,7 @@ export function initializeCreativeRowEditor() {
 
     // Markdown editor elements
     const contentTypeInput = document.getElementById('inline-content-type');
+    const markdownEditorInput = document.getElementById('inline-markdown-editor');
     const markdownSourceInput = document.getElementById('inline-markdown-source');
     const markdownWrapper = document.getElementById('markdown-editor-wrapper');
     const markdownTextarea = document.getElementById('markdown-editor-textarea');
@@ -258,6 +266,9 @@ export function initializeCreativeRowEditor() {
       if (Object.prototype.hasOwnProperty.call(data, 'markdown_source')) {
         setRowDatasetValue(row, 'markdownSource', data.markdown_source ?? '');
       }
+      if (Object.prototype.hasOwnProperty.call(data, 'markdown_editor')) {
+        setRowDatasetValue(row, 'markdownEditor', data.markdown_editor ?? '');
+      }
       if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
         if (data.has_children) {
           row.setAttribute('has-children', '');
@@ -298,6 +309,7 @@ export function initializeCreativeRowEditor() {
         parent_id: parentId,
         progress: Number.isNaN(progressValue) ? 0 : progressValue,
         content_type: row.dataset?.contentType || null,
+        markdown_editor: row.dataset?.markdownEditor || null,
         markdown_source: row.dataset?.markdownSource || null
       };
     }
@@ -309,6 +321,7 @@ export function initializeCreativeRowEditor() {
     function activateMarkdownMode(source) {
       markdownMode = true;
       if (contentTypeInput) contentTypeInput.value = 'markdown';
+      if (markdownEditorInput) markdownEditorInput.value = 'source';
       if (markdownTextarea) markdownTextarea.value = source || '';
       if (markdownWrapper) markdownWrapper.style.display = '';
       if (editorContainer) editorContainer.style.display = 'none';
@@ -323,6 +336,7 @@ export function initializeCreativeRowEditor() {
     function deactivateMarkdownMode() {
       markdownMode = false;
       if (contentTypeInput) contentTypeInput.value = 'html';
+      if (markdownEditorInput) markdownEditorInput.value = '';
       if (markdownSourceInput) markdownSourceInput.value = '';
       if (markdownWrapper) markdownWrapper.style.display = 'none';
       if (editorContainer) editorContainer.style.display = '';
@@ -349,20 +363,33 @@ export function initializeCreativeRowEditor() {
       const content = data.description_raw_html || data.description || '';
       descriptionInput.value = content;
 
-      // Handle markdown vs rich text mode
+      // Markdown is the canonical storage format for BOTH editors now. Which
+      // surface opens is decided by the persisted editor preference: only
+      // explicitly rich-authored Markdown reopens in Lexical; "source" and
+      // legacy (no preference) Markdown reopen in the advanced textarea.
       const isMarkdown = data.content_type === 'markdown';
-      if (isMarkdown) {
+      const useTextarea = isMarkdown && data.markdown_editor !== 'rich';
+      if (useTextarea) {
         activateMarkdownMode(data.markdown_source || '');
         // Also load Lexical with HTML for fallback/switching
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       } else {
         deactivateMarkdownMode();
+        if (isMarkdown) {
+          // Rich-authored Markdown: prime the hidden fields so a no-edit save
+          // (move, progress toggle) preserves Markdown canonical instead of
+          // demoting back to HTML before the first Lexical change fires.
+          if (contentTypeInput) contentTypeInput.value = 'markdown';
+          if (markdownSourceInput) markdownSourceInput.value = data.markdown_source || '';
+          if (markdownEditorInput) markdownEditorInput.value = 'rich';
+        }
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       }
 
       pendingSave = false;
-      // Track original content for dirty state detection
-      originalContent = isMarkdown ? (data.markdown_source || '') : content;
+      // Dirty detection is HTML-based for the rich surface (compares the editor's
+      // HTML projection), and Markdown-source-based for the textarea surface.
+      originalContent = useTextarea ? (data.markdown_source || '') : content;
       isDirty = false;
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
@@ -384,7 +411,12 @@ export function initializeCreativeRowEditor() {
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
       originalProgress = normalizedProgress;
-      if (!isMarkdown) {
+      // Focus the Lexical editor whenever it is the active surface. Gating on
+      // `!isMarkdown` was correct when `content_type === 'markdown'` always meant
+      // the textarea surface, but rich-authored Markdown now reopens in Lexical
+      // (markdown_editor === 'rich'), so use `!useTextarea` to also focus it.
+      // The textarea surface focuses itself in activateMarkdownMode().
+      if (!useTextarea) {
         lexicalEditor.focus();
       }
       updateActionButtonStates();
@@ -1288,8 +1320,12 @@ export function initializeCreativeRowEditor() {
 
       // CRITICAL: Capture ALL values BEFORE awaiting, because the editor may switch
       // to a different creative while we're waiting for uploads
-      const isMarkdownSave = markdownMode;
-      if (isMarkdownSave) syncMarkdownToForm();
+      // Both editor surfaces persist Markdown now. The textarea surface
+      // (markdownMode) syncs its value to the hidden fields here; the rich
+      // surface already kept them current via onLexicalChange/applyCreativeData.
+      if (markdownMode) syncMarkdownToForm();
+      const capturedContentType = contentTypeInput ? contentTypeInput.value : 'html';
+      const isMarkdownSave = capturedContentType === 'markdown';
       let currentContent = descriptionInput.value;
       let currentProgress = readProgressValue();
       let shouldPersistProgress = progressValueChanged();
@@ -1297,8 +1333,8 @@ export function initializeCreativeRowEditor() {
       const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
       const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
       const startCreativeId = creativeId;
-      let capturedMarkdownSource = isMarkdownSave ? (markdownTextarea?.value || '') : '';
-      const capturedContentType = isMarkdownSave ? 'markdown' : 'html';
+      let capturedMarkdownSource = isMarkdownSave ? (markdownSourceInput ? markdownSourceInput.value : '') : '';
+      const capturedMarkdownEditor = markdownEditorInput ? markdownEditorInput.value : '';
 
       // Prevent saving empty content, matching saveForm behavior
       // This avoids overwriting existing descriptions with empty strings during quick navigation
@@ -1320,9 +1356,12 @@ export function initializeCreativeRowEditor() {
       // so we must re-sync and re-capture the latest textarea value too — otherwise edits
       // made during the upload wait get overwritten by the stale pre-wait source.
       if (form.dataset.creativeId === startCreativeId) {
-        if (isMarkdownSave) {
+        if (markdownMode) {
           syncMarkdownToForm();
-          capturedMarkdownSource = markdownTextarea?.value || '';
+          capturedMarkdownSource = markdownSourceInput ? markdownSourceInput.value : '';
+        } else if (isMarkdownSave && markdownSourceInput) {
+          // Rich surface: re-capture any Markdown produced by edits during the wait.
+          capturedMarkdownSource = markdownSourceInput.value;
         }
         currentContent = descriptionInput.value;
         currentProgress = readProgressValue();
@@ -1338,6 +1377,9 @@ export function initializeCreativeRowEditor() {
       };
       if (isMarkdownSave) {
         body['creative[markdown_source]'] = capturedMarkdownSource;
+        if (capturedMarkdownEditor) {
+          body['creative[markdown_editor]'] = capturedMarkdownEditor;
+        }
       }
 
       if (shouldPersistProgress) {
@@ -1368,6 +1410,10 @@ export function initializeCreativeRowEditor() {
           }
           row.dataset.contentType = capturedContentType;
           row.dataset.markdownSource = isMarkdownSave ? capturedMarkdownSource : '';
+          // Persist which surface authored this save so a row re-opened from this
+          // cached payload (before any full GET refresh) reopens in the right
+          // editor — without it, rich-authored Markdown falls back to the textarea.
+          row.dataset.markdownEditor = isMarkdownSave ? capturedMarkdownEditor : '';
           if (currentParentId) {
             tree.dataset.parentId = currentParentId;
             row.parentId = currentParentId;
@@ -1929,10 +1975,18 @@ export function initializeCreativeRowEditor() {
       saveTimer = setTimeout(saveForm, 5000);
     }
 
-    function onLexicalChange(html) {
-      if (markdownMode) return; // Ignore Lexical changes in markdown mode
+    function onLexicalChange(payload) {
+      if (markdownMode) return; // Ignore Lexical changes when the textarea is active
+      const html = (payload && payload.html) || '';
+      const markdown = (payload && payload.markdown) || '';
       descriptionInput.value = html;
-      // Mark as dirty if content changed from original
+      // The rich editor is now a Markdown-canonical surface: persist the Markdown
+      // projection (text color/background as normalized <span> fragments) and
+      // record that the rich surface authored it, so it reopens in Lexical.
+      if (contentTypeInput) contentTypeInput.value = 'markdown';
+      if (markdownSourceInput) markdownSourceInput.value = markdown;
+      if (markdownEditorInput) markdownEditorInput.value = 'rich';
+      // Mark as dirty if the HTML projection changed from original
       isDirty = (html !== originalContent);
       scheduleSave();
     }
@@ -1992,9 +2046,11 @@ export function initializeCreativeRowEditor() {
       let atEnd = false;
       editorInstance.getEditorState().read(() => {
         const selection = $getSelection();
-        if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
-        const [start, end] = $getCharacterOffsets(selection);
-        atStart = start === 0 && end === 0;
+        // atStart must reflect the start of the whole document, not just offset 0
+        // of the current node — otherwise the start of a second paragraph (e.g.
+        // right after pressing Enter) is mistaken for the top and ArrowUp jumps
+        // to the row above instead of moving the cursor up. See isSelectionAtDocumentStart.
+        atStart = isSelectionAtDocumentStart(selection);
         atEnd = isSelectionAtDocumentEnd(selection);
       });
 
@@ -2014,32 +2070,6 @@ export function initializeCreativeRowEditor() {
       }
     }
 
-    function isSelectionAtDocumentEnd(selection) {
-      if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false;
-
-      const focus = selection.focus;
-      let node = focus.getNode();
-      if (!node) return false;
-
-      const offset = focus.offset;
-      if ($isTextNode(node)) {
-        if (offset !== node.getTextContentSize()) return false;
-      } else if (typeof node.getChildrenSize === 'function') {
-        if (offset !== node.getChildrenSize()) return false;
-      } else {
-        // Fallback for nodes without children size (e.g., line breaks)
-        const textSize = node.getTextContentSize?.() ?? 0;
-        if (offset !== textSize) return false;
-      }
-
-      while (node && !$isRootOrShadowRoot(node)) {
-        if (node.getNextSibling()) return false;
-        node = node.getParent();
-      }
-
-      return !!node && $isRootOrShadowRoot(node);
-    }
-
     if (progressInput) {
       progressInput.addEventListener('change', function () {
         if (progressValue) {
@@ -2052,7 +2082,7 @@ export function initializeCreativeRowEditor() {
           completionCascadePending = true;
           const alertMessage = progressInput.dataset.childrenAlertMessage;
           if (alertMessage) {
-            alert(alertMessage);
+            alertDialog(alertMessage);
           }
         }
         updateProgressInputAvailability(readProgressValue());
@@ -2138,14 +2168,14 @@ export function initializeCreativeRowEditor() {
     }
 
     if (archiveBtn) {
-      archiveBtn.addEventListener('click', function () {
+      archiveBtn.addEventListener('click', async function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
         const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`);
         const isArchived = row?.hasAttribute('archived');
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
-        if (confirm(confirmMsg)) {
+        if (await confirmDialog(confirmMsg)) {
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
             if (res.ok) {
@@ -2172,14 +2202,14 @@ export function initializeCreativeRowEditor() {
     }
 
     if (deleteBtn) {
-      deleteBtn.addEventListener('click', function () {
-        if (confirm(deleteBtn.dataset.confirm)) deleteCurrent(false);
+      deleteBtn.addEventListener('click', async function () {
+        if (await confirmDialog(deleteBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
       });
     }
 
     if (deleteWithChildrenBtn) {
-      deleteWithChildrenBtn.addEventListener('click', function () {
-        if (confirm(deleteWithChildrenBtn.dataset.confirm)) deleteCurrent(true);
+      deleteWithChildrenBtn.addEventListener('click', async function () {
+        if (await confirmDialog(deleteWithChildrenBtn.dataset.confirm, { danger: true })) deleteCurrent(true);
       });
     }
 
@@ -2215,17 +2245,17 @@ export function initializeCreativeRowEditor() {
     }
 
     if (unlinkBtn) {
-      unlinkBtn.addEventListener('click', function () {
-        if (confirm(unlinkBtn.dataset.confirm)) deleteCurrent(false);
+      unlinkBtn.addEventListener('click', async function () {
+        if (await confirmDialog(unlinkBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
       });
     }
 
     if (unconvertBtn) {
-      unconvertBtn.addEventListener('click', function () {
+      unconvertBtn.addEventListener('click', async function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
         const confirmText = unconvertBtn.dataset.confirm;
-        if (confirmText && !confirm(confirmText)) return;
+        if (confirmText && !(await confirmDialog(confirmText))) return;
         const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
         unconvertBtn.disabled = true;
         saveForm()
@@ -2235,7 +2265,7 @@ export function initializeCreativeRowEditor() {
                 .json()
                 .catch(function () { return {}; })
                 .then(function (data) {
-                  alert(data && data.error ? data.error : errorMessage);
+                  alertDialog(data && data.error ? data.error : errorMessage);
                   const error = new Error('Save failed');
                   error._handled = true;
                   throw error;
@@ -2252,12 +2282,12 @@ export function initializeCreativeRowEditor() {
               .json()
               .catch(function () { return {}; })
               .then(function (data) {
-                alert(data && data.error ? data.error : errorMessage);
+                alertDialog(data && data.error ? data.error : errorMessage);
               });
           })
           .catch(function (error) {
             if (error && error._handled) return;
-            alert(errorMessage);
+            alertDialog(errorMessage);
           })
           .finally(function () {
             unconvertBtn.disabled = false;
@@ -2276,7 +2306,7 @@ export function initializeCreativeRowEditor() {
         })
         .catch(function (error) {
           console.error('Failed to load metadata:', error);
-          alert('Failed to load metadata');
+          alertDialog('Failed to load metadata');
         });
     }
 
@@ -2321,17 +2351,17 @@ export function initializeCreativeRowEditor() {
                   metadataPopup.style.display = 'none';
                 } else {
                   return response.json().then(function (data) {
-                    alert('Failed to save metadata: ' + (data.error || 'Unknown error'));
+                    alertDialog('Failed to save metadata: ' + (data.error || 'Unknown error'));
                   });
                 }
               })
               .catch(function (error) {
                 console.error('Failed to save metadata:', error);
-                alert('Failed to save metadata');
+                alertDialog('Failed to save metadata');
               });
           } catch (error) {
             console.error('YAML parse error:', error);
-            alert('Invalid YAML format: ' + error.message);
+            alertDialog('Invalid YAML format: ' + error.message);
           }
         });
       }
@@ -2339,27 +2369,37 @@ export function initializeCreativeRowEditor() {
 
     // Markdown toggle button
     if (toggleMarkdownBtn) {
-      toggleMarkdownBtn.addEventListener('click', function () {
+      toggleMarkdownBtn.addEventListener('click', async function () {
         if (markdownMode) {
-          // Switching from Markdown → Rich Text
+          // Switching from Markdown (advanced textarea) → Rich Text. The Markdown
+          // stays canonical; we only flip the authoring surface to rich so it
+          // reopens in Lexical, and render it to HTML for the editor view.
           const confirmMsg = toggleMarkdownBtn.dataset.confirmToRichtext;
-          if (confirmMsg && !confirm(confirmMsg)) return;
+          if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
           const md = markdownTextarea?.value || '';
           const html = md ? renderMarkdown(md) : '';
           deactivateMarkdownMode();
           descriptionInput.value = html;
+          if (md) {
+            if (contentTypeInput) contentTypeInput.value = 'markdown';
+            if (markdownSourceInput) markdownSourceInput.value = md;
+            if (markdownEditorInput) markdownEditorInput.value = 'rich';
+          }
           lexicalEditor.load(html, `creative-switch-${Date.now()}`);
           lexicalEditor.focus();
           isDirty = true;
           scheduleSave();
         } else {
-          // Switching from Rich Text → Markdown
+          // Switching from Rich Text → Markdown (advanced textarea). Preserve the
+          // content by seeding the textarea with the rich surface's current
+          // Markdown projection instead of discarding it.
           const currentHtml = descriptionInput.value || '';
           if (!isHtmlEmpty(currentHtml)) {
             const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
-            if (confirmMsg && !confirm(confirmMsg)) return;
+            if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
           }
-          activateMarkdownMode('');
+          const existingMarkdown = markdownSourceInput ? markdownSourceInput.value : '';
+          activateMarkdownMode(existingMarkdown);
           isDirty = true;
           scheduleSave();
         }

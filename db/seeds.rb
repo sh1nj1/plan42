@@ -2,10 +2,19 @@
 # development, test). The code here should be idempotent so that it can be executed at any point in every environment.
 # The data can then be loaded with the bin/rails db:seed command (or created alongside the database with db:setup).
 
-# Create default admin user if it doesn't exist
+# Create default admin user if it doesn't exist.
+#
+# Skipped when the env bootstraps its admin via first-run signup (e.g. desktop):
+# seeding a known email/password there would ship a public admin credential that
+# is a standing backdoor on every install. Such envs grant system_admin to the
+# first registered user instead (see Collavre::UsersController::Registration).
+# NB: compare to `true` explicitly — an unset config.x.* key reads back as a
+# truthy empty OrderedOptions, so a bare `if` would skip in every env.
 default_email = ENV.fetch('DEFAULT_USER_EMAIL', 'admin@example.com')
 
-unless User.exists?(email: default_email)
+if Rails.application.config.x.bootstrap_first_admin == true
+  puts "Skipping default admin seed (env bootstraps admin via first-run signup)"
+elsif !User.exists?(email: default_email)
   User.create!(
     name: ENV.fetch('DEFAULT_USER_NAME', 'Admin'),
     email: default_email,

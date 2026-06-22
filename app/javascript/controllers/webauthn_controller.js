@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import { get, create, supported } from "@github/webauthn-json"
+import { alertDialog, confirmDialog } from "collavre/lib/utils/dialog"
 
 export default class extends Controller {
     static targets = ["nickname"]
@@ -35,7 +36,7 @@ export default class extends Controller {
         if (event) event.preventDefault()
 
         if (!supported()) {
-            alert(this.notSupportedMessageValue)
+            alertDialog(this.notSupportedMessageValue)
             return
         }
         const nickname = this.nicknameTarget.value
@@ -63,17 +64,17 @@ export default class extends Controller {
                 window.location.reload()
             } else {
                 const error = await response.json()
-                alert(error.message || "Registration failed")
+                alertDialog(error.message || "Registration failed")
             }
         } catch (error) {
             console.error(error)
-            alert("Registration failed. See console for details.")
+            alertDialog("Registration failed. See console for details.")
         }
     }
 
     async signin() {
         if (!supported()) {
-            alert(this.notSupportedMessageValue)
+            alertDialog(this.notSupportedMessageValue)
             return
         }
         try {
@@ -110,17 +111,22 @@ export default class extends Controller {
             if (response.ok) {
                 window.location.href = data.redirect_url
             } else {
-                alert(data.message || "Sign in failed")
+                alertDialog(data.message || "Sign in failed")
             }
         } catch (error) {
             console.error(error)
-            alert("Sign in failed. See console for details.")
+            alertDialog("Sign in failed. See console for details.")
         }
     }
 
-    delete(event) {
-        if (!confirm("Are you sure you want to delete this passkey?")) {
-            event.preventDefault()
+    async delete(event) {
+        event.preventDefault()
+        if (!await confirmDialog("Are you sure you want to delete this passkey?", { danger: true })) {
+            return
         }
+        // requestSubmit() (not submit()) dispatches the submit event so Turbo
+        // still intercepts the button_to DELETE form, preserving the original
+        // behavior the now-unconditional preventDefault() would otherwise bypass.
+        event.target.closest("form").requestSubmit()
     }
 }

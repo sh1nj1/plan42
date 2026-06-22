@@ -128,6 +128,7 @@ module Collavre
 
     def move
       topic = @creative.topics.find(params[:id])
+      source_creative = @creative
       target_creative = Creative.find(params[:target_creative_id]).effective_origin
 
       unless target_creative.has_permission?(Current.user, :write) || target_creative.user == Current.user
@@ -147,7 +148,13 @@ module Collavre
       broadcast_topic_event("deleted", topic_id: topic.id)
       broadcast_topic_event("created", creative: target_creative, topic: topic.slice(:id, :name))
 
-      render json: { success: true, topic: topic.slice(:id, :name), target_creative_id: target_creative.id }
+      render json: {
+        success: true,
+        topic: topic.slice(:id, :name),
+        target_creative_id: target_creative.id,
+        target_creative_name: target_creative.creative_snippet,
+        missing_members: missing_members_for_move(source_creative, target_creative)
+      }
     end
 
     def archive
@@ -202,6 +209,47 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
+    end
+
+    # When a topic moves to a different creative, members who had access on the
+    # source creative may lose visibility on the target. Returns the human
+    # members who are effectively present on the source (owner + feedback-or-
+    # higher shares) but have no resolvable access on the target, so the client
+    # can offer to re-add them with the same permission. Only returned when the
+    # current user can actually grant shares on the target (admin/owner);
+    # otherwise the suggestion would be unusable.
+    def missing_members_for_move(source_creative, target_creative)
+      return [] unless target_creative.has_permission?(Current.user, :admin) || target_creative.user == Current.user
+
+      # Any user with a resolvable share on the target chain (including inherited
+      # shares and explicit no_access blocks) already has — or is intentionally
+      # denied — access, so they are never "missing".
+      excluded_user_ids = target_creative.all_shared_users(:no_access).map(&:user_id).compact.to_set
+      excluded_user_ids << target_creative.user_id
+      excluded_user_ids << Current.user&.id
+
+      # Candidate => grant permission. Source owner had full control, so we
+      # suggest admin; shared members keep their own (closest) permission.
+      candidates = {}
+      owner = source_creative.user
+      if owner && !owner.ai_user? && excluded_user_ids.exclude?(owner.id)
+        candidates[owner.id] = { user: owner, permission: "admin" }
+      end
+
+      source_creative.all_shared_users(:feedback).each do |share|
+        user = share.user
+        next if user.nil? || user.ai_user?
+        next if excluded_user_ids.include?(user.id)
+
+        candidates[user.id] ||= { user: user, permission: share.permission }
+      end
+
+      candidates.values.map do |candidate|
+        {
+          user: view_context.user_json(candidate[:user], email: true),
+          permission: candidate[:permission]
+        }
+      end
     end
 
     def topic_params

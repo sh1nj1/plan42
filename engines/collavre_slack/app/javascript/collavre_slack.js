@@ -1,5 +1,6 @@
 import { filterChannels, reconcileSelection, buildChannelViewModels } from './slack_channel_list.js';
 import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
 
 let slackIntegrationInitialized = false;
 
@@ -152,7 +153,7 @@ if (!slackIntegrationInitialized) {
         deleteBtn.textContent = modal.dataset.deleteButtonLabel || 'Remove';
         deleteBtn.style.cssText = 'padding:0.25em 0.5em;font-size:0.8em;';
         deleteBtn.addEventListener('click', function () {
-          performDeleteLink(link);
+          performDeleteLink(link, deleteBtn);
         });
 
         li.appendChild(channelInfo);
@@ -189,10 +190,9 @@ if (!slackIntegrationInitialized) {
       }
     }
 
-    function performDeleteLink(link) {
-      if (!confirm(modal.dataset.deleteConfirm)) return;
+    async function performDeleteLink(link, btn) {
+      if (!(await confirmDialog(modal.dataset.deleteConfirm, { danger: true }))) return;
 
-      const btn = event.target;
       btn.disabled = true;
       btn.textContent = '...';
       clearError(errorEl);
@@ -334,7 +334,7 @@ if (!slackIntegrationInitialized) {
     openBtn.addEventListener('click', function () {
       creativeId = this.dataset.creativeId;
       if (!creativeId) {
-        alert(modal.dataset.noCreative);
+        alertDialog(modal.dataset.noCreative);
         return;
       }
       modal.style.display = 'flex';

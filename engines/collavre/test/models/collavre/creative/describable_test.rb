@@ -65,6 +65,82 @@ module Collavre
         assert_match %r{<input[^>]*checked[^>]*}, creative.description
       end
 
+      test "markdown_editor persists the authoring surface in data[editor]" do
+        rich = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"
+        )
+        assert_equal "rich", rich.data["editor"]
+
+        source = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "source", markdown_source: "# hi"
+        )
+        assert_equal "source", source.data["editor"]
+      end
+
+      test "markdown_editor defaults to source when absent" do
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# hi")
+        assert_equal "source", creative.data["editor"]
+      end
+
+      test "demoting markdown to html clears the editor preference" do
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"
+        )
+        assert_equal "rich", creative.data["editor"]
+
+        creative.update!(content_type_input: "html", description: "<p>plain</p>")
+        creative.reload
+        assert_nil creative.data["editor"]
+      end
+
+      test "color span survives sanitization in markdown mode" do
+        source = '<span style="color: rgb(255, 0, 0)">red</span> and ' \
+                 '<span style="background-color: #ffff00">hl</span>'
+        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.last
+
+        # Canonical markdown_source is preserved verbatim (sanitizer only touches
+        # the rendered description).
+        assert_equal source, creative.data["markdown_source"]
+        # Rendered description keeps the colors (spacing is normalized by the CSS scrubber).
+        assert_match(/color:\s*rgb\(255, 0, 0\)/, creative.description)
+        assert_match(/background-color:\s*#ffff00/, creative.description)
+        assert_includes creative.description, "red"
+        assert_includes creative.description, "hl"
+      end
+
+      test "color span survives sanitization in html mode" do
+        Creative.create!(user: @user, description: '<p><span style="color: #ff0000">hi</span></p>')
+        creative = Creative.last
+
+        assert_match(/color:\s*#ff0000/, creative.description)
+        assert_includes creative.description, "hi"
+      end
+
+      test "non-color style declarations are scrubbed from spans" do
+        Creative.create!(
+          user: @user,
+          description: '<p><span style="color: red; position: fixed; font-size: 99px">x</span></p>'
+        )
+        creative = Creative.last
+
+        assert_match(/color:\s*red/, creative.description)
+        refute_includes creative.description, "position"
+        refute_includes creative.description, "font-size"
+      end
+
+      test "dangerous style values are dropped, leaving no style attribute" do
+        Creative.create!(
+          user: @user,
+          description: '<p><span style="background: url(javascript:alert(1))">x</span></p>'
+        )
+        creative = Creative.last
+
+        refute_includes creative.description, "javascript"
+        refute_includes creative.description, "url("
+        assert_includes creative.description, "x"
+      end
+
       test "non-checkbox input tags are stripped from description" do
         Creative.create!(
           user: @user,
@@ -187,6 +263,61 @@ module Collavre
 
         assert_includes linked.reload.files.map(&:blob_id), blob.id
         assert ActiveStorage::Blob.exists?(blob.id), "linked-row legacy blob must survive a save"
+      end
+
+      test "rich-editor markdown upload attaches the referenced blob on save" do
+        blob = make_blob
+        # The rich (Lexical) editor is Markdown-canonical: an inserted image is
+        # serialized as a raw <img> blob URL inside markdown_source.
+        source = %(text\n\n<img src="#{asset_url(blob)}" alt="a.png">)
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: source
+        )
+
+        assert_includes creative.reload.files.map { |f| f.blob.signed_id }, blob.signed_id
+      end
+
+      test "markdown save does not detach an out-of-band attached blob" do
+        # A blob attached directly (legacy / backfill) but never referenced in
+        # the derived description must survive a normal markdown save:
+        # AttachmentBackfill skips markdown creatives, so reconcile is their only
+        # touch point and would otherwise purge a blob the user never removed.
+        # The guard: only blobs that WERE referenced in the prior description get
+        # detached, so an orphan that was never referenced is left alone.
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_source: "# hi"
+        )
+        blob = make_blob
+        creative.files.attach(blob)
+        assert_includes creative.reload.files.map(&:blob_id), blob.id
+
+        perform_enqueued_jobs do
+          creative.update!(content_type_input: "markdown", markdown_source: "# hi\n\nmore")
+        end
+
+        assert_includes creative.reload.files.map(&:blob_id), blob.id
+        assert ActiveStorage::Blob.exists?(blob.id)
+      end
+
+      test "rich-editor removing an embedded media node detaches its blob" do
+        # The rich (Lexical) editor embeds an upload as a raw <img> blob URL in
+        # markdown_source. When the user deletes that node, the blob is gone from
+        # the re-rendered description but still attached — and the editor's purge
+        # DELETE can't compensate while the attachment exists. It was referenced
+        # in the prior description, so reconcile must detach (and purge) it.
+        blob = make_blob
+        with_image = %(text\n\n<img src="#{asset_url(blob)}" alt="a.png">)
+        creative = Creative.create!(
+          user: @user, content_type_input: "markdown", markdown_editor: "rich", markdown_source: with_image
+        )
+        assert_includes creative.reload.files.map(&:blob_id), blob.id
+
+        perform_enqueued_jobs do
+          creative.update!(content_type_input: "markdown", markdown_editor: "rich", markdown_source: "text")
+        end
+
+        refute_includes creative.reload.files.map(&:blob_id), blob.id
+        refute ActiveStorage::Blob.exists?(blob.id)
       end
 
       # --- Sanitizer: media tags ---

@@ -169,6 +169,9 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_source')) {
     setDatasetValue(row, 'markdownSource', inlinePayload.markdown_source ?? '')
   }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_editor')) {
+    setDatasetValue(row, 'markdownEditor', inlinePayload.markdown_editor ?? '')
+  }
 
   if (dirty && typeof row.requestUpdate === 'function') {
     // Before Lit re-renders, sync progressHtml from current DOM.
@@ -306,6 +309,14 @@ export function renderCreativeTree(container, nodes, { replace = true } = {}) {
     return
   }
   reconcileNodes(container, nodes)
+}
+
+// Append a page of flat nodes to an already-rendered list without clearing the
+// existing rows. Used by the "Chats" feed's load-more, where each page is added
+// below the previous one rather than replacing it.
+export function appendCreativeNodes(container, nodes) {
+  if (!container) return
+  appendNodes(container, nodes)
 }
 
 export function dispatchCreativeTreeUpdated(container) {

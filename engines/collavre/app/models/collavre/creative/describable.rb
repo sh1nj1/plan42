@@ -5,6 +5,11 @@ module Collavre
 
       included do
         attr_accessor :content_type_input
+        # Which editing surface authored this Markdown: "rich" (Lexical) reopens
+        # in the rich editor, "source" (or absent/legacy) reopens in the advanced
+        # textarea. Stored in data["editor"]; decoupled from the storage format
+        # (content_type), which is now Markdown for both surfaces.
+        attr_accessor :markdown_editor
         attr_reader :markdown_source
 
         def markdown_source=(value)
@@ -128,6 +133,9 @@ module Collavre
           prev_source = data["markdown_source"].to_s
           prev_type = data["content_type"]
           self.data["content_type"] = "markdown"
+          # Remember which surface authored this. Absent param (MCP/tool writes)
+          # keeps the prior choice, defaulting to the advanced textarea.
+          self.data["editor"] = markdown_editor.presence || data["editor"] || "source"
           if new_source != prev_source || prev_type != "markdown"
             # Rewrite inline data-URI images to freshly-uploaded blob paths
             # FIRST, then persist the rewritten source. Subsequent edits
@@ -149,6 +157,7 @@ module Collavre
           self.data ||= {}
           self.data.delete("content_type")
           self.data.delete("markdown_source")
+          self.data.delete("editor")
         elsif !new_record? && description_changed? && data&.dig("content_type") == "markdown"
           # Description was rewritten through a non-markdown path (tool/MCP
           # update, direct base.update(description: ...), etc.) on a creative
@@ -158,6 +167,7 @@ module Collavre
           # Demote to HTML mode so the persisted source matches description.
           self.data.delete("content_type")
           self.data.delete("markdown_source")
+          self.data.delete("editor")
         end
       end
 
@@ -181,21 +191,67 @@ module Collavre
           end
         end
 
+        # The Lexical editor stores text color / background as inline <span
+        # style="...">. Tighten every style attribute to ONLY validated color /
+        # background-color declarations BEFORE sanitization, so allowing `style`
+        # in the safelist can't smuggle layout/position/url() payloads.
+        scrub_inline_color_styles(scrubbed)
+
         self.description = ActionController::Base.helpers.sanitize(
           scrubbed.to_html,
           tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input],
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical]
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical style]
         )
       end
 
-      # Sync creative.files to exactly the blobs referenced in the description
-      # HTML (attach new, detach removed). Must never raise during save —
-      # malformed HTML yields [] and a no-op.
+      # Only these CSS color values may appear in a stored inline style — mirrors
+      # the JS markdown serializer's allowlist (markdown_serialize.js). Blocks
+      # url(), expression(), javascript:, and angle brackets.
+      SAFE_COLOR_VALUE = /\A(#[0-9a-fA-F]{3,8}|rgba?\([0-9.,%\s]+\)|hsla?\([0-9.,%\s]+\)|var\(--[a-zA-Z0-9\-_]+\)|[a-zA-Z]+)\z/
+
+      def scrub_inline_color_styles(fragment)
+        fragment.css("[style]").each do |node|
+          declarations = node["style"].to_s.split(";").filter_map do |decl|
+            key, value = decl.split(":", 2)
+            next if key.nil? || value.nil?
+
+            key = key.strip.downcase
+            value = value.strip
+            next unless %w[color background-color].include?(key)
+            next if value =~ /url\(|expression|javascript:|@import|[<>]/i
+            next unless value =~ SAFE_COLOR_VALUE
+
+            "#{key}: #{value}"
+          end
+
+          if declarations.any?
+            node["style"] = declarations.join("; ")
+          else
+            node.remove_attribute("style")
+          end
+        end
+      end
+
+      # Sync creative.files to the blobs referenced in the description HTML
+      # (attach new, detach removed). Must never raise during save — malformed
+      # HTML yields [] and a no-op.
       #
-      # Markdown-mode creatives manage their own blobs via MarkdownConverter;
-      # the embed paths demote markdown -> html first, so uploads still reconcile.
+      # The rich (Lexical) editor is now Markdown-canonical and serializes
+      # inserted images/videos/files as raw blob-URL tags inside markdown_source,
+      # which markdown_to_html renders into `description`. So reconcile must run
+      # for markdown mode too, otherwise rich-editor uploads never reach
+      # creative.files (and the attachment list/remove services miss them).
+      #
+      # Markdown detach is narrowed (not skipped): markdown creatives may carry
+      # legacy blobs attached directly but never embedded in the derived
+      # description (AttachmentBackfill skips markdown, so reconcile is their only
+      # touch point) — those must survive. But media the user actually removed
+      # in-editor WAS referenced in the prior description and no longer is; that
+      # must detach, or creative.files keeps listing a deleted file (the editor's
+      # purge DELETE can't compensate while the attachment still exists). So for
+      # markdown we detach only blobs that were previously referenced. HTML keeps
+      # full detach (backfill embeds its orphans, so none should linger).
       def reconcile_description_attachments
-        return if data&.dig("content_type") == "markdown"
         # Linked creatives don't own their description (it lives on the origin)
         # and their own column is blank, so reconcile would treat every legacy
         # attachment as an orphan and purge it on the next save (e.g. a
@@ -212,8 +268,16 @@ module Collavre
         current = files.includes(:blob).to_a
         current_blob_ids = current.map(&:blob_id).to_set
 
+        markdown = data&.dig("content_type") == "markdown"
         to_attach = referenced.reject { |b| current_blob_ids.include?(b.id) }
-        to_detach = current.reject { |a| referenced_ids.include?(a.blob_id) }
+        unreferenced = current.reject { |a| referenced_ids.include?(a.blob_id) }
+        to_detach =
+          if markdown
+            prev_referenced_ids = blob_ids_referenced_in(description_before_last_save)
+            unreferenced.select { |a| prev_referenced_ids.include?(a.blob_id) }
+          else
+            unreferenced
+          end
         return if to_attach.empty? && to_detach.empty?
 
         to_attach.each { |blob| files.attach(blob) }
@@ -266,15 +330,30 @@ module Collavre
       end
 
       def extract_signed_ids_from_description
-        return [] if description.blank?
+        extract_signed_ids_from(description)
+      end
 
-        html = description.to_s
+      def extract_signed_ids_from(html)
+        return [] if html.blank?
+
+        html = html.to_s
 
         ids = html.scan(%r{/rails/active_storage/blobs/(?:redirect|proxy)/([^/?#]+)}).flatten
         ids += html.scan(%r{/rails/active_storage/blobs/([^/?#]+)}).flatten
         ids += html.scan(%r{/public-assets/blobs/([^/?#]+)}).flatten
 
         ids.uniq
+      end
+
+      # Blob ids that `html` references, resolving each signed id to its blob.
+      # Used to tell user-removed media (was referenced, now gone) apart from
+      # legacy orphans (never referenced) during markdown reconcile.
+      def blob_ids_referenced_in(html)
+        extract_signed_ids_from(html).filter_map do |sid|
+          ActiveStorage::Blob.find_signed(sid)&.id
+        rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+          nil
+        end.to_set
       end
 
       def description_cannot_change_if_has_origin

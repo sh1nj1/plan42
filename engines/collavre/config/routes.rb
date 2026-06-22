@@ -23,6 +23,7 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
+      get :typo_correction
     end
   end
   get "/email_verification/:token", to: "email_verifications#show", as: :email_verification
@@ -50,6 +51,8 @@ Collavre::Engine.routes.draw do
       post :apply
     end
   end
+
+  resources :typo_corrections, only: [ :create ]
 
   resources :creative_imports, only: [ :create ]
   resources :tasks, only: [] do
@@ -145,6 +148,16 @@ Collavre::Engine.routes.draw do
       post "agent/reply", to: "agents#reply"
       post "agent/notify", to: "agents#notify"
       delete "agent/:id", to: "agents#destroy"
+
+      # Mobile voice companion (Android): poll Inbox#System messages, read aloud,
+      # reply to the origin topic; a cold mic press starts work in Inbox#Main.
+      namespace :mobile do
+        post "voice_commands", to: "voice_commands#create"
+        get  "agent_events", to: "agent_events#index"
+        post "agent_events/:id/respond", to: "agent_events#respond"
+        post "agent_events/:id/read", to: "agent_events#read"
+        post "devices", to: "devices#create"
+      end
     end
   end
 

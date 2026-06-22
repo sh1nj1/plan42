@@ -4,8 +4,9 @@ source "https://rubygems.org"
 gem "rails", "~> 8.1.3"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
-# Use sqlite3 as the database for Active Record
-gem "sqlite3", ">= 2.1", groups: [ :development, :test ]
+# Use sqlite3 as the database for Active Record. Also in :desktop so the bundled
+# desktop app (which always runs on SQLite, never Postgres) ships the adapter.
+gem "sqlite3", ">= 2.1", groups: [ :development, :test, :desktop ]
 # Use postgresql as the database for production
 gem "pg", group: :production
 # Use the Puma web server [https://github.com/puma/puma]
@@ -63,7 +64,10 @@ gem "octokit"
 gem "ruby_llm"
 gem "liquid"
 
-gem "dotenv", groups: [ :development, :test ]
+# :desktop too — config/boot.rb requires "dotenv" unconditionally, and the
+# vendored desktop bundle excludes the development/test groups (.env.desktop
+# itself need not exist; Dotenv.overload skips missing files).
+gem "dotenv", groups: [ :development, :test, :desktop ]
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem

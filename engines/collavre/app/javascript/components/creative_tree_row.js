@@ -1,7 +1,9 @@
 import { LitElement, html, svg, nothing } from "lit";
-import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
+import { highlightCodeBlocks } from "../lib/utils/markdown";
+import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
+import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -78,6 +80,19 @@ class CreativeTreeRow extends LitElement {
   updated(changedProperties) {
     this._attachHandlers();
 
+    // Re-tokenize the server-rendered description code blocks with hljs so they
+    // match the editor's palette and follow light/dark theme. Idempotent: only
+    // unmarked blocks are processed, and lit re-renders description DOM (dropping
+    // the marker) only when descriptionHtml actually changes.
+    highlightCodeBlocks(this);
+
+    // Attach CSV/Excel download toolbars to markdown tables in the description
+    // display areas so creative tables match the chat-message table UI.
+    // Scoped to .creative-content/.creative-title-content (not the whole row)
+    // so the inline editor's own tables are never wrapped. Idempotent, safe on
+    // every Lit re-render.
+    addCreativeTableDownloadButtons(this);
+
     if (changedProperties.has('loadingChildren')) {
       if (this.loadingChildren) {
         this._startAnimation();
@@ -99,8 +114,10 @@ class CreativeTreeRow extends LitElement {
 
   set descriptionHtml(value) {
     const oldValue = this._descriptionHtml;
-    // Always sanitize when setting new HTML
-    const sanitized = DOMPurify.sanitize(value ?? "");
+    // Always sanitize when setting new HTML. Uses the shared sanitizer so the
+    // server-generated YouTube preview iframe survives (default DOMPurify config
+    // strips all iframes, which is what broke the YouTube link preview).
+    const sanitized = sanitizeDescriptionHtml(value);
     this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
     this.requestUpdate("descriptionHtml", oldValue);
