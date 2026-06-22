@@ -243,6 +243,33 @@ module Collavre
         assert_empty Matcher.new(context).match
       end
 
+      test "review routing falls through when quoted comment is ineligible for in-place review" do
+        # The quoted comment is private, so ReviewHandler#eligible? rejects it.
+        # Force-routing to the author anyway would schedule the agent only for
+        # ReviewHandler#handle to bail, falling through to a stray normal reply.
+        # The matcher must mirror that eligibility and not force the route.
+        topic = @creative.topics.create!(name: "Private quote topic", user: @user)
+        summary = @creative.comments.create!(
+          user: @ai_agent, topic_id: topic.id, content: "AI summary", private: true
+        )
+        review = @creative.comments.create!(
+          user: @user, topic_id: topic.id, content: "Make it shorter",
+          quoted_comment_id: summary.id
+        )
+
+        context = {
+          "event_name" => "comment_created",
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "id" => review.id },
+          "chat" => { "content" => "Make it shorter" }
+        }
+
+        # Ineligible quote → no forced route → no expression match → no agent
+        # scheduled, so the Review action can't produce a stray reply.
+        assert_empty Matcher.new(context).match
+      end
+
       # --- Priority ---
 
       test "mention takes priority over expression matching" do

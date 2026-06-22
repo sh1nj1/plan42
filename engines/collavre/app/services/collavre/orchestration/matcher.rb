@@ -50,6 +50,12 @@ module Collavre
         author = matched_comment.quoted_comment&.user
         return nil unless author&.ai_user?
 
+        # Mirror ReviewHandler#eligible?: if the handler would reject this quote
+        # (private, or from another topic/creative), forcing the route only lets
+        # ReviewHandler#handle bail and fall through to a stray normal reply.
+        # Fall through to normal routing instead of forcing an unhandleable review.
+        return nil unless Collavre::AiAgent::ReviewHandler.eligible?(matched_comment, author)
+
         return [] unless has_creative_permission?(author)
         return [] unless eligible_in_inbox?(author)
 
