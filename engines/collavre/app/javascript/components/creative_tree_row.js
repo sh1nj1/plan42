@@ -2,7 +2,7 @@ import { LitElement, html, svg, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
-import { addTableDownloadButtons } from "../lib/utils/table_download";
+import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 
@@ -86,11 +86,12 @@ class CreativeTreeRow extends LitElement {
     // the marker) only when descriptionHtml actually changes.
     highlightCodeBlocks(this);
 
-    // Attach CSV/Excel download toolbars to any markdown table in the
-    // description so creative tables match the chat-message table UI. Shared,
-    // idempotent util (skips already-wrapped tables), safe to call on every
-    // Lit re-render.
-    addTableDownloadButtons(this);
+    // Attach CSV/Excel download toolbars to markdown tables in the description
+    // display areas so creative tables match the chat-message table UI.
+    // Scoped to .creative-content/.creative-title-content (not the whole row)
+    // so the inline editor's own tables are never wrapped. Idempotent, safe on
+    // every Lit re-render.
+    addCreativeTableDownloadButtons(this);
 
     if (changedProperties.has('loadingChildren')) {
       if (this.loadingChildren) {

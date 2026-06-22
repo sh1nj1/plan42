@@ -1,4 +1,4 @@
-import { addTableDownloadButtons } from "../table_download"
+import { addTableDownloadButtons, addCreativeTableDownloadButtons } from "../table_download"
 
 // addTableDownloadButtons is the single shared utility used to attach CSV/Excel
 // download toolbars to rendered markdown tables. It must be container-agnostic so
@@ -51,5 +51,43 @@ describe("addTableDownloadButtons (shared comment + creative path)", () => {
     addTableDownloadButtons(container)
 
     expect(container.querySelector(".table-download-wrapper")).toBeNull()
+  })
+})
+
+describe("addCreativeTableDownloadButtons (row-scoped)", () => {
+  const tableHtml =
+    "<table><thead><tr><th>이름</th></tr></thead><tbody><tr><td>철수</td></tr></tbody></table>"
+
+  // Mirrors the live DOM: the inline editor is appended into .creative-tree as a
+  // sibling of the display areas, so a whole-subtree scan (the old bug) would
+  // move its <table> into a wrapper and corrupt in-progress edits.
+  function makeRow() {
+    const row = document.createElement("div")
+    row.innerHTML =
+      '<div class="creative-tree">' +
+      `<div class="creative-row"><div class="creative-content">${tableHtml}</div></div>` +
+      `<div id="inline-edit-form"><div data-lexical-editor-root>${tableHtml}</div>` +
+      `<div id="markdown-preview">${tableHtml}</div></div>` +
+      "</div>"
+    return row
+  }
+
+  it("wraps display-area tables but never the inline editor's tables", () => {
+    const row = makeRow()
+
+    addCreativeTableDownloadButtons(row)
+
+    expect(row.querySelector(".creative-content .table-download-wrapper")).not.toBeNull()
+    expect(row.querySelector("#inline-edit-form .table-download-wrapper")).toBeNull()
+    expect(row.querySelector("#markdown-preview .table-download-wrapper")).toBeNull()
+  })
+
+  it("also wraps title-content tables", () => {
+    const row = document.createElement("div")
+    row.innerHTML = `<div class="creative-title-content">${tableHtml}</div>`
+
+    addCreativeTableDownloadButtons(row)
+
+    expect(row.querySelector(".creative-title-content .table-download-wrapper")).not.toBeNull()
   })
 })
