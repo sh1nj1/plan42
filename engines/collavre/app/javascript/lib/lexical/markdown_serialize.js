@@ -1,4 +1,4 @@
-import { $isTextNode, $isParagraphNode } from "lexical"
+import { $isTextNode } from "lexical"
 import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown"
 import { TABLE, setCellTransformers } from "./table_transformer"
 
@@ -142,25 +142,6 @@ function decoratorMarkup(node) {
   return null
 }
 
-// A paragraph the user left blank (pressed Enter on an empty line). Decorator-
-// or text-bearing paragraphs are NOT blank, so media and whitespace-with-content
-// keep their normal export.
-function isBlankParagraph(node) {
-  if (!$isParagraphNode(node)) return false
-  return node.getChildren().every((child) => $isTextNode(child) && !child.getTextContent().trim())
-}
-
-// Blank paragraphs -> a non-breaking-space line (U+00A0). The default export
-// collapses an empty paragraph to "" (indistinguishable from the blank line the
-// upstream join inserts between two normal paragraphs), so collapseParagraphBreaks
-// would erase a deliberately-typed empty line. A NBSP line is non-blank Markdown,
-// so the hard-break renderer keeps it as a visible empty line inside one <p>
-// instead of collapsing it — and N empty paragraphs render as N blank lines.
-const EMPTY_PARAGRAPH_TRANSFORMER = exportOnlyTransformer(
-  (node) => (isBlankParagraph(node) ? "\u00A0" : null),
-  { type: "element" }
-)
-
 // Colored / highlighted text -> normalized <span>. Falls through (returns null)
 // for uncolored text so the default text-format export still applies.
 const COLOR_TRANSFORMER = exportOnlyTransformer((node, _exportChildren, exportFormat) => {
@@ -190,7 +171,6 @@ const DECORATOR_ELEMENT_TRANSFORMER = exportOnlyTransformer((node) => decoratorM
 export const MARKDOWN_TRANSFORMERS = [
   TABLE,
   DECORATOR_ELEMENT_TRANSFORMER,
-  EMPTY_PARAGRAPH_TRANSFORMER,
   DECORATOR_TEXT_TRANSFORMER,
   COLOR_TRANSFORMER,
   ...TRANSFORMERS
@@ -200,31 +180,20 @@ export const MARKDOWN_TRANSFORMERS = [
 // here (rather than imported into table_transformer.js) to break the cycle.
 setCellTransformers(MARKDOWN_TRANSFORMERS)
 
-// A block that must keep a blank line before/after it (i.e. is NOT a plain
-// paragraph): heading, blockquote, list item, fenced code, table row, thematic
-// break, or a top-level media tag. Anything else is treated as paragraph text.
-const NON_PARAGRAPH_LEAD =
-  /^(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|`{3,}|~{3,}|\||<(?:img|video|a)\b|(?:-{3,}|\*{3,}|_{3,})\s*$)/
-
-// Fenced code blocks may legitimately contain blank lines; guard them so the
-// paragraph collapse below never joins lines inside a code sample.
+// Fenced code blocks may legitimately contain consecutive blank lines; guard
+// them so the blank-line normalization below never touches a code sample.
 const FENCE_BLOCK = /(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1[ \t]*(?=\n|$)/g
 
-function isPlainParagraph(block) {
-  if (!block || block.includes("\x00MDFENCE")) return false
-  return !NON_PARAGRAPH_LEAD.test(block.split("\n", 1)[0])
-}
-
-// Collapse the blank line between two consecutive plain paragraphs so multi-line
-// rich text serializes as `a\nb` instead of `a\n\nb`. The renderers run with
-// hard breaks (a single `\n` becomes <br>), so the visual line break is
-// preserved while markdown_source stays free of the inserted blank line the user
-// never typed. Headings, lists, quotes, code fences, tables and media keep their
-// standard blank-line separation.
-export function collapseParagraphBreaks(markdown) {
-  // A document made only of blank paragraphs (each now a U+00A0 line) carries no
-  // real content — keep it empty so the empty-state contract (placeholders,
-  // description presence) is unchanged. trim() drops the nbsp too.
+// Normalize the canonical Markdown projection. Enter produces a real paragraph
+// break, so consecutive paragraphs are separated by the standard `\n\n` — no
+// marker characters in the stored source. This pass only:
+//   - returns "" for a blank-only document (placeholder/presence contract),
+//   - collapses runs of 3+ newlines (N consecutive blank paragraphs, which
+//     standard Markdown can't distinguish and renders identically) to one
+//     blank line, so the very first save is already round-trip stable,
+//   - trims trailing whitespace.
+// Blank lines inside fenced code are preserved verbatim.
+export function normalizeMarkdownBlankLines(markdown) {
   if (!String(markdown).trim()) return ""
 
   const fences = []
@@ -233,14 +202,9 @@ export function collapseParagraphBreaks(markdown) {
     return `\x00MDFENCE${fences.length - 1}\x00`
   })
 
-  const blocks = guarded.split("\n\n")
-  let out = blocks.length ? blocks[0] : ""
-  for (let i = 1; i < blocks.length; i++) {
-    const join = isPlainParagraph(blocks[i - 1]) && isPlainParagraph(blocks[i]) ? "\n" : "\n\n"
-    out += join + blocks[i]
-  }
+  const normalized = guarded.replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "")
 
-  return out.replace(/\x00MDFENCE(\d+)\x00/g, (_, n) => fences[Number(n)])
+  return normalized.replace(/\x00MDFENCE(\d+)\x00/g, (_, n) => fences[Number(n)])
 }
 
 // Read the editor state and return canonical Markdown.
@@ -249,5 +213,5 @@ export function lexicalToMarkdown(editor) {
   editor.getEditorState().read(() => {
     markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
   })
-  return collapseParagraphBreaks(markdown)
+  return normalizeMarkdownBlankLines(markdown)
 }

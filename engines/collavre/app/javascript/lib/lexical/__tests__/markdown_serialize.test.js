@@ -17,7 +17,7 @@ import {
   videoMarkup,
   attachmentMarkup,
   lexicalToMarkdown,
-  collapseParagraphBreaks
+  normalizeMarkdownBlankLines
 } from "../markdown_serialize"
 
 // Minimal DecoratorNode stand-in: the production image/video/attachment nodes
@@ -242,7 +242,7 @@ describe("lexicalToMarkdown", () => {
     expect(lexicalToMarkdown(editor)).toBe('plain <span style="color: blue">blue</span>')
   })
 
-  it("joins consecutive plain paragraphs with a single newline", () => {
+  it("separates consecutive paragraphs with a standard blank line", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -251,8 +251,9 @@ describe("lexicalToMarkdown", () => {
       b.append($createTextNode("def"))
       root.append(b)
     })
-    // No blank line inserted between rich-editor lines (the user's request).
-    expect(lexicalToMarkdown(editor)).toBe("abc\ndef")
+    // Enter produces a real paragraph break: standard Markdown `\n\n`, no marker
+    // characters in the canonical source (the user's "stray space" complaint).
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef")
   })
 
   it("keeps a blank line between a paragraph and a heading", () => {
@@ -267,7 +268,7 @@ describe("lexicalToMarkdown", () => {
     expect(lexicalToMarkdown(editor)).toBe("intro\n\n## Sec")
   })
 
-  it("preserves a single blank line (empty paragraph) as a non-breaking space line", () => {
+  it("renders an empty paragraph as the standard single blank line (no marker)", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -277,12 +278,12 @@ describe("lexicalToMarkdown", () => {
       b.append($createTextNode("def"))
       root.append(b)
     })
-    // The empty line must survive: renderers run with hard breaks, so the
-    // line renders as a visible blank line inside one <p> instead of collapsing.
-    expect(lexicalToMarkdown(editor)).toBe("abc\n\u00A0\ndef")
+    // An empty paragraph between two paragraphs is just the standard Markdown
+    // paragraph separation \u2014 no NBSP, no stray space in the canonical source.
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef")
   })
 
-  it("preserves multiple consecutive blank lines, one nbsp line each", () => {
+  it("collapses multiple consecutive blank lines to one standard blank line", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -293,7 +294,10 @@ describe("lexicalToMarkdown", () => {
       b.append($createTextNode("def"))
       root.append(b)
     })
-    expect(lexicalToMarkdown(editor)).toBe("abc\n\u00A0\n\u00A0\ndef")
+    // Standard Markdown can't distinguish N consecutive blank lines and renders
+    // them identically, so they normalize to a single blank line (round-trip
+    // stable on the first save).
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef")
   })
 
   it("serializes an editor that holds only empty paragraphs as empty Markdown", () => {
@@ -306,7 +310,7 @@ describe("lexicalToMarkdown", () => {
     expect(lexicalToMarkdown(editor)).toBe("")
   })
 
-  it("keeps tight lines tight and only the empty line spaced", () => {
+  it("separates every paragraph with a standard blank line", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -319,32 +323,38 @@ describe("lexicalToMarkdown", () => {
       c.append($createTextNode("ghi"))
       root.append(c)
     })
-    expect(lexicalToMarkdown(editor)).toBe("abc\ndef\n\u00A0\nghi")
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef\n\nghi")
   })
 })
 
-describe("collapseParagraphBreaks", () => {
-  it("collapses the blank line between two plain paragraphs", () => {
-    expect(collapseParagraphBreaks("a\n\nb")).toBe("a\nb")
-    expect(collapseParagraphBreaks("a\n\nb\n\nc")).toBe("a\nb\nc")
+describe("normalizeMarkdownBlankLines", () => {
+  it("keeps the standard blank line between two plain paragraphs", () => {
+    expect(normalizeMarkdownBlankLines("a\n\nb")).toBe("a\n\nb")
+    expect(normalizeMarkdownBlankLines("a\n\nb\n\nc")).toBe("a\n\nb\n\nc")
   })
 
-  it("keeps blank lines around non-paragraph blocks", () => {
-    expect(collapseParagraphBreaks("p\n\n## h")).toBe("p\n\n## h")
-    expect(collapseParagraphBreaks("note\n\n- a\n- b")).toBe("note\n\n- a\n- b")
-    expect(collapseParagraphBreaks("- a\n- b\n\ntail")).toBe("- a\n- b\n\ntail")
-    expect(collapseParagraphBreaks("p\n\n> quote")).toBe("p\n\n> quote")
-    expect(collapseParagraphBreaks('p\n\n<img src="/x.png" alt="x">')).toBe(
-      'p\n\n<img src="/x.png" alt="x">'
-    )
+  it("collapses runs of 3+ newlines to one standard blank line", () => {
+    expect(normalizeMarkdownBlankLines("a\n\n\nb")).toBe("a\n\nb")
+    expect(normalizeMarkdownBlankLines("a\n\n\n\n\nb")).toBe("a\n\nb")
+  })
+
+  it("returns empty string for blank-only input (empty-state contract)", () => {
+    expect(normalizeMarkdownBlankLines("")).toBe("")
+    expect(normalizeMarkdownBlankLines("\n")).toBe("")
+    expect(normalizeMarkdownBlankLines("\n\n  \n")).toBe("")
+  })
+
+  it("trims trailing whitespace", () => {
+    expect(normalizeMarkdownBlankLines("abc\n\n\n")).toBe("abc")
+    expect(normalizeMarkdownBlankLines("abc  \n")).toBe("abc")
   })
 
   it("never collapses blank lines inside a fenced code block", () => {
-    const md = "```js\nconst a = 1\n\nconst b = 2\n```"
-    expect(collapseParagraphBreaks(md)).toBe(md)
-    // ...and still collapses paragraphs around the protected fence
-    expect(collapseParagraphBreaks("a\n\nb\n\n```\nx\n\ny\n```")).toBe(
-      "a\nb\n\n```\nx\n\ny\n```"
+    const md = "```js\nconst a = 1\n\n\nconst b = 2\n```"
+    expect(normalizeMarkdownBlankLines(md)).toBe(md)
+    // ...and still normalizes blank-line runs around the protected fence
+    expect(normalizeMarkdownBlankLines("a\n\n\nb\n\n```\nx\n\n\ny\n```")).toBe(
+      "a\n\nb\n\n```\nx\n\n\ny\n```"
     )
   })
 })
@@ -415,9 +425,9 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
       '<p><span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span></p>',
       '<span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span>'
     ],
-    // A preserved blank line round-trips: markdown_to_html renders the nbsp line
-    // as <br> <br> inside one <p>; re-importing keeps the same canonical form.
-    ["blank line", "<p>abc<br>\u00A0<br>def</p>", "abc\n\u00A0\ndef"]
+    // A blank line round-trips as standard paragraph separation: markdown_to_html
+    // renders `abc\n\ndef` as two <p> blocks; re-importing keeps the same form.
+    ["blank line", "<p>abc</p><p>def</p>", "abc\n\ndef"]
   ]
 
   it.each(cases)("round-trips %s", (_name, html, expected) => {
