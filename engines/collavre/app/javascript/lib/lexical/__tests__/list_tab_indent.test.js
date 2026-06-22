@@ -3,6 +3,7 @@ import {
   $getRoot,
   $createParagraphNode,
   $createTextNode,
+  $isParagraphNode,
   KEY_TAB_COMMAND
 } from "lexical"
 import { HeadingNode, QuoteNode, registerRichText } from "@lexical/rich-text"
@@ -126,6 +127,76 @@ describe("registerListTabIndentation", () => {
     expect(handled).toBe(true)
     editor.read(() => {
       expect(countNestedLists($getRoot())).toBe(1)
+    })
+  })
+
+  it("Shift+Tab on a top-level item removes it from the list (becomes a paragraph)", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const ul = $createListNode("bullet")
+        const a = $createListItemNode()
+        const textA = $createTextNode("a")
+        a.append(textA)
+        ul.append(a)
+        root.append(ul)
+        textA.selectEnd()
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      // The whole list is gone; the item is now a top-level paragraph.
+      expect(root.getChildren().some($isListNode)).toBe(false)
+      const only = root.getFirstChild()
+      expect($isParagraphNode(only)).toBe(true)
+      expect(only.getTextContent()).toBe("a")
+    })
+  })
+
+  it("Shift+Tab on a middle top-level item splits the surrounding list", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const ul = $createListNode("bullet")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const b = $createListItemNode()
+        const textB = $createTextNode("b")
+        b.append(textB)
+        const c = $createListItemNode()
+        c.append($createTextNode("c"))
+        ul.append(a, b, c)
+        root.append(ul)
+        textB.selectEnd()
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      const kinds = root.getChildren().map((child) =>
+        $isListNode(child) ? `list[${child.getTextContent()}]` : `p[${child.getTextContent()}]`
+      )
+      // a stays in the first list, b becomes a paragraph, c moves to a trailing list.
+      expect(kinds).toEqual(["list[a]", "p[b]", "list[c]"])
     })
   })
 
