@@ -1,6 +1,7 @@
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
-import { $getCharacterOffsets, $getSelection, $isRangeSelection, $isTextNode, $isRootOrShadowRoot } from 'lexical'
+import { $getSelection } from 'lexical'
+import { isSelectionAtDocumentStart, isSelectionAtDocumentEnd } from '../lib/lexical/selection_boundary'
 import { createInlineEditor } from './lexical_inline_editor'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
@@ -2040,9 +2041,11 @@ export function initializeCreativeRowEditor() {
       let atEnd = false;
       editorInstance.getEditorState().read(() => {
         const selection = $getSelection();
-        if (!$isRangeSelection(selection) || !selection.isCollapsed()) return;
-        const [start, end] = $getCharacterOffsets(selection);
-        atStart = start === 0 && end === 0;
+        // atStart must reflect the start of the whole document, not just offset 0
+        // of the current node — otherwise the start of a second paragraph (e.g.
+        // right after pressing Enter) is mistaken for the top and ArrowUp jumps
+        // to the row above instead of moving the cursor up. See isSelectionAtDocumentStart.
+        atStart = isSelectionAtDocumentStart(selection);
         atEnd = isSelectionAtDocumentEnd(selection);
       });
 
@@ -2060,32 +2063,6 @@ export function initializeCreativeRowEditor() {
         move(1);
         requestAnimationFrame(() => lexicalEditor.focus());
       }
-    }
-
-    function isSelectionAtDocumentEnd(selection) {
-      if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false;
-
-      const focus = selection.focus;
-      let node = focus.getNode();
-      if (!node) return false;
-
-      const offset = focus.offset;
-      if ($isTextNode(node)) {
-        if (offset !== node.getTextContentSize()) return false;
-      } else if (typeof node.getChildrenSize === 'function') {
-        if (offset !== node.getChildrenSize()) return false;
-      } else {
-        // Fallback for nodes without children size (e.g., line breaks)
-        const textSize = node.getTextContentSize?.() ?? 0;
-        if (offset !== textSize) return false;
-      }
-
-      while (node && !$isRootOrShadowRoot(node)) {
-        if (node.getNextSibling()) return false;
-        node = node.getParent();
-      }
-
-      return !!node && $isRootOrShadowRoot(node);
     }
 
     if (progressInput) {
