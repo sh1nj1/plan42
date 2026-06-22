@@ -18,6 +18,10 @@
     width: 100%;
     font-size: 0.85em;
     margin: 0;
+    /* Override legacy actiontext.css fixed layout so creative tables expand to
+       content and horizontally scroll like chat tables (tables.css loads after
+       actiontext.css; same specificity, so it must restate this property). */
+    table-layout: auto;
 }
 
 .comment-content table th,
@@ -30,6 +34,10 @@
     padding: 0.3em 0.6em;
     text-align: left;
     white-space: nowrap;
+    /* Clear actiontext.css cell floors so creative cells size to content like
+       chat cells instead of forcing a min width / breaking long words. */
+    min-width: 0;
+    word-break: normal;
 }
 
 .comment-content table th,
