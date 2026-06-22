@@ -259,6 +259,12 @@ describe("registerListTabIndentation", () => {
         .getChildren()
         .some((li) => $isListItemNode(li) && $isListNode(li.getFirstChild()))
       expect(hasOrphanWrapper).toBe(false)
+      // The original list must not linger as an empty/orphan list before the
+      // paragraph: only the single trailing list should remain at the root, and no
+      // empty list anywhere (it would serialize as stray blank lines in Markdown).
+      const rootLists = root.getChildren().filter($isListNode)
+      expect(rootLists.length).toBe(1)
+      expect(rootLists[0]).toBe(trailingList)
     })
   })
 

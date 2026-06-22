@@ -120,7 +120,12 @@ function $convertListItemToParagraph(listItem) {
     let promotingChildren = true
     following.forEach((sibling) => {
       if (promotingChildren && $isNestedListItemWrapper(sibling)) {
+        // Move the wrapper's inner items up one level, then drop the wrapper. It only
+        // existed to nest the removed item's children; appending its contents alone
+        // would leave the emptied wrapper behind in parentList, so parentList never
+        // empties and the cleanup below can't remove it — an orphan <li><ul> list.
         trailingList.append(...sibling.getFirstChild().getChildren())
+        sibling.remove()
       } else {
         promotingChildren = false
         trailingList.append(sibling)
