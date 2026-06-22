@@ -51,9 +51,15 @@ export default function ImageResizer({ src, altText, width, height, nodeKey }) {
       editor.registerCommand(
         CLICK_COMMAND,
         (event) => {
-          // If click is outside our image, deselect
+          // If click is outside our image, deselect — but only via clearSelection.
+          // setSelected(false) is destructive here: when the click lands in text
+          // (a RangeSelection / the caret), the hook synthesizes a fresh empty
+          // NodeSelection and replaces the caret with it, so the editor loses its
+          // caret and becomes uneditable the instant you click to edit while an
+          // image is present. clearSelection only acts on an existing
+          // NodeSelection, so a RangeSelection (caret) is preserved.
           if (containerRef.current && !containerRef.current.contains(event.target)) {
-            setSelected(false)
+            clearSelection()
           }
           return false
         },
@@ -90,7 +96,7 @@ export default function ImageResizer({ src, altText, width, height, nodeKey }) {
         COMMAND_PRIORITY_LOW
       )
     )
-  }, [editor, isSelected, nodeKey, setSelected])
+  }, [editor, isSelected, nodeKey, clearSelection])
 
   // Resize logic
   const onPointerDown = useCallback(
