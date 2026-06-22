@@ -16,8 +16,13 @@ if defined?(Collavre::IntegrationSettings::Registry)
   registry.register(:fcm_wif_audience,                category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:fcm_wif_credential_source,       category: "firebase", sensitive: true,  requires_restart: true,
                                                       input_type: :textarea)
-  registry.register(:fcm_wif_service_account_email,   category: "firebase", sensitive: false, requires_restart: true,
-                                                      env_var: "FIREBASE_SERVICE_ACCOUNT")
+  # No custom env_var: the default (FCM_WIF_SERVICE_ACCOUNT_EMAIL == key.upcase)
+  # MUST match key.upcase. `IntegrationSettings.fetch(boot_safe: true)` — used
+  # below at boot — falls back to ENV[key.upcase] when the DB is unreachable,
+  # while the runtime Resolver reads ENV[env_var]. A custom env_var splits the
+  # two, so a value present at runtime is absent at boot (see creative #14282:
+  # the WIF impersonation URL was never built → every push failed Unauthorized).
+  registry.register(:fcm_wif_service_account_email,   category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:fcm_sender_id,                   category: "firebase", sensitive: false, requires_restart: true)
   registry.register(:fcm_vapid_key,                   category: "firebase", sensitive: true,  requires_restart: true)
   registry.register(:fcm_server_key,                  category: "firebase", sensitive: true,  requires_restart: true)
@@ -37,9 +42,9 @@ fcm_scope = [ Google::Apis::FcmV1::AUTH_FIREBASE_MESSAGING ].freeze
 
 # Default AWS Workload Identity Federation settings. Used as a fallback so the
 # pre-existing production deploy — which only injects FCM_SENDER_ID (the GCP
-# project number) and FIREBASE_SERVICE_ACCOUNT (the SA email) — keeps working
-# without having to set the explicit fcm_wif_* overrides. Admins can override
-# either piece via the admin UI / ENV for non-default pools or providers.
+# project number) and FCM_WIF_SERVICE_ACCOUNT_EMAIL (the SA email) — keeps
+# working without having to set the explicit fcm_wif_* overrides. Admins can
+# override either piece via the admin UI / ENV for non-default pools/providers.
 default_aws_audience = ->(project_number) {
   "//iam.googleapis.com/projects/#{project_number}/locations/global/workloadIdentityPools/aws-pool/providers/aws-provider"
 }
@@ -57,10 +62,9 @@ project_number              = resolve.call(:fcm_sender_id,                  %i[f
 service_account_json_body   = resolve.call(:firebase_service_account_json,  %i[fcm service_account_json])
 wif_audience_explicit       = resolve.call(:fcm_wif_audience,               %i[fcm wif_audience])
 wif_credential_source_raw   = resolve.call(:fcm_wif_credential_source,      %i[fcm wif_credential_source])
-# Single SA-email key. `fcm_wif_service_account_email` is registered with the
-# legacy FIREBASE_SERVICE_ACCOUNT env var so existing prod deploys resolve here
-# unchanged; the `firebase_service_account` key/credentials path stays readable
-# as an extra fallback for older setups.
+# Single SA-email key, resolved from FCM_WIF_SERVICE_ACCOUNT_EMAIL (DB > ENV);
+# the `firebase` credentials path stays readable as an extra fallback for older
+# setups.
 wif_sa_email                = resolve.call(:fcm_wif_service_account_email,  %i[fcm wif_service_account_email]).presence ||
                               Rails.application.credentials.dig(:firebase, :service_account)
 adc_path                    = resolve.call(:google_application_credentials, %i[fcm google_application_credentials])
