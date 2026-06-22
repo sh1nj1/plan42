@@ -59,7 +59,11 @@ import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
 import { ensureTrailingParagraph, registerTrailingParagraph } from "../lib/lexical/trailing_paragraph"
-import { MARKDOWN_TRANSFORMERS, normalizeMarkdownBlankLines } from "../lib/lexical/markdown_serialize"
+import {
+  MARKDOWN_TRANSFORMERS,
+  normalizeMarkdownBlankLines,
+  splitBlankLineParagraphs
+} from "../lib/lexical/markdown_serialize"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
@@ -238,6 +242,15 @@ function InitialContentPlugin({ html }) {
       if (root.getChildrenSize() === 0) {
         root.append($createParagraphNode())
       }
+
+      // A blank line the user typed is an empty paragraph, but the server renders
+      // it as a standalone <br> that re-imports as a paragraph holding a
+      // LineBreakNode — which Lexical draws as TWO lines, so blank lines grew by
+      // one on every reopen. Split those marker paragraphs back into empty
+      // paragraphs so reopened blank lines match freshly typed ones. Runs AFTER
+      // the trailing-empty cleanup above so an intentional trailing blank line
+      // (a marker paragraph the cleanup leaves alone) is preserved, not stripped.
+      splitBlankLineParagraphs(root)
 
       // A trailing top-level image/video/attachment leaves no caret position
       // after it, making the document uneditable. Guarantee an editable

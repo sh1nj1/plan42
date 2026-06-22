@@ -21,7 +21,8 @@ import {
   videoMarkup,
   attachmentMarkup,
   lexicalToMarkdown,
-  normalizeMarkdownBlankLines
+  normalizeMarkdownBlankLines,
+  splitBlankLineParagraphs
 } from "../markdown_serialize"
 
 // Minimal DecoratorNode stand-in: the production image/video/attachment nodes
@@ -396,7 +397,7 @@ describe("normalizeMarkdownBlankLines", () => {
 // into Lexical via $generateNodesFromDOM + the colorAwareSpanImport config. Then
 // we re-serialize to Markdown and require byte-identity with the rendered HTML's
 // intended source — guarding the md -> html -> lexical -> md round-trip.
-function importHtmlThenToMarkdown(html) {
+function importHtml(html) {
   const editor = createEditor({
     namespace: "test",
     onError(error) {
@@ -438,10 +439,39 @@ function importHtmlThenToMarkdown(html) {
         root.append(node)
       })
       flush()
+      // Mirror InlineLexicalEditor: a grouped blank-line marker paragraph (only
+      // LineBreakNodes) is split back into N empty paragraphs so reopened blank
+      // lines match the structure fresh typing produces.
+      splitBlankLineParagraphs(root)
     },
     { discrete: true }
   )
-  return lexicalToMarkdown(editor)
+  return editor
+}
+
+// Structure of the root's children, for asserting that blank-line markers import
+// as EMPTY paragraphs (one visual line each) rather than LineBreakNode-bearing
+// paragraphs (which Lexical renders with an extra trailing line).
+function importHtmlToStructure(html) {
+  const editor = importHtml(html)
+  let summary = []
+  editor.getEditorState().read(() => {
+    summary = $getRoot()
+      .getChildren()
+      .map((child) => ({
+        type: child.getType(),
+        childCount: child.getChildrenSize ? child.getChildrenSize() : 0,
+        lineBreaks: child.getChildren
+          ? child.getChildren().filter($isLineBreakNode).length
+          : 0,
+        text: child.getTextContent()
+      }))
+  })
+  return summary
+}
+
+function importHtmlThenToMarkdown(html) {
+  return lexicalToMarkdown(importHtml(html))
 }
 
 describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
@@ -499,5 +529,49 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
 
   it.each(cases)("round-trips %s", (_name, html, expected) => {
     expect(importHtmlThenToMarkdown(html)).toBe(expected)
+  })
+})
+
+describe("import structure: blank-line markers become empty paragraphs", () => {
+  // The bug: a single typed blank line is an EMPTY paragraph (zero children,
+  // one visual line). On reopen the server renders it as a standalone <br>,
+  // which imports as a paragraph holding a LineBreakNode — and Lexical renders
+  // that as TWO lines (the break starts a new line on top of the paragraph's
+  // own line). So the blank line grew by one on every reopen. After the fix a
+  // blank-line marker imports as an empty paragraph, matching fresh typing.
+  it("imports a single blank line as one empty paragraph (not a LineBreakNode)", () => {
+    const structure = importHtmlToStructure("<p>Test</p>\n<br>\n<p>a</p>")
+    expect(structure).toEqual([
+      { type: "paragraph", childCount: 1, lineBreaks: 0, text: "Test" },
+      { type: "paragraph", childCount: 0, lineBreaks: 0, text: "" },
+      { type: "paragraph", childCount: 1, lineBreaks: 0, text: "a" }
+    ])
+  })
+
+  it("imports N consecutive blank lines as N empty paragraphs", () => {
+    const structure = importHtmlToStructure("<p>abc</p>\n<br>\n<br>\n<p>def</p>")
+    expect(structure).toEqual([
+      { type: "paragraph", childCount: 1, lineBreaks: 0, text: "abc" },
+      { type: "paragraph", childCount: 0, lineBreaks: 0, text: "" },
+      { type: "paragraph", childCount: 0, lineBreaks: 0, text: "" },
+      { type: "paragraph", childCount: 1, lineBreaks: 0, text: "def" }
+    ])
+  })
+
+  it("leaves an in-paragraph line break (text + <br>) untouched", () => {
+    // A paragraph that mixes text and a break is NOT a blank-line marker; it
+    // must keep its LineBreakNode so real soft breaks survive.
+    const structure = importHtmlToStructure("<p>line1<br>line2</p>")
+    expect(structure).toEqual([
+      { type: "paragraph", childCount: 3, lineBreaks: 1, text: "line1\nline2" }
+    ])
+  })
+
+  it("splitBlankLineParagraphs preserves the exported <br> count (round-trip stable)", () => {
+    // After splitting, re-export still emits exactly N markers.
+    expect(importHtmlThenToMarkdown("<p>Test</p>\n<br>\n<p>a</p>")).toBe("Test\n\n<br>\n\na")
+    expect(importHtmlThenToMarkdown("<p>abc</p>\n<br>\n<br>\n<p>def</p>")).toBe(
+      "abc\n\n<br>\n\n<br>\n\ndef"
+    )
   })
 })

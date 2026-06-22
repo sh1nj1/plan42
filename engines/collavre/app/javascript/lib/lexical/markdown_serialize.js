@@ -1,4 +1,9 @@
-import { $isTextNode, $isParagraphNode, $isLineBreakNode } from "lexical"
+import {
+  $isTextNode,
+  $isParagraphNode,
+  $isLineBreakNode,
+  $createParagraphNode
+} from "lexical"
 import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown"
 import { TABLE, setCellTransformers } from "./table_transformer"
 
@@ -258,6 +263,31 @@ export function normalizeMarkdownBlankLines(markdown) {
     .replace(/\s+$/, "")
 
   return normalized.replace(/\x00MDFENCE(\d+)\x00/g, (_, n) => fences[Number(n)])
+}
+
+// On reopen, a run of blank-line markers (<br>) comes back grouped into ONE
+// paragraph holding N LineBreakNodes. Lexical renders such a paragraph as N+1
+// visual lines — each break starts a new line on top of the paragraph's own
+// line — so a single typed blank line reopens as TWO, growing by one on every
+// reopen (the "임의 새줄 추가" bug). Freshly typed blank lines are EMPTY
+// paragraphs instead (zero children, one visual line each). Re-create that
+// structure: replace every all-LineBreakNode paragraph with N empty paragraphs
+// so reopened blank lines match typed ones. Export is unaffected — each empty
+// paragraph still emits exactly one <br> (blankParagraphBreakCount), so the
+// canonical Markdown round-trips byte-for-byte. Paragraphs that mix text with a
+// break (real soft breaks) are left untouched.
+export function splitBlankLineParagraphs(root) {
+  if (!root || !root.getChildren) return
+  root.getChildren().forEach((node) => {
+    if (!$isParagraphNode(node)) return
+    const children = node.getChildren()
+    if (children.length === 0) return
+    if (!children.every($isLineBreakNode)) return
+    for (let i = 0; i < children.length; i++) {
+      node.insertBefore($createParagraphNode())
+    }
+    node.remove()
+  })
 }
 
 // Read the editor state and return canonical Markdown.
