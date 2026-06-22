@@ -129,13 +129,35 @@ function $convertListItemToParagraph(listItem) {
       }
     })
     if (trailingItems.length > 0) {
-      // For ordered lists, continue numbering from where the converted item was
-      // instead of restarting at 1 (e.g. "1. a / 2. b / 3. c" → outdent b → c stays 3).
-      const trailingStart =
-        listType === "number" ? listItem.getValue() + 1 : undefined
-      const trailingList = $createListNode(listType, trailingStart)
-      trailingItems.forEach((sibling) => trailingList.append(sibling))
-      anchor.insertAfter(trailingList)
+      // For ordered lists the trailing items must keep their original numbers
+      // (e.g. "1. a / 2. b / 3. c" → outdent b → c stays 3, not restart at 1).
+      //
+      // When a same-type list was promoted directly before these items (the removed
+      // item's own ordered child list), Lexical's ListNode transform merges the two
+      // adjacent same-type lists and keeps the *first* list's start — a separate
+      // trailing list's start would be silently discarded. So append the trailing
+      // items into that promoted list instead and set its start so the first trailing
+      // item lands on its original value, with the promoted children filling the slots
+      // leading up to it ("1. a / 2. b / [1.] b1 / 3. c" → outdent b → "2. b1 / 3. c").
+      const mergesWithPromoted =
+        $isListNode(anchor) && anchor.getListType() === listType
+      if (mergesWithPromoted) {
+        if (listType === "number") {
+          // Count real items already in the promoted list (nested wrappers don't
+          // advance numbering) so the first trailing item keeps its original value.
+          const promotedItems = anchor
+            .getChildren()
+            .filter((child) => !$isNestedListItemWrapper(child)).length
+          anchor.setStart(listItem.getValue() + 1 - promotedItems)
+        }
+        trailingItems.forEach((sibling) => anchor.append(sibling))
+      } else {
+        const trailingStart =
+          listType === "number" ? listItem.getValue() + 1 : undefined
+        const trailingList = $createListNode(listType, trailingStart)
+        trailingItems.forEach((sibling) => trailingList.append(sibling))
+        anchor.insertAfter(trailingList)
+      }
     }
   }
 

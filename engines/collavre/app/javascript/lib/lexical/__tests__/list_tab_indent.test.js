@@ -440,6 +440,65 @@ describe("registerListTabIndentation", () => {
     })
   })
 
+  it("Shift+Tab keeps the trailing numbering when an ordered child list is promoted", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        // "1. a / 2. b / 3. c" with an ordered child "b1" nested under "b".
+        const ol = $createListNode("number")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const b = $createListItemNode()
+        b.append($createTextNode("b"))
+        const b1 = $createListItemNode()
+        const textB1 = $createTextNode("b1")
+        b1.append(textB1)
+        const c = $createListItemNode()
+        c.append($createTextNode("c"))
+        ol.append(a, b, b1, c)
+        root.append(ol)
+        textB1.selectEnd()
+      },
+      { discrete: true }
+    )
+    // Nest "b1" under "b" via the real machinery (same ordered type as the parent).
+    editor.dispatchCommand(KEY_TAB_COMMAND, { preventDefault: () => {}, shiftKey: false })
+    // Caret into top-level "b" and outdent it.
+    editor.update(
+      () => {
+        const root = $getRoot()
+        const target = root.getAllTextNodes().find((n) => n.getTextContent() === "b")
+        target.selectEnd()
+      },
+      { discrete: true }
+    )
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      // The promoted child list (b1) and the continuation (c) are forced into ONE
+      // ordered list by Lexical's same-type-sibling merge. The continuation "c" must
+      // keep its original value 3, with the promoted child filling the slot before it.
+      const lists = root.getChildren().filter($isListNode)
+      const trailing = lists[lists.length - 1]
+      expect(trailing.getListType()).toBe("number")
+      const values = trailing
+        .getChildren()
+        .filter((li) => $isListItemNode(li) && !$isListNode(li.getFirstChild()))
+        .map((li) => li.getValue())
+      // start=2 → b1=2, c=3 (c is not renumbered down to 2 by the merge).
+      expect(values).toEqual([2, 3])
+      expect(trailing.getTextContent()).toContain("b1")
+      expect(trailing.getTextContent()).toContain("c")
+    })
+  })
+
   it("ignores Tab outside a list (returns false, no preventDefault)", () => {
     const editor = buildListEditor()
     editor.update(
