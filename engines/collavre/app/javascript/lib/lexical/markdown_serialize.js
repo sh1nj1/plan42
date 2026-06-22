@@ -231,27 +231,42 @@ setCellTransformers(MARKDOWN_TRANSFORMERS)
 // them so the blank-line normalization below never touches a code sample.
 const FENCE_BLOCK = /(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1[ \t]*(?=\n|$)/g
 
+// Inline code spans (`...`) may legitimately contain the literal text `<br>` or
+// a lone NBSP; guard them too so the blank-line normalization never rewrites the
+// span (which would break it on save). Matched after fences are stashed, so the
+// remaining backtick runs are genuine inline code.
+const INLINE_CODE = /(`+)[^\n]*?\1/g
+
 // Normalize the canonical Markdown projection. Enter produces a real paragraph
 // break (standard `\n\n` separation); a blank line the user typed is preserved
 // as a `<br>` marker (see BLANK_PARAGRAPH_TRANSFORMER). This pass only:
 //   - returns "" for a document with no real content (only whitespace and/or
 //     `<br>` markers), keeping the empty-state placeholder/presence contract,
+//   - migrates legacy NBSP-only blank-line markers (pre-`<br>` content) to a
+//     real `<br>` marker so they stop acting as a CommonMark lazy continuation,
+//   - isolates every `<br>` marker as its own block,
 //   - collapses runs of 3+ newlines to one blank line so block separation stays
 //     canonical and the very first save is round-trip stable,
 //   - trims trailing whitespace.
-// Blank lines inside fenced code are preserved verbatim.
+// Blank lines and literal `<br>`/NBSP inside code (fenced or inline) are
+// preserved verbatim.
 export function normalizeMarkdownBlankLines(markdown) {
   // A document of only blank lines (each now a `<br>`) carries no real content,
   // so strip the markers before the emptiness check.
   if (!String(markdown).replace(/<br\s*\/?>/gi, "").trim()) return ""
 
-  const fences = []
-  const guarded = String(markdown).replace(FENCE_BLOCK, (match) => {
-    fences.push(match)
-    return `\x00MDFENCE${fences.length - 1}\x00`
-  })
+  const guards = []
+  const stash = (match) => `\x00MDGUARD${guards.push(match) - 1}\x00`
+  const guarded = String(markdown)
+    .replace(FENCE_BLOCK, stash)
+    .replace(INLINE_CODE, stash)
 
   const normalized = guarded
+    // Legacy blank-line markers stored a line of only NBSP (U+00A0). CommonMark
+    // treats NBSP as content — a lazy list continuation — re-introducing the
+    // list-indent bug, so migrate such lines to a real `<br>` marker on save.
+    // (A regular whitespace-only line is already a CommonMark blank line.)
+    .replace(/^[ \t]*\u00A0[ \t\u00A0]*$/gm, "<br>")
     // Each blank-line marker is its own block: isolate every `<br>` with a blank
     // line on both sides. Lexical's exporter joins a freshly-typed empty
     // paragraph to its neighbours with a single `\n`, while a reopened (grouped)
@@ -262,7 +277,7 @@ export function normalizeMarkdownBlankLines(markdown) {
     .replace(/^\n+/, "")
     .replace(/\s+$/, "")
 
-  return normalized.replace(/\x00MDFENCE(\d+)\x00/g, (_, n) => fences[Number(n)])
+  return normalized.replace(/\x00MDGUARD(\d+)\x00/g, (_, n) => guards[Number(n)])
 }
 
 // On reopen, a run of blank-line markers (<br>) comes back grouped into ONE

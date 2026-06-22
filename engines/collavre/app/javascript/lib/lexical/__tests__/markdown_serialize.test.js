@@ -390,6 +390,38 @@ describe("normalizeMarkdownBlankLines", () => {
       "a\n\nb\n\n```\nx\n\n\ny\n```"
     )
   })
+
+  it("never rewrites a literal <br> inside an inline code span", () => {
+    // The rich editor exports inline code whose text is `<br>` as `` `<br>` ``.
+    // The blank-line normalizer must not treat that as a marker and inject
+    // blank lines, which would break the code span on save.
+    expect(normalizeMarkdownBlankLines("Here is `<br>` literal code")).toBe(
+      "Here is `<br>` literal code"
+    )
+    expect(normalizeMarkdownBlankLines("a `<br>` b")).toBe("a `<br>` b")
+    expect(normalizeMarkdownBlankLines("`<br>`")).toBe("`<br>`")
+    // A real marker on its own line is still isolated even alongside a code span
+    expect(normalizeMarkdownBlankLines("a `<br>` b\n<br>\nc")).toBe(
+      "a `<br>` b\n\n<br>\n\nc"
+    )
+  })
+
+  it("migrates legacy NBSP blank-line markers to <br> on save", () => {
+    // Pre-<br> content stored blank lines as a line of only U+00A0. Reopening
+    // and saving must clean it to a real <br> marker so CommonMark stops
+    // treating the following block as a lazy list continuation.
+    expect(normalizeMarkdownBlankLines("abc\n \ndef")).toBe(
+      "abc\n\n<br>\n\ndef"
+    )
+    // ...and a NBSP marker right after a list is isolated as its own block
+    expect(
+      normalizeMarkdownBlankLines("- a\n- b\n \nXXX")
+    ).toBe("- a\n- b\n\n<br>\n\nXXX")
+    // A NBSP inside inline code is left untouched
+    expect(normalizeMarkdownBlankLines("see ` ` here")).toBe(
+      "see ` ` here"
+    )
+  })
 })
 
 // Reproduces the production import path: stored Markdown is rendered to HTML by
