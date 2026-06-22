@@ -106,32 +106,37 @@ function $convertListItemToParagraph(listItem) {
 
   if (following.length > 0) {
     const listType = parentList.getListType()
-    // For ordered lists, continue numbering from where the converted item was
-    // instead of restarting at 1 (e.g. "1. a / 2. b / 3. c" → outdent b → c stays 3).
-    const trailingStart =
-      listType === "number" ? listItem.getValue() + 1 : undefined
-    const trailingList = $createListNode(listType, trailingStart)
     // @lexical/list stores a nested child list as a *wrapper* list item (its only
-    // child is a ListNode) placed right after the parent item. Those wrappers are
-    // the removed item's own children, so promote their contents up one level
-    // rather than re-nesting them under an empty item (which renders as an orphan
-    // <li><ul>…). Only the leading run belongs to the removed item — once a real
-    // item appears, later wrappers belong to it and must stay nested.
+    // child is a ListNode) placed right after the parent item. The leading run of
+    // such wrappers are the removed item's own children: promote each wrapper's
+    // inner ListNode up one level as its own block, then drop the emptied wrapper.
+    // Moving the whole ListNode (not just its items) preserves the child list's own
+    // marker type — a bullet child of a numbered parent must stay a bullet list, not
+    // get renumbered. Promoting items rather than the wrapper also empties parentList
+    // so the cleanup below can remove it, avoiding an orphan <li><ul>. Once a real
+    // item appears the run ends; later wrappers belong to it and must stay nested.
     let promotingChildren = true
+    const trailingItems = []
     following.forEach((sibling) => {
       if (promotingChildren && $isNestedListItemWrapper(sibling)) {
-        // Move the wrapper's inner items up one level, then drop the wrapper. It only
-        // existed to nest the removed item's children; appending its contents alone
-        // would leave the emptied wrapper behind in parentList, so parentList never
-        // empties and the cleanup below can't remove it — an orphan <li><ul> list.
-        trailingList.append(...sibling.getFirstChild().getChildren())
+        const childList = sibling.getFirstChild()
+        anchor.insertAfter(childList)
+        anchor = childList
         sibling.remove()
       } else {
         promotingChildren = false
-        trailingList.append(sibling)
+        trailingItems.push(sibling)
       }
     })
-    anchor.insertAfter(trailingList)
+    if (trailingItems.length > 0) {
+      // For ordered lists, continue numbering from where the converted item was
+      // instead of restarting at 1 (e.g. "1. a / 2. b / 3. c" → outdent b → c stays 3).
+      const trailingStart =
+        listType === "number" ? listItem.getValue() + 1 : undefined
+      const trailingList = $createListNode(listType, trailingStart)
+      trailingItems.forEach((sibling) => trailingList.append(sibling))
+      anchor.insertAfter(trailingList)
+    }
   }
 
   if (inlineChildren.length > 0) {

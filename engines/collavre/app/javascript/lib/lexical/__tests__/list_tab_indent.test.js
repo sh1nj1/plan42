@@ -322,6 +322,50 @@ describe("registerListTabIndentation", () => {
     })
   })
 
+  it("Shift+Tab promoting a differently-typed child list keeps the child's own marker", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        // A numbered parent with a bullet sub-list — "1. a / - a1" (valid mixed
+        // Markdown list). Built directly because Tab-nesting inherits the parent
+        // type, so it can't produce a differently-typed child.
+        const ol = $createListNode("number")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const wrapper = $createListItemNode()
+        const childList = $createListNode("bullet")
+        const a1 = $createListItemNode()
+        a1.append($createTextNode("a1"))
+        childList.append(a1)
+        wrapper.append(childList)
+        ol.append(a, wrapper)
+        root.append(ol)
+        a.getFirstChild().selectEnd() // caret into "a"
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      const paragraph = root.getChildren().find($isParagraphNode)
+      expect(paragraph.getTextContent()).toBe("a")
+      // a1 was a's bullet child; promoted up it must stay a bullet list, not be
+      // renumbered into an ordered list inheriting the parent's "number" type.
+      const lists = root.getChildren().filter($isListNode)
+      expect(lists.length).toBe(1)
+      expect(lists[0].getListType()).toBe("bullet")
+      expect(lists[0].getTextContent()).toContain("a1")
+    })
+  })
+
   it("Shift+Tab on a list nested in a blockquote removes the list formatting", () => {
     const editor = buildListEditor()
     editor.update(
