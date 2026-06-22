@@ -289,7 +289,7 @@ export function normalizeMarkdownBlankLines(markdown) {
 // paragraph holding N LineBreakNodes. Lexical renders such a paragraph as N+1
 // visual lines — each break starts a new line on top of the paragraph's own
 // line — so a single typed blank line reopens as TWO, growing by one on every
-// reopen (the "임의 새줄 추가" bug). Freshly typed blank lines are EMPTY
+// reopen (the "blank lines keep multiplying" bug). Freshly typed blank lines are EMPTY
 // paragraphs instead (zero children, one visual line each). Re-create that
 // structure: replace every all-LineBreakNode paragraph with N empty paragraphs
 // so reopened blank lines match typed ones. Export is unaffected — each empty
