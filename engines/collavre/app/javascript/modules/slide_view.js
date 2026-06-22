@@ -27,8 +27,9 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     updateUrl(index);
     // Initial slide is server-rendered (static ERB): re-tokenize its code blocks
-    // so they match the editor palette, same as the JS-loaded slides below.
+    // and attach table download buttons, same as the JS-loaded slides below.
     highlightCodeBlocks(contentEl);
+    addTableDownloadButtons(contentEl);
   }
 
   function updateUrl(idx) {
