@@ -251,6 +251,80 @@ describe("registerListTabIndentation", () => {
     })
   })
 
+  it("Shift+Tab on a list nested in a blockquote removes the list formatting", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        // A list whose parent is a QuoteNode, not the root — `> - item`.
+        const quote = new QuoteNode()
+        const ul = $createListNode("bullet")
+        const a = $createListItemNode()
+        const textA = $createTextNode("quoted")
+        a.append(textA)
+        ul.append(a)
+        quote.append(ul)
+        root.append(quote)
+        textA.selectEnd()
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      // The list must be gone (no `<ul>` anywhere), the text survives, and no
+      // list block remains — `> item` instead of an unchanged `> - item`.
+      expect(countNestedLists(root)).toBe(0)
+      expect(root.getTextContent()).toContain("quoted")
+    })
+  })
+
+  it("Shift+Tab splitting an ordered list keeps the trailing numbering", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const ol = $createListNode("number")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const b = $createListItemNode()
+        const textB = $createTextNode("b")
+        b.append(textB)
+        const c = $createListItemNode()
+        c.append($createTextNode("c"))
+        ol.append(a, b, c)
+        root.append(ol)
+        textB.selectEnd()
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      const lists = root.getChildren().filter($isListNode)
+      // a stays in the first ordered list; c moves to a trailing ordered list that
+      // continues numbering from 3 (b was 2), not restarting at 1.
+      const trailing = lists[lists.length - 1]
+      expect(trailing.getListType()).toBe("number")
+      expect(trailing.getStart()).toBe(3)
+      expect(trailing.getTextContent()).toBe("c")
+    })
+  })
+
   it("ignores Tab outside a list (returns false, no preventDefault)", () => {
     const editor = buildListEditor()
     editor.update(

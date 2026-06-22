@@ -2,7 +2,6 @@ import {
   $createParagraphNode,
   $getSelection,
   $isRangeSelection,
-  $isRootOrShadowRoot,
   COMMAND_PRIORITY_LOW,
   INDENT_CONTENT_COMMAND,
   KEY_TAB_COMMAND,
@@ -63,12 +62,14 @@ function $findListItemAncestor(selection) {
   return anchorNode.getParents().find($isListItemNode) || null
 }
 
-// A list item is "top level" when its parent list hangs directly off the root,
-// i.e. it is not nested inside another list item.
+// A list item is "top level" when its parent list is not nested inside another
+// list item. This holds both at the document root and inside a blockquote (where
+// the list's parent is the QuoteNode, not the root) — in both cases OUTDENT has
+// nothing shallower to drop to, so the item should leave the list instead.
 function $isTopLevelListItem(listItem) {
   const parentList = listItem.getParent()
   if (!$isListNode(parentList)) return false
-  return $isRootOrShadowRoot(parentList.getParent())
+  return !$isListItemNode(parentList.getParent())
 }
 
 // Remove a single top-level list item from its list, turning it into a paragraph
@@ -98,7 +99,12 @@ function $convertListItemToParagraph(listItem) {
   })
 
   if (following.length > 0) {
-    const trailingList = $createListNode(parentList.getListType())
+    const listType = parentList.getListType()
+    // For ordered lists, continue numbering from where the converted item was
+    // instead of restarting at 1 (e.g. "1. a / 2. b / 3. c" → outdent b → c stays 3).
+    const trailingStart =
+      listType === "number" ? listItem.getValue() + 1 : undefined
+    const trailingList = $createListNode(listType, trailingStart)
     trailingList.append(...following)
     anchor.insertAfter(trailingList)
   }
