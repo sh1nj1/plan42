@@ -79,21 +79,34 @@ function $convertListItemToParagraph(listItem) {
   if (!$isListNode(parentList)) return
 
   const following = listItem.getNextSiblings()
+  // An item can hold both inline content (text) and a nested child list. Only the
+  // inline content belongs in the paragraph — a nested ListNode inside a paragraph
+  // is invalid block structure, so it is promoted to a sibling list block instead.
   const children = listItem.getChildren()
+  const nestedLists = children.filter($isListNode)
+  const inlineChildren = children.filter((child) => !$isListNode(child))
   const paragraph = $createParagraphNode()
 
   parentList.insertAfter(paragraph)
 
+  // Keep block order: paragraph, then any promoted nested lists, then the split-off
+  // trailing items, by chaining insertAfter off the previously inserted block.
+  let anchor = paragraph
+  nestedLists.forEach((nestedList) => {
+    anchor.insertAfter(nestedList)
+    anchor = nestedList
+  })
+
   if (following.length > 0) {
     const trailingList = $createListNode(parentList.getListType())
     trailingList.append(...following)
-    paragraph.insertAfter(trailingList)
+    anchor.insertAfter(trailingList)
   }
 
-  if (children.length > 0) {
+  if (inlineChildren.length > 0) {
     // Moving the existing nodes (not cloning) keeps any caret pointing into them
     // valid, so the cursor stays where the user was typing.
-    children.forEach((child) => paragraph.append(child))
+    inlineChildren.forEach((child) => paragraph.append(child))
   } else {
     paragraph.select()
   }

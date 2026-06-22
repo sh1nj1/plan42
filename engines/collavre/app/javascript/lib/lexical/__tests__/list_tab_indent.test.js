@@ -200,6 +200,57 @@ describe("registerListTabIndentation", () => {
     })
   })
 
+  it("Shift+Tab on a top-level item with a nested child list never puts a list inside a paragraph", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const ul = $createListNode("bullet")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const child = $createListItemNode()
+        const childText = $createTextNode("a1")
+        child.append(childText)
+        ul.append(a, child)
+        root.append(ul)
+        childText.selectEnd()
+      },
+      { discrete: true }
+    )
+
+    // Tab on "a1" nests it under "a" via the real @lexical/list machinery, so the
+    // tree matches what a user actually builds (not a hand-rolled approximation).
+    editor.dispatchCommand(KEY_TAB_COMMAND, { preventDefault: () => {}, shiftKey: false })
+
+    editor.update(
+      () => {
+        const root = $getRoot()
+        const topList = root.getFirstChild()
+        topList.getFirstChild().getFirstChild().selectEnd() // caret into "a"
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      // "a" leaves the list as a paragraph and that paragraph must hold no list block.
+      const paragraph = root.getChildren().find($isParagraphNode)
+      expect(paragraph).toBeDefined()
+      expect(paragraph.getTextContent()).toBe("a")
+      expect(paragraph.getChildren().some($isListNode)).toBe(false)
+      // The nested "a1" content survives somewhere inside a list, not lost.
+      expect(countNestedLists(root)).toBeGreaterThan(0)
+      expect(root.getTextContent()).toContain("a1")
+    })
+  })
+
   it("ignores Tab outside a list (returns false, no preventDefault)", () => {
     const editor = buildListEditor()
     editor.update(
