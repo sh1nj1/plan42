@@ -34,6 +34,7 @@ import ShareModalController from "./share_modal_controller"
 import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
+import InboxBadgeController from "./inbox_badge_controller"
 
 // Export all controllers
 export {
@@ -69,7 +70,8 @@ export {
   ImageLightboxController,
   SearchPopupController,
   CommentBadgeController,
-  LandingVideoController
+  LandingVideoController,
+  InboxBadgeController
 }
 
 // Registration function for use with a Stimulus application
@@ -108,4 +110,5 @@ export function registerControllers(application) {
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
+  application.register("inbox-badge", InboxBadgeController)
 }

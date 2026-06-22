@@ -3,6 +3,9 @@ module Collavre
     module Broadcastable
       extend ActiveSupport::Concern
 
+      # The desktop and mobile inbox badge DOM ids kept in sync in real time.
+      INBOX_BADGE_TARGETS = %w[desktop-inbox-badge mobile-inbox-badge].freeze
+
       included do
         after_create_commit :broadcast_create
         after_update_commit :broadcast_update
@@ -112,20 +115,56 @@ module Collavre
         def broadcast_inbox_badge(inbox_creative, owner, count: nil)
           return unless inbox_creative && owner
 
-          count ||= Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+          count ||= inbox_badge_count(inbox_creative, owner)
 
-          %w[desktop-inbox-badge mobile-inbox-badge].each do |target_id|
+          INBOX_BADGE_TARGETS.each do |target_id|
             Turbo::StreamsChannel.broadcast_replace_to(
               [ "inbox", owner ],
               target: target_id,
               partial: "inbox/badge_component/count",
-              locals: {
-                count: count,
-                badge_id: target_id,
-                show_zero: false
-              }
+              locals: inbox_badge_locals(count, target_id)
             )
           end
+        end
+
+        # Render the same inbox badge replacements as a Turbo Stream string so a
+        # channel can transmit them straight to its own confirmed subscriber
+        # (see InboxBadgeChannel), instead of re-broadcasting to the sibling
+        # ["inbox", user] stream and risking a reconnect race. Returns nil when
+        # there is nothing to render.
+        def inbox_badge_turbo_stream(inbox_creative, owner, count: nil)
+          return unless inbox_creative && owner
+
+          count ||= inbox_badge_count(inbox_creative, owner)
+
+          INBOX_BADGE_TARGETS.map do |target_id|
+            Turbo::StreamsChannel.turbo_stream_action_tag(
+              :replace,
+              target: target_id,
+              template: ApplicationController.render(
+                partial: "inbox/badge_component/count",
+                formats: [ :html ],
+                locals: inbox_badge_locals(count, target_id)
+              )
+            )
+          end.join.html_safe
+        end
+
+        private
+
+        # Inbox badge count when no caller-supplied count is available (e.g. the
+        # reconnect snapshot in InboxBadgeChannel). Mirrors broadcast_badge's
+        # suppression: a user actively viewing the inbox (present in
+        # CommentPresenceStore) sees 0, so a reconnect can't repaint unread items
+        # over the suppressed badge.
+        def inbox_badge_count(inbox_creative, owner)
+          return 0 if CommentPresenceStore.list(inbox_creative.id).include?(owner.id)
+
+          Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+        end
+
+        def inbox_badge_locals(count, target_id)
+          { count: count, badge_id: target_id, show_zero: false }
         end
       end
 
