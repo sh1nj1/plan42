@@ -411,7 +411,12 @@ export function initializeCreativeRowEditor() {
       const effectiveParent = parentInput.value;
       if (unconvertBtn) unconvertBtn.style.display = effectiveParent ? '' : 'none';
       originalProgress = normalizedProgress;
-      if (!isMarkdown) {
+      // Focus the Lexical editor whenever it is the active surface. Gating on
+      // `!isMarkdown` was correct when `content_type === 'markdown'` always meant
+      // the textarea surface, but rich-authored Markdown now reopens in Lexical
+      // (markdown_editor === 'rich'), so use `!useTextarea` to also focus it.
+      // The textarea surface focuses itself in activateMarkdownMode().
+      if (!useTextarea) {
         lexicalEditor.focus();
       }
       updateActionButtonStates();
