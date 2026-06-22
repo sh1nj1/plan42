@@ -25,6 +25,13 @@ module Collavre
       def select(candidates)
         return [] if candidates.empty?
 
+        # Review feedback is forced routing: the Matcher already restricts candidates
+        # to the quoted comment's author, the sole agent ReviewHandler will accept.
+        # Floor-control arbitration (bid scoring, round_robin) among a forced single
+        # recipient is meaningless, and a low bid score must not drop it (e.g. bid
+        # strategy with bid_fallback_enabled: false) or the Review button no-ops.
+        return candidates if review_message?
+
         strategy = @policy_resolver.arbitration_strategy
         selected = apply_strategy(strategy, candidates)
 
@@ -36,6 +43,15 @@ module Collavre
       end
 
       private
+
+      # True when the triggering comment is review feedback (mirrors Matcher's
+      # review-author routing), so arbitration can be bypassed for forced routing.
+      def review_message?
+        comment_id = @context.dig("comment", "id") || @context.dig(:comment, :id)
+        return false unless comment_id
+
+        Comment.find_by(id: comment_id)&.review_message? || false
+      end
 
       def apply_strategy(strategy, candidates)
         case strategy
