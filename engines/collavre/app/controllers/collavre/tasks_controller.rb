@@ -14,13 +14,18 @@ module Collavre
         return head :unprocessable_entity
       end
 
-      # delegated and pending_approval tasks have already returned from
-      # AiAgentJob while deliberately holding the slot (should_release = false):
-      # delegated awaits an external MCP reply, pending_approval paused on
-      # ApprovalPendingError. No live worker will run the ensure-block release,
-      # so free the agent slot and drain the topic queue here — otherwise
-      # cancelling the blocker leaves agent capacity and the queued waiter stuck.
-      held_slot_without_worker = %w[delegated pending_approval].include?(task.status)
+      # These statuses count against the topic slot (occupying_topic_slot) yet no
+      # live worker will run AiAgentJob's ensure-block drain for them:
+      #   - delegated / pending_approval already returned from the job holding the
+      #     slot (should_release = false) — awaiting an MCP reply / approval.
+      #   - pending may be a waiter that dequeue_next_for_topic promoted
+      #     queued -> pending before its job starts; once cancelled, that job
+      #     early-returns at the top of #perform and never reaches the ensure drain.
+      # So free the agent slot and drain the topic queue here — otherwise
+      # cancelling the blocker leaves agent capacity and the next waiter stuck
+      # until stuck recovery. release!/dequeue are idempotent (dequeue is bounded
+      # by topic_at_capacity?), so a racing live worker that also drains is harmless.
+      held_slot_without_worker = %w[pending delegated pending_approval].include?(task.status)
       task.update!(status: "cancelled")
 
       if held_slot_without_worker && task.agent
