@@ -16,8 +16,9 @@ module Collavre
     def subscribed
       return reject unless current_user
 
-      stream_from "inbox_badge:#{current_user.id}"
-
+      # No stream_from: the badge DOM is updated through the user's existing
+      # ["inbox", user] Turbo stream. This channel only needs #subscribed to run
+      # on every (re)connect so it can re-push the authoritative count there.
       inbox = Creative.inbox_for(current_user)
       Comment.broadcast_inbox_badge(inbox, current_user) if inbox
     end
