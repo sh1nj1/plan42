@@ -35,7 +35,8 @@ module Collavre
 
       private
 
-      # Returns [author] if this is a review message, nil otherwise.
+      # Returns [author] for a routable review message, [] for an unroutable one,
+      # nil when this is not a review message.
       #
       # A review message can ONLY be handled by the author of the quoted comment:
       # ReviewHandler#eligible? requires quoted_comment.user_id == agent.id, so any
@@ -44,17 +45,22 @@ module Collavre
       # routing_expression — so the Review button is reliable even when the author
       # has none (e.g. /compress summaries authored by a primary agent resolved via
       # primary_agent_id). Without this the button renders but the feedback no-ops.
+      #
+      # Once this IS a review message, the only safe outcomes are exclusive-route or
+      # block ([]) — never nil. ResponseFinalizer keys on review_message? regardless
+      # of which agent the matcher picks, so a fall-through to mention/expression
+      # routing would schedule an agent that ReviewHandler#handle then bails on,
+      # producing the very stray reply this routing exists to prevent.
       def match_by_review_author
         return nil unless matched_comment&.review_message?
 
         author = matched_comment.quoted_comment&.user
-        return nil unless author&.ai_user?
+        return [] unless author&.ai_user?
 
         # Mirror ReviewHandler#eligible?: if the handler would reject this quote
-        # (private, or from another topic/creative), forcing the route only lets
-        # ReviewHandler#handle bail and fall through to a stray normal reply.
-        # Fall through to normal routing instead of forcing an unhandleable review.
-        return nil unless Collavre::AiAgent::ReviewHandler.eligible?(matched_comment, author)
+        # (private, or from another topic/creative), no agent can handle the review.
+        # Block rather than fall through, so it can't become a stray normal reply.
+        return [] unless Collavre::AiAgent::ReviewHandler.eligible?(matched_comment, author)
 
         return [] unless has_creative_permission?(author)
         return [] unless eligible_in_inbox?(author)

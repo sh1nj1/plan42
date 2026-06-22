@@ -243,11 +243,13 @@ module Collavre
         assert_empty Matcher.new(context).match
       end
 
-      test "review routing falls through when quoted comment is ineligible for in-place review" do
+      test "review routing blocks all agents when quoted comment is ineligible for in-place review" do
         # The quoted comment is private, so ReviewHandler#eligible? rejects it.
-        # Force-routing to the author anyway would schedule the agent only for
-        # ReviewHandler#handle to bail, falling through to a stray normal reply.
-        # The matcher must mirror that eligibility and not force the route.
+        # A review message is finalized through ReviewHandler regardless of which
+        # agent the matcher picks (ResponseFinalizer keys on review_message?), so
+        # letting it fall through to expression routing would schedule an agent
+        # that ReviewHandler#handle then bails on → a stray normal reply. The
+        # matcher must BLOCK (return []) an ineligible review, not fall through.
         topic = @creative.topics.create!(name: "Private quote topic", user: @user)
         summary = @creative.comments.create!(
           user: @ai_agent, topic_id: topic.id, content: "AI summary", private: true
@@ -255,6 +257,18 @@ module Collavre
         review = @creative.comments.create!(
           user: @user, topic_id: topic.id, content: "Make it shorter",
           quoted_comment_id: summary.id
+        )
+
+        # An agent that WOULD match by expression — proves the ineligible review is
+        # blocked outright, not merely "no expression happened to match".
+        expression_agent = User.create!(
+          email: "expr-agent@test.com", password: "password", name: "Expr Agent",
+          llm_vendor: "gemini", llm_model: "gemini-3-flash-preview",
+          searchable: true, routing_expression: "true"
+        )
+        CreativeShare.create!(creative: @creative, user: expression_agent, permission: "feedback")
+        CreativeSharesCache.find_or_create_by!(
+          creative_id: @creative.id, user_id: expression_agent.id, permission: :feedback
         )
 
         context = {
@@ -265,9 +279,11 @@ module Collavre
           "chat" => { "content" => "Make it shorter" }
         }
 
-        # Ineligible quote → no forced route → no expression match → no agent
-        # scheduled, so the Review action can't produce a stray reply.
+        # Ineligible quote → blocked. The expression_agent must NOT be scheduled,
+        # or clicking Review would produce a stray reply from it.
         assert_empty Matcher.new(context).match
+      ensure
+        expression_agent&.destroy
       end
 
       # --- Priority ---
