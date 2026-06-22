@@ -188,12 +188,18 @@ module Collavre
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
 
-      # Cancel queued tasks when a user DELETES their waiting notice. Skipped
-      # when the notice is removed by promotion cleanup (suppress_waiter_cancellation):
-      # there the waiter is being advanced, not abandoned, and cancelling other
-      # still-queued waiters in the topic would drop their work (e.g. multi-slot
-      # orphan recovery promoting one waiter must not cancel the rest).
-      cancel_queued_tasks_for_waiting_notice if waiting_notice? && !suppress_waiter_cancellation
+      # Cancel queued tasks when a user DELETES their waiting notice. Gated to
+      # topic_concurrency_defer notices: only the :deferred path queues a topic
+      # waiter, so a :delayed (busy / rate_limited) "⏳" notice — which shares the
+      # prefix but has no waiter of its own — must not cancel an unrelated queued
+      # waiter that happens to share the topic. Also skipped when the notice is
+      # removed by promotion cleanup (suppress_waiter_cancellation): there the
+      # waiter is being advanced, not abandoned, and cancelling other still-queued
+      # waiters would drop their work (multi-slot orphan recovery must not cancel
+      # the rest).
+      if waiting_notice? && topic_concurrency_defer? && !suppress_waiter_cancellation
+        cancel_queued_tasks_for_waiting_notice
+      end
     end
 
     def cancel_queued_tasks_for_waiting_notice
