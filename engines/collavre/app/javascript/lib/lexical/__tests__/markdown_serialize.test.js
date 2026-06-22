@@ -3,6 +3,10 @@ import {
   $getRoot,
   $createParagraphNode,
   $createTextNode,
+  $createLineBreakNode,
+  $isTextNode,
+  $isLineBreakNode,
+  $isElementNode,
   DecoratorNode
 } from "lexical"
 import { HeadingNode, QuoteNode, $createHeadingNode } from "@lexical/rich-text"
@@ -268,7 +272,7 @@ describe("lexicalToMarkdown", () => {
     expect(lexicalToMarkdown(editor)).toBe("intro\n\n## Sec")
   })
 
-  it("renders an empty paragraph as the standard single blank line (no marker)", () => {
+  it("renders an empty paragraph as a single <br> marker (preserves the blank line)", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -278,12 +282,13 @@ describe("lexicalToMarkdown", () => {
       b.append($createTextNode("def"))
       root.append(b)
     })
-    // An empty paragraph between two paragraphs is just the standard Markdown
-    // paragraph separation \u2014 no NBSP, no stray space in the canonical source.
-    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef")
+    // The blank line the user typed is preserved as a semantic <br> marker (not a
+    // stray space, and not collapsed away): standard paragraph separation around
+    // a single <br>. The <br> renders as a visible blank line and round-trips.
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\n<br>\n\ndef")
   })
 
-  it("collapses multiple consecutive blank lines to one standard blank line", () => {
+  it("preserves multiple consecutive blank lines, one <br> per line", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -294,10 +299,28 @@ describe("lexicalToMarkdown", () => {
       b.append($createTextNode("def"))
       root.append(b)
     })
-    // Standard Markdown can't distinguish N consecutive blank lines and renders
-    // them identically, so they normalize to a single blank line (round-trip
-    // stable on the first save).
-    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef")
+    // Two empty paragraphs (two Enters) keep their exact count as two <br>
+    // markers \u2014 the standard-paragraph model collapsed these to one blank line.
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\n<br>\n\n<br>\n\ndef")
+  })
+
+  it("serializes a blank paragraph of N line breaks as N <br> markers", () => {
+    // On reopen the importer groups N consecutive <br> elements into ONE
+    // paragraph holding N LineBreakNodes. Export must emit exactly N markers
+    // (not N+1) or blank lines multiply on every save.
+    const editor = buildEditor((root) => {
+      const a = $createParagraphNode()
+      a.append($createTextNode("abc"))
+      root.append(a)
+      const blanks = $createParagraphNode()
+      blanks.append($createLineBreakNode())
+      blanks.append($createLineBreakNode())
+      root.append(blanks)
+      const b = $createParagraphNode()
+      b.append($createTextNode("def"))
+      root.append(b)
+    })
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\n<br>\n\n<br>\n\ndef")
   })
 
   it("serializes an editor that holds only empty paragraphs as empty Markdown", () => {
@@ -310,7 +333,7 @@ describe("lexicalToMarkdown", () => {
     expect(lexicalToMarkdown(editor)).toBe("")
   })
 
-  it("separates every paragraph with a standard blank line", () => {
+  it("separates plain paragraphs with a blank line and keeps an empty one as <br>", () => {
     const editor = buildEditor((root) => {
       const a = $createParagraphNode()
       a.append($createTextNode("abc"))
@@ -323,7 +346,9 @@ describe("lexicalToMarkdown", () => {
       c.append($createTextNode("ghi"))
       root.append(c)
     })
-    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef\n\nghi")
+    // abc/def are adjacent paragraphs (standard \n\n separation); the empty
+    // paragraph before ghi is a deliberate blank line, kept as a <br>.
+    expect(lexicalToMarkdown(editor)).toBe("abc\n\ndef\n\n<br>\n\nghi")
   })
 })
 
@@ -342,6 +367,13 @@ describe("normalizeMarkdownBlankLines", () => {
     expect(normalizeMarkdownBlankLines("")).toBe("")
     expect(normalizeMarkdownBlankLines("\n")).toBe("")
     expect(normalizeMarkdownBlankLines("\n\n  \n")).toBe("")
+  })
+
+  it("treats a document of only <br> markers as empty (empty-state contract)", () => {
+    // A creative the user filled with nothing but blank lines carries no real
+    // content, so it stays empty (placeholders/presence checks unchanged).
+    expect(normalizeMarkdownBlankLines("<br>")).toBe("")
+    expect(normalizeMarkdownBlankLines("<br>\n\n<br>")).toBe("")
   })
 
   it("trims trailing whitespace", () => {
@@ -380,15 +412,32 @@ function importHtmlThenToMarkdown(html) {
       const doc = new DOMParser().parseFromString(html, "text/html")
       normalizeColoredContainers(doc.body)
       const nodes = $generateNodesFromDOM(editor, doc.body)
-      nodes.forEach((node) => {
-        if (node.getType && node.getType() === "text") {
-          const p = $createParagraphNode()
-          p.append(node)
-          root.append(p)
-        } else {
-          root.append(node)
+      // Mirror InlineLexicalEditor's import grouping: text nodes, line breaks,
+      // and inline elements can't be root children, so consecutive inline leaves
+      // are grouped back into a single paragraph. This is what merges adjacent
+      // <br> markers into ONE blank paragraph holding N LineBreakNodes — the
+      // exact structure the blank-paragraph export rule must round-trip.
+      let pending = null
+      const flush = () => {
+        if (pending) {
+          root.append(pending)
+          pending = null
         }
+      }
+      nodes.forEach((node) => {
+        const isInlineLeaf =
+          $isTextNode(node) ||
+          $isLineBreakNode(node) ||
+          ($isElementNode(node) && node.isInline())
+        if (isInlineLeaf) {
+          if (!pending) pending = $createParagraphNode()
+          pending.append(node)
+          return
+        }
+        flush()
+        root.append(node)
       })
+      flush()
     },
     { discrete: true }
   )
@@ -425,9 +474,27 @@ describe("round-trip: rendered HTML -> Lexical -> Markdown", () => {
       '<p><span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span></p>',
       '<span style="color: rgb(255, 0, 0)">&lt;tag&gt; &amp; x</span>'
     ],
-    // A blank line round-trips as standard paragraph separation: markdown_to_html
-    // renders `abc\n\ndef` as two <p> blocks; re-importing keeps the same form.
-    ["blank line", "<p>abc</p><p>def</p>", "abc\n\ndef"]
+    // Two adjacent paragraphs (no deliberate blank line between them) keep the
+    // standard `\n\n` separation and no <br> marker is introduced.
+    ["two adjacent paragraphs", "<p>abc</p><p>def</p>", "abc\n\ndef"],
+    // A deliberate blank line is a <br>. markdown_to_html renders
+    // `abc\n\n<br>\n\ndef` as <p>abc</p><br><p>def</p>; the importer groups the
+    // <br> into a blank paragraph and re-export emits exactly one <br>.
+    ["single blank line", "<p>abc</p>\n<br>\n<p>def</p>", "abc\n\n<br>\n\ndef"],
+    // Two consecutive <br> markers come back as ONE paragraph of two
+    // LineBreakNodes; the count must be preserved (no multiplication on re-save).
+    [
+      "two blank lines",
+      "<p>abc</p>\n<br>\n<br>\n<p>def</p>",
+      "abc\n\n<br>\n\n<br>\n\ndef"
+    ],
+    // A blank line right after a list no longer bleeds into the last <li>: the
+    // list closes and the <br> + following text serialize as their own blocks.
+    [
+      "blank line after a list",
+      "<ul>\n<li>test</li>\n<li>OK</li>\n</ul>\n<br>\n<p>XXXXXXX</p>",
+      "- test\n- OK\n\n<br>\n\nXXXXXXX"
+    ]
   ]
 
   it.each(cases)("round-trips %s", (_name, html, expected) => {
