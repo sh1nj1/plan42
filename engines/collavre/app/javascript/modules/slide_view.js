@@ -1,6 +1,6 @@
 import { createSubscription } from '../services/cable'
 import { highlightCodeBlocks } from '../lib/utils/markdown'
-import DOMPurify from 'dompurify'
+import { sanitizeDescriptionHtml } from '../lib/utils/sanitize_description'
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', function() {
         contentEl.innerHTML = '';
         var el = document.createElement(tag);
         el.className = 'creative-content';
-        el.innerHTML = DOMPurify.sanitize(data.description);
+        el.innerHTML = sanitizeDescriptionHtml(data.description_embedded_html || data.description);
         contentEl.appendChild(el);
         highlightCodeBlocks(el);
         if (captionEl) {
