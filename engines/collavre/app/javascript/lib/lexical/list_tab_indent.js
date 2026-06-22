@@ -148,7 +148,11 @@ function $convertListItemToParagraph(listItem) {
           const promotedItems = anchor
             .getChildren()
             .filter((child) => !$isNestedListItemWrapper(child)).length
-          anchor.setStart(listItem.getValue() + 1 - promotedItems)
+          // Clamp to 1: when more children are promoted than the removed item's
+          // value frees up (e.g. "1. b" with children b1, b2 → 1 + 1 - 2 = 0),
+          // a 0/negative start would render literally as "0."/"-1.". Falling back
+          // to 1 just renumbers the merged list sequentially from the top.
+          anchor.setStart(Math.max(1, listItem.getValue() + 1 - promotedItems))
         }
         trailingItems.forEach((sibling) => anchor.append(sibling))
       } else {

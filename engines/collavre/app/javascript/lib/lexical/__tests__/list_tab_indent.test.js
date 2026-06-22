@@ -499,6 +499,72 @@ describe("registerListTabIndentation", () => {
     })
   })
 
+  it("Shift+Tab never produces a zero/negative start with multiple promoted children", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        // "1. b" (first item) with two ordered children "b1", "b2" and a sibling "c".
+        const ol = $createListNode("number")
+        const b = $createListItemNode()
+        b.append($createTextNode("b"))
+        const b1 = $createListItemNode()
+        b1.append($createTextNode("b1"))
+        const b2 = $createListItemNode()
+        b2.append($createTextNode("b2"))
+        const c = $createListItemNode()
+        c.append($createTextNode("c"))
+        ol.append(b, b1, b2, c)
+        root.append(ol)
+      },
+      { discrete: true }
+    )
+    // Nest both "b1" and "b2" under "b" via the real machinery.
+    for (const text of ["b1", "b2"]) {
+      editor.update(
+        () => {
+          $getRoot()
+            .getAllTextNodes()
+            .find((n) => n.getTextContent() === text)
+            .selectEnd()
+        },
+        { discrete: true }
+      )
+      editor.dispatchCommand(KEY_TAB_COMMAND, { preventDefault: () => {}, shiftKey: false })
+    }
+    // Caret into top-level "b" and outdent it.
+    editor.update(
+      () => {
+        $getRoot()
+          .getAllTextNodes()
+          .find((n) => n.getTextContent() === "b")
+          .selectEnd()
+      },
+      { discrete: true }
+    )
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      const lists = root.getChildren().filter($isListNode)
+      const trailing = lists[lists.length - 1]
+      // The naive start (b.value + 1 - 2 promoted children = 0) would render "0.".
+      // Clamped to 1 → b1=1, b2=2, c=3 (sequential, all positive).
+      expect(trailing.getStart()).toBeGreaterThanOrEqual(1)
+      const values = trailing
+        .getChildren()
+        .filter((li) => $isListItemNode(li) && !$isListNode(li.getFirstChild()))
+        .map((li) => li.getValue())
+      expect(values).toEqual([1, 2, 3])
+      expect(values.every((v) => v >= 1)).toBe(true)
+    })
+  })
+
   it("ignores Tab outside a list (returns false, no preventDefault)", () => {
     const editor = buildListEditor()
     editor.update(
