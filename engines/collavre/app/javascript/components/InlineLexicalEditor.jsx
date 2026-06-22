@@ -58,6 +58,7 @@ import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
+import { ensureTrailingParagraph, registerTrailingParagraph } from "../lib/lexical/trailing_paragraph"
 import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/markdown_serialize"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
@@ -237,9 +238,22 @@ function InitialContentPlugin({ html }) {
       if (root.getChildrenSize() === 0) {
         root.append($createParagraphNode())
       }
+
+      // A trailing top-level image/video/attachment leaves no caret position
+      // after it, making the document uneditable. Guarantee an editable
+      // paragraph after it. (The RootNode transform below keeps this true while
+      // editing; this handles the initial load deterministically regardless of
+      // plugin effect ordering.)
+      ensureTrailingParagraph(root)
     })
   }, [editor, html])
 
+  return null
+}
+
+function TrailingParagraphPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => registerTrailingParagraph(editor), [editor])
   return null
 }
 
@@ -1015,6 +1029,7 @@ function EditorInner({
             onChange({ html: serialized, markdown })
           }}
         />
+        <TrailingParagraphPlugin />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <ReadyPlugin onReady={onReady} />
