@@ -5,9 +5,14 @@
 import { jest } from '@jest/globals'
 
 const createSubscription = jest.fn()
+const renderStreamMessage = jest.fn()
 
 jest.unstable_mockModule('../../services/cable', () => ({
   createSubscription,
+}))
+
+jest.unstable_mockModule('@hotwired/turbo-rails', () => ({
+  Turbo: { renderStreamMessage },
 }))
 
 const { Application } = await import('@hotwired/stimulus')
@@ -21,6 +26,7 @@ describe('InboxBadgeController', () => {
   beforeEach(() => {
     subscription = { unsubscribe: jest.fn() }
     createSubscription.mockReset()
+    renderStreamMessage.mockReset()
     createSubscription.mockReturnValue(subscription)
 
     container = document.createElement('div')
@@ -40,7 +46,20 @@ describe('InboxBadgeController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(createSubscription).toHaveBeenCalledTimes(1)
-    expect(createSubscription).toHaveBeenCalledWith({ channel: 'Collavre::InboxBadgeChannel' })
+    expect(createSubscription).toHaveBeenCalledWith(
+      { channel: 'Collavre::InboxBadgeChannel' },
+      expect.objectContaining({ received: expect.any(Function) }),
+    )
+  })
+
+  test('renders the transmitted badge snapshot through Turbo on its own subscription', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const [, callbacks] = createSubscription.mock.calls[0]
+    const snapshot = '<turbo-stream action="replace" target="desktop-inbox-badge"></turbo-stream>'
+    callbacks.received(snapshot)
+
+    expect(renderStreamMessage).toHaveBeenCalledWith(snapshot)
   })
 
   test('unsubscribes when the controller disconnects', async () => {

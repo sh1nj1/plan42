@@ -12,11 +12,13 @@ class Collavre::InboxBadgeChannelTest < ActionCable::Channel::TestCase
   end
 
   # Pull-on-subscribe: ActionCable re-runs #subscribed on every WebSocket
-  # (re)connect, so the server must re-push the authoritative inbox badge count
-  # to the user's existing ["inbox", user] Turbo stream. This is what self-heals
-  # a count that was missed while the socket was down (Turbo nav gaps,
-  # sleep/wake, server restart) — the symptom of "badge only appears on refresh".
-  test "subscribing re-broadcasts the current inbox badge count to both targets" do
+  # (re)connect, so the server must re-push the authoritative inbox badge count.
+  # The snapshot is delivered through THIS subscription (transmit) rather than
+  # re-broadcast to the sibling ["inbox", user] Turbo stream, so it can't race
+  # that stream's re-attach on reconnect and get dropped — which would leave the
+  # badge stale ("badge only appears on refresh"). transmit only reaches this
+  # just-confirmed subscriber, so the snapshot can never be sent to no one.
+  test "subscribing transmits the current inbox badge snapshot to its own subscriber" do
     user = users(:one)
     inbox = Collavre::Creative.inbox_for(user)
     inbox.comments.create!(
@@ -28,19 +30,18 @@ class Collavre::InboxBadgeChannelTest < ActionCable::Channel::TestCase
 
     stub_connection current_user: user
 
-    broadcasts = []
-    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*args, **kwargs) {
-      broadcasts << { stream: args.first, target: kwargs[:target], locals: kwargs[:locals] }
-    }) do
+    # Must NOT depend on the sibling Turbo stream: nothing should be broadcast.
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*) { flunk "snapshot must be transmitted, not broadcast to a sibling stream" }) do
       subscribe
     end
 
     assert subscription.confirmed?
 
-    inbox_broadcasts = broadcasts.select { |payload| payload[:stream] == [ "inbox", user ] }
-    assert inbox_broadcasts.any? { |payload| payload[:target] == "desktop-inbox-badge" && payload.dig(:locals, :count) == 1 },
-           "expected desktop inbox badge to be re-broadcast with the unread count on subscribe"
-    assert inbox_broadcasts.any? { |payload| payload[:target] == "mobile-inbox-badge" && payload.dig(:locals, :count) == 1 },
-           "expected mobile inbox badge to be re-broadcast with the unread count on subscribe"
+    html = transmissions.last
+    assert_not_nil html, "expected the channel to transmit a badge snapshot on subscribe"
+    assert_includes html, 'action="replace"'
+    assert_includes html, 'target="desktop-inbox-badge"'
+    assert_includes html, 'target="mobile-inbox-badge"'
+    assert_includes html, 'data-count="1"'
   end
 end

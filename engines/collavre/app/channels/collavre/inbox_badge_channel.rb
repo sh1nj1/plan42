@@ -10,17 +10,21 @@ module Collavre
   #
   # This channel closes that gap with the established pull-on-subscribe pattern:
   # ActionCable re-runs #subscribed on every (re)connect, so we re-push the
-  # authoritative count to the user's existing inbox stream each time. No client
-  # polling, no time window — the server self-heals the count on reconnect.
+  # authoritative count each time. No client polling, no time window — the server
+  # self-heals the count on reconnect.
   class InboxBadgeChannel < ApplicationCable::Channel
     def subscribed
       return reject unless current_user
 
-      # No stream_from: the badge DOM is updated through the user's existing
-      # ["inbox", user] Turbo stream. This channel only needs #subscribed to run
-      # on every (re)connect so it can re-push the authoritative count there.
+      # Deliver the snapshot through THIS subscription (transmit), not by
+      # re-broadcasting to the sibling ["inbox", user] Turbo stream. On reconnect
+      # the two subscriptions re-attach independently, so a broadcast from here
+      # could fire before that stream re-attaches and be dropped — leaving the
+      # badge stale. transmit only reaches this just-confirmed subscriber, so the
+      # snapshot can never be sent while no client is listening.
       inbox = Creative.inbox_for(current_user)
-      Comment.broadcast_inbox_badge(inbox, current_user) if inbox
+      snapshot = Comment.inbox_badge_turbo_stream(inbox, current_user)
+      transmit(snapshot) if snapshot
     end
   end
 end
