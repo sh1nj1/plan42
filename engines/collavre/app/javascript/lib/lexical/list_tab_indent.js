@@ -56,6 +56,12 @@ export function registerListTabIndentation(editor) {
   )
 }
 
+// A list item that exists only to hold a nested list (its first/only child is a
+// ListNode). @lexical/list uses this wrapper to represent indentation.
+function $isNestedListItemWrapper(node) {
+  return $isListItemNode(node) && $isListNode(node.getFirstChild())
+}
+
 function $findListItemAncestor(selection) {
   const anchorNode = selection.anchor.getNode()
   if ($isListItemNode(anchorNode)) return anchorNode
@@ -105,7 +111,21 @@ function $convertListItemToParagraph(listItem) {
     const trailingStart =
       listType === "number" ? listItem.getValue() + 1 : undefined
     const trailingList = $createListNode(listType, trailingStart)
-    trailingList.append(...following)
+    // @lexical/list stores a nested child list as a *wrapper* list item (its only
+    // child is a ListNode) placed right after the parent item. Those wrappers are
+    // the removed item's own children, so promote their contents up one level
+    // rather than re-nesting them under an empty item (which renders as an orphan
+    // <li><ul>…). Only the leading run belongs to the removed item — once a real
+    // item appears, later wrappers belong to it and must stay nested.
+    let promotingChildren = true
+    following.forEach((sibling) => {
+      if (promotingChildren && $isNestedListItemWrapper(sibling)) {
+        trailingList.append(...sibling.getFirstChild().getChildren())
+      } else {
+        promotingChildren = false
+        trailingList.append(sibling)
+      }
+    })
     anchor.insertAfter(trailingList)
   }
 

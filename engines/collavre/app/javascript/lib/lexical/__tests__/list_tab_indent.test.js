@@ -13,6 +13,7 @@ import {
   $createListNode,
   $createListItemNode,
   $isListNode,
+  $isListItemNode,
   registerList
 } from "@lexical/list"
 import { registerListTabIndentation } from "../list_tab_indent"
@@ -245,9 +246,73 @@ describe("registerListTabIndentation", () => {
       expect(paragraph).toBeDefined()
       expect(paragraph.getTextContent()).toBe("a")
       expect(paragraph.getChildren().some($isListNode)).toBe(false)
-      // The nested "a1" content survives somewhere inside a list, not lost.
+      // "a1" was a child of the removed "a", so it must be PROMOTED to a top-level
+      // item of the trailing list — not left as an orphan <li><ul> wrapper.
+      const trailingList = root.getChildren().filter($isListNode).pop()
+      const directItems = trailingList
+        .getChildren()
+        .filter((li) => $isListItemNode(li) && !$isListNode(li.getFirstChild()))
+        .map((li) => li.getTextContent())
+      expect(directItems).toContain("a1")
+      // No orphan nested-list wrapper survives at the trailing list's top level.
+      const hasOrphanWrapper = trailingList
+        .getChildren()
+        .some((li) => $isListItemNode(li) && $isListNode(li.getFirstChild()))
+      expect(hasOrphanWrapper).toBe(false)
+    })
+  })
+
+  it("Shift+Tab promotes only the removed item's children, leaving later items' nesting intact", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const ul = $createListNode("bullet")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const b = $createListItemNode()
+        b.append($createTextNode("b"))
+        const b1 = $createListItemNode()
+        const textB1 = $createTextNode("b1")
+        b1.append(textB1)
+        ul.append(a, b, b1)
+        root.append(ul)
+        textB1.selectEnd()
+      },
+      { discrete: true }
+    )
+
+    // Nest "b1" under "b" via the real machinery.
+    editor.dispatchCommand(KEY_TAB_COMMAND, { preventDefault: () => {}, shiftKey: false })
+
+    // Caret into top-level "a" and outdent it.
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.getFirstChild().getFirstChild().getFirstChild().selectEnd()
+      },
+      { discrete: true }
+    )
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      // "a" has no children, so nothing is promoted; "b1" stays nested under "b".
+      const trailingList = root.getChildren().filter($isListNode).pop()
+      const topTexts = trailingList
+        .getChildren()
+        .filter((li) => $isListItemNode(li) && !$isListNode(li.getFirstChild()))
+        .map((li) => li.getTextContent())
+      expect(topTexts).toContain("b")
+      expect(topTexts).not.toContain("b1")
+      // b1 remains nested (one wrapper holding b1's sublist).
       expect(countNestedLists(root)).toBeGreaterThan(0)
-      expect(root.getTextContent()).toContain("a1")
+      expect(root.getTextContent()).toContain("b1")
     })
   })
 
