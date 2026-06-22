@@ -44,7 +44,15 @@ export function registerListTabIndentation(editor) {
         // because OUTDENT has nothing shallower to move to. Nested item: un-nest one
         // level via OUTDENT, which @lexical/list collapses back into flat structure.
         if ($isTopLevelListItem(listItem)) {
-          $convertListItemToParagraph(listItem)
+          // A selection can span several top-level items; un-list each so multi-item
+          // Shift+Tab matches the range-aware OUTDENT path instead of only dropping
+          // the anchor's item. Collect the items up front (converting one mutates the
+          // tree) and convert in document order — each conversion splits the list and
+          // leaves the next selected item at the head of the trailing list, so the
+          // result is clean sequential paragraphs.
+          $selectedTopLevelListItems(selection, listItem).forEach(
+            $convertListItemToParagraph
+          )
           return true
         }
         return editor.dispatchCommand(OUTDENT_CONTENT_COMMAND, undefined)
@@ -66,6 +74,27 @@ function $findListItemAncestor(selection) {
   const anchorNode = selection.anchor.getNode()
   if ($isListItemNode(anchorNode)) return anchorNode
   return anchorNode.getParents().find($isListItemNode) || null
+}
+
+// The distinct top-level list items the selection touches, in document order.
+// getNodes() returns the range's nodes in document order; we map each to its
+// owning list item and keep only top-level, non-wrapper ones (nested items go
+// through OUTDENT instead). Falls back to the anchor item when the range yields
+// nothing useful (e.g. a collapsed selection on an empty item).
+function $selectedTopLevelListItems(selection, fallbackItem) {
+  const seen = new Set()
+  const items = []
+  selection.getNodes().forEach((node) => {
+    const listItem = $isListItemNode(node)
+      ? node
+      : node.getParents().find($isListItemNode)
+    if (!listItem || seen.has(listItem.getKey())) return
+    if (!$isTopLevelListItem(listItem) || $isNestedListItemWrapper(listItem)) return
+    seen.add(listItem.getKey())
+    items.push(listItem)
+  })
+  if (items.length === 0 && fallbackItem) items.push(fallbackItem)
+  return items
 }
 
 // A list item is "top level" when its parent list is not nested inside another

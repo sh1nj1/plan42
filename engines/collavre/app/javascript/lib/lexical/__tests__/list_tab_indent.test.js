@@ -3,6 +3,8 @@ import {
   $getRoot,
   $createParagraphNode,
   $createTextNode,
+  $createRangeSelection,
+  $setSelection,
   $isParagraphNode,
   KEY_TAB_COMMAND
 } from "lexical"
@@ -198,6 +200,45 @@ describe("registerListTabIndentation", () => {
       )
       // a stays in the first list, b becomes a paragraph, c moves to a trailing list.
       expect(kinds).toEqual(["list[a]", "p[b]", "list[c]"])
+    })
+  })
+
+  it("Shift+Tab un-lists every top-level item the selection spans, not just the anchor", () => {
+    const editor = buildListEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const ul = $createListNode("bullet")
+        const a = $createListItemNode()
+        a.append($createTextNode("a"))
+        const b = $createListItemNode()
+        b.append($createTextNode("b"))
+        const c = $createListItemNode()
+        c.append($createTextNode("c"))
+        ul.append(a, b, c)
+        root.append(ul)
+        // Select from inside "a" through inside "c" (spans all three items).
+        const selection = $createRangeSelection()
+        selection.anchor.set(a.getFirstChild().getKey(), 0, "text")
+        selection.focus.set(c.getFirstChild().getKey(), 1, "text")
+        $setSelection(selection)
+      },
+      { discrete: true }
+    )
+
+    const handled = editor.dispatchCommand(KEY_TAB_COMMAND, {
+      preventDefault: () => {},
+      shiftKey: true
+    })
+    expect(handled).toBe(true)
+
+    editor.read(() => {
+      const root = $getRoot()
+      // All three leave the list: no list node survives, three plain paragraphs in order.
+      expect(root.getChildren().some($isListNode)).toBe(false)
+      const kinds = root.getChildren().map((child) => `p[${child.getTextContent()}]`)
+      expect(kinds).toEqual(["p[a]", "p[b]", "p[c]"])
     })
   })
 
