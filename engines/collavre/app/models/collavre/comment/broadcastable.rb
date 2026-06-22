@@ -115,7 +115,7 @@ module Collavre
         def broadcast_inbox_badge(inbox_creative, owner, count: nil)
           return unless inbox_creative && owner
 
-          count ||= Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+          count ||= inbox_badge_count(inbox_creative, owner)
 
           INBOX_BADGE_TARGETS.each do |target_id|
             Turbo::StreamsChannel.broadcast_replace_to(
@@ -135,7 +135,7 @@ module Collavre
         def inbox_badge_turbo_stream(inbox_creative, owner, count: nil)
           return unless inbox_creative && owner
 
-          count ||= Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+          count ||= inbox_badge_count(inbox_creative, owner)
 
           INBOX_BADGE_TARGETS.map do |target_id|
             Turbo::StreamsChannel.turbo_stream_action_tag(
@@ -151,6 +151,17 @@ module Collavre
         end
 
         private
+
+        # Inbox badge count when no caller-supplied count is available (e.g. the
+        # reconnect snapshot in InboxBadgeChannel). Mirrors broadcast_badge's
+        # suppression: a user actively viewing the inbox (present in
+        # CommentPresenceStore) sees 0, so a reconnect can't repaint unread items
+        # over the suppressed badge.
+        def inbox_badge_count(inbox_creative, owner)
+          return 0 if CommentPresenceStore.list(inbox_creative.id).include?(owner.id)
+
+          Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+        end
 
         def inbox_badge_locals(count, target_id)
           { count: count, badge_id: target_id, show_zero: false }
