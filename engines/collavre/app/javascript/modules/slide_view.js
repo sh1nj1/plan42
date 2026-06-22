@@ -1,5 +1,6 @@
 import { createSubscription } from '../services/cable'
 import { highlightCodeBlocks } from '../lib/utils/markdown'
+import { addTableDownloadButtons } from '../lib/utils/table_download'
 import { sanitizeDescriptionHtml } from '../lib/utils/sanitize_description'
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -68,6 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
         el.innerHTML = sanitizeDescriptionHtml(data.description_embedded_html || data.description);
         contentEl.appendChild(el);
         highlightCodeBlocks(el);
+        addTableDownloadButtons(el);
         if (captionEl) {
           captionEl.textContent = data.prompt || '';
         }

@@ -1,0 +1,83 @@
+/*
+ * Shared markdown table styling + CSV/Excel download toolbar.
+ *
+ * Single source of truth so chat-message tables (.comment-content) and creative
+ * description tables (.creative-content / .creative-title-content) render
+ * identically and both expose the same top-right download buttons. The download
+ * toolbar markup is produced by lib/utils/table_download.js.
+ *
+ * Load this wherever either context renders: the creatives index, the slide
+ * layout, and any page that shows the comments popup.
+ */
+
+/* Table styling */
+.comment-content table,
+.creative-content table,
+.creative-title-content table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.85em;
+    margin: 0;
+}
+
+.comment-content table th,
+.comment-content table td,
+.creative-content table th,
+.creative-content table td,
+.creative-title-content table th,
+.creative-title-content table td {
+    border: 1px solid var(--color-border);
+    padding: 0.3em 0.6em;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.comment-content table th,
+.creative-content table th,
+.creative-title-content table th {
+    background: var(--color-section-bg);
+    font-weight: 600;
+}
+
+.comment-content table tr:hover td,
+.creative-content table tr:hover td,
+.creative-title-content table tr:hover td {
+    background: color-mix(in srgb, var(--color-section-bg) 40%, transparent);
+}
+
+/* Table download wrapper */
+.table-download-wrapper {
+    position: relative;
+    overflow-x: auto;
+    margin: 0.4em 0;
+}
+
+.table-download-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.3em;
+    padding: 0.15em 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.table-download-wrapper:hover .table-download-toolbar {
+    opacity: 1;
+}
+
+.table-download-btn {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    color: var(--color-muted);
+    font-size: 0.75em;
+    padding: 0.15em 0.5em;
+    cursor: pointer;
+    line-height: 1.4;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.table-download-btn:hover {
+    color: var(--color-active);
+    border-color: var(--color-active);
+}
