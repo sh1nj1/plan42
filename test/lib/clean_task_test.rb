@@ -6,8 +6,8 @@ require "rake"
 # `rake clean` is a development convenience that resets regenerable local
 # artifacts (most importantly clobbering public/assets so a stale Propshaft
 # .manifest.json can't force the Static resolver into MissingAssetError).
-# It must refuse to run in production, where public/assets is the real
-# precompiled output.
+# It must refuse to run outside development/test (production AND desktop, which
+# inherits production.rb), where public/assets is the real precompiled output.
 class CleanTaskTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("clean")
@@ -18,9 +18,14 @@ class CleanTaskTest < ActiveSupport::TestCase
     assert Rake::Task.task_defined?("clean")
   end
 
-  test "refuses to run in production" do
-    Rails.stub(:env, ActiveSupport::StringInquirer.new("production")) do
-      assert_raises(SystemExit) { Rake::Task["clean"].invoke }
+  # desktop inherits production.rb and ships real precompiled assets, so the
+  # guard whitelists dev/test rather than only blocking production.
+  test "refuses to run outside development/test (production, desktop)" do
+    %w[production desktop].each do |env|
+      Rake::Task["clean"].reenable
+      Rails.stub(:env, ActiveSupport::StringInquirer.new(env)) do
+        assert_raises(SystemExit, "expected clean to abort in #{env}") { Rake::Task["clean"].invoke }
+      end
     end
   end
 

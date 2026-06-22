@@ -11,7 +11,10 @@
 # gitignored, regenerable output, so this is always safe in development.
 desc "Reset local dev artifacts: clobber public/assets (Propshaft manifest included), clear tmp and log"
 task clean: :environment do
-  if Rails.env.production?
+  # Whitelist safe envs, not just `unless production?`: the `desktop` env
+  # inherits production.rb and ships real precompiled assets, so clobbering
+  # public/assets there would be destructive too.
+  unless Rails.env.development? || Rails.env.test?
     abort "rake clean is development-only; refusing to run in #{Rails.env}"
   end
 
