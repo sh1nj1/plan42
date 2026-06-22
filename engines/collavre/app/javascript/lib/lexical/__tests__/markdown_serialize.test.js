@@ -406,6 +406,24 @@ describe("normalizeMarkdownBlankLines", () => {
     )
   })
 
+  it("only isolates a <br> that is the whole blank-line marker line", () => {
+    // A blank-line marker is always emitted alone on its line (see
+    // BLANK_PARAGRAPH_TRANSFORMER). A <br> embedded inside a line of other
+    // content is an in-paragraph hard break / raw HTML, NOT a marker, so the
+    // normalizer must leave it (and its surroundings) untouched — injecting
+    // blank lines around it would rewrite user-authored HTML on save.
+    expect(normalizeMarkdownBlankLines("<span>foo<br>bar</span>")).toBe(
+      "<span>foo<br>bar</span>"
+    )
+    expect(normalizeMarkdownBlankLines("a<br>b")).toBe("a<br>b")
+    expect(normalizeMarkdownBlankLines("foo <br> bar")).toBe("foo <br> bar")
+    // A standalone marker line embedded next to inline-<br> text: only the
+    // whole-line marker is isolated; the inline one is preserved verbatim.
+    expect(normalizeMarkdownBlankLines("a<br>b\n<br>\nc<br>d")).toBe(
+      "a<br>b\n\n<br>\n\nc<br>d"
+    )
+  })
+
   it("migrates legacy NBSP blank-line markers to <br> on save", () => {
     // Pre-<br> content stored blank lines as a line of only U+00A0. Reopening
     // and saving must clean it to a real <br> marker so CommonMark stops

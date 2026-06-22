@@ -272,7 +272,12 @@ export function normalizeMarkdownBlankLines(markdown) {
     // paragraph to its neighbours with a single `\n`, while a reopened (grouped)
     // blank paragraph gets `\n\n`; canonicalizing here makes the very first save
     // byte-identical to the reopen fixpoint regardless of which path produced it.
-    .replace(/\n*(<br>)\n*/g, "\n\n$1\n\n")
+    // BLANK_PARAGRAPH_TRANSFORMER always emits a marker alone on its line, so we
+    // only match a `<br>` that is the WHOLE line (anchored ^…$ under /m). A
+    // `<br>` embedded in other content (an in-paragraph hard break or raw inline
+    // HTML such as `<span>foo<br>bar</span>`) is not a marker and is left
+    // untouched — isolating it would rewrite user HTML on save.
+    .replace(/\n*^[ \t]*<br>[ \t]*$\n*/gm, "\n\n<br>\n\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/^\n+/, "")
     .replace(/\s+$/, "")
