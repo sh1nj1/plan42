@@ -44,6 +44,15 @@ module Collavre
     has_many :creatives, class_name: "Collavre::Creative", dependent: nil
     before_destroy :destroy_creatives_leaf_first
 
+    # /compress and /merge summaries are durable recovery artifacts: they replace
+    # the deleted original conversation and anchor the restore control (rendered
+    # from the surviving result comment via CommentSnapshot). Detach them (nullify
+    # author) BEFORE the comments dependent: :destroy cascade — prepend ensures we
+    # run first — so deleting the authoring agent/user doesn't destroy the summary
+    # and orphan the snapshot, which would erase the only path to restore the
+    # compressed conversation.
+    before_destroy :preserve_durable_summary_comments, prepend: true
+
     belongs_to :creator, class_name: "Collavre::User", foreign_key: "created_by_id", optional: true
     has_many :created_ai_users, class_name: "Collavre::User", foreign_key: "created_by_id", dependent: :destroy
 
@@ -292,6 +301,14 @@ module Collavre
       unless user_themes.exists?(id: theme)
         errors.add(:theme, "is invalid")
       end
+    end
+
+    # Keep durable compress/merge summaries (snapshot result comments) alive when
+    # their author is deleted: nullify authorship instead of cascading destroy.
+    def preserve_durable_summary_comments
+      Collavre::Comment
+        .where(id: Collavre::CommentSnapshot.where(result_comment_id: comments.select(:id)).select(:result_comment_id))
+        .update_all(user_id: nil)
     end
 
     # Destroy creatives deepest-first so closure_tree always finds its parent
