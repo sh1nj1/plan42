@@ -1,3 +1,8 @@
+## v0.2.8 (2026-06-23)
+
+### Changes
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+
 ## v0.2.7 (2026-06-04)
 
 ### Changes

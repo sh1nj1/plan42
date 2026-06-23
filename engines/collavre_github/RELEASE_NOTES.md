@@ -1,3 +1,9 @@
+## v0.6.1 (2026-06-23)
+
+### Changes
+- 36c3f897 feat: typo correction (Phase 0 backend + Phase 1 chat composer) (#1317)
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+
 ## v0.6.0 (2026-06-04)
 
 ### Changes

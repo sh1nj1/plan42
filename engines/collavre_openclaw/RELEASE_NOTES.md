@@ -1,3 +1,10 @@
+## v0.6.4 (2026-06-23)
+
+### Changes
+- 36c3f897 feat: typo correction (Phase 0 backend + Phase 1 chat composer) (#1317)
+- a688ff6b build(deps): bump rack-session in /engines/collavre_openclaw (#1269)
+- da1f34db build(deps): bump erb in /engines/collavre_openclaw (#1268)
+
 ## v0.6.3 (2026-06-10)
 
 ### Changes
