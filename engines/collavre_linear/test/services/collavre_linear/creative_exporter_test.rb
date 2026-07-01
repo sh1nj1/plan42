@@ -62,12 +62,17 @@ module CollavreLinear
         team_id:           "team-exp"
       )
 
-      # Child creative is the one we actually export.
-      @child_creative = Collavre::Creative.create!(
+      # Child creative is the one we actually export. Suppress the auto-sync
+      # observer during construction: these tests drive the exporter directly
+      # and don't want the inline OutboundSyncJob firing (and hitting the
+      # network) at commit time.
+      @child_creative = Collavre::Creative.new(
         description: "<p>Child</p>",
         user: @user,
         parent: @root_creative
       )
+      @child_creative.skip_linear_sync = true
+      @child_creative.save!
 
       @fake_client = FakeClient.new
     end
@@ -149,6 +154,8 @@ module CollavreLinear
         sync_state:      :synced
       )
 
+      before = Time.current
+
       CollavreLinear::Client.stub(:new, @fake_client) do
         CollavreLinear::CreativeExporter.new(@child_creative).sync!
       end
@@ -159,6 +166,12 @@ module CollavreLinear
       existing_link.reload
       assert_not_equal "old-hash-that-will-not-match", existing_link.content_hash
       assert_equal 1, existing_link.local_version
+
+      # EchoGuard must stamp last_outbound_at on the update path, same as create.
+      assert_not_nil existing_link.last_outbound_at,
+        "EchoGuard must stamp last_outbound_at after update"
+      assert existing_link.last_outbound_at >= before,
+        "last_outbound_at must be at or after the sync! call"
     end
 
     # ---------------------------------------------------------------------------

@@ -88,5 +88,16 @@ module CollavreLinear
         end
       end
     end
+
+    initializer "collavre_linear.creative_sync_observer", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        creative_class = Collavre::Creative rescue nil
+        next unless creative_class
+
+        unless creative_class.include?(CollavreLinear::CreativeSyncObserver)
+          creative_class.include CollavreLinear::CreativeSyncObserver
+        end
+      end
+    end
   end
 end
