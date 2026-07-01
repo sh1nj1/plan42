@@ -93,7 +93,7 @@ Handled by the pure (no-I/O) `FieldMapper`. Native fields use **Last-Writer-Wins
 | `labels` | `creative.data["linear"]["labels"]` | ↔ | from `labels.nodes` inbound |
 | `assignee` | `creative.data["linear"]["assignee"]` | ↔ | stored under `data["linear"]` |
 | — (Creative `progress`) | — | **not synced** | `FieldMapper` never reads or writes `progress` |
-| comments | `Collavre::Comment` ↔ `CommentLink` | ↔ | inbound comments created with `skip_dispatch: true` |
+| comments | `Collavre::Comment` ↔ `CommentLink` | inbound | Linear → Collavre only (see Known limitations). Inbound comments created with `skip_dispatch: true` |
 | issue archive/remove | `creative.data["linear"]["archived"] = true` | inbound | **no destroy, no reparent of children** (decision B6) |
 
 ## Conflict policy
@@ -124,6 +124,15 @@ Two guards keep the loop echo-free:
 3. **Secondary** — `EchoGuard.record_outbound(link)` stamps `last_outbound_at`
    after each outbound push (timestamp-window guard for the brief period before
    `app_actor_id` is populated).
+
+## Known limitations
+
+- **Comment sync is inbound-only (Linear → Collavre).** Issues sync
+  bidirectionally, but comments do not: inbound Linear comments are applied to
+  Collavre via `InboundApplier#apply_comment!`, while new **local** Collavre
+  comments are **not** pushed out to Linear. `Client#create_comment` exists but
+  is not yet wired to any local-comment create path. Outbound local-comment sync
+  is a planned follow-up.
 
 ## Tests
 
