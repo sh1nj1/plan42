@@ -9,7 +9,7 @@ module CollavreLinear
       before_action :set_creative
       before_action :set_origin
       before_action :ensure_read_permission
-      before_action :ensure_admin_permission, only: %i[create destroy resync options]
+      before_action :ensure_admin_permission, only: %i[create destroy resync regenerate_secret options]
 
       # POST /linear/creatives/:creative_id/integration
       #
@@ -168,6 +168,32 @@ module CollavreLinear
         enqueue_subtree_sync
 
         render json: { success: true, message: I18n.t("collavre_linear.integration.resync_started") }
+      end
+
+      # POST /linear/creatives/:creative_id/integration/regenerate_secret
+      #
+      # Roll the team's shared webhook signing secret. The webhook is registered
+      # by hand (the OAuth grant has no admin scope to auto-provision), so this
+      # only rotates the stored secret — the reloaded modal shows the new value
+      # for the user to re-paste into Linear's webhook config.
+      def regenerate_secret
+        account = Current.user.linear_account
+        unless account
+          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        link = @origin.linear_project_links.find_by(account: account)
+        unless link
+          render json: { error: I18n.t("collavre_linear.errors.not_found") },
+                 status: :not_found
+          return
+        end
+
+        link.rotate_webhook_secret!
+
+        render json: { success: true }
       end
 
       # GET /linear/creatives/:creative_id/integration/options

@@ -76,6 +76,19 @@
                 <strong>Issue, Project, Comment</strong>
               </li>
             </ol>
+
+            <%# Roll the signing secret (e.g. if it leaked). Rotates the stored
+                secret; the reloaded modal shows the new value to re-paste into
+                Linear's webhook config. %>
+            <%= form_with url: main_app.respond_to?(:linear_creative_integration_regenerate_secret_path) ?
+                               main_app.linear_creative_integration_regenerate_secret_path(creative_id: creative_id) :
+                               "/linear/creatives/#{creative_id}/integration/regenerate_secret",
+                          method: :post, local: false,
+                          data: { confirm: t("collavre_linear.integration.regenerate_secret_confirm") },
+                          html: { style: "margin-top:0.5em;" } do |f| %>
+              <%= f.submit t("collavre_linear.integration.regenerate_secret_button"),
+                           class: "btn btn-secondary btn-sm" %>
+            <% end %>
           </details>
         <% end %>
 

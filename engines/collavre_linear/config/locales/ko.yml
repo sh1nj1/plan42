@@ -34,6 +34,8 @@ ko:
       webhook_guide_url_label: "URL 을 다음으로 설정합니다:"
       webhook_guide_secret_label: "서명 시크릿(signing secret)을 다음으로 설정합니다:"
       webhook_guide_events_label: "다음 이벤트를 구독합니다:"
+      regenerate_secret_button: "시크릿 재생성"
+      regenerate_secret_confirm: "새 서명 시크릿을 생성할까요? Linear 웹훅 설정에서 시크릿을 갱신해야 합니다."
       request_failed: "Linear 요청에 실패했습니다. 다시 시도해 주세요."
       conflict_notice: "⚠️ Linear 동기화 충돌: 이 항목이 로컬과 Linear 양쪽에서 수정되었습니다. 로컬 변경을 덮어쓰지 않기 위해 원격 변경은 적용되지 않았습니다. 수동으로 해결한 후 다시 동기화해 주세요."
     errors:

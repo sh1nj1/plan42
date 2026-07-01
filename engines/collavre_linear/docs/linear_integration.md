@@ -64,11 +64,15 @@ Defined in `env.template` / `.kamal/secrets` / `config/deploy.yml`:
 |---|---|
 | `LINEAR_CLIENT_ID` | OAuth application client id |
 | `LINEAR_CLIENT_SECRET` | OAuth application client secret |
-| `LINEAR_WEBHOOK_SECRET` | Fallback HMAC secret used to verify inbound webhooks when no per-`ProjectLink` secret matches |
 | `LINEAR_OAUTH_REDIRECT_URI` | OAuth callback URL (`https://<host>/linear/auth/callback`) |
 
-When `Collavre::IntegrationSettings::Resolver` defines `linear_webhook_secret` /
-`linear_api_endpoint`, those take precedence over the ENV values.
+When `Collavre::IntegrationSettings::Resolver` defines `linear_api_endpoint`,
+that takes precedence over the ENV value.
+
+The webhook signing secret is **not** an env/admin setting: it is generated per
+`ProjectLink` when a Creative is linked (shared across a team's links) and can be
+rolled from the modal's **Regenerate secret** button. Inbound deliveries verify
+only against that stored secret — there is no fallback.
 
 ### 3. Webhook (manual, one-time)
 
@@ -78,8 +82,8 @@ one-time setup guide. A Linear workspace admin creates the webhook by hand:
 
 1. Open **linear.app/settings/api → Webhooks → New webhook**.
 2. **URL**: `https://<host>/linear/webhook`.
-3. **Signing secret**: the per-`ProjectLink` secret shown in the modal (inbound
-   verification also falls back to `LINEAR_WEBHOOK_SECRET`).
+3. **Signing secret**: the per-`ProjectLink` secret shown in the modal (the only
+   secret inbound verification accepts; use **Regenerate secret** to roll it).
 4. **Events**: `Issue`, `Project`, `Comment` (`WebhookProvisioner::RESOURCE_TYPES`).
 
 Webhook mechanics:

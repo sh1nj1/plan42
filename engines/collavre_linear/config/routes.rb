@@ -13,6 +13,8 @@ CollavreLinear::Engine.routes.draw do
   resources :creatives, only: [] do
     resource :integration, module: :creatives, only: [ :create, :destroy ] do
       post :resync, on: :member
+      # Roll the team's shared webhook signing secret (re-paste into Linear).
+      post :regenerate_secret, on: :member
       # Teams/projects for the link picker (populated as dropdowns in the modal).
       get :options, on: :member
     end

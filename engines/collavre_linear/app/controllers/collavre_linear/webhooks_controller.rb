@@ -22,7 +22,7 @@ module CollavreLinear
       payload  = JSON.parse(raw_body)
 
       link    = find_project_link(payload)
-      secret  = resolve_webhook_secret(link)
+      secret  = link&.webhook_secret
 
       return head :unauthorized unless valid_signature?(raw_body, secret)
       return head :unauthorized unless fresh_timestamp?(payload)
@@ -43,8 +43,9 @@ module CollavreLinear
     private
 
     # Match the payload's team/project to a ProjectLink so we can use its
-    # per-link webhook secret and account. Falls back to nil (ENV secret +
-    # single-account fallback) when nothing matches.
+    # per-link webhook secret and account. Returns nil when nothing matches —
+    # the secret then resolves to nil and the delivery is rejected (401). There
+    # is no ENV/admin fallback: the secret lives only on the ProjectLink.
     def find_project_link(payload)
       team_id = extract_team_id(payload)
       project_id = extract_project_id(payload)
@@ -61,8 +62,8 @@ module CollavreLinear
 
       # Comment deliveries carry no team/project fields — they reference the
       # parent issue instead. Resolve via the linked issue so verification uses
-      # that project's per-link secret rather than falling back to the ENV secret
-      # (which the manual single-webhook setup never configures → 401).
+      # that project's per-link secret; without this the delivery matches no
+      # link and is rejected (401).
       if (issue_id = extract_issue_id(payload)).present?
         issue_link = CollavreLinear::IssueLink.find_by(linear_issue_id: issue_id)
         return issue_link.project_link if issue_link
@@ -88,22 +89,6 @@ module CollavreLinear
 
     def resolve_account(link)
       link&.account || CollavreLinear::Account.first
-    end
-
-    def resolve_webhook_secret(link)
-      link&.webhook_secret.presence || fallback_webhook_secret
-    end
-
-    def fallback_webhook_secret
-      resolved =
-        if defined?(Collavre::IntegrationSettings::Resolver)
-          begin
-            Collavre::IntegrationSettings::Resolver.get(:linear_webhook_secret).presence
-          rescue Collavre::IntegrationSettings::Resolver::UnknownKeyError
-            nil
-          end
-        end
-      resolved || ENV["LINEAR_WEBHOOK_SECRET"]
     end
 
     def valid_signature?(raw_body, secret)

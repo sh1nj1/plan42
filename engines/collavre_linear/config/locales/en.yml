@@ -34,6 +34,8 @@ en:
       webhook_guide_url_label: "Set the URL to:"
       webhook_guide_secret_label: "Set the signing secret to:"
       webhook_guide_events_label: "Subscribe to these events:"
+      regenerate_secret_button: "Regenerate secret"
+      regenerate_secret_confirm: "Generate a new signing secret? You'll need to update it in Linear's webhook settings."
       request_failed: "Linear request failed. Please try again."
       conflict_notice: "⚠️ Linear sync conflict: this item was edited both locally and in Linear. The remote change was NOT applied to avoid overwriting local edits. Resolve manually and re-sync."
     errors:

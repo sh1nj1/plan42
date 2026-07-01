@@ -145,20 +145,22 @@ module CollavreLinear
     end
 
     # -------------------------------------------------------------------------
-    # Fallback secret via ENV when no ProjectLink matches
+    # No fallback secret: unmatched deliveries are rejected, never verified
+    # against ENV / admin settings (the secret lives only on the ProjectLink).
     # -------------------------------------------------------------------------
 
-    test "falls back to ENV secret when no ProjectLink team matches" do
+    test "rejects (401) when no ProjectLink matches, even if a would-be ENV secret is set" do
       ENV["LINEAR_WEBHOOK_SECRET"] = "env-fallback-secret"
-      # A payload whose team does not match any ProjectLink; must verify against ENV.
+      # A payload whose team matches no ProjectLink. With the fallback removed,
+      # there is no secret to verify against → 401, regardless of ENV.
       payload = build_payload(data: { id: "iss-x", teamId: "unmatched-team" })
       sig = sign(payload, "env-fallback-secret")
 
-      assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+      assert_no_enqueued_jobs do
         post_webhook(payload, sig)
       end
 
-      assert_response :ok
+      assert_response :unauthorized
     ensure
       ENV.delete("LINEAR_WEBHOOK_SECRET")
     end

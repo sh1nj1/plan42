@@ -77,7 +77,6 @@ env:
     - PUBLIC_ASSETS_HOST
     - LINEAR_CLIENT_ID
     - LINEAR_CLIENT_SECRET
-    - LINEAR_WEBHOOK_SECRET
     - LINEAR_OAUTH_REDIRECT_URI
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.

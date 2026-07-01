@@ -541,6 +541,62 @@ module CollavreLinear
       end
 
       # -------------------------------------------------------------------------
+      # POST /linear/creatives/:creative_id/integration/regenerate_secret
+      # -------------------------------------------------------------------------
+
+      test "regenerate_secret rolls the project link's webhook signing secret" do
+        sign_in_as(@user)
+
+        link = CollavreLinear::ProjectLink.create!(
+          creative: @creative,
+          account: @account,
+          linear_project_id: "proj-regen-1",
+          team_id: "team-regen-1"
+        )
+        old_secret = link.webhook_secret
+
+        post "/linear/creatives/#{@creative.id}/integration/regenerate_secret", as: :json
+
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert body["success"]
+        assert_not_equal old_secret, link.reload.webhook_secret
+      end
+
+      test "regenerate_secret returns not_found when no link exists" do
+        sign_in_as(@user)
+
+        post "/linear/creatives/#{@creative.id}/integration/regenerate_secret", as: :json
+
+        assert_response :not_found
+      end
+
+      test "regenerate_secret returns forbidden for non-admin user" do
+        other = Collavre.user_class.create!(
+          email: "linear-nonadmin-regen-#{SecureRandom.hex(4)}@example.com",
+          name: "Non Admin Regen",
+          password: TEST_PASSWORD,
+          password_confirmation: TEST_PASSWORD,
+          timezone: "UTC"
+        )
+        @creative.creative_shares.create!(
+          user: other,
+          permission: :read
+        )
+        CollavreLinear::Account.create!(
+          user: other,
+          linear_uid: "uid-nonadmin-regen-#{SecureRandom.hex(4)}",
+          access_token: "tok-nonadmin-regen"
+        )
+
+        sign_in_as(other)
+
+        post "/linear/creatives/#{@creative.id}/integration/regenerate_secret", as: :json
+
+        assert_response :forbidden
+      end
+
+      # -------------------------------------------------------------------------
       # GET /linear/creatives/:creative_id/integration/options (link picker)
       # -------------------------------------------------------------------------
 

@@ -26,6 +26,22 @@ module CollavreLinear
 
     scope :auto_syncable, -> { where(sync_state: %i[synced dirty]) }
 
+    # Roll the team's shared HMAC secret and return the new value. Linear signs
+    # every delivery for a team with the one secret its webhook was registered
+    # with, so all sibling ProjectLinks must roll together or a sibling 401s.
+    # The webhook is set up by hand (no admin scope to auto-provision), so this
+    # only rotates the stored secret — the user re-pastes it into Linear's
+    # webhook config. update_column applies encryption (a raw write would leak
+    # plaintext); assign self last so its in-memory attribute reflects the roll.
+    def rotate_webhook_secret!
+      new_secret = SecureRandom.hex(20)
+      self.class.where(team_id: team_id).where.not(id: id).find_each do |sibling|
+        sibling.update_column(:webhook_secret, new_secret)
+      end
+      update_column(:webhook_secret, new_secret)
+      new_secret
+    end
+
     private
 
     # Linear signs every delivery for a team with ONE secret, and the manual

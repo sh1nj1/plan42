@@ -153,6 +153,38 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
       "the manual single team webhook needs all links to verify with the same secret"
   end
 
+  test "rotate_webhook_secret! rolls the secret for the link and every team sibling" do
+    first = CollavreLinear::ProjectLink.create!(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "proj-rot-a",
+      team_id: "team-rot"
+    )
+    c2 = Collavre::Creative.create!(description: "<p>c2</p>", user: @user)
+    sibling = CollavreLinear::ProjectLink.create!(
+      creative: c2,
+      account: @account,
+      linear_project_id: "proj-rot-b",
+      team_id: "team-rot"
+    )
+    old_secret = first.webhook_secret
+    assert_equal old_secret, sibling.webhook_secret
+
+    new_secret = first.rotate_webhook_secret!
+
+    assert_not_equal old_secret, new_secret
+    assert_match(/\A[0-9a-f]{40}\z/, new_secret)
+    assert_equal new_secret, first.webhook_secret
+    assert_equal new_secret, sibling.reload.webhook_secret,
+      "the team shares one secret Linear signs with — siblings must roll together or 401"
+
+    # update_column must still apply encryption; a raw write would leak plaintext.
+    raw = ActiveRecord::Base.connection.select_value(
+      "SELECT webhook_secret FROM linear_project_links WHERE id = #{first.id}"
+    )
+    assert_not_equal new_secret, raw, "the rolled secret must remain encrypted at rest"
+  end
+
   test "belongs to creative and account" do
     link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
