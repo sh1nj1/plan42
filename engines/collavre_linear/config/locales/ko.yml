@@ -1,0 +1,5 @@
+ko:
+  collavre_linear:
+    integration:
+      label: "Linear"
+      description: "프로젝트, 이슈, 댓글 양방향 동기화"

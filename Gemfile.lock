@@ -15,6 +15,13 @@ PATH
       rails (>= 8.0)
 
 PATH
+  remote: engines/collavre_linear
+  specs:
+    collavre_linear (0.1.0)
+      collavre
+      rails (>= 8.0)
+
+PATH
   remote: engines/collavre_notion
   specs:
     collavre_notion (0.1.4)
@@ -716,6 +723,7 @@ DEPENDENCIES
   collavre!
   collavre_completion_api!
   collavre_github!
+  collavre_linear!
   collavre_notion!
   collavre_openclaw!
   collavre_plan!

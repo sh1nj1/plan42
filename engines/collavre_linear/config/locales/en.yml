@@ -1,0 +1,5 @@
+en:
+  collavre_linear:
+    integration:
+      label: "Linear"
+      description: "Two-way sync of projects, issues and comments"
