@@ -368,13 +368,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
   end
 
   create_table "linear_comment_links", force: :cascade do |t|
-    t.bigint "comment_id", null: false
+    t.integer "comment_id", null: false
     t.datetime "created_at", null: false
     t.integer "issue_link_id", null: false
     t.string "linear_comment_id", null: false
     t.datetime "remote_updated_at"
     t.datetime "updated_at", null: false
-    t.index ["comment_id"], name: "index_linear_comment_links_on_comment_id"
+    t.index ["comment_id"], name: "index_linear_comment_links_on_comment_id", unique: true
     t.index ["issue_link_id"], name: "index_linear_comment_links_on_issue_link_id"
     t.index ["linear_comment_id"], name: "index_linear_comment_links_on_linear_comment_id_unique", unique: true
   end
@@ -391,8 +391,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
     t.datetime "remote_updated_at"
     t.integer "sync_state", default: 0, null: false
     t.datetime "updated_at", null: false
-    t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id"
-    t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id_unique", unique: true
+    t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id", unique: true
     t.index ["linear_issue_id"], name: "index_linear_issue_links_on_linear_issue_id_unique", unique: true
     t.index ["project_link_id"], name: "index_linear_issue_links_on_project_link_id"
   end

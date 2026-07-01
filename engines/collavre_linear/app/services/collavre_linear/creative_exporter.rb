@@ -166,7 +166,12 @@ module CollavreLinear
         linear_issue_id: linear_issue_id,
         parent_issue_id: parent_id,
         content_hash:    hash,
-        remote_updated_at: Time.current,
+        # Baseline the sync clock on LINEAR's updatedAt (not Time.current): the
+        # inbound applier compares this against a webhook's Linear-clock
+        # updatedAt, so an app-clock baseline would misclassify a genuine remote
+        # edit as a stale echo and drop it. Fall back to app clock only if Linear
+        # omits it. (Mirrors the comment jobs.)
+        remote_updated_at: response[:updatedAt] || Time.current,
         local_version:   1,
         sync_state:      :synced
       )
@@ -182,7 +187,7 @@ module CollavreLinear
       # left unlinked. Any other validation error must still surface.
       raise if e.is_a?(ActiveRecord::RecordInvalid) && !duplicate_issue_link_error?(e)
 
-      reconcile_self_echo!(linear_issue_id, project_link, hash, parent_id)
+      reconcile_self_echo!(linear_issue_id, project_link, hash, parent_id, response[:updatedAt])
     end
 
     # True when the RecordInvalid is exactly the IssueLink linear_issue_id
@@ -193,7 +198,7 @@ module CollavreLinear
         record.errors.of_kind?(:linear_issue_id, :taken)
     end
 
-    def reconcile_self_echo!(linear_issue_id, project_link, hash, parent_id)
+    def reconcile_self_echo!(linear_issue_id, project_link, hash, parent_id, remote_updated_at = nil)
       existing = CollavreLinear::IssueLink.find_by(linear_issue_id: linear_issue_id)
       return existing unless existing
 
@@ -204,7 +209,7 @@ module CollavreLinear
           project_link:      project_link,
           parent_issue_id:   parent_id,
           content_hash:      hash,
-          remote_updated_at: Time.current,
+          remote_updated_at: remote_updated_at || Time.current,
           local_version:     1,
           sync_state:        :synced
         )
@@ -264,7 +269,10 @@ module CollavreLinear
         issue_link.update!(
           content_hash:      hash,
           parent_issue_id:   parent_id,
-          remote_updated_at: Time.current,
+          # Baseline on Linear's updatedAt so inbound staleness is compared
+          # Linear-clock vs Linear-clock (see create_issue!). Preserve the prior
+          # baseline if Linear omits it rather than resetting to app clock.
+          remote_updated_at: response[:updatedAt] || issue_link.remote_updated_at,
           local_version:     issue_link.local_version + 1,
           sync_state:        :synced
         )

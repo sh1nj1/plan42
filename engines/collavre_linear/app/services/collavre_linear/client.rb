@@ -28,6 +28,7 @@ module CollavreLinear
           issue {
             id
             identifier
+            updatedAt
           }
         }
       }
@@ -42,6 +43,7 @@ module CollavreLinear
           issue {
             id
             identifier
+            updatedAt
           }
         }
       }

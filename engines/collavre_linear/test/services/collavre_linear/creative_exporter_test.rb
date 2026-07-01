@@ -130,6 +130,52 @@ module CollavreLinear
       assert_equal 1,            link.local_version
     end
 
+    # Regression: the sync baseline (remote_updated_at) must be stamped from
+    # LINEAR's returned updatedAt, not the app clock. The inbound applier compares
+    # this baseline against a webhook's Linear-clock updatedAt to decide
+    # conflict-vs-stale; an app-clock baseline (Time.current) can exceed a genuine
+    # remote edit's Linear updatedAt (clock skew + round-trip latency) and drop it
+    # as a "stale echo" — a silent lost update. Use a fixed, unmistakably-non-now
+    # timestamp so a Time.current regression fails loudly.
+    test "sync! baselines remote_updated_at on Linear's updatedAt after create" do
+      link_root_issue!
+      linear_ts = "2020-01-02T03:04:05Z"
+      fake = FakeClient.new(
+        create_response: { id: "iss-new", identifier: "ENG-1", updatedAt: linear_ts }
+      )
+
+      CollavreLinear::Client.stub(:new, fake) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      link = CollavreLinear::IssueLink.find_by(creative_id: @child_creative.id)
+      assert_equal Time.zone.parse(linear_ts), link.remote_updated_at,
+        "baseline must be Linear's updatedAt (Linear clock), not Time.current"
+    end
+
+    test "sync! baselines remote_updated_at on Linear's updatedAt after update" do
+      link_root_issue!
+      existing_link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-existing",
+        content_hash:    "old-hash-that-will-not-match",
+        sync_state:      :synced
+      )
+      linear_ts = "2020-06-07T08:09:10Z"
+      fake = FakeClient.new(
+        update_response: { id: "iss-existing", identifier: "ENG-2", updatedAt: linear_ts }
+      )
+
+      CollavreLinear::Client.stub(:new, fake) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      existing_link.reload
+      assert_equal Time.zone.parse(linear_ts), existing_link.remote_updated_at,
+        "update must re-baseline on Linear's updatedAt (Linear clock), not Time.current"
+    end
+
     test "sync! resolves project_link from ancestor when creative has no direct link" do
       # @child_creative has no ProjectLink; only @root_creative does.
       # Give the root its Linear issue first so the child does not defer on the
