@@ -241,7 +241,7 @@ module CollavreLinear
 
     # -- Step 4: conflict ------------------------------------------------------
 
-    test "dirty link + newer remote => conflict, system comment posted, fields unchanged" do
+    test "dirty link + newer remote => conflict, comment posted in Main topic, fields unchanged" do
       creative, link = linked_child(linear_issue_id: "iss-conf")
       link.update!(sync_state: :dirty, remote_updated_at: 2.hours.ago)
       original_description = creative.reload.description
@@ -265,6 +265,68 @@ module CollavreLinear
       assert_equal "conflict", link.reload.sync_state.to_s
       assert_equal original_description, creative.reload.description,
         "on conflict the field apply must be skipped (no data loss)"
+
+      # Fix 1: conflict comment must land in the Main topic, not System.
+      conflict_comment = creative.comments.order(created_at: :desc).first
+      main_topic = creative.main_topic(fallback_user: @user)
+      assert_equal main_topic.id, conflict_comment.topic_id,
+        "conflict comment must be posted to the Main topic, not a System topic"
+    end
+
+    # -- Fix 2: TOCTOU — duplicate inbound create is idempotent ------------------
+
+    test "applying the same Issue create twice yields exactly one Creative and one IssueLink" do
+      payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-dup",
+          "title"     => "Duplicate create test",
+          "priority"  => 0,
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      assert_nothing_raised do
+        CollavreLinear::InboundApplier.new(payload).apply!
+        # Simulate a concurrent webhook: apply the same payload a second time.
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+
+      assert_equal 1, CollavreLinear::IssueLink.where(linear_issue_id: "iss-dup").count,
+        "duplicate inbound create must not create a second IssueLink"
+      dup_link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-dup")
+      assert_not_nil dup_link
+      assert_equal 1,
+        Collavre::Creative.where(id: dup_link.creative_id).count,
+        "duplicate inbound create must not create a second Creative"
+    end
+
+    # -- Fix 3: nil remote_updated_at must NOT produce a false conflict ----------
+
+    test "dirty link with nil remote_updated_at allows inbound apply (no spurious conflict)" do
+      creative, link = linked_child(linear_issue_id: "iss-nilbase")
+      # Simulate a freshly-dirty link with no remote baseline.
+      link.update!(sync_state: :dirty, remote_updated_at: nil)
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-nilbase",
+          "title"     => "Should apply",
+          "priority"  => 2,
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "title" => "x" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_not_equal "conflict", link.reload.sync_state.to_s,
+        "dirty link with nil remote_updated_at must not be treated as a conflict"
+      assert_includes creative.reload.description, "Should apply",
+        "inbound apply must proceed when remote_updated_at baseline is nil"
     end
 
     test "dirty link but remote NOT newer => no conflict, applies normally" do

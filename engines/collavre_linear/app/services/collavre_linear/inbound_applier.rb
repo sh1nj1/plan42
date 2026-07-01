@@ -91,6 +91,10 @@ module CollavreLinear
         remote_updated_at: remote_updated_at,
         sync_state:        :synced
       )
+    rescue ActiveRecord::RecordNotUnique
+      # TOCTOU: a concurrent webhook already created the IssueLink for this
+      # linear_issue_id. Treat as already-applied (no second Creative created).
+      nil
     end
 
     def update_issue!
@@ -219,7 +223,9 @@ module CollavreLinear
       remote = remote_updated_at
       return false unless remote
 
-      local = link.remote_updated_at || link.updated_at
+      # When remote_updated_at is nil there is no baseline to compare against —
+      # we cannot determine that the remote is newer, so we allow the apply.
+      local = link.remote_updated_at
       return false unless local
 
       remote > local
@@ -234,7 +240,7 @@ module CollavreLinear
       creative.comments.create!(
         content:       conflict_message,
         user:          actor_user,
-        topic:         creative.system_topic(fallback_user: actor_user),
+        topic:         creative.main_topic(fallback_user: actor_user),
         skip_dispatch: true
       )
     rescue StandardError => e
