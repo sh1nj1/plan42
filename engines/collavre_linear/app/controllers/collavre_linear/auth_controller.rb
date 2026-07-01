@@ -79,14 +79,17 @@ module CollavreLinear
     end
 
     # POST /linear/auth/store_creative
-    # Persist creative_id and generate a CSRF state token in the session,
-    # then return the Linear authorize URL so the client can redirect.
+    # Persist creative_id and generate a CSRF state token in the session, then
+    # redirect the popup window straight to Linear's OAuth screen. The form
+    # POSTs into a popup with no JS handler, so returning JSON here would just
+    # render raw JSON in the popup and never start OAuth — a 303 redirect makes
+    # the popup follow through to Linear.
     def store_creative
       session[:linear_creative_id] = params[:creative_id]
       state = SecureRandom.hex(24)
       session[:linear_oauth_state] = state
       authorize_url = OAuthTokenService.authorize_url(state: state, creative_id: params[:creative_id])
-      render json: { url: authorize_url }
+      redirect_to authorize_url, allow_other_host: true, status: :see_other
     end
 
     private

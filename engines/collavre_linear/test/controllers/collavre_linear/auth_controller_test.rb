@@ -70,9 +70,9 @@ module CollavreLinear
     # Helper: drive through store_creative so session state is set, return state value.
     def initiate_oauth(creative_id: nil)
       params = creative_id ? { creative_id: creative_id } : { creative_id: "" }
-      post "/linear/auth/store_creative", params: params, as: :json
-      assert_response :ok
-      JSON.parse(response.body)["url"].then { |url| URI.decode_www_form(URI.parse(url).query).to_h["state"] }
+      post "/linear/auth/store_creative", params: params
+      assert_response :see_other
+      URI.decode_www_form(URI.parse(response.location).query).to_h["state"]
     end
 
     test "callback creates account with app_actor_id" do
@@ -175,16 +175,13 @@ module CollavreLinear
     # -------------------------------------------------------------------------
     # POST /linear/auth/store_creative
     # -------------------------------------------------------------------------
-    test "store_creative sets session key and returns authorize url" do
+    test "store_creative sets session key and redirects to authorize url" do
       sign_in_as(@user)
       post "/linear/auth/store_creative",
-           params: { creative_id: @creative.id },
-           as: :json
-      assert_response :ok
-      body = JSON.parse(response.body)
-      assert body["url"].present?, "Expected url in response"
-      assert_includes body["url"], "linear.app/oauth/authorize"
-      assert_includes body["url"], "state="
+           params: { creative_id: @creative.id }
+      assert_response :see_other
+      assert_includes response.location, "linear.app/oauth/authorize"
+      assert_includes response.location, "state="
     end
 
     test "store_creative requires authentication" do
