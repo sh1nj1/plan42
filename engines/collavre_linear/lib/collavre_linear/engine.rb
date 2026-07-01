@@ -107,5 +107,16 @@ module CollavreLinear
         end
       end
     end
+
+    initializer "collavre_linear.comment_sync_observer", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        comment_class = Collavre::Comment rescue nil
+        next unless comment_class
+
+        unless comment_class.include?(CollavreLinear::CommentSyncObserver)
+          comment_class.include CollavreLinear::CommentSyncObserver
+        end
+      end
+    end
   end
 end

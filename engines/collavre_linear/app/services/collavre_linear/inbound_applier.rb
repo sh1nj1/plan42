@@ -277,11 +277,15 @@ module CollavreLinear
     # collision, so no orphan (unlinked) duplicate comment is left behind.
     def create_mirrored_comment!(issue_link, linear_comment_id, body)
       Collavre::Comment.transaction do
-        comment = issue_link.creative.comments.create!(
+        comment = issue_link.creative.comments.new(
           content:       body,
           user:          comment_actor_user(issue_link),
           skip_dispatch: true
         )
+        # Suppress the outbound echo: this comment came FROM Linear, so the
+        # CommentSyncObserver must not post it straight back as a new comment.
+        comment.skip_linear_sync = true
+        comment.save!
         CommentLink.create!(
           comment_id:        comment.id,
           linear_comment_id: linear_comment_id,

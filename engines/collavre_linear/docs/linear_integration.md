@@ -108,7 +108,7 @@ Handled by the pure (no-I/O) `FieldMapper`. Native fields use **Last-Writer-Wins
 | `labels` | `creative.data["linear"]["labels"]` | ↔ | from `labels.nodes` inbound |
 | `assignee` | `creative.data["linear"]["assignee"]` | inbound | Linear → Collavre only; `FieldMapper` does not send `assignee_id` outbound (needs cross-system user-identity mapping — follow-up) |
 | — (Creative `progress`) | — | **not synced** | `FieldMapper` never reads or writes `progress` |
-| comments | `Collavre::Comment` ↔ `CommentLink` | inbound | Linear → Collavre only (see Known limitations). Inbound comments created with `skip_dispatch: true` |
+| comments | `Collavre::Comment` ↔ `CommentLink` | ↔ | Outbound: a human, non-private, non-placeholder Main-topic comment on a linked creative is pushed via `CommentSyncObserver` → `OutboundCommentSyncJob` → `Client#create_comment`. Inbound comments created with `skip_dispatch: true`. See Known limitations for what outbound omits |
 | issue archive/remove | `creative.data["linear"]["archived"] = true` | inbound | **no destroy, no reparent of children** (decision B6) |
 
 ## Conflict policy
@@ -142,12 +142,20 @@ Two guards keep the loop echo-free:
 
 ## Known limitations
 
-- **Comment sync is inbound-only (Linear → Collavre).** Issues sync
-  bidirectionally, but comments do not: inbound Linear comments are applied to
-  Collavre via `InboundApplier#apply_comment!`, while new **local** Collavre
-  comments are **not** pushed out to Linear. `Client#create_comment` exists but
-  is not yet wired to any local-comment create path. Outbound local-comment sync
-  is a planned follow-up.
+- **Outbound comment sync covers new human Main-topic chat only.** A local
+  comment is pushed to Linear (`CommentSyncObserver` → `OutboundCommentSyncJob`)
+  only when it is a **create** in the creative's **Main topic**, posted by a
+  **human** (`user.ai_user?` excluded), **non-private**, and not the streaming
+  `"..."` placeholder, on a creative that already has an `IssueLink`. Deliberate
+  omissions, each a planned follow-up:
+  - **Edits/deletes are not propagated.** Only `after_create_commit` is hooked;
+    editing or deleting a local comment does not update/remove the Linear comment.
+  - **AI agent turns are not synced.** An agent comment is created as a `"..."`
+    placeholder and mutated in place as tokens stream, so an after-create hook
+    would post `"..."` and never settle; a token-settled hook is the follow-up.
+  - **Non-Main topics are not synced.** A Linear issue has one flat comment list,
+    so only the Main topic mirrors out to avoid cross-posting every side thread.
+  - A comment posted **before** the creative is linked is not back-filled.
 
 - **Pure sibling drag/drop reorders do not push to Linear.** Priority maps to
   `Creative#sequence`, but `Collavre::Creatives::Reorderer#resequence!` persists
