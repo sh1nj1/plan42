@@ -146,6 +146,41 @@ module CollavreLinear
       assert_equal @project_link, link.project_link
     end
 
+    test "sync! reconciles a self-echo race: adopts the inbound link and removes the duplicate" do
+      link_root_issue!
+
+      # Simulate the inbound webhook echo of our own issueCreate racing ahead of
+      # our IssueLink insert: a duplicate Creative under the project root already
+      # holds the IssueLink for the id create_issue will return ("iss-new").
+      duplicate = Collavre::Creative.new(
+        description: "<p>echo dup</p>",
+        user: @user,
+        parent: @root_creative
+      )
+      duplicate.skip_linear_sync = true
+      duplicate.save!
+      CollavreLinear::IssueLink.create!(
+        creative:        duplicate,
+        project_link:    @project_link,
+        linear_issue_id: "iss-new",
+        sync_state:      :synced
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      # Exactly one IssueLink for the id, now pointing at our original creative.
+      links = CollavreLinear::IssueLink.where(linear_issue_id: "iss-new")
+      assert_equal 1, links.size, "the duplicate IssueLink must be reconciled to one"
+      assert_equal @child_creative.id, links.first.creative_id,
+        "the surviving link must point at our original creative, not the echo duplicate"
+      # The inbound duplicate creative is removed (and its removal must NOT archive
+      # the Linear issue we just created — the link was moved off it first).
+      assert_nil Collavre::Creative.find_by(id: duplicate.id),
+        "the echo duplicate creative must be removed"
+    end
+
     test "sync! is a no-op when no ProjectLink exists on self or ancestors" do
       orphan = Collavre::Creative.create!(description: "<p>Orphan</p>", user: @user)
 

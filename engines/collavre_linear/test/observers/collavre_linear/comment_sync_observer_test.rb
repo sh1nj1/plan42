@@ -150,6 +150,32 @@ module CollavreLinear
       end
     end
 
+    test "editing a mirrored comment to private removes its Linear mirror instead of updating it" do
+      comment = synced_comment
+      link = CollavreLinear::CommentLink.find_by(comment_id: comment.id)
+
+      comment.update!(content: "now secret", private: true)
+
+      assert_equal 0, enqueued_jobs.count { |j| j[:job] == CollavreLinear::OutboundCommentUpdateJob },
+        "must not push a now-private comment body out to Linear"
+      delete_jobs = enqueued_jobs.select { |j| j[:job] == CollavreLinear::OutboundCommentDeleteJob }
+      assert_equal 1, delete_jobs.size, "turning private must remove the Linear mirror"
+      assert_equal [ link.id ], delete_jobs.first[:args]
+    end
+
+    test "moving a mirrored comment out of the Main topic removes its Linear mirror" do
+      comment = synced_comment
+      link = CollavreLinear::CommentLink.find_by(comment_id: comment.id)
+      side_topic = @creative.topics.create!(name: "Side", user: @user)
+
+      comment.update!(topic: side_topic)
+
+      assert_equal 0, enqueued_jobs.count { |j| j[:job] == CollavreLinear::OutboundCommentUpdateJob }
+      delete_jobs = enqueued_jobs.select { |j| j[:job] == CollavreLinear::OutboundCommentDeleteJob }
+      assert_equal 1, delete_jobs.size, "moving out of Main must remove the Linear mirror"
+      assert_equal [ link.id ], delete_jobs.first[:args]
+    end
+
     # -- outbound delete -------------------------------------------------------
 
     test "deleting a synced comment enqueues OutboundCommentDeleteJob once" do

@@ -173,6 +173,53 @@ module CollavreLinear
 
       EchoGuard.record_outbound(issue_link, linear_issue_id)
       issue_link
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      # Self-echo race: the inbound webhook for the issue we JUST created can land
+      # in the window between create_issue and IssueLink.create! (app_actor_id is
+      # nil, so EchoGuard can't drop it), creating a duplicate Creative that grabs
+      # the IssueLink first. Adopt that link onto our original creative and remove
+      # the duplicate so the issue isn't double-represented and our creative isn't
+      # left unlinked. Any other validation error must still surface.
+      raise if e.is_a?(ActiveRecord::RecordInvalid) && !duplicate_issue_link_error?(e)
+
+      reconcile_self_echo!(linear_issue_id, project_link, hash, parent_id)
+    end
+
+    # True when the RecordInvalid is exactly the IssueLink linear_issue_id
+    # uniqueness collision (the self-echo race), not some other invalid record.
+    def duplicate_issue_link_error?(error)
+      record = error.record
+      record.is_a?(CollavreLinear::IssueLink) &&
+        record.errors.of_kind?(:linear_issue_id, :taken)
+    end
+
+    def reconcile_self_echo!(linear_issue_id, project_link, hash, parent_id)
+      existing = CollavreLinear::IssueLink.find_by(linear_issue_id: linear_issue_id)
+      return existing unless existing
+
+      duplicate = existing.creative
+      CollavreLinear::IssueLink.transaction do
+        existing.update!(
+          creative:          @creative,
+          project_link:      project_link,
+          parent_issue_id:   parent_id,
+          content_hash:      hash,
+          remote_updated_at: Time.current,
+          local_version:     1,
+          sync_state:        :synced
+        )
+
+        # Remove the echo duplicate. The link was reassigned above, so this must
+        # NOT archive the Linear issue we just created — skip_linear_sync guards
+        # the destroy observer, and the creative now holds no IssueLink anyway.
+        if duplicate && duplicate.id != @creative.id
+          duplicate.skip_linear_sync = true
+          duplicate.destroy!
+        end
+      end
+
+      EchoGuard.record_outbound(existing, linear_issue_id)
+      existing
     end
 
     def update_issue!(client, issue_link, attrs, hash, parent_id)

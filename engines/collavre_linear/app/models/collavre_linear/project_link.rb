@@ -11,6 +11,10 @@ module CollavreLinear
     # cascade so link.destroy! does not 500 once issues have synced.
     has_many :issue_links, class_name: "CollavreLinear::IssueLink", dependent: :destroy
 
+    # The HMAC secret Linear signs webhook deliveries with — encrypted at rest so
+    # a DB/backup leak can't be used to forge webhooks (mirrors Account tokens).
+    encrypts :webhook_secret, deterministic: false
+
     enum :sync_state, { synced: 0, dirty: 1, syncing: 2, conflict: 3 }, prefix: false
 
     validates :linear_project_id, presence: true
@@ -33,11 +37,18 @@ module CollavreLinear
     def ensure_webhook_secret
       return if webhook_secret.present?
 
-      self.webhook_secret =
-        (team_id.present? &&
-          self.class.where(team_id: team_id).where.not(id: id)
-              .where.not(webhook_secret: [ nil, "" ]).pick(:webhook_secret)) ||
-        SecureRandom.hex(20)
+      self.webhook_secret = adopt_team_webhook_secret || SecureRandom.hex(20)
+    end
+
+    # webhook_secret is encrypted (non-deterministic), so a raw column pick would
+    # return ciphertext and re-encrypting it double-wraps the value → HMAC mismatch.
+    # Load sibling ProjectLinks for the team and read the DECRYPTED attribute; any
+    # sibling secret is valid since a team shares one.
+    def adopt_team_webhook_secret
+      return nil if team_id.blank?
+
+      self.class.where(team_id: team_id).where.not(id: id)
+          .filter_map(&:webhook_secret).find(&:present?)
     end
   end
 end

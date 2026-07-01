@@ -115,6 +115,39 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::RecordNotUnique) { dup.save!(validate: false) }
   end
 
+  test "webhook_secret is stored encrypted at rest" do
+    link = CollavreLinear::ProjectLink.create!(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "proj-enc",
+      team_id: "team-enc"
+    )
+    raw = ActiveRecord::Base.connection.select_value(
+      "SELECT webhook_secret FROM linear_project_links WHERE id = #{link.id}"
+    )
+    assert link.webhook_secret.present?
+    assert_not_equal link.webhook_secret, raw,
+      "the HMAC signing secret must not be persisted in plaintext"
+  end
+
+  test "sibling ProjectLinks for a team share one secret even when encrypted" do
+    first = CollavreLinear::ProjectLink.create!(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "proj-share-a",
+      team_id: "team-share"
+    )
+    c2 = Collavre::Creative.create!(description: "<p>c2</p>", user: @user)
+    second = CollavreLinear::ProjectLink.create!(
+      creative: c2,
+      account: @account,
+      linear_project_id: "proj-share-b",
+      team_id: "team-share"
+    )
+    assert_equal first.webhook_secret, second.webhook_secret,
+      "the manual single team webhook needs all links to verify with the same secret"
+  end
+
   test "belongs to creative and account" do
     link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
