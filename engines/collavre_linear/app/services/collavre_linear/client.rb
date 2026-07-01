@@ -95,6 +95,15 @@ module CollavreLinear
       }
     GQL
 
+    # Archive (soft-delete) a Linear issue by id.
+    ISSUE_ARCHIVE = <<~GQL.freeze
+      mutation IssueArchive($id: String!) {
+        issueArchive(id: $id) {
+          success
+        }
+      }
+    GQL
+
     # viewer query + applicationWithAuthorization for OAuth app actor
     VIEWER = <<~GQL.freeze
       query ViewerAndAppActor {
@@ -166,6 +175,14 @@ module CollavreLinear
       data  = post!(PROJECT_UPDATE, { id: id, input: input })
       node  = data.dig("projectUpdate", "project")
       symbolize(node)
+    end
+
+    # Archive a Linear issue (soft-delete).
+    # @param id [String] Linear issue UUID
+    # @return [Boolean] success
+    def archive_issue(id)
+      data = post!(ISSUE_ARCHIVE, { id: id })
+      data.dig("issueArchive", "success") == true
     end
 
     # Create a comment on a Linear issue.

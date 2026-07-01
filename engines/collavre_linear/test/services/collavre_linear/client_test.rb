@@ -220,6 +220,30 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
+    # archive_issue
+    # ---------------------------------------------------------------------------
+    test "archive_issue posts issueArchive mutation and returns true on success" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
+        .to_return(
+          status: 200,
+          body: {
+            data: { issueArchive: { success: true } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      result = @client.archive_issue("iss-to-archive")
+
+      assert_equal true, result
+      assert_requested :post, LINEAR_ENDPOINT, body: /issueArchive/, times: 1
+      assert_requested :post, LINEAR_ENDPOINT do |req|
+        body = JSON.parse(req.body)
+        body["variables"]["id"] == "iss-to-archive"
+      end
+    end
+
+    # ---------------------------------------------------------------------------
     # Error handling
     # ---------------------------------------------------------------------------
     test "raises Client::Error when response contains GraphQL errors" do

@@ -92,18 +92,88 @@ module CollavreLinear
     end
 
     # -------------------------------------------------------------------------
-    # Destroy path
+    # Fix 1 — mark IssueLink dirty on update when link already exists
     # -------------------------------------------------------------------------
 
-    test "destroying a linked Creative enqueues OutboundSyncJob" do
+    test "updating a linked creative that already has an IssueLink marks it dirty and still enqueues" do
       child = Collavre::Creative.create!(
         description: "<p>Child</p>",
         user: @user,
         parent: @root_creative
       )
 
+      # Create a pre-existing IssueLink (simulates a creative already synced to Linear).
+      issue_link = CollavreLinear::IssueLink.create!(
+        creative:        child,
+        project_link:    @project_link,
+        linear_issue_id: "iss-pre-existing-#{SecureRandom.hex(4)}",
+        content_hash:    "abc123",
+        sync_state:      :synced
+      )
+
+      assert_equal "synced", issue_link.sync_state
+
       assert_enqueued_jobs 1, only: CollavreLinear::OutboundSyncJob do
+        child.update!(description: "<p>Child edited</p>")
+      end
+
+      assert_equal "dirty", issue_link.reload.sync_state,
+        "IssueLink must be marked dirty before OutboundSyncJob is enqueued"
+    end
+
+    # -------------------------------------------------------------------------
+    # Destroy path
+    # -------------------------------------------------------------------------
+
+    test "destroying a linked Creative with an IssueLink enqueues OutboundArchiveJob with linear_issue_id and account_id" do
+      child = Collavre::Creative.create!(
+        description: "<p>Child</p>",
+        user: @user,
+        parent: @root_creative
+      )
+
+      issue_link = CollavreLinear::IssueLink.create!(
+        creative:        child,
+        project_link:    @project_link,
+        linear_issue_id: "iss-archive-#{SecureRandom.hex(4)}",
+        content_hash:    "abc",
+        sync_state:      :synced
+      )
+
+      expected_issue_id  = issue_link.linear_issue_id
+      expected_account_id = @account.id
+
+      assert_enqueued_jobs 1, only: CollavreLinear::OutboundArchiveJob do
         child.destroy!
+      end
+
+      assert_enqueued_with(
+        job:  CollavreLinear::OutboundArchiveJob,
+        args: [expected_issue_id, expected_account_id]
+      )
+    end
+
+    test "destroying a linked Creative with NO IssueLink enqueues nothing" do
+      child = Collavre::Creative.create!(
+        description: "<p>No link</p>",
+        user: @user,
+        parent: @root_creative
+      )
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundArchiveJob do
+        assert_no_enqueued_jobs only: CollavreLinear::OutboundSyncJob do
+          child.destroy!
+        end
+      end
+    end
+
+    test "destroying an unlinked Creative enqueues nothing" do
+      orphan = Collavre::Creative.create!(description: "<p>Orphan</p>", user: @user)
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundArchiveJob do
+        assert_no_enqueued_jobs only: CollavreLinear::OutboundSyncJob do
+          orphan.destroy!
+        end
       end
     end
 
