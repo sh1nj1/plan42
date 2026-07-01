@@ -140,7 +140,15 @@ module CollavreLinear
       link = IssueLink.find_by(linear_issue_id: @data["id"])
       return unless link
 
-      link.with_lock do
+      # Lock order MUST match the outbound path: OutboundSyncJob locks the
+      # Creative row, then CreativeExporter#update_issue! locks the IssueLink.
+      # Taking them in the opposite order (link then creative) lets a concurrent
+      # inbound apply and outbound sync for the same creative deadlock on
+      # PostgreSQL, and this job has no deadlock retry. Lock Creative, then link.
+      creative = link.creative
+      creative.with_lock do
+        link.lock!
+
         # Already conflicted: halt until a human resolves (mirrors the outbound
         # exporter's `return if issue_link.conflict?`). conflict?(link) below only
         # trips for :dirty links, so without this a later remote update would
@@ -159,7 +167,6 @@ module CollavreLinear
           return
         end
 
-        creative = link.creative
         attrs    = FieldMapper.issue_to_creative_attrs(@data)
         changed  = changed_keys
 
@@ -205,10 +212,12 @@ module CollavreLinear
     # link last recorded. Returns the parent_issue_id that should be persisted on
     # the link (the new one when moved, the unchanged one otherwise).
     #
-    # Guard: only reparent to a parent that is itself a linked issue in this
-    # install. An unknown/unlinked parentId is left untouched (we do not move the
-    # Creative to a bogus node). Clearing parentId (moved to project root) moves
-    # the Creative under the ProjectLink root Creative, mirroring create.
+    # Guard: only move the Creative under a parent that is itself a linked issue.
+    # For a not-yet-linked parent (its create webhook hasn't arrived) we still
+    # record the new parent_issue_id so reparent_pending_children! can move the
+    # Creative once the parent is created — we just don't move it to a bogus node
+    # now. Clearing parentId (moved to project root) moves the Creative under the
+    # ProjectLink root Creative, mirroring create.
     def apply_parent_change!(creative, link)
       # Only act when the payload actually reports a parent change. When
       # updatedFrom is present but omits parentId, the parent did not change.
@@ -219,8 +228,19 @@ module CollavreLinear
       return link.parent_issue_id if new_parent_issue_id == link.parent_issue_id
 
       new_parent = resolve_reparent_target(new_parent_issue_id)
-      # Unknown/unlinked parent: leave the tree and the link untouched.
-      return link.parent_issue_id unless new_parent
+      unless new_parent
+        # The move targets a real Linear parent whose `create` webhook hasn't
+        # been applied yet (out-of-order delivery). Record the NEW parent_issue_id
+        # WITHOUT moving the tree: reparent_pending_children! keys on
+        # parent_issue_id, so once the parent Creative is created it finds and
+        # moves this child. Returning the OLD id would strand it under the old
+        # parent forever (the create repair could never match it). A cleared
+        # parentId (moved to project root) always resolves, so this only covers a
+        # still-unknown, non-blank parent.
+        return new_parent_issue_id if new_parent_issue_id.present?
+
+        return link.parent_issue_id
+      end
       return link.parent_issue_id if new_parent.id == creative.parent_id
 
       creative.parent = new_parent
@@ -245,8 +265,10 @@ module CollavreLinear
       link = IssueLink.find_by(linear_issue_id: @data["id"])
       return unless link
 
-      link.with_lock do
-        creative = link.creative
+      # Same lock order as update_issue! / the outbound path: Creative then link.
+      creative = link.creative
+      creative.with_lock do
+        link.lock!
         data = (creative.data || {}).deep_dup
         data["linear"] ||= {}
         data["linear"]["archived"] = true

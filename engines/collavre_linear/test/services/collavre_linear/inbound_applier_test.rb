@@ -214,7 +214,7 @@ module CollavreLinear
       assert_equal expected, child_link.content_hash
     end
 
-    test "update to an unlinked parentId does NOT reparent to a bogus node" do
+    test "update to a not-yet-linked parentId records the new id but does not move to a bogus node" do
       parent_a, _link_a = linked_child(linear_issue_id: "iss-p-a")
 
       child = Collavre::Creative.new(
@@ -237,7 +237,7 @@ module CollavreLinear
         "data"   => {
           "id"        => "iss-c",
           "title"     => "Child",
-          "parentId"  => "iss-not-linked-here",
+          "parentId"  => "iss-parent-later",
           "updatedAt" => Time.current.iso8601
         },
         "updatedFrom" => { "parentId" => "iss-p-a" }
@@ -248,8 +248,59 @@ module CollavreLinear
       child.reload
       child_link.reload
       assert_equal parent_a.id, child.parent_id,
-        "creative must not move when the new Linear parent is not a linked issue"
-      assert_equal "iss-p-a", child_link.parent_issue_id
+        "creative must not move when the new Linear parent isn't linked locally yet"
+      # The NEW parent_issue_id must be recorded so reparent_pending_children! can
+      # move the child once the parent's create webhook arrives. Recording the OLD
+      # id (the previous buggy behavior) would strand the child forever.
+      assert_equal "iss-parent-later", child_link.parent_issue_id,
+        "the new parent_issue_id must be recorded for later repair"
+    end
+
+    test "a move under a not-yet-created parent is repaired when the parent create arrives" do
+      parent_a, _link_a = linked_child(linear_issue_id: "iss-move-a")
+
+      child = Collavre::Creative.new(
+        description: "<p>Child</p>", user: @user, parent: parent_a
+      )
+      child.skip_linear_sync = true
+      child.save!
+      CollavreLinear::IssueLink.create!(
+        creative:          child,
+        project_link:      @project_link,
+        linear_issue_id:   "iss-move-child",
+        parent_issue_id:   "iss-move-a",
+        remote_updated_at: 1.hour.ago,
+        sync_state:        :synced
+      )
+
+      # 1) The move update arrives BEFORE the new parent's create webhook.
+      CollavreLinear::InboundApplier.new(
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-move-child",
+          "title"     => "Child",
+          "parentId"  => "iss-move-new-parent",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "parentId" => "iss-move-a" }
+      ).apply!
+
+      # 2) The new parent's create webhook lands and must repair the hierarchy.
+      CollavreLinear::InboundApplier.new(
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-move-new-parent",
+          "title"     => "New Parent",
+          "projectId" => "proj-inb",
+          "updatedAt" => Time.current.iso8601
+        }
+      ).apply!
+
+      new_parent = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-move-new-parent").creative
+      assert_equal new_parent.id, child.reload.parent_id,
+        "child must be reparented under the new parent once its create lands"
     end
 
     test "inbound reparent does not enqueue an outbound sync (echo suppressed)" do

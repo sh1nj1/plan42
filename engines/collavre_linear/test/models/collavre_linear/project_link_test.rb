@@ -120,6 +120,28 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::RecordNotUnique) { dup.save!(validate: false) }
   end
 
+  test "creative_id is globally unique — one Collavre root links at most one project" do
+    CollavreLinear::ProjectLink.create!(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "root-proj-a",
+      team_id: "team-root"
+    )
+    # The SAME root linking a SECOND, different Linear project must be rejected at
+    # the DB layer, not only by the controller's check-then-save origin_conflict
+    # guard: two concurrent link requests for one root to different projects could
+    # both pass that check, and resolve_project_link (find_by creative_id) would
+    # then sync against whichever ProjectLink the DB returns.
+    dup = CollavreLinear::ProjectLink.new(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "root-proj-b",
+      team_id: "team-root",
+      webhook_secret: "explicit-secret"
+    )
+    assert_raises(ActiveRecord::RecordNotUnique) { dup.save!(validate: false) }
+  end
+
   test "webhook_secret is stored encrypted at rest" do
     link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
