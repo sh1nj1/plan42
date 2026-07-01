@@ -1,0 +1,298 @@
+# frozen_string_literal: true
+
+module CollavreLinear
+  # Task 10 — applies a verified inbound Linear webhook payload to local Collavre
+  # state (Creatives, IssueLinks, CommentLinks).
+  #
+  # `payload` is a PARSED HASH with string keys, exactly as InboundApplyJob hands
+  # it over (never a JSON string). Shape (Linear webhook envelope):
+  #
+  #   {
+  #     "action"      => "create" | "update" | "remove",
+  #     "type"        => "Issue" | "Comment" | ...,
+  #     "data"        => { ...entity fields... },
+  #     "updatedFrom" => { ...changed fields (update only)... },
+  #     "webhookTimestamp" => <ms epoch>
+  #   }
+  #
+  # Loop guard: every Creative mutated here gets `skip_linear_sync = true` set
+  # BEFORE save, so the CreativeSyncObserver's after_commit does NOT bounce the
+  # change straight back out to Linear (echo prevention, Task 8).
+  #
+  # Sequence writes: FieldMapper only COMPUTES the sequence integer. We assign it
+  # through the closure_tree-managed model (`creative.sequence = value; save!`),
+  # never `update_column`/`update_all`, so the model's ordering callbacks run.
+  # Core `Collavre::Creative` has no dedicated reorder helper (it relies on
+  # `has_closure_tree order: :sequence` with a plain `sequence` column), so the
+  # attribute-assign-then-save path is the correct model-level write.
+  #
+  # Conflict rule: if the local link is `dirty` (has un-synced local edits) AND
+  # the remote payload is strictly NEWER than what we last saw
+  # (`remote_updated_at`), we do NOT overwrite local data. We flip the link to
+  # `conflict`, post a system comment noting the collision, and skip the field
+  # apply. "Newer" = remote timestamp > link.remote_updated_at, where the remote
+  # timestamp is taken from `data["updatedAt"]` (parsed) and falls back to
+  # `webhookTimestamp` (ms epoch) when `updatedAt` is absent.
+  class InboundApplier
+    def initialize(payload)
+      @payload = payload || {}
+      @action  = @payload["action"]
+      @type    = @payload["type"]
+      @data    = @payload["data"] || {}
+    end
+
+    def apply!
+      case @type
+      when "Comment"
+        apply_comment!
+      else # "Issue" (default)
+        apply_issue!
+      end
+    end
+
+    private
+
+    # -- Issue events ----------------------------------------------------------
+
+    def apply_issue!
+      case @action
+      when "create" then create_issue!
+      when "update" then update_issue!
+      when "remove" then remove_issue!
+      end
+    end
+
+    def create_issue!
+      linear_issue_id = @data["id"]
+      return if linear_issue_id.blank?
+      # Idempotency: a create we already have is a no-op.
+      return if IssueLink.find_by(linear_issue_id: linear_issue_id)
+
+      parent_creative = resolve_create_parent
+      return unless parent_creative
+
+      attrs = FieldMapper.issue_to_creative_attrs(@data)
+
+      creative = Collavre::Creative.new(
+        description: description_for(attrs),
+        user:        actor_user,
+        parent:      parent_creative
+      )
+      creative.skip_linear_sync = true
+      merge_linear_data!(creative, attrs[:data_linear])
+      creative.sequence = attrs[:sequence]
+      creative.save!
+
+      IssueLink.create!(
+        creative:          creative,
+        project_link:      project_link,
+        linear_issue_id:   linear_issue_id,
+        parent_issue_id:   @data["parentId"],
+        remote_updated_at: remote_updated_at,
+        sync_state:        :synced
+      )
+    end
+
+    def update_issue!
+      link = IssueLink.find_by(linear_issue_id: @data["id"])
+      return unless link
+
+      link.with_lock do
+        if conflict?(link)
+          mark_conflict!(link)
+          return
+        end
+
+        creative = link.creative
+        attrs    = FieldMapper.issue_to_creative_attrs(@data)
+        changed  = changed_keys
+
+        creative.skip_linear_sync = true
+
+        # Apply only fields that actually changed (per updatedFrom) when the hint
+        # is present; otherwise apply the full mapped set.
+        if changed.nil? || changed.include?("title") || changed.include?("description")
+          creative.description = description_for(attrs)
+        end
+        if changed.nil? || changed.include?("priority")
+          creative.sequence = attrs[:sequence]
+        end
+        merge_linear_data!(creative, attrs[:data_linear])
+        creative.save!
+
+        link.update!(remote_updated_at: remote_updated_at || link.remote_updated_at)
+      end
+    end
+
+    # Decision B6: NO destructive reparent of children. Mark an archive flag and
+    # note it on the link; never destroy the Creative or move its children.
+    def remove_issue!
+      link = IssueLink.find_by(linear_issue_id: @data["id"])
+      return unless link
+
+      link.with_lock do
+        creative = link.creative
+        data = (creative.data || {}).deep_dup
+        data["linear"] ||= {}
+        data["linear"]["archived"] = true
+        creative.skip_linear_sync = true
+        creative.data = data
+        creative.save!
+
+        link.update!(sync_state: :synced)
+      end
+    end
+
+    # -- Comment events --------------------------------------------------------
+
+    def apply_comment!
+      linear_comment_id = @data["id"]
+      return if linear_comment_id.blank?
+
+      issue_link = resolve_comment_issue_link
+      return unless issue_link
+
+      body = @data["body"].to_s
+      comment_link = CommentLink.find_by(linear_comment_id: linear_comment_id)
+
+      if comment_link
+        comment = Collavre::Comment.find_by(id: comment_link.comment_id)
+        comment&.update!(content: body)
+      else
+        creative = issue_link.creative
+        comment = creative.comments.create!(
+          content:       body,
+          user:          actor_user,
+          skip_dispatch: true
+        )
+        CommentLink.create!(
+          comment_id:        comment.id,
+          linear_comment_id: linear_comment_id,
+          issue_link:        issue_link
+        )
+      end
+    end
+
+    # -- Parent / link resolution ---------------------------------------------
+
+    # For create: nest under the parent issue's Creative if that parent is linked,
+    # otherwise fall back to the ProjectLink's root Creative.
+    def resolve_create_parent
+      if (parent_issue_id = @data["parentId"]).present?
+        parent_link = IssueLink.find_by(linear_issue_id: parent_issue_id)
+        return parent_link.creative if parent_link
+      end
+      project_link&.creative
+    end
+
+    # Resolve the governing ProjectLink for this payload. Preference order:
+    #   1. explicit projectId / project.id on the entity,
+    #   2. the parent issue's ProjectLink (sub-issue create),
+    #   3. the sole ProjectLink when the install has exactly one (common case:
+    #      one linked project — avoids a fragile guess when Linear omits the id).
+    def project_link
+      return @project_link if defined?(@project_link)
+
+      @project_link =
+        if (pid = @data["projectId"] || @data.dig("project", "id")).present?
+          ProjectLink.find_by(linear_project_id: pid)
+        elsif (parent_issue_id = @data["parentId"]).present? &&
+              (pl = IssueLink.find_by(linear_issue_id: parent_issue_id))
+          pl.project_link
+        elsif ProjectLink.count == 1
+          ProjectLink.first
+        end
+    end
+
+    def resolve_comment_issue_link
+      issue_id = @data.dig("issue", "id") || @data["issueId"]
+      return unless issue_id
+
+      IssueLink.find_by(linear_issue_id: issue_id)
+    end
+
+    # -- Conflict detection ----------------------------------------------------
+
+    def conflict?(link)
+      return false unless link.dirty?
+
+      remote = remote_updated_at
+      return false unless remote
+
+      local = link.remote_updated_at || link.updated_at
+      return false unless local
+
+      remote > local
+    end
+
+    def mark_conflict!(link)
+      link.update!(sync_state: :conflict)
+      post_conflict_comment(link.creative)
+    end
+
+    def post_conflict_comment(creative)
+      creative.comments.create!(
+        content:       conflict_message,
+        user:          actor_user,
+        topic:         creative.system_topic(fallback_user: actor_user),
+        skip_dispatch: true
+      )
+    rescue StandardError => e
+      # A notification failure must never mask the (correct) skip-apply behavior.
+      Rails.logger.error(
+        "[CollavreLinear::InboundApplier] failed to post conflict comment: " \
+        "#{e.class}: #{e.message}"
+      )
+    end
+
+    def conflict_message
+      "⚠️ Linear sync conflict: this item was edited both locally and in Linear. " \
+      "The remote change was NOT applied to avoid overwriting local edits. " \
+      "Resolve manually and re-sync."
+    end
+
+    # -- Field helpers ---------------------------------------------------------
+
+    # Collavre::Creative has no title column — the canonical text lives in
+    # `description` (title is derived from it via creative_snippet). Prefer the
+    # mapped description; fall back to the issue title when description is blank.
+    def description_for(attrs)
+      desc = attrs[:description].presence
+      title = attrs[:title].presence
+      desc || title || ""
+    end
+
+    def merge_linear_data!(creative, data_linear)
+      return if data_linear.blank?
+
+      data = (creative.data || {}).deep_dup
+      data["linear"] ||= {}
+      data["linear"].merge!(data_linear.deep_stringify_keys)
+      creative.data = data
+    end
+
+    # `updatedFrom` (update events) lists the fields that changed. Returns nil
+    # when absent so callers apply the full mapped set.
+    def changed_keys
+      uf = @payload["updatedFrom"]
+      return nil unless uf.is_a?(Hash)
+
+      uf.keys
+    end
+
+    def remote_updated_at
+      if (ts = @data["updatedAt"]).present?
+        return Time.zone.parse(ts.to_s) rescue nil
+      end
+      if (wt = @payload["webhookTimestamp"]).present?
+        # webhookTimestamp is milliseconds since epoch.
+        return Time.zone.at(wt.to_i / 1000.0)
+      end
+      nil
+    end
+
+    def actor_user
+      @actor_user ||= project_link&.account&.user
+    end
+  end
+end
