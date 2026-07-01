@@ -3,6 +3,13 @@ require_relative "../config/environment"
 require "rails/test_help"
 require "minitest/mock"
 
+# Engine `*_url` helpers (via the bare Collavre::Engine.routes.url_helpers module
+# used across tests) take the route set's optimized generation path, whose host
+# comes from the engine route set's default_url_options — empty by default in
+# test. Seed it so those helpers resolve a host regardless of suite ordering.
+# Engine route set only; app route host stays unset (OpenRedirect guard).
+Collavre::Engine.routes.default_url_options[:host] ||= "www.example.com"
+
 # Add engines test directories to the test runner
 # Note: We do not auto-load engine tests here to avoid running them during targeted app tests.
 # Use `rails test engines/` or `rake test:engines` to run engine tests.

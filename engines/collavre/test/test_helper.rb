@@ -9,6 +9,17 @@ require_relative "../../../config/environment"
 require "rails/test_help"
 require "minitest/mock"
 
+# The `collavre` test helper (below) exposes the bare
+# `Collavre::Engine.routes.url_helpers` module, which has no request context.
+# Its `*_url` helpers take the route set's optimized generation path, whose host
+# comes from the engine route set's `default_url_options` — empty by default in
+# test. Without a host these calls raise "Missing host to link to!" once any test
+# has warmed the optimized path (order-dependent). Seed the engine host so `_url`
+# helpers resolve regardless of suite ordering. Scoped to the engine route set
+# only; the app route host stays unset to preserve the OpenRedirect guard in
+# config/application.rb.
+Collavre::Engine.routes.default_url_options[:host] ||= "www.example.com"
+
 module ActiveSupport
   class TestCase
     include ActiveJob::TestHelper
