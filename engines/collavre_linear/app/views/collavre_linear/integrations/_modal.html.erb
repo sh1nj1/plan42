@@ -12,9 +12,10 @@
 %>
 
 <% connected    = local_assigns.fetch(:connected, Current.user&.linear_account.present?) %>
-<% creative_id  = local_assigns[:creative]&.id %>
-<% project_link = connected && creative_id &&
-                  Collavre::Creative.find_by(id: creative_id)&.effective_origin&.linear_project_links
+<% creative     = local_assigns[:creative] %>
+<% creative_id  = creative&.id %>
+<% project_link = connected && creative &&
+                  creative.effective_origin&.linear_project_links
                     &.find_by(account: Current.user&.linear_account) %>
 
 <div id="linear-integration-modal"
