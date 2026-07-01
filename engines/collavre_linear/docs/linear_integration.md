@@ -159,14 +159,6 @@ Two guards keep the loop echo-free:
   registry seam) that the engine observer can subscribe to; this is a follow-up
   rather than an engine-local change, since core must not reference the engine.
 
-- **Deleting a linked *root* Creative does not archive its Linear issue.** The
-  `linear_project_links` row is `dependent: :destroy`, so it is gone before the
-  observer's `after_commit` runs — `linked_subtree?` returns false and the
-  captured archive id is dropped, leaving the Linear issue live. Non-root linked
-  Creatives archive correctly. Fixing the root case needs the archive intent
-  captured/enqueued in a `before_destroy` (or the project-link teardown) ordered
-  ahead of the cascade; deferred as a follow-up.
-
 - **Moving a linked Creative under a *newly-created* in-subtree parent can race.**
   If the child's outbound update runs before the new parent's create, the update
   sends no `parentId` and advances the content hash, so the Linear issue stays
