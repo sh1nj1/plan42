@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_17_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -350,6 +350,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_17_090000) do
     t.string "value"
     t.index ["creative_id"], name: "index_labels_on_creative_id"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
+  end
+
+  create_table "linear_accounts", force: :cascade do |t|
+    t.string "access_token", null: false
+    t.string "app_actor_id"
+    t.datetime "created_at", null: false
+    t.string "linear_uid", null: false
+    t.string "refresh_token"
+    t.datetime "token_expires_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.string "workspace_id"
+    t.string "workspace_name"
+    t.index ["linear_uid"], name: "index_linear_accounts_on_linear_uid", unique: true
+    t.index ["user_id"], name: "index_linear_accounts_on_user_id", unique: true
   end
 
   create_table "mcp_tools", force: :cascade do |t|
@@ -906,6 +921,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_17_090000) do
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "creatives"
   add_foreign_key "labels", "users", column: "owner_id"
+  add_foreign_key "linear_accounts", "users"
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"
