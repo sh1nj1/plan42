@@ -206,6 +206,7 @@ module CollavreLinear
       )
 
       EchoGuard.record_outbound(issue_link, linear_issue_id)
+      backfill_pending_comments!(@creative)
       issue_link
     rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
       # Self-echo race: the inbound webhook for the issue we JUST created can land
@@ -253,7 +254,21 @@ module CollavreLinear
       end
 
       EchoGuard.record_outbound(existing, linear_issue_id)
+      backfill_pending_comments!(@creative)
       existing
+    end
+
+    # A comment posted in the window before this creative's IssueLink existed was
+    # skipped by CommentSyncObserver (syncable? requires a link) with no later
+    # backfill, permanently dropping it. Now that the link exists, enqueue those
+    # comments. OutboundCommentSyncJob is idempotent (re-checks CommentLink +
+    # syncability under lock), so already-synced/non-syncable comments no-op.
+    def backfill_pending_comments!(creative)
+      creative.comments.find_each do |comment|
+        next unless CommentSyncability.syncable?(comment)
+
+        OutboundCommentSyncJob.perform_later(comment.id)
+      end
     end
 
     # A cross-project move can't be auto-applied; freeze the link at :conflict so

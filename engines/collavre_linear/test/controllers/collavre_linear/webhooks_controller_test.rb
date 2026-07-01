@@ -195,5 +195,57 @@ module CollavreLinear
     ensure
       ENV.delete("LINEAR_WEBHOOK_SECRET")
     end
+
+    # -------------------------------------------------------------------------
+    # Cross-link identifier mismatch — a valid team-A signature must not
+    # authenticate a write whose other identifiers belong to team B.
+    # -------------------------------------------------------------------------
+
+    test "rejects (401) when the signing team's secret validates but projectId belongs to another team" do
+      # Team B: a separate account/team → its own (different) webhook secret.
+      other_user = Collavre.user_class.create!(
+        email: "linear-webhook-b-#{SecureRandom.hex(4)}@example.com",
+        name: "Webhook B", password: TEST_PASSWORD,
+        password_confirmation: TEST_PASSWORD, timezone: "UTC"
+      )
+      other_account = CollavreLinear::Account.create!(
+        user: other_user, linear_uid: "uid-webhook-b-#{SecureRandom.hex(4)}",
+        access_token: "tok-webhook-b"
+      )
+      other_root = Collavre::Creative.create!(description: "Root B", user: other_user)
+      CollavreLinear::ProjectLink.create!(
+        creative: other_root, account: other_account,
+        linear_project_id: "proj-B", team_id: "team-B"
+      )
+
+      # Signed with team A's secret (find_project_link resolves A via teamId),
+      # but projectId points at team B. InboundApplier would apply to B by
+      # projectId, so A's secret must NOT authenticate this.
+      payload = build_payload(data: { id: "iss-1", teamId: "team-webhook", projectId: "proj-B" })
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_no_enqueued_jobs do
+        post_webhook(payload, sig)
+      end
+      assert_response :unauthorized
+    end
+
+    test "accepts a same-team delivery for a DIFFERENT project (team-shared secret)" do
+      # A second project link in the SAME team shares team A's secret, so a
+      # delivery naming that project must still be accepted (no over-rejection).
+      second_root = Collavre::Creative.create!(description: "Root A2", user: @user)
+      CollavreLinear::ProjectLink.create!(
+        creative: second_root, account: @account,
+        linear_project_id: "proj-webhook-2", team_id: "team-webhook"
+      )
+
+      payload = build_payload(data: { id: "iss-2", teamId: "team-webhook", projectId: "proj-webhook-2" })
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+        post_webhook(payload, sig)
+      end
+      assert_response :ok
+    end
   end
 end

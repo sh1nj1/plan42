@@ -5,6 +5,8 @@ require "digest"
 
 module CollavreLinear
   class CreativeExporterTest < ActiveSupport::TestCase
+    include ActiveJob::TestHelper
+
     # ---------------------------------------------------------------------------
     # Plain stub — no network; conforms to Client's public interface.
     # ---------------------------------------------------------------------------
@@ -324,6 +326,25 @@ module CollavreLinear
       assert_equal :conflict, link.reload.sync_state.to_sym
       assert CollavreLinear::ProjectLink.exists?(other_link.id),
         "project B remains linked (the move target)"
+    end
+
+    test "sync! backfills comments posted before the IssueLink existed" do
+      original_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+      # Comment posted while the creative had no Linear issue yet: CommentSyncObserver
+      # skipped it (syncable? requires a link) with no later backfill. skip_dispatch
+      # avoids AI routing during the test.
+      comment = @child_creative.comments.create!(
+        content: "early comment", user: @user, skip_dispatch: true
+      )
+
+      assert_enqueued_with(job: CollavreLinear::OutboundCommentSyncJob, args: [ comment.id ]) do
+        CollavreLinear::Client.stub(:new, @fake_client) do
+          CollavreLinear::CreativeExporter.new(@child_creative).sync!
+        end
+      end
+    ensure
+      ActiveJob::Base.queue_adapter = original_adapter
     end
 
     # ---------------------------------------------------------------------------

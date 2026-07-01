@@ -26,6 +26,12 @@ module CollavreLinear
 
       return head :unauthorized unless valid_signature?(raw_body, secret)
       return head :unauthorized unless fresh_timestamp?(payload)
+      # Signature only proves the sender holds the signing link's per-TEAM secret.
+      # InboundApplier routes by the payload's own id/projectId, so a payload
+      # signed with team A's secret but naming team B's project/issue would let a
+      # user who can see A's (UI-visible) secret forge writes into B. Require every
+      # other identifier to resolve to the SAME team before enqueueing.
+      return head :unauthorized unless payload_identifiers_consistent?(payload, link)
 
       account = resolve_account(link)
       if account && CollavreLinear::EchoGuard.our_event?(account, payload)
@@ -70,6 +76,28 @@ module CollavreLinear
       end
 
       nil
+    end
+
+    # The webhook secret is shared per TEAM (siblings adopt it, rotation rolls the
+    # whole team), so the team is the trust boundary. Every identifier the payload
+    # carries that resolves to a ProjectLink must belong to the signing link's
+    # team; a mismatch means a cross-team forgery signed with the wrong secret.
+    def payload_identifiers_consistent?(payload, link)
+      return false unless link
+
+      project_id = extract_project_id(payload)
+      if project_id.present?
+        other = CollavreLinear::ProjectLink.find_by(linear_project_id: project_id)
+        return false if other && other.team_id != link.team_id
+      end
+
+      issue_id = extract_issue_id(payload)
+      if issue_id.present?
+        issue_link = CollavreLinear::IssueLink.find_by(linear_issue_id: issue_id)
+        return false if issue_link && issue_link.project_link.team_id != link.team_id
+      end
+
+      true
     end
 
     def extract_issue_id(payload)
