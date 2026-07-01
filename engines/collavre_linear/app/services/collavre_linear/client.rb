@@ -384,7 +384,18 @@ module CollavreLinear
     #     (Account#token_expiring_soon? returns false for a nil expiry)
     def fresh_access_token
       if account.refresh_token.present? && account.token_expiring_soon?
-        CollavreLinear::OAuthTokenService.refresh(account)
+        begin
+          CollavreLinear::OAuthTokenService.refresh(account)
+        rescue CollavreLinear::OAuthTokenService::Error,
+               SocketError, SystemCallError, Timeout::Error, IOError,
+               OpenSSL::SSL::SSLError => e
+          # The refresh runs before the GraphQL request, so a transient failure
+          # here (network/TLS/timeout, or a temporary non-2xx from Linear's token
+          # endpoint) raises outside post!'s transport wrap and would bypass the
+          # outbound jobs' retry_on Client::Error, dropping the pending sync. Map
+          # it to Error so a transient outage is retried, not lost.
+          raise Error, "Linear token refresh failed: #{e.class}: #{e.message}"
+        end
       end
       account.access_token
     end

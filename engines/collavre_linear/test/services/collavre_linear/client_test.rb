@@ -584,6 +584,49 @@ module CollavreLinear
       assert_not_requested :post, LINEAR_TOKEN_ENDPOINT
     end
 
+    test "wraps a token-refresh transport failure in Client::Error so outbound jobs retry" do
+      # The refresh happens inside fresh_access_token BEFORE the GraphQL request,
+      # so a transient network failure there raises a raw transport exception that
+      # bypasses retry_on Client::Error and drops the pending sync. Must surface as
+      # Client::Error, like the GraphQL transport wrap.
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "usr_refresh_timeout",
+        access_token: "stale-tok",
+        refresh_token: "refresh-tok",
+        token_expires_at: 10.seconds.from_now
+      )
+      client = CollavreLinear::Client.new(account)
+
+      stub_request(:post, LINEAR_TOKEN_ENDPOINT).to_timeout
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        client.create_issue(team_id: "t1", title: "Refresh timeout")
+      end
+      assert_match(/token refresh/, err.message)
+    end
+
+    test "wraps a token-refresh non-2xx response in Client::Error so outbound jobs retry" do
+      # A temporary non-2xx from Linear's token endpoint raises OAuthTokenService::Error,
+      # which is NOT a Client::Error and would bypass the jobs' retry policy.
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "usr_refresh_5xx",
+        access_token: "stale-tok",
+        refresh_token: "refresh-tok",
+        token_expires_at: 10.seconds.from_now
+      )
+      client = CollavreLinear::Client.new(account)
+
+      stub_request(:post, LINEAR_TOKEN_ENDPOINT)
+        .to_return(status: 503, body: { error: "temporarily_unavailable" }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      assert_raises(CollavreLinear::Client::Error) do
+        client.create_issue(team_id: "t1", title: "Refresh 503")
+      end
+    end
+
     # ---------------------------------------------------------------------------
     # Content-Type header
     # ---------------------------------------------------------------------------
