@@ -40,5 +40,21 @@ if (!linearIntegrationInitialized) {
     modal.addEventListener('click', function (event) {
       if (event.target === modal) closeModal();
     });
+
+    // OAuth connect: open the popup first, then submit the hidden form with the
+    // native form.submit(). Turbo intercepts submit-button clicks (and would
+    // fetch() the store_creative endpoint, then auto-follow its 302 to Linear's
+    // cross-origin authorize URL → blocked by CORS). Native submit() is not
+    // intercepted, so the popup navigates for real and the redirect follows.
+    const connectBtn = document.getElementById('linear-connect-btn');
+    const connectForm = document.getElementById('linear-connect-form');
+    connectBtn?.addEventListener('click', function () {
+      const w = parseInt(connectBtn.dataset.windowWidth, 10) || 620;
+      const h = parseInt(connectBtn.dataset.windowHeight, 10) || 720;
+      const left = window.screenX + (window.outerWidth - w) / 2;
+      const top = window.screenY + (window.outerHeight - h) / 2;
+      window.open('', 'linear-auth-window', `width=${w},height=${h},left=${left},top=${top}`);
+      connectForm?.submit();
+    });
   });
 }

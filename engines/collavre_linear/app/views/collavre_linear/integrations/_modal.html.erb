@@ -100,17 +100,26 @@
         <%= t("collavre_linear.integration.connect_prompt") %>
       </p>
 
+      <%#
+        Hidden form + separate button, mirroring collavre_github. The JS opener
+        calls the native form.submit() (not a submit-button click), which Turbo
+        does NOT intercept — so the popup does a real top-level navigation and
+        follows the 302 to Linear's authorize URL. A submit-button click lets
+        Turbo turn it into a fetch(), which auto-follows the cross-origin
+        redirect and is blocked by CORS.
+      %>
       <form id="linear-connect-form"
             action="/linear/auth/store_creative"
             method="post"
-            target="linear-auth-window">
+            target="linear-auth-window"
+            style="display:none;">
         <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
         <input type="hidden" name="creative_id" value="<%= creative_id %>">
-        <button type="submit" class="btn btn-primary"
-                onclick="window.open('', 'linear-auth-window', 'width=620,height=720')">
-          <%= t("collavre_linear.integration.connect_button") %>
-        </button>
       </form>
+      <button type="button" id="linear-connect-btn" class="btn btn-primary"
+              data-window-width="620" data-window-height="720">
+        <%= t("collavre_linear.integration.connect_button") %>
+      </button>
     <% end %>
   </div>
 </div>
