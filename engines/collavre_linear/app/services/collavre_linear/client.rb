@@ -247,7 +247,7 @@ module CollavreLinear
 
       request = Net::HTTP::Post.new(uri.path.presence || "/")
       request["Content-Type"] = "application/json"
-      request["Authorization"] = "Bearer #{account.access_token}"
+      request["Authorization"] = "Bearer #{fresh_access_token}"
       request.body = { query: query, variables: variables }.to_json
 
       response = http.request(request)
@@ -268,6 +268,20 @@ module CollavreLinear
       end
 
       parsed["data"]
+    end
+
+    # Return a non-expired access token, refreshing via the refresh_token grant
+    # when the current token is expiring soon.
+    #
+    # Guards:
+    #   - no refresh_token present  → use current token (nothing to refresh with)
+    #   - nil token_expires_at      → long-lived token, never triggers a refresh
+    #     (Account#token_expiring_soon? returns false for a nil expiry)
+    def fresh_access_token
+      if account.refresh_token.present? && account.token_expiring_soon?
+        CollavreLinear::OAuthTokenService.refresh(account)
+      end
+      account.access_token
     end
 
     def resolve_endpoint

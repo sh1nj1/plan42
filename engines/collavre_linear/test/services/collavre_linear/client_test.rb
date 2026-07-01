@@ -24,6 +24,10 @@ module CollavreLinear
         access_token: "tok"
       )
       @client = CollavreLinear::Client.new(@account)
+
+      ENV["LINEAR_CLIENT_ID"]          ||= "test-client-id"
+      ENV["LINEAR_CLIENT_SECRET"]      ||= "test-client-secret"
+      ENV["LINEAR_OAUTH_REDIRECT_URI"] ||= "https://example.com/linear/auth/callback"
     end
 
     # ---------------------------------------------------------------------------
@@ -368,6 +372,96 @@ module CollavreLinear
       end
 
       assert_match "500", err.message
+    end
+
+    # ---------------------------------------------------------------------------
+    # Token refresh (P1-1)
+    # ---------------------------------------------------------------------------
+    LINEAR_TOKEN_ENDPOINT = "https://api.linear.app/oauth/token"
+
+    test "refreshes an expiring token before posting the GraphQL request" do
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "usr_refresh_test",
+        access_token: "stale-tok",
+        refresh_token: "refresh-tok",
+        token_expires_at: 10.seconds.from_now
+      )
+      client = CollavreLinear::Client.new(account)
+
+      token_stub = stub_request(:post, LINEAR_TOKEN_ENDPOINT)
+        .with(body: hash_including("grant_type" => "refresh_token"))
+        .to_return(
+          status: 200,
+          body: { access_token: "fresh-tok", expires_in: 3600 }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      graphql_stub = stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer fresh-tok" })
+        .to_return(
+          status: 200,
+          body: {
+            data: { issueCreate: { success: true, issue: { id: "iss-r", identifier: "ENG-R" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      client.create_issue(team_id: "t1", title: "Refresh me")
+
+      assert_requested(token_stub, times: 1)
+      assert_requested(graphql_stub, times: 1)
+      assert_equal "fresh-tok", account.reload.access_token
+    end
+
+    test "does not refresh a non-expiring token" do
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "usr_no_refresh_test",
+        access_token: "live-tok",
+        refresh_token: "refresh-tok",
+        token_expires_at: 1.hour.from_now
+      )
+      client = CollavreLinear::Client.new(account)
+
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer live-tok" })
+        .to_return(
+          status: 200,
+          body: {
+            data: { issueCreate: { success: true, issue: { id: "iss-n", identifier: "ENG-N" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      client.create_issue(team_id: "t1", title: "No refresh")
+
+      assert_not_requested :post, LINEAR_TOKEN_ENDPOINT
+    end
+
+    test "does not refresh when token_expires_at is nil (long-lived token)" do
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "usr_longlived_test",
+        access_token: "longlived-tok",
+        refresh_token: "refresh-tok",
+        token_expires_at: nil
+      )
+      client = CollavreLinear::Client.new(account)
+
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer longlived-tok" })
+        .to_return(
+          status: 200,
+          body: {
+            data: { issueCreate: { success: true, issue: { id: "iss-l", identifier: "ENG-L" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      client.create_issue(team_id: "t1", title: "Long lived")
+
+      assert_not_requested :post, LINEAR_TOKEN_ENDPOINT
     end
 
     # ---------------------------------------------------------------------------
