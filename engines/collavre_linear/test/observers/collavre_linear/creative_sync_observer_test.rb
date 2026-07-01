@@ -143,14 +143,27 @@ module CollavreLinear
       expected_issue_id  = issue_link.linear_issue_id
       expected_account_id = @account.id
 
-      assert_enqueued_jobs 1, only: CollavreLinear::OutboundArchiveJob do
-        child.destroy!
-      end
+      # NOTE: the archive enqueue happens in an `after_commit` on destroy. Under
+      # parallel execution a strict count-in-block (`assert_enqueued_jobs 1 do
+      # child.destroy! end`) is timing/contention sensitive, so we destroy first
+      # and then assert against the *accumulated* queue. `assert_enqueued_with`
+      # scans every job enqueued during the test — it proves the archive job was
+      # enqueued with the exact captured ids regardless of when the commit
+      # callback fired — and an explicit count assertion proves it fired exactly
+      # once (no duplicates, and the two negative tests below still guarantee it
+      # does not fire when there is no IssueLink / no link).
+      child.destroy!
 
       assert_enqueued_with(
         job:  CollavreLinear::OutboundArchiveJob,
         args: [expected_issue_id, expected_account_id]
       )
+
+      archive_jobs = enqueued_jobs.select do |job|
+        job[:job] == CollavreLinear::OutboundArchiveJob
+      end
+      assert_equal 1, archive_jobs.size,
+        "expected exactly one OutboundArchiveJob to be enqueued on destroy"
     end
 
     test "destroying a linked Creative with NO IssueLink enqueues nothing" do
