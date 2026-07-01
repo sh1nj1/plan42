@@ -83,6 +83,26 @@ module CollavreLinear
       }
     GQL
 
+    # CommentUpdateInput fields used: body
+    COMMENT_UPDATE = <<~GQL.freeze
+      mutation CommentUpdate($id: String!, $input: CommentUpdateInput!) {
+        commentUpdate(id: $id, input: $input) {
+          success
+          comment {
+            id
+          }
+        }
+      }
+    GQL
+
+    COMMENT_DELETE = <<~GQL.freeze
+      mutation CommentDelete($id: String!) {
+        commentDelete(id: $id) {
+          success
+        }
+      }
+    GQL
+
     # WebhookCreateInput fields used: url, secret, teamId, resourceTypes
     WEBHOOK_CREATE = <<~GQL.freeze
       mutation WebhookCreate($input: WebhookCreateInput!) {
@@ -238,6 +258,21 @@ module CollavreLinear
       data  = post!(COMMENT_CREATE, { input: input })
       node  = data.dig("commentCreate", "comment")
       symbolize(node)
+    end
+
+    # Edit an existing Linear comment's body.
+    # @return [Hash] with :id
+    def update_comment(id:, body:)
+      data = post!(COMMENT_UPDATE, { id: id, input: { body: body } })
+      node = data.dig("commentUpdate", "comment")
+      symbolize(node)
+    end
+
+    # Delete a Linear comment.
+    # @return [Boolean] success
+    def delete_comment(id)
+      data = post!(COMMENT_DELETE, { id: id })
+      data.dig("commentDelete", "success") == true
     end
 
     # Fetch the authenticated viewer identity.

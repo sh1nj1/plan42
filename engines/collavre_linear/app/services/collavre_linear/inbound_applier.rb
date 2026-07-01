@@ -269,6 +269,9 @@ module CollavreLinear
         # prefix into the canonical local comment. Only a genuine Linear-side edit
         # (a body that differs from what we would send) updates local content.
         if comment && CommentFormatter.outbound_body(comment) != body
+          # skip_linear_sync so this Linear-originated edit does not echo back out
+          # as an outbound update (which would re-wrap the author-name prefix).
+          comment.skip_linear_sync = true
           comment.update!(content: body)
         end
       else
@@ -325,7 +328,13 @@ module CollavreLinear
       comment_link = CommentLink.find_by(linear_comment_id: linear_comment_id)
       return unless comment_link
 
-      Collavre::Comment.find_by(id: comment_link.comment_id)&.destroy
+      comment = Collavre::Comment.find_by(id: comment_link.comment_id)
+      if comment
+        # skip_linear_sync so this Linear-originated removal does not echo back out
+        # as an outbound delete of the comment Linear already deleted.
+        comment.skip_linear_sync = true
+        comment.destroy
+      end
       comment_link.destroy
     end
 

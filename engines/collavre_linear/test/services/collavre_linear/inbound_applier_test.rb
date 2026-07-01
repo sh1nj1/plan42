@@ -584,6 +584,56 @@ module CollavreLinear
       end
     end
 
+    test "genuine inbound comment edit applies locally but does NOT echo an outbound update" do
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-noecho")
+      comment = creative.comments.create!(content: "old body", user: @user, skip_dispatch: true)
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id,
+        linear_comment_id: "cmt-noecho",
+        issue_link: issue_link
+      )
+
+      payload = {
+        "action" => "update",
+        "type"   => "Comment",
+        "data"   => {
+          "id"    => "cmt-noecho",
+          "body"  => "a real linear-side edit",
+          "issue" => { "id" => "iss-cmt-noecho" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      # The local edit must land, but re-emitting it to Linear would loop the
+      # author-name prefix back into itself (double-prefix); the applier flags the
+      # comment skip_linear_sync so the CommentSyncObserver stays silent.
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentUpdateJob do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+      assert_equal "a real linear-side edit", comment.reload.content
+    end
+
+    test "inbound comment remove deletes locally but does NOT echo an outbound delete" do
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-rmnoecho")
+      comment = creative.comments.create!(content: "bye", user: @user, skip_dispatch: true)
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id,
+        linear_comment_id: "cmt-rmnoecho",
+        issue_link: issue_link
+      )
+
+      payload = {
+        "action" => "remove",
+        "type"   => "Comment",
+        "data"   => { "id" => "cmt-rmnoecho", "issue" => { "id" => "iss-cmt-rmnoecho" } }
+      }
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentDeleteJob do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+      refute Collavre::Comment.exists?(comment.id)
+    end
+
     test "losing a comment-create race leaves NO orphan comment (unique violation past the guard)" do
       # Pre-create a CommentLink for the same linear_comment_id to guarantee the
       # unique insert fails. Bypass the early find_by guard (stub it to nil) so

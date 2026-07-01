@@ -170,6 +170,46 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
+    # update_comment
+    # ---------------------------------------------------------------------------
+    test "update_comment posts commentUpdate mutation and returns id" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" }) do |req|
+          req.body.include?("commentUpdate") && req.body.include?("edited body")
+        end
+        .to_return(
+          status: 200,
+          body: {
+            data: { commentUpdate: { success: true, comment: { id: "cmt-1" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      res = @client.update_comment(id: "cmt-1", body: "edited body")
+
+      assert_equal "cmt-1", res[:id]
+      assert_requested :post, LINEAR_ENDPOINT, body: /commentUpdate/, times: 1
+    end
+
+    # ---------------------------------------------------------------------------
+    # delete_comment
+    # ---------------------------------------------------------------------------
+    test "delete_comment posts commentDelete mutation and returns success" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" }) do |req|
+          req.body.include?("commentDelete") && req.body.include?("cmt-1")
+        end
+        .to_return(
+          status: 200,
+          body: { data: { commentDelete: { success: true } } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      assert_equal true, @client.delete_comment("cmt-1")
+      assert_requested :post, LINEAR_ENDPOINT, body: /commentDelete/, times: 1
+    end
+
+    # ---------------------------------------------------------------------------
     # viewer_and_app_actor
     # ---------------------------------------------------------------------------
     test "viewer_and_app_actor returns user_id and organization_id; app_actor_id nil" do

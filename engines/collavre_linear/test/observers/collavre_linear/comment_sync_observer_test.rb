@@ -109,5 +109,100 @@ module CollavreLinear
         comment.save!
       end
     end
+
+    # -- outbound update -------------------------------------------------------
+
+    test "editing a synced comment's content enqueues OutboundCommentUpdateJob once" do
+      comment = synced_comment
+
+      assert_enqueued_jobs 1, only: CollavreLinear::OutboundCommentUpdateJob do
+        comment.update!(content: "edited")
+      end
+
+      assert_enqueued_with(job: CollavreLinear::OutboundCommentUpdateJob, args: [ comment.id ])
+    end
+
+    test "editing a comment with no CommentLink enqueues no outbound update" do
+      unsynced = @creative.comments.new(content: "unsynced", user: @user)
+      unsynced.skip_linear_sync = true
+      unsynced.save!
+      fresh = ::Collavre::Comment.find(unsynced.id)
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentUpdateJob do
+        fresh.update!(content: "edited")
+      end
+    end
+
+    test "saving a synced comment without changing content enqueues no outbound update" do
+      comment = synced_comment(content: "hello linear")
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentUpdateJob do
+        comment.update!(content: "hello linear")
+      end
+    end
+
+    test "inbound-mirrored content edit (skip_linear_sync) does not echo an update" do
+      comment = synced_comment
+      comment.skip_linear_sync = true
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentUpdateJob do
+        comment.update!(content: "from a linear edit")
+      end
+    end
+
+    # -- outbound delete -------------------------------------------------------
+
+    test "deleting a synced comment enqueues OutboundCommentDeleteJob once" do
+      comment = synced_comment
+      link = CollavreLinear::CommentLink.find_by(comment_id: comment.id)
+
+      assert_enqueued_jobs 1, only: CollavreLinear::OutboundCommentDeleteJob do
+        comment.destroy
+      end
+
+      # Assert against the raw enqueued args rather than assert_enqueued_with:
+      # the latter deserializes every enqueued job, and the comment's own
+      # cancel_pending_tasks job holds a GlobalID to the now-destroyed comment,
+      # which can no longer be resolved.
+      delete_job = enqueued_jobs.find { |j| j[:job] == CollavreLinear::OutboundCommentDeleteJob }
+      assert_equal [ link.id ], delete_job[:args]
+    end
+
+    test "deleting a comment with no CommentLink enqueues no outbound delete" do
+      unsynced = @creative.comments.new(content: "unsynced", user: @user)
+      unsynced.skip_linear_sync = true
+      unsynced.save!
+      fresh = ::Collavre::Comment.find(unsynced.id)
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentDeleteJob do
+        fresh.destroy
+      end
+    end
+
+    test "inbound-mirrored delete (skip_linear_sync) does not echo a delete" do
+      comment = synced_comment
+      comment.skip_linear_sync = true
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundCommentDeleteJob do
+        comment.destroy
+      end
+    end
+
+    private
+
+    # A comment already mirrored to Linear (has a CommentLink). Returns a fresh
+    # instance so the transient skip_linear_sync used to suppress the create echo
+    # does not carry over into the update/delete assertions.
+    def synced_comment(content: "hello linear")
+      comment = @creative.comments.new(content: content, user: @user)
+      comment.skip_linear_sync = true
+      comment.save!
+      CollavreLinear::CommentLink.create!(
+        comment_id:        comment.id,
+        linear_comment_id: "lin-#{comment.id}",
+        issue_link:        @issue_link
+      )
+      ::Collavre::Comment.find(comment.id)
+    end
   end
 end
