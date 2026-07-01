@@ -359,6 +359,35 @@ module CollavreLinear
         assert body["success"]
       end
 
+      test "resync enqueues OutboundSyncJob for the whole subtree" do
+        sign_in_as(@user)
+
+        child1 = Collavre::Creative.create!(
+          description: "<p>resync child 1</p>", user: @user, parent: @creative
+        )
+        child2 = Collavre::Creative.create!(
+          description: "<p>resync child 2</p>", user: @user, parent: @creative
+        )
+
+        CollavreLinear::ProjectLink.create!(
+          creative: @creative,
+          account: @account,
+          linear_project_id: "proj-resync-subtree",
+          team_id: "team-resync-subtree",
+          webhook_id: "wh-resync-subtree-001"
+        )
+
+        assert_enqueued_jobs 3, only: CollavreLinear::OutboundSyncJob do
+          post "/linear/creatives/#{@creative.id}/integration/resync", as: :json
+        end
+
+        assert_response :success
+        enqueued_ids = enqueued_jobs
+          .select { |j| j[:job] == CollavreLinear::OutboundSyncJob }
+          .map { |j| j[:args].first }
+        assert_equal [ @creative.id, child1.id, child2.id ].sort, enqueued_ids.sort
+      end
+
       test "resync returns not_found when no link exists" do
         sign_in_as(@user)
 

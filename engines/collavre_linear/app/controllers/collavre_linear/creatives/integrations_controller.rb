@@ -48,9 +48,7 @@ module CollavreLinear
         # so enqueue an outbound export for the whole subtree — otherwise a
         # populated tree would only create the root Linear issue. Idempotent:
         # the exporter skips unchanged content via its content hash.
-        @origin.self_and_descendants.ids.each do |creative_id|
-          CollavreLinear::OutboundSyncJob.perform_later(creative_id)
-        end
+        enqueue_subtree_sync
 
         # Webhook provisioning failure must NOT fail the request — the link and
         # outbound sync still work — but it MUST be surfaced: without a webhook,
@@ -99,7 +97,11 @@ module CollavreLinear
 
       # POST /linear/creatives/:creative_id/integration/resync
       #
-      # Re-enqueues a full outbound export for the subtree root.
+      # Re-enqueues a full outbound export for the whole subtree. Mirrors the
+      # create path: enqueuing only the root would never recover stale/missing
+      # descendant issues. The ParentNotExportedError + retry_on deferral in
+      # OutboundSyncJob protects against parent-before-child races, so enqueuing
+      # the full subtree is safe.
       def resync
         account = Current.user.linear_account
         unless account
@@ -114,12 +116,20 @@ module CollavreLinear
           return
         end
 
-        CollavreLinear::OutboundSyncJob.perform_later(@origin.id)
+        enqueue_subtree_sync
 
         render json: { success: true, message: I18n.t("collavre_linear.integration.resync_started") }
       end
 
       private
+
+      # Enqueue an outbound export for every Creative in the @origin subtree.
+      # Shared by create (initial link) and resync so both cover descendants.
+      def enqueue_subtree_sync
+        @origin.self_and_descendants.ids.each do |creative_id|
+          CollavreLinear::OutboundSyncJob.perform_later(creative_id)
+        end
+      end
 
       def integration_forbidden_message
         I18n.t("collavre_linear.errors.forbidden")
