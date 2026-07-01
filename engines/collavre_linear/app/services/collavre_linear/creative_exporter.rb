@@ -19,6 +19,21 @@ module CollavreLinear
     # (plain-text truncation of the description used everywhere in the app).
     CreativeAdapter = Struct.new(:title, :description, :sequence, :data, keyword_init: true)
 
+    # Compute the outbound content hash for a Creative's current state. Shared
+    # with the inbound applier so it can advance IssueLink#content_hash after
+    # applying a remote update, keeping the exporter's dirty-check consistent.
+    def self.content_hash_for(creative)
+      attrs = FieldMapper.creative_to_issue_attrs(
+        CreativeAdapter.new(
+          title:       creative.creative_snippet,
+          description: creative.description,
+          sequence:    creative.sequence,
+          data:        creative.data
+        )
+      )
+      Digest::SHA256.hexdigest(attrs.sort.to_h.to_json)
+    end
+
     def initialize(creative)
       @creative = creative
     end
@@ -73,6 +88,7 @@ module CollavreLinear
     end
 
     # SHA-256 of the sorted, serialised mapped attrs (stable key order).
+    # Shared with CreativeExporter.content_hash_for so inbound + outbound agree.
     def compute_content_hash(attrs)
       Digest::SHA256.hexdigest(attrs.sort.to_h.to_json)
     end

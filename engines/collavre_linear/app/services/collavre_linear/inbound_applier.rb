@@ -73,28 +73,50 @@ module CollavreLinear
 
       attrs = FieldMapper.issue_to_creative_attrs(@data)
 
-      creative = Collavre::Creative.new(
-        description: description_for(attrs),
-        user:        actor_user,
-        parent:      parent_creative
-      )
-      creative.skip_linear_sync = true
-      merge_linear_data!(creative, attrs[:data_linear])
-      creative.sequence = attrs[:sequence]
-      creative.save!
+      # Wrap Creative + IssueLink in ONE transaction so a concurrent duplicate
+      # `create` delivery that loses the unique linear_issue_id race also rolls
+      # back the just-saved Creative — otherwise the loser leaves an orphan
+      # Creative with no IssueLink.
+      Collavre::Creative.transaction do
+        creative = Collavre::Creative.new(
+          description: description_for(attrs),
+          user:        actor_user,
+          parent:      parent_creative
+        )
+        creative.skip_linear_sync = true
+        merge_linear_data!(creative, attrs[:data_linear])
+        creative.sequence = attrs[:sequence]
+        creative.save!
 
-      IssueLink.create!(
-        creative:          creative,
-        project_link:      project_link,
-        linear_issue_id:   linear_issue_id,
-        parent_issue_id:   @data["parentId"],
-        remote_updated_at: remote_updated_at,
-        sync_state:        :synced
-      )
+        IssueLink.create!(
+          creative:          creative,
+          project_link:      project_link,
+          linear_issue_id:   linear_issue_id,
+          parent_issue_id:   @data["parentId"],
+          remote_updated_at: remote_updated_at,
+          sync_state:        :synced
+        )
+      end
     rescue ActiveRecord::RecordNotUnique
-      # TOCTOU: a concurrent webhook already created the IssueLink for this
-      # linear_issue_id. Treat as already-applied (no second Creative created).
+      # TOCTOU: a concurrent webhook already committed the IssueLink for this
+      # linear_issue_id (DB unique index). The enclosing transaction rolled back
+      # the Creative we started, so no orphan remains. Treat as already-applied.
       nil
+    rescue ActiveRecord::RecordInvalid => e
+      # Same race, but the duplicate was already visible to the model-level
+      # uniqueness validation. Only swallow the linear_issue_id collision; any
+      # other validation failure must still surface.
+      raise unless duplicate_issue_link_error?(e)
+
+      nil
+    end
+
+    # True when the RecordInvalid is exactly the IssueLink linear_issue_id
+    # uniqueness collision (the duplicate-create race), not some other invalid.
+    def duplicate_issue_link_error?(error)
+      record = error.record
+      record.is_a?(IssueLink) &&
+        record.errors.of_kind?(:linear_issue_id, :taken)
     end
 
     def update_issue!
@@ -124,7 +146,17 @@ module CollavreLinear
         merge_linear_data!(creative, attrs[:data_linear])
         creative.save!
 
-        link.update!(remote_updated_at: remote_updated_at || link.remote_updated_at)
+        # Advance the outbound content hash to the newly-applied state. Without
+        # this the link still holds the OLD outbound hash, so a later local edit
+        # back to that old state would make CreativeExporter#update_issue! skip
+        # the push, leaving Linear stale. Recompute with the exact same hashing
+        # the exporter uses. reload picks up the persisted, closure_tree-managed
+        # sequence so inbound + outbound hashes agree.
+        link.update!(
+          remote_updated_at: remote_updated_at || link.remote_updated_at,
+          content_hash:      CreativeExporter.content_hash_for(creative.reload),
+          sync_state:        :synced
+        )
       end
     end
 

@@ -114,6 +114,57 @@ module CollavreLinear
         "priority 1 should map to sequence 1 via FieldMapper + model save"
     end
 
+    test "update advances IssueLink#content_hash to the newly-applied state" do
+      creative, link = linked_child(linear_issue_id: "iss-hash")
+      link.update!(content_hash: "stale-outbound-hash", sync_state: :synced)
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-hash",
+          "title"     => "Remote new title",
+          "priority"  => 2,
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "title" => "Original title" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link.reload
+      creative.reload
+      expected = CollavreLinear::CreativeExporter.content_hash_for(creative)
+      assert_equal expected, link.content_hash,
+        "content_hash should match the freshly-applied creative state"
+      assert_equal "synced", link.sync_state
+      assert_not_equal "stale-outbound-hash", link.content_hash
+    end
+
+    test "a no-op export after inbound update is correctly skipped (hash matches)" do
+      creative, link = linked_child(linear_issue_id: "iss-noop")
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-noop",
+          "title"     => "Synced title",
+          "priority"  => 3,
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "title" => "Original title" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      # Simulate the exporter's dirty-check: current creative content hashes to
+      # exactly what the link stores, so update_issue! would skip the API call.
+      creative.reload
+      current_hash = CollavreLinear::CreativeExporter.content_hash_for(creative)
+      assert_equal link.reload.content_hash, current_hash
+    end
+
     # -- create ----------------------------------------------------------------
 
     test "create builds a child creative under the project root and an IssueLink" do
@@ -300,6 +351,40 @@ module CollavreLinear
       assert_equal 1,
         Collavre::Creative.where(id: dup_link.creative_id).count,
         "duplicate inbound create must not create a second Creative"
+    end
+
+    test "losing a create race (unique violation past the guard) leaves NO orphan Creative" do
+      # Pre-create a link for the same linear_issue_id to guarantee the unique
+      # insert fails. Bypass the early find_by guard (stub it to nil) so the
+      # applier proceeds to save a Creative and then hits RecordNotUnique on the
+      # IssueLink insert — the exact TOCTOU window.
+      existing_creative, _existing_link = linked_child(linear_issue_id: "iss-race")
+
+      payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-race",
+          "title"     => "Race loser",
+          "priority"  => 0,
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      creative_count_before = Collavre::Creative.count
+
+      CollavreLinear::IssueLink.stub :find_by, nil do
+        assert_nothing_raised do
+          CollavreLinear::InboundApplier.new(payload).apply!
+        end
+      end
+
+      assert_equal creative_count_before, Collavre::Creative.count,
+        "the losing create must not leave an orphan Creative"
+      assert_equal 1, CollavreLinear::IssueLink.where(linear_issue_id: "iss-race").count
+      # The surviving link still points at the original creative.
+      assert_equal existing_creative.id,
+        CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-race").creative_id
     end
 
     # -- Fix 3: nil remote_updated_at must NOT produce a false conflict ----------
