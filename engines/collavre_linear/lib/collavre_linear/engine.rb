@@ -2,6 +2,14 @@ module CollavreLinear
   class Engine < ::Rails::Engine
     isolate_namespace CollavreLinear
 
+    # Path this engine is mounted at in the host app (see the
+    # `collavre_linear.routes` initializer below). Because the engine is
+    # `isolate_namespace`d and detached, its own `url_helpers` generate
+    # engine-internal paths WITHOUT this prefix. Anything that needs a URL the
+    # host (or an external service like Linear) will actually reach must fold
+    # this prefix back in — pass it as `script_name:` to the engine url_helper.
+    MOUNT_PATH = "/linear"
+
     config.generators do |g|
       g.test_framework :minitest
     end
@@ -18,7 +26,7 @@ module CollavreLinear
 
     initializer "collavre_linear.routes", before: :add_routing_paths do |app|
       app.routes.append do
-        mount CollavreLinear::Engine => "/linear", as: :linear_engine
+        mount CollavreLinear::Engine => CollavreLinear::Engine::MOUNT_PATH, as: :linear_engine
       end
     end
 

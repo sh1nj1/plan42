@@ -41,7 +41,13 @@ module CollavreLinear
 
       creative_id = session.delete(:linear_creative_id)
       if creative_id.present?
-        redirect_to linear_engine.setup_auth_path(creative_id: creative_id)
+        # Redirect to the MOUNTED path (/linear/auth/setup). The engine is
+        # detached, so we fold its mount prefix in explicitly via `script_name:`
+        # — the bare engine-internal /auth/setup would 404 in the popup.
+        redirect_to linear_engine.setup_auth_path(
+          creative_id: creative_id,
+          script_name: CollavreLinear::Engine::MOUNT_PATH
+        )
       else
         redirect_to collavre.creatives_path,
                     notice: I18n.t("collavre_linear.auth.connected", default: "Linear connected.")

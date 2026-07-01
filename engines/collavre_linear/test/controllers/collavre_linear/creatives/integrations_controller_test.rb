@@ -70,6 +70,29 @@ module CollavreLinear
           "no warning should surface on a successful provisioning"
       end
 
+      test "create registers the webhook URL WITH the /linear mount prefix" do
+        sign_in_as(@user)
+
+        captured_url = nil
+        provisioner = lambda do |project_link:, webhook_url:|
+          captured_url = webhook_url
+          :created
+        end
+
+        CollavreLinear::WebhookProvisioner.stub(:ensure_for, provisioner) do
+          post "/linear/creatives/#{@creative.id}/integration",
+               params: { team_id: "team-prefix", linear_project_id: "proj-prefix" },
+               as: :json
+        end
+
+        assert_response :success
+        # A detached engine url_helper omits the mount prefix, registering
+        # https://host/webhook — a 404 in production. The real route is
+        # /linear/webhook, so the registered URL MUST carry the prefix.
+        assert_includes captured_url, "/linear/webhook",
+          "webhook URL registered with Linear must include the /linear mount prefix"
+      end
+
       test "create surfaces a warning (but still succeeds) when webhook provisioning fails" do
         sign_in_as(@user)
 

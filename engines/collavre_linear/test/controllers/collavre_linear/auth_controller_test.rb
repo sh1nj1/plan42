@@ -124,7 +124,10 @@ module CollavreLinear
       get "/linear/auth/callback", params: { code: "auth-code-003", state: state }
 
       assert_response :redirect
-      assert_match(/setup/, response.location)
+      # The redirect MUST target the MOUNTED path (/linear/auth/setup), not the
+      # engine-internal /auth/setup — otherwise the popup 404s right after a
+      # successful Linear authorization.
+      assert_match(%r{/linear/auth/setup}, URI.parse(response.location).path)
       assert_match(/creative_id=#{@creative.id}/, response.location)
     end
 
