@@ -4,6 +4,7 @@ en:
       connected: "Linear connected successfully."
       invalid_state: "Invalid OAuth state. Please try connecting again."
       login_first: "Please log in first."
+      already_linked_other: "This Linear account is already connected to a different Collavre user."
     integration:
       label: "Linear"
       description: "Two-way sync of projects, issues and comments"

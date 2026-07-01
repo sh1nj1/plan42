@@ -4,6 +4,7 @@ ko:
       connected: "Linear 연결 성공."
       invalid_state: "OAuth 상태가 유효하지 않습니다. 다시 연결해 주세요."
       login_first: "먼저 로그인해 주세요."
+      already_linked_other: "이 Linear 계정은 이미 다른 Collavre 사용자에 연결되어 있습니다."
     integration:
       label: "Linear"
       description: "프로젝트, 이슈, 댓글 양방향 동기화"

@@ -28,10 +28,22 @@ module CollavreLinear
       client = CollavreLinear::Client.new(temp_account)
       viewer = client.viewer_and_app_actor
 
+      # Never reassign a Linear identity already owned by another Collavre user
+      # (that would steal their account + project links). Bind by the CURRENT
+      # user instead (user_id is unique — one Linear account per user), so a
+      # reconnect with a different Linear UID updates in place rather than
+      # violating the unique index.
+      if CollavreLinear::Account.where(linear_uid: viewer[:user_id])
+                                .where.not(user_id: Current.user.id).exists?
+        redirect_to collavre.creatives_path,
+                    alert: I18n.t("collavre_linear.auth.already_linked_other")
+        return
+      end
+
       account = CollavreLinear::Account.find_or_initialize_by(
-        linear_uid: viewer[:user_id]
+        user_id: Current.user.id
       )
-      account.user_id          = Current.user.id
+      account.linear_uid       = viewer[:user_id]
       account.access_token     = tokens[:access_token]
       account.refresh_token    = tokens[:refresh_token]
       account.token_expires_at = Time.current + tokens[:expires_in].to_i.seconds if tokens[:expires_in]

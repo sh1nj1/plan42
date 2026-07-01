@@ -45,9 +45,12 @@ module CollavreLinear
       case @type
       when "Comment"
         apply_comment!
-      else # "Issue" (default)
+      when "Issue"
         apply_issue!
       end
+      # Other types (e.g. Project — the webhook subscribes to it) are ignored:
+      # routing them through apply_issue! would use the project UUID as a
+      # linear_issue_id and create a blank Creative in a one-link install.
     end
 
     private

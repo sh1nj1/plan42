@@ -24,8 +24,20 @@ module CollavreLinear
 
     private
 
+    # Linear signs every delivery for a team with ONE secret, and the manual
+    # (no-admin) setup registers a single team webhook. So all ProjectLinks for
+    # the same team must share one secret — otherwise a sibling verifies the
+    # team webhook with a secret Linear never uses and inbound 401s. Adopt an
+    # existing team secret (even from a sibling with no stored webhook_id, which
+    # is always the case under manual setup); only generate for a brand-new team.
     def ensure_webhook_secret
-      self.webhook_secret ||= SecureRandom.hex(20)
+      return if webhook_secret.present?
+
+      self.webhook_secret =
+        (team_id.present? &&
+          self.class.where(team_id: team_id).where.not(id: id)
+              .where.not(webhook_secret: [ nil, "" ]).pick(:webhook_secret)) ||
+        SecureRandom.hex(20)
     end
   end
 end

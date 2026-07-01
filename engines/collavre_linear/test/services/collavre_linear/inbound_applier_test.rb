@@ -373,6 +373,21 @@ module CollavreLinear
         "child must be reparented under the parent once the parent create lands"
     end
 
+    test "a Project webhook is ignored (no blank Creative/IssueLink created)" do
+      # The webhook subscribes to Project events; routing them as Issues would
+      # use the project UUID as linear_issue_id and create a blank Creative.
+      payload = {
+        "action" => "create",
+        "type"   => "Project",
+        "data"   => { "id" => "proj-inb", "name" => "A project", "updatedAt" => Time.current.iso8601 }
+      }
+
+      assert_no_difference [ -> { CollavreLinear::IssueLink.count },
+                            -> { Collavre::Creative.count } ] do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+    end
+
     # -- remove: archive marker, no destroy/reparent ---------------------------
 
     test "remove sets an archive marker and does not destroy the creative" do

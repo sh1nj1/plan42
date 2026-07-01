@@ -114,6 +114,37 @@ module CollavreLinear
       assert_equal "actor-abc", account.app_actor_id
     end
 
+    test "callback does not reassign a Linear account already owned by another user" do
+      # @user already owns the linear identity the viewer query returns.
+      CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "user-uid-1",
+        access_token: "owner-token"
+      )
+
+      other = Collavre.user_class.create!(
+        email: "linear-thief@example.com",
+        name: "Thief",
+        password: TEST_PASSWORD,
+        password_confirmation: TEST_PASSWORD,
+        timezone: "UTC"
+      )
+      sign_in_as(other)
+
+      stub_token_exchange
+      stub_viewer_query # returns user-uid-1
+
+      state = initiate_oauth
+      get "/linear/auth/callback", params: { code: "auth-code-steal", state: state }
+
+      assert_response :redirect
+      account = CollavreLinear::Account.find_by(linear_uid: "user-uid-1")
+      assert_equal @user.id, account.user_id, "account must not be stolen"
+      assert_equal "owner-token", account.access_token, "tokens must not be overwritten"
+      assert_nil CollavreLinear::Account.find_by(user: other),
+        "the second user must not acquire the account"
+    end
+
     test "callback redirects to setup when creative_id is in session" do
       sign_in_as(@user)
 

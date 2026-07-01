@@ -108,41 +108,43 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
-    # ensure_for — sibling secret sharing lets HMAC verify against either link
+    # Same-team links share ONE webhook_secret so HMAC verifies against either.
+    # Under manual (no-admin) setup the sibling has no webhook_id, so sharing
+    # must happen at creation (model-level), not only via the provisioner.
     # ---------------------------------------------------------------------------
-    test "ensure_for copies the sibling webhook_secret so signatures verify across links" do
+    test "a new link in an existing team adopts the sibling webhook_secret at creation" do
       other_creative = Collavre::Creative.create!(
         description: "<p>Other creative</p>",
         user: @user
       )
+      # No webhook_id — mirrors manual setup, where auto-provisioning never ran.
       other_link = CollavreLinear::ProjectLink.create!(
         creative: other_creative,
         account: @account,
         linear_project_id: "proj-secret-2",
-        team_id: "team-wh-1", # same team as @link
-        webhook_id: "wh-shared-secret"
+        team_id: "team-wh-1" # same team as @link
       )
-      original_secret = @link.webhook_secret
-      assert_not_equal other_link.webhook_secret, original_secret,
-        "precondition: siblings start with distinct random secrets"
 
-      spy = Minitest::Mock.new
-      CollavreLinear::Client.stub :new, spy do
-        CollavreLinear::WebhookProvisioner.ensure_for(
-          project_link: @link,
-          webhook_url:  @webhook_url
-        )
-      end
-      spy.verify
-
-      shared_secret = @link.reload.webhook_secret
-      assert_equal other_link.webhook_secret, shared_secret
+      assert_equal @link.webhook_secret, other_link.webhook_secret,
+        "same-team links must share one secret even without a stored webhook_id"
 
       # A delivery signed with the shared secret verifies against either link.
       raw_body = { "action" => "update" }.to_json
-      sig = OpenSSL::HMAC.hexdigest("SHA256", shared_secret, raw_body)
+      sig = OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, raw_body)
       expected_other = OpenSSL::HMAC.hexdigest("SHA256", other_link.webhook_secret, raw_body)
       assert_equal expected_other, sig
+    end
+
+    test "a link in a different team gets its own generated secret" do
+      other_creative = Collavre::Creative.create!(description: "<p>Other</p>", user: @user)
+      other_link = CollavreLinear::ProjectLink.create!(
+        creative: other_creative,
+        account: @account,
+        linear_project_id: "proj-team-2",
+        team_id: "team-wh-DIFFERENT"
+      )
+
+      assert_not_equal @link.webhook_secret, other_link.webhook_secret
     end
 
     # ---------------------------------------------------------------------------
