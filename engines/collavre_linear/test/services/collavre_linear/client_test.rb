@@ -244,6 +244,47 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
+    # delete_webhook
+    # ---------------------------------------------------------------------------
+    test "delete_webhook posts webhookDelete mutation and returns true on success" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
+        .to_return(
+          status: 200,
+          body: {
+            data: { webhookDelete: { success: true } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      result = @client.delete_webhook("wh-to-delete")
+
+      assert_equal true, result
+      assert_requested :post, LINEAR_ENDPOINT, body: /webhookDelete/, times: 1
+      assert_requested :post, LINEAR_ENDPOINT do |req|
+        body = JSON.parse(req.body)
+        body["variables"]["id"] == "wh-to-delete"
+      end
+    end
+
+    test "delete_webhook raises Client::Error on GraphQL errors" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 200,
+          body: {
+            errors: [{ message: "Webhook not found" }]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.delete_webhook("wh-nonexistent")
+      end
+
+      assert_match "Webhook not found", err.message
+    end
+
+    # ---------------------------------------------------------------------------
     # Error handling
     # ---------------------------------------------------------------------------
     test "raises Client::Error when response contains GraphQL errors" do

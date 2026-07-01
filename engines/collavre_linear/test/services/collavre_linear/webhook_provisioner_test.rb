@@ -124,5 +124,49 @@ module CollavreLinear
 
       assert_nil @link.reload.webhook_id
     end
+
+    # ---------------------------------------------------------------------------
+    # deregister — calls delete_webhook when webhook_id is present
+    # ---------------------------------------------------------------------------
+    test "deregister calls delete_webhook with the stored webhook_id" do
+      @link.update_column(:webhook_id, "wh-to-remove-001")
+
+      deleted_ids = []
+      stub_client = Object.new
+      stub_client.define_singleton_method(:delete_webhook) { |id| deleted_ids << id; true }
+
+      CollavreLinear::Client.stub :new, stub_client do
+        CollavreLinear::WebhookProvisioner.deregister(project_link: @link)
+      end
+
+      assert_equal [ "wh-to-remove-001" ], deleted_ids
+    end
+
+    test "deregister is a no-op when webhook_id is blank" do
+      assert_nil @link.webhook_id
+
+      spy = Minitest::Mock.new
+      # delete_webhook must NOT be called — no expectations set, verify will catch any calls
+      CollavreLinear::Client.stub :new, spy do
+        CollavreLinear::WebhookProvisioner.deregister(project_link: @link)
+      end
+
+      spy.verify
+    end
+
+    test "deregister swallows Client::Error so callers can proceed" do
+      @link.update_column(:webhook_id, "wh-failing-001")
+
+      error_client = Object.new
+      def error_client.delete_webhook(_id)
+        raise CollavreLinear::Client::Error, "not found"
+      end
+
+      CollavreLinear::Client.stub :new, error_client do
+        assert_nothing_raised do
+          CollavreLinear::WebhookProvisioner.deregister(project_link: @link)
+        end
+      end
+    end
   end
 end

@@ -104,6 +104,23 @@ module CollavreLinear
       }
     GQL
 
+    # Delete (deregister) a Linear webhook by id.
+    WEBHOOK_DELETE = <<~GQL.freeze
+      mutation WebhookDelete($id: String!) {
+        webhookDelete(id: $id) {
+          success
+        }
+      }
+    GQL
+
+    # Delete (deregister) a webhook from Linear.
+    # @param id [String] Linear webhook UUID
+    # @return [Boolean] success
+    def delete_webhook(id)
+      data = post!(WEBHOOK_DELETE, { id: id })
+      data.dig("webhookDelete", "success") == true
+    end
+
     # viewer query + applicationWithAuthorization for OAuth app actor
     VIEWER = <<~GQL.freeze
       query ViewerAndAppActor {

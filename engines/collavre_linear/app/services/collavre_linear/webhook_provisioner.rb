@@ -13,6 +13,7 @@ module CollavreLinear
   #     project_link: link,
   #     webhook_url:  "https://example.com/linear/webhook"
   #   )
+  #   CollavreLinear::WebhookProvisioner.deregister(project_link: link)
   class WebhookProvisioner
     RESOURCE_TYPES = %w[Issue Project Comment].freeze
 
@@ -22,7 +23,16 @@ module CollavreLinear
       new(project_link: project_link, webhook_url: webhook_url).ensure_for
     end
 
-    def initialize(project_link:, webhook_url:)
+    # Best-effort deregistration of the webhook registered for project_link.
+    # No-op when webhook_id is blank. Rescues Client::Error so that unlink
+    # succeeds even if the Linear API call fails.
+    #
+    # @param project_link [CollavreLinear::ProjectLink]
+    def self.deregister(project_link:)
+      new(project_link: project_link, webhook_url: nil).deregister
+    end
+
+    def initialize(project_link:, webhook_url: nil)
       @project_link = project_link
       @webhook_url  = webhook_url
     end
@@ -52,6 +62,18 @@ module CollavreLinear
         "team #{@project_link.team_id}: #{e.message}"
       )
       :failed
+    end
+
+    # Best-effort deregistration. No-op when webhook_id is blank.
+    def deregister
+      return unless @project_link.webhook_id.present?
+
+      client.delete_webhook(@project_link.webhook_id)
+    rescue CollavreLinear::Client::Error => e
+      Rails.logger.warn(
+        "[CollavreLinear::WebhookProvisioner] Webhook deregistration failed for " \
+        "webhook #{@project_link.webhook_id}: #{e.message}"
+      )
     end
 
     private

@@ -9,17 +9,13 @@ module CollavreLinear
       before_action :set_creative
       before_action :set_origin
       before_action :ensure_read_permission
+      before_action :ensure_admin_permission, only: %i[create destroy resync]
 
       # POST /linear/creatives/:creative_id/integration
       #
       # Links a Creative subtree to a Linear team + project, provisions a
       # webhook for the team, and enqueues an initial full export.
       def create
-        unless @creative.has_permission?(Current.user, :admin)
-          render json: { error: integration_forbidden_message }, status: :forbidden
-          return
-        end
-
         account = Current.user.linear_account
         unless account
           render json: { error: I18n.t("collavre_linear.errors.not_connected") },
@@ -57,15 +53,10 @@ module CollavreLinear
 
       # DELETE /linear/creatives/:creative_id/integration
       #
-      # Unlinks the Creative from its Linear project.  Webhook deregistration
-      # is best-effort (Linear offers no webhook delete endpoint in the public
-      # GraphQL API; the webhook_id is cleared locally).
+      # Unlinks the Creative from its Linear project and deregisters the
+      # remote webhook at Linear (best-effort; unlink succeeds even if the
+      # API call fails).
       def destroy
-        unless @creative.has_permission?(Current.user, :admin)
-          render json: { error: integration_forbidden_message }, status: :forbidden
-          return
-        end
-
         account = Current.user.linear_account
         unless account
           render json: { error: I18n.t("collavre_linear.errors.not_connected") },
@@ -80,6 +71,7 @@ module CollavreLinear
           return
         end
 
+        CollavreLinear::WebhookProvisioner.deregister(project_link: link)
         link.destroy!
 
         render json: { success: true }
@@ -89,11 +81,6 @@ module CollavreLinear
       #
       # Re-enqueues a full outbound export for the subtree root.
       def resync
-        unless @creative.has_permission?(Current.user, :admin)
-          render json: { error: integration_forbidden_message }, status: :forbidden
-          return
-        end
-
         account = Current.user.linear_account
         unless account
           render json: { error: I18n.t("collavre_linear.errors.not_connected") },

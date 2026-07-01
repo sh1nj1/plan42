@@ -75,12 +75,14 @@ module CollavreLinear
              as: :json
         assert_response :success
 
-        # Second call: same team/project — should update, not create new webhook
-        stub_provisioner_returning("wh-ctrl-test-001")  # stubbed again but should be skipped
+        # Second call: same team/project — webhook already exists, WebhookProvisioner skips
+        # the API call. Assert that webhookCreate is NOT requested a second time.
+        WebMock.reset!
         post "/linear/creatives/#{@creative.id}/integration",
              params: { team_id: "team-ctrl-2", linear_project_id: "proj-ctrl-2" },
              as: :json
         assert_response :success
+        assert_not_requested :post, LINEAR_GRAPHQL_ENDPOINT, body: /webhookCreate/
 
         # There should still be exactly one ProjectLink
         assert_equal 1, CollavreLinear::ProjectLink.where(account: @account).count
@@ -139,7 +141,7 @@ module CollavreLinear
       # DELETE /linear/creatives/:creative_id/integration
       # -------------------------------------------------------------------------
 
-      test "destroy unlinks the creative's project link" do
+      test "destroy unlinks the creative's project link and calls webhookDelete" do
         sign_in_as(@user)
 
         link = CollavreLinear::ProjectLink.create!(
@@ -149,6 +151,36 @@ module CollavreLinear
           team_id: "team-destroy-1",
           webhook_id: "wh-destroy-001"
         )
+
+        stub_webhook_delete_returning(true)
+
+        delete "/linear/creatives/#{@creative.id}/integration", as: :json
+
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert body["success"]
+        assert_not CollavreLinear::ProjectLink.exists?(link.id)
+        assert_requested_webhook_delete(webhook_id: "wh-destroy-001", times: 1)
+      end
+
+      test "destroy still unlinks even when webhookDelete raises Client::Error" do
+        sign_in_as(@user)
+
+        link = CollavreLinear::ProjectLink.create!(
+          creative: @creative,
+          account: @account,
+          linear_project_id: "proj-destroy-2",
+          team_id: "team-destroy-2",
+          webhook_id: "wh-destroy-002"
+        )
+
+        stub_request(:post, LINEAR_GRAPHQL_ENDPOINT)
+          .with(body: /webhookDelete/)
+          .to_return(
+            status: 200,
+            body: { errors: [{ message: "Webhook not found" }] }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
 
         delete "/linear/creatives/#{@creative.id}/integration", as: :json
 
@@ -223,6 +255,31 @@ module CollavreLinear
         assert_response :not_found
       end
 
+      test "resync returns forbidden for non-admin user" do
+        other = Collavre.user_class.create!(
+          email: "linear-nonadmin-resync-#{SecureRandom.hex(4)}@example.com",
+          name: "Non Admin Resync",
+          password: TEST_PASSWORD,
+          password_confirmation: TEST_PASSWORD,
+          timezone: "UTC"
+        )
+        @creative.creative_shares.create!(
+          user: other,
+          permission: :read
+        )
+        CollavreLinear::Account.create!(
+          user: other,
+          linear_uid: "uid-nonadmin-resync-#{SecureRandom.hex(4)}",
+          access_token: "tok-nonadmin-resync"
+        )
+
+        sign_in_as(other)
+
+        post "/linear/creatives/#{@creative.id}/integration/resync", as: :json
+
+        assert_response :forbidden
+      end
+
       private
 
       LINEAR_GRAPHQL_ENDPOINT = "https://api.linear.app/graphql"
@@ -250,6 +307,30 @@ module CollavreLinear
         assert_requested :post, LINEAR_GRAPHQL_ENDPOINT,
                          body: /webhookCreate/,
                          times: times
+      end
+
+      def stub_webhook_delete_returning(success)
+        stub_request(:post, LINEAR_GRAPHQL_ENDPOINT)
+          .with(body: /webhookDelete/)
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                webhookDelete: { success: success }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      def assert_requested_webhook_delete(webhook_id:, times: 1)
+        assert_requested :post, LINEAR_GRAPHQL_ENDPOINT,
+                         body: /webhookDelete/,
+                         times: times
+        assert_requested :post, LINEAR_GRAPHQL_ENDPOINT, times: times do |req|
+          body = JSON.parse(req.body)
+          body["query"].include?("webhookDelete") && body["variables"]["id"] == webhook_id
+        end
       end
     end
   end
