@@ -89,6 +89,64 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
+    # Ordering: a child whose job runs before its parent's export must NOT be
+    # created as a top-level Linear issue — it defers until the parent lands.
+    # ---------------------------------------------------------------------------
+
+    test "child job running before parent export defers instead of creating a top-level issue" do
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "uid-order-#{SecureRandom.hex(4)}",
+        access_token: "tok-order"
+      )
+      CollavreLinear::ProjectLink.create!(
+        creative: @creative,
+        account:  account,
+        linear_project_id: "proj-order",
+        team_id:           "team-order"
+      )
+      child = Collavre::Creative.new(
+        description: "<p>Child</p>", user: @user, parent: @creative
+      )
+      child.skip_linear_sync = true
+      child.save!
+
+      created = []
+      fake_client = Class.new do
+        define_method(:create_issue) do |**kw|
+          created << kw
+          { id: "iss-#{created.size}", identifier: "ENG-#{created.size}" }
+        end
+        def update_issue(id, **_) = { id: id, identifier: "ENG-0" }
+      end.new
+
+      # Child job runs FIRST — parent has no Linear issue yet. It must NOT
+      # create a Linear issue (would be top-level); it re-enqueues instead.
+      CollavreLinear::Client.stub(:new, fake_client) do
+        assert_enqueued_with(job: CollavreLinear::OutboundSyncJob, args: [ child.id ]) do
+          CollavreLinear::OutboundSyncJob.perform_now(child.id)
+        end
+      end
+
+      assert_empty created, "child must not create a top-level issue before its parent exists"
+      assert_nil CollavreLinear::IssueLink.find_by(creative_id: child.id),
+        "no IssueLink should exist for the deferred child"
+
+      # Now the parent exports, then the retried child nests under it.
+      CollavreLinear::Client.stub(:new, fake_client) do
+        CollavreLinear::OutboundSyncJob.perform_now(@creative.id)
+        CollavreLinear::OutboundSyncJob.perform_now(child.id)
+      end
+
+      child_link = CollavreLinear::IssueLink.find_by(creative_id: child.id)
+      assert_not_nil child_link, "child must be exported once the parent exists"
+      parent_link = CollavreLinear::IssueLink.find_by(creative_id: @creative.id)
+      child_call = created.last
+      assert_equal parent_link.linear_issue_id, child_call[:parent_id],
+        "child must be nested under the parent's Linear issue, not top-level"
+    end
+
+    # ---------------------------------------------------------------------------
     # Idempotent single-create across repeated performs
     # ---------------------------------------------------------------------------
 

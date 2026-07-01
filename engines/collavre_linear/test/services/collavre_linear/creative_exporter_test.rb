@@ -77,6 +77,18 @@ module CollavreLinear
       @fake_client = FakeClient.new
     end
 
+    # Give the root creative its Linear issue so exporting @child_creative on
+    # the create path does not defer on the parent-ordering guard. Returns the
+    # created root IssueLink.
+    def link_root_issue!(linear_issue_id = "iss-root-parent")
+      CollavreLinear::IssueLink.create!(
+        creative:        @root_creative,
+        project_link:    @project_link,
+        linear_issue_id: linear_issue_id,
+        sync_state:      :synced
+      )
+    end
+
     # ---------------------------------------------------------------------------
     # Step 1 — CREATE path
     # ---------------------------------------------------------------------------
@@ -105,6 +117,7 @@ module CollavreLinear
     end
 
     test "sync! persists an IssueLink with content_hash after create" do
+      link_root_issue!
       CollavreLinear::Client.stub(:new, @fake_client) do
         CollavreLinear::CreativeExporter.new(@child_creative).sync!
       end
@@ -119,6 +132,10 @@ module CollavreLinear
 
     test "sync! resolves project_link from ancestor when creative has no direct link" do
       # @child_creative has no ProjectLink; only @root_creative does.
+      # Give the root its Linear issue first so the child does not defer on the
+      # parent-ordering guard — this test is about project_link resolution.
+      link_root_issue!("iss-parent-ancestor")
+
       CollavreLinear::Client.stub(:new, @fake_client) do
         CollavreLinear::CreativeExporter.new(@child_creative).sync!
       end
@@ -373,6 +390,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "sync! re-raises Client::Error so the job can retry" do
+      link_root_issue!
       error_client = Class.new do
         def create_issue(**); raise CollavreLinear::Client::Error, "boom"; end
         def update_issue(*, **); raise CollavreLinear::Client::Error, "boom"; end
@@ -390,6 +408,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "sync! stamps last_outbound_at via EchoGuard after create" do
+      link_root_issue!
       before = Time.current
       CollavreLinear::Client.stub(:new, @fake_client) do
         CollavreLinear::CreativeExporter.new(@child_creative).sync!

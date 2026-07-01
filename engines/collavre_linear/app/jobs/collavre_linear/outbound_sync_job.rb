@@ -15,6 +15,13 @@ module CollavreLinear
     # Retries on transient Linear API errors.
     retry_on CollavreLinear::Client::Error, wait: :polynomially_longer, attempts: 5
 
+    # Re-enqueue a child whose parent's Linear issue does not exist yet, so the
+    # child lands AFTER its parent and nests correctly. Independent per-creative
+    # jobs can otherwise run out of order under multiple workers and flatten the
+    # tree. Generous attempts so a slow/retrying parent export still resolves.
+    retry_on CollavreLinear::CreativeExporter::ParentNotExportedError,
+             wait: :polynomially_longer, attempts: 25
+
     def perform(creative_id)
       creative = ::Collavre::Creative.find(creative_id)
 

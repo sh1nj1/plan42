@@ -14,6 +14,14 @@ module CollavreLinear
   # hash is unchanged (dirty-tracking).  Raises Client::Error on network failure
   # so the caller (OutboundSyncJob) can retry.
   class CreativeExporter
+    # Raised when a child must be exported AFTER its parent's Linear issue
+    # exists but the parent hasn't been exported yet (independent per-creative
+    # jobs can run out of order under multiple queue workers). The job catches
+    # this and re-enqueues so the child retries once the parent has landed —
+    # without this, the child would be created as a TOP-LEVEL Linear issue and
+    # the tree would be permanently flattened on first export.
+    class ParentNotExportedError < StandardError; end
+
     # Thin adapter so FieldMapper's #title contract is met without touching core.
     # Collavre::Creative has no :title column — we derive it from creative_snippet
     # (plain-text truncation of the description used everywhere in the app).
@@ -73,6 +81,11 @@ module CollavreLinear
       issue_link = @creative.linear_issue_links.first
 
       if issue_link.nil?
+        # Ordering guard: if this creative's parent belongs to the exported
+        # subtree but has not yet produced its Linear issue, defer — creating
+        # now would make this a top-level issue and flatten the tree.
+        raise ParentNotExportedError if parent_export_pending?
+
         create_issue!(client, project_link, attrs, hash, parent_id)
       else
         update_issue!(client, issue_link, attrs, hash, parent_id)
@@ -80,6 +93,23 @@ module CollavreLinear
     end
 
     private
+
+    # True when this creative's parent is itself part of the exported subtree
+    # (it resolves the governing ProjectLink) but has not yet been exported to
+    # Linear (no linear_issue_id). The parent MUST land first so this child can
+    # be nested under it. The ProjectLink-root creative's own parent is outside
+    # the subtree (resolves no link), so the root never defers.
+    def parent_export_pending?
+      parent = @creative.parent
+      return false unless parent
+      return false if parent.linear_issue_links.first&.linear_issue_id.present?
+
+      # Parent is in the linked subtree only if it (or an ancestor) holds a
+      # ProjectLink. If not, the parent is above the linked root — no wait.
+      parent.self_and_ancestors.any? do |ancestor|
+        CollavreLinear::ProjectLink.exists?(creative_id: ancestor.id)
+      end
+    end
 
     # Wrap a Collavre::Creative in the adapter expected by FieldMapper.
     # :title is derived from creative_snippet (plain-text, max 24 chars).
