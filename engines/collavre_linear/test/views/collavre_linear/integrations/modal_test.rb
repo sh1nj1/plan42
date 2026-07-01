@@ -107,6 +107,31 @@ module CollavreLinear
         assert_includes html, "/linear/webhook"
         assert_includes html, link.webhook_secret
       end
+
+      test "webhook guide uses defined design tokens so text is visible in dark mode" do
+        account = CollavreLinear::Account.create!(
+          user: @user,
+          linear_uid: "uid-tok-#{SecureRandom.hex(4)}",
+          access_token: "tok-tok"
+        )
+        CollavreLinear::ProjectLink.create!(
+          creative: @creative.effective_origin,
+          account: account,
+          linear_project_id: "proj-tok-1",
+          team_id: "team-tok-1"
+        )
+
+        html = render_modal(connected: true)
+
+        # These token names are NOT defined in design_tokens.css, so their
+        # hardcoded light fallbacks (#f8f8f8 / #666) would force a near-white
+        # box + inherited near-white text in dark mode → invisible.
+        refute_includes html, "--color-surface-secondary"
+        refute_includes html, "--color-text-secondary"
+        # Real tokens that carry dark-mode overrides.
+        assert_includes html, "var(--surface-secondary)"
+        assert_includes html, "var(--text-muted)"
+      end
     end
   end
 end

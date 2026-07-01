@@ -28,7 +28,7 @@
             onclick="document.getElementById('linear-integration-modal').style.display='none'">&times;</button>
 
     <h2><%= t("collavre_linear.integration.label") %></h2>
-    <p style="margin-bottom:1em;color:var(--color-text-secondary,#666);">
+    <p style="margin-bottom:1em;color:var(--text-muted);">
       <%= t("collavre_linear.integration.description") %>
     </p>
 
@@ -46,10 +46,13 @@
             longer request Linear's `admin` scope (app actors can't), so the
             webhook can't be auto-provisioned; the user creates it once by hand. %>
         <% if project_link.webhook_id.blank? %>
+          <%# Use defined semantic tokens (not phantom --color-*-secondary names,
+              whose light hex fallbacks forced a near-white box + invisible text
+              in dark mode). Explicit --text-primary guards inherited contrast. %>
           <details class="linear-webhook-guide" open
-                   style="margin-bottom:1em;padding:0.75em;border:1px solid var(--color-border,#ddd);border-radius:6px;background:var(--color-surface-secondary,#f8f8f8);">
+                   style="margin-bottom:1em;padding:0.75em;border:1px solid var(--border-color);border-radius:6px;background:var(--surface-secondary);color:var(--text-primary);">
             <summary style="font-weight:600;cursor:pointer;"><%= t("collavre_linear.integration.webhook_guide_title") %></summary>
-            <p style="margin:0.5em 0;color:var(--color-text-secondary,#666);font-size:0.9em;">
+            <p style="margin:0.5em 0;color:var(--text-muted);font-size:0.9em;">
               <%= t("collavre_linear.integration.webhook_guide_intro") %>
             </p>
             <ol style="margin:0 0 0 1.2em;font-size:0.9em;line-height:1.6;">
@@ -61,12 +64,12 @@
               <li>
                 <%= t("collavre_linear.integration.webhook_guide_url_label") %>
                 <br>
-                <code style="user-select:all;word-break:break-all;"><%= "#{request.base_url}/linear/webhook" %></code>
+                <code style="user-select:all;word-break:break-all;background:var(--color-code-bg);color:var(--color-code-text);padding:0.1em 0.3em;border-radius:3px;"><%= "#{request.base_url}/linear/webhook" %></code>
               </li>
               <li>
                 <%= t("collavre_linear.integration.webhook_guide_secret_label") %>
                 <br>
-                <code style="user-select:all;word-break:break-all;"><%= project_link.webhook_secret %></code>
+                <code style="user-select:all;word-break:break-all;background:var(--color-code-bg);color:var(--color-code-text);padding:0.1em 0.3em;border-radius:3px;"><%= project_link.webhook_secret %></code>
               </li>
               <li>
                 <%= t("collavre_linear.integration.webhook_guide_events_label") %>
@@ -114,7 +117,7 @@
                                       options_failed: t("collavre_linear.integration.options_failed"),
                                       no_projects: t("collavre_linear.integration.no_projects") } } do |f| %>
           <p class="linear-options-status"
-             style="margin-bottom:0.75em;color:var(--color-text-secondary,#666);font-size:0.9em;">
+             style="margin-bottom:0.75em;color:var(--text-muted);font-size:0.9em;">
             <%= t("collavre_linear.integration.options_loading") %>
           </p>
 
