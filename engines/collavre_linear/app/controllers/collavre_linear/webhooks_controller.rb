@@ -11,14 +11,10 @@ module CollavreLinear
   #   3. Drop our own events (EchoGuard) to avoid sync loops. Echo -> 200 ack,
   #      but nothing enqueued.
   #
-  # This is a machine-to-machine endpoint: no user session, CSRF disabled.
+  # Machine-to-machine endpoint authenticated by the HMAC signature below, not a
+  # user session. Inherits ActionController::API, which carries no CSRF
+  # middleware — so there is nothing to skip, and no session cookie to forge.
   class WebhooksController < ActionController::API
-    # ActionController::API doesn't include CSRF, but be explicit/defensive in
-    # case a base module adds it back.
-    if respond_to?(:skip_forgery_protection)
-      skip_forgery_protection
-    end
-
     TIMESTAMP_WINDOW_MS = 60_000
 
     def create

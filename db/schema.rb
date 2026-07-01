@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_000005) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -411,6 +411,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000005) do
     t.index ["account_id"], name: "index_linear_project_links_on_account_id"
     t.index ["creative_id", "linear_project_id"], name: "index_linear_project_links_on_creative_and_project", unique: true
     t.index ["creative_id"], name: "index_linear_project_links_on_creative_id"
+    t.index ["linear_project_id"], name: "index_linear_project_links_on_linear_project_id"
+    t.index ["team_id"], name: "index_linear_project_links_on_team_id"
   end
 
   create_table "mcp_tools", force: :cascade do |t|
