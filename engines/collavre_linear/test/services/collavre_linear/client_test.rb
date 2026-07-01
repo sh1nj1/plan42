@@ -474,6 +474,26 @@ module CollavreLinear
       assert_match "500", err.message
     end
 
+    test "wraps a connection/read timeout in Client::Error so outbound jobs retry" do
+      # Transport failures raise before any GraphQL response is parsed. They must
+      # surface as Client::Error, otherwise the outbound jobs' retry_on
+      # Client::Error can't catch them and a transient outage drops the change.
+      stub_request(:post, LINEAR_ENDPOINT).to_timeout
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "Timeout")
+      end
+      assert_match(/transport error/, err.message)
+    end
+
+    test "wraps a socket/connection error in Client::Error so outbound jobs retry" do
+      stub_request(:post, LINEAR_ENDPOINT).to_raise(Errno::ECONNREFUSED)
+
+      assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "Conn refused")
+      end
+    end
+
     # ---------------------------------------------------------------------------
     # Token refresh (P1-1)
     # ---------------------------------------------------------------------------

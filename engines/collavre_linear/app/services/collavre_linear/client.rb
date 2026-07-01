@@ -343,7 +343,19 @@ module CollavreLinear
       request["Authorization"] = "Bearer #{fresh_access_token}"
       request.body = { query: query, variables: variables }.to_json
 
-      response = http.request(request)
+      response =
+        begin
+          http.request(request)
+        rescue SocketError, SystemCallError, Timeout::Error, IOError,
+               OpenSSL::SSL::SSLError => e
+          # Transport-layer failures (connection refused/reset, DNS, TLS,
+          # open/read timeouts) raise before any GraphQL response exists, so they
+          # bypass the parsed-`errors` path below. Wrap them in Error so the
+          # outbound jobs' `retry_on Client::Error` treats a transient
+          # Linear/network outage as retryable instead of dropping the pending
+          # sync/comment/archive on the first failure.
+          raise Error, "Linear transport error: #{e.class}: #{e.message}"
+        end
 
       parsed = begin
         JSON.parse(response.body)
