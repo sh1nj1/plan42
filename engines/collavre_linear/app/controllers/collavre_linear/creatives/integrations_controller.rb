@@ -39,7 +39,7 @@ module CollavreLinear
         link.team_id = team_id
         link.save!
 
-        CollavreLinear::WebhookProvisioner.ensure_for(
+        provision_result = CollavreLinear::WebhookProvisioner.ensure_for(
           project_link: link,
           webhook_url:  linear_webhook_url
         )
@@ -52,7 +52,21 @@ module CollavreLinear
           CollavreLinear::OutboundSyncJob.perform_later(creative_id)
         end
 
-        render json: { success: true, project_link: serialize_link(link) }
+        # Webhook provisioning failure must NOT fail the request — the link and
+        # outbound sync still work — but it MUST be surfaced: without a webhook,
+        # inbound sync is silently disabled (usually a missing Linear admin
+        # permission on the OAuth grant).
+        webhook_provisioned = provision_result != :failed
+        response_body = {
+          success:             true,
+          project_link:        serialize_link(link),
+          webhook_provisioned: webhook_provisioned
+        }
+        unless webhook_provisioned
+          response_body[:warning] = I18n.t("collavre_linear.integration.webhook_provision_failed")
+        end
+
+        render json: response_body
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
       end

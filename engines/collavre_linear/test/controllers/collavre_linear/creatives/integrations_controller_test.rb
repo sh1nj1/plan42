@@ -63,6 +63,32 @@ module CollavreLinear
 
         assert_equal 1, CollavreLinear::ProjectLink.where(account: @account).count
         assert_requested_webhook_registration(times: 1)
+
+        assert body["webhook_provisioned"],
+          "create must report a successful webhook provisioning outcome"
+        assert_nil body["warning"],
+          "no warning should surface on a successful provisioning"
+      end
+
+      test "create surfaces a warning (but still succeeds) when webhook provisioning fails" do
+        sign_in_as(@user)
+
+        CollavreLinear::WebhookProvisioner.stub(:ensure_for, :failed) do
+          post "/linear/creatives/#{@creative.id}/integration",
+               params: { team_id: "team-fail", linear_project_id: "proj-fail" },
+               as: :json
+        end
+
+        # The link + outbound sync still work, so the request succeeds.
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert body["success"]
+        assert_equal 1, CollavreLinear::ProjectLink.where(account: @account).count
+
+        # But the failed inbound webhook setup must be surfaced, not silent.
+        assert_equal false, body["webhook_provisioned"]
+        assert_not_nil body["warning"],
+          "a failed webhook provisioning must surface a warning to the user"
       end
 
       test "create enqueues OutboundSyncJob for the whole existing subtree" do

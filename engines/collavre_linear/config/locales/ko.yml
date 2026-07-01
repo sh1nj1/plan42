@@ -22,6 +22,7 @@ ko:
       resync_button: "지금 재동기화"
       resync_started: "재동기화 시작됨. 이슈가 곧 업데이트됩니다."
       missing_creative: "creative_id가 필요합니다"
+      webhook_provision_failed: "프로젝트는 연결되었지만 인바운드 웹훅 설정에 실패했습니다. 이 작업이 성공할 때까지 Linear로부터의 인바운드 동기화가 비활성화됩니다. Linear 계정에 관리자 권한이 있는지 확인한 후 다시 동기화해 주세요."
     errors:
       not_connected: "Linear 계정이 연결되지 않았습니다."
       missing_params: "team_id와 linear_project_id가 필요합니다."
