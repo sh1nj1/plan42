@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_000003) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_000004) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -382,6 +382,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000003) do
     t.string "content_hash"
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.datetime "last_outbound_at"
     t.string "linear_issue_id", null: false
     t.integer "local_version", default: 0, null: false
     t.string "parent_issue_id"
@@ -399,6 +400,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000003) do
     t.integer "account_id", null: false
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.datetime "last_outbound_at"
     t.datetime "last_synced_at"
     t.string "linear_project_id", null: false
     t.integer "sync_state", default: 0, null: false
