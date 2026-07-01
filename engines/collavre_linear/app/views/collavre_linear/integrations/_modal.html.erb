@@ -5,10 +5,10 @@
     creative:  the Collavre::Creative being configured
     connected: boolean – whether Current.user has a CollavreLinear::Account
 
-  Usage:
-    <%= render "collavre_linear/integrations/modal",
-               creative: @creative,
-               connected: Current.user&.linear_account.present? %>
+  Rendered by callers with:
+    render "collavre_linear/integrations/modal", creative: @creative
+  (an example with literal ERB tags is omitted here: a nested "%"+">" would
+   terminate this comment early and leak the trailing marker into the page).
 %>
 
 <% connected    = local_assigns.fetch(:connected, Current.user&.linear_account.present?) %>

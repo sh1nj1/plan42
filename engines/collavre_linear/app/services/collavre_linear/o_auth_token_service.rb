@@ -26,6 +26,16 @@ module CollavreLinear
     class Error < StandardError; end
 
     class << self
+      # Names of any OAuth secrets that are unset/blank. When non-empty we must
+      # NOT start the flow: a blank redirect_uri produces an authorize URL like
+      # `...&redirect_uri&scope=...` that Linear accepts but can never redirect
+      # back from, so the callback never fires and the account is never created
+      # (Linear just shows the app as "already installed"). Fail loudly instead.
+      def missing_config
+        { LINEAR_CLIENT_ID: client_id,
+          LINEAR_OAUTH_REDIRECT_URI: redirect_uri }.select { |_, v| v.blank? }.keys
+      end
+
       # Build the URL that redirects the user to Linear for authorization.
       #
       # @param state [String] CSRF token / opaque value passed through the OAuth flow

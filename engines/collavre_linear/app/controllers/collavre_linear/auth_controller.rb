@@ -103,6 +103,14 @@ module CollavreLinear
     # render raw JSON in the popup and never start OAuth — a 303 redirect makes
     # the popup follow through to Linear.
     def store_creative
+      missing = OAuthTokenService.missing_config
+      if missing.any?
+        render plain: I18n.t("collavre_linear.auth.oauth_config_missing",
+                             keys: missing.join(", ")),
+               status: :service_unavailable
+        return
+      end
+
       session[:linear_creative_id] = params[:creative_id]
       state = SecureRandom.hex(24)
       session[:linear_oauth_state] = state

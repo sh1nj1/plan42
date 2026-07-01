@@ -5,6 +5,7 @@ en:
       invalid_state: "Invalid OAuth state. Please try connecting again."
       login_first: "Please log in first."
       already_linked_other: "This Linear account is already connected to a different Collavre user."
+      oauth_config_missing: "Linear OAuth is not configured (%{keys}). Set these before connecting."
     integration:
       label: "Linear"
       description: "Two-way sync of projects, issues and comments"

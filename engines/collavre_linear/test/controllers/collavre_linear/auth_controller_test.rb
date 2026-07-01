@@ -225,6 +225,18 @@ module CollavreLinear
       assert_response :redirect
     end
 
+    test "store_creative fails loudly when OAuth config is missing" do
+      # A blank redirect_uri would otherwise build `...&redirect_uri&scope=...`,
+      # which Linear can never redirect back from ("already installed" dead-end).
+      sign_in_as(@user)
+      OAuthTokenService.stub(:missing_config, [ :LINEAR_OAUTH_REDIRECT_URI ]) do
+        post "/linear/auth/store_creative", params: { creative_id: @creative.id }
+      end
+      assert_response :service_unavailable
+      assert_includes response.body, "LINEAR_OAUTH_REDIRECT_URI"
+      assert_nil session[:linear_creative_id]
+    end
+
     private
 
     def stub_token_exchange
