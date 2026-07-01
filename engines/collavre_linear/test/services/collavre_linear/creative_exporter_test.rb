@@ -452,6 +452,39 @@ module CollavreLinear
       assert_not_equal "old-hash-that-will-not-match", existing_link.content_hash
     end
 
+    test "sync! sends parentId: null on update when a creative moves out from under a linked parent to the project root" do
+      # The link once recorded a linked Linear parent (parent_issue_id present),
+      # but the creative now resolves NO linked parent (parent_linear_issue_id is
+      # nil — its Collavre parent is outside the linked subtree / the project
+      # root). Linear only changes provided fields, so omitting parentId would
+      # leave the issue nested under its old parent while we persist
+      # parent_issue_id: nil + synced — permanent, invisible hierarchy drift.
+      # An explicit null must be sent to clear the remote parent.
+      existing_link = CollavreLinear::IssueLink.create!(
+        creative:        @root_creative,          # no Collavre parent -> parent_id nil
+        project_link:    @project_link,
+        linear_issue_id: "iss-was-nested",
+        parent_issue_id: "iss-stale-parent",      # previously under a linked parent
+        content_hash:    "old-hash-that-will-not-match",
+        sync_state:      :synced
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@root_creative).sync!
+      end
+
+      assert_equal 1, @fake_client.update_calls.size
+      call = @fake_client.update_calls.first
+      assert call.key?(:parent_id),
+        "parentId must be sent (as null) to clear the remote parent on move-to-root"
+      assert_nil call[:parent_id],
+        "parentId must be an explicit null, not the stale parent"
+
+      existing_link.reload
+      assert_nil existing_link.parent_issue_id,
+        "link parent_issue_id must be cleared to match the cleared remote parent"
+    end
+
     test "sync! DEFERS an update when the parent is in-subtree but not yet exported" do
       # Codex fix: an already-linked creative moved under a NEWLY-created in-subtree
       # parent can run before the parent's create job. Exporting now would send no

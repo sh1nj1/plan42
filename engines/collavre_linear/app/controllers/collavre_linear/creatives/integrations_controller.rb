@@ -54,7 +54,18 @@ module CollavreLinear
                                  .where.not(account: account, linear_project_id: linear_project_id)
                                  .exists?
 
-        if overlapping || origin_conflict
+        # One Linear project maps to exactly one Collavre root. Inbound webhooks
+        # resolve the project with an UNSCOPED find_by(linear_project_id:), so a
+        # second ProjectLink for the same project on a DISJOINT creative (not an
+        # ancestor/descendant, so the overlap check above misses it) would make
+        # imports/updates land on whichever row the DB returns while both roots
+        # export into it. Reject globally; re-linking @origin stays idempotent.
+        project_taken = CollavreLinear::ProjectLink
+                          .where(linear_project_id: linear_project_id)
+                          .where.not(creative_id: @origin.id)
+                          .exists?
+
+        if overlapping || origin_conflict || project_taken
           render json: { error: I18n.t("collavre_linear.errors.overlapping_link") },
                  status: :unprocessable_entity
           return

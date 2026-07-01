@@ -95,6 +95,36 @@ module CollavreLinear
           JSON.parse(response.body)["error"]
       end
 
+      test "create rejects linking a DISJOINT creative to an already-linked Linear project" do
+        sign_in_as(@user)
+
+        # A totally separate Collavre root (not an ancestor/descendant of
+        # @creative) is already linked to proj-shared. Inbound webhooks resolve
+        # the project with an UNSCOPED find_by(linear_project_id:), so a second
+        # ProjectLink for the same project would make imports/updates land on
+        # whichever row the DB returns while both roots export into it. The one
+        # Linear project must map to exactly one Collavre root.
+        other_root = Collavre::Creative.create!(
+          description: "<p>disjoint other root</p>", user: @user
+        )
+        CollavreLinear::ProjectLink.create!(
+          creative:          other_root.effective_origin,
+          account:           @account,
+          linear_project_id: "proj-shared",
+          team_id:           "team-shared"
+        )
+
+        assert_no_difference -> { CollavreLinear::ProjectLink.count } do
+          post "/linear/creatives/#{@creative.id}/integration",
+               params: { team_id: "team-shared", linear_project_id: "proj-shared" },
+               as: :json
+        end
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("collavre_linear.errors.overlapping_link"),
+          JSON.parse(response.body)["error"]
+      end
+
       test "create rejects a SECOND link to a DIFFERENT project on the same origin" do
         sign_in_as(@user)
 

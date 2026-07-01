@@ -248,8 +248,16 @@ module CollavreLinear
         # Carry parentId on update so a reparent in Collavre moves the issue in
         # Linear too. Only send it when the parent is itself a linked Linear
         # issue (mirrors create_issue!); sending a nil/bogus parentId would error.
+        # When the parent is cleared (moved out from under a linked parent to the
+        # project root), send an EXPLICIT null: Linear only changes provided
+        # fields, so omitting parentId would leave the issue nested under its old
+        # parent while we persist parent_issue_id: nil + synced — permanent drift.
         update_fields = attrs
-        update_fields = update_fields.merge(parent_id: parent_id) if parent_id
+        if parent_id
+          update_fields = update_fields.merge(parent_id: parent_id)
+        elsif issue_link.parent_issue_id.present?
+          update_fields = update_fields.merge(parent_id: nil)
+        end
 
         response = client.update_issue(issue_link.linear_issue_id, **update_fields)
 
