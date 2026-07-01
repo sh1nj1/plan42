@@ -69,7 +69,9 @@ module CollavreLinear
       assert_equal "iss-cjob", @fake_client.calls.first[:issue_id]
       # Body is prefixed with the author's display name so Linear readers can tell
       # Collavre chat participants apart (all sync through one Linear app actor).
-      assert_equal "[Comment Job Test]: hello linear", @fake_client.calls.first[:body]
+      # Brackets are escaped so Linear's Markdown does not read the prefix as a
+      # link reference definition (which swallows single-word content to empty).
+      assert_equal "\\[Comment Job Test\\]: hello linear", @fake_client.calls.first[:body]
 
       link = CollavreLinear::CommentLink.find_by(comment_id: @comment.id)
       assert_not_nil link

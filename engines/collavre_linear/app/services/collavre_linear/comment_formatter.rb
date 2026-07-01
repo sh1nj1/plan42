@@ -10,13 +10,18 @@ module CollavreLinear
   # The same formatter drives the inbound echo guard: when Linear webhooks our
   # own comment back, the incoming body equals this prefixed form, so the
   # applier can recognise the echo and leave the canonical local comment intact.
+  #
+  # The brackets are backslash-escaped because Linear renders comments as
+  # Markdown: an unescaped "[name]: word" is a link reference definition (label +
+  # destination) that Linear swallows into an empty string when the content is a
+  # single token. Escaping keeps the whole line literal regardless of word count.
   module CommentFormatter
     module_function
 
     def outbound_body(comment)
       content = comment.content.to_s
       author  = comment.user&.display_name
-      author.present? ? "[#{author}]: #{content}" : content
+      author.present? ? "\\[#{author}\\]: #{content}" : content
     end
   end
 end
