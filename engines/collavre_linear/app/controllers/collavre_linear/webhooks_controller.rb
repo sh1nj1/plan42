@@ -1,0 +1,122 @@
+# frozen_string_literal: true
+
+module CollavreLinear
+  # Receives inbound webhooks from Linear.
+  #
+  # Security pipeline (all BEFORE enqueueing any work):
+  #   1. Verify `Linear-Signature` = HMAC-SHA256(webhook_secret, raw_body) with
+  #      a constant-time compare. Bad/missing signature -> 401.
+  #   2. Verify `webhookTimestamp` (ms epoch) is within +/- 60s of now to reject
+  #      replayed/stale deliveries. Out-of-window -> 401.
+  #   3. Drop our own events (EchoGuard) to avoid sync loops. Echo -> 200 ack,
+  #      but nothing enqueued.
+  #
+  # This is a machine-to-machine endpoint: no user session, CSRF disabled.
+  class WebhooksController < ActionController::API
+    # ActionController::API doesn't include CSRF, but be explicit/defensive in
+    # case a base module adds it back.
+    if respond_to?(:skip_forgery_protection)
+      skip_forgery_protection
+    end
+
+    TIMESTAMP_WINDOW_MS = 60_000
+
+    def create
+      raw_body = request.raw_post.presence || request.body.read
+      payload  = JSON.parse(raw_body)
+
+      link    = find_project_link(payload)
+      secret  = resolve_webhook_secret(link)
+
+      return head :unauthorized unless valid_signature?(raw_body, secret)
+      return head :unauthorized unless fresh_timestamp?(payload)
+
+      account = resolve_account(link)
+      if account && CollavreLinear::EchoGuard.our_event?(account, payload)
+        # Our own actor bounced back — ack so Linear stops retrying, but do not
+        # re-apply our own change.
+        return head :ok
+      end
+
+      CollavreLinear::InboundApplyJob.perform_later(payload)
+      head :ok
+    rescue JSON::ParserError
+      head :bad_request
+    end
+
+    private
+
+    # Match the payload's team/project to a ProjectLink so we can use its
+    # per-link webhook secret and account. Falls back to nil (ENV secret +
+    # single-account fallback) when nothing matches.
+    def find_project_link(payload)
+      team_id = extract_team_id(payload)
+      project_id = extract_project_id(payload)
+
+      if team_id.present?
+        link = CollavreLinear::ProjectLink.find_by(team_id: team_id)
+        return link if link
+      end
+
+      if project_id.present?
+        link = CollavreLinear::ProjectLink.find_by(linear_project_id: project_id)
+        return link if link
+      end
+
+      nil
+    end
+
+    def extract_team_id(payload)
+      payload.dig("data", "teamId") ||
+        payload.dig("data", "team", "id") ||
+        payload["teamId"]
+    end
+
+    def extract_project_id(payload)
+      payload.dig("data", "projectId") ||
+        payload.dig("data", "project", "id")
+    end
+
+    def resolve_account(link)
+      link&.account || CollavreLinear::Account.first
+    end
+
+    def resolve_webhook_secret(link)
+      link&.webhook_secret.presence || fallback_webhook_secret
+    end
+
+    def fallback_webhook_secret
+      resolved =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          begin
+            Collavre::IntegrationSettings::Resolver.get(:linear_webhook_secret).presence
+          rescue Collavre::IntegrationSettings::Resolver::UnknownKeyError
+            nil
+          end
+        end
+      resolved || ENV["LINEAR_WEBHOOK_SECRET"]
+    end
+
+    def valid_signature?(raw_body, secret)
+      return false if secret.blank?
+
+      signature = request.headers["Linear-Signature"] ||
+        request.get_header("HTTP_LINEAR_SIGNATURE")
+      return false if signature.blank?
+
+      expected = OpenSSL::HMAC.hexdigest("SHA256", secret, raw_body)
+      ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+    end
+
+    def fresh_timestamp?(payload)
+      ts = payload["webhookTimestamp"]
+      return false if ts.blank?
+
+      ts_ms = Integer(ts)
+      now_ms = (Time.now.to_f * 1000).to_i
+      (now_ms - ts_ms).abs <= TIMESTAMP_WINDOW_MS
+    rescue ArgumentError, TypeError
+      false
+    end
+  end
+end
