@@ -166,6 +166,39 @@ module CollavreLinear
         "expected exactly one OutboundArchiveJob to be enqueued on destroy"
     end
 
+    # Regression: the Creative that OWNS the ProjectLink is itself linked as an
+    # issue. Destroying it cascades the ProjectLink AND IssueLink away before the
+    # after_commit runs, so the old `linked_subtree?` gate returned false and
+    # SWALLOWED the captured archive id — leaking a live Linear issue. The
+    # destroy path must archive purely from the before_destroy capture.
+    test "destroying the linked-root Creative (owns the ProjectLink) still enqueues OutboundArchiveJob" do
+      linked_root = Collavre::Creative.create!(description: "<p>Linked root</p>", user: @user)
+      project_link = CollavreLinear::ProjectLink.create!(
+        creative: linked_root,
+        account:  @account,
+        linear_project_id: "proj-root-#{SecureRandom.hex(4)}",
+        team_id:           "team-obs"
+      )
+      issue_link = CollavreLinear::IssueLink.create!(
+        creative:        linked_root,
+        project_link:    project_link,
+        linear_issue_id: "iss-root-#{SecureRandom.hex(4)}",
+        content_hash:    "abc",
+        sync_state:      :synced
+      )
+      expected_issue_id = issue_link.linear_issue_id
+
+      linked_root.destroy!
+
+      assert_enqueued_with(
+        job:  CollavreLinear::OutboundArchiveJob,
+        args: [ expected_issue_id, @account.id ]
+      )
+      archive_jobs = enqueued_jobs.select { |job| job[:job] == CollavreLinear::OutboundArchiveJob }
+      assert_equal 1, archive_jobs.size,
+        "expected exactly one OutboundArchiveJob when the link-owner root is destroyed"
+    end
+
     test "destroying a linked Creative with NO IssueLink enqueues nothing" do
       child = Collavre::Creative.create!(
         description: "<p>No link</p>",

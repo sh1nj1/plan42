@@ -77,19 +77,27 @@ module CollavreLinear
 
     def enqueue_linear_outbound_sync
       return if skip_linear_sync
+
+      # Destroys are driven ENTIRELY by what before_destroy captured. By the time
+      # this after_commit runs, the ProjectLink/IssueLink rows are already gone
+      # via dependent: :destroy, so `linked_subtree?` is unreliable here — it
+      # returns false for the link OWNER itself, which would otherwise swallow
+      # the captured archive id and leak a live Linear issue. Trust the captured
+      # ids; enqueue_archive_if_captured no-ops when nothing was captured (an
+      # unlinked creative), so this is safe for every destroy.
+      if destroyed?
+        enqueue_archive_if_captured
+        return
+      end
+
       # Cheap in-memory short-circuit BEFORE any DB work: `after_commit` fires for
-      # every Creative write app-wide. Destroys always proceed (archive path);
-      # an update/create with no Linear-relevant column change can't affect the
-      # exported issue, so skip the subtree query entirely.
+      # every Creative write app-wide. An update/create with no Linear-relevant
+      # column change can't affect the exported issue, so skip the subtree query.
       return if relevant_change_absent?
       return unless linked_subtree?
 
-      if destroyed?
-        enqueue_archive_if_captured
-      else
-        mark_issue_link_dirty
-        CollavreLinear::OutboundSyncJob.perform_later(id)
-      end
+      mark_issue_link_dirty
+      CollavreLinear::OutboundSyncJob.perform_later(id)
     rescue StandardError => e
       # Never let a sync-scheduling failure break the host transaction's
       # commit callbacks.
@@ -99,13 +107,11 @@ module CollavreLinear
       )
     end
 
-    # True when this commit touched no Linear-relevant column. Destroys never
-    # short-circuit (handled via the archive path). Otherwise read the flag
-    # captured in after_save. A nil flag (no save ran, e.g. a bare touch) is
-    # treated as "no relevant change".
+    # True when this commit touched no Linear-relevant column. Only reached for
+    # non-destroy commits (destroys return early via the archive path). Reads
+    # the flag captured in after_save; a nil flag (no save ran, e.g. a bare
+    # touch) is treated as "no relevant change".
     def relevant_change_absent?
-      return false if destroyed?
-
       !_linear_relevant_change
     end
 
@@ -127,35 +133,14 @@ module CollavreLinear
     end
 
     # True when this creative (or any ancestor) carries a ProjectLink, i.e. it
-    # lives inside a subtree that is linked to a Linear project.
-    #
-    # On destroy the row is already gone, so `self_and_ancestors` cannot be
-    # queried; fall back to the in-memory parent chain via cached ancestor ids.
+    # lives inside a subtree that is linked to a Linear project. Only called for
+    # non-destroy commits — the row is still present, so `self_and_ancestors` is
+    # queryable.
     def linked_subtree?
-      ancestor_ids = linked_subtree_ancestor_ids
+      ancestor_ids = self_and_ancestors.pluck(:id)
       return false if ancestor_ids.empty?
 
       CollavreLinear::ProjectLink.where(creative_id: ancestor_ids).exists?
-    end
-
-    def linked_subtree_ancestor_ids
-      if destroyed?
-        # Row is gone; walk the persisted hierarchy is impossible, so use the
-        # in-memory parent_id and its ancestors resolved through a fresh lookup
-        # of the (still-present) parent.
-        ids = [ id ]
-        pid = parent_id
-        while pid
-          ids << pid
-          parent = self.class.find_by(id: pid)
-          break unless parent
-
-          pid = parent.parent_id
-        end
-        ids
-      else
-        self_and_ancestors.pluck(:id)
-      end
     end
   end
 end
