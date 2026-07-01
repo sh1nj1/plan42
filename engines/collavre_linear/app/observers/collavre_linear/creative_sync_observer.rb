@@ -103,7 +103,7 @@ module CollavreLinear
         # Row is gone; walk the persisted hierarchy is impossible, so use the
         # in-memory parent_id and its ancestors resolved through a fresh lookup
         # of the (still-present) parent.
-        ids = [id]
+        ids = [ id ]
         pid = parent_id
         while pid
           ids << pid

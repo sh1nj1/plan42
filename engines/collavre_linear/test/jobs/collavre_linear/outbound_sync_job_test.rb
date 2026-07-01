@@ -44,7 +44,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "perform_later enqueues the job" do
-      assert_enqueued_with(job: CollavreLinear::OutboundSyncJob, args: [@creative.id]) do
+      assert_enqueued_with(job: CollavreLinear::OutboundSyncJob, args: [ @creative.id ]) do
         CollavreLinear::OutboundSyncJob.perform_later(@creative.id)
       end
     end

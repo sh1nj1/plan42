@@ -65,7 +65,7 @@ module CollavreLinear
         project_id: "proj-1",
         state_id: "state-1",
         assignee_id: "user-1",
-        label_ids: ["lbl-1"],
+        label_ids: [ "lbl-1" ],
         priority: 2
       )
 
@@ -80,7 +80,7 @@ module CollavreLinear
           vars["projectId"] == "proj-1" &&
           vars["stateId"] == "state-1" &&
           vars["assigneeId"] == "user-1" &&
-          vars["labelIds"] == ["lbl-1"] &&
+          vars["labelIds"] == [ "lbl-1" ] &&
           vars["priority"] == 2
       end
     end
@@ -119,7 +119,7 @@ module CollavreLinear
           headers: { "Content-Type" => "application/json" }
         )
 
-      res = @client.create_project(name: "My Project", team_ids: ["t1"])
+      res = @client.create_project(name: "My Project", team_ids: [ "t1" ])
 
       assert_equal "proj-1", res[:id]
       assert_requested :post, LINEAR_ENDPOINT, body: /projectCreate/, times: 1
@@ -212,7 +212,7 @@ module CollavreLinear
         url: "https://example.com/hook",
         secret: "s3cr3t",
         team_id: "t1",
-        resource_types: ["Issue"]
+        resource_types: [ "Issue" ]
       )
 
       assert_equal "wh-1", res[:id]
@@ -272,7 +272,7 @@ module CollavreLinear
         .to_return(
           status: 200,
           body: {
-            errors: [{ message: "Webhook not found" }]
+            errors: [ { message: "Webhook not found" } ]
           }.to_json,
           headers: { "Content-Type" => "application/json" }
         )
@@ -314,7 +314,7 @@ module CollavreLinear
           status: 200,
           body: {
             data: { issueCreate: nil },
-            errors: [{ message: "Partial failure" }]
+            errors: [ { message: "Partial failure" } ]
           }.to_json,
           headers: { "Content-Type" => "application/json" }
         )

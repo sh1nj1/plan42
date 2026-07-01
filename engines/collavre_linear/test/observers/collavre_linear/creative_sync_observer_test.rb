@@ -58,7 +58,7 @@ module CollavreLinear
 
       assert_enqueued_with(
         job: CollavreLinear::OutboundSyncJob,
-        args: [child.id]
+        args: [ child.id ]
       )
     end
 
@@ -75,7 +75,7 @@ module CollavreLinear
 
       assert_enqueued_with(
         job: CollavreLinear::OutboundSyncJob,
-        args: [child.id]
+        args: [ child.id ]
       )
     end
 
@@ -156,7 +156,7 @@ module CollavreLinear
 
       assert_enqueued_with(
         job:  CollavreLinear::OutboundArchiveJob,
-        args: [expected_issue_id, expected_account_id]
+        args: [ expected_issue_id, expected_account_id ]
       )
 
       archive_jobs = enqueued_jobs.select do |job|
@@ -204,7 +204,7 @@ module CollavreLinear
 
       assert_enqueued_with(
         job: CollavreLinear::OutboundSyncJob,
-        args: [wanderer.id]
+        args: [ wanderer.id ]
       )
     end
 

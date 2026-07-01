@@ -60,7 +60,7 @@ module CollavreLinear
 
     test "our_event? never raises on bizarre payload shapes" do
       account = make_account
-      [nil, {}, { "actor" => {} }, { "actor" => { "id" => nil } }].each do |p|
+      [ nil, {}, { "actor" => {} }, { "actor" => { "id" => nil } } ].each do |p|
         assert_nothing_raised { EchoGuard.our_event?(account, p) }
       end
     end

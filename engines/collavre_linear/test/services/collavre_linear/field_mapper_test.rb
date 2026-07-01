@@ -86,7 +86,7 @@ module CollavreLinear
     test "outbound: label_ids included when labels present in creative.data[linear]" do
       creative = make_creative(
         linear_data: {
-          "labels" => [{ "id" => "lbl-1", "name" => "Bug" }, { "id" => "lbl-2", "name" => "Frontend" }]
+          "labels" => [ { "id" => "lbl-1", "name" => "Bug" }, { "id" => "lbl-2", "name" => "Frontend" } ]
         }
       )
       attrs = FieldMapper.creative_to_issue_attrs(creative)
@@ -147,7 +147,7 @@ module CollavreLinear
     end
 
     test "inbound: labels nodes are mirrored into data_linear[:labels]" do
-      labels = [{ "id" => "lbl-1", "name" => "Bug" }]
+      labels = [ { "id" => "lbl-1", "name" => "Bug" } ]
       attrs = FieldMapper.issue_to_creative_attrs(make_issue(labels: labels))
       assert_equal labels, attrs[:data_linear][:labels]
     end

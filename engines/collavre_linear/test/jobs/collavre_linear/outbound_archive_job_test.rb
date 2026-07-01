@@ -36,7 +36,7 @@ module CollavreLinear
     test "perform_later enqueues the job with linear_issue_id and account_id" do
       assert_enqueued_with(
         job: CollavreLinear::OutboundArchiveJob,
-        args: ["iss-archive-1", @account.id]
+        args: [ "iss-archive-1", @account.id ]
       ) do
         CollavreLinear::OutboundArchiveJob.perform_later("iss-archive-1", @account.id)
       end

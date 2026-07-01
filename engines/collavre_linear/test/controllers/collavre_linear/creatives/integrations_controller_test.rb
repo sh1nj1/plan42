@@ -178,7 +178,7 @@ module CollavreLinear
           .with(body: /webhookDelete/)
           .to_return(
             status: 200,
-            body: { errors: [{ message: "Webhook not found" }] }.to_json,
+            body: { errors: [ { message: "Webhook not found" } ] }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
 
