@@ -520,10 +520,14 @@ module CollavreLinear
     test "comment update ignores our own echo so the name prefix is not injected locally" do
       creative, issue_link = linked_child(linear_issue_id: "iss-cmt-echo")
       comment = creative.comments.create!(content: "hello", user: @user, skip_dispatch: true)
+      # Outbound stored Linear's updatedAt for the version we posted; the echo
+      # carries that same timestamp, so it is not strictly newer -> skipped.
+      synced_at = Time.current
       CollavreLinear::CommentLink.create!(
         comment_id: comment.id,
         linear_comment_id: "cmt-echo",
-        issue_link: issue_link
+        issue_link: issue_link,
+        remote_updated_at: synced_at
       )
 
       # Linear echoes back the prefixed body the outbound job sent.
@@ -535,7 +539,7 @@ module CollavreLinear
           "id"    => "cmt-echo",
           "body"  => echoed_body,
           "issue" => { "id" => "iss-cmt-echo" },
-          "updatedAt" => Time.current.iso8601
+          "updatedAt" => synced_at.iso8601
         }
       }
 
@@ -543,6 +547,39 @@ module CollavreLinear
 
       assert_equal "hello", comment.reload.content,
         "the echo of our own prefixed comment must not overwrite the canonical local body"
+    end
+
+    test "a stale echo of an older body does not overwrite a newer local edit" do
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-stale")
+      # The user already re-edited the comment to B locally; the outbound update
+      # advanced the synced baseline to that edit's Linear updatedAt.
+      comment = creative.comments.create!(content: "B newer local edit", user: @user, skip_dispatch: true)
+      baseline = Time.current
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id,
+        linear_comment_id: "cmt-stale",
+        issue_link: issue_link,
+        remote_updated_at: baseline
+      )
+
+      # Linear now delivers the delayed echo of the ORIGINAL A version, whose
+      # updatedAt predates the baseline. A mutable-content comparison would treat
+      # it as a genuine edit and clobber B; the timestamp guard skips it.
+      payload = {
+        "action" => "update",
+        "type"   => "Comment",
+        "data"   => {
+          "id"    => "cmt-stale",
+          "body"  => "\\[name\\]: A stale old body",
+          "issue" => { "id" => "iss-cmt-stale" },
+          "updatedAt" => (baseline - 30.seconds).iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal "B newer local edit", comment.reload.content,
+        "a stale echo (older updatedAt) must not clobber the newer local edit"
     end
 
     test "comment remove deletes the mirrored comment and its CommentLink" do
@@ -590,7 +627,8 @@ module CollavreLinear
       CollavreLinear::CommentLink.create!(
         comment_id: comment.id,
         linear_comment_id: "cmt-noecho",
-        issue_link: issue_link
+        issue_link: issue_link,
+        remote_updated_at: 1.hour.ago
       )
 
       payload = {

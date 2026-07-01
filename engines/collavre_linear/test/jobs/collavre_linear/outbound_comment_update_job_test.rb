@@ -8,7 +8,7 @@ module CollavreLinear
     class FakeClient
       attr_reader :update_calls
 
-      def initialize(response: { id: "lin-cmt-1" })
+      def initialize(response: { id: "lin-cmt-1", updatedAt: "2026-07-01T00:00:00Z" })
         @response     = response
         @update_calls = []
       end
@@ -60,7 +60,7 @@ module CollavreLinear
     end
 
     test "updates the linked Linear comment with the prefixed body" do
-      CollavreLinear::CommentLink.create!(
+      link = CollavreLinear::CommentLink.create!(
         comment_id:        @comment.id,
         linear_comment_id: "lin-cmt-1",
         issue_link:        @issue_link
@@ -73,6 +73,28 @@ module CollavreLinear
       assert_equal 1, @fake_client.update_calls.size
       assert_equal "lin-cmt-1", @fake_client.update_calls.first[:id]
       assert_equal "\\[Comment Update Test\\]: hello linear", @fake_client.update_calls.first[:body]
+      # The edit's Linear updatedAt advances the synced baseline so the echo of
+      # this edit is recognised as ours by the inbound applier.
+      assert_equal Time.utc(2026, 7, 1), link.reload.remote_updated_at
+    end
+
+    test "no-op when the comment was made private after the update was enqueued" do
+      CollavreLinear::CommentLink.create!(
+        comment_id:        @comment.id,
+        linear_comment_id: "lin-cmt-1",
+        issue_link:        @issue_link
+      )
+      # Visibility changed between enqueue and run: pushing the now-hidden body to
+      # Linear would leak it. The delete job (enqueued by the observer) owns
+      # teardown; this update must no-op.
+      @comment.update_columns(private: true)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::OutboundCommentUpdateJob.perform_now(@comment.id)
+      end
+
+      assert_equal 0, @fake_client.update_calls.size,
+        "must not push a comment that is no longer public/Main"
     end
 
     test "no-op when the comment has no CommentLink" do

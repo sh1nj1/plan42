@@ -353,11 +353,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
   end
 
   create_table "linear_accounts", force: :cascade do |t|
-    t.string "access_token", null: false
+    t.text "access_token", null: false
     t.string "app_actor_id"
     t.datetime "created_at", null: false
     t.string "linear_uid", null: false
-    t.string "refresh_token"
+    t.text "refresh_token"
     t.datetime "token_expires_at"
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
@@ -372,6 +372,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
     t.datetime "created_at", null: false
     t.integer "issue_link_id", null: false
     t.string "linear_comment_id", null: false
+    t.datetime "remote_updated_at"
     t.datetime "updated_at", null: false
     t.index ["comment_id"], name: "index_linear_comment_links_on_comment_id"
     t.index ["issue_link_id"], name: "index_linear_comment_links_on_issue_link_id"
@@ -407,7 +408,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
     t.string "team_id", null: false
     t.datetime "updated_at", null: false
     t.string "webhook_id"
-    t.string "webhook_secret", null: false
+    t.text "webhook_secret", null: false
     t.index ["account_id"], name: "index_linear_project_links_on_account_id"
     t.index ["creative_id", "linear_project_id"], name: "index_linear_project_links_on_creative_and_project", unique: true
     t.index ["creative_id"], name: "index_linear_project_links_on_creative_id"

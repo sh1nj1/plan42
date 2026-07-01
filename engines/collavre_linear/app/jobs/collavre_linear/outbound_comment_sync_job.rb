@@ -35,10 +35,14 @@ module CollavreLinear
         linear_comment_id = result[:id]
         return if linear_comment_id.blank?
 
+        # Record Linear's updatedAt for this version so the inbound applier can
+        # recognise the create webhook (and any stale echo of it) as our own by
+        # timestamp rather than by comparing against the mutable local body.
         CollavreLinear::CommentLink.create!(
           comment_id:        comment.id,
           linear_comment_id: linear_comment_id,
-          issue_link:        issue_link
+          issue_link:        issue_link,
+          remote_updated_at: result[:updatedAt]
         )
       end
     rescue ActiveRecord::RecordNotFound

@@ -264,19 +264,35 @@ module CollavreLinear
 
       if comment_link
         comment = Collavre::Comment.find_by(id: comment_link.comment_id)
-        # Skip our own echo: Linear webhooks back the comment we just posted with
-        # the prefixed body we sent ("[name]: ..."). Overwriting would inject that
-        # prefix into the canonical local comment. Only a genuine Linear-side edit
-        # (a body that differs from what we would send) updates local content.
-        if comment && CommentFormatter.outbound_body(comment) != body
+        # Apply genuine Linear-side edits; skip our own echoes. We compare the
+        # webhook's updatedAt against the version we last synced (stored on the
+        # link) rather than the mutable local body: a user may edit A->B locally
+        # before Linear echoes the older A, and a body comparison would then treat
+        # that stale echo as a real edit and clobber B. A strictly-newer remote
+        # timestamp is the only thing that means a real Linear-side change.
+        if comment && genuine_comment_edit?(comment_link)
           # skip_linear_sync so this Linear-originated edit does not echo back out
           # as an outbound update (which would re-wrap the author-name prefix).
           comment.skip_linear_sync = true
           comment.update!(content: body)
+          comment_link.update!(remote_updated_at: remote_updated_at) if remote_updated_at
         end
       else
         create_mirrored_comment!(issue_link, linear_comment_id, body)
       end
+    end
+
+    # True when this comment webhook is a real Linear-side edit rather than our
+    # own (possibly stale) echo. "Real" = a remote updatedAt strictly newer than
+    # the version we last synced. A missing baseline or remote timestamp falls
+    # through to applying, mirroring how issue conflict detection treats an absent
+    # baseline (we cannot prove staleness, so we do not silently drop the edit).
+    def genuine_comment_edit?(comment_link)
+      remote   = remote_updated_at
+      baseline = comment_link.remote_updated_at
+      return true unless remote && baseline
+
+      remote > baseline
     end
 
     # Create the mirrored Collavre comment AND its CommentLink atomically. A
@@ -298,7 +314,8 @@ module CollavreLinear
         CommentLink.create!(
           comment_id:        comment.id,
           linear_comment_id: linear_comment_id,
-          issue_link:        issue_link
+          issue_link:        issue_link,
+          remote_updated_at: remote_updated_at
         )
       end
     rescue ActiveRecord::RecordNotUnique

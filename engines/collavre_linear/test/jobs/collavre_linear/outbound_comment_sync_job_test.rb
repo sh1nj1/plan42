@@ -8,7 +8,7 @@ module CollavreLinear
     class FakeClient
       attr_reader :calls
 
-      def initialize(response: { id: "lin-cmt-1" })
+      def initialize(response: { id: "lin-cmt-1", updatedAt: "2026-07-01T00:00:00Z" })
         @response = response
         @calls    = []
       end
@@ -77,6 +77,9 @@ module CollavreLinear
       assert_not_nil link
       assert_equal "lin-cmt-1", link.linear_comment_id
       assert_equal @issue_link.id, link.issue_link_id
+      # The synced baseline is stored so the inbound applier can recognise this
+      # comment's own create webhook (and stale echoes) by timestamp.
+      assert_equal Time.utc(2026, 7, 1), link.remote_updated_at
     end
 
     test "is idempotent: an existing CommentLink short-circuits without posting" do

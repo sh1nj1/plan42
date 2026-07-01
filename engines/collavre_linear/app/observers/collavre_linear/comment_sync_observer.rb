@@ -80,22 +80,10 @@ module CollavreLinear
       )
     end
 
-    # Only mirror real human chat posted in the Main topic of a linked creative.
-    # Excludes: inbound echoes; private notes; system/waiting notices (no user);
-    # AI agent turns — their comment is created as a "..." streaming placeholder
-    # and mutated in place, so an after_create hook would post "..." and never
-    # settle; the placeholder itself; and creatives with no Linear issue.
+    # Delegates to the shared predicate so the observer and the outbound update
+    # job (which re-checks at run time) can never diverge on what is syncable.
     def linear_syncable_comment?
-      return false if skip_linear_sync
-      return false if private?
-      return false if user_id.nil?
-      return false if user&.ai_user?
-      return false if content.blank?
-      return false if content == ::Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT
-      return false unless topic&.name == ::Collavre::Creative::MAIN_TOPIC_NAME
-      return false unless creative
-
-      creative.linear_issue_links.exists?
+      CollavreLinear::CommentSyncability.syncable?(self)
     end
   end
 end

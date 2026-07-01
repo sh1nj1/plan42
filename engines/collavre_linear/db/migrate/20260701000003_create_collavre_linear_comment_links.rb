@@ -4,6 +4,10 @@ class CreateCollavreLinearCommentLinks < ActiveRecord::Migration[8.0]
       t.integer :comment_id, null: false
       t.string :linear_comment_id, null: false
       t.references :issue_link, null: false, foreign_key: { to_table: :linear_issue_links }
+      # Linear-side `updatedAt` of the comment version we last synced. Lets the
+      # inbound applier ignore our own (possibly stale) echoes by timestamp
+      # instead of comparing against the mutable local body.
+      t.datetime :remote_updated_at
       t.timestamps
     end
 

@@ -5,7 +5,9 @@ class CreateCollavreLinearProjectLinks < ActiveRecord::Migration[8.0]
       t.references :account, null: false, foreign_key: { to_table: :linear_accounts }
       t.string :linear_project_id, null: false
       t.string :team_id, null: false
-      t.string :webhook_secret, null: false
+      # Encrypted at rest (ActiveRecord encryption); the envelope can exceed the
+      # 255-byte `string` limit in PostgreSQL, so store it in a `text` column.
+      t.text :webhook_secret, null: false
       t.integer :sync_state, null: false, default: 0
       t.datetime :last_synced_at
       t.timestamps

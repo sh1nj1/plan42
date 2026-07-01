@@ -78,6 +78,7 @@ module CollavreLinear
           success
           comment {
             id
+            updatedAt
           }
         }
       }
@@ -90,6 +91,7 @@ module CollavreLinear
           success
           comment {
             id
+            updatedAt
           }
         }
       }
