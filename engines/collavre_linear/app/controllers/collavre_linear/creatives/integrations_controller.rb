@@ -44,7 +44,13 @@ module CollavreLinear
           webhook_url:  linear_webhook_url
         )
 
-        CollavreLinear::OutboundSyncJob.perform_later(@origin.id)
+        # Existing descendants never fire after-commit callbacks during linking,
+        # so enqueue an outbound export for the whole subtree — otherwise a
+        # populated tree would only create the root Linear issue. Idempotent:
+        # the exporter skips unchanged content via its content hash.
+        @origin.self_and_descendants.ids.each do |creative_id|
+          CollavreLinear::OutboundSyncJob.perform_later(creative_id)
+        end
 
         render json: { success: true, project_link: serialize_link(link) }
       rescue ActiveRecord::RecordInvalid => e
