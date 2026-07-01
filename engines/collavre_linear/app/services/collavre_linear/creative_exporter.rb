@@ -13,6 +13,14 @@ module CollavreLinear
   # existing issue on subsequent runs.  Skips the network call when the content
   # hash is unchanged (dirty-tracking).  Raises Client::Error on network failure
   # so the caller (OutboundSyncJob) can retry.
+  #
+  # Project-root mapping: the ProjectLink-root Creative maps to the Linear
+  # PROJECT itself, NOT an issue. Its direct children become the project's
+  # TOP-LEVEL issues (parentId nil); deeper descendants nest as sub-issues.
+  # Exporting the root as an issue would consume the project's single top-level
+  # slot and flatten every sibling under it, so sync! no-ops for the root.
+  # Inbound mirrors this: a top-level Linear issue is imported as a direct child
+  # of the root Creative (see InboundApplier#resolve_create_parent).
   class CreativeExporter
     # Raised when a child must be exported AFTER its parent's Linear issue
     # exists but the parent hasn't been exported yet (independent per-creative
@@ -72,6 +80,10 @@ module CollavreLinear
       project_link = resolve_project_link
       return unless project_link
 
+      # The ProjectLink-root Creative IS the project, not an issue — skip it.
+      # (Its children export as the project's top-level issues; see class docs.)
+      return if project_link.creative_id == @creative.id
+
       account   = project_link.account
       client    = Client.new(account)
       attrs     = FieldMapper.creative_to_issue_attrs(adapt(@creative))
@@ -108,6 +120,10 @@ module CollavreLinear
     def parent_export_pending?
       parent = @creative.parent
       return false unless parent
+      # Parent is the project itself (its own ProjectLink root). The project
+      # never becomes a Linear issue, so this creative is a TOP-LEVEL issue and
+      # must NOT wait for a parent issue that will never exist.
+      return false if CollavreLinear::ProjectLink.exists?(creative_id: parent.id)
       return false if parent.linear_issue_links.first&.linear_issue_id.present?
 
       # Parent is in the linked subtree only if it (or an ancestor) holds a

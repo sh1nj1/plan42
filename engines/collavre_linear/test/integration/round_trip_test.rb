@@ -133,17 +133,9 @@ module CollavreLinear
     test "(a) creating a Creative in a linked subtree enqueues OutboundSyncJob that calls issueCreate" do
       child = nil
 
-      # In a real linked subtree the root has already been exported to Linear;
-      # give it its issue so the new child nests under it rather than deferring
-      # on the parent-ordering guard.
-      CollavreLinear::IssueLink.create!(
-        creative:          @root_creative,
-        project_link:      @project_link,
-        linear_issue_id:   "iss-rt-root",
-        remote_updated_at: 1.hour.ago,
-        sync_state:        :synced
-      )
-
+      # The root creative maps to the Linear PROJECT (no issue), so a direct
+      # child exports as a TOP-LEVEL issue without deferring on a parent that
+      # will never exist.
       # The observer's after_commit enqueues exactly one OutboundSyncJob.
       assert_enqueued_jobs 1, only: CollavreLinear::OutboundSyncJob do
         child = Collavre::Creative.create!(
