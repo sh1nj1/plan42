@@ -237,7 +237,6 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
 
   test "update_metadata preserves registered reserved key when payload omits it" do
     # Register a dummy vendor-neutral key "x" to test the registry seam.
-    # Reset after this test to avoid polluting other tests.
     Collavre::Creative.register_reserved_metadata_key("x")
     creative = Creative.create!(
       description: "<p>test</p>",
@@ -254,6 +253,8 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "protected-value", creative.data["x"], "Reserved key 'x' should be preserved when omitted from payload"
     assert_equal "new-value", creative.data["other"]
   ensure
-    Collavre::Creative.instance_variable_set(:@registered_reserved_metadata_keys, nil)
+    # Remove ONLY the dummy key we added; never wipe the registry (would drop
+    # engine keys like "linear" registered once at boot).
+    Collavre::Creative.registered_reserved_metadata_keys.delete("x")
   end
 end
