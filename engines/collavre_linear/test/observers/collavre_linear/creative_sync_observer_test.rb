@@ -92,6 +92,30 @@ module CollavreLinear
     end
 
     # -------------------------------------------------------------------------
+    # Moving a pre-existing subtree under a linked root must sync descendants too
+    # -------------------------------------------------------------------------
+
+    test "moving an existing subtree under a linked root enqueues sync for the moved root AND its descendants" do
+      # Pre-existing UNLINKED subtree built while `parent` is outside any linked
+      # root, so nothing is enqueued during construction.
+      parent     = Collavre::Creative.create!(description: "<p>Movable parent</p>", user: @user)
+      child      = Collavre::Creative.create!(description: "<p>Movable child</p>", user: @user, parent: parent)
+      grandchild = Collavre::Creative.create!(description: "<p>Movable grandchild</p>", user: @user, parent: child)
+
+      # Move the whole subtree under the linked root. Only `parent`'s parent_id
+      # changes; the core move hook touches descendants via `update_all` (no
+      # callbacks), so without a descendant fan-out the pre-existing children
+      # would never reach Linear.
+      assert_enqueued_jobs 3, only: CollavreLinear::OutboundSyncJob do
+        parent.update!(parent: @root_creative)
+      end
+
+      [ parent, child, grandchild ].each do |c|
+        assert_enqueued_with(job: CollavreLinear::OutboundSyncJob, args: [ c.id ])
+      end
+    end
+
+    # -------------------------------------------------------------------------
     # Fix 1 — mark IssueLink dirty on update when link already exists
     # -------------------------------------------------------------------------
 

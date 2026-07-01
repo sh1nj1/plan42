@@ -33,6 +33,13 @@ module CollavreLinear
       # so it cannot be read there directly.
       attr_accessor :_linear_relevant_change
 
+      # Transient flag: did this save re-parent the creative (parent_id change)?
+      # A move carries its whole subtree, but the core move hook touches
+      # descendants via `update_all` (no callbacks fire on them), so their sync
+      # must be fanned out from the moved root. Same capture-in-after_save reason
+      # as above.
+      attr_accessor :_linear_parent_changed
+
       # prepend: true ensures we run before the dependent: :destroy cascade that
       # deletes IssueLinks — which is added by a separate engine initializer.
       before_destroy :capture_linear_archive_info, prepend: true
@@ -73,6 +80,7 @@ module CollavreLinear
         else
           (saved_changes.keys & LINEAR_RELEVANT_COLUMNS).any?
         end
+      self._linear_parent_changed = saved_change_to_parent_id?
     end
 
     def enqueue_linear_outbound_sync
@@ -97,7 +105,15 @@ module CollavreLinear
       return unless linked_subtree?
 
       mark_issue_link_dirty
-      CollavreLinear::OutboundSyncJob.perform_later(id)
+
+      # A re-parent moves this creative's whole subtree into the linked root, but
+      # the core move hook only `update_all`-touches descendants (no callbacks),
+      # so they never enqueue themselves. Fan out to each so pre-existing children
+      # reach Linear too. Per-creative jobs self-order via the exporter's
+      # ParentNotExportedError retry, so enqueue order doesn't matter. Non-move
+      # changes (description/data/sequence) only affect this one creative.
+      target_ids = _linear_parent_changed ? self_and_descendants.ids : [ id ]
+      target_ids.each { |cid| CollavreLinear::OutboundSyncJob.perform_later(cid) }
     rescue StandardError => e
       # Never let a sync-scheduling failure break the host transaction's
       # commit callbacks.
