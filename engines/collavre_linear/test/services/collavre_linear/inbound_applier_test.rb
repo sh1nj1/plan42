@@ -335,6 +335,44 @@ module CollavreLinear
         "child issue should nest under the parent issue's creative"
     end
 
+    test "out-of-order create (child before parent) reparents the child once the parent lands" do
+      # Child arrives first: parent not linked yet, so it falls back to root but
+      # records parent_issue_id.
+      child_payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-ooo-child",
+          "title"     => "Early child",
+          "priority"  => 0,
+          "parentId"  => "iss-ooo-parent",
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+      CollavreLinear::InboundApplier.new(child_payload).apply!
+
+      child_link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-ooo-child")
+      assert_equal @root_creative.id, child_link.creative.parent_id,
+        "child with an unknown parent falls back to the project root"
+
+      # Parent arrives later: the child must be reparented under it.
+      parent_payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-ooo-parent",
+          "title"     => "Late parent",
+          "priority"  => 0,
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+      CollavreLinear::InboundApplier.new(parent_payload).apply!
+
+      parent_link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-ooo-parent")
+      assert_equal parent_link.creative.id, child_link.reload.creative.parent_id,
+        "child must be reparented under the parent once the parent create lands"
+    end
+
     # -- remove: archive marker, no destroy/reparent ---------------------------
 
     test "remove sets an archive marker and does not destroy the creative" do
@@ -462,6 +500,45 @@ module CollavreLinear
       end
 
       assert_equal "edited body", comment.reload.content
+    end
+
+    test "comment remove deletes the mirrored comment and its CommentLink" do
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-rm")
+      comment = creative.comments.create!(content: "to be removed", user: @user, skip_dispatch: true)
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id,
+        linear_comment_id: "cmt-rm",
+        issue_link: issue_link
+      )
+
+      payload = {
+        "action" => "remove",
+        "type"   => "Comment",
+        "data"   => { "id" => "cmt-rm", "issue" => { "id" => "iss-cmt-rm" } }
+      }
+
+      assert_difference -> { CollavreLinear::CommentLink.count }, -1 do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+
+      refute Collavre::Comment.exists?(comment.id),
+        "the mirrored comment must be deleted, not blanked"
+    end
+
+    test "comment remove for an unlinked comment is a no-op (no blank comment created)" do
+      creative, _link = linked_child(linear_issue_id: "iss-cmt-rm2")
+
+      payload = {
+        "action" => "remove",
+        "type"   => "Comment",
+        "data"   => { "id" => "cmt-never-linked", "issue" => { "id" => "iss-cmt-rm2" } }
+      }
+
+      assert_no_difference -> { creative.comments.count } do
+        assert_no_difference -> { CollavreLinear::CommentLink.count } do
+          CollavreLinear::InboundApplier.new(payload).apply!
+        end
+      end
     end
 
     # -- Step 4: conflict ------------------------------------------------------

@@ -96,6 +96,12 @@ module CollavreLinear
           remote_updated_at: remote_updated_at,
           sync_state:        :synced
         )
+
+        # Out-of-order delivery: children whose `create` arrived before this
+        # parent were attached to the project root (resolve_create_parent's
+        # fallback) but recorded parent_issue_id. Now that the parent Creative
+        # exists, reparent them so the tree isn't permanently flattened.
+        reparent_pending_children!(linear_issue_id, creative)
       end
     rescue ActiveRecord::RecordNotUnique
       # TOCTOU: a concurrent webhook already committed the IssueLink for this
@@ -234,6 +240,12 @@ module CollavreLinear
       linear_comment_id = @data["id"]
       return if linear_comment_id.blank?
 
+      # A Linear `remove` must delete the mirrored comment, never fall through to
+      # the upsert path — otherwise it would overwrite/blank the local comment or
+      # create an empty one. Handled before issue-link resolution since a removal
+      # only needs the CommentLink mapping.
+      return remove_comment!(linear_comment_id) if @action == "remove"
+
       issue_link = resolve_comment_issue_link
       return unless issue_link
 
@@ -258,7 +270,32 @@ module CollavreLinear
       end
     end
 
+    # Delete the locally-mirrored comment when Linear removes it. No-op when the
+    # comment was never linked, so a stray remove event can't create a blank
+    # comment.
+    def remove_comment!(linear_comment_id)
+      comment_link = CommentLink.find_by(linear_comment_id: linear_comment_id)
+      return unless comment_link
+
+      Collavre::Comment.find_by(id: comment_link.comment_id)&.destroy
+      comment_link.destroy
+    end
+
     # -- Parent / link resolution ---------------------------------------------
+
+    # Reparent any already-linked children that reference this newly-created
+    # parent issue but were attached elsewhere (project root) because the
+    # parent's create webhook hadn't arrived yet. Skips children already nested
+    # correctly. skip_linear_sync so the reparent doesn't echo back out.
+    def reparent_pending_children!(parent_linear_issue_id, parent_creative)
+      IssueLink.where(parent_issue_id: parent_linear_issue_id).find_each do |child_link|
+        child = child_link.creative
+        next if child.nil? || child.parent_id == parent_creative.id
+
+        child.skip_linear_sync = true
+        child.update!(parent: parent_creative)
+      end
+    end
 
     # For create: nest under the parent issue's Creative if that parent is linked,
     # otherwise fall back to the ProjectLink's root Creative.

@@ -4,7 +4,7 @@ module CollavreLinear
   # Pure field translation between Collavre Creative attributes and Linear issue
   # attributes.  NO I/O — this class never reads from the DB or makes HTTP calls.
   #
-  # == priority ↔ sequence mapping (LOCKED decision by 정순오)
+  # == priority <-> sequence mapping (locked product decision)
   #
   # Linear priority is a 5-value enum:
   #   0 = No priority, 1 = Urgent, 2 = High, 3 = Medium, 4 = Low
