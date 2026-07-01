@@ -26,9 +26,17 @@ module CollavreLinear
       # Transient storage for archive data captured before the row is gone.
       attr_accessor :_linear_archive_issue_id, :_linear_archive_account_id
 
+      # Transient flag: did the just-committed save touch a Linear-relevant
+      # column? Captured in after_save (where saved_changes is reliable) so the
+      # after_commit hook can short-circuit WITHOUT a DB query. saved_changes is
+      # cleared by the time after_commit runs (esp. under transactional tests),
+      # so it cannot be read there directly.
+      attr_accessor :_linear_relevant_change
+
       # prepend: true ensures we run before the dependent: :destroy cascade that
       # deletes IssueLinks — which is added by a separate engine initializer.
       before_destroy :capture_linear_archive_info, prepend: true
+      after_save :capture_linear_relevant_change
       after_commit :enqueue_linear_outbound_sync
     end
 
@@ -50,8 +58,30 @@ module CollavreLinear
       )
     end
 
+    # Columns whose change can alter the exported Linear issue (mirrors what
+    # CreativeExporter hashes: description -> title/description, sequence ->
+    # priority, data -> state/labels) plus parent_id (re-parenting -> parentId).
+    LINEAR_RELEVANT_COLUMNS = %w[description sequence data parent_id].freeze
+
+    # Record — in after_save, where saved_changes is reliable — whether this
+    # save touched a Linear-relevant column. A create always counts (its seeded
+    # attributes populate the whole row).
+    def capture_linear_relevant_change
+      self._linear_relevant_change =
+        if previously_new_record?
+          true
+        else
+          (saved_changes.keys & LINEAR_RELEVANT_COLUMNS).any?
+        end
+    end
+
     def enqueue_linear_outbound_sync
       return if skip_linear_sync
+      # Cheap in-memory short-circuit BEFORE any DB work: `after_commit` fires for
+      # every Creative write app-wide. Destroys always proceed (archive path);
+      # an update/create with no Linear-relevant column change can't affect the
+      # exported issue, so skip the subtree query entirely.
+      return if relevant_change_absent?
       return unless linked_subtree?
 
       if destroyed?
@@ -67,6 +97,16 @@ module CollavreLinear
         "[CollavreLinear::CreativeSyncObserver] failed to enqueue sync for " \
         "creative #{id}: #{e.class}: #{e.message}"
       )
+    end
+
+    # True when this commit touched no Linear-relevant column. Destroys never
+    # short-circuit (handled via the archive path). Otherwise read the flag
+    # captured in after_save. A nil flag (no save ran, e.g. a bare touch) is
+    # treated as "no relevant change".
+    def relevant_change_absent?
+      return false if destroyed?
+
+      !_linear_relevant_change
     end
 
     def enqueue_archive_if_captured

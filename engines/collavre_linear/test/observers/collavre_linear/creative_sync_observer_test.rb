@@ -209,6 +209,51 @@ module CollavreLinear
     end
 
     # -------------------------------------------------------------------------
+    # P3-9 — cheap short-circuit: unrelated writes skip the subtree DB query
+    # -------------------------------------------------------------------------
+
+    # Count how many times the observer's subtree existence query touches
+    # linear_project_links during the given block.
+    def count_project_link_queries
+      count = 0
+      sub = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+        sql = payload[:sql].to_s
+        count += 1 if sql.include?("linear_project_links") && sql.match?(/\bSELECT\b/i)
+      end
+      yield
+      count
+    ensure
+      ActiveSupport::Notifications.unsubscribe(sub)
+    end
+
+    test "an update with no Linear-relevant column change does not run the ProjectLink query" do
+      unrelated = Collavre::Creative.create!(description: "<p>Unrelated</p>", user: @user)
+
+      # `progress` is not a Linear-relevant column, so the observer must
+      # short-circuit before querying linear_project_links.
+      queries = count_project_link_queries do
+        assert_no_enqueued_jobs only: CollavreLinear::OutboundSyncJob do
+          unrelated.update!(progress: 0.5)
+        end
+      end
+
+      assert_equal 0, queries,
+        "observer must short-circuit before the ProjectLink subtree query when " \
+        "no Linear-relevant column changed"
+    end
+
+    test "an update that touches a Linear-relevant column still runs the subtree query" do
+      unrelated = Collavre::Creative.create!(description: "<p>Unrelated</p>", user: @user)
+
+      queries = count_project_link_queries do
+        unrelated.update!(description: "<p>Relevant edit</p>")
+      end
+
+      assert_operator queries, :>, 0,
+        "a description change must still reach the subtree query"
+    end
+
+    # -------------------------------------------------------------------------
     # Step 4 — inbound suppression via skip_linear_sync
     # -------------------------------------------------------------------------
 
