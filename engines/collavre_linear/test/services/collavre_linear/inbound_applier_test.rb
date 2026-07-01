@@ -303,6 +303,64 @@ module CollavreLinear
         "child must be reparented under the new parent once its create lands"
     end
 
+    test "a move to a DIFFERENT linked project surfaces a conflict instead of silently syncing" do
+      creative, link = linked_child(linear_issue_id: "iss-xproj")
+
+      # A second linked project (a different Collavre root) — the move target.
+      other_root = Collavre::Creative.new(description: "<p>Other root</p>", user: @user)
+      other_root.skip_linear_sync = true
+      other_root.save!
+      CollavreLinear::ProjectLink.create!(
+        creative:          other_root,
+        account:           @account,
+        linear_project_id: "proj-inb-b",
+        team_id:           "team-inb"
+      )
+
+      CollavreLinear::InboundApplier.new(
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-xproj",
+          "title"     => "Moved",
+          "projectId" => "proj-inb-b",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "projectId" => "proj-inb" }
+      ).apply!
+
+      link.reload
+      # The mapping is now provably wrong (Creative under root A, Linear says
+      # project B). Auto-applying + marking :synced would freeze that drift and
+      # future outbound syncs would push against the old project's account.
+      assert link.conflict?,
+        "cross-project move must be surfaced as a conflict, not marked synced"
+      assert_equal @root_creative.id, creative.reload.parent_id,
+        "the creative must not be silently re-homed on a cross-project move"
+    end
+
+    test "a move to an UNLINKED project also surfaces a conflict (no silent drift)" do
+      creative, link = linked_child(linear_issue_id: "iss-xproj-unlinked")
+
+      CollavreLinear::InboundApplier.new(
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-xproj-unlinked",
+          "title"     => "Moved out",
+          "projectId" => "proj-not-linked",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "projectId" => "proj-inb" }
+      ).apply!
+
+      link.reload
+      assert link.conflict?,
+        "moving an issue out to an unlinked project must surface, not silently sync"
+      assert_includes creative.reload.description, "Original title",
+        "no field updates should be applied on an un-appliable cross-project move"
+    end
+
     test "inbound reparent does not enqueue an outbound sync (echo suppressed)" do
       parent_a, _la = linked_child(linear_issue_id: "iss-echo-a")
       parent_b, _lb = linked_child(linear_issue_id: "iss-echo-b")

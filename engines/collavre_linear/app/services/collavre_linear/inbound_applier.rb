@@ -167,6 +167,23 @@ module CollavreLinear
           return
         end
 
+        # Cross-project move: the payload places the issue in a DIFFERENT project
+        # than the link records. It cannot be auto-applied — the Creative lives
+        # under the old ProjectLink root, and re-homing it (together with its
+        # linked sub-issues, which move with it in Linear) under the new root is
+        # ambiguous. Applying + marking :synced would silently freeze the wrong
+        # mapping (link.project_link stays the old project), so future outbound
+        # syncs push against the wrong account. Surface it for a human instead.
+        # (parentId-only moves within the same project are handled by
+        # apply_parent_change!.) Fires only when the payload explicitly names a
+        # project that differs — a same-project update carries the unchanged id.
+        payload_project_id = @data["projectId"] || @data.dig("project", "id")
+        if payload_project_id.present? &&
+           payload_project_id != link.project_link.linear_project_id
+          mark_conflict!(link)
+          return
+        end
+
         attrs    = FieldMapper.issue_to_creative_attrs(@data)
         changed  = changed_keys
 
