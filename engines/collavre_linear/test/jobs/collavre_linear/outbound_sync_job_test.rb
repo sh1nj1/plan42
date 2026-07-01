@@ -89,23 +89,23 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
-    # Concurrent-perform — with_lock guard (no double-create)
+    # Idempotent single-create across repeated performs
     # ---------------------------------------------------------------------------
 
-    test "concurrent performs do not double-create the IssueLink" do
+    test "repeated performs create exactly one IssueLink and call create_issue exactly once" do
       account = CollavreLinear::Account.create!(
         user: @user,
         linear_uid: "uid-job-lock-#{SecureRandom.hex(4)}",
         access_token: "tok-job"
       )
-      project_link = CollavreLinear::ProjectLink.create!(
+      _project_link = CollavreLinear::ProjectLink.create!(
         creative: @creative,
         account:  account,
         linear_project_id: "proj-lock",
         team_id:           "team-lock"
       )
 
-      # Track how many create_issue calls are made.
+      # Track how many create_issue calls are made across both performs.
       create_count = 0
       fake_client = Class.new do
         define_method(:create_issue) do |**_|
@@ -115,21 +115,23 @@ module CollavreLinear
         def update_issue(id, **_) = { id: id, identifier: "ENG-0" }
       end.new
 
+      # NOTE: DB-level with_lock serialization under true thread concurrency is not
+      # unit-tested here because the test DB / transactional fixtures don't exercise
+      # real row-lock contention.  This test verifies create-idempotency via
+      # IssueLink reload: the second perform sees the IssueLink written by the first
+      # and must take the update path (or skip due to dirty-tracking), never calling
+      # create_issue a second time.  Do NOT attempt a flaky multi-threaded test.
       CollavreLinear::Client.stub(:new, fake_client) do
-        # Simulate two concurrent performs: run both sequentially with the same
-        # creative — the with_lock on the creative row in the job means the second
-        # one sees the IssueLink created by the first and calls update_issue
-        # (or skips due to dirty-tracking), never create_issue a second time.
         CollavreLinear::OutboundSyncJob.perform_now(@creative.id)
         CollavreLinear::OutboundSyncJob.perform_now(@creative.id)
       end
 
       assert_equal 1, create_count,
-        "create_issue must be called exactly once even with concurrent performs"
+        "create_issue must be called exactly once even across repeated performs"
 
       links = CollavreLinear::IssueLink.where(creative_id: @creative.id)
       assert_equal 1, links.count,
-        "exactly one IssueLink must exist after concurrent performs"
+        "exactly one IssueLink must exist after repeated performs"
     end
   end
 end

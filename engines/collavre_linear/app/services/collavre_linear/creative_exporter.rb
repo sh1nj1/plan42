@@ -104,10 +104,13 @@ module CollavreLinear
     end
 
     def update_issue!(client, issue_link, attrs, hash)
-      # Skip when nothing has changed.
-      return issue_link if issue_link.content_hash == hash
-
       issue_link.with_lock do
+        # Re-check under lock: a concurrent update with identical content must not
+        # trigger a redundant API call.  The pre-lock check is gone intentionally
+        # to eliminate the TOCTOU window between the dirty-check and the lock
+        # acquisition.
+        return issue_link if issue_link.content_hash == hash
+
         response = client.update_issue(issue_link.linear_issue_id, **attrs)
 
         issue_link.update!(
