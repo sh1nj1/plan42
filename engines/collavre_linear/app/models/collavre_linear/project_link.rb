@@ -7,6 +7,10 @@ module CollavreLinear
     belongs_to :creative, class_name: "::Collavre::Creative"
     belongs_to :account, class_name: "CollavreLinear::Account"
 
+    # linear_issue_links.project_link_id has an FK to this row; unlinking must
+    # cascade so link.destroy! does not 500 once issues have synced.
+    has_many :issue_links, class_name: "CollavreLinear::IssueLink", dependent: :destroy
+
     enum :sync_state, { synced: 0, dirty: 1, syncing: 2, conflict: 3 }, prefix: false
 
     validates :linear_project_id, presence: true

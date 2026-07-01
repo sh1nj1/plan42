@@ -65,6 +65,31 @@ module CollavreLinear
         assert_requested_webhook_registration(times: 1)
       end
 
+      test "create enqueues OutboundSyncJob for the whole existing subtree" do
+        sign_in_as(@user)
+
+        child1 = Collavre::Creative.create!(
+          description: "<p>child 1</p>", user: @user, parent: @creative
+        )
+        child2 = Collavre::Creative.create!(
+          description: "<p>child 2</p>", user: @user, parent: @creative
+        )
+
+        stub_provisioner_returning("wh-subtree-001")
+
+        assert_enqueued_jobs 3, only: CollavreLinear::OutboundSyncJob do
+          post "/linear/creatives/#{@creative.id}/integration",
+               params: { team_id: "team-subtree", linear_project_id: "proj-subtree" },
+               as: :json
+        end
+
+        assert_response :success
+        enqueued_ids = enqueued_jobs
+          .select { |j| j[:job] == CollavreLinear::OutboundSyncJob }
+          .map { |j| j[:args].first }
+        assert_equal [ @creative.id, child1.id, child2.id ].sort, enqueued_ids.sort
+      end
+
       test "create is idempotent — second call does not provision a new webhook" do
         sign_in_as(@user)
 
@@ -188,6 +213,44 @@ module CollavreLinear
         body = JSON.parse(response.body)
         assert body["success"]
         assert_not CollavreLinear::ProjectLink.exists?(link.id)
+      end
+
+      test "destroy cascades to issue links and comment links (no FK 500)" do
+        sign_in_as(@user)
+
+        link = CollavreLinear::ProjectLink.create!(
+          creative: @creative,
+          account: @account,
+          linear_project_id: "proj-destroy-cascade",
+          team_id: "team-destroy-cascade",
+          webhook_id: "wh-destroy-cascade"
+        )
+        child = Collavre::Creative.create!(
+          description: "<p>child</p>",
+          user: @user,
+          parent: @creative
+        )
+        issue_link = CollavreLinear::IssueLink.create!(
+          creative: child,
+          project_link: link,
+          linear_issue_id: "iss-cascade-1",
+          sync_state: :synced
+        )
+        comment = child.comments.create!(content: "c", user: @user, skip_dispatch: true)
+        comment_link = CollavreLinear::CommentLink.create!(
+          comment_id: comment.id,
+          linear_comment_id: "cmt-cascade-1",
+          issue_link: issue_link
+        )
+
+        stub_webhook_delete_returning(true)
+
+        delete "/linear/creatives/#{@creative.id}/integration", as: :json
+
+        assert_response :success
+        assert_not CollavreLinear::ProjectLink.exists?(link.id)
+        assert_not CollavreLinear::IssueLink.exists?(issue_link.id), "IssueLink should cascade-delete"
+        assert_not CollavreLinear::CommentLink.exists?(comment_link.id), "CommentLink should cascade-delete"
       end
 
       test "destroy returns not_found when no link exists" do
