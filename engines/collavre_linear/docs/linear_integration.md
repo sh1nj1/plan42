@@ -134,6 +134,16 @@ Two guards keep the loop echo-free:
   is not yet wired to any local-comment create path. Outbound local-comment sync
   is a planned follow-up.
 
+- **Pure sibling drag/drop reorders do not push to Linear.** Priority maps to
+  `Creative#sequence`, but `Collavre::Creatives::Reorderer#resequence!` persists
+  new sequence values with `update_column`, which bypasses the `after_save`
+  callback the outbound observer relies on — so a reorder that changes only order
+  (no parent change) does not enqueue an `OutboundSyncJob`, and Linear priority
+  stays stale until the next normal save. The clean fix needs a vendor-neutral
+  post-resequence hook in core `Reorderer` (mirroring the reserved-metadata-key
+  registry seam) that the engine observer can subscribe to; this is a follow-up
+  rather than an engine-local change, since core must not reference the engine.
+
 ## Tests
 
 - `test/integration/round_trip_test.rb` — keystone proof the loop is closed and
