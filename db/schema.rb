@@ -376,7 +376,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
     t.datetime "updated_at", null: false
     t.index ["comment_id"], name: "index_linear_comment_links_on_comment_id", unique: true
     t.index ["issue_link_id"], name: "index_linear_comment_links_on_issue_link_id"
-    t.index ["linear_comment_id"], name: "index_linear_comment_links_on_linear_comment_id_unique", unique: true
+    t.index ["linear_comment_id"], name: "index_linear_comment_links_on_linear_comment_id", unique: true
   end
 
   create_table "linear_issue_links", force: :cascade do |t|
@@ -392,7 +392,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
     t.integer "sync_state", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id", unique: true
-    t.index ["linear_issue_id"], name: "index_linear_issue_links_on_linear_issue_id_unique", unique: true
+    t.index ["linear_issue_id"], name: "index_linear_issue_links_on_linear_issue_id", unique: true
     t.index ["project_link_id"], name: "index_linear_issue_links_on_project_link_id"
   end
 
@@ -411,7 +411,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000006) do
     t.index ["account_id"], name: "index_linear_project_links_on_account_id"
     t.index ["creative_id", "linear_project_id"], name: "index_linear_project_links_on_creative_and_project", unique: true
     t.index ["creative_id"], name: "index_linear_project_links_on_creative_id"
-    t.index ["linear_project_id"], name: "index_linear_project_links_on_linear_project_id"
+    t.index ["linear_project_id"], name: "index_linear_project_links_on_linear_project_id", unique: true
     t.index ["team_id"], name: "index_linear_project_links_on_team_id"
   end
 

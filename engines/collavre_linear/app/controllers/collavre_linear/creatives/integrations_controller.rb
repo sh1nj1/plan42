@@ -76,7 +76,17 @@ module CollavreLinear
           linear_project_id: linear_project_id
         )
         link.team_id = team_id
-        link.save!
+        begin
+          link.save!
+        rescue ActiveRecord::RecordNotUnique
+          # Race-safe backstop for the project_taken check above: the check is
+          # check-then-save, so two concurrent requests can both pass it; the
+          # linear_project_id unique index rejects the loser's insert. Surface
+          # the same conflict instead of a 500.
+          render json: { error: I18n.t("collavre_linear.errors.overlapping_link") },
+                 status: :unprocessable_entity
+          return
+        end
 
         provision_result = CollavreLinear::WebhookProvisioner.ensure_for(
           project_link: link,

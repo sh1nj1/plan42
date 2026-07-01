@@ -98,15 +98,20 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
     refute_includes ids, syncing.id
   end
 
-  test "unique index on (creative_id, linear_project_id)" do
+  test "linear_project_id is globally unique across creatives" do
     CollavreLinear::ProjectLink.create!(
       creative: @creative,
       account: @account,
       linear_project_id: "dup-proj",
       team_id: "team-dup"
     )
+    # A DISJOINT creative claiming the same Linear project must be rejected at
+    # the DB layer, not just by the controller's check-then-save: inbound
+    # webhooks resolve the project via an unscoped find_by(linear_project_id:),
+    # so two links on one project would route imports nondeterministically.
+    other = Collavre::Creative.create!(description: "<p>other root</p>", user: @user)
     dup = CollavreLinear::ProjectLink.new(
-      creative: @creative,
+      creative: other,
       account: @account,
       linear_project_id: "dup-proj",
       team_id: "team-dup",
