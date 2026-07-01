@@ -97,6 +97,35 @@ module CollavreLinear
       assert_equal 1, CollavreLinear::CommentLink.where(comment_id: @comment.id).count
     end
 
+    test "no-op when the comment was made private after the create was enqueued" do
+      # The comment was public/Main when the observer enqueued this create job,
+      # so no CommentLink exists yet and the observer cannot enqueue a delete for
+      # the later visibility change. Posting the now-hidden body would leak it —
+      # the job must re-run syncability and no-op.
+      @comment.update_columns(private: true)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::OutboundCommentSyncJob.perform_now(@comment.id)
+      end
+
+      assert_equal 0, @fake_client.calls.size,
+        "must not post a comment that is no longer public/Main"
+      assert_nil CollavreLinear::CommentLink.find_by(comment_id: @comment.id)
+    end
+
+    test "no-op when the comment was moved out of Main after the create was enqueued" do
+      other_topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Side thread")
+      @comment.update_columns(topic_id: other_topic.id)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::OutboundCommentSyncJob.perform_now(@comment.id)
+      end
+
+      assert_equal 0, @fake_client.calls.size,
+        "must not post a comment moved to a side topic"
+      assert_nil CollavreLinear::CommentLink.find_by(comment_id: @comment.id)
+    end
+
     test "no-op when the comment's creative has no Linear issue link" do
       unlinked = Collavre::Creative.new(description: "<p>Unlinked</p>", user: @user)
       unlinked.skip_linear_sync = true

@@ -27,6 +27,13 @@ module CollavreLinear
         # linked this comment already. One Collavre comment -> one Linear comment.
         return if CollavreLinear::CommentLink.exists?(comment_id: comment.id)
 
+        # Re-check visibility at run time: the comment was public/Main when the
+        # observer enqueued this create, but may have been made private or moved
+        # out of Main since. No CommentLink exists yet, so the observer cannot
+        # enqueue a delete for that change — posting the now-hidden body would
+        # leak it. Same predicate the update job re-runs; here it must no-op.
+        return unless CollavreLinear::CommentSyncability.syncable?(comment)
+
         result = CollavreLinear::Client.new(account).create_comment(
           issue_id: issue_link.linear_issue_id,
           body:     CollavreLinear::CommentFormatter.outbound_body(comment)
