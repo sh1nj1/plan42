@@ -291,6 +291,41 @@ module CollavreLinear
         "content_hash must not be advanced while halted"
     end
 
+    test "sync! HALTS as conflict when the creative moved under a DIFFERENT linked project" do
+      # The creative's IssueLink lives in project A, but it was reparented under a
+      # different linked root (project B). resolve_project_link now returns B, so
+      # updating would push A's issue with B's account/client (wrong project) and
+      # silently diverge the tree from Linear. Reject: mark :conflict, no API call.
+      # (Actively migrating/recreating in B is a product decision, out of scope.)
+      other_root = Collavre::Creative.create!(description: "<p>Root B</p>", user: @user)
+      other_link = CollavreLinear::ProjectLink.create!(
+        creative: other_root, account: @account,
+        linear_project_id: "proj-B", team_id: "team-B"
+      )
+      link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link, # project A
+        linear_issue_id: "iss-cross",
+        content_hash:    "hash-A",
+        sync_state:      :synced
+      )
+      # Move the child under project B's root.
+      @child_creative.skip_linear_sync = true
+      @child_creative.update!(parent: other_root)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      assert_equal 0, @fake_client.update_calls.size,
+        "must NOT update A's issue with B's client on a cross-project move"
+      assert_equal 0, @fake_client.create_calls.size,
+        "must NOT auto-recreate in B (that migration is a product decision)"
+      assert_equal :conflict, link.reload.sync_state.to_sym
+      assert CollavreLinear::ProjectLink.exists?(other_link.id),
+        "project B remains linked (the move target)"
+    end
+
     # ---------------------------------------------------------------------------
     # Step 2b — dirty-tracking (unchanged content → NO API call)
     # ---------------------------------------------------------------------------

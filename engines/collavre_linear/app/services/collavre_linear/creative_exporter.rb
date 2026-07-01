@@ -92,6 +92,19 @@ module CollavreLinear
 
       issue_link = @creative.linear_issue_links.first
 
+      # Cross-project move: the creative was reparented under a DIFFERENT linked
+      # root than the one its existing issue belongs to. resolve_project_link now
+      # returns the new project, so updating would push the OLD project's issue
+      # with the NEW project's account/client (wrong project) and diverge the tree
+      # from Linear. It cannot be auto-applied — re-homing the issue (and its
+      # linked sub-issues, which move with it in Linear) into the new project is
+      # ambiguous. Halt + surface as conflict (mirrors the inbound cross-project
+      # handling); actively migrating/recreating is a product decision. Checked
+      # before the parent-export guard so a cross-root move never defers.
+      if issue_link && issue_link.project_link_id != project_link.id
+        return mark_cross_project_conflict!(issue_link)
+      end
+
       # Ordering guard for BOTH create and update: if this creative's parent
       # belongs to the exported subtree but has not yet produced its Linear issue,
       # defer (the job re-enqueues on ParentNotExportedError once the parent lands).
@@ -241,6 +254,18 @@ module CollavreLinear
 
       EchoGuard.record_outbound(existing, linear_issue_id)
       existing
+    end
+
+    # A cross-project move can't be auto-applied; freeze the link at :conflict so
+    # a stale queued job never pushes the wrong project and a human resolves it
+    # (via resync after re-linking). Idempotent: already-conflicted links no-op.
+    def mark_cross_project_conflict!(issue_link)
+      issue_link.with_lock do
+        return issue_link if issue_link.conflict?
+
+        issue_link.update!(sync_state: :conflict)
+      end
+      issue_link
     end
 
     def update_issue!(client, issue_link, attrs, hash, parent_id)
