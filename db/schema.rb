@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_000003) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -365,6 +365,49 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000000) do
     t.string "workspace_name"
     t.index ["linear_uid"], name: "index_linear_accounts_on_linear_uid", unique: true
     t.index ["user_id"], name: "index_linear_accounts_on_user_id", unique: true
+  end
+
+  create_table "linear_comment_links", force: :cascade do |t|
+    t.bigint "comment_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "issue_link_id", null: false
+    t.string "linear_comment_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_linear_comment_links_on_comment_id"
+    t.index ["issue_link_id"], name: "index_linear_comment_links_on_issue_link_id"
+    t.index ["linear_comment_id"], name: "index_linear_comment_links_on_linear_comment_id_unique", unique: true
+  end
+
+  create_table "linear_issue_links", force: :cascade do |t|
+    t.string "content_hash"
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.string "linear_issue_id", null: false
+    t.integer "local_version", default: 0, null: false
+    t.string "parent_issue_id"
+    t.integer "project_link_id", null: false
+    t.datetime "remote_updated_at"
+    t.integer "sync_state", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id"
+    t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id_unique", unique: true
+    t.index ["linear_issue_id"], name: "index_linear_issue_links_on_linear_issue_id_unique", unique: true
+    t.index ["project_link_id"], name: "index_linear_issue_links_on_project_link_id"
+  end
+
+  create_table "linear_project_links", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.datetime "last_synced_at"
+    t.string "linear_project_id", null: false
+    t.integer "sync_state", default: 0, null: false
+    t.string "team_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "webhook_secret", null: false
+    t.index ["account_id"], name: "index_linear_project_links_on_account_id"
+    t.index ["creative_id", "linear_project_id"], name: "index_linear_project_links_on_creative_and_project", unique: true
+    t.index ["creative_id"], name: "index_linear_project_links_on_creative_id"
   end
 
   create_table "mcp_tools", force: :cascade do |t|
@@ -922,6 +965,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000000) do
   add_foreign_key "labels", "creatives"
   add_foreign_key "labels", "users", column: "owner_id"
   add_foreign_key "linear_accounts", "users"
+  add_foreign_key "linear_comment_links", "linear_issue_links", column: "issue_link_id"
+  add_foreign_key "linear_issue_links", "creatives"
+  add_foreign_key "linear_issue_links", "linear_project_links", column: "project_link_id"
+  add_foreign_key "linear_project_links", "creatives"
+  add_foreign_key "linear_project_links", "linear_accounts", column: "account_id"
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"

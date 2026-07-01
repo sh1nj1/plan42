@@ -49,5 +49,44 @@ module CollavreLinear
         end
       end
     end
+
+    initializer "collavre_linear.user_associations", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        user_class = Collavre.user_class rescue nil
+        next unless user_class
+
+        unless user_class.reflect_on_association(:linear_account)
+          user_class.has_one :linear_account,
+                             class_name: "CollavreLinear::Account",
+                             foreign_key: :user_id,
+                             dependent: :destroy
+        end
+      end
+    end
+
+    initializer "collavre_linear.creative_associations", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        creative_class = Collavre::Creative rescue nil
+        next unless creative_class
+
+        unless creative_class.reflect_on_association(:linear_project_links)
+          creative_class.has_many :linear_project_links,
+                                  class_name: "CollavreLinear::ProjectLink",
+                                  foreign_key: :creative_id,
+                                  dependent: :destroy
+        end
+
+        unless creative_class.reflect_on_association(:linear_issue_links)
+          creative_class.has_many :linear_issue_links,
+                                  class_name: "CollavreLinear::IssueLink",
+                                  foreign_key: :creative_id,
+                                  dependent: :destroy
+        end
+
+        if creative_class.respond_to?(:register_reserved_metadata_key)
+          creative_class.register_reserved_metadata_key("linear")
+        end
+      end
+    end
   end
 end

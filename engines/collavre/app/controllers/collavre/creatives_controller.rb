@@ -407,7 +407,7 @@ module Collavre
       # concurrent markdown edit. "editor" must be reserved too: dropping it would erase the "rich"
       # authoring flag and make a Lexical-authored creative reopen in the advanced textarea.
       current_data = creative.data || {}
-      %w[markdown_source content_type editor].each do |key|
+      Collavre::Creative.reserved_metadata_keys.each do |key|
         if current_data.key?(key)
           new_data[key] = current_data[key]
         else
