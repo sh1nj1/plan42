@@ -208,6 +208,8 @@ module CollavreLinear
       uri  = URI.parse(endpoint)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = uri.scheme == "https"
+      http.open_timeout = 10
+      http.read_timeout = 30
 
       request = Net::HTTP::Post.new(uri.path.presence || "/")
       request["Content-Type"] = "application/json"
@@ -215,11 +217,20 @@ module CollavreLinear
       request.body = { query: query, variables: variables }.to_json
 
       response = http.request(request)
-      parsed   = JSON.parse(response.body)
+
+      parsed = begin
+        JSON.parse(response.body)
+      rescue JSON::ParserError
+        raise Error, "Linear returned non-JSON response (HTTP #{response.code}): #{response.body.to_s[0, 200]}"
+      end
 
       if parsed["errors"].present?
         messages = parsed["errors"].map { |e| e["message"] }.join("; ")
         raise Error, "Linear GraphQL error(s): #{messages}"
+      end
+
+      unless response.is_a?(Net::HTTPSuccess)
+        raise Error, "Linear HTTP error: #{response.code} #{response.message}"
       end
 
       parsed["data"]

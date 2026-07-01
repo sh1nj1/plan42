@@ -90,6 +90,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     test "update_issue posts issueUpdate mutation and returns id" do
       stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
         .to_return(
           status: 200,
           body: {
@@ -109,6 +110,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     test "create_project posts projectCreate mutation and returns id" do
       stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
         .to_return(
           status: 200,
           body: {
@@ -128,6 +130,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     test "update_project posts projectUpdate mutation and returns id" do
       stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
         .to_return(
           status: 200,
           body: {
@@ -147,6 +150,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     test "create_comment posts commentCreate mutation and returns id" do
       stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
         .to_return(
           status: 200,
           body: {
@@ -166,6 +170,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     test "viewer_and_app_actor returns user_id, app_actor_id, organization_id" do
       stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
         .to_return(
           status: 200,
           body: {
@@ -194,6 +199,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     test "register_webhook posts webhookCreate mutation and returns id" do
       stub_request(:post, LINEAR_ENDPOINT)
+        .with(headers: { "Authorization" => "Bearer tok" })
         .to_return(
           status: 200,
           body: {
@@ -251,6 +257,52 @@ module CollavreLinear
       assert_raises(CollavreLinear::Client::Error) do
         @client.create_issue(team_id: "t1", title: "Partial")
       end
+    end
+
+    test "raises Client::Error (not JSON::ParserError) on 401 with non-GraphQL body" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 401,
+          body: { error: "unauthorized" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "Auth failure")
+      end
+
+      assert_match "401", err.message
+    end
+
+    test "raises Client::Error on 401 with HTML body (non-JSON)" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 401,
+          body: "<html><body>Unauthorized</body></html>",
+          headers: { "Content-Type" => "text/html" }
+        )
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "HTML auth failure")
+      end
+
+      assert_match "401", err.message
+      assert_kind_of CollavreLinear::Client::Error, err
+    end
+
+    test "raises Client::Error on 500 response" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 500,
+          body: { error: "Internal Server Error" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "Server error")
+      end
+
+      assert_match "500", err.message
     end
 
     # ---------------------------------------------------------------------------
