@@ -9,7 +9,7 @@ module CollavreLinear
       before_action :set_creative
       before_action :set_origin
       before_action :ensure_read_permission
-      before_action :ensure_admin_permission, only: %i[create destroy resync]
+      before_action :ensure_admin_permission, only: %i[create destroy resync options]
 
       # POST /linear/creatives/:creative_id/integration
       #
@@ -145,6 +145,26 @@ module CollavreLinear
         enqueue_subtree_sync
 
         render json: { success: true, message: I18n.t("collavre_linear.integration.resync_started") }
+      end
+
+      # GET /linear/creatives/:creative_id/integration/options
+      #
+      # Teams and projects the connected account can see, so the link modal can
+      # offer dropdowns instead of asking the user to type raw Linear IDs.
+      def options
+        account = Current.user.linear_account
+        unless account
+          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        client = CollavreLinear::Client.new(account)
+        render json: { teams: client.list_teams, projects: client.list_projects }
+      rescue CollavreLinear::Client::Error => e
+        # Surface the Linear-side failure (expired token, revoked scope) instead
+        # of leaving the dropdowns silently empty.
+        render json: { error: e.message }, status: :bad_gateway
       end
 
       private

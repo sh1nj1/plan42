@@ -470,6 +470,75 @@ module CollavreLinear
         assert_response :forbidden
       end
 
+      # -------------------------------------------------------------------------
+      # GET /linear/creatives/:creative_id/integration/options (link picker)
+      # -------------------------------------------------------------------------
+
+      test "options returns teams and projects for the connected account" do
+        sign_in_as(@user)
+
+        stub_request(:post, LINEAR_GRAPHQL_ENDPOINT)
+          .with(body: /teams/)
+          .to_return(
+            status: 200,
+            body: { data: { teams: { nodes: [ { id: "t1", name: "Eng", key: "ENG" } ] } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+        stub_request(:post, LINEAR_GRAPHQL_ENDPOINT)
+          .with(body: /projects/)
+          .to_return(
+            status: 200,
+            body: { data: { projects: { nodes: [ { id: "p1", name: "Roadmap", teams: { nodes: [ { id: "t1" } ] } } ] } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        get "/linear/creatives/#{@creative.id}/integration/options", as: :json
+
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert_equal "t1", body["teams"].first["id"]
+        assert_equal "Roadmap", body["projects"].first["name"]
+        assert_equal [ "t1" ], body["projects"].first["team_ids"]
+      end
+
+      test "options surfaces a bad_gateway when Linear errors" do
+        sign_in_as(@user)
+
+        stub_request(:post, LINEAR_GRAPHQL_ENDPOINT)
+          .to_return(
+            status: 200,
+            body: { errors: [ { message: "Unauthorized" } ] }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        get "/linear/creatives/#{@creative.id}/integration/options", as: :json
+
+        assert_response :bad_gateway
+        assert_match "Unauthorized", JSON.parse(response.body)["error"]
+      end
+
+      test "options returns forbidden for non-admin user" do
+        other = Collavre.user_class.create!(
+          email: "linear-nonadmin-options-#{SecureRandom.hex(4)}@example.com",
+          name: "Non Admin Options",
+          password: TEST_PASSWORD,
+          password_confirmation: TEST_PASSWORD,
+          timezone: "UTC"
+        )
+        @creative.creative_shares.create!(user: other, permission: :read)
+        CollavreLinear::Account.create!(
+          user: other,
+          linear_uid: "uid-nonadmin-options-#{SecureRandom.hex(4)}",
+          access_token: "tok-nonadmin-options"
+        )
+
+        sign_in_as(other)
+
+        get "/linear/creatives/#{@creative.id}/integration/options", as: :json
+
+        assert_response :forbidden
+      end
+
       private
 
       LINEAR_GRAPHQL_ENDPOINT = "https://api.linear.app/graphql"

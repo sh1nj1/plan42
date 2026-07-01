@@ -200,6 +200,65 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
+    # list_teams / list_projects (link picker)
+    # ---------------------------------------------------------------------------
+    test "list_teams returns id/name/key for each team" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(body: /teams/)
+        .to_return(
+          status: 200,
+          body: {
+            data: { teams: { nodes: [
+              { id: "t1", name: "Engineering", key: "ENG" },
+              { id: "t2", name: "Design", key: "DSN" }
+            ] } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      teams = @client.list_teams
+
+      assert_equal 2, teams.size
+      assert_equal "t1", teams.first[:id]
+      assert_equal "Engineering", teams.first[:name]
+      assert_equal "ENG", teams.first[:key]
+    end
+
+    test "list_projects returns id/name and owning team_ids" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(body: /projects/)
+        .to_return(
+          status: 200,
+          body: {
+            data: { projects: { nodes: [
+              { id: "p1", name: "Roadmap", teams: { nodes: [ { id: "t1" }, { id: "t2" } ] } },
+              { id: "p2", name: "Backlog", teams: { nodes: [ { id: "t2" } ] } }
+            ] } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      projects = @client.list_projects
+
+      assert_equal 2, projects.size
+      assert_equal "p1", projects.first[:id]
+      assert_equal "Roadmap", projects.first[:name]
+      assert_equal %w[t1 t2], projects.first[:team_ids]
+      assert_equal %w[t2], projects.last[:team_ids]
+    end
+
+    test "list_teams returns [] when nodes are absent" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 200,
+          body: { data: { teams: {} } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      assert_equal [], @client.list_teams
+    end
+
+    # ---------------------------------------------------------------------------
     # register_webhook
     # ---------------------------------------------------------------------------
     test "register_webhook posts webhookCreate mutation and returns id" do

@@ -51,6 +51,18 @@ module CollavreLinear
         assert_includes html, I18n.t("collavre_linear.integration.project_id_label")
       end
 
+      test "link form renders dropdowns (not text inputs) wired to the options endpoint" do
+        html = render_modal(connected: true)
+
+        # Combo boxes so the user picks by name instead of typing raw IDs.
+        assert_match %r{<select[^>]*name="linear_project_id"}, html
+        assert_match %r{<select[^>]*name="team_id"}, html
+        refute_match %r{<input[^>]*name="linear_project_id"[^>]*type="text"}, html
+        # JS fetches teams/projects from the per-creative options endpoint.
+        assert_includes html, "/linear/creatives/#{@creative.id}/integration/options"
+        assert_includes html, I18n.t("collavre_linear.integration.project_select_placeholder")
+      end
+
       test "shows resync + unlink actions when a project link already exists" do
         account = CollavreLinear::Account.create!(
           user: @user,

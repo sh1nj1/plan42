@@ -138,6 +138,35 @@ module CollavreLinear
       }
     GQL
 
+    # List the workspace teams the token can see (for the link-a-project picker).
+    TEAMS = <<~GQL.freeze
+      query Teams {
+        teams(first: 250) {
+          nodes {
+            id
+            name
+            key
+          }
+        }
+      }
+    GQL
+
+    # List projects with their owning team ids so the picker can scope projects
+    # to the chosen team (a Linear project may belong to more than one team).
+    PROJECTS = <<~GQL.freeze
+      query Projects {
+        projects(first: 250) {
+          nodes {
+            id
+            name
+            teams {
+              nodes { id }
+            }
+          }
+        }
+      }
+    GQL
+
     def initialize(account)
       @account = account
       @endpoint = resolve_endpoint
@@ -222,6 +251,29 @@ module CollavreLinear
         organization_id: data.dig("viewer", "organization", "id"),
         app_actor_id:    nil
       }
+    end
+
+    # List workspace teams for the link picker.
+    # @return [Array<Hash>] each with :id, :name, :key
+    def list_teams
+      data  = post!(TEAMS, {})
+      nodes = data.dig("teams", "nodes") || []
+      nodes.map { |n| symbolize(n) }
+    end
+
+    # List projects for the link picker, each with the ids of its owning teams
+    # so the UI can scope projects to the selected team.
+    # @return [Array<Hash>] each with :id, :name, :team_ids
+    def list_projects
+      data  = post!(PROJECTS, {})
+      nodes = data.dig("projects", "nodes") || []
+      nodes.map do |n|
+        {
+          id:       n["id"],
+          name:     n["name"],
+          team_ids: (n.dig("teams", "nodes") || []).map { |t| t["id"] }
+        }
+      end
     end
 
     # Register a webhook with Linear.
