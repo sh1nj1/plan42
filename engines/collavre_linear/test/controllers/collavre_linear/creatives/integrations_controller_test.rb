@@ -119,6 +119,46 @@ module CollavreLinear
           JSON.parse(response.body)["error"]
       end
 
+      test "create rejects a subtree overlap owned by ANOTHER Linear account" do
+        sign_in_as(@user)
+
+        # A different admin, with their OWN Linear account, already linked the
+        # ancestor. The exporter resolves ProjectLink/IssueLink per creative
+        # WITHOUT account scope, so a second account claiming a descendant would
+        # hijack the subtree — the overlap guard must span all accounts.
+        other_user = Collavre.user_class.create!(
+          email: "linear-integ-other-#{SecureRandom.hex(4)}@example.com",
+          name: "Other Linear Admin",
+          password: TEST_PASSWORD,
+          password_confirmation: TEST_PASSWORD,
+          timezone: "UTC"
+        )
+        other_account = CollavreLinear::Account.create!(
+          user: other_user,
+          linear_uid: "uid-integ-other-#{SecureRandom.hex(4)}",
+          access_token: "tok-integ-other"
+        )
+        CollavreLinear::ProjectLink.create!(
+          creative:          @creative.effective_origin,
+          account:           other_account,
+          linear_project_id: "proj-other",
+          team_id:           "team-other"
+        )
+        child = Collavre::Creative.create!(
+          description: "<p>child</p>", user: @user, parent: @creative
+        )
+
+        assert_no_difference -> { CollavreLinear::ProjectLink.count } do
+          post "/linear/creatives/#{child.id}/integration",
+               params: { team_id: "team-mine", linear_project_id: "proj-mine" },
+               as: :json
+        end
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("collavre_linear.errors.overlapping_link"),
+          JSON.parse(response.body)["error"]
+      end
+
       test "create registers the webhook URL WITH the /linear mount prefix" do
         sign_in_as(@user)
 
