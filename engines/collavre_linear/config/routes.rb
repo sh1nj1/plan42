@@ -8,4 +8,11 @@ CollavreLinear::Engine.routes.draw do
 
   # Inbound webhook from Linear (HMAC-signed, machine-to-machine, no user session)
   post "webhook", to: "webhooks#create", as: :webhook
+
+  # Creative integration endpoints (link / unlink / resync)
+  resources :creatives, only: [] do
+    resource :integration, module: :creatives, only: [ :create, :destroy ] do
+      post :resync, on: :member
+    end
+  end
 end

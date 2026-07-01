@@ -1,0 +1,115 @@
+<%#
+  Linear integration modal partial.
+
+  Locals (optional – callers may pass creative):
+    creative:  the Collavre::Creative being configured
+    connected: boolean – whether Current.user has a CollavreLinear::Account
+
+  Usage:
+    <%= render "collavre_linear/integrations/modal",
+               creative: @creative,
+               connected: Current.user&.linear_account.present? %>
+%>
+
+<% connected    = local_assigns.fetch(:connected, Current.user&.linear_account.present?) %>
+<% creative_id  = local_assigns[:creative]&.id %>
+<% project_link = connected && creative_id &&
+                  Collavre::Creative.find_by(id: creative_id)&.effective_origin&.linear_project_links
+                    &.find_by(account: Current.user&.linear_account) %>
+
+<div id="linear-integration-modal"
+     data-creative-id="<%= creative_id %>"
+     style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;
+            align-items:center;justify-content:center;background:rgba(0,0,0,0.4);">
+  <div class="popup-box" style="min-width:340px;max-width:90vw;">
+    <button type="button" id="close-linear-modal" class="popup-close-btn"
+            onclick="document.getElementById('linear-integration-modal').style.display='none'">&times;</button>
+
+    <h2><%= t("collavre_linear.integration.label") %></h2>
+    <p style="margin-bottom:1em;color:var(--color-text-secondary,#666);">
+      <%= t("collavre_linear.integration.description") %>
+    </p>
+
+    <% if connected %>
+      <% if project_link %>
+        <%# --- Already linked --- %>
+        <p style="color:var(--color-success,#16a34a);margin-bottom:0.75em;">
+          <%= t("collavre_linear.integration.linked",
+                project: project_link.linear_project_id,
+                team:    project_link.team_id) %>
+        </p>
+
+        <%# Resync form %>
+        <%= form_with url: main_app.respond_to?(:linear_creative_integration_resync_path) ?
+                           main_app.linear_creative_integration_resync_path(creative_id: creative_id) :
+                           "/linear/creatives/#{creative_id}/integration/resync",
+                      method: :post, local: false,
+                      html: { style: "display:inline;margin-right:0.5em;" } do |f| %>
+          <%= f.submit t("collavre_linear.integration.resync_button"),
+                       class: "btn btn-secondary btn-sm" %>
+        <% end %>
+
+        <%# Unlink form %>
+        <%= form_with url: main_app.respond_to?(:linear_creative_integration_path) ?
+                           main_app.linear_creative_integration_path(creative_id: creative_id) :
+                           "/linear/creatives/#{creative_id}/integration",
+                      method: :delete, local: false,
+                      data: { confirm: t("collavre_linear.integration.unlink_confirm") } do |f| %>
+          <%= f.submit t("collavre_linear.integration.unlink_button"),
+                       class: "btn btn-danger btn-sm" %>
+        <% end %>
+
+      <% else %>
+        <%# --- Connected but not yet linked to a project --- %>
+        <p style="margin-bottom:0.75em;">
+          <%= t("collavre_linear.integration.link_prompt") %>
+        </p>
+
+        <%= form_with url: main_app.respond_to?(:linear_creative_integration_path) ?
+                           main_app.linear_creative_integration_path(creative_id: creative_id) :
+                           "/linear/creatives/#{creative_id}/integration",
+                      method: :post, local: false,
+                      html: { id: "linear-link-form" } do |f| %>
+          <div style="margin-bottom:0.75em;">
+            <%= f.label :team_id, t("collavre_linear.integration.team_id_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.text_field :team_id,
+                             placeholder: t("collavre_linear.integration.team_id_placeholder"),
+                             required: true,
+                             style: "width:100%;padding:0.4em 0.6em;border:1px solid #ccc;border-radius:4px;" %>
+          </div>
+
+          <div style="margin-bottom:1em;">
+            <%= f.label :linear_project_id, t("collavre_linear.integration.project_id_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.text_field :linear_project_id,
+                             placeholder: t("collavre_linear.integration.project_id_placeholder"),
+                             required: true,
+                             style: "width:100%;padding:0.4em 0.6em;border:1px solid #ccc;border-radius:4px;" %>
+          </div>
+
+          <%= f.submit t("collavre_linear.integration.link_button"),
+                       class: "btn btn-primary" %>
+        <% end %>
+      <% end %>
+
+    <% else %>
+      <%# --- Not connected — show OAuth connect button --- %>
+      <p style="margin-bottom:0.75em;">
+        <%= t("collavre_linear.integration.connect_prompt") %>
+      </p>
+
+      <form id="linear-connect-form"
+            action="/linear/auth/store_creative"
+            method="post"
+            target="linear-auth-window">
+        <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+        <input type="hidden" name="creative_id" value="<%= creative_id %>">
+        <button type="submit" class="btn btn-primary"
+                onclick="window.open('', 'linear-auth-window', 'width=620,height=720')">
+          <%= t("collavre_linear.integration.connect_button") %>
+        </button>
+      </form>
+    <% end %>
+  </div>
+</div>

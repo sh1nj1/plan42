@@ -1,5 +1,29 @@
 ko:
   collavre_linear:
+    auth:
+      connected: "Linear 연결 성공."
+      invalid_state: "OAuth 상태가 유효하지 않습니다. 다시 연결해 주세요."
+      login_first: "먼저 로그인해 주세요."
     integration:
       label: "Linear"
       description: "프로젝트, 이슈, 댓글 양방향 동기화"
+      setup: "설정"
+      connect_prompt: "Linear 계정을 연결하여 동기화를 시작하세요."
+      connect_button: "Linear 연결"
+      link_prompt: "이 크리에이티브에 연결할 Linear 팀 및 프로젝트 ID를 입력하세요."
+      team_id_label: "팀 ID"
+      team_id_placeholder: "예: TEAM-abc123"
+      project_id_label: "프로젝트 ID"
+      project_id_placeholder: "예: proj-abc123"
+      link_button: "프로젝트 연결"
+      linked: "프로젝트 %{project} 연결됨 (팀 %{team})"
+      unlink_button: "연결 해제"
+      unlink_confirm: "이 크리에이티브에서 Linear 연동을 제거하시겠습니까?"
+      resync_button: "지금 재동기화"
+      resync_started: "재동기화 시작됨. 이슈가 곧 업데이트됩니다."
+      missing_creative: "creative_id가 필요합니다"
+    errors:
+      not_connected: "Linear 계정이 연결되지 않았습니다."
+      missing_params: "team_id와 linear_project_id가 필요합니다."
+      not_found: "Linear 프로젝트 링크를 찾을 수 없습니다."
+      forbidden: "접근이 거부되었습니다."

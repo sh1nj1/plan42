@@ -1,5 +1,29 @@
 en:
   collavre_linear:
+    auth:
+      connected: "Linear connected successfully."
+      invalid_state: "Invalid OAuth state. Please try connecting again."
+      login_first: "Please log in first."
     integration:
       label: "Linear"
       description: "Two-way sync of projects, issues and comments"
+      setup: "Setup"
+      connect_prompt: "Connect your Linear account to start syncing."
+      connect_button: "Connect Linear"
+      link_prompt: "Enter your Linear team and project IDs to link this creative."
+      team_id_label: "Team ID"
+      team_id_placeholder: "e.g. TEAM-abc123"
+      project_id_label: "Project ID"
+      project_id_placeholder: "e.g. proj-abc123"
+      link_button: "Link Project"
+      linked: "Linked to project %{project} (team %{team})"
+      unlink_button: "Unlink"
+      unlink_confirm: "Remove Linear integration from this creative?"
+      resync_button: "Re-sync now"
+      resync_started: "Re-sync started. Issues will update shortly."
+      missing_creative: "creative_id is required"
+    errors:
+      not_connected: "Linear account not connected."
+      missing_params: "team_id and linear_project_id are required."
+      not_found: "Linear project link not found."
+      forbidden: "Access denied."

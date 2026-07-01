@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_000004) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_01_000005) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -406,6 +406,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000004) do
     t.integer "sync_state", default: 0, null: false
     t.string "team_id", null: false
     t.datetime "updated_at", null: false
+    t.string "webhook_id"
     t.string "webhook_secret", null: false
     t.index ["account_id"], name: "index_linear_project_links_on_account_id"
     t.index ["creative_id", "linear_project_id"], name: "index_linear_project_links_on_creative_and_project", unique: true

@@ -1,0 +1,132 @@
+# frozen_string_literal: true
+
+module CollavreLinear
+  module Creatives
+    class IntegrationsController < ApplicationController
+      include Collavre::IntegrationSetup
+      include Collavre::IntegrationPermission
+
+      before_action :set_creative
+      before_action :set_origin
+      before_action :ensure_read_permission
+
+      # POST /linear/creatives/:creative_id/integration
+      #
+      # Links a Creative subtree to a Linear team + project, provisions a
+      # webhook for the team, and enqueues an initial full export.
+      def create
+        unless @creative.has_permission?(Current.user, :admin)
+          render json: { error: integration_forbidden_message }, status: :forbidden
+          return
+        end
+
+        account = Current.user.linear_account
+        unless account
+          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        team_id          = params[:team_id].to_s.presence
+        linear_project_id = params[:linear_project_id].to_s.presence
+
+        unless team_id && linear_project_id
+          render json: { error: I18n.t("collavre_linear.errors.missing_params") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        link = @origin.linear_project_links.find_or_initialize_by(
+          account:           account,
+          linear_project_id: linear_project_id
+        )
+        link.team_id = team_id
+        link.save!
+
+        CollavreLinear::WebhookProvisioner.ensure_for(
+          project_link: link,
+          webhook_url:  linear_webhook_url
+        )
+
+        CollavreLinear::OutboundSyncJob.perform_later(@origin.id)
+
+        render json: { success: true, project_link: serialize_link(link) }
+      rescue ActiveRecord::RecordInvalid => e
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+
+      # DELETE /linear/creatives/:creative_id/integration
+      #
+      # Unlinks the Creative from its Linear project.  Webhook deregistration
+      # is best-effort (Linear offers no webhook delete endpoint in the public
+      # GraphQL API; the webhook_id is cleared locally).
+      def destroy
+        unless @creative.has_permission?(Current.user, :admin)
+          render json: { error: integration_forbidden_message }, status: :forbidden
+          return
+        end
+
+        account = Current.user.linear_account
+        unless account
+          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        link = @origin.linear_project_links.find_by(account: account)
+        unless link
+          render json: { error: I18n.t("collavre_linear.errors.not_found") },
+                 status: :not_found
+          return
+        end
+
+        link.destroy!
+
+        render json: { success: true }
+      end
+
+      # POST /linear/creatives/:creative_id/integration/resync
+      #
+      # Re-enqueues a full outbound export for the subtree root.
+      def resync
+        unless @creative.has_permission?(Current.user, :admin)
+          render json: { error: integration_forbidden_message }, status: :forbidden
+          return
+        end
+
+        account = Current.user.linear_account
+        unless account
+          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        unless @origin.linear_project_links.where(account: account).exists?
+          render json: { error: I18n.t("collavre_linear.errors.not_found") },
+                 status: :not_found
+          return
+        end
+
+        CollavreLinear::OutboundSyncJob.perform_later(@origin.id)
+
+        render json: { success: true, message: I18n.t("collavre_linear.integration.resync_started") }
+      end
+
+      private
+
+      def integration_forbidden_message
+        I18n.t("collavre_linear.errors.forbidden")
+      end
+
+      def serialize_link(link)
+        {
+          id:                link.id,
+          team_id:           link.team_id,
+          linear_project_id: link.linear_project_id,
+          sync_state:        link.sync_state,
+          webhook_id:        link.webhook_id
+        }
+      end
+    end
+  end
+end
