@@ -247,5 +247,70 @@ module CollavreLinear
       end
       assert_response :ok
     end
+
+    # Issue events are routed by data["id"] (the issue itself), and create/
+    # reparent by data["parentId"] — neither is the comment-shaped issue id, so
+    # both must be checked for cross-team forgery too.
+
+    test "rejects (401) when the Issue event data.id resolves to another team's issue" do
+      other_link = build_other_team_project_link
+      other_issue = Collavre::Creative.create!(
+        description: "Issue B", user: other_link.account.user, parent: other_link.creative
+      )
+      CollavreLinear::IssueLink.create!(
+        creative: other_issue, project_link: other_link, linear_issue_id: "iss-teamB"
+      )
+
+      # Signed with team A's secret (teamId=A, no projectId), but data.id names
+      # team B's issue — update_issue!/remove_issue! route by data["id"], so A's
+      # secret must NOT authenticate a write into B.
+      payload = build_payload(data: { id: "iss-teamB", teamId: "team-webhook" })
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_no_enqueued_jobs do
+        post_webhook(payload, sig)
+      end
+      assert_response :unauthorized
+    end
+
+    test "rejects (401) when the Issue event parentId resolves to another team's issue" do
+      other_link = build_other_team_project_link
+      other_issue = Collavre::Creative.create!(
+        description: "Parent B", user: other_link.account.user, parent: other_link.creative
+      )
+      CollavreLinear::IssueLink.create!(
+        creative: other_issue, project_link: other_link, linear_issue_id: "iss-parentB"
+      )
+
+      # A create/reparent that resolves its parent to team B's issue would attach
+      # a child under B's tree; signed with A's secret this must be rejected.
+      payload = build_payload(
+        action: "create",
+        data: { id: "iss-new", teamId: "team-webhook", parentId: "iss-parentB" }
+      )
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_no_enqueued_jobs do
+        post_webhook(payload, sig)
+      end
+      assert_response :unauthorized
+    end
+
+    def build_other_team_project_link
+      other_user = Collavre.user_class.create!(
+        email: "linear-webhook-b-#{SecureRandom.hex(4)}@example.com",
+        name: "Webhook B", password: TEST_PASSWORD,
+        password_confirmation: TEST_PASSWORD, timezone: "UTC"
+      )
+      other_account = CollavreLinear::Account.create!(
+        user: other_user, linear_uid: "uid-webhook-b-#{SecureRandom.hex(4)}",
+        access_token: "tok-webhook-b"
+      )
+      other_root = Collavre::Creative.create!(description: "Root B", user: other_user)
+      CollavreLinear::ProjectLink.create!(
+        creative: other_root, account: other_account,
+        linear_project_id: "proj-B-#{SecureRandom.hex(4)}", team_id: "team-B"
+      )
+    end
   end
 end

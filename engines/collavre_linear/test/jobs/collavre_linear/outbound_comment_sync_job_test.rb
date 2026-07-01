@@ -153,5 +153,35 @@ module CollavreLinear
       end
       assert_equal 0, @fake_client.calls.size
     end
+
+    test "adopts the self-echo CommentLink and removes the mirror duplicate on collision" do
+      # Simulate the inbound self-echo winning the race: in the window between
+      # create_comment returning and our CommentLink.create!, Linear's create
+      # webhook already mirrored the comment locally and grabbed the unique
+      # linear_comment_id we are about to record.
+      mirror = @creative.comments.new(content: "hello linear", user: @user)
+      mirror.skip_linear_sync = true
+      mirror.save!
+      CollavreLinear::CommentLink.create!(
+        comment_id:        mirror.id,
+        linear_comment_id: "lin-cmt-1", # same id FakeClient returns
+        issue_link:        @issue_link
+      )
+
+      assert_nothing_raised do
+        CollavreLinear::Client.stub(:new, @fake_client) do
+          CollavreLinear::OutboundCommentSyncJob.perform_now(@comment.id)
+        end
+      end
+
+      # The link is adopted onto the user's original comment (so future edits keep
+      # syncing instead of re-posting), and the echo mirror is removed — the
+      # comment is neither double-represented nor left unlinked.
+      link = CollavreLinear::CommentLink.find_by(linear_comment_id: "lin-cmt-1")
+      assert_not_nil link
+      assert_equal @comment.id, link.comment_id
+      assert_equal 1, CollavreLinear::CommentLink.where(linear_comment_id: "lin-cmt-1").count
+      assert_nil Collavre::Comment.find_by(id: mirror.id), "duplicate mirror must be removed"
+    end
   end
 end

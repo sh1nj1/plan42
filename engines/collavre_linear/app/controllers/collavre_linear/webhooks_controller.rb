@@ -91,13 +91,24 @@ module CollavreLinear
         return false if other && other.team_id != link.team_id
       end
 
-      issue_id = extract_issue_id(payload)
-      if issue_id.present?
+      issue_ids_in_payload(payload).each do |issue_id|
         issue_link = CollavreLinear::IssueLink.find_by(linear_issue_id: issue_id)
         return false if issue_link && issue_link.project_link.team_id != link.team_id
       end
 
       true
+    end
+
+    # Every issue identifier InboundApplier may route by: the comment's parent
+    # issue (data.issue.id / data.issueId), the Issue event's own id (data.id —
+    # what update_issue!/remove_issue!/create_issue! key on), and a create/
+    # reparent target (data.parentId). The comment-shaped extract_issue_id alone
+    # missed data.id, letting an Issue payload signed with team A's secret but
+    # naming team B's issue slip past the cross-team guard.
+    def issue_ids_in_payload(payload)
+      ids = [ extract_issue_id(payload), payload.dig("data", "parentId") ]
+      ids << payload.dig("data", "id") if payload["type"] == "Issue"
+      ids.compact_blank
     end
 
     def extract_issue_id(payload)
