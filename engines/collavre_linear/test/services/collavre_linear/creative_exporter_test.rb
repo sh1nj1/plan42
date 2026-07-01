@@ -179,15 +179,8 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "sync! skips the API call when content_hash is unchanged" do
-      # Compute the hash through the same adapter path the exporter uses.
-      adapter = CreativeExporter::CreativeAdapter.new(
-        title:       @child_creative.creative_snippet,
-        description: @child_creative.description,
-        sequence:    @child_creative.sequence,
-        data:        @child_creative.data
-      )
-      attrs = FieldMapper.creative_to_issue_attrs(adapter)
-      hash  = Digest::SHA256.hexdigest(attrs.sort.to_h.to_json)
+      # Compute the hash through the canonical exporter path (parent-aware).
+      hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
 
       CollavreLinear::IssueLink.create!(
         creative:        @child_creative,
@@ -204,6 +197,175 @@ module CollavreLinear
       assert_equal 0, @fake_client.update_calls.size,
         "update_issue must NOT be called when content_hash is unchanged"
       assert_equal 0, @fake_client.create_calls.size
+    end
+
+    # ---------------------------------------------------------------------------
+    # Step 2c — dirty link with unchanged content → reset to :synced (Fix 1)
+    # ---------------------------------------------------------------------------
+
+    test "sync! resets :dirty link to :synced without an API call when content is unchanged" do
+      # Compute the current content hash via the canonical exporter path.
+      hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
+
+      # Simulate what the observer does on a metadata-only save: mark dirty
+      # without changing any mapped field.
+      dirty_link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-dirty-noop",
+        content_hash:    hash,
+        sync_state:      :dirty
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      # No API call must be made — content is identical.
+      assert_equal 0, @fake_client.update_calls.size,
+        "update_issue must NOT be called when content_hash is unchanged"
+      assert_equal 0, @fake_client.create_calls.size
+
+      # The link must no longer be :dirty so inbound updates don't trip conflict?.
+      dirty_link.reload
+      assert_equal "synced", dirty_link.sync_state,
+        "sync_state must be reset to :synced after a no-op export"
+    end
+
+    test "dirty link reset prevents false conflict on subsequent inbound update" do
+      hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
+
+      dirty_link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-dirty-noop2",
+        content_hash:    hash,
+        sync_state:      :dirty
+      )
+
+      # Run the exporter — should reset :dirty → :synced.
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      dirty_link.reload
+      assert_equal "synced", dirty_link.sync_state
+
+      # After reset, conflict? must return false (InboundApplier keyed condition).
+      assert_not dirty_link.dirty?,
+        "dirty? must be false after the no-op export resets sync_state"
+    end
+
+    # ---------------------------------------------------------------------------
+    # Step 2d — reparent pushes parentId on update (hierarchy divergence fix)
+    # ---------------------------------------------------------------------------
+
+    test "sync! pushes parentId to Linear when a linked creative is reparented under a different linked parent" do
+      # Root already holds a linked issue (the ORIGINAL parent of @child_creative).
+      CollavreLinear::IssueLink.create!(
+        creative:        @root_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-old-parent",
+        sync_state:      :synced
+      )
+
+      # A SECOND linked creative to move the child under.
+      new_parent = Collavre::Creative.new(
+        description: "<p>New parent</p>", user: @user, parent: @root_creative
+      )
+      new_parent.skip_linear_sync = true
+      new_parent.save!
+      CollavreLinear::IssueLink.create!(
+        creative:        new_parent,
+        project_link:    @project_link,
+        linear_issue_id: "iss-new-parent",
+        sync_state:      :synced
+      )
+
+      # The child already has an IssueLink whose content_hash reflects its state
+      # under the OLD parent (iss-old-parent).
+      old_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
+      child_link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-child",
+        content_hash:    old_hash,
+        sync_state:      :synced
+      )
+
+      # Reparent the child under the new linked parent (content unchanged).
+      @child_creative.skip_linear_sync = true
+      @child_creative.update!(parent: new_parent)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      assert_equal 1, @fake_client.update_calls.size,
+        "reparent must trigger update_issue even though content fields are unchanged"
+      call = @fake_client.update_calls.first
+      assert_equal "iss-child", call[:_id]
+      assert_equal "iss-new-parent", call[:parent_id],
+        "update_issue must carry the NEW parent's linear_issue_id as parent_id"
+
+      child_link.reload
+      assert_not_equal old_hash, child_link.content_hash,
+        "content_hash must advance to reflect the new parent"
+    end
+
+    test "sync! does not add a spurious parentId change on a same-parent content edit" do
+      # Root holds a linked issue = the child's parent.
+      CollavreLinear::IssueLink.create!(
+        creative:        @root_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-parent-stable",
+        sync_state:      :synced
+      )
+
+      existing_link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-content-edit",
+        content_hash:    "old-hash-that-will-not-match",
+        sync_state:      :synced
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      # Content changed → update runs. Because the parent is UNCHANGED (still the
+      # linked root), parentId is still sent (idempotent — same value), but the
+      # point is we don't fabricate a bogus/nil parentId that would error.
+      assert_equal 1, @fake_client.update_calls.size
+      call = @fake_client.update_calls.first
+      assert_equal "iss-parent-stable", call[:parent_id],
+        "the stable linked parent's id should be sent, not nil"
+      existing_link.reload
+      assert_not_equal "old-hash-that-will-not-match", existing_link.content_hash
+    end
+
+    test "sync! omits parentId on update when the creative has no linked parent" do
+      # @child_creative's parent (@root_creative) has NO IssueLink → parent is
+      # not a linked Linear issue, so no parentId must be sent (would error).
+      existing_link = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-no-linked-parent",
+        content_hash:    "old-hash-that-will-not-match",
+        sync_state:      :synced
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      assert_equal 1, @fake_client.update_calls.size
+      call = @fake_client.update_calls.first
+      assert_not call.key?(:parent_id),
+        "no parent_id must be sent when the parent is not a linked Linear issue"
+      existing_link.reload
+      assert_not_equal "old-hash-that-will-not-match", existing_link.content_hash
     end
 
     # ---------------------------------------------------------------------------
