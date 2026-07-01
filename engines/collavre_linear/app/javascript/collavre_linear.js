@@ -28,10 +28,11 @@ if (!linearIntegrationInitialized) {
 
   // Submit a modal form (link / resync / unlink) to its JSON endpoint and
   // reload on success. Honors data-confirm and surfaces server errors.
-  function submitLinearModalForm(form) {
+  function submitLinearModalForm(form, fallbackError) {
     const confirmMsg = form.dataset.confirm;
     if (confirmMsg && !window.confirm(confirmMsg)) return;
 
+    const genericError = fallbackError || 'Linear request failed.';
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     fetch(form.action, {
       method: 'POST', // Rails method-override (_method field) handles DELETE
@@ -48,10 +49,10 @@ if (!linearIntegrationInitialized) {
         if (res.ok && data.success) {
           window.location.reload();
         } else {
-          window.alert(data.error || data.warning || 'Linear request failed.');
+          window.alert(data.error || data.warning || genericError);
         }
       })
-      .catch(function () { window.alert('Linear request failed.'); });
+      .catch(function () { window.alert(genericError); });
   }
 
   document.addEventListener('turbo:load', function () {
@@ -104,7 +105,7 @@ if (!linearIntegrationInitialized) {
       if (form.id === 'linear-connect-form') return;
       form.addEventListener('submit', function (event) {
         event.preventDefault();
-        submitLinearModalForm(form);
+        submitLinearModalForm(form, modal.dataset.errorGeneric);
       });
     });
   });

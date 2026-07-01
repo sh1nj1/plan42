@@ -70,6 +70,31 @@ module CollavreLinear
           "no warning should surface on a successful provisioning"
       end
 
+      test "create rejects linking a descendant when an ancestor is already linked" do
+        sign_in_as(@user)
+
+        # @creative (ancestor) already linked to a project.
+        CollavreLinear::ProjectLink.create!(
+          creative:          @creative.effective_origin,
+          account:           @account,
+          linear_project_id: "proj-ancestor",
+          team_id:           "team-ov"
+        )
+        child = Collavre::Creative.create!(
+          description: "<p>child</p>", user: @user, parent: @creative
+        )
+
+        assert_no_difference -> { CollavreLinear::ProjectLink.count } do
+          post "/linear/creatives/#{child.id}/integration",
+               params: { team_id: "team-ov", linear_project_id: "proj-descendant" },
+               as: :json
+        end
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("collavre_linear.errors.overlapping_link"),
+          JSON.parse(response.body)["error"]
+      end
+
       test "create registers the webhook URL WITH the /linear mount prefix" do
         sign_in_as(@user)
 

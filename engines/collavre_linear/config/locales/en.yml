@@ -30,9 +30,11 @@ en:
       webhook_guide_url_label: "Set the URL to:"
       webhook_guide_secret_label: "Set the signing secret to:"
       webhook_guide_events_label: "Subscribe to these events:"
+      request_failed: "Linear request failed. Please try again."
       conflict_notice: "⚠️ Linear sync conflict: this item was edited both locally and in Linear. The remote change was NOT applied to avoid overwriting local edits. Resolve manually and re-sync."
     errors:
       not_connected: "Linear account not connected."
       missing_params: "team_id and linear_project_id are required."
       not_found: "Linear project link not found."
       forbidden: "Access denied."
+      overlapping_link: "A parent or child of this item is already linked to Linear. Unlink it first, or link a non-overlapping item."

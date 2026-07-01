@@ -32,6 +32,21 @@ module CollavreLinear
           return
         end
 
+        # Reject linking inside/around an already-linked subtree. A second
+        # ProjectLink on an ancestor/descendant would sync against the wrong
+        # project: IssueLink is unique per Creative and the exporter reuses the
+        # creative's existing issue link, so the new project would silently
+        # update the old project's issues. Re-linking @origin to the SAME project
+        # stays idempotent (find_or_initialize_by below).
+        overlapping_ids =
+          (@origin.self_and_ancestors.ids + @origin.self_and_descendants.ids).uniq - [ @origin.id ]
+        if overlapping_ids.any? &&
+           CollavreLinear::ProjectLink.where(account: account, creative_id: overlapping_ids).exists?
+          render json: { error: I18n.t("collavre_linear.errors.overlapping_link") },
+                 status: :unprocessable_entity
+          return
+        end
+
         link = @origin.linear_project_links.find_or_initialize_by(
           account:           account,
           linear_project_id: linear_project_id

@@ -30,9 +30,11 @@ ko:
       webhook_guide_url_label: "URL 을 다음으로 설정합니다:"
       webhook_guide_secret_label: "서명 시크릿(signing secret)을 다음으로 설정합니다:"
       webhook_guide_events_label: "다음 이벤트를 구독합니다:"
+      request_failed: "Linear 요청에 실패했습니다. 다시 시도해 주세요."
       conflict_notice: "⚠️ Linear 동기화 충돌: 이 항목이 로컬과 Linear 양쪽에서 수정되었습니다. 로컬 변경을 덮어쓰지 않기 위해 원격 변경은 적용되지 않았습니다. 수동으로 해결한 후 다시 동기화해 주세요."
     errors:
       not_connected: "Linear 계정이 연결되지 않았습니다."
       missing_params: "team_id와 linear_project_id가 필요합니다."
       not_found: "Linear 프로젝트 링크를 찾을 수 없습니다."
       forbidden: "접근이 거부되었습니다."
+      overlapping_link: "이 항목의 상위 또는 하위 항목이 이미 Linear에 연결되어 있습니다. 먼저 연결을 해제하거나 겹치지 않는 항목을 연결하세요."
