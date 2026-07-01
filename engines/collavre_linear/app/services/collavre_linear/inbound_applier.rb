@@ -144,6 +144,16 @@ module CollavreLinear
           creative.sequence = attrs[:sequence]
         end
         merge_linear_data!(creative, attrs[:data_linear])
+
+        # Reparent: when the payload's Linear parent differs from what the link
+        # last recorded, move the Creative under the corresponding linked parent
+        # and track the new parent_issue_id. Without this the tree stays under the
+        # old parent AND the content hash below (which folds in the parent's
+        # linear_issue_id) would record the OLD parent as synced, hiding the
+        # divergence from later outbound syncs. Assigned before save! so the
+        # skip_linear_sync guard covers the reparent (no echo back to Linear).
+        new_parent_issue_id = apply_parent_change!(creative, link)
+
         creative.save!
 
         # Advance the outbound content hash to the newly-applied state. Without
@@ -154,9 +164,48 @@ module CollavreLinear
         # sequence so inbound + outbound hashes agree.
         link.update!(
           remote_updated_at: remote_updated_at || link.remote_updated_at,
+          parent_issue_id:   new_parent_issue_id,
           content_hash:      CreativeExporter.content_hash_for(creative.reload),
           sync_state:        :synced
         )
+      end
+    end
+
+    # Reparent the Creative when the inbound Linear parent differs from what the
+    # link last recorded. Returns the parent_issue_id that should be persisted on
+    # the link (the new one when moved, the unchanged one otherwise).
+    #
+    # Guard: only reparent to a parent that is itself a linked issue in this
+    # install. An unknown/unlinked parentId is left untouched (we do not move the
+    # Creative to a bogus node). Clearing parentId (moved to project root) moves
+    # the Creative under the ProjectLink root Creative, mirroring create.
+    def apply_parent_change!(creative, link)
+      # Only act when the payload actually reports a parent change. When
+      # updatedFrom is present but omits parentId, the parent did not change.
+      changed = changed_keys
+      return link.parent_issue_id if changed && !changed.include?("parentId")
+
+      new_parent_issue_id = @data["parentId"].presence
+      return link.parent_issue_id if new_parent_issue_id == link.parent_issue_id
+
+      new_parent = resolve_reparent_target(new_parent_issue_id)
+      # Unknown/unlinked parent: leave the tree and the link untouched.
+      return link.parent_issue_id unless new_parent
+      return link.parent_issue_id if new_parent.id == creative.parent_id
+
+      creative.parent = new_parent
+      new_parent_issue_id
+    end
+
+    # Resolve the Creative to reparent under for an inbound parent change.
+    #   - a linked issue id -> that issue's Creative
+    #   - a blank/absent parentId (moved to project root) -> the ProjectLink root
+    #   - an unknown/unlinked issue id -> nil (caller leaves as-is)
+    def resolve_reparent_target(parent_issue_id)
+      if parent_issue_id.present?
+        IssueLink.find_by(linear_issue_id: parent_issue_id)&.creative
+      else
+        project_link&.creative
       end
     end
 

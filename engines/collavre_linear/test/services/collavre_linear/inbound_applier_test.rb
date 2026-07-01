@@ -165,6 +165,129 @@ module CollavreLinear
       assert_equal link.reload.content_hash, current_hash
     end
 
+    # -- update: reparent ------------------------------------------------------
+
+    test "update with a changed parentId moves the creative under the new linked parent" do
+      # Two linked potential parents plus the child currently under parent A.
+      parent_a, _link_a = linked_child(linear_issue_id: "iss-parent-a")
+      parent_b, _link_b = linked_child(linear_issue_id: "iss-parent-b")
+
+      child = Collavre::Creative.new(
+        description: "<p>Child</p>", user: @user, parent: parent_a
+      )
+      child.skip_linear_sync = true
+      child.save!
+      child_link = CollavreLinear::IssueLink.create!(
+        creative:          child,
+        project_link:      @project_link,
+        linear_issue_id:   "iss-child",
+        parent_issue_id:   "iss-parent-a",
+        remote_updated_at: 1.hour.ago,
+        sync_state:        :synced
+      )
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-child",
+          "title"     => "Child",
+          "parentId"  => "iss-parent-b",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "parentId" => "iss-parent-a" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      child.reload
+      child_link.reload
+      assert_equal parent_b.id, child.parent_id,
+        "creative should be reparented under the new linked parent"
+      assert_equal "iss-parent-b", child_link.parent_issue_id,
+        "link.parent_issue_id should track the new Linear parent"
+
+      # The content hash folds in the parent's linear_issue_id, so it must reflect
+      # the NEW parent — otherwise later outbound syncs would treat the old parent
+      # as synced and hide the divergence.
+      expected = CollavreLinear::CreativeExporter.content_hash_for(child)
+      assert_equal expected, child_link.content_hash
+    end
+
+    test "update to an unlinked parentId does NOT reparent to a bogus node" do
+      parent_a, _link_a = linked_child(linear_issue_id: "iss-p-a")
+
+      child = Collavre::Creative.new(
+        description: "<p>Child</p>", user: @user, parent: parent_a
+      )
+      child.skip_linear_sync = true
+      child.save!
+      child_link = CollavreLinear::IssueLink.create!(
+        creative:          child,
+        project_link:      @project_link,
+        linear_issue_id:   "iss-c",
+        parent_issue_id:   "iss-p-a",
+        remote_updated_at: 1.hour.ago,
+        sync_state:        :synced
+      )
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-c",
+          "title"     => "Child",
+          "parentId"  => "iss-not-linked-here",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "parentId" => "iss-p-a" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      child.reload
+      child_link.reload
+      assert_equal parent_a.id, child.parent_id,
+        "creative must not move when the new Linear parent is not a linked issue"
+      assert_equal "iss-p-a", child_link.parent_issue_id
+    end
+
+    test "inbound reparent does not enqueue an outbound sync (echo suppressed)" do
+      parent_a, _la = linked_child(linear_issue_id: "iss-echo-a")
+      parent_b, _lb = linked_child(linear_issue_id: "iss-echo-b")
+
+      child = Collavre::Creative.new(
+        description: "<p>Child</p>", user: @user, parent: parent_a
+      )
+      child.skip_linear_sync = true
+      child.save!
+      CollavreLinear::IssueLink.create!(
+        creative:          child,
+        project_link:      @project_link,
+        linear_issue_id:   "iss-echo-child",
+        parent_issue_id:   "iss-echo-a",
+        remote_updated_at: 1.hour.ago,
+        sync_state:        :synced
+      )
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-echo-child",
+          "title"     => "Child",
+          "parentId"  => "iss-echo-b",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "parentId" => "iss-echo-a" }
+      }
+
+      assert_no_enqueued_jobs only: CollavreLinear::OutboundSyncJob do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+      assert_equal parent_b.id, child.reload.parent_id
+    end
+
     # -- create ----------------------------------------------------------------
 
     test "create builds a child creative under the project root and an IssueLink" do
