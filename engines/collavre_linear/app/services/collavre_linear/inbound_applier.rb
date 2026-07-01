@@ -26,11 +26,19 @@ module CollavreLinear
   # `has_closure_tree order: :sequence` with a plain `sequence` column), so the
   # attribute-assign-then-save path is the correct model-level write.
   #
-  # Conflict rule: if the local link is `dirty` (has un-synced local edits) AND
-  # the remote payload is strictly NEWER than what we last saw
-  # (`remote_updated_at`), we do NOT overwrite local data. We flip the link to
-  # `conflict`, post a system comment noting the collision, and skip the field
-  # apply. "Newer" = remote timestamp > link.remote_updated_at, where the remote
+  # Conflict rule: when the local link is `dirty` (has un-synced local edits) the
+  # inbound payload is dispositioned against our last-seen remote timestamp
+  # (`remote_updated_at`):
+  #   * remote strictly NEWER than baseline => genuine concurrent remote edit =>
+  #     flip to `conflict`, post a Main-topic comment, skip the field apply.
+  #   * remote present but NOT newer (<=) => a stale echo. A genuinely new remote
+  #     edit always carries updatedAt > baseline, so a not-newer payload on a
+  #     dirty link can only be our own outbound update webhooking back (or a
+  #     replayed delivery). Applying it would clobber the newer pending local
+  #     edit, so we no-op. (Especially reachable today: issue echo dropping is
+  #     disabled while `app_actor_id` is nil.)
+  #   * remote or baseline nil => no basis to compare => apply.
+  # "Newer" = remote timestamp > link.remote_updated_at, where the remote
   # timestamp is taken from `data["updatedAt"]` (parsed) and falls back to
   # `webhookTimestamp` (ms epoch) when `updatedAt` is absent.
   class InboundApplier
@@ -140,8 +148,14 @@ module CollavreLinear
         # link back to :synced.
         return if link.conflict?
 
-        if conflict?(link)
+        case inbound_disposition(link)
+        when :conflict
           mark_conflict!(link)
+          return
+        when :stale
+          # Stale echo of an already-seen (or our own) remote state; applying it
+          # would overwrite the newer pending local edit. Leave the link dirty so
+          # the pending outbound push still carries the local edit to Linear.
           return
         end
 
@@ -381,11 +395,15 @@ module CollavreLinear
       project_link&.creative
     end
 
-    # Resolve the governing ProjectLink for this payload. Preference order:
+    # Resolve the governing ProjectLink for this payload. Membership must be
+    # PROVEN — Linear webhooks are team-scoped, so a projectless issue (backlog,
+    # or a different project in the same team) must not be adopted into a linked
+    # project's subtree. Preference order:
     #   1. explicit projectId / project.id on the entity,
-    #   2. the parent issue's ProjectLink (sub-issue create),
-    #   3. the sole ProjectLink when the install has exactly one (common case:
-    #      one linked project — avoids a fragile guess when Linear omits the id).
+    #   2. the parent issue's ProjectLink (sub-issue whose parent is linked).
+    # There is deliberately NO sole-ProjectLink fallback: a payload that names
+    # neither a project nor a linked parent cannot prove it belongs to any linked
+    # project, so it resolves to nil and the caller no-ops the import.
     def project_link
       return @project_link if defined?(@project_link)
 
@@ -395,8 +413,6 @@ module CollavreLinear
         elsif (parent_issue_id = @data["parentId"]).present? &&
               (pl = IssueLink.find_by(linear_issue_id: parent_issue_id))
           pl.project_link
-        elsif ProjectLink.count == 1
-          ProjectLink.first
         end
     end
 
@@ -409,18 +425,24 @@ module CollavreLinear
 
     # -- Conflict detection ----------------------------------------------------
 
-    def conflict?(link)
-      return false unless link.dirty?
+    # Classify how an inbound update should be treated relative to local state:
+    #   :apply    — safe to apply (clean link, or dirty with no baseline to
+    #               compare against).
+    #   :conflict — dirty link AND remote strictly newer than baseline (genuine
+    #               concurrent remote edit; human resolves).
+    #   :stale    — dirty link AND remote present but NOT newer than baseline. A
+    #               genuinely new remote edit always has updatedAt > baseline, so
+    #               this can only be a stale/own echo; no-op rather than clobber
+    #               the pending local edit.
+    def inbound_disposition(link)
+      return :apply unless link.dirty?
 
-      remote = remote_updated_at
-      return false unless remote
+      remote   = remote_updated_at
+      baseline = link.remote_updated_at
+      # No basis to compare (fresh dirty link or missing remote stamp) — apply.
+      return :apply unless remote && baseline
 
-      # When remote_updated_at is nil there is no baseline to compare against —
-      # we cannot determine that the remote is newer, so we allow the apply.
-      local = link.remote_updated_at
-      return false unless local
-
-      remote > local
+      remote > baseline ? :conflict : :stale
     end
 
     def mark_conflict!(link)

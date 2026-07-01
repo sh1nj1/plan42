@@ -298,6 +298,7 @@ module CollavreLinear
           "id"        => "iss-new",
           "title"     => "Brand new issue",
           "priority"  => 0,
+          "projectId" => "proj-inb",
           "updatedAt" => Time.current.iso8601
         }
       }
@@ -346,6 +347,7 @@ module CollavreLinear
           "title"     => "Early child",
           "priority"  => 0,
           "parentId"  => "iss-ooo-parent",
+          "projectId" => "proj-inb",
           "updatedAt" => Time.current.iso8601
         }
       }
@@ -363,6 +365,7 @@ module CollavreLinear
           "id"        => "iss-ooo-parent",
           "title"     => "Late parent",
           "priority"  => 0,
+          "projectId" => "proj-inb",
           "updatedAt" => Time.current.iso8601
         }
       }
@@ -779,6 +782,7 @@ module CollavreLinear
           "id"        => "iss-dup",
           "title"     => "Duplicate create test",
           "priority"  => 0,
+          "projectId" => "proj-inb",
           "updatedAt" => Time.current.iso8601
         }
       }
@@ -812,6 +816,7 @@ module CollavreLinear
           "id"        => "iss-race",
           "title"     => "Race loser",
           "priority"  => 0,
+          "projectId" => "proj-inb",
           "updatedAt" => Time.current.iso8601
         }
       }
@@ -859,9 +864,11 @@ module CollavreLinear
         "inbound apply must proceed when remote_updated_at baseline is nil"
     end
 
-    test "dirty link but remote NOT newer => no conflict, applies normally" do
+    test "dirty link + older remote => stale echo, no-op (keeps local edit, stays dirty)" do
       creative, link = linked_child(linear_issue_id: "iss-noconf")
-      link.update!(sync_state: :dirty, remote_updated_at: Time.current)
+      baseline = Time.current
+      link.update!(sync_state: :dirty, remote_updated_at: baseline)
+      local_description = creative.reload.description
 
       payload = {
         "action" => "update",
@@ -870,15 +877,75 @@ module CollavreLinear
           "id"        => "iss-noconf",
           "title"     => "Older remote",
           "priority"  => 2,
-          "updatedAt" => 1.hour.ago.iso8601   # older than remote_updated_at (now)
+          "updatedAt" => 1.hour.ago.iso8601   # older than baseline (now)
         },
         "updatedFrom" => { "title" => "x" }
       }
 
       CollavreLinear::InboundApplier.new(payload).apply!
 
-      assert_not_equal "conflict", link.reload.sync_state.to_s
-      assert_includes creative.reload.description, "Older remote"
+      # An older-than-baseline payload on a dirty link can only be a stale echo;
+      # applying it would clobber the newer local edit.
+      assert_equal "dirty", link.reload.sync_state.to_s,
+        "a stale (older) echo must leave the link dirty for the pending outbound push"
+      assert_equal local_description, creative.reload.description,
+        "a stale (older) echo must not overwrite the newer local edit"
+    end
+
+    test "dirty link + echo whose updatedAt EQUALS the baseline => no-op (own outbound echo)" do
+      # The exact finding: local edit A pushed (exporter stores baseline = A's
+      # updatedAt), user edits to B (dirty), then Linear echoes A back with the
+      # SAME updatedAt. Applying A would silently lose B.
+      creative, link = linked_child(linear_issue_id: "iss-echo-equal")
+      baseline = Time.current
+      link.update!(sync_state: :dirty, remote_updated_at: baseline)
+      local_b = creative.reload.description
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-echo-equal",
+          "title"     => "Echoed old body A",
+          "priority"  => 2,
+          "updatedAt" => baseline.iso8601   # equal to baseline (own echo)
+        },
+        "updatedFrom" => { "title" => "x" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal "dirty", link.reload.sync_state.to_s
+      assert_equal local_b, creative.reload.description,
+        "an equal-timestamp own echo must not overwrite the newer local edit"
+    end
+
+    # -- Finding: projectless team issue must not be adopted --------------------
+
+    test "projectless issue create (no projectId, no linked parent) is NOT imported" do
+      # A team-scoped webhook for an issue that belongs to no project. With a
+      # single linked project the old sole-link fallback would have adopted this
+      # backlog issue into the linked subtree.
+      assert_equal 1, CollavreLinear::ProjectLink.count,
+        "precondition: exactly one linked project (the vulnerable sole-link case)"
+
+      payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-projectless",
+          "title"     => "Unrelated backlog issue",
+          "priority"  => 0,
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      assert_no_difference [ -> { CollavreLinear::IssueLink.count },
+                            -> { Collavre::Creative.count } ] do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+      assert_nil CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-projectless"),
+        "a projectless team issue must not be adopted into the linked project's subtree"
     end
   end
 end
