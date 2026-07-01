@@ -39,11 +39,16 @@ module CollavreLinear
 
     # Returns one of: :skipped, :created, :failed
     def ensure_for
-      # Idempotent: if the team already has a webhook_id, skip.
-      if team_already_has_webhook?
-        # Copy the webhook_id to this link so it is consistent.
-        existing_id = existing_webhook_id_for_team
-        @project_link.update_column(:webhook_id, existing_id) if existing_id && @project_link.webhook_id.nil?
+      # Idempotent: this link is already provisioned — nothing to do.
+      return :skipped if @project_link.webhook_id.present?
+
+      # A sibling for the same team already has a webhook; adopt its id + secret.
+      if (existing = existing_team_webhook)
+        # Linear signs ALL deliveries for a team with the single secret it was
+        # registered with. WebhooksController#find_project_link can resolve a
+        # delivery to any sibling link for the team, so every sibling MUST carry
+        # the SAME webhook_secret (and id) or HMAC verification 401s. Copy both.
+        adopt_team_webhook(existing)
         return :skipped
       end
 
@@ -65,14 +70,24 @@ module CollavreLinear
     end
 
     # Best-effort deregistration. No-op when webhook_id is blank.
+    #
+    # Webhooks are team-scoped/shared: siblings for the same team reuse the same
+    # webhook_id. Only delete the remote webhook when NO OTHER ProjectLink for
+    # the team still references it — otherwise unlinking one project would kill
+    # inbound sync for every remaining sibling.
     def deregister
-      return unless @project_link.webhook_id.present?
+      webhook_id = @project_link.webhook_id
+      return if webhook_id.blank?
 
-      client.delete_webhook(@project_link.webhook_id)
+      unless siblings_share_webhook?(webhook_id)
+        client.delete_webhook(webhook_id)
+      end
+
+      @project_link.update_column(:webhook_id, nil)
     rescue CollavreLinear::Client::Error => e
       Rails.logger.warn(
         "[CollavreLinear::WebhookProvisioner] Webhook deregistration failed for " \
-        "webhook #{@project_link.webhook_id}: #{e.message}"
+        "webhook #{webhook_id}: #{e.message}"
       )
     end
 
@@ -84,16 +99,33 @@ module CollavreLinear
       @client ||= CollavreLinear::Client.new(@project_link.account)
     end
 
-    def team_already_has_webhook?
-      existing_webhook_id_for_team.present?
+    # Copy the existing team webhook's id AND secret onto this link so every
+    # sibling for the team shares the single secret Linear signs with.
+    def adopt_team_webhook(existing)
+      updates = {}
+      updates[:webhook_id]     = existing.webhook_id     if @project_link.webhook_id.blank?
+      updates[:webhook_secret] = existing.webhook_secret if existing.webhook_secret.present?
+      return if updates.empty?
+
+      @project_link.update_columns(updates)
     end
 
-    def existing_webhook_id_for_team
+    # The first sibling ProjectLink (any team member) that already carries a
+    # webhook_id, used as the source of the shared id + secret.
+    def existing_team_webhook
       CollavreLinear::ProjectLink
         .where(team_id: @project_link.team_id)
+        .where.not(id: @project_link.id)
         .where.not(webhook_id: [ nil, "" ])
-        .limit(1)
-        .pick(:webhook_id)
+        .first
+    end
+
+    # True when another ProjectLink for the same team still references webhook_id.
+    def siblings_share_webhook?(webhook_id)
+      CollavreLinear::ProjectLink
+        .where(team_id: @project_link.team_id, webhook_id: webhook_id)
+        .where.not(id: @project_link.id)
+        .exists?
     end
   end
 end

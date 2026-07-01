@@ -103,6 +103,46 @@ module CollavreLinear
       spy.verify
       # The shared webhook_id should be copied to this link
       assert_equal "wh-shared-777", @link.reload.webhook_id
+      # ...and the shared secret too, so HMAC verifies against either sibling.
+      assert_equal other_link.webhook_secret, @link.reload.webhook_secret
+    end
+
+    # ---------------------------------------------------------------------------
+    # ensure_for — sibling secret sharing lets HMAC verify against either link
+    # ---------------------------------------------------------------------------
+    test "ensure_for copies the sibling webhook_secret so signatures verify across links" do
+      other_creative = Collavre::Creative.create!(
+        description: "<p>Other creative</p>",
+        user: @user
+      )
+      other_link = CollavreLinear::ProjectLink.create!(
+        creative: other_creative,
+        account: @account,
+        linear_project_id: "proj-secret-2",
+        team_id: "team-wh-1", # same team as @link
+        webhook_id: "wh-shared-secret"
+      )
+      original_secret = @link.webhook_secret
+      assert_not_equal other_link.webhook_secret, original_secret,
+        "precondition: siblings start with distinct random secrets"
+
+      spy = Minitest::Mock.new
+      CollavreLinear::Client.stub :new, spy do
+        CollavreLinear::WebhookProvisioner.ensure_for(
+          project_link: @link,
+          webhook_url:  @webhook_url
+        )
+      end
+      spy.verify
+
+      shared_secret = @link.reload.webhook_secret
+      assert_equal other_link.webhook_secret, shared_secret
+
+      # A delivery signed with the shared secret verifies against either link.
+      raw_body = { "action" => "update" }.to_json
+      sig = OpenSSL::HMAC.hexdigest("SHA256", shared_secret, raw_body)
+      expected_other = OpenSSL::HMAC.hexdigest("SHA256", other_link.webhook_secret, raw_body)
+      assert_equal expected_other, sig
     end
 
     # ---------------------------------------------------------------------------
@@ -140,6 +180,44 @@ module CollavreLinear
       end
 
       assert_equal [ "wh-to-remove-001" ], deleted_ids
+    end
+
+    test "deregister does NOT delete a webhook still shared by a sibling link" do
+      @link.update_column(:webhook_id, "wh-shared-keep")
+      other_creative = Collavre::Creative.create!(
+        description: "<p>Other creative</p>", user: @user
+      )
+      CollavreLinear::ProjectLink.create!(
+        creative: other_creative,
+        account: @account,
+        linear_project_id: "proj-keep-2",
+        team_id: "team-wh-1", # same team
+        webhook_id: "wh-shared-keep" # shares the same webhook
+      )
+
+      spy = Minitest::Mock.new # no delete_webhook expectation → verify catches any call
+      CollavreLinear::Client.stub :new, spy do
+        CollavreLinear::WebhookProvisioner.deregister(project_link: @link)
+      end
+      spy.verify
+
+      # Local webhook_id cleared on this link, sibling untouched.
+      assert_nil @link.reload.webhook_id
+    end
+
+    test "deregister DOES delete the webhook when this is the last link using it" do
+      @link.update_column(:webhook_id, "wh-last-one")
+
+      deleted_ids = []
+      stub_client = Object.new
+      stub_client.define_singleton_method(:delete_webhook) { |id| deleted_ids << id; true }
+
+      CollavreLinear::Client.stub :new, stub_client do
+        CollavreLinear::WebhookProvisioner.deregister(project_link: @link)
+      end
+
+      assert_equal [ "wh-last-one" ], deleted_ids
+      assert_nil @link.reload.webhook_id
     end
 
     test "deregister is a no-op when webhook_id is blank" do
