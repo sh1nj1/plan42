@@ -75,7 +75,7 @@ module CollavreLinear
       URI.decode_www_form(URI.parse(response.location).query).to_h["state"]
     end
 
-    test "callback creates account with app_actor_id" do
+    test "callback creates account from viewer identity" do
       sign_in_as(@user)
 
       stub_token_exchange
@@ -87,7 +87,8 @@ module CollavreLinear
       assert_response :redirect
       account = CollavreLinear::Account.find_by(user: @user)
       assert_not_nil account
-      assert_equal "actor-abc",  account.app_actor_id
+      # Linear exposes no query for the app actor id; it stays nil (EchoGuard no-ops).
+      assert_nil account.app_actor_id
       assert_equal "user-uid-1", account.linear_uid
       assert_equal "new-at",     account.access_token
     end
@@ -111,7 +112,7 @@ module CollavreLinear
       assert_equal 1, CollavreLinear::Account.where(user: @user).count
       account = CollavreLinear::Account.find_by(user: @user)
       assert_equal "new-at", account.access_token
-      assert_equal "actor-abc", account.app_actor_id
+      assert_nil account.app_actor_id
     end
 
     test "callback does not reassign a Linear account already owned by another user" do
@@ -261,9 +262,6 @@ module CollavreLinear
               viewer: {
                 id: "user-uid-1",
                 organization: { id: "org-xyz" }
-              },
-              applicationWithAuthorization: {
-                appActor: { id: "actor-abc" }
               }
             }
           }.to_json,

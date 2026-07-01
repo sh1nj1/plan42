@@ -121,17 +121,17 @@ module CollavreLinear
       data.dig("webhookDelete", "success") == true
     end
 
-    # viewer query + applicationWithAuthorization for OAuth app actor
+    # Viewer identity only. Linear's schema exposes no Query field for the OAuth
+    # app actor id of the current token (`applicationWithAuthorization { appActor }`
+    # is not valid — that field is absent and its type carries no appActor), so
+    # app_actor_id stays nil and EchoGuard no-ops. Loops are already prevented
+    # independently by InboundApplier (skip_linear_sync on inbound writes,
+    # IssueLink dedup on create, content_hash on update).
     VIEWER = <<~GQL.freeze
-      query ViewerAndAppActor {
+      query Viewer {
         viewer {
           id
           organization {
-            id
-          }
-        }
-        applicationWithAuthorization {
-          appActor {
             id
           }
         }
@@ -211,14 +211,16 @@ module CollavreLinear
       symbolize(node)
     end
 
-    # Fetch the authenticated viewer identity and OAuth app actor.
+    # Fetch the authenticated viewer identity.
+    # app_actor_id is intentionally nil (no Linear query exposes it for the
+    # current token); EchoGuard degrades to a no-op — see VIEWER above.
     # @return [Hash] with :user_id, :app_actor_id, :organization_id
     def viewer_and_app_actor
       data = post!(VIEWER, {})
       {
         user_id:         data.dig("viewer", "id"),
         organization_id: data.dig("viewer", "organization", "id"),
-        app_actor_id:    data.dig("applicationWithAuthorization", "appActor", "id")
+        app_actor_id:    nil
       }
     end
 

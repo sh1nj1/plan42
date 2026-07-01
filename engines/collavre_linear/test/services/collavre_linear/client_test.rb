@@ -172,9 +172,13 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
     # viewer_and_app_actor
     # ---------------------------------------------------------------------------
-    test "viewer_and_app_actor returns user_id, app_actor_id, organization_id" do
+    test "viewer_and_app_actor returns user_id and organization_id; app_actor_id nil" do
+      # Linear's schema has no Query field for the app actor id, so the request
+      # asks only for viewer identity and app_actor_id is always nil.
       stub_request(:post, LINEAR_ENDPOINT)
-        .with(headers: { "Authorization" => "Bearer tok" })
+        .with(headers: { "Authorization" => "Bearer tok" }) do |req|
+          !req.body.include?("applicationWithAuthorization")
+        end
         .to_return(
           status: 200,
           body: {
@@ -182,9 +186,6 @@ module CollavreLinear
               viewer: {
                 id: "user-123",
                 organization: { id: "org-456" }
-              },
-              applicationWithAuthorization: {
-                appActor: { id: "actor-789" }
               }
             }
           }.to_json,
@@ -195,7 +196,7 @@ module CollavreLinear
 
       assert_equal "user-123", res[:user_id]
       assert_equal "org-456", res[:organization_id]
-      assert_equal "actor-789", res[:app_actor_id]
+      assert_nil res[:app_actor_id]
     end
 
     # ---------------------------------------------------------------------------
