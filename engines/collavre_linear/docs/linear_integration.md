@@ -48,8 +48,12 @@ In Linear: **Settings → API → OAuth applications → Create new**.
 - **Redirect URI**: must match `LINEAR_OAUTH_REDIRECT_URI` (the host's
   `/linear/auth/callback` — the engine is mounted at `/linear`).
 - **Scopes requested** by the engine (`OAuthTokenService::OAUTH_SCOPES`):
-  `read,write,issues:create,comments:create,admin`. The `admin` scope is
-  required for webhook creation/read — without it inbound sync cannot be set up.
+  `read,write,issues:create,comments:create`. `admin` is intentionally NOT
+  requested: Linear rejects it for app actors ("App users can't request admin
+  scopes") and we authorize with `actor: "app"`. `admin` would only be needed to
+  auto-create webhooks via the API; instead the inbound webhook is set up
+  **manually** (see the Webhook section) — the integration modal shows a
+  one-time setup guide after linking.
 - Note the **Client ID** and **Client secret**.
 
 ### 2. Environment variables
@@ -66,12 +70,22 @@ Defined in `env.template` / `.kamal/secrets` / `config/deploy.yml`:
 When `Collavre::IntegrationSettings::Resolver` defines `linear_webhook_secret` /
 `linear_api_endpoint`, those take precedence over the ENV values.
 
-### 3. Webhook
+### 3. Webhook (manual, one-time)
+
+Because we don't hold the `admin` scope, the webhook is **not** auto-provisioned.
+After linking a Creative to a Linear project, the integration modal shows a
+one-time setup guide. A Linear workspace admin creates the webhook by hand:
+
+1. Open **linear.app/settings/api → Webhooks → New webhook**.
+2. **URL**: `https://<host>/linear/webhook`.
+3. **Signing secret**: the per-`ProjectLink` secret shown in the modal (inbound
+   verification also falls back to `LINEAR_WEBHOOK_SECRET`).
+4. **Events**: `Issue`, `Project`, `Comment` (`WebhookProvisioner::RESOURCE_TYPES`).
+
+Webhook mechanics:
 
 - **URL**: `POST https://<host>/linear/webhook` (machine-to-machine, no user
   session, CSRF disabled).
-- **Resource types** provisioned (`WebhookProvisioner::RESOURCE_TYPES`):
-  `Issue`, `Project`, `Comment`.
 - **Security pipeline** (all before any work is enqueued):
   1. Verify `Linear-Signature` = `HMAC-SHA256(webhook_secret, raw_body)` with a
      constant-time compare — bad/missing → `401`.

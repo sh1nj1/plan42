@@ -70,6 +70,30 @@ module CollavreLinear
         assert_includes html, I18n.t("collavre_linear.integration.unlink_button")
         assert_includes html, I18n.t("collavre_linear.integration.resync_button")
         assert_includes html, "proj-modal-1"
+        # Webhook is present, so the manual setup guide must NOT be shown.
+        refute_includes html, I18n.t("collavre_linear.integration.webhook_guide_title")
+      end
+
+      test "shows the manual webhook setup guide (url + secret) when linked without a webhook" do
+        account = CollavreLinear::Account.create!(
+          user: @user,
+          linear_uid: "uid-guide-#{SecureRandom.hex(4)}",
+          access_token: "tok-guide"
+        )
+        # webhook_id blank → inbound not wired → guide must appear with the
+        # /linear/webhook URL and this link's signing secret.
+        link = CollavreLinear::ProjectLink.create!(
+          creative: @creative.effective_origin,
+          account: account,
+          linear_project_id: "proj-guide-1",
+          team_id: "team-guide-1"
+        )
+
+        html = render_modal(connected: true)
+
+        assert_includes html, I18n.t("collavre_linear.integration.webhook_guide_title")
+        assert_includes html, "/linear/webhook"
+        assert_includes html, link.webhook_secret
       end
     end
   end

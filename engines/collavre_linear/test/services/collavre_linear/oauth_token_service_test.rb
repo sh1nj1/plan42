@@ -38,11 +38,12 @@ module CollavreLinear
       assert_includes url, "comments%3Acreate"
     end
 
-    test "authorize_url requests the admin scope (needed for webhook provisioning)" do
+    test "authorize_url does NOT request the admin scope (app actors cannot)" do
       url = CollavreLinear::OAuthTokenService.authorize_url(state: "adm", creative_id: "1")
-      # Linear requires the `admin` scope to create/read webhooks; without it
-      # WebhookProvisioner.ensure_for silently fails and inbound sync is disabled.
-      assert_includes url, "admin"
+      # Linear rejects `admin` for app actors ("App users can't request admin
+      # scopes"). Webhooks are set up manually via the modal guide instead, so
+      # the requested scope list must not contain admin.
+      refute_includes url, "admin"
     end
 
     test "authorize_url includes client_id from env" do

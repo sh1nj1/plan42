@@ -40,6 +40,41 @@
                 team:    project_link.team_id) %>
         </p>
 
+        <%# --- Manual webhook setup guide ---
+            Shown only when inbound isn't wired yet (webhook_id blank). We no
+            longer request Linear's `admin` scope (app actors can't), so the
+            webhook can't be auto-provisioned; the user creates it once by hand. %>
+        <% if project_link.webhook_id.blank? %>
+          <details class="linear-webhook-guide" open
+                   style="margin-bottom:1em;padding:0.75em;border:1px solid var(--color-border,#ddd);border-radius:6px;background:var(--color-surface-secondary,#f8f8f8);">
+            <summary style="font-weight:600;cursor:pointer;"><%= t("collavre_linear.integration.webhook_guide_title") %></summary>
+            <p style="margin:0.5em 0;color:var(--color-text-secondary,#666);font-size:0.9em;">
+              <%= t("collavre_linear.integration.webhook_guide_intro") %>
+            </p>
+            <ol style="margin:0 0 0 1.2em;font-size:0.9em;line-height:1.6;">
+              <li>
+                <%= t("collavre_linear.integration.webhook_guide_open_settings_html",
+                      link: link_to("linear.app/settings/api", "https://linear.app/settings/api",
+                                    target: "_blank", rel: "noopener")) %>
+              </li>
+              <li>
+                <%= t("collavre_linear.integration.webhook_guide_url_label") %>
+                <br>
+                <code style="user-select:all;word-break:break-all;"><%= "#{request.base_url}/linear/webhook" %></code>
+              </li>
+              <li>
+                <%= t("collavre_linear.integration.webhook_guide_secret_label") %>
+                <br>
+                <code style="user-select:all;word-break:break-all;"><%= project_link.webhook_secret %></code>
+              </li>
+              <li>
+                <%= t("collavre_linear.integration.webhook_guide_events_label") %>
+                <strong>Issue, Project, Comment</strong>
+              </li>
+            </ol>
+          </details>
+        <% end %>
+
         <%# Resync form %>
         <%= form_with url: main_app.respond_to?(:linear_creative_integration_resync_path) ?
                            main_app.linear_creative_integration_resync_path(creative_id: creative_id) :
