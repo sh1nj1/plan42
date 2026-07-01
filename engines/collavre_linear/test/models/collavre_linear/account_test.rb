@@ -18,13 +18,25 @@ class CollavreLinear::AccountTest < ActiveSupport::TestCase
     )
   end
 
-  test "encrypts access_token and enforces unique linear_uid" do
+  test "encrypts access_token" do
     a = CollavreLinear::Account.create!(user: @user, linear_uid: "u1", access_token: "secret-token")
     raw = CollavreLinear::Account.connection.select_value(
       "SELECT access_token FROM linear_accounts WHERE id = #{a.id}")
     refute_equal "secret-token", raw
+  end
+
+  test "model validation rejects duplicate linear_uid" do
+    CollavreLinear::Account.create!(user: @user, linear_uid: "u1", access_token: "token-a")
+    dup = CollavreLinear::Account.new(user: @other_user, linear_uid: "u1", access_token: "token-b")
+    refute dup.valid?
+    assert_includes dup.errors[:linear_uid], "has already been taken"
+  end
+
+  test "DB unique index raises RecordNotUnique when validation is bypassed" do
+    CollavreLinear::Account.create!(user: @user, linear_uid: "u1", access_token: "token-a")
+    dup = CollavreLinear::Account.new(user: @other_user, linear_uid: "u1", access_token: "token-b")
     assert_raises(ActiveRecord::RecordNotUnique) do
-      CollavreLinear::Account.create!(user: @other_user, linear_uid: "u1", access_token: "x")
+      dup.save(validate: false)
     end
   end
 

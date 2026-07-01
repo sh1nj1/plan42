@@ -9,7 +9,7 @@ module CollavreLinear
     encrypts :access_token, deterministic: false
     encrypts :refresh_token, deterministic: false
 
-    validates :linear_uid, presence: true
+    validates :linear_uid, presence: true, uniqueness: true
     validates :access_token, presence: true
 
     def token_expired?
