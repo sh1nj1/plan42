@@ -9,13 +9,16 @@ module CollavreLinear
   # Linear priority is a 5-value enum:
   #   0 = No priority, 1 = Urgent, 2 = High, 3 = Medium, 4 = Low
   #
-  # Collavre sequence is a dense total order of siblings (closure_tree).
+  # Collavre sequence is a dense, ZERO-BASED total order of siblings (closure_tree):
+  # core resequencing (`CreateService#resequence`, `Reorderer#resequence!`) assigns
+  # `each_with_index`, so the first sibling is sequence 0. The mapping must honor
+  # that base — otherwise the first (top-ranked) sibling would export as "None".
   #
-  # Inbound  (Linear → Collavre): sequence = (priority == 0 ? 5 : priority)
-  #   Urgent(1) sorts first, Low(4) sorts last, None(0) → 5 (after all ranked).
+  # Inbound  (Linear → Collavre): sequence = (priority == 0 ? 4 : priority - 1)
+  #   Urgent(1) → 0 (first), Low(4) → 3, None(0) → 4 (after all ranked buckets).
   #
-  # Outbound (Collavre → Linear): sequence value 1-4 maps 1:1 to priority 1-4;
-  #   sequence 5 (the "None" sentinel) and nil/unranked → priority 0 (None).
+  # Outbound (Collavre → Linear): sequence 0-3 maps to priority 1-4 (0→Urgent);
+  #   sequence 4 (the "None" sentinel) and nil/unranked → priority 0 (None).
   #
   # Lossy edge: Linear priority is a 5-bucket enum; Collavre sequence is a dense
   # integer total order.  Within-bucket ordering is NOT representable in Linear
@@ -76,26 +79,25 @@ module CollavreLinear
 
     # -- Private helpers -------------------------------------------------------
 
-    # Map a creative's sequence integer to a Linear priority integer (0-4).
+    # Map a creative's ZERO-BASED sequence integer to a Linear priority (0-4).
     #
-    # sequence nil or 5 → 0 (No priority / None)
-    # sequence 1-4      → 1-4 (direct bucket)
-    # sequence > 5      → 0  (unranked, out-of-range)
+    # sequence 0-3      → 1-4 (0→Urgent, 3→Low)
+    # sequence 4        → 0   (the None sentinel, sorts after all ranked buckets)
+    # sequence nil or >4 → 0  (unranked / out-of-range → No priority)
     def sequence_to_priority(sequence)
       return 0 if sequence.nil?
-      return 0 if sequence == 5
-      return 0 if sequence < 1 || sequence > 4
+      return 0 if sequence < 0 || sequence > 3
 
-      sequence
+      sequence + 1
     end
     private_class_method :sequence_to_priority
 
-    # Map a Linear priority integer to a Collavre sequence integer.
+    # Map a Linear priority integer to a Collavre ZERO-BASED sequence integer.
     #
-    # priority 1-4 → 1-4 (direct bucket)
-    # priority 0   → 5   (None sentinel, sorts last among siblings)
+    # priority 1-4 → 0-3 (Urgent→0, Low→3)
+    # priority 0   → 4   (None sentinel, sorts last among siblings)
     def priority_to_sequence(priority)
-      priority == 0 ? 5 : priority
+      priority == 0 ? 4 : priority - 1
     end
     private_class_method :priority_to_sequence
   end

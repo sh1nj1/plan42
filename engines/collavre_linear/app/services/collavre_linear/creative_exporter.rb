@@ -80,12 +80,18 @@ module CollavreLinear
 
       issue_link = @creative.linear_issue_links.first
 
-      if issue_link.nil?
-        # Ordering guard: if this creative's parent belongs to the exported
-        # subtree but has not yet produced its Linear issue, defer — creating
-        # now would make this a top-level issue and flatten the tree.
-        raise ParentNotExportedError if parent_export_pending?
+      # Ordering guard for BOTH create and update: if this creative's parent
+      # belongs to the exported subtree but has not yet produced its Linear issue,
+      # defer (the job re-enqueues on ParentNotExportedError once the parent lands).
+      #   - create: exporting now would make a top-level issue, flattening the tree.
+      #   - update: an already-linked creative moved under a NEWLY-created parent
+      #     can run before the parent's create job. Without waiting we'd send no
+      #     parentId, persist parent_issue_id for the still-nil parent, and the
+      #     later parent export would NOT re-enqueue us — leaving the Linear issue
+      #     under its old parent until a manual resync.
+      raise ParentNotExportedError if parent_export_pending?
 
+      if issue_link.nil?
         create_issue!(client, project_link, attrs, hash, parent_id)
       else
         update_issue!(client, issue_link, attrs, hash, parent_id)

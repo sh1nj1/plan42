@@ -162,5 +162,36 @@ module CollavreLinear
     ensure
       ENV.delete("LINEAR_WEBHOOK_SECRET")
     end
+
+    # -------------------------------------------------------------------------
+    # Comment deliveries carry no team/project — resolve secret via linked issue
+    # -------------------------------------------------------------------------
+
+    test "comment webhook resolves the per-link secret via the linked issue (not ENV)" do
+      # ENV secret is deliberately WRONG: if the resolver fell back to it, the
+      # signature (made with the project-link secret) would fail → 401.
+      ENV["LINEAR_WEBHOOK_SECRET"] = "wrong-env-secret"
+      CollavreLinear::IssueLink.create!(
+        creative:        @creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-cmt-webhook",
+        sync_state:      :synced
+      )
+      # Comment payload has no teamId/projectId — only the parent issue id.
+      payload = build_payload(
+        type: "Comment",
+        data: { id: "cmt-1", issue: { id: "iss-cmt-webhook" } },
+        updatedFrom: nil
+      )
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+        post_webhook(payload, sig)
+      end
+
+      assert_response :ok
+    ensure
+      ENV.delete("LINEAR_WEBHOOK_SECRET")
+    end
   end
 end

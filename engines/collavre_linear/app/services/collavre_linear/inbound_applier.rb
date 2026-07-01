@@ -133,6 +133,13 @@ module CollavreLinear
       return unless link
 
       link.with_lock do
+        # Already conflicted: halt until a human resolves (mirrors the outbound
+        # exporter's `return if issue_link.conflict?`). conflict?(link) below only
+        # trips for :dirty links, so without this a later remote update would
+        # overwrite the local edits that caused the conflict and silently flip the
+        # link back to :synced.
+        return if link.conflict?
+
         if conflict?(link)
           mark_conflict!(link)
           return
@@ -259,8 +266,18 @@ module CollavreLinear
         comment = Collavre::Comment.find_by(id: comment_link.comment_id)
         comment&.update!(content: body)
       else
-        creative = issue_link.creative
-        comment = creative.comments.create!(
+        create_mirrored_comment!(issue_link, linear_comment_id, body)
+      end
+    end
+
+    # Create the mirrored Collavre comment AND its CommentLink atomically. A
+    # concurrent duplicate delivery can pass the CommentLink.find_by check above
+    # and reach here twice; the loser hits the unique linear_comment_id index.
+    # Wrapping both in one transaction rolls back the just-created Comment on that
+    # collision, so no orphan (unlinked) duplicate comment is left behind.
+    def create_mirrored_comment!(issue_link, linear_comment_id, body)
+      Collavre::Comment.transaction do
+        comment = issue_link.creative.comments.create!(
           content:       body,
           user:          comment_actor_user(issue_link),
           skip_dispatch: true
@@ -271,6 +288,24 @@ module CollavreLinear
           issue_link:        issue_link
         )
       end
+    rescue ActiveRecord::RecordNotUnique
+      # DB unique index caught the duplicate; the transaction rolled back the
+      # Comment. Already-applied — treat as a no-op.
+      nil
+    rescue ActiveRecord::RecordInvalid => e
+      # Model-level uniqueness saw the duplicate first. Only swallow the
+      # linear_comment_id collision; any other validation failure must surface.
+      raise unless duplicate_comment_link_error?(e)
+
+      nil
+    end
+
+    # True when the RecordInvalid is exactly the CommentLink linear_comment_id
+    # uniqueness collision (the duplicate-delivery race), not another invalid.
+    def duplicate_comment_link_error?(error)
+      record = error.record
+      record.is_a?(CommentLink) &&
+        record.errors.of_kind?(:linear_comment_id, :taken)
     end
 
     # Delete the locally-mirrored comment when Linear removes it. No-op when the

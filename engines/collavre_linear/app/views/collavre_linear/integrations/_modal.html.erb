@@ -152,10 +152,15 @@
         <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
         <input type="hidden" name="creative_id" value="<%= creative_id %>">
       </form>
-      <button type="button" id="linear-connect-btn" class="btn btn-primary"
-              data-window-width="620" data-window-height="720">
-        <%= t("collavre_linear.integration.connect_button") %>
-      </button>
+      <%# Wrap in a block element: .popup-box is flex-column, so a bare button
+          child stretches to full width. The block wrapper lets the button keep
+          its natural (auto) width, matching the other modal buttons. %>
+      <div>
+        <button type="button" id="linear-connect-btn" class="btn btn-primary"
+                data-window-width="620" data-window-height="720">
+          <%= t("collavre_linear.integration.connect_button") %>
+        </button>
+      </div>
     <% end %>
   </div>
 </div>

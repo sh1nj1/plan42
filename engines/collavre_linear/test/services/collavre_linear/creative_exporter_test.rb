@@ -163,6 +163,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "sync! calls update_issue when IssueLink exists and content has changed" do
+      link_root_issue! # consistent topology: parent exported before child
       existing_link = CollavreLinear::IssueLink.create!(
         creative:        @child_creative,
         project_link:    @project_link,
@@ -192,6 +193,7 @@ module CollavreLinear
     end
 
     test "sync! does NOT push to Linear when the link is in :conflict state" do
+      link_root_issue! # consistent topology: parent exported before child
       # A newer inbound webhook flipped the link to :conflict. Even though content
       # differs (stale hash) and a job was queued, auto-sync must HALT until an
       # explicit resync — otherwise we overwrite the remote change we chose to keep.
@@ -221,6 +223,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "sync! skips the API call when content_hash is unchanged" do
+      link_root_issue! # consistent topology: parent exported before child
       # Compute the hash through the canonical exporter path (parent-aware).
       hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
 
@@ -246,6 +249,7 @@ module CollavreLinear
     # ---------------------------------------------------------------------------
 
     test "sync! resets :dirty link to :synced without an API call when content is unchanged" do
+      link_root_issue! # consistent topology: parent exported before child
       # Compute the current content hash via the canonical exporter path.
       hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
 
@@ -275,6 +279,7 @@ module CollavreLinear
     end
 
     test "dirty link reset prevents false conflict on subsequent inbound update" do
+      link_root_issue! # consistent topology: parent exported before child
       hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative)
 
       dirty_link = CollavreLinear::IssueLink.create!(
@@ -387,27 +392,66 @@ module CollavreLinear
       assert_not_equal "old-hash-that-will-not-match", existing_link.content_hash
     end
 
-    test "sync! omits parentId on update when the creative has no linked parent" do
-      # @child_creative's parent (@root_creative) has NO IssueLink → parent is
-      # not a linked Linear issue, so no parentId must be sent (would error).
+    test "sync! omits parentId on update for the linked-root creative (parent outside Linear)" do
+      # The ProjectLink-root creative's own parent is outside the linked subtree,
+      # so no parentId must be sent (a nil/bogus parentId would error). This is
+      # the legitimate "no linked parent" case — distinct from a child whose
+      # in-subtree parent simply hasn't exported yet (which defers, below).
       existing_link = CollavreLinear::IssueLink.create!(
-        creative:        @child_creative,
+        creative:        @root_creative,
         project_link:    @project_link,
-        linear_issue_id: "iss-no-linked-parent",
+        linear_issue_id: "iss-root-self",
         content_hash:    "old-hash-that-will-not-match",
         sync_state:      :synced
       )
 
       CollavreLinear::Client.stub(:new, @fake_client) do
-        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+        CollavreLinear::CreativeExporter.new(@root_creative).sync!
       end
 
       assert_equal 1, @fake_client.update_calls.size
       call = @fake_client.update_calls.first
       assert_not call.key?(:parent_id),
-        "no parent_id must be sent when the parent is not a linked Linear issue"
+        "no parent_id must be sent when the parent is outside the linked subtree"
       existing_link.reload
       assert_not_equal "old-hash-that-will-not-match", existing_link.content_hash
+    end
+
+    test "sync! DEFERS an update when the parent is in-subtree but not yet exported" do
+      # Codex fix: an already-linked creative moved under a NEWLY-created in-subtree
+      # parent can run before the parent's create job. Exporting now would send no
+      # parentId and record the wrong parent, and the parent export would NOT
+      # re-enqueue this child. Defer (the job retries on ParentNotExportedError).
+      new_parent = Collavre::Creative.new(
+        description: "<p>New parent</p>", user: @user, parent: @root_creative
+      )
+      new_parent.skip_linear_sync = true
+      new_parent.save!
+
+      moved_child = Collavre::Creative.new(
+        description: "<p>Moved child</p>", user: @user, parent: new_parent
+      )
+      moved_child.skip_linear_sync = true
+      moved_child.save!
+
+      # Child already has its own Linear issue (update path), but new_parent
+      # has not exported yet.
+      CollavreLinear::IssueLink.create!(
+        creative:        moved_child,
+        project_link:    @project_link,
+        linear_issue_id: "iss-moved-child",
+        content_hash:    "old-hash-that-will-not-match",
+        sync_state:      :synced
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        assert_raises(CollavreLinear::CreativeExporter::ParentNotExportedError) do
+          CollavreLinear::CreativeExporter.new(moved_child).sync!
+        end
+      end
+
+      assert_equal 0, @fake_client.update_calls.size,
+        "no update must be pushed while the new in-subtree parent is unexported"
     end
 
     # ---------------------------------------------------------------------------

@@ -40,8 +40,19 @@ module CollavreLinear
         # stays idempotent (find_or_initialize_by below).
         overlapping_ids =
           (@origin.self_and_ancestors.ids + @origin.self_and_descendants.ids).uniq - [ @origin.id ]
-        if overlapping_ids.any? &&
-           CollavreLinear::ProjectLink.where(account: account, creative_id: overlapping_ids).exists?
+        overlapping = overlapping_ids.any? &&
+          CollavreLinear::ProjectLink.where(account: account, creative_id: overlapping_ids).exists?
+
+        # @origin itself already linked to a DIFFERENT project — same failure
+        # mode (the exporter would keep updating the old project's issue). The
+        # ancestor/descendant check above excludes @origin to keep same-project
+        # re-linking idempotent, so guard the different-project case explicitly.
+        origin_conflict = @origin.linear_project_links
+                                 .where(account: account)
+                                 .where.not(linear_project_id: linear_project_id)
+                                 .exists?
+
+        if overlapping || origin_conflict
           render json: { error: I18n.t("collavre_linear.errors.overlapping_link") },
                  status: :unprocessable_entity
           return

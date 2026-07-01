@@ -59,7 +59,20 @@ module CollavreLinear
         return link if link
       end
 
+      # Comment deliveries carry no team/project fields — they reference the
+      # parent issue instead. Resolve via the linked issue so verification uses
+      # that project's per-link secret rather than falling back to the ENV secret
+      # (which the manual single-webhook setup never configures → 401).
+      if (issue_id = extract_issue_id(payload)).present?
+        issue_link = CollavreLinear::IssueLink.find_by(linear_issue_id: issue_id)
+        return issue_link.project_link if issue_link
+      end
+
       nil
+    end
+
+    def extract_issue_id(payload)
+      payload.dig("data", "issue", "id") || payload.dig("data", "issueId")
     end
 
     def extract_team_id(payload)

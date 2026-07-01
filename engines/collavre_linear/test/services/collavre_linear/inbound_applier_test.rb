@@ -93,7 +93,7 @@ module CollavreLinear
         "linked creative description should reflect the inbound title"
     end
 
-    test "update writes sequence via the model (priority 1 => sequence 1)" do
+    test "update writes sequence via the model (priority 1 => sequence 0)" do
       creative, _link = linked_child(linear_issue_id: "iss-seq")
 
       payload = {
@@ -110,8 +110,8 @@ module CollavreLinear
 
       CollavreLinear::InboundApplier.new(payload).apply!
 
-      assert_equal 1, creative.reload.sequence,
-        "priority 1 should map to sequence 1 via FieldMapper + model save"
+      assert_equal 0, creative.reload.sequence,
+        "priority 1 (Urgent) should map to zero-based sequence 0 (first sibling)"
     end
 
     test "update advances IssueLink#content_hash to the newly-applied state" do
@@ -556,7 +556,70 @@ module CollavreLinear
       end
     end
 
+    test "losing a comment-create race leaves NO orphan comment (unique violation past the guard)" do
+      # Pre-create a CommentLink for the same linear_comment_id to guarantee the
+      # unique insert fails. Bypass the early find_by guard (stub it to nil) so
+      # the applier proceeds to create a Collavre::Comment and then hits the
+      # unique linear_comment_id — the exact TOCTOU window. The comment+link must
+      # be atomic so the loser leaves no orphan (unlinked) comment behind.
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-race")
+      winner = creative.comments.create!(content: "winner", user: @user, skip_dispatch: true)
+      CollavreLinear::CommentLink.create!(
+        comment_id: winner.id,
+        linear_comment_id: "cmt-race",
+        issue_link: issue_link
+      )
+
+      payload = {
+        "action" => "create",
+        "type"   => "Comment",
+        "data"   => {
+          "id"    => "cmt-race",
+          "body"  => "loser duplicate",
+          "issue" => { "id" => "iss-cmt-race" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      comment_count_before = creative.comments.count
+
+      CollavreLinear::CommentLink.stub :find_by, nil do
+        assert_nothing_raised do
+          CollavreLinear::InboundApplier.new(payload).apply!
+        end
+      end
+
+      assert_equal comment_count_before, creative.reload.comments.count,
+        "the losing comment-create must not leave an orphan comment"
+      assert_equal 1, CollavreLinear::CommentLink.where(linear_comment_id: "cmt-race").count
+    end
+
     # -- Step 4: conflict ------------------------------------------------------
+
+    test "already-conflicted link skips a later inbound update (no clobber, stays conflict)" do
+      creative, link = linked_child(linear_issue_id: "iss-conf-skip")
+      link.update!(sync_state: :conflict, remote_updated_at: 1.hour.ago)
+      original = creative.description
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-conf-skip",
+          "title"     => "Remote overwrite attempt",
+          "priority"  => 2,
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "title" => "x" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal "conflict", link.reload.sync_state.to_s,
+        "an already-conflicted link must remain conflicted (halt until resolution)"
+      assert_equal original, creative.reload.description,
+        "a conflicted link must not be overwritten by a later remote update"
+    end
 
     test "dirty link + newer remote => conflict, comment posted in Main topic, fields unchanged" do
       creative, link = linked_child(linear_issue_id: "iss-conf")

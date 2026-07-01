@@ -95,6 +95,30 @@ module CollavreLinear
           JSON.parse(response.body)["error"]
       end
 
+      test "create rejects a SECOND link to a DIFFERENT project on the same origin" do
+        sign_in_as(@user)
+
+        # @origin already linked to project A. The ancestor/descendant guard
+        # excludes @origin itself (to keep same-project re-link idempotent), so
+        # this different-project case must be rejected by the origin guard.
+        CollavreLinear::ProjectLink.create!(
+          creative:          @creative.effective_origin,
+          account:           @account,
+          linear_project_id: "proj-a",
+          team_id:           "team-oc"
+        )
+
+        assert_no_difference -> { CollavreLinear::ProjectLink.count } do
+          post "/linear/creatives/#{@creative.id}/integration",
+               params: { team_id: "team-oc", linear_project_id: "proj-b" },
+               as: :json
+        end
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("collavre_linear.errors.overlapping_link"),
+          JSON.parse(response.body)["error"]
+      end
+
       test "create registers the webhook URL WITH the /linear mount prefix" do
         sign_in_as(@user)
 

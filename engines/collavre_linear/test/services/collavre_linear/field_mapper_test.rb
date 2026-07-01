@@ -34,26 +34,34 @@ module CollavreLinear
     # creative_to_issue_attrs (outbound)
     # ---------------------------------------------------------------------------
 
-    test "outbound: sequence 2 maps to priority 2" do
-      creative = make_creative(sequence: 2)
-      attrs = FieldMapper.creative_to_issue_attrs(creative)
-      assert_equal 2, attrs[:priority]
-    end
-
-    test "outbound: sequence 1 maps to priority 1 (Urgent)" do
-      creative = make_creative(sequence: 1)
+    # Sequences are ZERO-BASED (core resequences with each_with_index): the first
+    # sibling is sequence 0 and must export as Urgent (priority 1), not None.
+    test "outbound: sequence 0 (first sibling) maps to priority 1 (Urgent)" do
+      creative = make_creative(sequence: 0)
       attrs = FieldMapper.creative_to_issue_attrs(creative)
       assert_equal 1, attrs[:priority]
     end
 
-    test "outbound: sequence 4 maps to priority 4 (Low)" do
-      creative = make_creative(sequence: 4)
+    test "outbound: sequence 1 maps to priority 2 (High)" do
+      creative = make_creative(sequence: 1)
+      attrs = FieldMapper.creative_to_issue_attrs(creative)
+      assert_equal 2, attrs[:priority]
+    end
+
+    test "outbound: sequence 3 maps to priority 4 (Low)" do
+      creative = make_creative(sequence: 3)
       attrs = FieldMapper.creative_to_issue_attrs(creative)
       assert_equal 4, attrs[:priority]
     end
 
-    test "outbound: sequence 5 (None sentinel) maps to priority 0" do
-      creative = make_creative(sequence: 5)
+    test "outbound: sequence 4 (None sentinel) maps to priority 0" do
+      creative = make_creative(sequence: 4)
+      attrs = FieldMapper.creative_to_issue_attrs(creative)
+      assert_equal 0, attrs[:priority]
+    end
+
+    test "outbound: out-of-range sequence maps to priority 0 (None)" do
+      creative = make_creative(sequence: 9)
       attrs = FieldMapper.creative_to_issue_attrs(creative)
       assert_equal 0, attrs[:priority]
     end
@@ -109,29 +117,39 @@ module CollavreLinear
     # issue_to_creative_attrs (inbound)
     # ---------------------------------------------------------------------------
 
-    test "inbound: priority 1 yields sequence 1" do
+    # Zero-based sequences: Urgent(1) → 0 (first sibling), Low(4) → 3.
+    test "inbound: priority 1 (Urgent) yields sequence 0 (first)" do
       attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 1))
+      assert_equal 0, attrs[:sequence]
+    end
+
+    test "inbound: priority 2 yields sequence 1" do
+      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 2))
       assert_equal 1, attrs[:sequence]
     end
 
-    test "inbound: priority 2 yields sequence 2" do
-      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 2))
+    test "inbound: priority 3 yields sequence 2" do
+      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 3))
       assert_equal 2, attrs[:sequence]
     end
 
-    test "inbound: priority 3 yields sequence 3" do
-      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 3))
+    test "inbound: priority 4 (Low) yields sequence 3" do
+      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 4))
       assert_equal 3, attrs[:sequence]
     end
 
-    test "inbound: priority 4 yields sequence 4" do
-      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 4))
+    test "inbound: priority 0 (None) yields sequence 4 (last)" do
+      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 0))
       assert_equal 4, attrs[:sequence]
     end
 
-    test "inbound: priority 0 (None) yields sequence 5 (last)" do
-      attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 0))
-      assert_equal 5, attrs[:sequence]
+    # Round-trip: a ranked priority survives priority → sequence → priority.
+    test "round-trip: priority 1..4 is stable through sequence" do
+      (1..4).each do |priority|
+        seq = FieldMapper.issue_to_creative_attrs(make_issue(priority: priority))[:sequence]
+        back = FieldMapper.creative_to_issue_attrs(make_creative(sequence: seq))[:priority]
+        assert_equal priority, back, "priority #{priority} should round-trip"
+      end
     end
 
     test "inbound: title and description are passed through" do
