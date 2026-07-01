@@ -48,7 +48,8 @@ In Linear: **Settings → API → OAuth applications → Create new**.
 - **Redirect URI**: must match `LINEAR_OAUTH_REDIRECT_URI` (the host's
   `/linear/auth/callback` — the engine is mounted at `/linear`).
 - **Scopes requested** by the engine (`OAuthTokenService::OAUTH_SCOPES`):
-  `read,write,issues:create,comments:create`.
+  `read,write,issues:create,comments:create,admin`. The `admin` scope is
+  required for webhook creation/read — without it inbound sync cannot be set up.
 - Note the **Client ID** and **Client secret**.
 
 ### 2. Environment variables
@@ -91,7 +92,7 @@ Handled by the pure (no-I/O) `FieldMapper`. Native fields use **Last-Writer-Wins
 | `priority` (0–4) | **`creative.sequence`** | ↔ | Intentional bidirectional. Inbound: `sequence = (priority == 0 ? 5 : priority)`. Outbound: `sequence 1–4 → priority 1–4`, `5`/nil/out-of-range → priority `0` (None). Lossy edge: within-bucket dense ordering is not representable in Linear's 5-value enum |
 | `state` | `creative.data["linear"]["state"]` | ↔ | not a native Creative field |
 | `labels` | `creative.data["linear"]["labels"]` | ↔ | from `labels.nodes` inbound |
-| `assignee` | `creative.data["linear"]["assignee"]` | ↔ | stored under `data["linear"]` |
+| `assignee` | `creative.data["linear"]["assignee"]` | inbound | Linear → Collavre only; `FieldMapper` does not send `assignee_id` outbound (needs cross-system user-identity mapping — follow-up) |
 | — (Creative `progress`) | — | **not synced** | `FieldMapper` never reads or writes `progress` |
 | comments | `Collavre::Comment` ↔ `CommentLink` | inbound | Linear → Collavre only (see Known limitations). Inbound comments created with `skip_dispatch: true` |
 | issue archive/remove | `creative.data["linear"]["archived"] = true` | inbound | **no destroy, no reparent of children** (decision B6) |

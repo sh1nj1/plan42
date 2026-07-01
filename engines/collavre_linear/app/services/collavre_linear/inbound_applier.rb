@@ -333,9 +333,7 @@ module CollavreLinear
     end
 
     def conflict_message
-      "⚠️ Linear sync conflict: this item was edited both locally and in Linear. " \
-      "The remote change was NOT applied to avoid overwriting local edits. " \
-      "Resolve manually and re-sync."
+      I18n.t("collavre_linear.integration.conflict_notice")
     end
 
     # -- Field helpers ---------------------------------------------------------

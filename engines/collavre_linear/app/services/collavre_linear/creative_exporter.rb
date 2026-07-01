@@ -171,6 +171,12 @@ module CollavreLinear
 
     def update_issue!(client, issue_link, attrs, hash, parent_id)
       issue_link.with_lock do
+        # Conflict policy (see docs "Conflict handling"): a newer inbound Linear
+        # change flipped this link to :conflict. Auto-sync HALTS until an explicit
+        # resync resolves it — a stale queued job must never overwrite the remote
+        # change we already chose not to clobber.
+        return issue_link if issue_link.conflict?
+
         # Re-check under lock: a concurrent update with identical content must not
         # trigger a redundant API call.  The pre-lock check is gone intentionally
         # to eliminate the TOCTOU window between the dirty-check and the lock

@@ -191,6 +191,31 @@ module CollavreLinear
         "last_outbound_at must be at or after the sync! call"
     end
 
+    test "sync! does NOT push to Linear when the link is in :conflict state" do
+      # A newer inbound webhook flipped the link to :conflict. Even though content
+      # differs (stale hash) and a job was queued, auto-sync must HALT until an
+      # explicit resync — otherwise we overwrite the remote change we chose to keep.
+      conflicted = CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: "iss-conflict",
+        content_hash:    "old-hash-that-will-not-match",
+        sync_state:      :conflict
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      assert_equal 0, @fake_client.update_calls.size,
+        "update_issue must NOT be called while the link is in :conflict"
+      conflicted.reload
+      assert_equal :conflict, conflicted.sync_state.to_sym,
+        "conflict state must persist until an explicit resync/resolution"
+      assert_equal "old-hash-that-will-not-match", conflicted.content_hash,
+        "content_hash must not be advanced while halted"
+    end
+
     # ---------------------------------------------------------------------------
     # Step 2b — dirty-tracking (unchanged content → NO API call)
     # ---------------------------------------------------------------------------

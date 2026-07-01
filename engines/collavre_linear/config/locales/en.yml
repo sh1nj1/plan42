@@ -23,6 +23,7 @@ en:
       resync_started: "Re-sync started. Issues will update shortly."
       missing_creative: "creative_id is required"
       webhook_provision_failed: "Project linked, but setting up the inbound webhook failed. Inbound sync from Linear is disabled until this succeeds — please confirm your Linear account has admin permission and try re-syncing."
+      conflict_notice: "⚠️ Linear sync conflict: this item was edited both locally and in Linear. The remote change was NOT applied to avoid overwriting local edits. Resolve manually and re-sync."
     errors:
       not_connected: "Linear account not connected."
       missing_params: "team_id and linear_project_id are required."
