@@ -198,7 +198,7 @@ module CollavreLinear
         creative = issue_link.creative
         comment = creative.comments.create!(
           content:       body,
-          user:          actor_user,
+          user:          comment_actor_user(issue_link),
           skip_dispatch: true
         )
         CommentLink.create!(
@@ -331,6 +331,16 @@ module CollavreLinear
 
     def actor_user
       @actor_user ||= project_link&.account&.user
+    end
+
+    # Owner for an inbound COMMENT. Comment payloads carry no projectId/parentId,
+    # so the memoized `project_link` falls back to the sole ProjectLink and is
+    # nil in multi-project installs — which would drop author attribution. The
+    # governing project is unambiguous here: it's the one the resolved issue_link
+    # belongs to. Prefer that; fall back to actor_user only when issue_link is
+    # absent (e.g. the conflict-comment path has no issue_link in scope).
+    def comment_actor_user(issue_link)
+      issue_link&.project_link&.account&.user || actor_user
     end
   end
 end

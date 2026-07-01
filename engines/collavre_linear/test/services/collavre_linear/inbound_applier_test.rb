@@ -263,6 +263,57 @@ module CollavreLinear
       assert_equal "A linear comment", Collavre::Comment.find(link.comment_id).content
     end
 
+    test "comment create is attributed to the issue's account owner with multiple linked projects" do
+      # Second linked project (different account/owner) so ProjectLink.count > 1
+      # — the comment payload carries no projectId/parentId, so the sole-link
+      # fallback returns nil and would drop author attribution. The correct owner
+      # is reachable via the resolved issue_link's project_link.
+      other_user = Collavre.user_class.create!(
+        email: "inbound-other-#{SecureRandom.hex(4)}@example.com",
+        name: "Inbound Other",
+        password: TEST_PASSWORD,
+        password_confirmation: TEST_PASSWORD,
+        timezone: "UTC"
+      )
+      other_account = CollavreLinear::Account.create!(
+        user: other_user,
+        linear_uid: "uid-inb-other-#{SecureRandom.hex(4)}",
+        access_token: "tok-inb-other"
+      )
+      other_root = Collavre::Creative.new(description: "<p>Other Root</p>", user: other_user)
+      other_root.skip_linear_sync = true
+      other_root.save!
+      CollavreLinear::ProjectLink.create!(
+        creative: other_root,
+        account:  other_account,
+        linear_project_id: "proj-inb-other",
+        team_id:           "team-inb-other"
+      )
+      assert_operator CollavreLinear::ProjectLink.count, :>, 1
+
+      _creative, _link = linked_child(linear_issue_id: "iss-cmt-multi")
+
+      payload = {
+        "action" => "create",
+        "type"   => "Comment",
+        "data"   => {
+          "id"    => "cmt-multi",
+          "body"  => "A comment in a multi-project install",
+          "issue" => { "id" => "iss-cmt-multi" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link = CollavreLinear::CommentLink.find_by(linear_comment_id: "cmt-multi")
+      assert_not_nil link
+      comment = Collavre::Comment.find(link.comment_id)
+      assert_not_nil comment.user, "inbound comment must not lose author attribution"
+      assert_equal @user.id, comment.user_id,
+        "comment must be attributed to the issue's account owner, not nil or another project's owner"
+    end
+
     test "comment update edits the existing Collavre comment" do
       creative, issue_link = linked_child(linear_issue_id: "iss-cmt2")
       comment = creative.comments.create!(content: "old body", user: @user, skip_dispatch: true)
