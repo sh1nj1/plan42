@@ -70,11 +70,12 @@ module CollavreLinear
 
         tokens = post_token!(params)
 
-        account.update!(
-          access_token:    tokens[:access_token],
-          refresh_token:   tokens[:refresh_token],
+        attrs = {
+          access_token:     tokens[:access_token],
           token_expires_at: Time.current + tokens[:expires_in].to_i.seconds
-        )
+        }
+        attrs[:refresh_token] = tokens[:refresh_token] if tokens[:refresh_token].present?
+        account.update!(attrs)
         account
       end
 
@@ -103,7 +104,8 @@ module CollavreLinear
         end
 
         unless response.is_a?(Net::HTTPSuccess)
-          raise Error, "Linear token request failed (HTTP #{response.code}): #{parsed}"
+          error_detail = parsed["error"] || parsed["error_description"] || "(no error field)"
+          raise Error, "Linear token request failed (HTTP #{response.code}): #{error_detail}"
         end
 
         parsed.transform_keys(&:to_sym)

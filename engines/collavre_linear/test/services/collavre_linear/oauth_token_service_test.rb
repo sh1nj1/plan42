@@ -156,6 +156,34 @@ module CollavreLinear
       assert_not_requested :post, LINEAR_TOKEN_ENDPOINT
     end
 
+    test "refresh preserves existing refresh_token when response omits it" do
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "usr-refresh-no-rt",
+        access_token: "old-access",
+        refresh_token: "kept-refresh-token",
+        token_expires_at: 2.minutes.from_now
+      )
+
+      stub_request(:post, LINEAR_TOKEN_ENDPOINT)
+        .to_return(
+          status: 200,
+          body: {
+            access_token: "refreshed-access",
+            expires_in: 86400
+            # deliberately no refresh_token key
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      CollavreLinear::OAuthTokenService.refresh(account)
+
+      account.reload
+      assert_equal "refreshed-access",   account.access_token
+      assert_equal "kept-refresh-token", account.refresh_token,
+                   "refresh_token must be preserved when not returned by token endpoint"
+    end
+
     test "refresh raises OAuthTokenService::Error on failure" do
       account = CollavreLinear::Account.create!(
         user: @user,

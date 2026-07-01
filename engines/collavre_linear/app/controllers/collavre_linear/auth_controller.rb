@@ -11,6 +11,14 @@ module CollavreLinear
     # Exchange the authorization code, create/update the Account, capture
     # the OAuth app actor id via the GraphQL viewer query.
     def callback
+      expected_state = session.delete(:linear_oauth_state)
+      unless params[:state].present? && params[:state] == expected_state
+        redirect_to collavre.creatives_path,
+                    alert: I18n.t("collavre_linear.auth.invalid_state",
+                                  default: "Invalid OAuth state. Please try connecting again.")
+        return
+      end
+
       tokens = OAuthTokenService.exchange(params[:code])
 
       # Build a temporary account so we can call the viewer query
@@ -71,20 +79,24 @@ module CollavreLinear
     end
 
     # POST /linear/auth/store_creative
-    # Persist creative_id in the session before redirecting to Linear OAuth.
+    # Persist creative_id and generate a CSRF state token in the session,
+    # then return the Linear authorize URL so the client can redirect.
     def store_creative
       session[:linear_creative_id] = params[:creative_id]
-      head :ok
+      state = SecureRandom.hex(24)
+      session[:linear_oauth_state] = state
+      authorize_url = OAuthTokenService.authorize_url(state: state, creative_id: params[:creative_id])
+      render json: { url: authorize_url }
     end
 
     private
 
     def require_authenticated_user!
-      unless Current.user
-        redirect_to collavre.new_session_path,
-                    alert: I18n.t("collavre_linear.auth.login_first",
-                                  default: "Please log in first.")
-      end
+      return if Current.user
+
+      redirect_to collavre.new_session_path,
+                  alert: I18n.t("collavre_linear.auth.login_first",
+                                default: "Please log in first.")
     end
 
     def linear_engine

@@ -66,13 +66,23 @@ module CollavreLinear
     # -------------------------------------------------------------------------
     # GET /linear/auth/callback
     # -------------------------------------------------------------------------
+
+    # Helper: drive through store_creative so session state is set, return state value.
+    def initiate_oauth(creative_id: nil)
+      params = creative_id ? { creative_id: creative_id } : { creative_id: "" }
+      post "/linear/auth/store_creative", params: params, as: :json
+      assert_response :ok
+      JSON.parse(response.body)["url"].then { |url| URI.decode_www_form(URI.parse(url).query).to_h["state"] }
+    end
+
     test "callback creates account with app_actor_id" do
       sign_in_as(@user)
 
       stub_token_exchange
       stub_viewer_query
 
-      get "/linear/auth/callback", params: { code: "auth-code-001", state: "any-state" }
+      state = initiate_oauth
+      get "/linear/auth/callback", params: { code: "auth-code-001", state: state }
 
       assert_response :redirect
       account = CollavreLinear::Account.find_by(user: @user)
@@ -94,7 +104,8 @@ module CollavreLinear
       stub_token_exchange
       stub_viewer_query
 
-      get "/linear/auth/callback", params: { code: "auth-code-002", state: "s" }
+      state = initiate_oauth
+      get "/linear/auth/callback", params: { code: "auth-code-002", state: state }
 
       assert_response :redirect
       assert_equal 1, CollavreLinear::Account.where(user: @user).count
@@ -106,16 +117,11 @@ module CollavreLinear
     test "callback redirects to setup when creative_id is in session" do
       sign_in_as(@user)
 
-      # Simulate session storing creative_id before OAuth redirect
-      post "/linear/auth/store_creative",
-           params: { creative_id: @creative.id },
-           as: :json
-      assert_response :ok
-
       stub_token_exchange
       stub_viewer_query
 
-      get "/linear/auth/callback", params: { code: "auth-code-003", state: "s" }
+      state = initiate_oauth(creative_id: @creative.id)
+      get "/linear/auth/callback", params: { code: "auth-code-003", state: state }
 
       assert_response :redirect
       assert_match(/setup/, response.location)
@@ -128,7 +134,8 @@ module CollavreLinear
       stub_token_exchange
       stub_viewer_query
 
-      get "/linear/auth/callback", params: { code: "auth-code-004", state: "s" }
+      state = initiate_oauth
+      get "/linear/auth/callback", params: { code: "auth-code-004", state: state }
 
       assert_response :redirect
       assert_match(/creatives/, response.location)
@@ -139,15 +146,45 @@ module CollavreLinear
       assert_response :redirect
     end
 
+    test "callback rejects missing state parameter" do
+      sign_in_as(@user)
+      stub_token_exchange
+      stub_viewer_query
+
+      initiate_oauth  # sets session state but we won't pass state param
+      get "/linear/auth/callback", params: { code: "auth-code-csrf" }
+
+      assert_response :redirect
+      assert_nil CollavreLinear::Account.find_by(user: @user)
+      assert_not_requested :post, LINEAR_TOKEN_ENDPOINT
+    end
+
+    test "callback rejects mismatched state parameter" do
+      sign_in_as(@user)
+      stub_token_exchange
+      stub_viewer_query
+
+      initiate_oauth  # sets session state
+      get "/linear/auth/callback", params: { code: "auth-code-csrf2", state: "wrong-state" }
+
+      assert_response :redirect
+      assert_nil CollavreLinear::Account.find_by(user: @user)
+      assert_not_requested :post, LINEAR_TOKEN_ENDPOINT
+    end
+
     # -------------------------------------------------------------------------
     # POST /linear/auth/store_creative
     # -------------------------------------------------------------------------
-    test "store_creative sets session key" do
+    test "store_creative sets session key and returns authorize url" do
       sign_in_as(@user)
       post "/linear/auth/store_creative",
            params: { creative_id: @creative.id },
            as: :json
       assert_response :ok
+      body = JSON.parse(response.body)
+      assert body["url"].present?, "Expected url in response"
+      assert_includes body["url"], "linear.app/oauth/authorize"
+      assert_includes body["url"], "state="
     end
 
     test "store_creative requires authentication" do
