@@ -66,8 +66,10 @@ module CollavreLinear
       end
 
       assert_equal 1, @fake_client.calls.size
-      assert_equal "iss-cjob",     @fake_client.calls.first[:issue_id]
-      assert_equal "hello linear", @fake_client.calls.first[:body]
+      assert_equal "iss-cjob", @fake_client.calls.first[:issue_id]
+      # Body is prefixed with the author's display name so Linear readers can tell
+      # Collavre chat participants apart (all sync through one Linear app actor).
+      assert_equal "[Comment Job Test]: hello linear", @fake_client.calls.first[:body]
 
       link = CollavreLinear::CommentLink.find_by(comment_id: @comment.id)
       assert_not_nil link

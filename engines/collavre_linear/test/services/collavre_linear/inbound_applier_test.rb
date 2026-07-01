@@ -517,6 +517,34 @@ module CollavreLinear
       assert_equal "edited body", comment.reload.content
     end
 
+    test "comment update ignores our own echo so the name prefix is not injected locally" do
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-echo")
+      comment = creative.comments.create!(content: "hello", user: @user, skip_dispatch: true)
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id,
+        linear_comment_id: "cmt-echo",
+        issue_link: issue_link
+      )
+
+      # Linear echoes back the prefixed body the outbound job sent.
+      echoed_body = CollavreLinear::CommentFormatter.outbound_body(comment)
+      payload = {
+        "action" => "update",
+        "type"   => "Comment",
+        "data"   => {
+          "id"    => "cmt-echo",
+          "body"  => echoed_body,
+          "issue" => { "id" => "iss-cmt-echo" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal "hello", comment.reload.content,
+        "the echo of our own prefixed comment must not overwrite the canonical local body"
+    end
+
     test "comment remove deletes the mirrored comment and its CommentLink" do
       creative, issue_link = linked_child(linear_issue_id: "iss-cmt-rm")
       comment = creative.comments.create!(content: "to be removed", user: @user, skip_dispatch: true)

@@ -29,7 +29,7 @@ module CollavreLinear
 
         result = CollavreLinear::Client.new(account).create_comment(
           issue_id: issue_link.linear_issue_id,
-          body:     comment.content.to_s
+          body:     CollavreLinear::CommentFormatter.outbound_body(comment)
         )
 
         linear_comment_id = result[:id]

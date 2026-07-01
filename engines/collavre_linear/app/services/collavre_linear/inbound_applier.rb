@@ -264,7 +264,13 @@ module CollavreLinear
 
       if comment_link
         comment = Collavre::Comment.find_by(id: comment_link.comment_id)
-        comment&.update!(content: body)
+        # Skip our own echo: Linear webhooks back the comment we just posted with
+        # the prefixed body we sent ("[name]: ..."). Overwriting would inject that
+        # prefix into the canonical local comment. Only a genuine Linear-side edit
+        # (a body that differs from what we would send) updates local content.
+        if comment && CommentFormatter.outbound_body(comment) != body
+          comment.update!(content: body)
+        end
       else
         create_mirrored_comment!(issue_link, linear_comment_id, body)
       end
