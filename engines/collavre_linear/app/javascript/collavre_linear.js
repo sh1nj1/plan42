@@ -10,6 +10,12 @@
 // failed navigation and leave the modal stuck in its old state. So we submit
 // them via fetch() and reload on success, transitioning to the next state.
 
+// Native window.confirm/alert don't render in the packaged Tauri desktop
+// (WKWebView) — they resolve silently, so a confirm-gated action would fire
+// unconfirmed and errors would vanish. Route through the shared in-app modal
+// like the GitHub/Slack/Notion engines do.
+import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+
 let linearIntegrationInitialized = false;
 
 if (!linearIntegrationInitialized) {
@@ -28,9 +34,10 @@ if (!linearIntegrationInitialized) {
 
   // Submit a modal form (link / resync / unlink) to its JSON endpoint and
   // reload on success. Honors data-confirm and surfaces server errors.
-  function submitLinearModalForm(form, fallbackError) {
+  async function submitLinearModalForm(form, fallbackError) {
     const confirmMsg = form.dataset.confirm;
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    // Only the consequential forms (regenerate-secret, unlink) carry data-confirm.
+    if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: true }))) return;
 
     const genericError = fallbackError || 'Linear request failed.';
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -49,10 +56,10 @@ if (!linearIntegrationInitialized) {
         if (res.ok && data.success) {
           window.location.reload();
         } else {
-          window.alert(data.error || data.warning || genericError);
+          alertDialog(data.error || data.warning || genericError);
         }
       })
-      .catch(function () { window.alert(genericError); });
+      .catch(function () { alertDialog(genericError); });
   }
 
   // Populate the project/team dropdowns from the account's Linear workspace so
