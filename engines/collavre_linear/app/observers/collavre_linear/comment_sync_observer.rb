@@ -34,17 +34,25 @@ module CollavreLinear
       log_enqueue_failure("sync", e)
     end
 
-    # Propagate a local edit to Linear. Gated on an existing CommentLink (only a
-    # comment already mirrored to Linear has one). A single core update can change
-    # content, `private`, and `topic_id` together, so re-check syncability: if the
-    # comment turned private or moved out of Main, remove its Linear mirror rather
-    # than pushing the now-hidden body outward. `skip_linear_sync` suppresses the
-    # echo when the inbound applier rewrites content from Linear.
+    # Propagate a local edit to Linear. A single core update can change content,
+    # `private`, and `topic_id` together, so re-check syncability: if the comment
+    # turned private or moved out of Main, remove its Linear mirror rather than
+    # pushing the now-hidden body outward. `skip_linear_sync` suppresses the echo
+    # when the inbound applier rewrites content from Linear.
     def enqueue_linear_comment_update
       return if skip_linear_sync
 
       comment_link = CollavreLinear::CommentLink.find_by(comment_id: id)
-      return unless comment_link
+
+      unless comment_link
+        # No mirror: either never synced, or a prior update tore it down when the
+        # comment went private / left Main. If it is syncable again, recreate the
+        # mirror so re-entering visibility doesn't leave it permanently off Linear.
+        # The sync job locks the IssueLink and re-checks CommentLink existence, so
+        # this can't duplicate a mirror the create path is still building.
+        CollavreLinear::OutboundCommentSyncJob.perform_later(id) if linear_syncable_comment?
+        return
+      end
 
       unless linear_syncable_comment?
         CollavreLinear::OutboundCommentDeleteJob.perform_later(comment_link.id)

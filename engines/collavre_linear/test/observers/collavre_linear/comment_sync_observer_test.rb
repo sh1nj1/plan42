@@ -176,6 +176,23 @@ module CollavreLinear
       assert_equal [ link.id ], delete_jobs.first[:args]
     end
 
+    test "a comment made private then public again re-mirrors to Linear" do
+      comment = synced_comment
+      link = CollavreLinear::CommentLink.find_by(comment_id: comment.id)
+
+      # Going private enqueues the delete job; simulate it tearing down the link.
+      comment.update!(private: true)
+      link.destroy
+
+      # Re-entering syncable state with the mirror gone must recreate it, not
+      # leave the (now visible again) comment permanently absent from Linear.
+      fresh = ::Collavre::Comment.find(comment.id)
+      assert_enqueued_jobs 1, only: CollavreLinear::OutboundCommentSyncJob do
+        fresh.update!(private: false)
+      end
+      assert_enqueued_with(job: CollavreLinear::OutboundCommentSyncJob, args: [ fresh.id ])
+    end
+
     # -- outbound delete -------------------------------------------------------
 
     test "deleting a synced comment enqueues OutboundCommentDeleteJob once" do
