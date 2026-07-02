@@ -78,6 +78,25 @@ module CollavreLinear
       assert_equal Time.utc(2026, 7, 1), link.reload.remote_updated_at
     end
 
+    test "pushes the freshest committed body, not the value at enqueue time" do
+      CollavreLinear::CommentLink.create!(
+        comment_id:        @comment.id,
+        linear_comment_id: "lin-cmt-1",
+        issue_link:        @issue_link
+      )
+      # A later edit landed before this job runs. The job reloads under the lock,
+      # so it pushes the current body — the guard against an out-of-order pair of
+      # edit jobs overwriting Linear back to a stale body.
+      @comment.update_columns(content: "edited body")
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::OutboundCommentUpdateJob.perform_now(@comment.id)
+      end
+
+      assert_equal "\\[Comment Update Test\\]: edited body",
+        @fake_client.update_calls.first[:body]
+    end
+
     test "no-op when the comment was made private after the update was enqueued" do
       CollavreLinear::CommentLink.create!(
         comment_id:        @comment.id,

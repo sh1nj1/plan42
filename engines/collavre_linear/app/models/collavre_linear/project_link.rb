@@ -23,6 +23,7 @@ module CollavreLinear
 
     before_validation :ensure_webhook_secret
     before_save :ensure_webhook_secret
+    before_create :converge_team_webhook_secret
 
     scope :auto_syncable, -> { where(sync_state: %i[synced dirty]) }
 
@@ -54,6 +55,24 @@ module CollavreLinear
       return if webhook_secret.present?
 
       self.webhook_secret = adopt_team_webhook_secret || SecureRandom.hex(20)
+    end
+
+    # Concurrency guard for the "one secret per team" invariant. When two projects
+    # from the SAME team are linked at the same instant, ensure_webhook_secret runs
+    # for both before either row commits, so adopt finds no sibling and each
+    # generates a DIFFERENT secret. find_project_link then resolves the team to one
+    # arbitrary sibling, so a manual Linear webhook signed with the other row's
+    # secret 401s every delivery. Serialize on the shared account row (siblings of a
+    # team share one account) and re-adopt inside the lock: the second creator
+    # blocks until the first commits, then converges on its secret. Held until the
+    # INSERT commits, so this runs in before_create (validations run pre-transaction).
+    def converge_team_webhook_secret
+      return unless account
+
+      account.with_lock do
+        sibling_secret = adopt_team_webhook_secret
+        self.webhook_secret = sibling_secret if sibling_secret.present?
+      end
     end
 
     # webhook_secret is encrypted (non-deterministic), so a raw column pick would

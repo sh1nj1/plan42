@@ -175,6 +175,37 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
       "the manual single team webhook needs all links to verify with the same secret"
   end
 
+  test "before_create re-adopts a team secret that commits during the create race" do
+    # Concurrent same-team links: ensure_webhook_secret runs for both before either
+    # commits, so adopt misses and each generates a different secret -> split-brain
+    # that 401s the team webhook. Simulate the race window: adopt returns nil at
+    # validation (a fresh secret is generated) but the sibling's secret becomes
+    # visible before this row's INSERT, so before_create's locked re-adopt converges.
+    sibling = CollavreLinear::ProjectLink.create!(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "proj-race-a",
+      team_id: "team-race"
+    )
+    c2 = Collavre::Creative.create!(description: "<p>c2</p>", user: @user)
+    link = CollavreLinear::ProjectLink.new(
+      creative: c2,
+      account: @account,
+      linear_project_id: "proj-race-b",
+      team_id: "team-race"
+    )
+
+    adopt_calls = 0
+    link.define_singleton_method(:adopt_team_webhook_secret) do
+      adopt_calls += 1
+      adopt_calls == 1 ? nil : sibling.webhook_secret
+    end
+    link.save!
+
+    assert_equal sibling.webhook_secret, link.reload.webhook_secret,
+      "the racing link must converge on the sibling's committed secret, not its own"
+  end
+
   test "rotate_webhook_secret! rolls the secret for the link and every team sibling" do
     first = CollavreLinear::ProjectLink.create!(
       creative: @creative,
