@@ -71,13 +71,28 @@ module CollavreLinear
         sequence:    priority_to_sequence(priority),
         data_linear: {
           state:    issue_payload["state"],
-          labels:   (issue_payload.dig("labels", "nodes") || []),
+          labels:   normalize_labels(issue_payload["labels"]),
           assignee: issue_payload["assignee"]
         }
       }
     end
 
     # -- Private helpers -------------------------------------------------------
+
+    # Linear delivers `labels` in two shapes: the webhook payload sends a flat
+    # Array (`[]` or `[{...}]`), while the GraphQL API nests them under
+    # `{ "nodes" => [...] }`. Calling `dig("labels", "nodes")` on the Array form
+    # raises `TypeError: no implicit conversion of String into Integer`
+    # (Array#dig with a String key), which crashed every inbound issue apply.
+    # Normalize both shapes (and a missing key) to a plain Array.
+    def normalize_labels(labels)
+      case labels
+      when Array then labels
+      when Hash  then labels["nodes"] || []
+      else []
+      end
+    end
+    private_class_method :normalize_labels
 
     # Map a creative's ZERO-BASED sequence integer to a Linear priority (0-4).
     #

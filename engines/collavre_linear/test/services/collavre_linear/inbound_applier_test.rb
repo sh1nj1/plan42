@@ -495,6 +495,34 @@ module CollavreLinear
       assert_includes link.creative.description, "Brand new issue"
     end
 
+    # Regression: a real Linear webhook carries `labels` as a flat Array (`[]` or
+    # `[{...}]`), unlike the GraphQL `{ "nodes" => [...] }` shape. FieldMapper's
+    # `dig("labels", "nodes")` raised TypeError on the Array, so the whole
+    # inbound create crashed and no Creative/IssueLink was ever created. The
+    # other create tests omit `labels` (nil short-circuits dig), hiding this.
+    test "create with webhook-shaped labels Array creates the creative without raising" do
+      payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-labels",
+          "title"     => "Issue with labels",
+          "priority"  => 0,
+          "projectId" => "proj-inb",
+          "labels"    => [ { "id" => "lbl-1", "name" => "Bug" } ],
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      assert_difference -> { CollavreLinear::IssueLink.count }, 1 do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+
+      link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-labels")
+      assert_not_nil link
+      assert_includes link.creative.description, "Issue with labels"
+    end
+
     test "create nests under the parent issue's creative when parent is linked" do
       parent_creative, _plink = linked_child(linear_issue_id: "iss-parent")
 

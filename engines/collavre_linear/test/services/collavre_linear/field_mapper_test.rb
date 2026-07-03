@@ -191,6 +191,28 @@ module CollavreLinear
       assert_equal [], attrs[:data_linear][:labels]
     end
 
+    # Regression: Linear WEBHOOK payloads deliver `labels` as a flat Array
+    # (`[]` or `[{...}]`), not the GraphQL `{ "nodes" => [...] }` shape the API
+    # returns. The mapper used `dig("labels", "nodes")`, which raises
+    # `TypeError: no implicit conversion of String into Integer` on an Array
+    # (Array#dig with a String key) — crashing every inbound issue create/update
+    # before anything was saved (so Linear issues never appeared in Collavre).
+    test "inbound: webhook-shaped empty labels Array maps to [] without raising" do
+      attrs = FieldMapper.issue_to_creative_attrs("priority" => 0, "labels" => [])
+      assert_equal [], attrs[:data_linear][:labels]
+    end
+
+    test "inbound: webhook-shaped populated labels Array is mirrored into data_linear[:labels]" do
+      labels = [ { "id" => "lbl-1", "name" => "Bug" } ]
+      attrs = FieldMapper.issue_to_creative_attrs("priority" => 0, "labels" => labels)
+      assert_equal labels, attrs[:data_linear][:labels]
+    end
+
+    test "inbound: missing labels key maps to [] without raising" do
+      attrs = FieldMapper.issue_to_creative_attrs("priority" => 0)
+      assert_equal [], attrs[:data_linear][:labels]
+    end
+
     test "inbound: progress key is NOT in the output" do
       attrs = FieldMapper.issue_to_creative_attrs(make_issue(priority: 2))
       refute attrs.key?(:progress), "progress must never appear in inbound attrs"
