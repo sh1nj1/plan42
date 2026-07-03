@@ -397,6 +397,78 @@ module CollavreLinear
       assert_equal parent_b.id, child.reload.parent_id
     end
 
+    # -- update racing ahead of create (out-of-order delivery) -----------------
+
+    test "update for an issue whose create has not committed upserts the full payload" do
+      # Race: separate InboundApplyJobs on multiple workers run the `update`
+      # before the `create` webhook commits the IssueLink. The update `data` is
+      # the full current entity, so it must be applied (not dropped) — otherwise
+      # the later create carries only the stale creation-time title and the edit
+      # is lost permanently.
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-upd-before-create",
+          "title"     => "Edited before create landed",
+          "priority"  => 2,
+          "projectId" => "proj-inb",
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "title" => "Original creation title" }
+      }
+
+      assert_difference -> { CollavreLinear::IssueLink.count }, 1 do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+
+      link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-upd-before-create")
+      assert_not_nil link, "the raced update should create the missing IssueLink"
+      assert_includes link.creative.description, "Edited before create landed",
+        "the edited title from the update payload must be preserved, not dropped"
+
+      # The real create webhook arriving later is idempotent (no duplicate).
+      create_payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-upd-before-create",
+          "title"     => "Original creation title",
+          "priority"  => 2,
+          "projectId" => "proj-inb",
+          "updatedAt" => 1.minute.ago.iso8601
+        }
+      }
+      assert_no_difference -> { CollavreLinear::IssueLink.count } do
+        CollavreLinear::InboundApplier.new(create_payload).apply!
+      end
+      assert_includes link.creative.reload.description, "Edited before create landed",
+        "the idempotent create must not clobber the newer upserted edit"
+    end
+
+    test "update for an unknown projectless issue does NOT create a creative" do
+      # An update whose data proves no linked-project membership (no projectId,
+      # no linked parent) must stay a no-op — the upsert-on-missing-link path
+      # must not adopt foreign issues into a linked subtree.
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-foreign-upd",
+          "title"     => "Foreign issue edit",
+          "priority"  => 2,
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "title" => "old" }
+      }
+
+      assert_no_difference [ -> { CollavreLinear::IssueLink.count },
+                             -> { Collavre::Creative.count } ] do
+        CollavreLinear::InboundApplier.new(payload).apply!
+      end
+      assert_nil CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-foreign-upd")
+    end
+
     # -- create ----------------------------------------------------------------
 
     test "create builds a child creative under the project root and an IssueLink" do

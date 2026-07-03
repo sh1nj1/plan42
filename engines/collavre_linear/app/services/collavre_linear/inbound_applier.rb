@@ -138,7 +138,14 @@ module CollavreLinear
 
     def update_issue!
       link = IssueLink.find_by(linear_issue_id: @data["id"])
-      return unless link
+      # Out-of-order delivery: an `update` can be processed before the issue's
+      # `create` webhook has committed its IssueLink (separate InboundApplyJobs,
+      # multiple workers). Dropping it loses the edit permanently — the later
+      # create only carries the original creation-time payload. The update `data`
+      # is the full current entity, so upsert it as a create: the real create is
+      # then idempotent, and a projectless/foreign issue still no-ops via
+      # resolve_create_parent's proven-membership guard.
+      return create_issue! unless link
 
       # Lock order MUST match the outbound path: OutboundSyncJob locks the
       # Creative row, then CreativeExporter#update_issue! locks the IssueLink.
