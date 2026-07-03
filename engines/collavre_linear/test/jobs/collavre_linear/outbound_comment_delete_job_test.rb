@@ -79,6 +79,37 @@ module CollavreLinear
         "the CommentLink must be removed once the Linear comment is deleted"
     end
 
+    test "keeps the mirror when the comment became visible again before the job ran" do
+      # Re-visibility race: the comment went private / left Main (this delete was
+      # enqueued), then became public/Main again before the job ran. Its
+      # CommentLink still exists and the observer enqueues no recreate (only
+      # private/topic_id changed, not content), so deleting the mirror now would
+      # strand the re-visible comment off Linear. The job must no-op instead.
+      live = @creative.comments.new(content: "back in main", user: @user)
+      live.skip_linear_sync = true # suppress the observer during setup only
+      live.save!
+      # The flag is a plain attr_accessor, not DB-backed — reload won't clear it,
+      # so reset it explicitly to reflect the real (syncable) row state.
+      live.skip_linear_sync = nil
+      assert CollavreLinear::CommentSyncability.syncable?(live),
+        "guard: the comment must be syncable again for this scenario"
+
+      link = CollavreLinear::CommentLink.create!(
+        comment_id:        live.id,
+        linear_comment_id: "lin-del-live",
+        issue_link:        @issue_link
+      )
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::OutboundCommentDeleteJob.perform_now(link.id)
+      end
+
+      assert_equal 0, @fake_client.delete_calls.size,
+        "a re-visible comment's mirror must not be deleted"
+      assert CollavreLinear::CommentLink.find_by(id: link.id),
+        "the CommentLink must survive so the comment stays mirrored"
+    end
+
     test "no-op when the CommentLink is already gone (idempotent re-run)" do
       @link.destroy
 

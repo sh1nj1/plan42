@@ -46,6 +46,19 @@ module CollavreLinear
       secret
     end
 
+    # The one signing secret a team's single Linear webhook uses, denormalized
+    # across the team's sibling ProjectLinks. Returns any non-blank sibling's
+    # value: a row created concurrently with the admin's paste can commit blank
+    # (adopt ran before the paste was visible), and webhook verification may
+    # resolve a delivery to that blank row — so the TEAM's secret, not one
+    # arbitrary row's column, is the authority. Reads the decrypted attribute
+    # (a raw pick would be ciphertext). Nil when the team has no secret yet.
+    def self.team_webhook_secret(team_id)
+      return if team_id.blank?
+
+      where(team_id: team_id).filter_map { |link| link.webhook_secret.presence }.first
+    end
+
     private
 
     # Inherit an existing team sibling's pasted secret so the admin configures one
@@ -57,8 +70,7 @@ module CollavreLinear
     def adopt_team_webhook_secret
       return if webhook_secret.present? || team_id.blank?
 
-      self.webhook_secret = self.class.where(team_id: team_id).where.not(id: id)
-                                .filter_map(&:webhook_secret).find(&:present?)
+      self.webhook_secret = self.class.team_webhook_secret(team_id)
     end
   end
 end

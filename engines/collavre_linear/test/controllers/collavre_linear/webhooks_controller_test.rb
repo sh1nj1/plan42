@@ -87,6 +87,40 @@ module CollavreLinear
       assert_response :ok
     end
 
+    test "comment delivery verifies against the team secret when its own row is a blank paste-race sibling" do
+      # A second project of the same team, created concurrently with the admin's
+      # paste, committed a blank secret. A comment delivery resolves via its issue
+      # to THAT specific (blank) row — not the team branch — so verifying against
+      # the row's own column would 401 despite the team holding the secret. The
+      # secret must resolve at the team level.
+      blank_creative = Collavre::Creative.create!(description: "blank sibling", progress: 0.0, user: @user)
+      blank_link = CollavreLinear::ProjectLink.create!(
+        creative: blank_creative,
+        account:  @account,
+        linear_project_id: "proj-blank",
+        team_id:           "team-webhook"
+      )
+      # Force the row blank to model the paste race: its before_create adopt ran
+      # before the sibling's secret was visible, so it committed with no secret.
+      blank_link.update_column(:webhook_secret, nil)
+      assert_nil blank_link.reload.webhook_secret, "guard: the paste-race sibling must be blank"
+      CollavreLinear::IssueLink.create!(
+        creative:        blank_creative,
+        project_link:    blank_link,
+        linear_issue_id: "iss-blank",
+        sync_state:      :synced
+      )
+
+      # No teamId/projectId → resolves via the issue branch to blank_link.
+      payload = build_payload(type: "Comment", data: { issue: { id: "iss-blank" } })
+      sig = sign(payload, "test-webhook-secret")
+
+      assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+        post_webhook(payload, sig)
+      end
+      assert_response :ok
+    end
+
     # -------------------------------------------------------------------------
     # Bad signature
     # -------------------------------------------------------------------------
@@ -244,6 +278,33 @@ module CollavreLinear
 
       payload = build_payload(data: { id: "iss-2", teamId: "team-webhook", projectId: "proj-webhook-2" })
       sig = sign(payload, @project_link.webhook_secret)
+
+      assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+        post_webhook(payload, sig)
+      end
+      assert_response :ok
+    end
+
+    test "team delivery verifies against a sibling that holds the secret when another is blank" do
+      # A same-team sibling created concurrently with the admin's paste can commit
+      # with a blank secret (its adopt scan missed the not-yet-committed paste).
+      # The verifier resolves a team to an arbitrary row, so it must PREFER a
+      # sibling holding the real secret rather than 401 on the blank one. The blank
+      # row is created first (lower id) so an unordered find_by would pick it.
+      blank_root = Collavre::Creative.create!(description: "Blank root", user: @user)
+      CollavreLinear::ProjectLink.create!(
+        creative: blank_root, account: @account,
+        linear_project_id: "proj-blank", team_id: "team-mixed", webhook_secret: nil
+      )
+      secret_root = Collavre::Creative.create!(description: "Secret root", user: @user)
+      CollavreLinear::ProjectLink.create!(
+        creative: secret_root, account: @account,
+        linear_project_id: "proj-secret", team_id: "team-mixed",
+        webhook_secret: "mixed-team-secret"
+      )
+
+      payload = build_payload(data: { id: "iss-mixed", teamId: "team-mixed" })
+      sig = OpenSSL::HMAC.hexdigest("SHA256", "mixed-team-secret", payload)
 
       assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
         post_webhook(payload, sig)

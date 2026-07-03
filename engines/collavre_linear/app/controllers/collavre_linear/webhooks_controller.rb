@@ -22,7 +22,12 @@ module CollavreLinear
       payload  = JSON.parse(raw_body)
 
       link    = find_project_link(payload)
-      secret  = link&.webhook_secret
+      # Resolve the secret at the TEAM level, not off the matched row's own
+      # column. find_project_link can return a specific row (project/issue/comment
+      # branches) that committed blank in the paste race even though a sibling
+      # holds the team's secret — verifying against the team's non-blank secret
+      # keeps those deliveries from a spurious 401.
+      secret  = link && CollavreLinear::ProjectLink.team_webhook_secret(link.team_id)
 
       return head :unauthorized unless valid_signature?(raw_body, secret)
       return head :unauthorized unless fresh_timestamp?(payload)
@@ -57,7 +62,13 @@ module CollavreLinear
       project_id = extract_project_id(payload)
 
       if team_id.present?
-        link = CollavreLinear::ProjectLink.find_by(team_id: team_id)
+        # A team shares one webhook secret, but a sibling created concurrently
+        # with the admin's paste can commit blank and would 401 the delivery if
+        # the verifier picked it. Prefer any sibling that already holds the pasted
+        # secret; fall back to any team row so routing still resolves before a
+        # secret is ever pasted (that case 401s on the nil secret, as intended).
+        siblings = CollavreLinear::ProjectLink.where(team_id: team_id).to_a
+        link = siblings.find { |s| s.webhook_secret.present? } || siblings.first
         return link if link
       end
 

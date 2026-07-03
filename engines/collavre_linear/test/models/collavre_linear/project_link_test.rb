@@ -220,6 +220,30 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
     assert_not_equal "pasted-linear-secret", raw, "the stored secret must remain encrypted at rest"
   end
 
+  test "team_webhook_secret returns a non-blank sibling's secret, ignoring blank rows" do
+    # A row created concurrently with the admin's paste can commit blank; webhook
+    # verification must still resolve the team's real secret from a configured
+    # sibling rather than 401 on the blank row.
+    blank = CollavreLinear::ProjectLink.create!(
+      creative: @creative,
+      account: @account,
+      linear_project_id: "proj-tws-blank",
+      team_id: "team-tws"
+    )
+    c2 = Collavre::Creative.create!(description: "<p>c2</p>", user: @user)
+    CollavreLinear::ProjectLink.create!(
+      creative: c2,
+      account: @account,
+      linear_project_id: "proj-tws-set",
+      team_id: "team-tws",
+      webhook_secret: "the-team-secret"
+    )
+
+    assert_nil blank.webhook_secret, "guard: the blank row must actually be blank"
+    assert_equal "the-team-secret", CollavreLinear::ProjectLink.team_webhook_secret("team-tws")
+    assert_nil CollavreLinear::ProjectLink.team_webhook_secret("team-none")
+  end
+
   test "belongs to creative and account" do
     link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
