@@ -370,10 +370,16 @@ module CollavreLinear
     # Wrapping both in one transaction rolls back the just-created Comment on that
     # collision, so no orphan (unlinked) duplicate comment is left behind.
     def create_mirrored_comment!(issue_link, linear_comment_id, body)
+      author = user_matching_actor_email
+      # A Linear author with no matching Collavre user becomes a SYSTEM comment
+      # (user: nil), with the author's name prefixed into the body exactly as the
+      # outbound Collavre->Linear direction does. A matched author is attributed
+      # directly and needs no prefix.
+      content = author ? body : CommentFormatter.prefixed_body(@payload.dig("actor", "name"), body)
       Collavre::Comment.transaction do
         comment = issue_link.creative.comments.new(
-          content:       body,
-          user:          comment_author_user(issue_link),
+          content:       content,
+          user:          author,
           skip_dispatch: true
         )
         # Suppress the outbound echo: this comment came FROM Linear, so the
@@ -568,26 +574,12 @@ module CollavreLinear
       @actor_user ||= project_link&.account&.user
     end
 
-    # Owner for an inbound COMMENT. Comment payloads carry no projectId/parentId,
-    # so the memoized `project_link` falls back to the sole ProjectLink and is
-    # nil in multi-project installs — which would drop author attribution. The
-    # governing project is unambiguous here: it's the one the resolved issue_link
-    # belongs to. Prefer that; fall back to actor_user only when issue_link is
-    # absent (e.g. the conflict-comment path has no issue_link in scope).
-    def comment_actor_user(issue_link)
-      issue_link&.project_link&.account&.user || actor_user
-    end
-
     # Author for an inbound Linear COMMENT. A human writing in Linear should show
-    # up as themselves in Collavre, not as the shared connecting account: match
-    # the webhook `actor.email` to a Collavre user. Falls back to the account
-    # owner when the actor carries no email or no user matches. Our own outbound
-    # comments never reach here — the controller drops app-actor events via
-    # EchoGuard before enqueuing — so this only runs for genuine Linear authors.
-    def comment_author_user(issue_link)
-      user_matching_actor_email || comment_actor_user(issue_link)
-    end
-
+    # up as themselves in Collavre when their `actor.email` matches a Collavre
+    # user. When it does not (Linear-only author, or no email), the caller stores
+    # a system comment (nil user) with a "[name]:" prefix instead — never the
+    # shared connecting account. Our own outbound comments never reach here: the
+    # controller drops app-actor events via EchoGuard before enqueuing.
     def user_matching_actor_email
       email = @payload.dig("actor", "email")
       return nil if email.blank?

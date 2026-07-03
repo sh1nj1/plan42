@@ -19,8 +19,15 @@ module CollavreLinear
     module_function
 
     def outbound_body(comment)
-      content = comment.content.to_s
-      author  = comment.user&.display_name
+      prefixed_body(comment.user&.display_name, comment.content.to_s)
+    end
+
+    # Prefix `content` with an escaped "[author]: " attribution, or return it
+    # unchanged when `author` is blank. Single source of the prefix format so the
+    # outbound Collavre->Linear body and the inbound system-comment fallback (a
+    # Linear author with no matching Collavre user) stay byte-identical — the echo
+    # guard above relies on the two forms matching.
+    def prefixed_body(author, content)
       author.present? ? "\\[#{author}\\]: #{content}" : content
     end
   end

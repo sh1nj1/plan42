@@ -651,11 +651,11 @@ module CollavreLinear
       assert_equal "A linear comment", Collavre::Comment.find(link.comment_id).content
     end
 
-    test "comment create is attributed to the issue's account owner with multiple linked projects" do
+    test "comment create with no author is a system comment (nil user) in a multi-project install" do
       # Second linked project (different account/owner) so ProjectLink.count > 1
-      # — the comment payload carries no projectId/parentId, so the sole-link
-      # fallback returns nil and would drop author attribution. The correct owner
-      # is reachable via the resolved issue_link's project_link.
+      # — proves the comment still resolves via the issue_link in a multi-project
+      # install. With no actor email/name to attribute, an inbound comment is a
+      # system comment (nil user), never silently pinned to some account owner.
       other_user = Collavre.user_class.create!(
         email: "inbound-other-#{SecureRandom.hex(4)}@example.com",
         name: "Inbound Other",
@@ -697,9 +697,10 @@ module CollavreLinear
       link = CollavreLinear::CommentLink.find_by(linear_comment_id: "cmt-multi")
       assert_not_nil link
       comment = Collavre::Comment.find(link.comment_id)
-      assert_not_nil comment.user, "inbound comment must not lose author attribution"
-      assert_equal @user.id, comment.user_id,
-        "comment must be attributed to the issue's account owner, not nil or another project's owner"
+      assert_nil comment.user_id,
+        "an inbound comment with no matching Collavre author is a system comment (nil user)"
+      assert_equal "A comment in a multi-project install", comment.content,
+        "with no author name to prefix, the body is stored unchanged"
     end
 
     test "comment create is attributed to the Collavre user whose email matches the Linear commenter" do
@@ -731,6 +732,8 @@ module CollavreLinear
       comment = Collavre::Comment.find(link.comment_id)
       assert_equal commenter.id, comment.user_id,
         "inbound comment must be attributed to the email-matched Collavre user, not the connecting account owner"
+      assert_equal "A human-authored Linear comment", comment.content,
+        "a matched author is attributed directly, with no [name] prefix"
     end
 
     test "comment create matches the commenter email case- and whitespace-insensitively" do
@@ -763,13 +766,13 @@ module CollavreLinear
         "email match must normalize case and whitespace like Collavre::User does"
     end
 
-    test "comment create falls back to the account owner when no Collavre user matches the commenter email" do
+    test "comment create with no email match is a system comment prefixed with the Linear author name" do
       _creative, _link = linked_child(linear_issue_id: "iss-cmt-nomatch")
 
       payload = {
         "action" => "create",
         "type"   => "Comment",
-        "actor"  => { "id" => "linear-actor-3", "email" => "no-such-collavre-user@nowhere.test" },
+        "actor"  => { "id" => "linear-actor-3", "name" => "Linear Only", "email" => "no-such-collavre-user@nowhere.test" },
         "data"   => {
           "id"    => "cmt-nomatch",
           "body"  => "Comment from a Linear-only user",
@@ -782,8 +785,10 @@ module CollavreLinear
 
       link = CollavreLinear::CommentLink.find_by(linear_comment_id: "cmt-nomatch")
       comment = Collavre::Comment.find(link.comment_id)
-      assert_equal @user.id, comment.user_id,
-        "unmatched commenter email must fall back to the connecting account owner"
+      assert_nil comment.user_id,
+        "an unmatched Linear commenter must be a system comment (nil user), not the connecting account owner"
+      assert_equal "\\[Linear Only\\]: Comment from a Linear-only user", comment.content,
+        "unmatched commenter body must carry the escaped [name] prefix, mirroring outbound CommentFormatter"
     end
 
     test "comment update edits the existing Collavre comment" do
