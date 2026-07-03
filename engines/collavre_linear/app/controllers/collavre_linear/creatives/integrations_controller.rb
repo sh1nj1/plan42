@@ -148,6 +148,14 @@ module CollavreLinear
           return
         end
 
+        # Resync is the human resolution path the conflict notice points to, so it
+        # must break the :conflict freeze — CreativeExporter#update_issue! (and the
+        # inbound applier) HALT on conflicted links, so without this the enqueued
+        # jobs would report success while making no API call and leaving the
+        # conflict stuck. Reopen conflicted links as :dirty so the export re-runs
+        # and pushes the local (kept) content Linear never received.
+        clear_conflicted_links
+
         enqueue_subtree_sync
 
         render json: { success: true, message: I18n.t("collavre_linear.integration.resync_started") }
@@ -214,6 +222,18 @@ module CollavreLinear
         @origin.self_and_descendants.ids.each do |creative_id|
           CollavreLinear::OutboundSyncJob.perform_later(creative_id)
         end
+      end
+
+      # Reopen conflicted issue links in the subtree so an explicit resync can
+      # actually push. update_all bypasses the exporter's per-link lock, but a
+      # concurrent inbound re-marking one conflict just means that link no-ops
+      # again (the user resyncs once more) — no data loss, and it unsticks the
+      # common case the resync button promises to fix.
+      def clear_conflicted_links
+        CollavreLinear::IssueLink
+          .where(creative_id: @origin.self_and_descendants.ids)
+          .where(sync_state: CollavreLinear::IssueLink.sync_states[:conflict])
+          .update_all(sync_state: CollavreLinear::IssueLink.sync_states[:dirty])
       end
 
       def integration_forbidden_message

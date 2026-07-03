@@ -418,6 +418,32 @@ module CollavreLinear
         assert_equal [ @creative.id, child1.id, child2.id ].sort, enqueued_ids.sort
       end
 
+      test "resync reopens conflicted issue links so the export can push" do
+        sign_in_as(@user)
+
+        project_link = CollavreLinear::ProjectLink.create!(
+          creative: @creative,
+          account: @account,
+          linear_project_id: "proj-resync-conflict",
+          team_id: "team-resync-conflict",
+          webhook_id: "wh-resync-conflict-001"
+        )
+        # A link frozen at :conflict by an inbound race. Without reopening it, the
+        # exporter's `return if conflict?` makes the resync a silent no-op.
+        conflicted = CollavreLinear::IssueLink.create!(
+          creative: @creative,
+          project_link: project_link,
+          linear_issue_id: "issue-resync-conflict",
+          sync_state: :conflict
+        )
+
+        post "/linear/creatives/#{@creative.id}/integration/resync", as: :json
+
+        assert_response :success
+        assert conflicted.reload.dirty?,
+               "resync must reopen the conflicted link so update_issue! actually pushes"
+      end
+
       test "resync returns not_found when no link exists" do
         sign_in_as(@user)
 
