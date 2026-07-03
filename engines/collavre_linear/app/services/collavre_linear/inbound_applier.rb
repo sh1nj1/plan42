@@ -316,19 +316,28 @@ module CollavreLinear
       comment_link = CommentLink.find_by(linear_comment_id: linear_comment_id)
 
       if comment_link
-        comment = Collavre::Comment.find_by(id: comment_link.comment_id)
-        # Apply genuine Linear-side edits; skip our own echoes. We compare the
-        # webhook's updatedAt against the version we last synced (stored on the
-        # link) rather than the mutable local body: a user may edit A->B locally
-        # before Linear echoes the older A, and a body comparison would then treat
-        # that stale echo as a real edit and clobber B. A strictly-newer remote
-        # timestamp is the only thing that means a real Linear-side change.
-        if comment && genuine_comment_edit?(comment_link)
-          # skip_linear_sync so this Linear-originated edit does not echo back out
-          # as an outbound update (which would re-wrap the author-name prefix).
-          comment.skip_linear_sync = true
-          comment.update!(content: body)
-          comment_link.update!(remote_updated_at: remote_updated_at) if remote_updated_at
+        # Serialize against OutboundCommentUpdateJob, which holds this CommentLink's
+        # lock across its Linear round-trip and only advances remote_updated_at
+        # afterwards. Reading the baseline without the lock can observe the pre-update
+        # value mid-flight, so the echo of our own outbound edit (a strictly-newer
+        # updatedAt) is misclassified as a genuine Linear edit and clobbers the local
+        # body with the outbound (author-prefixed) form. Lock + reload so the baseline
+        # we compare against is the committed one, mirroring the issue apply path.
+        comment_link.with_lock do
+          comment = Collavre::Comment.find_by(id: comment_link.comment_id)
+          # Apply genuine Linear-side edits; skip our own echoes. We compare the
+          # webhook's updatedAt against the version we last synced (stored on the
+          # link) rather than the mutable local body: a user may edit A->B locally
+          # before Linear echoes the older A, and a body comparison would then treat
+          # that stale echo as a real edit and clobber B. A strictly-newer remote
+          # timestamp is the only thing that means a real Linear-side change.
+          if comment && genuine_comment_edit?(comment_link)
+            # skip_linear_sync so this Linear-originated edit does not echo back out
+            # as an outbound update (which would re-wrap the author-name prefix).
+            comment.skip_linear_sync = true
+            comment.update!(content: body)
+            comment_link.update!(remote_updated_at: remote_updated_at) if remote_updated_at
+          end
         end
       else
         create_mirrored_comment!(issue_link, linear_comment_id, body)

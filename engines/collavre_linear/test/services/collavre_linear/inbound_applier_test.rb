@@ -694,6 +694,55 @@ module CollavreLinear
         "a stale echo (older updatedAt) must not clobber the newer local edit"
     end
 
+    test "an echo racing ahead of the outbound baseline commit is suppressed once the lock exposes it" do
+      creative, issue_link = linked_child(linear_issue_id: "iss-cmt-race")
+      comment = creative.comments.create!(content: "hello", user: @user, skip_dispatch: true)
+      # The link still carries the PRE-outbound baseline: the outbound update job is
+      # in-flight (holding the lock), has already reached Linear, but has not yet
+      # committed the new remote_updated_at. Reading this stale value would classify
+      # our own echo as a genuine Linear edit.
+      committed_at = Time.current
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id,
+        linear_comment_id: "cmt-race",
+        issue_link: issue_link,
+        remote_updated_at: committed_at - 1.hour
+      )
+
+      # Simulate the outbound job committing its baseline the instant the inbound
+      # apply acquires the lock — i.e. the echo raced in first, and the lock makes
+      # the apply wait until the outbound commit is visible. The module always
+      # `super`s and only acts for this one link, so it does not affect other tests.
+      race = Module.new do
+        define_method(:with_lock) do |*args, &blk|
+          if linear_comment_id == "cmt-race" && !@_committed
+            @_committed = true
+            self.class.where(id: id).update_all(remote_updated_at: committed_at)
+          end
+          super(*args, &blk)
+        end
+      end
+      CollavreLinear::CommentLink.prepend(race)
+
+      # Echo of our own outbound edit: updatedAt == the baseline the outbound commits.
+      payload = {
+        "action" => "update",
+        "type"   => "Comment",
+        "data"   => {
+          "id"    => "cmt-race",
+          "body"  => CollavreLinear::CommentFormatter.outbound_body(comment),
+          "issue" => { "id" => "iss-cmt-race" },
+          "updatedAt" => committed_at.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal "hello", comment.reload.content,
+        "an echo that arrived before the outbound baseline commit must be suppressed " \
+        "once the CommentLink lock exposes the committed baseline (no lock -> clobber)"
+    end
+
     test "comment remove deletes the mirrored comment and its CommentLink" do
       creative, issue_link = linked_child(linear_issue_id: "iss-cmt-rm")
       comment = creative.comments.create!(content: "to be removed", user: @user, skip_dispatch: true)
