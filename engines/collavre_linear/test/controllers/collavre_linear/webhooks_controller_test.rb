@@ -360,6 +360,74 @@ module CollavreLinear
       assert_response :unauthorized
     end
 
+    # Comment events route update/remove by the Comment's own data.id (a
+    # linear_comment_id), not by any issue id, so that identifier needs the same
+    # cross-team check.
+
+    test "rejects (401) when a Comment event data.id resolves to another team's comment" do
+      other_link = build_other_team_project_link
+      other_issue = Collavre::Creative.create!(
+        description: "Issue B", user: other_link.account.user, parent: other_link.creative
+      )
+      other_issue_link = CollavreLinear::IssueLink.create!(
+        creative: other_issue, project_link: other_link, linear_issue_id: "iss-cmtB"
+      )
+      other_comment = other_issue.comments.create!(
+        content: "team B comment", user: other_link.account.user, skip_dispatch: true
+      )
+      CollavreLinear::CommentLink.create!(
+        comment_id: other_comment.id, issue_link: other_issue_link,
+        linear_comment_id: "cmt-teamB"
+      )
+
+      # find_project_link resolves team A via the parent issue.id (team A's own
+      # linked issue), so A's secret verifies. But data.id names team B's comment —
+      # apply_comment! routes remove/update by data["id"], so A's secret must NOT
+      # authenticate a delete/edit of B's mirrored comment.
+      CollavreLinear::IssueLink.create!(
+        creative: @creative, project_link: @project_link,
+        linear_issue_id: "iss-cmtA", sync_state: :synced
+      )
+      payload = build_payload(
+        action: "remove", type: "Comment",
+        data: { id: "cmt-teamB", issue: { id: "iss-cmtA" } },
+        updatedFrom: nil
+      )
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_no_enqueued_jobs do
+        post_webhook(payload, sig)
+      end
+      assert_response :unauthorized
+    end
+
+    test "accepts a Comment event whose data.id is the signing team's own comment" do
+      issue_link = CollavreLinear::IssueLink.create!(
+        creative: @creative, project_link: @project_link,
+        linear_issue_id: "iss-cmtA", sync_state: :synced
+      )
+      comment = @creative.comments.create!(
+        content: "team A comment", user: @user, skip_dispatch: true
+      )
+      CollavreLinear::CommentLink.create!(
+        comment_id: comment.id, issue_link: issue_link, linear_comment_id: "cmt-teamA"
+      )
+
+      # Same-team comment: data.id belongs to team A's own CommentLink, so the
+      # cross-team guard must NOT over-reject it.
+      payload = build_payload(
+        action: "update", type: "Comment",
+        data: { id: "cmt-teamA", issue: { id: "iss-cmtA" }, body: "edited" },
+        updatedFrom: nil
+      )
+      sig = sign(payload, @project_link.webhook_secret)
+
+      assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+        post_webhook(payload, sig)
+      end
+      assert_response :ok
+    end
+
     def build_other_team_project_link
       other_user = Collavre.user_class.create!(
         email: "linear-webhook-b-#{SecureRandom.hex(4)}@example.com",

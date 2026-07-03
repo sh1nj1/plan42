@@ -107,6 +107,12 @@ module CollavreLinear
         return false if issue_link && issue_link.project_link.team_id != link.team_id
       end
 
+      comment_ids_in_payload(payload).each do |comment_id|
+        comment_link = CollavreLinear::CommentLink.find_by(linear_comment_id: comment_id)
+        return false if comment_link &&
+          comment_link.issue_link.project_link.team_id != link.team_id
+      end
+
       true
     end
 
@@ -120,6 +126,18 @@ module CollavreLinear
       ids = [ extract_issue_id(payload), payload.dig("data", "parentId") ]
       ids << payload.dig("data", "id") if payload["type"] == "Issue"
       ids.compact_blank
+    end
+
+    # Comment events route update/remove by the Comment's own data.id (a
+    # linear_comment_id), which none of the issue-shaped extractors surface.
+    # Without checking it, a payload signed with team A's secret but naming team
+    # B's CommentLink slips past the guard and apply_comment! edits/deletes B's
+    # mirror. Only a Comment payload's data.id is a comment id (Issue payloads key
+    # it as an issue, already covered above).
+    def comment_ids_in_payload(payload)
+      return [] unless payload["type"] == "Comment"
+
+      [ payload.dig("data", "id") ].compact_blank
     end
 
     def extract_issue_id(payload)
