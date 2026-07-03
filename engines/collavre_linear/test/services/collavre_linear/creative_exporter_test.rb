@@ -328,6 +328,49 @@ module CollavreLinear
         "project B remains linked (the move target)"
     end
 
+    test "sync! DEFERS a new child whose parent's IssueLink is frozen in :conflict" do
+      # A parent creative was halted mid cross-project move: its own IssueLink is
+      # frozen at :conflict pointing at project A while it now sits under linked
+      # root B. A brand-new child under it has NO IssueLink, so the cross-project
+      # guard in sync! (which needs an existing link) never runs. Without this
+      # defer, the child would be created in project B carrying a parentId from
+      # project A's frozen issue — a wrong-project write Linear rejects or
+      # mis-nests. Defer until the parent's conflict is resolved.
+      other_root = Collavre::Creative.create!(description: "<p>Root B</p>", user: @user)
+      CollavreLinear::ProjectLink.create!(
+        creative: other_root, account: @account,
+        linear_project_id: "proj-B", team_id: "team-B"
+      )
+
+      parent = Collavre::Creative.new(
+        description: "<p>Conflicted parent</p>", user: @user, parent: other_root
+      )
+      parent.skip_linear_sync = true
+      parent.save!
+      CollavreLinear::IssueLink.create!(
+        creative:        parent,
+        project_link:    @project_link, # project A — different from B
+        linear_issue_id: "iss-parent-A",
+        content_hash:    "hash-parent",
+        sync_state:      :conflict
+      )
+
+      child = Collavre::Creative.new(
+        description: "<p>New child</p>", user: @user, parent: parent
+      )
+      child.skip_linear_sync = true
+      child.save!
+
+      assert_raises CollavreLinear::CreativeExporter::ParentNotExportedError do
+        CollavreLinear::Client.stub(:new, @fake_client) do
+          CollavreLinear::CreativeExporter.new(child).sync!
+        end
+      end
+
+      assert_equal 0, @fake_client.create_calls.size,
+        "must NOT create the child in B with a parentId from A's conflicted issue"
+    end
+
     test "sync! backfills comments posted before the IssueLink existed" do
       original_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test

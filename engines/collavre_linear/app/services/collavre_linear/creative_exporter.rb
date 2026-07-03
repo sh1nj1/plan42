@@ -137,7 +137,17 @@ module CollavreLinear
       # never becomes a Linear issue, so this creative is a TOP-LEVEL issue and
       # must NOT wait for a parent issue that will never exist.
       return false if CollavreLinear::ProjectLink.exists?(creative_id: parent.id)
-      return false if parent.linear_issue_links.first&.linear_issue_id.present?
+
+      # A conflict-frozen parent is NOT a valid nesting target: it was halted
+      # mid cross-project move, so its Linear issue may live in a DIFFERENT
+      # project than this child resolves to. Adopting its linear_issue_id as the
+      # child's parentId would send Linear a cross-project parent (rejected, or
+      # the child lands in the wrong project). A brand-new child has no IssueLink,
+      # so the cross-project guard in sync! (which needs an existing link) never
+      # fires — defer here until the parent's conflict is resolved (the child's
+      # job retries; an explicit resync re-homes the parent into this project).
+      parent_link = parent.linear_issue_links.first
+      return false if parent_link&.linear_issue_id.present? && !parent_link.conflict?
 
       # Parent is in the linked subtree only if it (or an ancestor) holds a
       # ProjectLink. If not, the parent is above the linked root — no wait.
