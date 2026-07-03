@@ -99,4 +99,7 @@ Rails.application.configure do
 
   # Allow Tailscale hosts for remote development access
   config.hosts << /.*\.tailadceed\.ts\.net/
+
+  # Allow Collavre preview hosts ({port}.collavre.com) for inbound webhook testing (e.g. Linear)
+  config.hosts << /\A\d+\.collavre\.com\z/
 end
