@@ -97,29 +97,6 @@ module CollavreLinear
         @fake_client.update_calls.first[:body]
     end
 
-    test "no-op when the linked issue is frozen at :conflict, preserving the mirror" do
-      link = CollavreLinear::CommentLink.create!(
-        comment_id:        @comment.id,
-        linear_comment_id: "lin-cmt-1",
-        issue_link:        @issue_link
-      )
-      # The issue froze at :conflict after this edit was enqueued: pushing now
-      # would update the comment on the stale issue in the OLD project. The write
-      # must freeze until an explicit resync. Unlike a visibility change, the
-      # mirror is KEPT (no delete) — only the outbound edit is withheld.
-      @issue_link.update!(sync_state: :conflict)
-      @comment.update_columns(content: "edited while conflicted")
-
-      CollavreLinear::Client.stub(:new, @fake_client) do
-        CollavreLinear::OutboundCommentUpdateJob.perform_now(@comment.id)
-      end
-
-      assert_equal 0, @fake_client.update_calls.size,
-        "must not push an edit to a conflict-frozen (stale-project) issue"
-      assert_not_nil CollavreLinear::CommentLink.find_by(id: link.id),
-        "the comment mirror must be preserved through the conflict freeze"
-    end
-
     test "no-op when the comment was made private after the update was enqueued" do
       CollavreLinear::CommentLink.create!(
         comment_id:        @comment.id,

@@ -34,13 +34,6 @@ module CollavreLinear
         # teardown; no-op.
         return unless CollavreLinear::CommentSyncability.syncable?(comment)
 
-        # The linked issue is frozen at :conflict — pushing this edit would
-        # update the comment on the stale issue in the OLD project. Freeze
-        # comment edits too until an explicit resync clears the conflict
-        # (mirrors the create job and CreativeExporter#update_issue!). The mirror
-        # is preserved; only the write is withheld.
-        return if comment_link.issue_link.conflict?
-
         account = comment_link.issue_link.project_link.account
         return unless account
 
