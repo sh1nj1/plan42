@@ -373,7 +373,7 @@ module CollavreLinear
       Collavre::Comment.transaction do
         comment = issue_link.creative.comments.new(
           content:       body,
-          user:          comment_actor_user(issue_link),
+          user:          comment_author_user(issue_link),
           skip_dispatch: true
         )
         # Suppress the outbound echo: this comment came FROM Linear, so the
@@ -576,6 +576,25 @@ module CollavreLinear
     # absent (e.g. the conflict-comment path has no issue_link in scope).
     def comment_actor_user(issue_link)
       issue_link&.project_link&.account&.user || actor_user
+    end
+
+    # Author for an inbound Linear COMMENT. A human writing in Linear should show
+    # up as themselves in Collavre, not as the shared connecting account: match
+    # the webhook `actor.email` to a Collavre user. Falls back to the account
+    # owner when the actor carries no email or no user matches. Our own outbound
+    # comments never reach here — the controller drops app-actor events via
+    # EchoGuard before enqueuing — so this only runs for genuine Linear authors.
+    def comment_author_user(issue_link)
+      user_matching_actor_email || comment_actor_user(issue_link)
+    end
+
+    def user_matching_actor_email
+      email = @payload.dig("actor", "email")
+      return nil if email.blank?
+
+      # User#email is normalized to strip.downcase, so match the same way for a
+      # case- and whitespace-insensitive lookup.
+      Collavre.user_class.find_by(email: email.strip.downcase)
     end
   end
 end

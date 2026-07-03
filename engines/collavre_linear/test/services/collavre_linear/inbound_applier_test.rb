@@ -702,6 +702,90 @@ module CollavreLinear
         "comment must be attributed to the issue's account owner, not nil or another project's owner"
     end
 
+    test "comment create is attributed to the Collavre user whose email matches the Linear commenter" do
+      commenter = Collavre.user_class.create!(
+        email: "linear-commenter-#{SecureRandom.hex(4)}@example.com",
+        name: "Linear Commenter",
+        password: TEST_PASSWORD,
+        password_confirmation: TEST_PASSWORD,
+        timezone: "UTC"
+      )
+      _creative, _link = linked_child(linear_issue_id: "iss-cmt-email")
+
+      payload = {
+        "action" => "create",
+        "type"   => "Comment",
+        "actor"  => { "id" => "linear-actor-1", "email" => commenter.email },
+        "data"   => {
+          "id"    => "cmt-email",
+          "body"  => "A human-authored Linear comment",
+          "issue" => { "id" => "iss-cmt-email" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link = CollavreLinear::CommentLink.find_by(linear_comment_id: "cmt-email")
+      assert_not_nil link
+      comment = Collavre::Comment.find(link.comment_id)
+      assert_equal commenter.id, comment.user_id,
+        "inbound comment must be attributed to the email-matched Collavre user, not the connecting account owner"
+    end
+
+    test "comment create matches the commenter email case- and whitespace-insensitively" do
+      commenter = Collavre.user_class.create!(
+        email: "mixed-case-#{SecureRandom.hex(4)}@example.com",
+        name: "Mixed Case",
+        password: TEST_PASSWORD,
+        password_confirmation: TEST_PASSWORD,
+        timezone: "UTC"
+      )
+      _creative, _link = linked_child(linear_issue_id: "iss-cmt-case")
+
+      payload = {
+        "action" => "create",
+        "type"   => "Comment",
+        "actor"  => { "id" => "linear-actor-2", "email" => "  #{commenter.email.upcase}  " },
+        "data"   => {
+          "id"    => "cmt-case",
+          "body"  => "Case-insensitive match",
+          "issue" => { "id" => "iss-cmt-case" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link = CollavreLinear::CommentLink.find_by(linear_comment_id: "cmt-case")
+      comment = Collavre::Comment.find(link.comment_id)
+      assert_equal commenter.id, comment.user_id,
+        "email match must normalize case and whitespace like Collavre::User does"
+    end
+
+    test "comment create falls back to the account owner when no Collavre user matches the commenter email" do
+      _creative, _link = linked_child(linear_issue_id: "iss-cmt-nomatch")
+
+      payload = {
+        "action" => "create",
+        "type"   => "Comment",
+        "actor"  => { "id" => "linear-actor-3", "email" => "no-such-collavre-user@nowhere.test" },
+        "data"   => {
+          "id"    => "cmt-nomatch",
+          "body"  => "Comment from a Linear-only user",
+          "issue" => { "id" => "iss-cmt-nomatch" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link = CollavreLinear::CommentLink.find_by(linear_comment_id: "cmt-nomatch")
+      comment = Collavre::Comment.find(link.comment_id)
+      assert_equal @user.id, comment.user_id,
+        "unmatched commenter email must fall back to the connecting account owner"
+    end
+
     test "comment update edits the existing Collavre comment" do
       creative, issue_link = linked_child(linear_issue_id: "iss-cmt2")
       comment = creative.comments.create!(content: "old body", user: @user, skip_dispatch: true)
