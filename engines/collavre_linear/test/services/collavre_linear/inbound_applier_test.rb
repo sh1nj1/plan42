@@ -523,6 +523,56 @@ module CollavreLinear
       assert_includes link.creative.description, "Issue with labels"
     end
 
+    # Product decision: the Linear issue TITLE is the creative's value; the issue
+    # DESCRIPTION is ignored for now. (Previously the mapper preferred the Linear
+    # description, so the creative body became the long issue description.)
+    test "create uses the Linear issue title as the creative value, ignoring the issue description" do
+      payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"          => "iss-title-only",
+          "title"       => "Title wins",
+          "description" => "This long body must be ignored",
+          "priority"    => 0,
+          "projectId"   => "proj-inb",
+          "updatedAt"   => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-title-only")
+      assert_not_nil link
+      assert_includes link.creative.description, "Title wins"
+      refute_includes link.creative.description, "This long body must be ignored",
+        "the Linear issue description must be ignored — only the title is used"
+    end
+
+    test "update ignoring a Linear description-only change keeps the creative value as the title" do
+      creative, _link = linked_child(linear_issue_id: "iss-desc-only")
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"          => "iss-desc-only",
+          "title"       => "Original title",
+          "description" => "Newly added Linear body",
+          "priority"    => 0,
+          "updatedAt"   => Time.current.iso8601
+        },
+        "updatedFrom" => { "description" => "" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      creative.reload
+      assert_includes creative.description, "Original title"
+      refute_includes creative.description, "Newly added Linear body",
+        "a Linear description-only edit must not inject the description into the creative"
+    end
+
     test "create nests under the parent issue's creative when parent is linked" do
       parent_creative, _plink = linked_child(linear_issue_id: "iss-parent")
 

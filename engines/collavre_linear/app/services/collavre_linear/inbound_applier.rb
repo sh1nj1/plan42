@@ -197,8 +197,10 @@ module CollavreLinear
         creative.skip_linear_sync = true
 
         # Apply only fields that actually changed (per updatedFrom) when the hint
-        # is present; otherwise apply the full mapped set.
-        if changed.nil? || changed.include?("title") || changed.include?("description")
+        # is present; otherwise apply the full mapped set. The creative value
+        # tracks the issue TITLE only — a description-only Linear edit must not
+        # touch it (the description is ignored).
+        if changed.nil? || changed.include?("title")
           creative.description = description_for(attrs)
         end
         if changed.nil? || changed.include?("priority")
@@ -533,12 +535,11 @@ module CollavreLinear
     # -- Field helpers ---------------------------------------------------------
 
     # Collavre::Creative has no title column — the canonical text lives in
-    # `description` (title is derived from it via creative_snippet). Prefer the
-    # mapped description; fall back to the issue title when description is blank.
+    # `description` (title is derived from it via creative_snippet). The Linear
+    # issue TITLE is that canonical value; the Linear issue description is
+    # intentionally ignored for now (product decision).
     def description_for(attrs)
-      desc = attrs[:description].presence
-      title = attrs[:title].presence
-      desc || title || ""
+      attrs[:title].presence || ""
     end
 
     def merge_linear_data!(creative, data_linear)
