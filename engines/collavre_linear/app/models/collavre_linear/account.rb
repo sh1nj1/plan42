@@ -6,6 +6,12 @@ module CollavreLinear
 
     belongs_to :user, class_name: "::User"
 
+    # account_id carries a RESTRICT foreign key, so a user delete (which cascades
+    # here via has_one :linear_account, dependent: :destroy) would hit a FK
+    # violation unless we tear the links down first. Cascades on to issue/comment
+    # links via ProjectLink's own dependent chain.
+    has_many :project_links, class_name: "CollavreLinear::ProjectLink", dependent: :destroy
+
     encrypts :access_token, deterministic: false
     encrypts :refresh_token, deterministic: false
 

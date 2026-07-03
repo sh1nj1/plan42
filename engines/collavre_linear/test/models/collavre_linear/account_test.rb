@@ -110,6 +110,21 @@ class CollavreLinear::AccountTest < ActiveSupport::TestCase
     assert_equal @user, account.user
   end
 
+  test "destroying the owning user cascades away the account and its project links" do
+    creative = Collavre::Creative.create!(description: "<p>Root</p>", user: @user)
+    account = CollavreLinear::Account.create!(user: @user, linear_uid: "u-del", access_token: "token")
+    link = CollavreLinear::ProjectLink.create!(
+      creative: creative, account: account, linear_project_id: "proj-del", team_id: "team-del"
+    )
+
+    # The RESTRICT FK on linear_project_links.account_id would reject the account
+    # delete without the dependent cascade, breaking user deletion entirely.
+    assert_nothing_raised { @user.destroy! }
+
+    assert_not CollavreLinear::Account.exists?(account.id)
+    assert_not CollavreLinear::ProjectLink.exists?(link.id)
+  end
+
   test "encrypts refresh_token" do
     a = CollavreLinear::Account.create!(
       user: @user,
