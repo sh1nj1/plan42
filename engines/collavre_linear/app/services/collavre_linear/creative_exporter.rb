@@ -114,7 +114,7 @@ module CollavreLinear
       #     parentId, persist parent_issue_id for the still-nil parent, and the
       #     later parent export would NOT re-enqueue us — leaving the Linear issue
       #     under its old parent until a manual resync.
-      raise ParentNotExportedError if parent_export_pending?
+      raise ParentNotExportedError if parent_export_pending?(project_link)
 
       if issue_link.nil?
         create_issue!(client, project_link, attrs, hash, parent_id)
@@ -130,7 +130,7 @@ module CollavreLinear
     # Linear (no linear_issue_id). The parent MUST land first so this child can
     # be nested under it. The ProjectLink-root creative's own parent is outside
     # the subtree (resolves no link), so the root never defers.
-    def parent_export_pending?
+    def parent_export_pending?(project_link)
       parent = @creative.parent
       return false unless parent
       # Parent is the project itself (its own ProjectLink root). The project
@@ -138,16 +138,21 @@ module CollavreLinear
       # must NOT wait for a parent issue that will never exist.
       return false if CollavreLinear::ProjectLink.exists?(creative_id: parent.id)
 
-      # A conflict-frozen parent is NOT a valid nesting target: it was halted
-      # mid cross-project move, so its Linear issue may live in a DIFFERENT
-      # project than this child resolves to. Adopting its linear_issue_id as the
+      # A conflict-frozen OR cross-project parent is NOT a valid nesting target.
+      # After a cross-project move the parent's Linear issue lives in a DIFFERENT
+      # project than this child resolves to; adopting its linear_issue_id as the
       # child's parentId would send Linear a cross-project parent (rejected, or
       # the child lands in the wrong project). A brand-new child has no IssueLink,
       # so the cross-project guard in sync! (which needs an existing link) never
-      # fires — defer here until the parent's conflict is resolved (the child's
-      # job retries; an explicit resync re-homes the parent into this project).
+      # fires — defer here. We catch both signals: the parent already halted at
+      # :conflict, AND the transient window where the parent has moved (its link
+      # points at a different project) but its own export has not marked it
+      # :conflict yet. Defer until resolved (the child's job retries; an explicit
+      # resync re-homes the parent into this project, then re-exports this child).
       parent_link = parent.linear_issue_links.first
-      return false if parent_link&.linear_issue_id.present? && !parent_link.conflict?
+      if parent_link&.linear_issue_id.present?
+        return false unless parent_link.conflict? || parent_link.project_link_id != project_link.id
+      end
 
       # Parent is in the linked subtree only if it (or an ancestor) holds a
       # ProjectLink. If not, the parent is above the linked root — no wait.

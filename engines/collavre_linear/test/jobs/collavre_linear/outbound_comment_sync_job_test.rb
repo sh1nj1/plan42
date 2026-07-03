@@ -97,6 +97,22 @@ module CollavreLinear
       assert_equal 1, CollavreLinear::CommentLink.where(comment_id: @comment.id).count
     end
 
+    test "no-op when the linked issue is frozen at :conflict" do
+      # The issue link was halted at :conflict (e.g. a cross-project move): its
+      # linear_issue_id still points at the OLD project. Posting the comment now
+      # would write it to the wrong project. The write must freeze until an
+      # explicit resync clears the conflict — no post, no CommentLink.
+      @issue_link.update!(sync_state: :conflict)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::OutboundCommentSyncJob.perform_now(@comment.id)
+      end
+
+      assert_equal 0, @fake_client.calls.size,
+        "must not post a comment to a conflict-frozen (stale-project) issue"
+      assert_nil CollavreLinear::CommentLink.find_by(comment_id: @comment.id)
+    end
+
     test "no-op when the comment was made private after the create was enqueued" do
       # The comment was public/Main when the observer enqueued this create job,
       # so no CommentLink exists yet and the observer cannot enqueue a delete for

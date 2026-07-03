@@ -371,6 +371,49 @@ module CollavreLinear
         "must NOT create the child in B with a parentId from A's conflicted issue"
     end
 
+    test "sync! DEFERS a new child when its parent's issue is in a DIFFERENT project (pre-conflict)" do
+      # Same class of wrong-project write as the conflict case, but in the
+      # transient window BEFORE the parent's own export marks it :conflict: the
+      # parent has moved under root B while its IssueLink still points at project
+      # A and is otherwise :synced. A new child (no IssueLink) resolves to project
+      # B; without deferring on the project mismatch, it would be created in B
+      # carrying a parentId from A's issue. conflict? is false here, so a
+      # conflict-only guard would miss it — defer on the cross-project link too.
+      other_root = Collavre::Creative.create!(description: "<p>Root B</p>", user: @user)
+      CollavreLinear::ProjectLink.create!(
+        creative: other_root, account: @account,
+        linear_project_id: "proj-B2", team_id: "team-B2"
+      )
+
+      parent = Collavre::Creative.new(
+        description: "<p>Moved parent</p>", user: @user, parent: other_root
+      )
+      parent.skip_linear_sync = true
+      parent.save!
+      CollavreLinear::IssueLink.create!(
+        creative:        parent,
+        project_link:    @project_link, # project A — different from B, but NOT conflicted
+        linear_issue_id: "iss-parent-A2",
+        content_hash:    "hash-parent",
+        sync_state:      :synced
+      )
+
+      child = Collavre::Creative.new(
+        description: "<p>New child</p>", user: @user, parent: parent
+      )
+      child.skip_linear_sync = true
+      child.save!
+
+      assert_raises CollavreLinear::CreativeExporter::ParentNotExportedError do
+        CollavreLinear::Client.stub(:new, @fake_client) do
+          CollavreLinear::CreativeExporter.new(child).sync!
+        end
+      end
+
+      assert_equal 0, @fake_client.create_calls.size,
+        "must NOT create the child in B with a parentId from A's (different-project) issue"
+    end
+
     test "sync! backfills comments posted before the IssueLink existed" do
       original_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test

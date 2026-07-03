@@ -40,6 +40,16 @@ module CollavreLinear
           # leak it. Same predicate the update job re-runs; here it must no-op.
           return unless CollavreLinear::CommentSyncability.syncable?(comment)
 
+          # The linked issue is frozen at :conflict (e.g. a halted cross-project
+          # move). Its linear_issue_id still points at the issue in the OLD
+          # project, so posting now would write the comment to the wrong project.
+          # Freeze outbound comment creates too until an explicit resync clears
+          # the conflict — mirrors CreativeExporter#update_issue!. (Not folded
+          # into syncable? on purpose: that predicate also gates the delete job,
+          # where "not syncable" tears mirrors down — a conflict must freeze
+          # writes, not mass-delete existing comment mirrors.)
+          return if issue_link.conflict?
+
           posted = CollavreLinear::Client.new(account).create_comment(
             issue_id: issue_link.linear_issue_id,
             body:     CollavreLinear::CommentFormatter.outbound_body(comment)
