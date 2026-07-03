@@ -32,7 +32,10 @@ module CollavreLinear
         creative: @creative,
         account:  @account,
         linear_project_id: "proj-webhook",
-        team_id:           "team-webhook"
+        team_id:           "team-webhook",
+        # Linear owns the secret; a real link only verifies once the admin pastes
+        # it. Set it explicitly so signature-verification cases have a secret.
+        webhook_secret:    "test-webhook-secret"
       )
     end
 

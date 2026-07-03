@@ -17,10 +17,10 @@ module CollavreLinear
     LINEAR_TOKEN_ENDPOINT = "https://api.linear.app/oauth/token"
     # NOTE: `admin` is intentionally NOT requested. Linear rejects it for app
     # actors ("App users can't request admin scopes"), which is how we authorize
-    # (actor: "app"). `admin` is only needed to auto-create webhooks via the API;
-    # without it WebhookProvisioner.ensure_for cannot provision, so inbound sync
-    # is wired up MANUALLY instead — the integration modal shows a one-time
-    # webhook setup guide (URL + signing secret + events) after linking.
+    # (actor: "app"). `admin` is only needed to auto-create webhooks via the API,
+    # so inbound sync is wired up MANUALLY instead — the integration modal shows a
+    # one-time setup guide (URL + events) after linking, and the admin pastes back
+    # the signing secret Linear generates for the webhook.
     OAUTH_SCOPES          = "read,write,issues:create,comments:create"
 
     class Error < StandardError; end

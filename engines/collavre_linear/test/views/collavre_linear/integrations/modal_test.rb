@@ -74,7 +74,7 @@ module CollavreLinear
           account: account,
           linear_project_id: "proj-modal-1",
           team_id: "team-modal-1",
-          webhook_id: "wh-modal-1"
+          webhook_secret: "modal-secret"
         )
 
         html = render_modal(connected: true)
@@ -82,18 +82,16 @@ module CollavreLinear
         assert_includes html, I18n.t("collavre_linear.integration.unlink_button")
         assert_includes html, I18n.t("collavre_linear.integration.resync_button")
         assert_includes html, "proj-modal-1"
-        # Webhook is present, so the manual setup guide must NOT be shown.
-        refute_includes html, I18n.t("collavre_linear.integration.webhook_guide_title")
       end
 
-      test "shows the manual webhook setup guide (url + secret) when linked without a webhook" do
+      test "shows the manual webhook guide with a paste field (not the secret) when unset" do
         account = CollavreLinear::Account.create!(
           user: @user,
           linear_uid: "uid-guide-#{SecureRandom.hex(4)}",
           access_token: "tok-guide"
         )
-        # webhook_id blank → inbound not wired → guide must appear with the
-        # /linear/webhook URL and this link's signing secret.
+        # No secret yet → guide must show the /linear/webhook URL and a field to
+        # paste Linear's generated secret into (posting to the secret endpoint).
         link = CollavreLinear::ProjectLink.create!(
           creative: @creative.effective_origin,
           account: account,
@@ -105,7 +103,32 @@ module CollavreLinear
 
         assert_includes html, I18n.t("collavre_linear.integration.webhook_guide_title")
         assert_includes html, "/linear/webhook"
-        assert_includes html, link.webhook_secret
+        assert_includes html, "/linear/creatives/#{@creative.id}/integration/secret"
+        assert_match %r{<input[^>]*name="webhook_secret"}, html
+        assert_includes html, I18n.t("collavre_linear.integration.webhook_secret_unset")
+        # Sanity: nothing to leak because Linear owns the secret and none is set.
+        assert_nil link.webhook_secret
+      end
+
+      test "shows saved status and never renders the stored secret once pasted" do
+        account = CollavreLinear::Account.create!(
+          user: @user,
+          linear_uid: "uid-saved-#{SecureRandom.hex(4)}",
+          access_token: "tok-saved"
+        )
+        CollavreLinear::ProjectLink.create!(
+          creative: @creative.effective_origin,
+          account: account,
+          linear_project_id: "proj-saved-1",
+          team_id: "team-saved-1",
+          webhook_secret: "super-secret-value"
+        )
+
+        html = render_modal(connected: true)
+
+        assert_includes html, I18n.t("collavre_linear.integration.webhook_secret_saved")
+        # The signing secret is Linear's to display, never ours — must not echo back.
+        refute_includes html, "super-secret-value"
       end
 
       test "webhook guide uses defined design tokens so text is visible in dark mode" do

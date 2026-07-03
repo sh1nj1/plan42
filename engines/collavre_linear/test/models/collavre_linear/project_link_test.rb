@@ -22,29 +22,27 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
     )
   end
 
-  test "webhook_secret is auto-generated on validation" do
-    link = CollavreLinear::ProjectLink.new(
+  test "webhook_secret stays blank until pasted — we never mint our own" do
+    link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
       account: @account,
       linear_project_id: "proj-1",
       team_id: "team-1"
     )
+    # Linear owns the signing secret (it generates one per webhook), so a fresh
+    # link carries none until the admin pastes Linear's value.
     assert_nil link.webhook_secret
-    link.valid?
-    assert_not_nil link.webhook_secret
-    assert_match(/\A[0-9a-f]{40}\z/, link.webhook_secret)
   end
 
-  test "webhook_secret is not regenerated if already present" do
-    link = CollavreLinear::ProjectLink.new(
+  test "an explicitly provided webhook_secret is preserved" do
+    link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
       account: @account,
       linear_project_id: "proj-2",
       team_id: "team-2",
-      webhook_secret: "existing-secret"
+      webhook_secret: "linear-generated-secret"
     )
-    link.valid?
-    assert_equal "existing-secret", link.webhook_secret
+    assert_equal "linear-generated-secret", link.webhook_secret
   end
 
   test "sync_state defaults to synced" do
@@ -147,7 +145,8 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
       creative: @creative,
       account: @account,
       linear_project_id: "proj-enc",
-      team_id: "team-enc"
+      team_id: "team-enc",
+      webhook_secret: "plaintext-signing-secret"
     )
     raw = ActiveRecord::Base.connection.select_value(
       "SELECT webhook_secret FROM linear_project_links WHERE id = #{link.id}"
@@ -157,12 +156,17 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
       "the HMAC signing secret must not be persisted in plaintext"
   end
 
-  test "sibling ProjectLinks for a team share one secret even when encrypted" do
-    first = CollavreLinear::ProjectLink.create!(
+  test "a second project of a team adopts the team's pasted secret on create" do
+    # One Linear webhook per team = one secret, so a later project of the same
+    # team inherits the sibling's pasted value instead of asking the admin to
+    # paste it again. Adopt reads the DECRYPTED attribute (a raw ciphertext pick
+    # would double-encrypt into an HMAC mismatch).
+    CollavreLinear::ProjectLink.create!(
       creative: @creative,
       account: @account,
       linear_project_id: "proj-share-a",
-      team_id: "team-share"
+      team_id: "team-share",
+      webhook_secret: "team-signing-secret"
     )
     c2 = Collavre::Creative.create!(description: "<p>c2</p>", user: @user)
     second = CollavreLinear::ProjectLink.create!(
@@ -171,42 +175,21 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
       linear_project_id: "proj-share-b",
       team_id: "team-share"
     )
-    assert_equal first.webhook_secret, second.webhook_secret,
+    assert_equal "team-signing-secret", second.webhook_secret,
       "the manual single team webhook needs all links to verify with the same secret"
   end
 
-  test "before_create re-adopts a team secret that commits during the create race" do
-    # Concurrent same-team links: ensure_webhook_secret runs for both before either
-    # commits, so adopt misses and each generates a different secret -> split-brain
-    # that 401s the team webhook. Simulate the race window: adopt returns nil at
-    # validation (a fresh secret is generated) but the sibling's secret becomes
-    # visible before this row's INSERT, so before_create's locked re-adopt converges.
-    sibling = CollavreLinear::ProjectLink.create!(
+  test "a brand-new team's first link adopts nothing (stays blank)" do
+    link = CollavreLinear::ProjectLink.create!(
       creative: @creative,
       account: @account,
-      linear_project_id: "proj-race-a",
-      team_id: "team-race"
+      linear_project_id: "proj-fresh",
+      team_id: "team-fresh"
     )
-    c2 = Collavre::Creative.create!(description: "<p>c2</p>", user: @user)
-    link = CollavreLinear::ProjectLink.new(
-      creative: c2,
-      account: @account,
-      linear_project_id: "proj-race-b",
-      team_id: "team-race"
-    )
-
-    adopt_calls = 0
-    link.define_singleton_method(:adopt_team_webhook_secret) do
-      adopt_calls += 1
-      adopt_calls == 1 ? nil : sibling.webhook_secret
-    end
-    link.save!
-
-    assert_equal sibling.webhook_secret, link.reload.webhook_secret,
-      "the racing link must converge on the sibling's committed secret, not its own"
+    assert_nil link.webhook_secret
   end
 
-  test "rotate_webhook_secret! rolls the secret for the link and every team sibling" do
+  test "update_webhook_secret! stores the pasted secret on the link and every team sibling" do
     first = CollavreLinear::ProjectLink.create!(
       creative: @creative,
       account: @account,
@@ -220,22 +203,21 @@ class CollavreLinear::ProjectLinkTest < ActiveSupport::TestCase
       linear_project_id: "proj-rot-b",
       team_id: "team-rot"
     )
-    old_secret = first.webhook_secret
-    assert_equal old_secret, sibling.webhook_secret
+    assert_nil first.webhook_secret
+    assert_nil sibling.webhook_secret
 
-    new_secret = first.rotate_webhook_secret!
+    returned = first.update_webhook_secret!("pasted-linear-secret")
 
-    assert_not_equal old_secret, new_secret
-    assert_match(/\A[0-9a-f]{40}\z/, new_secret)
-    assert_equal new_secret, first.webhook_secret
-    assert_equal new_secret, sibling.reload.webhook_secret,
-      "the team shares one secret Linear signs with — siblings must roll together or 401"
+    assert_equal "pasted-linear-secret", returned
+    assert_equal "pasted-linear-secret", first.webhook_secret
+    assert_equal "pasted-linear-secret", sibling.reload.webhook_secret,
+      "the team shares one secret Linear signs with — siblings must match or 401"
 
     # update_column must still apply encryption; a raw write would leak plaintext.
     raw = ActiveRecord::Base.connection.select_value(
       "SELECT webhook_secret FROM linear_project_links WHERE id = #{first.id}"
     )
-    assert_not_equal new_secret, raw, "the rolled secret must remain encrypted at rest"
+    assert_not_equal "pasted-linear-secret", raw, "the stored secret must remain encrypted at rest"
   end
 
   test "belongs to creative and account" do

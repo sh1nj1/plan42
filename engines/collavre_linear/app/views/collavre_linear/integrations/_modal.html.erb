@@ -42,55 +42,60 @@
         </p>
 
         <%# --- Manual webhook setup guide ---
-            Shown only when inbound isn't wired yet (webhook_id blank). We no
-            longer request Linear's `admin` scope (app actors can't), so the
-            webhook can't be auto-provisioned; the user creates it once by hand. %>
-        <% if project_link.webhook_id.blank? %>
-          <%# Use defined semantic tokens (not phantom --color-*-secondary names,
-              whose light hex fallbacks forced a near-white box + invisible text
-              in dark mode). Explicit --text-primary guards inherited contrast. %>
-          <details class="linear-webhook-guide" open
-                   style="margin-bottom:1em;padding:0.75em;border:1px solid var(--border-color);border-radius:6px;background:var(--surface-secondary);color:var(--text-primary);">
-            <summary style="font-weight:600;cursor:pointer;"><%= t("collavre_linear.integration.webhook_guide_title") %></summary>
-            <p style="margin:0.5em 0;color:var(--text-muted);font-size:0.9em;">
-              <%= t("collavre_linear.integration.webhook_guide_intro") %>
-            </p>
-            <ol style="margin:0 0 0 1.2em;font-size:0.9em;line-height:1.6;">
-              <li>
-                <%= t("collavre_linear.integration.webhook_guide_open_settings_html",
-                      link: link_to("linear.app/settings/api", "https://linear.app/settings/api",
-                                    target: "_blank", rel: "noopener")) %>
-              </li>
-              <li>
-                <%= t("collavre_linear.integration.webhook_guide_url_label") %>
-                <br>
-                <code style="user-select:all;word-break:break-all;background:var(--color-code-bg);color:var(--color-code-text);padding:0.1em 0.3em;border-radius:3px;"><%= "#{request.base_url}/linear/webhook" %></code>
-              </li>
-              <li>
-                <%= t("collavre_linear.integration.webhook_guide_secret_label") %>
-                <br>
-                <code style="user-select:all;word-break:break-all;background:var(--color-code-bg);color:var(--color-code-text);padding:0.1em 0.3em;border-radius:3px;"><%= project_link.webhook_secret %></code>
-              </li>
-              <li>
-                <%= t("collavre_linear.integration.webhook_guide_events_label") %>
-                <strong>Issue, Project, Comment</strong>
-              </li>
-            </ol>
-
-            <%# Roll the signing secret (e.g. if it leaked). Rotates the stored
-                secret; the reloaded modal shows the new value to re-paste into
-                Linear's webhook config. %>
-            <%= form_with url: main_app.respond_to?(:linear_creative_integration_regenerate_secret_path) ?
-                               main_app.linear_creative_integration_regenerate_secret_path(creative_id: creative_id) :
-                               "/linear/creatives/#{creative_id}/integration/regenerate_secret",
-                          method: :post, local: false,
-                          data: { confirm: t("collavre_linear.integration.regenerate_secret_confirm") },
-                          html: { style: "margin-top:0.5em;" } do |f| %>
-              <%= f.submit t("collavre_linear.integration.regenerate_secret_button"),
-                           class: "btn btn-secondary btn-sm" %>
-            <% end %>
-          </details>
-        <% end %>
+            Linear GENERATES the signing secret when the webhook is created and
+            won't let us force it to a value we pick, and app actors can't request
+            the `admin` scope to auto-provision — so the admin creates the webhook
+            by hand, then pastes Linear's generated secret back into the form below.
+            Shown until that secret is stored (blank => inbound not yet wired). %>
+        <% secret_set = project_link.webhook_secret.present? %>
+        <%# Use defined semantic tokens (not phantom --color-*-secondary names,
+            whose light hex fallbacks forced a near-white box + invisible text
+            in dark mode). Explicit --text-primary guards inherited contrast. %>
+        <details class="linear-webhook-guide" <%= "open" unless secret_set %>
+                 style="margin-bottom:1em;padding:0.75em;border:1px solid var(--border-color);border-radius:6px;background:var(--surface-secondary);color:var(--text-primary);">
+          <summary style="font-weight:600;cursor:pointer;"><%= t("collavre_linear.integration.webhook_guide_title") %></summary>
+          <p style="margin:0.5em 0;color:var(--text-muted);font-size:0.9em;">
+            <%= t("collavre_linear.integration.webhook_guide_intro") %>
+          </p>
+          <ol style="margin:0 0 0 1.2em;font-size:0.9em;line-height:1.6;">
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_open_settings_html",
+                    link: link_to("linear.app/settings/api", "https://linear.app/settings/api",
+                                  target: "_blank", rel: "noopener")) %>
+            </li>
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_url_label") %>
+              <br>
+              <code style="user-select:all;word-break:break-all;background:var(--color-code-bg);color:var(--color-code-text);padding:0.1em 0.3em;border-radius:3px;"><%= "#{request.base_url}/linear/webhook" %></code>
+            </li>
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_events_label") %>
+              <strong>Issue, Project, Comment</strong>
+            </li>
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_secret_label") %>
+              <%# Paste Linear's generated secret; the controller stores it and
+                  propagates it to every sibling link of the team. We never render
+                  the stored secret back — it's Linear's to show, not ours. %>
+              <%= form_with url: main_app.respond_to?(:linear_creative_integration_secret_path) ?
+                                 main_app.linear_creative_integration_secret_path(creative_id: creative_id) :
+                                 "/linear/creatives/#{creative_id}/integration/secret",
+                            method: :post, local: false,
+                            html: { style: "margin-top:0.4em;display:flex;gap:0.4em;align-items:center;flex-wrap:wrap;" } do |f| %>
+                <%= f.password_field :webhook_secret, autocomplete: "off",
+                                     placeholder: t("collavre_linear.integration.webhook_secret_placeholder"),
+                                     "aria-label": t("collavre_linear.integration.webhook_secret_input_label"),
+                                     style: "flex:1;min-width:180px;padding:0.35em 0.5em;border:1px solid var(--color-border);border-radius:4px;" %>
+                <%= f.submit t("collavre_linear.integration.webhook_secret_save_button"),
+                             class: "btn btn-primary btn-sm" %>
+              <% end %>
+              <p style="margin:0.4em 0 0;font-size:0.85em;color:<%= secret_set ? "var(--color-success,#16a34a)" : "var(--text-muted)" %>;">
+                <%= secret_set ? t("collavre_linear.integration.webhook_secret_saved") :
+                                 t("collavre_linear.integration.webhook_secret_unset") %>
+              </p>
+            </li>
+          </ol>
+        </details>
 
         <%# Resync form %>
         <%= form_with url: main_app.respond_to?(:linear_creative_integration_resync_path) ?

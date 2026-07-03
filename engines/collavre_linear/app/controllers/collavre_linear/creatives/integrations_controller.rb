@@ -9,7 +9,7 @@ module CollavreLinear
       before_action :set_creative
       before_action :set_origin
       before_action :ensure_read_permission
-      before_action :ensure_admin_permission, only: %i[create destroy resync regenerate_secret options]
+      before_action :ensure_admin_permission, only: %i[create destroy resync update_secret options]
 
       # POST /linear/creatives/:creative_id/integration
       #
@@ -88,41 +88,25 @@ module CollavreLinear
           return
         end
 
-        provision_result = CollavreLinear::WebhookProvisioner.ensure_for(
-          project_link: link,
-          webhook_url:  linear_webhook_url
-        )
-
         # Existing descendants never fire after-commit callbacks during linking,
         # so enqueue an outbound export for the whole subtree — otherwise a
         # populated tree would only create the root Linear issue. Idempotent:
         # the exporter skips unchanged content via its content hash.
         enqueue_subtree_sync
 
-        # Webhook provisioning failure must NOT fail the request — the link and
-        # outbound sync still work — but it MUST be surfaced: without a webhook,
-        # inbound sync is silently disabled (usually a missing Linear admin
-        # permission on the OAuth grant).
-        webhook_provisioned = provision_result != :failed
-        response_body = {
-          success:             true,
-          project_link:        serialize_link(link),
-          webhook_provisioned: webhook_provisioned
-        }
-        unless webhook_provisioned
-          response_body[:warning] = I18n.t("collavre_linear.integration.webhook_provision_failed")
-        end
-
-        render json: response_body
+        # Inbound sync needs a webhook Linear can't auto-provision (app actors
+        # lack the admin scope), so the admin sets it up by hand and pastes the
+        # secret Linear generates via update_secret. The modal shows that guide.
+        render json: { success: true, project_link: serialize_link(link) }
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
       end
 
       # DELETE /linear/creatives/:creative_id/integration
       #
-      # Unlinks the Creative from its Linear project and deregisters the
-      # remote webhook at Linear (best-effort; unlink succeeds even if the
-      # API call fails).
+      # Unlinks the Creative from its Linear project. The webhook is set up by
+      # hand in Linear (we never learn its id), so there is nothing to
+      # deregister here — the admin removes it in Linear's settings if desired.
       def destroy
         account = Current.user.linear_account
         unless account
@@ -138,7 +122,6 @@ module CollavreLinear
           return
         end
 
-        CollavreLinear::WebhookProvisioner.deregister(project_link: link)
         link.destroy!
 
         render json: { success: true }
@@ -170,13 +153,13 @@ module CollavreLinear
         render json: { success: true, message: I18n.t("collavre_linear.integration.resync_started") }
       end
 
-      # POST /linear/creatives/:creative_id/integration/regenerate_secret
+      # POST /linear/creatives/:creative_id/integration/secret
       #
-      # Roll the team's shared webhook signing secret. The webhook is registered
-      # by hand (the OAuth grant has no admin scope to auto-provision), so this
-      # only rotates the stored secret — the reloaded modal shows the new value
-      # for the user to re-paste into Linear's webhook config.
-      def regenerate_secret
+      # Store the signing secret the admin copied from Linear's webhook settings.
+      # Linear owns the secret (it generates one per webhook and won't let us pick
+      # it), so the admin pastes it here and we propagate it to the team's sibling
+      # links — the one value all of the team's deliveries verify against.
+      def update_secret
         account = Current.user.linear_account
         unless account
           render json: { error: I18n.t("collavre_linear.errors.not_connected") },
@@ -191,7 +174,14 @@ module CollavreLinear
           return
         end
 
-        link.rotate_webhook_secret!
+        secret = params[:webhook_secret].to_s.strip
+        if secret.blank?
+          render json: { error: I18n.t("collavre_linear.errors.missing_secret") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        link.update_webhook_secret!(secret)
 
         render json: { success: true }
       end

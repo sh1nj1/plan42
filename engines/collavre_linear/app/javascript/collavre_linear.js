@@ -32,11 +32,11 @@ if (!linearIntegrationInitialized) {
     }
   });
 
-  // Submit a modal form (link / resync / unlink) to its JSON endpoint and
-  // reload on success. Honors data-confirm and surfaces server errors.
+  // Submit a modal form (link / resync / unlink / paste-secret) to its JSON
+  // endpoint and reload on success. Honors data-confirm and surfaces errors.
   async function submitLinearModalForm(form, fallbackError) {
     const confirmMsg = form.dataset.confirm;
-    // Only the consequential forms (regenerate-secret, unlink) carry data-confirm.
+    // Only the destructive unlink form carries data-confirm.
     if (confirmMsg && !(await confirmDialog(confirmMsg, { danger: true }))) return;
 
     const genericError = fallbackError || 'Linear request failed.';

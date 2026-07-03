@@ -11,79 +11,54 @@ module CollavreLinear
     # cascade so link.destroy! does not 500 once issues have synced.
     has_many :issue_links, class_name: "CollavreLinear::IssueLink", dependent: :destroy
 
-    # The HMAC secret Linear signs webhook deliveries with — encrypted at rest so
-    # a DB/backup leak can't be used to forge webhooks (mirrors Account tokens).
+    # The HMAC secret Linear signs webhook deliveries with. Linear GENERATES this
+    # when the webhook is created — it can't be forced to a value we pick — so the
+    # admin pastes Linear's secret in (we never mint our own; app actors also lack
+    # the admin scope to auto-provision). Blank until pasted, which is fine: inbound
+    # deliveries just 401 until then (WebhooksController). Encrypted at rest so a
+    # DB/backup leak can't forge webhooks (mirrors Account tokens).
     encrypts :webhook_secret, deterministic: false
 
     enum :sync_state, { synced: 0, dirty: 1, syncing: 2, conflict: 3 }, prefix: false
 
     validates :linear_project_id, presence: true
     validates :team_id, presence: true
-    validates :webhook_secret, presence: true
 
-    before_validation :ensure_webhook_secret
-    before_save :ensure_webhook_secret
-    before_create :converge_team_webhook_secret
+    # A team's single Linear webhook signs every delivery with one secret, so a
+    # second project of an already-configured team inherits that secret rather
+    # than asking the admin to paste it again (no-op for a brand-new team).
+    before_create :adopt_team_webhook_secret
 
     scope :auto_syncable, -> { where(sync_state: %i[synced dirty]) }
 
-    # Roll the team's shared HMAC secret and return the new value. Linear signs
-    # every delivery for a team with the one secret its webhook was registered
-    # with, so all sibling ProjectLinks must roll together or a sibling 401s.
-    # The webhook is set up by hand (no admin scope to auto-provision), so this
-    # only rotates the stored secret — the user re-pastes it into Linear's
-    # webhook config. update_column applies encryption (a raw write would leak
-    # plaintext); assign self last so its in-memory attribute reflects the roll.
-    def rotate_webhook_secret!
-      new_secret = SecureRandom.hex(20)
+    # Store the signing secret the admin copied from Linear's webhook settings,
+    # propagating it to every sibling ProjectLink of the team. Linear signs all of
+    # a team's deliveries with the one secret its single webhook carries, and
+    # find_project_link resolves a delivery to an arbitrary team sibling, so all
+    # must hold the same value or a sibling 401s. update_column applies encryption
+    # (a raw write would leak plaintext); assign self last so its in-memory
+    # attribute reflects the pasted value.
+    def update_webhook_secret!(secret)
       self.class.where(team_id: team_id).where.not(id: id).find_each do |sibling|
-        sibling.update_column(:webhook_secret, new_secret)
+        sibling.update_column(:webhook_secret, secret)
       end
-      update_column(:webhook_secret, new_secret)
-      new_secret
+      update_column(:webhook_secret, secret)
+      secret
     end
 
     private
 
-    # Linear signs every delivery for a team with ONE secret, and the manual
-    # (no-admin) setup registers a single team webhook. So all ProjectLinks for
-    # the same team must share one secret — otherwise a sibling verifies the
-    # team webhook with a secret Linear never uses and inbound 401s. Adopt an
-    # existing team secret (even from a sibling with no stored webhook_id, which
-    # is always the case under manual setup); only generate for a brand-new team.
-    def ensure_webhook_secret
-      return if webhook_secret.present?
-
-      self.webhook_secret = adopt_team_webhook_secret || SecureRandom.hex(20)
-    end
-
-    # Concurrency guard for the "one secret per team" invariant. When two projects
-    # from the SAME team are linked at the same instant, ensure_webhook_secret runs
-    # for both before either row commits, so adopt finds no sibling and each
-    # generates a DIFFERENT secret. find_project_link then resolves the team to one
-    # arbitrary sibling, so a manual Linear webhook signed with the other row's
-    # secret 401s every delivery. Serialize on the shared account row (siblings of a
-    # team share one account) and re-adopt inside the lock: the second creator
-    # blocks until the first commits, then converges on its secret. Held until the
-    # INSERT commits, so this runs in before_create (validations run pre-transaction).
-    def converge_team_webhook_secret
-      return unless account
-
-      account.with_lock do
-        sibling_secret = adopt_team_webhook_secret
-        self.webhook_secret = sibling_secret if sibling_secret.present?
-      end
-    end
-
-    # webhook_secret is encrypted (non-deterministic), so a raw column pick would
-    # return ciphertext and re-encrypting it double-wraps the value → HMAC mismatch.
-    # Load sibling ProjectLinks for the team and read the DECRYPTED attribute; any
-    # sibling secret is valid since a team shares one.
+    # Inherit an existing team sibling's pasted secret so the admin configures one
+    # webhook per team, not per project. webhook_secret is encrypted
+    # (non-deterministic), so a raw column pick would return ciphertext that
+    # re-encrypts into a double-wrapped value → HMAC mismatch; read the DECRYPTED
+    # attribute off loaded siblings instead. Any sibling secret is valid since a
+    # team shares one. Skips when already set or the team has no secret yet.
     def adopt_team_webhook_secret
-      return nil if team_id.blank?
+      return if webhook_secret.present? || team_id.blank?
 
-      self.class.where(team_id: team_id).where.not(id: id)
-          .filter_map(&:webhook_secret).find(&:present?)
+      self.webhook_secret = self.class.where(team_id: team_id).where.not(id: id)
+                                .filter_map(&:webhook_secret).find(&:present?)
     end
   end
 end

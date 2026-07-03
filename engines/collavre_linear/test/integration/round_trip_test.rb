@@ -80,7 +80,10 @@ module CollavreLinear
         creative: @root_creative,
         account:  @account,
         linear_project_id: "proj-rt",
-        team_id:           "team-rt"
+        team_id:           "team-rt",
+        # Linear owns the secret; set it explicitly so inbound signature
+        # verification has a stored value to check against.
+        webhook_secret:    "test-rt-secret"
       )
     end
 

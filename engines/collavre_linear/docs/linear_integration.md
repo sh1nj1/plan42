@@ -69,10 +69,11 @@ Defined in `env.template` / `.kamal/secrets` / `config/deploy.yml`:
 When `Collavre::IntegrationSettings::Resolver` defines `linear_api_endpoint`,
 that takes precedence over the ENV value.
 
-The webhook signing secret is **not** an env/admin setting: it is generated per
-`ProjectLink` when a Creative is linked (shared across a team's links) and can be
-rolled from the modal's **Regenerate secret** button. Inbound deliveries verify
-only against that stored secret — there is no fallback.
+The webhook signing secret is **not** an env/admin setting, and we do **not**
+mint our own: Linear generates it when the webhook is created, so the admin
+pastes it into the modal, which stores it per `ProjectLink` (shared across a
+team's links). Inbound deliveries verify only against that stored secret — there
+is no fallback.
 
 ### 3. Webhook (manual, one-time)
 
@@ -82,9 +83,10 @@ one-time setup guide. A Linear workspace admin creates the webhook by hand:
 
 1. Open **linear.app/settings/api → Webhooks → New webhook**.
 2. **URL**: `https://<host>/linear/webhook`.
-3. **Signing secret**: the per-`ProjectLink` secret shown in the modal (the only
-   secret inbound verification accepts; use **Regenerate secret** to roll it).
-4. **Events**: `Issue`, `Project`, `Comment` (`WebhookProvisioner::RESOURCE_TYPES`).
+3. **Events**: `Issue`, `Project`, `Comment`.
+4. **Signing secret**: Linear generates and displays one for the webhook. Copy
+   it and paste it into the modal's secret field — that stored value is the only
+   secret inbound verification accepts. Paste a new value to roll it.
 
 Webhook mechanics:
 
