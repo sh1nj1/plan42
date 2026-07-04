@@ -5,6 +5,26 @@ module Collavre
   class Creative < ApplicationRecord
     self.table_name = "creatives"
 
+    # ---------------------------------------------------------------------------
+    # Reserved metadata key registry — engines register their own namespaces so
+    # `update_metadata` preserves them without core naming vendor-specific keys.
+    # ---------------------------------------------------------------------------
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor].freeze
+
+    class << self
+      def registered_reserved_metadata_keys
+        @registered_reserved_metadata_keys ||= []
+      end
+
+      def register_reserved_metadata_key(key)
+        registered_reserved_metadata_keys << key.to_s unless registered_reserved_metadata_keys.include?(key.to_s)
+      end
+
+      def reserved_metadata_keys
+        (BUILTIN_RESERVED_METADATA_KEYS + registered_reserved_metadata_keys).freeze
+      end
+    end
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "creatives/creative"
