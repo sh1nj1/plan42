@@ -191,6 +191,26 @@ module CollavreLinear
       }
     GQL
 
+    # List workflow states with their owning team id and type so the link modal
+    # can offer a "done state" combobox scoped to the chosen team. `type` is
+    # Linear's state category (triage/backlog/unstarted/started/completed/
+    # canceled) — the picker defaults to the team's "completed" state.
+    WORKFLOW_STATES = <<~GQL.freeze
+      query WorkflowStates {
+        workflowStates(first: 250) {
+          nodes {
+            id
+            name
+            type
+            position
+            team {
+              id
+            }
+          }
+        }
+      }
+    GQL
+
     def initialize(account)
       @account = account
       @endpoint = resolve_endpoint
@@ -311,6 +331,24 @@ module CollavreLinear
           id:       n["id"],
           name:     n["name"],
           team_ids: (n.dig("teams", "nodes") || []).map { |t| t["id"] }
+        }
+      end
+    end
+
+    # List workflow states for the "done state" picker, each with its owning
+    # team id and category type so the UI can scope states to the selected team
+    # and default to the completed one.
+    # @return [Array<Hash>] each with :id, :name, :type, :position, :team_id
+    def list_workflow_states
+      data  = post!(WORKFLOW_STATES, {})
+      nodes = data.dig("workflowStates", "nodes") || []
+      nodes.map do |n|
+        {
+          id:       n["id"],
+          name:     n["name"],
+          type:     n["type"],
+          position: n["position"],
+          team_id:  n.dig("team", "id")
         }
       end
     end

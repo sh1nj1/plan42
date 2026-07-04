@@ -64,6 +64,36 @@ module CollavreLinear
         assert_not_requested :post, LINEAR_GRAPHQL_ENDPOINT, body: /webhookCreate/
       end
 
+      test "create stores the selected done_state_id on the project link" do
+        sign_in_as(@user)
+
+        post "/linear/creatives/#{@creative.id}/integration",
+             params: { team_id: "team-done", linear_project_id: "proj-done",
+                       done_state_id: "state-completed" },
+             as: :json
+
+        assert_response :success
+        body = JSON.parse(response.body)
+        assert_equal "state-completed", body["project_link"]["done_state_id"]
+
+        link = CollavreLinear::ProjectLink.find_by(account: @account, linear_project_id: "proj-done")
+        assert_equal "state-completed", link.done_state_id
+      end
+
+      test "create leaves done_state_id nil when the picker is blank" do
+        sign_in_as(@user)
+
+        post "/linear/creatives/#{@creative.id}/integration",
+             params: { team_id: "team-nodone", linear_project_id: "proj-nodone",
+                       done_state_id: "" },
+             as: :json
+
+        assert_response :success
+        link = CollavreLinear::ProjectLink.find_by(account: @account, linear_project_id: "proj-nodone")
+        assert_nil link.done_state_id,
+          "a blank done-state selection must store nil, not an empty string"
+      end
+
       test "create rejects linking a descendant when an ancestor is already linked" do
         sign_in_as(@user)
 
@@ -577,6 +607,15 @@ module CollavreLinear
             body: { data: { projects: { nodes: [ { id: "p1", name: "Roadmap", teams: { nodes: [ { id: "t1" } ] } } ] } } }.to_json,
             headers: { "Content-Type" => "application/json" }
           )
+        stub_request(:post, LINEAR_GRAPHQL_ENDPOINT)
+          .with(body: /workflowStates/)
+          .to_return(
+            status: 200,
+            body: { data: { workflowStates: { nodes: [
+              { id: "s1", name: "Completed", type: "completed", position: 3, team: { id: "t1" } }
+            ] } } }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
 
         get "/linear/creatives/#{@creative.id}/integration/options", as: :json
 
@@ -585,6 +624,9 @@ module CollavreLinear
         assert_equal "t1", body["teams"].first["id"]
         assert_equal "Roadmap", body["projects"].first["name"]
         assert_equal [ "t1" ], body["projects"].first["team_ids"]
+        assert_equal "s1", body["states"].first["id"]
+        assert_equal "completed", body["states"].first["type"]
+        assert_equal "t1", body["states"].first["team_id"]
       end
 
       test "options surfaces a bad_gateway when Linear errors" do

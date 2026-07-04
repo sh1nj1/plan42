@@ -52,7 +52,45 @@ module CollavreLinear
           data:        creative.data
         )
       )
+      # Fold the completion→state override into the hash so inbound and outbound
+      # agree: after an inbound apply advances content_hash via this method, a
+      # later outbound sync of a completed leaf must see the SAME state_id it
+      # would push. Resolve the governing ProjectLink the same way sync! does.
+      apply_completion!(attrs, creative, resolve_project_link_for(creative))
       hash_attrs(attrs, parent_linear_issue_id_for(creative))
+    end
+
+    # Walk self-and-ancestors (nearest first) for the governing ProjectLink.
+    # Class-level twin of the instance #resolve_project_link so content_hash_for
+    # can apply the same completion override.
+    def self.resolve_project_link_for(creative)
+      creative.self_and_ancestors.each do |ancestor|
+        link = CollavreLinear::ProjectLink.find_by(creative_id: ancestor.id)
+        return link if link
+      end
+      nil
+    end
+
+    # Completion mapping (Collavre → Linear): a LEAF creative at 100% progress
+    # exports with its project's configured "done" workflow state. Mutates and
+    # returns `attrs`.
+    #
+    # Guards, each a deliberate no-op:
+    #   * no project_link / no done_state_id — completion mapping not configured.
+    #   * creative has active children       — only leaves carry independent
+    #     progress (a parent's progress is a rollup average), so only leaves drive
+    #     the done state; a parent issue's state follows from its children.
+    #   * progress < 1.0                     — only 100% maps to done. We do NOT
+    #     move an issue OUT of done here: the reverse (un-done) target state is
+    #     ambiguous and out of scope, so an incomplete leaf keeps echoing its last
+    #     known Linear state (from data["linear"]) unchanged.
+    def self.apply_completion!(attrs, creative, project_link)
+      done_state_id = project_link&.done_state_id
+      return attrs if done_state_id.blank?
+      return attrs unless creative.children.active.empty?
+
+      attrs[:state_id] = done_state_id if creative.progress.to_f >= 1.0
+      attrs
     end
 
     # Resolve the parent Creative's linked linear_issue_id (or nil when the
@@ -87,6 +125,8 @@ module CollavreLinear
       account   = project_link.account
       client    = Client.new(account)
       attrs     = FieldMapper.creative_to_issue_attrs(adapt(@creative))
+      # Completed leaf → push the project's "done" state (mirrors content_hash_for).
+      self.class.apply_completion!(attrs, @creative, project_link)
       parent_id = parent_linear_issue_id
       hash      = compute_content_hash(attrs, parent_id)
 

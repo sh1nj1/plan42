@@ -1344,5 +1344,172 @@ module CollavreLinear
       assert_nil CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-projectless"),
         "a projectless team issue must not be adopted into the linked project's subtree"
     end
+
+    # -- Completion mapping (Linear done state → leaf 100%) --------------------
+
+    test "update to the done state marks the leaf creative 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      creative, _link = linked_child(linear_issue_id: "iss-done")
+      assert_equal 0.0, creative.progress
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-done",
+          "title"     => "Original title",
+          "state"     => { "id" => "state-done", "type" => "completed" },
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal 1.0, creative.reload.progress,
+        "reaching the configured done state must mark the leaf 100%"
+    end
+
+    test "update OUT of the done state un-completes a leaf that was 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      creative, _link = linked_child(linear_issue_id: "iss-reopen")
+      creative.update_column(:progress, 1.0)
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-reopen",
+          "title"     => "Original title",
+          "state"     => { "id" => "state-inprogress", "type" => "started" },
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "state" => { "id" => "state-done" } }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal 0.0, creative.reload.progress,
+        "leaving the done state after being complete must un-complete the leaf"
+    end
+
+    test "update to a non-done state PRESERVES sub-100% partial progress" do
+      @project_link.update!(done_state_id: "state-done")
+      creative, _link = linked_child(linear_issue_id: "iss-partial")
+      creative.update_column(:progress, 0.5)
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-partial",
+          "title"     => "Original title",
+          "state"     => { "id" => "state-inprogress", "type" => "started" },
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_in_delta 0.5, creative.reload.progress, 0.0001,
+        "a non-done state must not clobber partial Collavre progress (binary mapping)"
+    end
+
+    test "a title-only update does NOT touch leaf progress even if the issue is done" do
+      @project_link.update!(done_state_id: "state-done")
+      creative, _link = linked_child(linear_issue_id: "iss-title-only")
+      creative.update_column(:progress, 0.5)
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-title-only",
+          "title"     => "New title",
+          "state"     => { "id" => "state-done", "type" => "completed" },
+          "updatedAt" => Time.current.iso8601
+        },
+        # state is NOT in updatedFrom → the state field is not being applied.
+        "updatedFrom" => { "title" => "Original title" }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_in_delta 0.5, creative.reload.progress, 0.0001,
+        "progress must only reconcile when the state field is part of the update"
+    end
+
+    test "inbound done state does NOT force progress on a NON-leaf creative" do
+      @project_link.update!(done_state_id: "state-done")
+      creative, _link = linked_child(linear_issue_id: "iss-parent-done")
+      # Give it a child so it is no longer a leaf; its progress rolls up to 0.
+      grandchild = Collavre::Creative.new(
+        description: "<p>Grandchild</p>", user: @user, parent: creative
+      )
+      grandchild.skip_linear_sync = true
+      grandchild.save!
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-parent-done",
+          "title"     => "Original title",
+          "state"     => { "id" => "state-done", "type" => "completed" },
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_not_equal 1.0, creative.reload.progress,
+        "only leaves map to 100%; a parent's progress stays a rollup of its children"
+    end
+
+    test "completion mapping is off when the project link has no done_state_id" do
+      creative, _link = linked_child(linear_issue_id: "iss-nomap") # done_state_id nil
+
+      payload = {
+        "action" => "update",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-nomap",
+          "title"     => "Original title",
+          "state"     => { "id" => "state-anything", "type" => "completed" },
+          "updatedAt" => Time.current.iso8601
+        },
+        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      assert_equal 0.0, creative.reload.progress,
+        "no done state configured → completion mapping stays off"
+    end
+
+    test "create of an already-done issue marks the new leaf 100%" do
+      @project_link.update!(done_state_id: "state-done")
+
+      payload = {
+        "action" => "create",
+        "type"   => "Issue",
+        "data"   => {
+          "id"        => "iss-create-done",
+          "title"     => "Born done",
+          "projectId" => "proj-inb",
+          "state"     => { "id" => "state-done", "type" => "completed" },
+          "updatedAt" => Time.current.iso8601
+        }
+      }
+
+      CollavreLinear::InboundApplier.new(payload).apply!
+
+      link = CollavreLinear::IssueLink.find_by(linear_issue_id: "iss-create-done")
+      assert_not_nil link
+      assert_equal 1.0, link.creative.progress,
+        "an imported issue already in the done state must be created at 100%"
+    end
   end
 end

@@ -681,6 +681,83 @@ module CollavreLinear
     end
 
     # ---------------------------------------------------------------------------
+    # Completion mapping (Collavre 100% → Linear done state)
+    # ---------------------------------------------------------------------------
+
+    test "sync! pushes the project's done_state_id as state_id for a leaf at 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      # Leaf (no children) at 100%. update_column: set the raw progress without
+      # tripping the parent rollup or the observer.
+      @child_creative.update_column(:progress, 1.0)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_equal "state-done", call[:state_id],
+        "a completed leaf must export with the configured done workflow state"
+    end
+
+    test "sync! does NOT set a done state_id for a leaf below 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      @child_creative.update_column(:progress, 0.5)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_nil call[:state_id],
+        "an incomplete leaf must not be forced into the done state"
+    end
+
+    test "sync! does NOT set a done state_id for a NON-leaf creative even at 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      # Give @child_creative a child so it is no longer a leaf. Its own progress
+      # would be a rollup; force it to 1.0 to prove leaf-ness (not the value) gates.
+      grandchild = Collavre::Creative.new(
+        description: "<p>Grandchild</p>", user: @user, parent: @child_creative
+      )
+      grandchild.skip_linear_sync = true
+      grandchild.save!
+      @child_creative.update_column(:progress, 1.0)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_nil call[:state_id],
+        "only leaves drive the done state; a parent's rolled-up 100% must not"
+    end
+
+    test "sync! ignores completion when the project link has no done_state_id" do
+      @child_creative.update_column(:progress, 1.0) # done_state_id nil (default)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_nil call[:state_id],
+        "completion mapping is off until a done state is configured"
+    end
+
+    test "content_hash_for folds in the completion state so completing a leaf changes the hash" do
+      @project_link.update!(done_state_id: "state-done")
+
+      @child_creative.update_column(:progress, 0.0)
+      incomplete_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative.reload)
+
+      @child_creative.update_column(:progress, 1.0)
+      complete_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative.reload)
+
+      assert_not_equal incomplete_hash, complete_hash,
+        "the content hash must change when a leaf reaches 100% so the exporter pushes"
+    end
+
+    # ---------------------------------------------------------------------------
     # EchoGuard stamp
     # ---------------------------------------------------------------------------
 

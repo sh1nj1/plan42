@@ -97,6 +97,10 @@ module CollavreLinear
         creative.skip_linear_sync = true
         merge_linear_data!(creative, attrs[:data_linear])
         creative.sequence = attrs[:sequence]
+        # Completion mapping (Linear → Collavre): a freshly-imported issue that is
+        # already in the project's "done" state marks the (new, always-leaf)
+        # creative 100%.
+        reconcile_leaf_progress!(creative, project_link)
         creative.save!
 
         IssueLink.create!(
@@ -207,6 +211,13 @@ module CollavreLinear
           creative.sequence = attrs[:sequence]
         end
         merge_linear_data!(creative, attrs[:data_linear])
+
+        # Completion mapping (Linear → Collavre): only reconcile when the state
+        # field is actually part of this update (or updatedFrom is absent). A
+        # title-only edit must not touch the leaf's progress.
+        if changed.nil? || changed.include?("state")
+          reconcile_leaf_progress!(creative, link.project_link)
+        end
 
         # Reparent: when the payload's Linear parent differs from what the link
         # last recorded, move the Creative under the corresponding linked parent
@@ -546,6 +557,37 @@ module CollavreLinear
     # intentionally ignored for now (product decision).
     def description_for(attrs)
       attrs[:title].presence || ""
+    end
+
+    # Completion mapping (Linear → Collavre). Reflect whether the inbound issue
+    # is in the project's configured "done" workflow state onto the LEAF
+    # creative's progress. Sets progress in memory; the caller's save! persists
+    # it under skip_linear_sync (no echo back to Linear).
+    #
+    # Guards (deliberate no-ops):
+    #   * done_state_id blank         — completion mapping not configured.
+    #   * origin-linked creative      — its progress delegates to the origin and
+    #     a direct write is validation-forbidden; leave it alone.
+    #   * creative has active children — only leaves carry independent progress
+    #     (a parent's is a rollup average driven by its children).
+    #
+    # Transitions:
+    #   * state == done_state_id            → progress 1.0 (100%).
+    #   * state != done_state_id AND was 1.0 → progress 0.0 (un-complete). A
+    #     sub-100% local progress is PRESERVED — the done<->100% mapping is
+    #     binary, so a non-done state must not clobber partial Collavre progress.
+    def reconcile_leaf_progress!(creative, project_link)
+      done_state_id = project_link&.done_state_id
+      return if done_state_id.blank?
+      return if creative.respond_to?(:origin_id) && creative.origin_id.present?
+      return unless creative.children.active.empty?
+
+      state_id = @data.dig("state", "id")
+      if state_id.present? && state_id == done_state_id
+        creative.progress = 1.0 if creative.progress.to_f < 1.0
+      elsif creative.progress.to_f >= 1.0
+        creative.progress = 0.0
+      end
     end
 
     def merge_linear_data!(creative, data_linear)
