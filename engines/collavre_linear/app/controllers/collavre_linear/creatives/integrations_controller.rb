@@ -32,57 +32,74 @@ module CollavreLinear
           return
         end
 
-        # Reject linking inside/around an already-linked subtree. A second
-        # ProjectLink on an ancestor/descendant would sync against the wrong
-        # project: IssueLink is unique per Creative and the exporter resolves
-        # both ProjectLink and IssueLink per creative WITHOUT account scope, so
-        # the new project would silently update the old project's issues. The
-        # check must span ALL accounts — a second admin with their own Linear
-        # account could otherwise hijack the subtree. Re-linking @origin to the
-        # SAME project stays idempotent (find_or_initialize_by below).
-        overlapping_ids =
-          (@origin.self_and_ancestors.ids + @origin.self_and_descendants.ids).uniq - [ @origin.id ]
-        overlapping = overlapping_ids.any? &&
-          CollavreLinear::ProjectLink.where(creative_id: overlapping_ids).exists?
-
-        # @origin may only carry the idempotent re-link target (same account AND
-        # same project). Any other existing link on @origin conflicts: a
-        # different project (the exporter would keep updating the old issue), or
-        # the same subtree claimed by another account. The ancestor/descendant
-        # check above excludes @origin, so guard @origin explicitly here.
-        origin_conflict = @origin.linear_project_links
-                                 .where.not(account: account, linear_project_id: linear_project_id)
-                                 .exists?
-
-        # One Linear project maps to exactly one Collavre root. Inbound webhooks
-        # resolve the project with an UNSCOPED find_by(linear_project_id:), so a
-        # second ProjectLink for the same project on a DISJOINT creative (not an
-        # ancestor/descendant, so the overlap check above misses it) would make
-        # imports/updates land on whichever row the DB returns while both roots
-        # export into it. Reject globally; re-linking @origin stays idempotent.
-        project_taken = CollavreLinear::ProjectLink
-                          .where(linear_project_id: linear_project_id)
-                          .where.not(creative_id: @origin.id)
-                          .exists?
-
-        if overlapping || origin_conflict || project_taken
-          render json: { error: I18n.t("collavre_linear.errors.overlapping_link") },
-                 status: :unprocessable_entity
-          return
-        end
-
-        link = @origin.linear_project_links.find_or_initialize_by(
-          account:           account,
-          linear_project_id: linear_project_id
-        )
-        link.team_id = team_id
+        # Serialize concurrent link attempts within the same tree. The overlap
+        # checks below are check-then-save with NO DB constraint spanning
+        # ancestors/descendants, so two requests linking a parent and a child
+        # Creative could both pass the overlap check and double-link the subtree.
+        # Every Creative in a tree shares one root, so a row lock on that root
+        # forces overlapping attempts to run one at a time; the loser then sees
+        # the winner's ProjectLink and is rejected. (project_taken's CROSS-tree
+        # race stays covered by the linear_project_id unique index +
+        # RecordNotUnique backstop below, since disjoint trees have distinct roots
+        # and would not serialize on this lock.)
+        overlapping_link = false
+        link = nil
         begin
-          link.save!
+          @origin.root.with_lock do
+            # Reject linking inside/around an already-linked subtree. A second
+            # ProjectLink on an ancestor/descendant would sync against the wrong
+            # project: IssueLink is unique per Creative and the exporter resolves
+            # both ProjectLink and IssueLink per creative WITHOUT account scope, so
+            # the new project would silently update the old project's issues. The
+            # check must span ALL accounts — a second admin with their own Linear
+            # account could otherwise hijack the subtree. Re-linking @origin to the
+            # SAME project stays idempotent (find_or_initialize_by below).
+            overlapping_ids =
+              (@origin.self_and_ancestors.ids + @origin.self_and_descendants.ids).uniq - [ @origin.id ]
+            overlapping = overlapping_ids.any? &&
+              CollavreLinear::ProjectLink.where(creative_id: overlapping_ids).exists?
+
+            # @origin may only carry the idempotent re-link target (same account
+            # AND same project). Any other existing link on @origin conflicts: a
+            # different project (the exporter would keep updating the old issue),
+            # or the same subtree claimed by another account. The ancestor/
+            # descendant check above excludes @origin, so guard @origin here.
+            origin_conflict = @origin.linear_project_links
+                                     .where.not(account: account, linear_project_id: linear_project_id)
+                                     .exists?
+
+            # One Linear project maps to exactly one Collavre root. Inbound
+            # webhooks resolve the project with an UNSCOPED
+            # find_by(linear_project_id:), so a second ProjectLink for the same
+            # project on a DISJOINT creative (not an ancestor/descendant, so the
+            # overlap check above misses it) would make imports/updates land on
+            # whichever row the DB returns while both roots export into it. Reject
+            # globally; re-linking @origin stays idempotent.
+            project_taken = CollavreLinear::ProjectLink
+                              .where(linear_project_id: linear_project_id)
+                              .where.not(creative_id: @origin.id)
+                              .exists?
+
+            if overlapping || origin_conflict || project_taken
+              overlapping_link = true
+            else
+              link = @origin.linear_project_links.find_or_initialize_by(
+                account:           account,
+                linear_project_id: linear_project_id
+              )
+              link.team_id = team_id
+              link.save!
+            end
+          end
         rescue ActiveRecord::RecordNotUnique
           # Race-safe backstop for the project_taken check above: the check is
-          # check-then-save, so two concurrent requests can both pass it; the
-          # linear_project_id unique index rejects the loser's insert. Surface
-          # the same conflict instead of a 500.
+          # check-then-save, so two DISJOINT-tree requests (which do not share the
+          # root lock) can both pass it; the linear_project_id unique index rejects
+          # the loser's insert. Surface the same conflict instead of a 500.
+          overlapping_link = true
+        end
+
+        if overlapping_link
           render json: { error: I18n.t("collavre_linear.errors.overlapping_link") },
                  status: :unprocessable_entity
           return
