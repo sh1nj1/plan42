@@ -1,0 +1,309 @@
+# frozen_string_literal: true
+
+# =============================================================================
+# db:sqlite_to_postgres
+# =============================================================================
+#
+# One-shot data migration from a SQLite primary database into the PostgreSQL
+# database configured for a target Rails environment.
+#
+# Design ("simplest and error-free"):
+#   * The TARGET schema is created by Rails from db/schema.rb (`db:schema:load`
+#     semantics), so every column gets its correct Postgres type
+#     (boolean / json / bytea / decimal ...). We never let SQLite's dynamic
+#     typing leak into Postgres.
+#   * We read RAW column values from SQLite (no application models), so encrypted
+#     / serialized columns are copied verbatim and stay valid. Each value is then
+#     quoted for its TARGET column type (0/1 -> boolean, JSON text -> json,
+#     blob -> bytea), so SQLite's dynamic typing never leaks into Postgres.
+#   * Referential integrity is disabled during the copy, so table order and FKs
+#     never block the load. Primary-key sequences are reset afterwards.
+#   * Row counts are compared per table at the end; a mismatch fails the task.
+#
+# Usage:
+#   # Copy the 700MB production SQLite primary DB into the Postgres database
+#   # that `production` resolves to (DATABASE_URL must point at Postgres):
+#   DATABASE_URL=postgresql://user:pw@host:5432/collavre_production \
+#     bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"
+#
+# Options (environment variables):
+#   BATCH_SIZE=1000        rows per INSERT batch (default 1000)
+#   SKIP_SCHEMA_LOAD=1     do NOT load db/schema.rb into the target first
+#                          (use when the target already has an empty schema)
+#   ONLY=t1,t2             copy only these tables
+#   EXCLUDE=t1,t2          skip these tables (in addition to the built-ins)
+#
+# Notes:
+#   * Only the PRIMARY database holds real data. cache/queue/cable are volatile
+#     (Solid Cache/Queue/Cable) and are intentionally NOT migrated — the schema
+#     load creates their empty tables in the same Postgres database.
+#   * Run inside a maintenance window with the app stopped: rows inserted into
+#     SQLite while the copy runs would be lost.
+#   * Active Storage: only DB metadata rows are copied. Blob files on disk/S3
+#     are untouched — leave the storage volume/bucket as-is.
+#   * Foreign keys are bypassed via disable_referential_integrity, which issues
+#     ALTER TABLE ... DISABLE TRIGGER ALL. That disables the internal RI/system
+#     triggers, which is SUPERUSER-ONLY — being the table owner is NOT enough.
+#     On a Kamal Postgres accessory the app role is a superuser, so this is a
+#     non-issue there. On a locked-down managed instance, run the copy as a
+#     superuser role, otherwise the FK triggers stay on and the alphabetical
+#     insert order raises ForeignKeyViolation (first offender: activity_logs).
+#   * Ownership after a SUPERUSER-run cutover: every table/sequence created by
+#     schema:load is then owned by that superuser, so the app role hits
+#     "permission denied for table ..." on every query even if it owns the
+#     database. After the copy, reassign public-schema objects to the app role
+#     (ALTER TABLE/SEQUENCE <name> OWNER TO <app_role>). REASSIGN OWNED BY is too
+#     broad — the bootstrap superuser owns pinned system objects. Not needed on
+#     Kamal (the app role is the owner).
+# =============================================================================
+
+# Named abstract model that owns the SOURCE (SQLite) connection. Rails 8 forbids
+# establish_connection on an anonymous class, so this must be a real constant.
+class SqliteMigrationSource < ActiveRecord::Base
+  self.abstract_class = true
+end
+
+namespace :db do
+  desc "Copy a SQLite primary DB into the target environment's PostgreSQL DB " \
+       "([sqlite_path,target_env])"
+  task :sqlite_to_postgres, %i[sqlite_path target_env] => :environment do |_task, args|
+    sqlite_path = args[:sqlite_path]
+    target_env  = args[:target_env]
+
+    abort "ERROR: sqlite_path is required, e.g. db:sqlite_to_postgres[storage/production-primary.sqlite3,production]" if sqlite_path.blank?
+    abort "ERROR: target_env is required, e.g. db:sqlite_to_postgres[storage/production-primary.sqlite3,production]" if target_env.blank?
+
+    sqlite_path = File.expand_path(sqlite_path)
+    abort "ERROR: SQLite file not found: #{sqlite_path}" unless File.file?(sqlite_path)
+
+    batch_size = Integer(ENV.fetch("BATCH_SIZE", 1000))
+    skip_schema_load = ENV["SKIP_SCHEMA_LOAD"].present?
+    only_tables    = ENV["ONLY"].to_s.split(",").map(&:strip).reject(&:empty?)
+    exclude_tables = ENV["EXCLUDE"].to_s.split(",").map(&:strip).reject(&:empty?)
+
+    # Tables Rails manages itself; schema:load populates these to the correct
+    # versions, so copying them from SQLite would only cause conflicts.
+    builtin_excludes = %w[schema_migrations ar_internal_metadata]
+
+    # --- Resolve the TARGET database config (primary role) -------------------
+    target_config = ActiveRecord::Base.configurations
+      .configs_for(env_name: target_env, name: "primary", include_hidden: true)
+
+    abort "ERROR: no 'primary' database config for environment '#{target_env}'" if target_config.nil?
+
+    unless target_config.adapter.to_s.start_with?("postgresql")
+      abort <<~MSG
+        ERROR: target '#{target_env}' primary adapter is '#{target_config.adapter}', not postgresql.
+               Set DATABASE_URL to your PostgreSQL server so the '#{target_env}'
+               environment resolves to Postgres, then re-run.
+      MSG
+    end
+
+    puts "=" * 72
+    puts "SQLite -> PostgreSQL data migration"
+    puts "  source : #{sqlite_path}"
+    puts "  target : #{target_env} / primary -> #{safe_target_desc(target_config)}"
+    puts "  batch  : #{batch_size} rows"
+    puts "=" * 72
+
+    # --- Open the SOURCE (SQLite) on its own connection ----------------------
+    SqliteMigrationSource.establish_connection(adapter: "sqlite3", database: sqlite_path)
+    source_conn = SqliteMigrationSource.connection
+
+    # --- Connect the primary (default) connection to the TARGET --------------
+    ActiveRecord::Base.establish_connection(target_config)
+
+    # --- Load schema into the target (correct Postgres types) ----------------
+    if skip_schema_load
+      puts "\n[schema] SKIP_SCHEMA_LOAD set — assuming target schema already exists."
+    else
+      puts "\n[schema] Loading db/schema.rb into the target database..."
+      load_portable_schema(target_config)
+      # load_schema may leave the connection pointed elsewhere; re-pin to target.
+      ActiveRecord::Base.establish_connection(target_config)
+      puts "[schema] Done."
+    end
+    target_conn = ActiveRecord::Base.connection
+
+    # --- Decide which tables to copy -----------------------------------------
+    source_tables = source_conn.tables.sort
+    tables = source_tables
+    tables &= only_tables if only_tables.any?
+    tables -= builtin_excludes
+    tables -= exclude_tables
+
+    missing_in_target = tables.reject { |t| target_conn.data_source_exists?(t) }
+    if missing_in_target.any?
+      abort "ERROR: these source tables do not exist in the target schema " \
+            "(schema out of date?): #{missing_in_target.join(', ')}"
+    end
+
+    puts "\n[copy] #{tables.size} tables to copy.\n\n"
+
+    # --- Copy rows -----------------------------------------------------------
+    totals = {}
+    target_conn.disable_referential_integrity do
+      tables.each do |table|
+        totals[table] = copy_table(
+          source_conn: source_conn,
+          target_conn: target_conn,
+          table: table,
+          batch_size: batch_size
+        )
+      end
+    end
+
+    # --- Reset primary-key sequences -----------------------------------------
+    puts "\n[sequences] Resetting primary-key sequences..."
+    tables.each do |table|
+      target_conn.reset_pk_sequence!(table)
+    rescue => e
+      warn "  [warn] could not reset sequence for #{table}: #{e.message}"
+    end
+    puts "[sequences] Done."
+
+    # --- Verify row counts ---------------------------------------------------
+    puts "\n[verify] Comparing row counts (source vs target)..."
+    mismatches = []
+    tables.each do |table|
+      src = source_conn.select_value(%(SELECT COUNT(*) FROM "#{table}")).to_i
+      dst = target_conn.select_value(%(SELECT COUNT(*) FROM "#{table}")).to_i
+      status = src == dst ? "ok" : "MISMATCH"
+      mismatches << [ table, src, dst ] if src != dst
+      printf "  %-45s %10d -> %-10d %s\n", table, src, dst, status
+    end
+
+    puts "\n" + ("=" * 72)
+    if mismatches.any?
+      puts "FAILED: #{mismatches.size} table(s) with row-count mismatch:"
+      mismatches.each { |t, s, d| puts "  #{t}: source=#{s} target=#{d}" }
+      abort "Migration incomplete — investigate mismatched tables before switching over."
+    else
+      grand = totals.values.sum
+      puts "SUCCESS: #{tables.size} tables, #{grand} rows copied and verified."
+      puts "Next: point the app's DATABASE_URL at PostgreSQL and redeploy."
+    end
+    puts "=" * 72
+  end
+
+  # Copy one table from source (SQLite) to target (Postgres) using keyset
+  # pagination on ROWID. Each value is quoted according to its TARGET column type
+  # so SQLite 0/1 -> boolean, JSON text -> json, blob -> bytea all convert
+  # correctly, and encrypted/serialized text is copied verbatim.
+  def copy_table(source_conn:, target_conn:, table:, batch_size:)
+    total = source_conn.select_value(%(SELECT COUNT(*) FROM "#{table}")).to_i
+    if total.zero?
+      printf "  %-45s %s\n", table, "empty"
+      return 0
+    end
+
+    target_columns = target_conn.columns(table).index_by(&:name)
+    quoted_table = target_conn.quote_table_name(table)
+
+    copied = 0
+    last_rowid = nil
+    loop do
+      where = last_rowid ? "WHERE ROWID > #{Integer(last_rowid)}" : ""
+      result = source_conn.select_all(
+        %(SELECT ROWID AS __rowid, * FROM "#{table}" #{where} ORDER BY ROWID LIMIT #{Integer(batch_size)})
+      )
+      break if result.empty?
+
+      rows = result.to_a
+      last_rowid = rows.last["__rowid"]
+
+      # Only copy source columns that also exist in the target schema.
+      source_cols = result.columns - [ "__rowid" ]
+      col_names = source_cols.select { |c| target_columns.key?(c) }
+      quoted_cols = col_names.map { |c| target_conn.quote_column_name(c) }.join(", ")
+
+      # Row-count verification cannot detect a column present in SQLite but
+      # absent from db/schema.rb — its data is silently dropped. Warn once so a
+      # stale schema doesn't cause invisible data loss.
+      dropped = source_cols - col_names
+      if dropped.any? && !@warned_dropped_cols&.include?(table)
+        (@warned_dropped_cols ||= []) << table
+        warn "\n  [warn] #{table}: source columns not in target schema, NOT copied: #{dropped.join(', ')}"
+      end
+
+      tuples = rows.map do |row|
+        "(" + col_names.map do |c|
+          quote_for_column(target_conn, target_columns[c], row[c])
+        end.join(", ") + ")"
+      end.join(", ")
+
+      target_conn.execute(%(INSERT INTO #{quoted_table} (#{quoted_cols}) VALUES #{tuples}))
+      copied += rows.size
+      printf "\r  %-45s %10d / %-10d", table, copied, total
+    end
+
+    printf "\r  %-45s %10d / %-10d done\n", table, copied, total
+    copied
+  end
+
+  # Quote a raw SQLite value as a SQL literal for the given target column.
+  # SQLite's dynamic typing means values arrive as ints/strings/blobs; we map
+  # them to the target column's Postgres type explicitly.
+  def quote_for_column(conn, column, raw)
+    return "NULL" if raw.nil?
+
+    case column.type
+    when :boolean
+      # SQLite stores booleans as 0/1 (or occasionally 't'/'f').
+      ActiveModel::Type::Boolean.new.cast(raw) ? "TRUE" : "FALSE"
+    when :binary
+      # Let the adapter emit a proper bytea literal (respects standard_conforming_strings).
+      conn.quote(ActiveRecord::Type::Binary::Data.new(raw.to_s))
+    when :json, :jsonb
+      # The SQLite value is already JSON text; insert it verbatim (do NOT
+      # re-serialize, or it becomes a double-encoded JSON string). Postgres
+      # casts the unknown-type string literal into json/jsonb.
+      conn.quote(raw.to_s)
+    else
+      # integer / decimal / float / string / text / datetime / date / uuid ...
+      conn.quote(raw)
+    end
+  end
+
+  # Load db/schema.rb into the target, translating SQLite-only expression indexes
+  # into their PostgreSQL equivalents. SQLite dumps JSON expression indexes using
+  # json_extract(col, '$.key'); PostgreSQL needs (col ->> 'key'). Without this,
+  # db:schema:load fails on Postgres with "function json_extract does not exist".
+  def load_portable_schema(target_config)
+    require "tempfile"
+    schema_file = ActiveRecord::Tasks::DatabaseTasks.schema_dump_path(target_config)
+    schema_file ||= Rails.root.join("db", "schema.rb").to_s
+    content = File.read(schema_file)
+    content = content.gsub(
+      /json_extract\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*'\$\.([^']+)'\s*\)/,
+      '(\1 ->> \'\2\')'
+    )
+    # PostgreSQL `text`/`binary` have no byte limit; SQLite/MySQL-style limits
+    # (e.g. 4294967295 for LONGTEXT) exceed Postgres's max and raise on load.
+    content = content.gsub(/(\bt\.(?:text|binary)\b[^\n]*?),\s*limit:\s*\d+/, '\1')
+
+    Tempfile.create([ "schema", ".rb" ]) do |f|
+      f.write(content)
+      f.flush
+      ActiveRecord::Tasks::DatabaseTasks.load_schema(target_config, :ruby, f.path)
+    end
+  end
+
+  # Build a non-secret description of the target (host/db without password).
+  def safe_target_desc(db_config)
+    cfg = db_config.configuration_hash
+    if cfg[:host]
+      db = cfg[:database]
+      "#{cfg[:host]}:#{cfg[:port] || 5432}/#{db}"
+    elsif cfg[:url]
+      begin
+        u = URI.parse(cfg[:url])
+        "#{u.host}:#{u.port || 5432}#{u.path}"
+      rescue StandardError
+        "(postgresql)"
+      end
+    else
+      cfg[:database] || "(postgresql)"
+    end
+  end
+end
