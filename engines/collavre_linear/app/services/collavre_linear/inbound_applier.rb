@@ -319,6 +319,12 @@ module CollavreLinear
       return remove_comment!(linear_comment_id) if @action == "remove"
 
       issue_link = resolve_comment_issue_link
+      # The sequential linear_inbound queue applies webhooks in receipt order, so
+      # a comment normally lands after its issue's create. If the issue is still
+      # unlinked here, either Linear delivered the comment ahead of the create at
+      # the network level (a rare residual the in-order queue can't fully close)
+      # or the comment belongs to an unlinked issue — in both cases we have no
+      # issue to attach to, so drop rather than guess.
       return unless issue_link
 
       body = @data["body"].to_s

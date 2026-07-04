@@ -45,6 +45,9 @@ module CollavreLinear
         return head :ok
       end
 
+      # Enqueue on the sequential linear_inbound queue (single-thread worker) so
+      # verified events apply strictly in receipt order — a comment that arrives
+      # after its issue's create must also be APPLIED after it.
       CollavreLinear::InboundApplyJob.perform_later(payload)
       head :ok
     rescue JSON::ParserError

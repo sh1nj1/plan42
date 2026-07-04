@@ -14,7 +14,13 @@ module CollavreLinear
   # that constant exists, this job no-ops gracefully so the webhook pipeline can
   # ship and be validated independently.
   class InboundApplyJob < ApplicationJob
-    queue_as :default
+    # Inbound webhooks MUST apply in receipt order: a Comment can arrive before
+    # its issue's Create, and an Update before its Create. Running these on a
+    # multi-threaded queue lets workers apply them out of order — the comment
+    # then finds no IssueLink and is dropped. `linear_inbound` is served by a
+    # single-thread, single-process worker (config/queue.yml), making it a
+    # sequential FIFO queue that preserves enqueue (receipt) order.
+    queue_as :linear_inbound
 
     def perform(payload)
       unless CollavreLinear.const_defined?(:InboundApplier)

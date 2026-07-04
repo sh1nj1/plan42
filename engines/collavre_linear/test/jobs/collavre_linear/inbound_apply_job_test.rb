@@ -22,6 +22,15 @@ module CollavreLinear
       end
     end
 
+    test "runs on the dedicated sequential linear_inbound queue" do
+      # Inbound applies must process strictly in receipt order — a comment can
+      # arrive before its issue's create, and concurrent workers on a shared
+      # queue would apply them out of order (dropping the comment). config/
+      # queue.yml gives linear_inbound a single-thread, single-process worker so
+      # this queue is a sequential FIFO consumer.
+      assert_equal "linear_inbound", CollavreLinear::InboundApplyJob.new.queue_name
+    end
+
     test "perform delegates to InboundApplier#apply!" do
       payload = { "action" => "update", "data" => { "id" => "iss-1" } }
       captured = nil
