@@ -232,6 +232,16 @@ module CollavreLinear
       new_data = (@creative.data || {}).deep_dup
       new_data["linear"] ||= {}
       new_data["linear"]["state_before_done"] = candidate
+      # Record our OWN outbound completion into the local state mirror: we are
+      # about to push this issue to the done state, but Linear's echo of that push
+      # is EchoGuard-suppressed and never arrives, and nothing else writes
+      # data["linear"]["state"] outbound. Without this, apply_completion!'s un-done
+      # guard (data["linear"]["state"] == done) can NEVER be satisfied on a
+      # Collavre-driven completion, so a later drop below 100% would push no state
+      # and leave the issue stuck in done. This is the truth — the issue IS now in
+      # done because we put it there — and a genuine human move in Linear still
+      # overwrites it via the inbound applier, correctly halting the restore.
+      new_data["linear"]["state"] = { "id" => done_state_id }
       @creative.data = new_data
       @creative.update_column(:data, new_data)
     end

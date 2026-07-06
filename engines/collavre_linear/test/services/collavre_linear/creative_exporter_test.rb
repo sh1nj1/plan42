@@ -875,6 +875,36 @@ module CollavreLinear
         "the pure hash must fold in the restored pre-done state so an inbound apply advances it consistently"
     end
 
+    # END-TO-END un-done: mirrors the REAL pure-outbound flow — a leaf completed
+    # in Collavre (no prior inbound state, our done-push echo is suppressed so
+    # data["linear"]["state"] is NEVER set to done), then dropped below 100%.
+    # The earlier restore tests fake data["linear"]["state"] == done; this one
+    # does NOT, so it exercises the actual capture→restore handoff.
+    test "sync! restores pre-done state on drop after a real Collavre-driven completion (no faked echo)" do
+      @project_link.update!(done_state_id: "state-done")
+      link_child_issue!(linear_issue_id: "iss-x")
+      # Leaf reached 100% purely in Collavre: no data["linear"]["state"] at all.
+      @child_creative.update_column(:progress, 1.0)
+      @fake_client = FakeClient.new(fetch_state_response: { "id" => "state-backlog", "name" => "Backlog" })
+
+      # Step 1: push done (captures the pre-done state via a one-time Linear query).
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+      assert_equal "state-done", @fake_client.update_calls.first[:state_id],
+        "precondition: completing the leaf pushes done"
+
+      # Step 2: drop below 100% — Linear must be restored to the captured state.
+      @child_creative.reload.update_column(:progress, 0.0)
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      restore_call = @fake_client.update_calls.last
+      assert_equal "state-backlog", restore_call[:state_id],
+        "dropping a Collavre-completed leaf below 100% must restore the pre-done Linear state"
+    end
+
     # ---------------------------------------------------------------------------
     # EchoGuard stamp
     # ---------------------------------------------------------------------------
