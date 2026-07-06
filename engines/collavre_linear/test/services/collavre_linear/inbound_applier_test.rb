@@ -1361,7 +1361,7 @@ module CollavreLinear
           "state"     => { "id" => "state-done", "type" => "completed" },
           "updatedAt" => Time.current.iso8601
         },
-        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+        "updatedFrom" => { "stateId" => "state-todo" }
       }
 
       CollavreLinear::InboundApplier.new(payload).apply!
@@ -1384,7 +1384,7 @@ module CollavreLinear
           "state"     => { "id" => "state-inprogress", "type" => "started" },
           "updatedAt" => Time.current.iso8601
         },
-        "updatedFrom" => { "state" => { "id" => "state-done" } }
+        "updatedFrom" => { "stateId" => "state-done" }
       }
 
       CollavreLinear::InboundApplier.new(payload).apply!
@@ -1407,7 +1407,7 @@ module CollavreLinear
           "state"     => { "id" => "state-inprogress", "type" => "started" },
           "updatedAt" => Time.current.iso8601
         },
-        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+        "updatedFrom" => { "stateId" => "state-todo" }
       }
 
       CollavreLinear::InboundApplier.new(payload).apply!
@@ -1459,7 +1459,7 @@ module CollavreLinear
           "state"     => { "id" => "state-done", "type" => "completed" },
           "updatedAt" => Time.current.iso8601
         },
-        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+        "updatedFrom" => { "stateId" => "state-todo" }
       }
 
       CollavreLinear::InboundApplier.new(payload).apply!
@@ -1480,7 +1480,7 @@ module CollavreLinear
           "state"     => { "id" => "state-anything", "type" => "completed" },
           "updatedAt" => Time.current.iso8601
         },
-        "updatedFrom" => { "state" => { "id" => "state-todo" } }
+        "updatedFrom" => { "stateId" => "state-todo" }
       }
 
       CollavreLinear::InboundApplier.new(payload).apply!

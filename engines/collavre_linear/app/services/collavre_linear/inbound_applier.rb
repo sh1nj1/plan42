@@ -215,7 +215,11 @@ module CollavreLinear
         # Completion mapping (Linear → Collavre): only reconcile when the state
         # field is actually part of this update (or updatedFrom is absent). A
         # title-only edit must not touch the leaf's progress.
-        if changed.nil? || changed.include?("state")
+        # Linear keys the state change in updatedFrom by its scalar FK column
+        # `stateId` (mirrors `parentId`/`projectId`/`priority` elsewhere), NOT a
+        # nested `state` object — matching "state" here never fired on real
+        # webhooks, silently disabling done→100% on the normal update path.
+        if changed.nil? || changed.include?("stateId")
           reconcile_leaf_progress!(creative, link.project_link)
         end
 
