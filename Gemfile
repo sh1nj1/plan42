@@ -7,8 +7,10 @@ gem "propshaft"
 # Use sqlite3 as the database for Active Record. Also in :desktop so the bundled
 # desktop app (which always runs on SQLite, never Postgres) ships the adapter.
 gem "sqlite3", ">= 2.1", groups: [ :development, :test, :desktop ]
-# Use postgresql as the database for production
-gem "pg", group: :production
+# Use postgresql as the database for production, and opt-in for local
+# development/test via DB_ADAPTER=postgresql or DATABASE_URL (SQLite -> Postgres
+# migration). Requires libpq (e.g. `brew install libpq` / postgresql).
+gem "pg", groups: [ :development, :test, :production ]
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Bundle JavaScript via esbuild [https://github.com/rails/jsbundling-rails]

@@ -4,7 +4,16 @@
 #   Ensure the SQLite 3 gem is defined in your Gemfile
 #   gem "sqlite3"
 #
-<% adapter = ENV["DATABASE_URL"].to_s.then { |u| u.empty? ? "sqlite3" : URI.parse(u).scheme } %>
+<%
+  # Adapter selection (development/test):
+  #   1. DATABASE_URL set        -> use its scheme (postgres cutover, CI, etc.)
+  #   2. DB_ADAPTER=postgresql   -> local Postgres, no URL required
+  #   3. otherwise               -> sqlite3 (zero-config default)
+  database_url = ENV["DATABASE_URL"].to_s
+  raw_adapter  = database_url.empty? ? ENV.fetch("DB_ADAPTER", "sqlite3") : URI.parse(database_url).scheme
+  # Normalize the "postgres" URL scheme to Rails' registered "postgresql" adapter name.
+  adapter      = raw_adapter == "postgres" ? "postgresql" : raw_adapter
+%>
 default: &default
   adapter: <%= adapter %>
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
@@ -13,18 +22,35 @@ default: &default
   variables:
     journal_mode: WAL
     synchronous: normal
+  <% elsif database_url.empty? %>
+  encoding: unicode
+  host: <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+  username: <%= ENV.fetch("DATABASE_USERNAME", "collavre_user") %>
+  password: <%= ENV["DATABASE_PASSWORD"] %>
   <% end %>
 
 development:
   <<: *default
+  <% if adapter == "sqlite3" %>
   database: storage/development.sqlite3
+  <% elsif database_url.empty? %>
+  database: <%= ENV.fetch("DATABASE_NAME", "collavre_db") %>
+  <% else %>
+  url: <%= database_url %>
+  <% end %>
 
 # Warning: The database defined as "test" will be erased and
 # re-generated from your development database when you run "rake".
 # Do not set this db to the same as development or production.
 test:
   <<: *default
+  <% if adapter == "sqlite3" %>
   database: storage/test.sqlite3
+  <% elsif database_url.empty? %>
+  database: <%= ENV.fetch("TEST_DATABASE_NAME", "collavre_test") %>
+  <% else %>
+  url: <%= database_url %>
+  <% end %>
 
 production:
   primary:
