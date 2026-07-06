@@ -59,6 +59,44 @@ module CollavreLinear
       assert applied, "job must call apply! on the InboundApplier"
     end
 
+    test "a transient ActiveRecord::Deadlocked re-enqueues (retry) instead of dropping the event" do
+      # WebhooksController acks Linear (200) before this job runs, so a dropped
+      # apply is never re-delivered. A transient deadlock must retry, not park.
+      deadlocking = lambda { |_p|
+        obj = Object.new
+        obj.define_singleton_method(:apply!) { raise ActiveRecord::Deadlocked, "deadlock" }
+        obj
+      }
+
+      CollavreLinear::InboundApplier.stub(:new, deadlocking) do
+        assert_enqueued_with(job: CollavreLinear::InboundApplyJob) do
+          # retry_on rescues the deadlock and re-enqueues the job for a later run.
+          CollavreLinear::InboundApplyJob.perform_now(
+            { "action" => "update", "data" => { "id" => "iss-1" } }
+          )
+        end
+      end
+    end
+
+    test "a non-transient error surfaces and parks — it is NOT auto-retried" do
+      # Real bugs must fail loudly (operator-visible failed execution), not loop.
+      boom = lambda { |_p|
+        obj = Object.new
+        obj.define_singleton_method(:apply!) { raise "boom" }
+        obj
+      }
+
+      CollavreLinear::InboundApplier.stub(:new, boom) do
+        assert_no_enqueued_jobs do
+          assert_raises(RuntimeError) do
+            CollavreLinear::InboundApplyJob.perform_now(
+              { "action" => "update", "data" => { "id" => "iss-1" } }
+            )
+          end
+        end
+      end
+    end
+
     test "perform is silent when InboundApplier is not yet defined" do
       # Simulate the Task-10-not-built state: no InboundApplier constant.
       had_const = CollavreLinear.const_defined?(:InboundApplier, false)
