@@ -211,9 +211,37 @@ module CollavreLinear
       }
     GQL
 
+    # Fetch a single issue's current workflow state (for seeding the pre-done
+    # snapshot when a leaf is completed with no locally-known Linear state).
+    ISSUE_QUERY = <<~GQL.freeze
+      query Issue($id: String!) {
+        issue(id: $id) {
+          id
+          state {
+            id
+            name
+            type
+          }
+        }
+      }
+    GQL
+
     def initialize(account)
       @account = account
       @endpoint = resolve_endpoint
+    end
+
+    # Fetch a single Linear issue's current workflow state.
+    # @param id [String] Linear issue UUID
+    # @return [Hash, nil] {"id" =>, "name" =>, "type" =>} (string keys, matching
+    #   the shape stored under data["linear"]["state"]), or nil when the issue or
+    #   its state is absent.
+    def fetch_issue_state(id)
+      data  = post!(ISSUE_QUERY, { id: id })
+      state = data.dig("issue", "state")
+      return nil if state.nil?
+
+      state.slice("id", "name", "type")
     end
 
     # Create a Linear issue.

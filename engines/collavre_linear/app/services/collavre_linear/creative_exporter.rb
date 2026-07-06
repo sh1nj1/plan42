@@ -81,15 +81,38 @@ module CollavreLinear
     #     progress (a parent's progress is a rollup average), so only leaves drive
     #     the done state; a parent issue's state follows from its children.
     #   * progress < 1.0                     — only 100% maps to done. We do NOT
-    #     move an issue OUT of done here: the reverse (un-done) target state is
-    #     ambiguous and out of scope, so an incomplete leaf keeps echoing its last
-    #     known Linear state (from data["linear"]) unchanged.
+    #     blindly clobber the state here; instead, when our record shows the issue
+    #     still sitting in the done state, we RESTORE the state it held before it
+    #     was completed (the "un-done" case — see below). Otherwise the last-known
+    #     Linear state (from data["linear"]) echoes through unchanged.
+    #
+    # Un-done (Collavre 100% → below): the pre-done state is snapshotted into
+    # data["linear"]["state_before_done"] by #capture_state_before_done! at the
+    # moment the leaf is pushed to done. On a later drop below 100% we push that
+    # snapshot back — but only while data["linear"]["state"] still equals the done
+    # state (i.e. our push landed and nobody has since moved the issue). That
+    # done-state guard keeps us from fighting a human who moved the issue
+    # elsewhere in Linear, and bounds the loop: once the restore echoes back,
+    # data["linear"]["state"] is no longer done so this never re-fires.
+    #
+    # This method stays PURE (no I/O, no mutation) so CreativeExporter.content_hash_for
+    # and #sync! compute the SAME state_id — the capture that needs the network is
+    # done separately in the sync! path.
     def self.apply_completion!(attrs, creative, project_link)
       done_state_id = project_link&.done_state_id
       return attrs if done_state_id.blank?
       return attrs unless creative.children.active.empty?
 
-      attrs[:state_id] = done_state_id if creative.progress.to_f >= 1.0
+      if creative.progress.to_f >= 1.0
+        attrs[:state_id] = done_state_id
+      else
+        linear  = (creative.data || {})["linear"] || {}
+        before  = linear["state_before_done"]
+        current = linear["state"]
+        if before.present? && current.is_a?(Hash) && current["id"] == done_state_id
+          attrs[:state_id] = before["id"]
+        end
+      end
       attrs
     end
 
@@ -122,15 +145,22 @@ module CollavreLinear
       # (Its children export as the project's top-level issues; see class docs.)
       return if project_link.creative_id == @creative.id
 
-      account   = project_link.account
-      client    = Client.new(account)
+      account    = project_link.account
+      client     = Client.new(account)
+      issue_link = @creative.linear_issue_links.first
+
+      # Before a completed leaf's state is overridden to "done", remember the state
+      # it is leaving so a later drop below 100% can restore it (outbound un-done).
+      # This may query Linear once, so it lives here in the I/O path — NOT in the
+      # pure apply_completion!/content_hash_for.
+      capture_state_before_done!(client, project_link, issue_link)
+
       attrs     = FieldMapper.creative_to_issue_attrs(adapt(@creative))
-      # Completed leaf → push the project's "done" state (mirrors content_hash_for).
+      # Completed leaf → push the project's "done" state; a leaf dropped below 100%
+      # → restore its pre-done state (mirrors content_hash_for).
       self.class.apply_completion!(attrs, @creative, project_link)
       parent_id = parent_linear_issue_id
       hash      = compute_content_hash(attrs, parent_id)
-
-      issue_link = @creative.linear_issue_links.first
 
       # Cross-project move: the creative was reparented under a DIFFERENT linked
       # root than the one its existing issue belongs to. resolve_project_link now
@@ -164,6 +194,47 @@ module CollavreLinear
     end
 
     private
+
+    # Snapshot the pre-done Linear workflow state onto
+    # data["linear"]["state_before_done"] so a later drop below 100% can restore
+    # the issue to it (see apply_completion!'s un-done branch).
+    #
+    # Acts only for a completed leaf (progress >= 1.0) whose project has a done
+    # state configured. Sources the snapshot from the last-known non-done state in
+    # data["linear"]["state"]; when none is known (e.g. the leaf reached 100%
+    # purely in Collavre before any inbound state sync), queries Linear ONCE to
+    # seed it — but only if no snapshot exists yet, so this never re-queries.
+    #
+    # No-op for: the create path (no Linear issue yet to query), non-leaves,
+    # completion mapping off, an already-done known state, and when the snapshot
+    # is unchanged. Persists via update_column to avoid the sync observer (this is
+    # bookkeeping, not a mapped-field change) and never touches state_id itself.
+    def capture_state_before_done!(client, project_link, issue_link)
+      done_state_id = project_link.done_state_id
+      return if done_state_id.blank?
+      return unless @creative.progress.to_f >= 1.0
+      return unless @creative.children.active.empty?
+
+      linear  = (@creative.data || {})["linear"] || {}
+      current = linear["state"]
+
+      candidate =
+        if current.is_a?(Hash) && current["id"].present? && current["id"] != done_state_id
+          current
+        elsif linear["state_before_done"].blank? && issue_link&.linear_issue_id.present?
+          fetched = client.fetch_issue_state(issue_link.linear_issue_id)
+          fetched if fetched.present? && fetched["id"] != done_state_id
+        end
+
+      return if candidate.blank?
+      return if candidate == linear["state_before_done"]
+
+      new_data = (@creative.data || {}).deep_dup
+      new_data["linear"] ||= {}
+      new_data["linear"]["state_before_done"] = candidate
+      @creative.data = new_data
+      @creative.update_column(:data, new_data)
+    end
 
     # True when this creative's parent is itself part of the exported subtree
     # (it resolves the governing ProjectLink) but has not yet been exported to

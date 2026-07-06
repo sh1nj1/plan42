@@ -324,6 +324,34 @@ module CollavreLinear
       assert_equal [], @client.list_workflow_states
     end
 
+    test "fetch_issue_state returns the issue's current workflow state (id/name/type)" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(body: /issue\(id:/)
+        .to_return(
+          status: 200,
+          body: {
+            data: { issue: { id: "iss-1", state: { id: "s2", name: "Done", type: "completed" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      state = @client.fetch_issue_state("iss-1")
+
+      assert_equal({ "id" => "s2", "name" => "Done", "type" => "completed" }, state)
+      assert_requested :post, LINEAR_ENDPOINT, body: /issue\(id:/, times: 1
+    end
+
+    test "fetch_issue_state returns nil when the issue or its state is absent" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 200,
+          body: { data: { issue: nil } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      assert_nil @client.fetch_issue_state("iss-missing")
+    end
+
     test "list_teams returns [] when nodes are absent" do
       stub_request(:post, LINEAR_ENDPOINT)
         .to_return(
