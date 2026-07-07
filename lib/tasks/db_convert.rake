@@ -32,6 +32,11 @@
 #                          (use when the target already has an empty schema)
 #   ONLY=t1,t2             copy only these tables
 #   EXCLUDE=t1,t2          skip these tables (in addition to the built-ins)
+#   APP_ROLE=name          after the copy, reassign ownership of every
+#                          public-schema object to this role (default: the
+#                          target database's owner). A superuser-run schema:load
+#                          owns every object, so the app role would otherwise get
+#                          "permission denied"; the task fixes this automatically.
 #
 # Notes:
 #   * Only the PRIMARY database holds real data. cache/queue/cable are volatile
@@ -44,17 +49,19 @@
 #   * Foreign keys are bypassed via disable_referential_integrity, which issues
 #     ALTER TABLE ... DISABLE TRIGGER ALL. That disables the internal RI/system
 #     triggers, which is SUPERUSER-ONLY — being the table owner is NOT enough.
-#     On a Kamal Postgres accessory the app role is a superuser, so this is a
-#     non-issue there. On a locked-down managed instance, run the copy as a
-#     superuser role, otherwise the FK triggers stay on and the alphabetical
-#     insert order raises ForeignKeyViolation (first offender: activity_logs).
+#     The task ENFORCES this up front: if the target role is not a superuser it
+#     aborts with copy/paste instructions, instead of failing deep in the copy
+#     with a confusing ForeignKeyViolation (first offender: activity_logs). On a
+#     Kamal Postgres accessory the app role is a superuser, so the check passes.
 #   * Ownership after a SUPERUSER-run cutover: every table/sequence created by
-#     schema:load is then owned by that superuser, so the app role hits
+#     schema:load is then owned by that superuser, so the app role would hit
 #     "permission denied for table ..." on every query even if it owns the
-#     database. After the copy, reassign public-schema objects to the app role
-#     (ALTER TABLE/SEQUENCE <name> OWNER TO <app_role>). REASSIGN OWNED BY is too
-#     broad — the bootstrap superuser owns pinned system objects. Not needed on
-#     Kamal (the app role is the owner).
+#     database. The task FIXES this automatically at the end: it reassigns every
+#     public-schema object to the app role (the target database's owner, or
+#     APP_ROLE) and prints the equivalent psql for the record. It is a no-op when
+#     the connecting role already owns everything (e.g. Kamal, app role == owner).
+#     (REASSIGN OWNED BY is intentionally avoided — the bootstrap superuser owns
+#     pinned system objects, so it is too broad.)
 # =============================================================================
 
 # Named abstract model that owns the SOURCE (SQLite) connection. Rails 8 forbids
@@ -113,6 +120,11 @@ namespace :db do
     # --- Connect the primary (default) connection to the TARGET --------------
     ActiveRecord::Base.establish_connection(target_config)
 
+    # --- Require a SUPERUSER role (RI disable is superuser-only) --------------
+    # Fail fast with instructions instead of dying deep in the copy with a
+    # confusing ForeignKeyViolation once DISABLE TRIGGER ALL silently no-ops.
+    ensure_target_superuser!(ActiveRecord::Base.connection, sqlite_path, target_env)
+
     # --- Load schema into the target (correct Postgres types) ----------------
     if skip_schema_load
       puts "\n[schema] SKIP_SCHEMA_LOAD set — assuming target schema already exists."
@@ -162,6 +174,11 @@ namespace :db do
     end
     puts "[sequences] Done."
 
+    # --- Reassign ownership to the app role ----------------------------------
+    # schema:load ran as the (required) superuser, so it owns every object; hand
+    # them to the app role or the app gets "permission denied for table ...".
+    reassign_owner_to_app_role(target_conn)
+
     # --- Verify row counts ---------------------------------------------------
     puts "\n[verify] Comparing row counts (source vs target)..."
     mismatches = []
@@ -184,6 +201,128 @@ namespace :db do
       puts "Next: point the app's DATABASE_URL at PostgreSQL and redeploy."
     end
     puts "=" * 72
+  end
+
+  # Abort with copy/paste instructions unless the target connection is a
+  # PostgreSQL superuser. The copy relies on disable_referential_integrity
+  # (ALTER TABLE ... DISABLE TRIGGER ALL), which silently no-ops for a
+  # non-superuser and then lets the alphabetical insert order raise a confusing
+  # ForeignKeyViolation (first offender: activity_logs). Fail early instead.
+  def ensure_target_superuser!(conn, sqlite_path, target_env)
+    return if ActiveModel::Type::Boolean.new.cast(conn.select_value("SELECT current_setting('is_superuser')"))
+
+    role = conn.select_value("SELECT current_user")
+    rel_sqlite = sqlite_path.sub("#{Rails.root}/", "")
+    abort <<~MSG
+      #{'=' * 72}
+      ERROR: connected as role '#{role}', which is NOT a PostgreSQL superuser.
+
+      This migration disables referential integrity (ALTER TABLE ... DISABLE
+      TRIGGER ALL) during the copy — a SUPERUSER-ONLY operation. Being the
+      table/database owner is NOT enough. Without it the FK system triggers stay
+      on and the alphabetical insert order raises ForeignKeyViolation (first
+      offender: activity_logs).
+
+      Re-run with a superuser role, e.g.:
+        DATABASE_URL=postgresql://<superuser>@<host>/<db> \\
+          bin/rails "db:sqlite_to_postgres[#{rel_sqlite},#{target_env}]"
+
+      The copied objects are then owned by that superuser; this task reassigns
+      them to the app role automatically at the end (override with APP_ROLE).
+      On a Kamal Postgres accessory the app role is already a superuser, so this
+      check passes there automatically.
+      #{'=' * 72}
+    MSG
+  end
+
+  # Reassign every public-schema table/sequence/view to the application role.
+  # A superuser-run schema:load owns every object, so without this the app role
+  # gets "permission denied for table ..." on every query. The app role defaults
+  # to the target DATABASE's owner (createdb --owner=<app_role>); override with
+  # APP_ROLE. No-op when the connecting role already owns everything (Kamal).
+  def reassign_owner_to_app_role(conn)
+    current_role = conn.select_value("SELECT current_user")
+    app_role = ENV["APP_ROLE"].presence || conn.select_value(<<~SQL).to_s
+      SELECT pg_catalog.pg_get_userbyid(datdba)
+      FROM pg_database WHERE datname = current_database()
+    SQL
+
+    if app_role.empty? || app_role == current_role
+      puts "\n[ownership] Objects already owned by the connecting role " \
+           "('#{current_role}') — no reassignment needed."
+      return
+    end
+
+    puts "\n[ownership] Reassigning public-schema objects to app role '#{app_role}'..."
+    qrole = conn.quote_column_name(app_role)
+    # Tables / partitioned tables / views / matviews, plus only STANDALONE
+    # sequences. A sequence owned by a table column (serial deptype 'a' or
+    # identity 'i') cannot have its owner changed on its own — Postgres raises
+    # "cannot change owner of sequence ...". Its owner follows the owning table's
+    # owner automatically, so reassigning the tables covers those sequences.
+    objects = conn.select_rows(<<~SQL)
+      SELECT c.relkind, c.relname
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND (
+          c.relkind IN ('r', 'p', 'v', 'm')
+          OR (c.relkind = 'S' AND NOT EXISTS (
+            SELECT 1 FROM pg_depend d
+            WHERE d.classid = 'pg_class'::regclass
+              AND d.objid = c.oid
+              AND d.deptype IN ('a', 'i')
+              AND d.refobjsubid <> 0
+          ))
+        )
+    SQL
+
+    count = 0
+    objects.each do |relkind, relname|
+      keyword =
+        case relkind
+        when "S" then "SEQUENCE"
+        when "v" then "VIEW"
+        when "m" then "MATERIALIZED VIEW"
+        else "TABLE" # 'r' ordinary, 'p' partitioned
+        end
+      obj = "public.#{conn.quote_column_name(relname)}"
+      conn.execute("ALTER #{keyword} #{obj} OWNER TO #{qrole}")
+      count += 1
+    end
+    puts "[ownership] Reassigned #{count} objects to '#{app_role}'."
+    puts "[ownership] Equivalent psql (for the record):"
+    puts ownership_psql_hint(app_role).gsub(/^/, "  ")
+  rescue StandardError => e
+    # Data is already copied — don't fail the whole run. Print the exact psql to
+    # finish the ownership handoff manually (run as a superuser).
+    warn "\n  [warn] ownership reassignment failed: #{e.message}"
+    warn "  Run this as a superuser to grant the app role access:"
+    warn ownership_psql_hint(app_role.to_s.empty? ? "<app_role>" : app_role).gsub(/^/, "  ")
+  end
+
+  # The psql that reassigns every public-schema object to +app_role+, shown so a
+  # cutover is reproducible / recoverable by hand.
+  def ownership_psql_hint(app_role)
+    <<~SQL
+      psql -d <database> <<'EOSQL'
+      DO $$ DECLARE r RECORD; BEGIN
+        FOR r IN SELECT c.relkind, c.relname FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'public'
+                   AND (c.relkind IN ('r','p','v','m')
+                        OR (c.relkind = 'S' AND NOT EXISTS (
+                          SELECT 1 FROM pg_depend d
+                          WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
+                            AND d.deptype IN ('a','i') AND d.refobjsubid <> 0))) LOOP
+          EXECUTE format('ALTER %s public.%I OWNER TO %I',
+            CASE r.relkind WHEN 'S' THEN 'SEQUENCE' WHEN 'v' THEN 'VIEW'
+                           WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'TABLE' END,
+            r.relname, '#{app_role}');
+        END LOOP;
+      END $$;
+      EOSQL
+    SQL
   end
 
   # Copy one table from source (SQLite) to target (Postgres) using keyset
