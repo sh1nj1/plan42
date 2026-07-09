@@ -4,7 +4,7 @@ require "test_helper"
 
 module Collavre
   # A message that renders an approval button (pending) or an approved/denied
-  # status label (승인됨/거부됨, decided) in the chat list carries an `action`
+  # status label (approved/denied, decided) in the chat list carries an `action`
   # JSON payload. Such a message is a HUMAN decision surface and must NEVER be
   # dispatched to an AI agent — regardless of who authored it or whether it has
   # already been decided.
@@ -19,7 +19,7 @@ module Collavre
     include ActiveJob::TestHelper
 
     # Representative action payloads for the three approval-message flavors, all
-    # of which render the approve button / 승인됨 label in the chat list.
+    # of which render the approve button / approved label in the chat list.
     ACTION_PAYLOADS = {
       execute_tool: { "action" => "execute_tool", "tool_name" => "write_file" },
       approve_tool: { "actions" => [ { "action" => "approve_tool", "tool_name" => "bash" } ] },

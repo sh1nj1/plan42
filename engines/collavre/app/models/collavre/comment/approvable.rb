@@ -7,7 +7,7 @@ module Collavre
       # approved/denied status label (decided) in the chat list — i.e. it
       # carries an `action` JSON payload. Both the `has_pending_action`
       # button (action.present? && action_executed_at.blank?) and the
-      # ✅ 승인됨 / 🚫 거부됨 label (action_executed_at.present?, which implies
+      # ✅ approved / 🚫 denied label (action_executed_at.present?, which implies
       # action.present?) roll up to this single condition.
       #
       # Such a message is a HUMAN decision surface and must never be dispatched

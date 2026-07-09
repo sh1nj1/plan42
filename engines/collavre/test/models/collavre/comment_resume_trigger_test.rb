@@ -59,7 +59,7 @@ module Collavre
       assert_includes resume_comment.content, "🔄"
     end
 
-    # An approval surface (approve button / 승인됨 label = action payload) is a
+    # An approval surface (approve button / approved label = action payload) is a
     # human decision surface, not a "user resumed" signal. Even authored by a
     # human, it must not resume the loop — otherwise the auto-posted @agent
     # resume turn would carry the approval message into the agent's history,
