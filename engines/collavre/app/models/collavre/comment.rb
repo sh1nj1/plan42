@@ -213,6 +213,7 @@ module Collavre
       return if private?
       return if skip_default_user  # system notices should not trigger AI
       return if skip_dispatch      # explicit opt-out (e.g., command processor responses)
+      return if approval_action?   # approval button / 승인됨 message: human decision surface, never dispatch to an agent
       return unless user_id        # nil user = system message
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
