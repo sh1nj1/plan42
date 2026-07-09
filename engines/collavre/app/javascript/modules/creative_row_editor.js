@@ -1221,11 +1221,11 @@ export function initializeCreativeRowEditor() {
             }
             updateActionButtonStates();
             // Only announce "saved" when the current buffer still matches what we
-            // just persisted. If the user kept typing during the in-flight save,
-            // isDirty stays true above (only the earlier snapshot was stored), and
-            // a fresh debounce is already queued, so show "pending" rather than
-            // falsely claiming saved.
-            applySaveStatus(isDirty ? 'pending' : 'saved');
+            // just persisted. Text edits during the in-flight save keep isDirty
+            // true; a non-text change (e.g. a second progress toggle) re-arms
+            // pendingSave while this early-returns on the shared promise. Either
+            // means the latest value isn't persisted, so show "pending".
+            applySaveStatus((isDirty || pendingSave) ? 'pending' : 'saved');
           });
         }).catch(function (err) {
           // Preserve existing rejection propagation; only surface save status.
