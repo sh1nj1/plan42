@@ -1,4 +1,4 @@
-import { $getSelection, $isRangeSelection, ParagraphNode } from "lexical"
+import { $getSelection, $isRangeSelection, $isParagraphNode, TextNode } from "lexical"
 import { $createCodeNode } from "@lexical/code"
 import { markLanguageResolved } from "../editor/code_languages"
 
@@ -21,11 +21,23 @@ const FENCE_REGEX = /^```([\w+-]*)$/
  * space, so pressing Enter after the fence (what users actually do) left the
  * paragraph as plain text. This transform reacts to the fence itself.
  *
+ * It is a TextNode (leaf) transform on purpose: leaf transforms run for every
+ * keystroke that mutates a text node, whereas an element transform on the
+ * paragraph only re-runs when the paragraph's own children change. Typing the
+ * third backtick just edits the existing text node, so a paragraph transform
+ * never saw the completed ``` and only the space-triggered built-in fired.
+ *
  * Returns the editor.registerNodeTransform teardown so callers can clean up.
  */
 export function registerCodeFenceShortcut(editor) {
-  return editor.registerNodeTransform(ParagraphNode, (node) => {
-    const match = node.getTextContent().match(FENCE_REGEX)
+  return editor.registerNodeTransform(TextNode, (textNode) => {
+    // The fence must be the paragraph's entire text; bail before touching the
+    // parent for the common case of a text node inside anything else.
+    const paragraph = textNode.getParent()
+    if (!$isParagraphNode(paragraph)) return
+    if (paragraph.getTopLevelElement() !== paragraph) return
+
+    const match = paragraph.getTextContent().match(FENCE_REGEX)
     if (!match) return
 
     // Only convert the block the user is actively typing in — a collapsed caret
@@ -33,11 +45,11 @@ export function registerCodeFenceShortcut(editor) {
     // edits) that happen to produce a ``` paragraph elsewhere from being rewritten.
     const selection = $getSelection()
     if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
-    if (selection.anchor.getNode().getTopLevelElement() !== node) return
+    if (selection.anchor.getNode().getTopLevelElement() !== paragraph) return
 
     const language = match[1] || undefined
     const codeNode = $createCodeNode(language)
-    node.replace(codeNode)
+    paragraph.replace(codeNode)
     // An explicit fence language must survive the highlight transform, which
     // otherwise re-detects any block still on the "javascript" default and would
     // silently relabel a deliberate ```javascript. Mirror the import path.

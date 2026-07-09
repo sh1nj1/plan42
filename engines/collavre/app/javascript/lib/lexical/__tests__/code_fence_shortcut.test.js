@@ -44,7 +44,50 @@ function typeFence(editor, text) {
   )
 }
 
+// Simulate real keystrokes: type into a single persistent paragraph one char at
+// a time, moving the caret to the end after each. This is what the browser does
+// and, unlike typeFence, it never rebuilds the paragraph — so it exercises the
+// path where only a leaf text node is dirty (the case a ParagraphNode transform
+// missed, leaving Enter after ``` doing nothing).
+function typeIncrementally(editor, text) {
+  editor.update(
+    () => {
+      const root = $getRoot()
+      root.clear()
+      root.append($createParagraphNode())
+    },
+    { discrete: true }
+  )
+  for (const ch of text) {
+    editor.update(
+      () => {
+        const paragraph = $getRoot().getFirstChild()
+        let textNode = paragraph.getFirstChild()
+        if (!textNode) {
+          textNode = $createTextNode("")
+          paragraph.append(textNode)
+        }
+        textNode.setTextContent(textNode.getTextContent() + ch)
+        textNode.select(textNode.getTextContentSize(), textNode.getTextContentSize())
+      },
+      { discrete: true }
+    )
+  }
+}
+
 describe("registerCodeFenceShortcut", () => {
+  it("converts ``` typed one character at a time (Enter path, no trailing space)", () => {
+    const editor = buildEditor()
+    typeIncrementally(editor, "```")
+
+    editor.read(() => {
+      const children = $getRoot().getChildren()
+      expect(children).toHaveLength(1)
+      expect($isCodeNode(children[0])).toBe(true)
+      expect(children[0].getTextContent()).toBe("")
+    })
+  })
+
   it("converts a bare ``` fence into an empty code block", () => {
     const editor = buildEditor()
     typeFence(editor, "```")
