@@ -7,6 +7,7 @@ import {
 } from "lexical"
 import { $createCodeNode, $isCodeNode } from "@lexical/code"
 import { $isTableNode } from "@lexical/table"
+import { $isListNode } from "@lexical/list"
 
 /**
  * Toggle the current selection between a code block and normal paragraphs.
@@ -19,8 +20,8 @@ import { $isTableNode } from "@lexical/table"
  *
  * When every selected top-level block is already a code block the toggle runs in
  * reverse: each code block is expanded back into one paragraph per line.
- * Any mix of block types (headings, quotes, lists, paragraphs) is absorbed as
- * plain text so the button always has a predictable effect on a range.
+ * Text blocks (headings, quotes, paragraphs) are absorbed as plain text; tables,
+ * media, and lists are structural and left in place (see $isMergeableTextBlock).
  */
 export function $toggleCodeBlockForSelection() {
   const selection = $getSelection()
@@ -75,6 +76,13 @@ export function $toggleCodeBlockForSelection() {
 // not, so they are excluded from the merge to avoid destroying content.
 function $isMergeableTextBlock(node) {
   if ($isTableNode(node) || $isDecoratorNode(node)) return false
+  // A ListNode is the top-level element for every bullet, so selecting text in
+  // ONE bullet top-levels to the whole list. Merging it would flatten every
+  // sibling bullet (via getTextContent()) and replace the entire list — losing
+  // unselected bullets. Item-granular folding (split the list, keep the rest) is
+  // out of scope here, so lists are treated as structural and left in place;
+  // convert a list to code via a ``` fence instead.
+  if ($isListNode(node)) return false
   // TableCellNode is a shadow root, so getTopLevelElement() on cell content
   // returns the cell's own paragraph — a plain block that slips past the
   // $isTableNode check above. Merging that cell block with document-root blocks

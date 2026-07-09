@@ -30,7 +30,13 @@ class TestMediaNode extends DecoratorNode {
 }
 import { HeadingNode, QuoteNode, registerRichText } from "@lexical/rich-text"
 import { CodeNode, CodeHighlightNode, $createCodeNode, $isCodeNode } from "@lexical/code"
-import { ListNode, ListItemNode } from "@lexical/list"
+import {
+  ListNode,
+  ListItemNode,
+  $createListNode,
+  $createListItemNode,
+  $isListNode
+} from "@lexical/list"
 import {
   TableNode,
   TableRowNode,
@@ -223,6 +229,67 @@ describe("$toggleCodeBlockForSelection", () => {
       expect(children.map((c) => c.getType())).toEqual(["code", "table", "code"])
       const table = children.find($isTableNode)
       expect(table.getTextContent()).toContain("cell")
+      const codeBlocks = children.filter($isCodeNode)
+      expect(codeBlocks.map((c) => c.getTextContent())).toEqual(["before", "after"])
+    })
+  })
+
+  it("leaves the whole list intact when only one bullet is selected", () => {
+    const editor = buildEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const list = $createListNode("bullet")
+        const first = $createListItemNode()
+        first.append($createTextNode("one"))
+        const second = $createListItemNode()
+        second.append($createTextNode("two"))
+        list.append(first, second)
+        root.append(list)
+        // Caret sits in the first bullet only.
+        first.getFirstChild().selectEnd()
+        $toggleCodeBlockForSelection()
+      },
+      { discrete: true }
+    )
+
+    editor.read(() => {
+      const children = $getRoot().getChildren()
+      // The list survives whole — the unselected second bullet is not absorbed
+      // into a code block, and no code block is created from a single bullet.
+      expect(children.some($isListNode)).toBe(true)
+      expect(children.some($isCodeNode)).toBe(false)
+      expect(children.find($isListNode).getTextContent()).toContain("two")
+    })
+  })
+
+  it("merges surrounding text but leaves a list in place (structural, order preserved)", () => {
+    const editor = buildEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const before = appendParagraph(root, "before")
+        const list = $createListNode("bullet")
+        const item = $createListItemNode()
+        item.append($createTextNode("bullet"))
+        list.append(item)
+        root.append(list)
+        const after = appendParagraph(root, "after")
+        const selection = $createRangeSelection()
+        selection.anchor.set(before.getFirstChild().getKey(), 0, "text")
+        selection.focus.set(after.getFirstChild().getKey(), "after".length, "text")
+        $setSelection(selection)
+        $toggleCodeBlockForSelection()
+      },
+      { discrete: true }
+    )
+
+    editor.read(() => {
+      const children = $getRoot().getChildren()
+      // List stays in place; "after" is not pulled above it (order preserved).
+      expect(children.map((c) => c.getType())).toEqual(["code", "list", "code"])
       const codeBlocks = children.filter($isCodeNode)
       expect(codeBlocks.map((c) => c.getTextContent())).toEqual(["before", "after"])
     })
