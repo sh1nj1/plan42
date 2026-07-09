@@ -124,6 +124,9 @@ ko:
         metadata_save: 저장
         toggle_markdown: 마크다운
         toggle_richtext: 서식 편집
+        save_status_saving: 저장중…
+        save_status_saved: 저장됨
+        save_status_error: 저장 실패
         markdown_to_richtext_confirm: 서식 편집으로 전환하면 마크다운 원본이 삭제됩니다.
           계속하시겠습니까?
         richtext_to_markdown_confirm: 마크다운으로 전환하면 현재 서식 편집 내용이 삭제됩니다. 계속하시겠습니까?

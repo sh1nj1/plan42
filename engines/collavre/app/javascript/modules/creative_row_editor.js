@@ -76,11 +76,24 @@ export function initializeCreativeRowEditor() {
         console.log('Restoring dirty state for current creative');
         isDirty = true;
         pendingSave = true;
+        setSaveStatus('error');
         updateActionButtonStates();
       }
     });
 
     // ... rest of initialization
+
+    // Reflect the inline editor's save lifecycle in the toolbar row.
+    // Plain JS controller can't call the i18n `t()` helper, so the localized
+    // strings are carried on the span's data-* attributes (set in the ERB).
+    // state: 'saving' | 'saved' | 'error' | '' (cleared).
+    function setSaveStatus(state) {
+      const el = document.getElementById('inline-save-status');
+      if (!el) return;
+      const label = state ? el.dataset[`label${state.charAt(0).toUpperCase()}${state.slice(1)}`] : '';
+      el.textContent = label || '';
+      el.dataset.state = state || '';
+    }
 
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
@@ -391,6 +404,7 @@ export function initializeCreativeRowEditor() {
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;
       isDirty = false;
+      setSaveStatus('');
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       setProgressState(normalizedProgress);
@@ -1083,6 +1097,7 @@ export function initializeCreativeRowEditor() {
         pendingSave = false;
         if (!form.action) return Promise.resolve();
         saving = true;
+        setSaveStatus('saving');
 
         // Capture values being saved to update dirty state on success
         // NOTE: `let` (not `const`) — when the server rewrites markdown_source
@@ -1101,7 +1116,10 @@ export function initializeCreativeRowEditor() {
         }
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
-          if (!r.ok) return r;
+          if (!r.ok) {
+            setSaveStatus('error');
+            return r;
+          }
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
@@ -1194,7 +1212,12 @@ export function initializeCreativeRowEditor() {
               }
             }
             updateActionButtonStates();
+            setSaveStatus('saved');
           });
+        }).catch(function (err) {
+          // Preserve existing rejection propagation; only surface save status.
+          setSaveStatus('error');
+          throw err;
         }).finally(function () {
           saving = false;
           if (!shouldPersistProgress) {
