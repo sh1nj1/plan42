@@ -15,7 +15,6 @@ import { HeadingNode, QuoteNode, $isHeadingNode, $isQuoteNode } from "@lexical/r
 import {
   CodeNode,
   CodeHighlightNode,
-  $createCodeNode,
   $isCodeNode,
   registerCodeHighlighting
 } from "@lexical/code"
@@ -56,6 +55,7 @@ import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
+import { $toggleCodeBlockForSelection } from "../lib/lexical/code_block_toggle"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
 import { ensureTrailingParagraph, registerTrailingParagraph } from "../lib/lexical/trailing_paragraph"
@@ -682,39 +682,7 @@ function Toolbar() {
 
   const toggleCodeBlock = useCallback(() => {
     editor.update(() => {
-      const selection = $getSelection()
-      if (!$isRangeSelection(selection)) return
-
-      const anchorNode = selection.anchor.getNode()
-      const topLevel = anchorNode.getTopLevelElement()
-      if (!topLevel) return
-
-      if ($isCodeNode(topLevel)) {
-        const textContent = topLevel.getTextContent()
-        const lines = textContent.split("\n")
-        const firstParagraph = $createParagraphNode()
-        firstParagraph.append($createTextNode(lines[0] || ""))
-        topLevel.replace(firstParagraph)
-        let previous = firstParagraph
-        for (let index = 1; index < lines.length; index += 1) {
-          const paragraph = $createParagraphNode()
-          paragraph.append($createTextNode(lines[index]))
-          previous.insertAfter(paragraph)
-          previous = paragraph
-        }
-        firstParagraph.selectEnd()
-        return
-      }
-
-      if (topLevel.getType?.() !== "paragraph") {
-        return
-      }
-
-      const codeNode = $createCodeNode()
-      const content = topLevel.getTextContent()
-      codeNode.append($createTextNode(content || ""))
-      topLevel.replace(codeNode)
-      codeNode.selectEnd()
+      $toggleCodeBlockForSelection()
     })
   }, [editor])
 
