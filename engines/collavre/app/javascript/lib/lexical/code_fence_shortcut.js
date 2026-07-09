@@ -1,9 +1,14 @@
 import { $getSelection, $isRangeSelection, ParagraphNode } from "lexical"
 import { $createCodeNode } from "@lexical/code"
+import { markLanguageResolved } from "../editor/code_languages"
 
 // A paragraph whose entire text is a Markdown fence opener: three backticks,
 // optionally followed by a language token (e.g. ```ruby). Nothing may follow
 // the language, so normal prose that merely contains backticks is untouched.
+//
+// A language only reaches match[1] when the whole fence lands at once (paste or
+// programmatic insert); per-character typing converts on the bare ``` before a
+// language can be typed, which is the intended immediate-conversion behavior.
 const FENCE_REGEX = /^```([\w+-]*)$/
 
 /**
@@ -33,6 +38,10 @@ export function registerCodeFenceShortcut(editor) {
     const language = match[1] || undefined
     const codeNode = $createCodeNode(language)
     node.replace(codeNode)
+    // An explicit fence language must survive the highlight transform, which
+    // otherwise re-detects any block still on the "javascript" default and would
+    // silently relabel a deliberate ```javascript. Mirror the import path.
+    if (language) markLanguageResolved(editor, codeNode.getKey())
     codeNode.selectStart()
   })
 }

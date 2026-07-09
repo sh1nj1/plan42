@@ -9,6 +9,7 @@ import {
 import { HeadingNode, QuoteNode, registerRichText } from "@lexical/rich-text"
 import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code"
 import { registerCodeFenceShortcut } from "../code_fence_shortcut"
+import { isLanguageResolved } from "../../editor/code_languages"
 
 function buildEditor() {
   const editor = createEditor({
@@ -66,6 +67,33 @@ describe("registerCodeFenceShortcut", () => {
       expect($isCodeNode(codeNode)).toBe(true)
       expect(codeNode.getLanguage()).toBe("ruby")
     })
+  })
+
+  it("marks an explicit fence language resolved so highlighting won't relabel it", () => {
+    const editor = buildEditor()
+    // ```javascript is ambiguous with the tokenizer's baked default; without the
+    // resolved marker the detect transform would re-detect and could relabel it.
+    typeFence(editor, "```javascript")
+
+    let key
+    editor.read(() => {
+      const codeNode = $getRoot().getFirstChild()
+      expect($isCodeNode(codeNode)).toBe(true)
+      expect(codeNode.getLanguage()).toBe("javascript")
+      key = codeNode.getKey()
+    })
+    expect(isLanguageResolved(editor, key)).toBe(true)
+  })
+
+  it("does not mark a bare ``` fence resolved", () => {
+    const editor = buildEditor()
+    typeFence(editor, "```")
+
+    let key
+    editor.read(() => {
+      key = $getRoot().getFirstChild().getKey()
+    })
+    expect(isLanguageResolved(editor, key)).toBe(false)
   })
 
   it("leaves prose that merely contains backticks untouched", () => {
