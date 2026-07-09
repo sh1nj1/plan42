@@ -1097,7 +1097,14 @@ export function initializeCreativeRowEditor() {
         pendingSave = false;
         if (!form.action) return Promise.resolve();
         saving = true;
-        setSaveStatus('saving');
+        // Only reflect this save's outcome while the editor is still bound to the
+        // creative it started on. If the user navigates to another row mid-flight
+        // (move() reattaches the shared #inline-save-status span to the new row),
+        // a late completion must not mislabel the newly opened row.
+        const applySaveStatus = function (state) {
+          if (tree === currentTree) setSaveStatus(state);
+        };
+        applySaveStatus('saving');
 
         // Capture values being saved to update dirty state on success
         // NOTE: `let` (not `const`) — when the server rewrites markdown_source
@@ -1117,7 +1124,7 @@ export function initializeCreativeRowEditor() {
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) {
-            setSaveStatus('error');
+            applySaveStatus('error');
             return r;
           }
           return r.text().then(function (text) {
@@ -1216,11 +1223,11 @@ export function initializeCreativeRowEditor() {
             // just persisted. If the user kept typing during the in-flight save,
             // isDirty stays true above (only the earlier snapshot was stored), so
             // keep the pending/saving indicator instead of falsely claiming saved.
-            setSaveStatus(isDirty ? 'saving' : 'saved');
+            applySaveStatus(isDirty ? 'saving' : 'saved');
           });
         }).catch(function (err) {
           // Preserve existing rejection propagation; only surface save status.
-          setSaveStatus('error');
+          applySaveStatus('error');
           throw err;
         }).finally(function () {
           saving = false;
