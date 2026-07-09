@@ -61,6 +61,11 @@ module Collavre
 
     scope :public_only, -> { where(private: false) }
 
+    # SQL inverse of Comment#approval_action? (action.present?). Approval-surface
+    # messages must never reach an AI agent — not only at the dispatch seams but
+    # also as chat-history/trigger context — so agent-context queries exclude them.
+    scope :without_approval_action, -> { where("action IS NULL OR action = ''") }
+
     scope :visible_to, ->(user) {
       where(
         "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
