@@ -29,7 +29,7 @@ module Collavre
       end
 
       def parse_action(comment)
-        return nil if comment.action.blank?
+        return nil unless comment.approval_action?
 
         JSON.parse(comment.action)
       rescue JSON::ParserError

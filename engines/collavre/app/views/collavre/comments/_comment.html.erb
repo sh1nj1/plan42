@@ -173,7 +173,7 @@
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
     </div>
   <% end %>
-  <% if comment.action.present? %>
+  <% if comment.approval_action? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>
