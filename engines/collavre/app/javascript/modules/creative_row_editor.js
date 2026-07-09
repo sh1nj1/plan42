@@ -1079,6 +1079,12 @@ export function initializeCreativeRowEditor() {
     }
 
     function saveForm(tree = currentTree, parentId = parentInput.value) {
+      // Reflect the in-flight save immediately, *before* awaiting pending uploads.
+      // Direct-save callers (progress checkbox, structure moves) bypass
+      // scheduleSave(), so without this an attachment upload still in flight would
+      // let the toolbar keep a stale "saved" label for the whole upload window.
+      // Gated on the editor still being bound to this row (mirrors applySaveStatus).
+      if (tree === currentTree && (pendingSave || saving || isDirty)) setSaveStatus('pending');
       return waitForUploads().then(function () {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
@@ -1091,6 +1097,8 @@ export function initializeCreativeRowEditor() {
           : isHtmlEmpty(descriptionInput.value);
         if (isEmpty) {
           pendingSave = false;
+          // Nothing to persist — don't strand the "pending" label set above.
+          if (tree === currentTree) setSaveStatus('');
           return Promise.resolve();
         }
 
