@@ -1974,6 +1974,10 @@ export function initializeCreativeRowEditor() {
           originalProgress = 0;
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
+          isDirty = false;
+          // The status span is shared across rows; clear the previous row's
+          // "saved"/"failed" label so a blank new row doesn't inherit it.
+          setSaveStatus('');
           lexicalEditor.focus();
           updateActionButtonStates();
           document.dispatchEvent(new CustomEvent('creative-editing:start', {
@@ -2005,6 +2009,10 @@ export function initializeCreativeRowEditor() {
       if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;
 
       pendingSave = true;
+      // A prior "saved"/"failed" label would otherwise claim the freshly edited
+      // buffer is persisted during the 5s debounce window, so reflect the pending
+      // save the moment the buffer diverges from what was last stored.
+      if (isDirty) setSaveStatus('saving');
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
     }
