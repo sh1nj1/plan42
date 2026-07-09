@@ -124,6 +124,7 @@ ko:
         metadata_save: 저장
         toggle_markdown: 마크다운
         toggle_richtext: 서식 편집
+        save_status_pending: 저장 대기중
         save_status_saving: 저장중…
         save_status_saved: 저장됨
         save_status_error: 저장 실패

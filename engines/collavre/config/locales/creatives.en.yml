@@ -136,6 +136,7 @@ en:
         metadata_save: Save
         toggle_markdown: Markdown
         toggle_richtext: Rich Text
+        save_status_pending: Save pending
         save_status_saving: Saving…
         save_status_saved: Saved
         save_status_error: Save failed

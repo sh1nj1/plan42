@@ -86,7 +86,8 @@ export function initializeCreativeRowEditor() {
     // Reflect the inline editor's save lifecycle in the toolbar row.
     // Plain JS controller can't call the i18n `t()` helper, so the localized
     // strings are carried on the span's data-* attributes (set in the ERB).
-    // state: 'saving' | 'saved' | 'error' | '' (cleared).
+    // state: 'pending' | 'saving' | 'saved' | 'error' | '' (cleared).
+    // 'pending' = dirty, waiting out the debounce; 'saving' = request in flight.
     function setSaveStatus(state) {
       const el = document.getElementById('inline-save-status');
       if (!el) return;
@@ -1221,9 +1222,10 @@ export function initializeCreativeRowEditor() {
             updateActionButtonStates();
             // Only announce "saved" when the current buffer still matches what we
             // just persisted. If the user kept typing during the in-flight save,
-            // isDirty stays true above (only the earlier snapshot was stored), so
-            // keep the pending/saving indicator instead of falsely claiming saved.
-            applySaveStatus(isDirty ? 'saving' : 'saved');
+            // isDirty stays true above (only the earlier snapshot was stored), and
+            // a fresh debounce is already queued, so show "pending" rather than
+            // falsely claiming saved.
+            applySaveStatus(isDirty ? 'pending' : 'saved');
           });
         }).catch(function (err) {
           // Preserve existing rejection propagation; only surface save status.
@@ -2011,8 +2013,9 @@ export function initializeCreativeRowEditor() {
       pendingSave = true;
       // A prior "saved"/"failed" label would otherwise claim the freshly edited
       // buffer is persisted during the 5s debounce window, so reflect the pending
-      // save the moment the buffer diverges from what was last stored.
-      if (isDirty) setSaveStatus('saving');
+      // save the moment the buffer diverges from what was last stored. The request
+      // hasn't started yet, so this is "pending" (waiting), not "saving".
+      if (isDirty) setSaveStatus('pending');
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
     }
