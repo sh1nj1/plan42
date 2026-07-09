@@ -131,10 +131,13 @@ module Collavre
     # next value per parent in `seq`. The first time a parent is seen the
     # counter is seeded past any pre-existing children so an import into an
     # already-populated parent appends after them instead of colliding at 0.
+    # A nil parent means a root-level import (top-level page with no parent_id);
+    # closure_tree orders roots by `sequence` too, so seed from Creative.roots.
     def self.create_child(user:, parent:, description:, seq:)
-      key = parent.id
+      key = parent&.id
       unless seq.key?(key)
-        max = parent.children.maximum(:sequence)
+        siblings = parent ? parent.children : Creative.roots
+        max = siblings.maximum(:sequence)
         seq[key] = max ? max + 1 : 0
       end
       creative = Creative.create(user: user, parent: parent, description: description, sequence: seq[key])

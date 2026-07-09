@@ -242,9 +242,32 @@ class MarkdownImporterTest < ActiveSupport::TestCase
     assert_equal existing, parent.children.order(:sequence).first
   end
 
+  test "imports at root level with a nil parent and sequences the root siblings" do
+    user = users(:one)
+    markdown = <<~MD
+      # Root Page
+      First child
+      Second child
+    MD
+
+    # Top-level import (no parent_id) passes parent: nil with create_root: true.
+    # Regression guard: create_child must not dereference a nil parent.
+    created = MarkdownImporter.import(markdown, parent: nil, user: user, create_root: true)
+
+    root = created.first
+    assert_nil root.parent, "create_root import must produce a top-level creative"
+    assert_equal "Root Page", plain_text(root.description)
+
+    ordered = root.children.order(:sequence).map { |c| plain_text(c.description) }
+    assert_equal [ "First child", "Second child" ], ordered
+    assert_equal [ 0, 1 ], root.children.order(:sequence).pluck(:sequence)
+  end
+
   private
 
+  # Extract visible text via a real HTML parser; a single-pass tag-strip regex
+  # is incomplete (nested tags like `<<b>b>` slip through) — CodeQL flags it.
   def plain_text(html)
-    html.to_s.gsub(/<[^>]+>/, "").strip
+    Nokogiri::HTML.fragment(html.to_s).text.strip
   end
 end
