@@ -274,6 +274,7 @@ module Collavre
     def resume_trigger_loop_if_awaiting
       return unless user_id                # must have a user (not system)
       return if user&.ai_user?             # must be a human, not an AI agent
+      return if approval_action?           # approval surface is not a user-resume signal; the resumed @agent turn would otherwise carry it into history
       return unless creative
 
       # Use pessimistic lock to prevent duplicate resume from concurrent comments
