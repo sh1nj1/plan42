@@ -4,7 +4,8 @@ import {
   $createParagraphNode,
   $createTextNode,
   $createRangeSelection,
-  $setSelection
+  $setSelection,
+  KEY_ENTER_COMMAND
 } from "lexical"
 import { HeadingNode, QuoteNode, registerRichText } from "@lexical/rich-text"
 import { CodeNode, CodeHighlightNode, $isCodeNode } from "@lexical/code"
@@ -24,9 +25,10 @@ function buildEditor() {
   return editor
 }
 
-// Simulate a user typing `text` into an empty paragraph with the caret at its end,
-// so the fence transform sees an active collapsed selection inside the paragraph.
-function typeFence(editor, text) {
+// Put `text` into a fresh paragraph with the caret at its end — the state right
+// before the user presses Enter. This does NOT convert on its own; conversion is
+// the Enter keystroke, so the language token can be typed first.
+function setFenceLine(editor, text) {
   editor.update(
     () => {
       const root = $getRoot()
@@ -44,53 +46,35 @@ function typeFence(editor, text) {
   )
 }
 
-// Simulate real keystrokes: type into a single persistent paragraph one char at
-// a time, moving the caret to the end after each. This is what the browser does
-// and, unlike typeFence, it never rebuilds the paragraph — so it exercises the
-// path where only a leaf text node is dirty (the case a ParagraphNode transform
-// missed, leaving Enter after ``` doing nothing).
-function typeIncrementally(editor, text) {
-  editor.update(
-    () => {
-      const root = $getRoot()
-      root.clear()
-      root.append($createParagraphNode())
-    },
-    { discrete: true }
-  )
-  for (const ch of text) {
-    editor.update(
-      () => {
-        const paragraph = $getRoot().getFirstChild()
-        let textNode = paragraph.getFirstChild()
-        if (!textNode) {
-          textNode = $createTextNode("")
-          paragraph.append(textNode)
-        }
-        textNode.setTextContent(textNode.getTextContent() + ch)
-        textNode.select(textNode.getTextContentSize(), textNode.getTextContentSize())
-      },
-      { discrete: true }
-    )
-  }
+// Dispatch a bare Enter (the fence-commit keystroke). Returns nothing; read the
+// editor state afterwards to assert the outcome.
+function pressEnter(editor, { shiftKey = false } = {}) {
+  editor.dispatchCommand(KEY_ENTER_COMMAND, {
+    shiftKey,
+    preventDefault() {}
+  })
 }
 
 describe("registerCodeFenceShortcut", () => {
-  it("converts ``` typed one character at a time (Enter path, no trailing space)", () => {
+  it("does not convert until Enter — so ```lang can be typed first", () => {
     const editor = buildEditor()
-    typeIncrementally(editor, "```")
-
+    // The fence line is present with the caret at its end, but no Enter yet.
+    setFenceLine(editor, "```")
     editor.read(() => {
-      const children = $getRoot().getChildren()
-      expect(children).toHaveLength(1)
-      expect($isCodeNode(children[0])).toBe(true)
-      expect(children[0].getTextContent()).toBe("")
+      expect($isCodeNode($getRoot().getFirstChild())).toBe(false)
+    })
+
+    // Extending the fence with a language must not have converted it either.
+    setFenceLine(editor, "```json")
+    editor.read(() => {
+      expect($isCodeNode($getRoot().getFirstChild())).toBe(false)
     })
   })
 
-  it("converts a bare ``` fence into an empty code block", () => {
+  it("converts a bare ``` fence into an empty code block on Enter", () => {
     const editor = buildEditor()
-    typeFence(editor, "```")
+    setFenceLine(editor, "```")
+    pressEnter(editor)
 
     editor.read(() => {
       const children = $getRoot().getChildren()
@@ -101,14 +85,15 @@ describe("registerCodeFenceShortcut", () => {
     })
   })
 
-  it("carries the language token from ```ruby", () => {
+  it("carries the language token from ```json on Enter", () => {
     const editor = buildEditor()
-    typeFence(editor, "```ruby")
+    setFenceLine(editor, "```json")
+    pressEnter(editor)
 
     editor.read(() => {
       const codeNode = $getRoot().getFirstChild()
       expect($isCodeNode(codeNode)).toBe(true)
-      expect(codeNode.getLanguage()).toBe("ruby")
+      expect(codeNode.getLanguage()).toBe("json")
     })
   })
 
@@ -116,7 +101,8 @@ describe("registerCodeFenceShortcut", () => {
     const editor = buildEditor()
     // ```javascript is ambiguous with the tokenizer's baked default; without the
     // resolved marker the detect transform would re-detect and could relabel it.
-    typeFence(editor, "```javascript")
+    setFenceLine(editor, "```javascript")
+    pressEnter(editor)
 
     let key
     editor.read(() => {
@@ -130,7 +116,8 @@ describe("registerCodeFenceShortcut", () => {
 
   it("does not mark a bare ``` fence resolved", () => {
     const editor = buildEditor()
-    typeFence(editor, "```")
+    setFenceLine(editor, "```")
+    pressEnter(editor)
 
     let key
     editor.read(() => {
@@ -139,9 +126,20 @@ describe("registerCodeFenceShortcut", () => {
     expect(isLanguageResolved(editor, key)).toBe(false)
   })
 
-  it("leaves prose that merely contains backticks untouched", () => {
+  it("leaves Shift+Enter as a soft newline, not a fence commit", () => {
     const editor = buildEditor()
-    typeFence(editor, "run ```code``` inline")
+    setFenceLine(editor, "```")
+    pressEnter(editor, { shiftKey: true })
+
+    editor.read(() => {
+      expect($isCodeNode($getRoot().getFirstChild())).toBe(false)
+    })
+  })
+
+  it("leaves prose that merely contains backticks untouched on Enter", () => {
+    const editor = buildEditor()
+    setFenceLine(editor, "run ```code``` inline")
+    pressEnter(editor)
 
     editor.read(() => {
       const child = $getRoot().getFirstChild()
@@ -150,7 +148,7 @@ describe("registerCodeFenceShortcut", () => {
     })
   })
 
-  it("does not convert a ``` paragraph when the caret is elsewhere (bulk edits)", () => {
+  it("does not convert a ``` paragraph when the caret is elsewhere", () => {
     const editor = buildEditor()
     editor.update(
       () => {
@@ -171,6 +169,7 @@ describe("registerCodeFenceShortcut", () => {
       },
       { discrete: true }
     )
+    pressEnter(editor)
 
     editor.read(() => {
       const children = $getRoot().getChildren()

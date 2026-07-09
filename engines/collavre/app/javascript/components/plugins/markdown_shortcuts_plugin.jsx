@@ -15,10 +15,10 @@ import { registerCodeFenceShortcut } from "../../lib/lexical/code_fence_shortcut
  * - "1. " (any number) at line start → ordered list
  * - "```" (optionally "```lang") on its own line → code block
  *
- * These fire on text change (not on Enter), so they don't conflict
- * with the Enter→addNew() shortcut on desktop. The built-in CODE transformer
- * needs "``` " (trailing space); registerCodeFenceShortcut additionally converts
- * the bare "```" fence so pressing Enter after it also opens a code block.
+ * The list transformers fire on text change. The built-in CODE transformer
+ * needs "``` " (trailing space); registerCodeFenceShortcut adds the Enter path,
+ * converting a "```" (or "```lang") line to a code block when Enter is pressed —
+ * so the language can be typed before the fence commits.
  */
 const CREATIVE_MARKDOWN_TRANSFORMERS = [
   UNORDERED_LIST,

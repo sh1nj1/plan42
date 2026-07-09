@@ -1,59 +1,60 @@
-import { $getSelection, $isRangeSelection, $isParagraphNode, TextNode } from "lexical"
+import {
+  $getSelection,
+  $isRangeSelection,
+  $isParagraphNode,
+  KEY_ENTER_COMMAND,
+  COMMAND_PRIORITY_HIGH
+} from "lexical"
 import { $createCodeNode } from "@lexical/code"
 import { markLanguageResolved } from "../editor/code_languages"
 
 // A paragraph whose entire text is a Markdown fence opener: three backticks,
 // optionally followed by a language token (e.g. ```ruby). Nothing may follow
 // the language, so normal prose that merely contains backticks is untouched.
-//
-// A language only reaches match[1] when the whole fence lands at once (paste or
-// programmatic insert); per-character typing converts on the bare ``` before a
-// language can be typed, which is the intended immediate-conversion behavior.
 const FENCE_REGEX = /^```([\w+-]*)$/
 
 /**
- * Turn a line that starts with a Markdown code fence into a code block as the
- * user types it — the standard rich-editor shortcut. Typing ``` (optionally
- * ```lang) on its own line replaces that paragraph with an empty code block and
- * drops the caret inside, ready for code.
+ * Open a code block when the user presses Enter on a "```" (optionally
+ * "```lang") line. The built-in @lexical/markdown CODE transformer only fires on
+ * "``` " + a trailing space, so Enter after the fence (what users actually do)
+ * left the paragraph as plain text; this adds the Enter path.
  *
- * The built-in @lexical/markdown CODE transformer only fires on ``` + a trailing
- * space, so pressing Enter after the fence (what users actually do) left the
- * paragraph as plain text. This transform reacts to the fence itself.
+ * Enter is used deliberately rather than reacting to the fence text itself:
+ * converting the moment the third backtick lands would swallow "```json" before
+ * the language could be typed. Conversion must wait for the delimiter — a space
+ * (handled by the built-in transformer) or Enter (handled here) — so whatever
+ * language the user typed between the fence and the delimiter is captured.
  *
- * It is a TextNode (leaf) transform on purpose: leaf transforms run for every
- * keystroke that mutates a text node, whereas an element transform on the
- * paragraph only re-runs when the paragraph's own children change. Typing the
- * third backtick just edits the existing text node, so a paragraph transform
- * never saw the completed ``` and only the space-triggered built-in fired.
- *
- * Returns the editor.registerNodeTransform teardown so callers can clean up.
+ * Returns the editor.registerCommand teardown so callers can clean up.
  */
 export function registerCodeFenceShortcut(editor) {
-  return editor.registerNodeTransform(TextNode, (textNode) => {
-    // The fence must be the paragraph's entire text; bail before touching the
-    // parent for the common case of a text node inside anything else.
-    const paragraph = textNode.getParent()
-    if (!$isParagraphNode(paragraph)) return
-    if (paragraph.getTopLevelElement() !== paragraph) return
+  return editor.registerCommand(
+    KEY_ENTER_COMMAND,
+    (event) => {
+      // Shift+Enter is a soft newline within a block, never a fence commit.
+      if (event?.shiftKey) return false
 
-    const match = paragraph.getTextContent().match(FENCE_REGEX)
-    if (!match) return
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false
 
-    // Only convert the block the user is actively typing in — a collapsed caret
-    // inside this paragraph. This keeps bulk operations (import, paste, programmatic
-    // edits) that happen to produce a ``` paragraph elsewhere from being rewritten.
-    const selection = $getSelection()
-    if (!$isRangeSelection(selection) || !selection.isCollapsed()) return
-    if (selection.anchor.getNode().getTopLevelElement() !== paragraph) return
+      const paragraph = selection.anchor.getNode().getTopLevelElement()
+      if (!$isParagraphNode(paragraph)) return false
 
-    const language = match[1] || undefined
-    const codeNode = $createCodeNode(language)
-    paragraph.replace(codeNode)
-    // An explicit fence language must survive the highlight transform, which
-    // otherwise re-detects any block still on the "javascript" default and would
-    // silently relabel a deliberate ```javascript. Mirror the import path.
-    if (language) markLanguageResolved(editor, codeNode.getKey())
-    codeNode.selectStart()
-  })
+      const match = paragraph.getTextContent().match(FENCE_REGEX)
+      if (!match) return false
+
+      // Swallow the newline Enter would otherwise insert; replace the fence line.
+      event?.preventDefault()
+      const language = match[1] || undefined
+      const codeNode = $createCodeNode(language)
+      paragraph.replace(codeNode)
+      // An explicit fence language must survive the highlight transform, which
+      // otherwise re-detects any block still on the "javascript" default and would
+      // silently relabel a deliberate ```javascript. Mirror the import path.
+      if (language) markLanguageResolved(editor, codeNode.getKey())
+      codeNode.selectStart()
+      return true
+    },
+    COMMAND_PRIORITY_HIGH
+  )
 }
