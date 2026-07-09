@@ -183,4 +183,68 @@ class MarkdownImporterTest < ActiveSupport::TestCase
     assert_not_nil image_creative, "Bare reference-style data URI with title should still resolve to an Active Storage blob image"
     assert_no_match(/data:image\/png;base64/, image_creative.description, "Raw data URI must not survive import")
   end
+
+  test "assigns contiguous sequence to persisted siblings in document order" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    markdown = <<~MD
+      First
+      Second
+      Third
+      Fourth
+      Fifth
+    MD
+
+    MarkdownImporter.import(markdown, parent: parent, user: user)
+
+    ordered = parent.children.order(:sequence).map { |c| plain_text(c.description) }
+    assert_equal %w[First Second Third Fourth Fifth], ordered,
+      "Persisted children must sort by sequence in document order (not rely on DB tie-break)"
+    assert_equal [ 0, 1, 2, 3, 4 ], parent.children.order(:sequence).map(&:sequence),
+      "Imported siblings must get contiguous 0-based sequence values"
+  end
+
+  test "assigns per-parent sequence for nested headings" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    markdown = <<~MD
+      # H1
+      Alpha
+      Beta
+      ## H2
+      Gamma
+      Delta
+    MD
+
+    MarkdownImporter.import(markdown, parent: parent, user: user)
+
+    h1 = parent.children.order(:sequence).first
+    assert_equal "H1", plain_text(h1.description)
+    # Under H1: "Alpha", "Beta", then "H2" — each a distinct sibling in order
+    assert_equal %w[Alpha Beta H2], h1.children.order(:sequence).map { |c| plain_text(c.description) }
+    assert_equal [ 0, 1, 2 ], h1.children.order(:sequence).map(&:sequence)
+
+    h2 = h1.children.order(:sequence).find { |c| plain_text(c.description) == "H2" }
+    assert_equal %w[Gamma Delta], h2.children.order(:sequence).map { |c| plain_text(c.description) }
+    assert_equal [ 0, 1 ], h2.children.order(:sequence).map(&:sequence)
+  end
+
+  test "appends imported siblings after existing children of the target parent" do
+    user = users(:one)
+    parent = Creative.create!(user: user, description: "Parent")
+    existing = Creative.create!(user: user, parent: parent, description: "Existing", sequence: 0)
+
+    MarkdownImporter.import("Imported one\nImported two\n", parent: parent, user: user)
+
+    ordered = parent.children.order(:sequence).map { |c| plain_text(c.description) }
+    assert_equal [ "Existing", "Imported one", "Imported two" ], ordered,
+      "Imported nodes must append after pre-existing children, not collide at sequence 0"
+    assert_equal existing, parent.children.order(:sequence).first
+  end
+
+  private
+
+  def plain_text(html)
+    html.to_s.gsub(/<[^>]+>/, "").strip
+  end
 end
