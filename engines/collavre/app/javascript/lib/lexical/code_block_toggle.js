@@ -2,9 +2,11 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getSelection,
+  $isDecoratorNode,
   $isRangeSelection
 } from "lexical"
 import { $createCodeNode, $isCodeNode } from "@lexical/code"
+import { $isTableNode } from "@lexical/table"
 
 /**
  * Toggle the current selection between a code block and normal paragraphs.
@@ -39,15 +41,29 @@ export function $toggleCodeBlockForSelection() {
     return
   }
 
-  // Otherwise → merge every selected block's text into a single code block.
-  const content = topLevels.map((node) => node.getTextContent()).join("\n")
+  // Otherwise → merge every selected TEXT block into a single code block.
+  // Tables and media (image/video/attachment DecoratorNodes) are structural:
+  // their text content is empty or a flattening of tabular data, so absorbing
+  // them would silently destroy the table/media. Leave those blocks in place
+  // and only merge the real text blocks (matches the old paragraph-only guard,
+  // widened to headings/quotes/lists but not to structural containers).
+  const mergeable = topLevels.filter($isMergeableTextBlock)
+  if (mergeable.length === 0) return
+  const content = mergeable.map((node) => node.getTextContent()).join("\n")
   const codeNode = $createCodeNode()
   codeNode.append($createTextNode(content))
-  topLevels[0].replace(codeNode)
-  for (let index = 1; index < topLevels.length; index += 1) {
-    topLevels[index].remove()
+  mergeable[0].replace(codeNode)
+  for (let index = 1; index < mergeable.length; index += 1) {
+    mergeable[index].remove()
   }
   codeNode.selectEnd()
+}
+
+// A block can be folded into a code block only if its text content faithfully
+// represents it. Tables (tabular structure) and decorator media (no text) do
+// not, so they are excluded from the merge to avoid destroying content.
+function $isMergeableTextBlock(node) {
+  return !$isTableNode(node) && !$isDecoratorNode(node)
 }
 
 // Distinct top-level blocks the selection touches, in document order. getNodes()
