@@ -218,12 +218,13 @@ describe("$toggleCodeBlockForSelection", () => {
 
     editor.read(() => {
       const children = $getRoot().getChildren()
-      // Table survives; its cell text is NOT pulled into any code block.
+      // Table survives in place; its cell text is NOT pulled into any code block,
+      // and "after" is not moved above the table (document order preserved).
+      expect(children.map((c) => c.getType())).toEqual(["code", "table", "code"])
       const table = children.find($isTableNode)
-      expect(table).toBeDefined()
       expect(table.getTextContent()).toContain("cell")
       const codeBlocks = children.filter($isCodeNode)
-      codeBlocks.forEach((code) => expect(code.getTextContent()).not.toContain("cell"))
+      expect(codeBlocks.map((c) => c.getTextContent())).toEqual(["before", "after"])
     })
   })
 
@@ -248,11 +249,11 @@ describe("$toggleCodeBlockForSelection", () => {
 
     editor.read(() => {
       const children = $getRoot().getChildren()
-      // Media block must survive; the two text paragraphs merge into one code block.
-      expect(children.some((c) => c.getType() === "test-media")).toBe(true)
+      // Media block must survive AND stay in document order. Text on each side of
+      // it becomes its own code block — "after" is never pulled above the media.
+      expect(children.map((c) => c.getType())).toEqual(["code", "test-media", "code"])
       const codeBlocks = children.filter($isCodeNode)
-      expect(codeBlocks).toHaveLength(1)
-      expect(codeBlocks[0].getTextContent()).toBe("before\nafter")
+      expect(codeBlocks.map((c) => c.getTextContent())).toEqual(["before", "after"])
     })
   })
 })

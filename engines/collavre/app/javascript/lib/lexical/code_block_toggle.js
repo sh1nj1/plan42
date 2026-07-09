@@ -41,22 +41,33 @@ export function $toggleCodeBlockForSelection() {
     return
   }
 
-  // Otherwise → merge every selected TEXT block into a single code block.
-  // Tables and media (image/video/attachment DecoratorNodes) are structural:
-  // their text content is empty or a flattening of tabular data, so absorbing
-  // them would silently destroy the table/media. Leave those blocks in place
-  // and only merge the real text blocks (matches the old paragraph-only guard,
-  // widened to headings/quotes/lists but not to structural containers).
-  const mergeable = topLevels.filter($isMergeableTextBlock)
-  if (mergeable.length === 0) return
-  const content = mergeable.map((node) => node.getTextContent()).join("\n")
-  const codeNode = $createCodeNode()
-  codeNode.append($createTextNode(content))
-  mergeable[0].replace(codeNode)
-  for (let index = 1; index < mergeable.length; index += 1) {
-    mergeable[index].remove()
+  // Otherwise → fold the selected TEXT blocks into code blocks. Tables and media
+  // (image/video/attachment DecoratorNodes) are structural: their text content is
+  // empty or a flattening of tabular data, so absorbing them would silently
+  // destroy the table/media. They are left in place, which SPLITS the selection:
+  // merging text from both sides of a structural block into one code block would
+  // pull later content across the block and corrupt document order. So each
+  // contiguous run of text blocks becomes its own code block, structural blocks
+  // untouched in between (matches the old paragraph-only guard, widened to
+  // headings/quotes/lists but not across structural containers).
+  let run = []
+  let lastCode = null
+  const flushRun = () => {
+    if (run.length === 0) return
+    const content = run.map((node) => node.getTextContent()).join("\n")
+    const codeNode = $createCodeNode()
+    codeNode.append($createTextNode(content))
+    run[0].replace(codeNode)
+    for (let index = 1; index < run.length; index += 1) run[index].remove()
+    lastCode = codeNode
+    run = []
   }
-  codeNode.selectEnd()
+  topLevels.forEach((node) => {
+    if ($isMergeableTextBlock(node)) run.push(node)
+    else flushRun()
+  })
+  flushRun()
+  if (lastCode) lastCode.selectEnd()
 }
 
 // A block can be folded into a code block only if its text content faithfully
