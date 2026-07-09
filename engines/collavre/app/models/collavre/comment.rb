@@ -61,6 +61,11 @@ module Collavre
 
     scope :public_only, -> { where(private: false) }
 
+    # SQL inverse of Comment#approval_action? (action.present?). Approval-surface
+    # messages must never reach an AI agent — not only at the dispatch seams but
+    # also as chat-history/trigger context — so agent-context queries exclude them.
+    scope :without_approval_action, -> { where("action IS NULL OR action = ''") }
+
     scope :visible_to, ->(user) {
       where(
         "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
@@ -213,6 +218,7 @@ module Collavre
       return if private?
       return if skip_default_user  # system notices should not trigger AI
       return if skip_dispatch      # explicit opt-out (e.g., command processor responses)
+      return if approval_action?   # approval button / approved message: human decision surface, never dispatch to an agent
       return unless user_id        # nil user = system message
       return if user&.ai_user?     # AI replies use A2aDispatcher, not this callback
       return unless creative
@@ -273,6 +279,7 @@ module Collavre
     def resume_trigger_loop_if_awaiting
       return unless user_id                # must have a user (not system)
       return if user&.ai_user?             # must be a human, not an AI agent
+      return if approval_action?           # approval surface is not a user-resume signal; the resumed @agent turn would otherwise carry it into history
       return unless creative
 
       # Use pessimistic lock to prevent duplicate resume from concurrent comments

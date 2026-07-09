@@ -15,6 +15,10 @@ module Collavre
       # Dispatch A2A events if the response mentions any AI agents
       def dispatch
         return unless @reply_comment&.content.present?
+        # An approval-action message (approve button / approved) is a human decision
+        # surface and must never reach an AI agent — not even via an @mention in
+        # another agent's reply. Same invariant as Comment#dispatch_to_orchestration.
+        return if @reply_comment.approval_action?
 
         mentioned_agents = find_mentioned_agents
         return if mentioned_agents.empty?

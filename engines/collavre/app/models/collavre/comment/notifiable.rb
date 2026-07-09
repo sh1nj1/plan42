@@ -172,7 +172,7 @@ module Collavre
       end
 
       def notify_approver
-        return unless approver.present? && action.present?
+        return unless approver.present? && approval_action?
         return if approver == user
         return if creative&.inbox? # Don't notify about inbox comments
 
