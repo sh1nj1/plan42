@@ -2014,8 +2014,11 @@ export function initializeCreativeRowEditor() {
       // A prior "saved"/"failed" label would otherwise claim the freshly edited
       // buffer is persisted during the 5s debounce window, so reflect the pending
       // save the moment the buffer diverges from what was last stored. The request
-      // hasn't started yet, so this is "pending" (waiting), not "saving".
-      if (isDirty) setSaveStatus('pending');
+      // hasn't started yet, so this is "pending" (waiting), not "saving". Gate on
+      // pendingSave (just set true), not isDirty: structure-only changes (level
+      // up/down, reorder) schedule a save without setting isDirty, and must not
+      // keep showing the previous "saved" label.
+      setSaveStatus('pending');
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
     }
