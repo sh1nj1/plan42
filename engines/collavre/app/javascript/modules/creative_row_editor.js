@@ -1212,7 +1212,11 @@ export function initializeCreativeRowEditor() {
               }
             }
             updateActionButtonStates();
-            setSaveStatus('saved');
+            // Only announce "saved" when the current buffer still matches what we
+            // just persisted. If the user kept typing during the in-flight save,
+            // isDirty stays true above (only the earlier snapshot was stored), so
+            // keep the pending/saving indicator instead of falsely claiming saved.
+            setSaveStatus(isDirty ? 'saving' : 'saved');
           });
         }).catch(function (err) {
           // Preserve existing rejection propagation; only surface save status.
