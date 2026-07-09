@@ -63,7 +63,14 @@ export function $toggleCodeBlockForSelection() {
 // represents it. Tables (tabular structure) and decorator media (no text) do
 // not, so they are excluded from the merge to avoid destroying content.
 function $isMergeableTextBlock(node) {
-  return !$isTableNode(node) && !$isDecoratorNode(node)
+  if ($isTableNode(node) || $isDecoratorNode(node)) return false
+  // TableCellNode is a shadow root, so getTopLevelElement() on cell content
+  // returns the cell's own paragraph — a plain block that slips past the
+  // $isTableNode check above. Merging that cell block with document-root blocks
+  // moves content across the table boundary (relocating outside text into a
+  // cell, or replacing the cell body). Never merge table-scoped blocks.
+  if (node.getParents().some($isTableNode)) return false
+  return true
 }
 
 // Distinct top-level blocks the selection touches, in document order. getNodes()

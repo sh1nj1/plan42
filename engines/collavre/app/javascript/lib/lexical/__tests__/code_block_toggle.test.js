@@ -190,6 +190,43 @@ describe("$toggleCodeBlockForSelection", () => {
     })
   })
 
+  it("does not fold table-cell content into the merge when a table sits inside the range", () => {
+    const editor = buildEditor()
+    editor.update(
+      () => {
+        const root = $getRoot()
+        root.clear()
+        const before = appendParagraph(root, "before")
+        const table = $createTableNodeWithDimensions(2, 2, false)
+        root.append(table)
+        // Put text in the first cell so we can assert it is never merged out.
+        const cellParagraph = table.getFirstChild().getFirstChild().getFirstChild()
+        cellParagraph.clear()
+        cellParagraph.append($createTextNode("cell"))
+        const after = appendParagraph(root, "after")
+        // Endpoints are the outside paragraphs; the range walks through the
+        // table interior. getTableCell content top-levels to the cell paragraph,
+        // which must be excluded from the merge (it is table-scoped).
+        const selection = $createRangeSelection()
+        selection.anchor.set(before.getFirstChild().getKey(), 0, "text")
+        selection.focus.set(after.getFirstChild().getKey(), "after".length, "text")
+        $setSelection(selection)
+        $toggleCodeBlockForSelection()
+      },
+      { discrete: true }
+    )
+
+    editor.read(() => {
+      const children = $getRoot().getChildren()
+      // Table survives; its cell text is NOT pulled into any code block.
+      const table = children.find($isTableNode)
+      expect(table).toBeDefined()
+      expect(table.getTextContent()).toContain("cell")
+      const codeBlocks = children.filter($isCodeNode)
+      codeBlocks.forEach((code) => expect(code.getTextContent()).not.toContain("cell"))
+    })
+  })
+
   it("merges surrounding text but leaves a selected media (decorator) block intact", () => {
     const editor = buildEditor()
     editor.update(
