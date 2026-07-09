@@ -71,8 +71,11 @@ export function initializeCreativeRowEditor() {
         alertDialog(serverMessage || 'Failed to save changes. Please check your connection and try again.');
       }
 
-      // If the failed item matches the current creative, mark it as dirty so it can be retried
-      if (form.dataset.creativeId && item.path.includes(form.dataset.creativeId)) {
+      // If the failed item matches the current creative, mark it as dirty so it can be retried.
+      // Match the id exactly — a substring test (e.g. path.includes("23")) also matches
+      // "/creatives/123", flagging the wrong row's toolbar as failed.
+      const failedCreativeId = (item.path.match(/\/creatives\/(\d+)/) || [])[1];
+      if (form.dataset.creativeId && failedCreativeId === form.dataset.creativeId) {
         console.log('Restoring dirty state for current creative');
         isDirty = true;
         pendingSave = true;
