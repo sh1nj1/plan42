@@ -71,16 +71,33 @@ export function initializeCreativeRowEditor() {
         alertDialog(serverMessage || 'Failed to save changes. Please check your connection and try again.');
       }
 
-      // If the failed item matches the current creative, mark it as dirty so it can be retried
-      if (form.dataset.creativeId && item.path.includes(form.dataset.creativeId)) {
+      // If the failed item matches the current creative, mark it as dirty so it can be retried.
+      // Match the id exactly — a substring test (e.g. path.includes("23")) also matches
+      // "/creatives/123", flagging the wrong row's toolbar as failed.
+      const failedCreativeId = (item.path.match(/\/creatives\/(\d+)/) || [])[1];
+      if (form.dataset.creativeId && failedCreativeId === form.dataset.creativeId) {
         console.log('Restoring dirty state for current creative');
         isDirty = true;
         pendingSave = true;
+        setSaveStatus('error');
         updateActionButtonStates();
       }
     });
 
     // ... rest of initialization
+
+    // Reflect the inline editor's save lifecycle in the toolbar row.
+    // Plain JS controller can't call the i18n `t()` helper, so the localized
+    // strings are carried on the span's data-* attributes (set in the ERB).
+    // state: 'pending' | 'saving' | 'saved' | 'error' | '' (cleared).
+    // 'pending' = dirty, waiting out the debounce; 'saving' = request in flight.
+    function setSaveStatus(state) {
+      const el = document.getElementById('inline-save-status');
+      if (!el) return;
+      const label = state ? el.dataset[`label${state.charAt(0).toUpperCase()}${state.slice(1)}`] : '';
+      el.textContent = label || '';
+      el.dataset.state = state || '';
+    }
 
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
@@ -391,6 +408,7 @@ export function initializeCreativeRowEditor() {
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;
       isDirty = false;
+      setSaveStatus('');
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       setProgressState(normalizedProgress);
@@ -1064,6 +1082,12 @@ export function initializeCreativeRowEditor() {
     }
 
     function saveForm(tree = currentTree, parentId = parentInput.value) {
+      // Reflect the in-flight save immediately, *before* awaiting pending uploads.
+      // Direct-save callers (progress checkbox, structure moves) bypass
+      // scheduleSave(), so without this an attachment upload still in flight would
+      // let the toolbar keep a stale "saved" label for the whole upload window.
+      // Gated on the editor still being bound to this row (mirrors applySaveStatus).
+      if (tree === currentTree && (pendingSave || saving || isDirty)) setSaveStatus('pending');
       return waitForUploads().then(function () {
         if (saving) return savePromise;
         clearTimeout(saveTimer);
@@ -1076,6 +1100,8 @@ export function initializeCreativeRowEditor() {
           : isHtmlEmpty(descriptionInput.value);
         if (isEmpty) {
           pendingSave = false;
+          // Nothing to persist — don't strand the "pending" label set above.
+          if (tree === currentTree) setSaveStatus('');
           return Promise.resolve();
         }
 
@@ -1083,6 +1109,14 @@ export function initializeCreativeRowEditor() {
         pendingSave = false;
         if (!form.action) return Promise.resolve();
         saving = true;
+        // Only reflect this save's outcome while the editor is still bound to the
+        // creative it started on. If the user navigates to another row mid-flight
+        // (move() reattaches the shared #inline-save-status span to the new row),
+        // a late completion must not mislabel the newly opened row.
+        const applySaveStatus = function (state) {
+          if (tree === currentTree) setSaveStatus(state);
+        };
+        applySaveStatus('saving');
 
         // Capture values being saved to update dirty state on success
         // NOTE: `let` (not `const`) — when the server rewrites markdown_source
@@ -1101,7 +1135,10 @@ export function initializeCreativeRowEditor() {
         }
 
         savePromise = creativesApi.save(form.action, method, form).then(function (r) {
-          if (!r.ok) return r;
+          if (!r.ok) {
+            applySaveStatus('error');
+            return r;
+          }
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
@@ -1194,7 +1231,17 @@ export function initializeCreativeRowEditor() {
               }
             }
             updateActionButtonStates();
+            // Only announce "saved" when the current buffer still matches what we
+            // just persisted. Text edits during the in-flight save keep isDirty
+            // true; a non-text change (e.g. a second progress toggle) re-arms
+            // pendingSave while this early-returns on the shared promise. Either
+            // means the latest value isn't persisted, so show "pending".
+            applySaveStatus((isDirty || pendingSave) ? 'pending' : 'saved');
           });
+        }).catch(function (err) {
+          // Preserve existing rejection propagation; only surface save status.
+          applySaveStatus('error');
+          throw err;
         }).finally(function () {
           saving = false;
           if (!shouldPersistProgress) {
@@ -1940,6 +1987,10 @@ export function initializeCreativeRowEditor() {
           originalProgress = 0;
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
+          isDirty = false;
+          // The status span is shared across rows; clear the previous row's
+          // "saved"/"failed" label so a blank new row doesn't inherit it.
+          setSaveStatus('');
           lexicalEditor.focus();
           updateActionButtonStates();
           document.dispatchEvent(new CustomEvent('creative-editing:start', {
@@ -1971,6 +2022,14 @@ export function initializeCreativeRowEditor() {
       if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;
 
       pendingSave = true;
+      // A prior "saved"/"failed" label would otherwise claim the freshly edited
+      // buffer is persisted during the 5s debounce window, so reflect the pending
+      // save the moment the buffer diverges from what was last stored. The request
+      // hasn't started yet, so this is "pending" (waiting), not "saving". Gate on
+      // pendingSave (just set true), not isDirty: structure-only changes (level
+      // up/down, reorder) schedule a save without setting isDirty, and must not
+      // keep showing the previous "saved" label.
+      setSaveStatus('pending');
       clearTimeout(saveTimer);
       saveTimer = setTimeout(saveForm, 5000);
     }
