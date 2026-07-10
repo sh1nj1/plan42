@@ -207,6 +207,7 @@ namespace :db do
       # load_schema may leave the connection pointed elsewhere; re-pin to target.
       ActiveRecord::Base.establish_connection(run_config)
       puts "[schema] Done."
+      stamp_all_migrations(ActiveRecord::Base.connection)
     end
     target_conn = ActiveRecord::Base.connection
 
@@ -529,6 +530,32 @@ namespace :db do
   # into their PostgreSQL equivalents. SQLite dumps JSON expression indexes using
   # json_extract(col, '$.key'); PostgreSQL needs (col ->> 'key'). Without this,
   # db:schema:load fails on Postgres with "function json_extract does not exist".
+  # Fully populate schema_migrations after a schema:load.
+  #
+  # Why: schema:load's assume_migrated_upto_version stamps only versions from the
+  # primary db_config's migrations_paths (nil -> just "db/migrate", 7 files here),
+  # leaving the ~160 engine migrations unstamped. db:migrate, however, reads
+  # DatabaseTasks.migrations_paths (primary + every engine that appends its path),
+  # so on deploy it treats those engine migrations as pending and re-runs them
+  # against already-existing tables -> "relation already exists". Stamping the full
+  # set here makes db:migrate a no-op, which is correct: schema:load already built
+  # the exact state those migrations produce.
+  def stamp_all_migrations(conn)
+    paths = ActiveRecord::Tasks::DatabaseTasks.migrations_paths
+    all = ActiveRecord::MigrationContext.new(paths).migrations.map(&:version)
+    sm = conn.quote_table_name("schema_migrations")
+    existing = conn.select_values("SELECT version FROM #{sm}").map(&:to_i)
+    missing = (all - existing).sort
+    if missing.empty?
+      puts "[schema] schema_migrations already complete (#{existing.size} versions)."
+      return
+    end
+    values = missing.map { |v| "(#{conn.quote(v.to_s)})" }.join(", ")
+    conn.execute("INSERT INTO #{sm} (version) VALUES #{values}")
+    puts "[schema] Stamped #{missing.size} engine/primary migration versions " \
+         "(schema_migrations now #{existing.size + missing.size})."
+  end
+
   def load_portable_schema(target_config)
     require "tempfile"
     schema_file = ActiveRecord::Tasks::DatabaseTasks.schema_dump_path(target_config)
