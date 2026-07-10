@@ -314,7 +314,24 @@ module Collavre
     # Destroy creatives deepest-first so closure_tree always finds its parent
     def destroy_creatives_leaf_first
       all_creatives = creatives.flat_map { |c| c.self_and_descendants.to_a }.uniq
-      all_creatives.sort_by { |c| -c.self_and_ancestors.count }.each do |c|
+
+      # Order by depth in memory. The subtree is contiguous within all_creatives
+      # (every node between an owned root and its descendant is itself a
+      # descendant), so following parent_id links yields the same leaf-first
+      # ordering as self_and_ancestors.count without firing a COUNT query per
+      # creative (the previous N+1).
+      by_id = all_creatives.index_by(&:id)
+      depth_of = lambda do |creative|
+        depth = 0
+        node = creative
+        while node&.parent_id && (parent = by_id[node.parent_id])
+          depth += 1
+          node = parent
+        end
+        depth
+      end
+
+      all_creatives.sort_by { |c| -depth_of.call(c) }.each do |c|
         c.reload.destroy! if Creative.exists?(c.id)
       end
     end
