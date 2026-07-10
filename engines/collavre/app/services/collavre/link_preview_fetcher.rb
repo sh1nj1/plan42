@@ -1,5 +1,5 @@
 module Collavre
-  require "open-uri"
+  require "net/http"
   require "nokogiri"
   require "uri"
   require "ipaddr"
@@ -29,18 +29,22 @@ module Collavre
       IPAddr.new("ff00::/8")
     ].freeze
 
+    # Minimal HTTP result the fetcher reasons about. `body` is only populated for
+    # successful (2xx) responses; redirects carry a `location` instead.
+    Response = Struct.new(:code, :content_type, :body, :location, keyword_init: true)
+
     def self.fetch(url)
       new(url).fetch
     end
 
-    def initialize(url, io_opener: URI, logger: Rails.logger)
+    def initialize(url, http_client: nil, logger: Rails.logger)
       @url = url
-      @io_opener = io_opener
+      @http_client = http_client || PinnedHttpClient.new
       @logger = logger
     end
 
     def fetch
-      uri = safe_http_uri
+      uri = parse_http_uri(@url)
       return {} unless uri
 
       html, base_uri = read_html(uri)
@@ -56,47 +60,60 @@ module Collavre
     private
 
     def read_html(uri, redirect_limit = MAX_REDIRECTS)
-      html = nil
-      base_uri = nil
-      options = REQUEST_OPTIONS.merge(read_timeout: READ_TIMEOUT, open_timeout: OPEN_TIMEOUT, redirect: false)
-      @io_opener.open(uri.to_s, options) do |io|
-        content_type = io.respond_to?(:content_type) ? io.content_type : nil
-        if content_type && HTML_CONTENT_TYPES.none? { |type| content_type.include?(type) }
-          return [ nil, nil ]
-        end
-        base_uri = io.respond_to?(:base_uri) ? io.base_uri : uri
-        html = io.read(MAX_BYTES)
+      # Resolve+validate the host ONCE per hop and pin the request to that exact
+      # IP. This closes the DNS-rebinding TOCTOU gap: a hostname that validates
+      # as public here can no longer be re-resolved to a private/metadata IP at
+      # connect time, because the connection targets the pinned address (with the
+      # original hostname preserved for Host/SNI).
+      address = pinned_address(uri)
+      return [ nil, nil ] unless address
+
+      response = @http_client.get(
+        uri,
+        ip: address,
+        headers: REQUEST_OPTIONS,
+        open_timeout: OPEN_TIMEOUT,
+        read_timeout: READ_TIMEOUT,
+        max_bytes: MAX_BYTES
+      )
+      return [ nil, nil ] unless response
+
+      if redirect?(response.code)
+        return [ nil, nil ] if redirect_limit <= 0
+
+        redirected_uri = normalize_redirect_uri(uri, response.location)
+        return [ nil, nil ] unless redirected_uri
+
+        # Recurse so the new host is resolved+validated+pinned from scratch;
+        # never follow a hop to an internal address.
+        return read_html(redirected_uri, redirect_limit - 1)
       end
-      [ html, base_uri ]
-    rescue OpenURI::HTTPRedirect => e
-      return [ nil, nil ] if redirect_limit <= 0
 
-      redirected_uri = safe_redirect_uri(uri, e.uri)
-      return [ nil, nil ] unless redirected_uri
+      return [ nil, nil ] unless success?(response.code)
 
-      read_html(redirected_uri, redirect_limit - 1)
-    rescue OpenURI::HTTPError, SocketError, IOError, SystemCallError, URI::InvalidURIError => e
+      content_type = response.content_type
+      if content_type && HTML_CONTENT_TYPES.none? { |type| content_type.include?(type) }
+        return [ nil, nil ]
+      end
+
+      [ response.body, uri ]
+    rescue SocketError, IOError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout,
+           OpenSSL::SSL::SSLError, URI::InvalidURIError => e
       @logger&.info("Link preview fetch skipped for #{@url}: #{e.class} #{e.message}")
       [ nil, nil ]
     end
 
-    def safe_http_uri
-      uri = parse_http_uri(@url)
-      return unless uri
-      return unless allowed_destination?(uri)
-
-      uri
+    def redirect?(code)
+      code.to_i.between?(300, 399)
     end
 
-    def safe_redirect_uri(current_uri, redirected)
-      new_uri = normalize_redirect_uri(current_uri, redirected)
-      return unless new_uri
-      return unless allowed_destination?(new_uri)
-
-      new_uri
+    def success?(code)
+      code.to_i.between?(200, 299)
     end
 
     def normalize_redirect_uri(current_uri, redirected)
+      return if redirected.blank?
+
       target_uri = redirected.is_a?(URI) ? redirected : URI.parse(redirected.to_s)
       target_uri = current_uri.merge(target_uri) if target_uri.relative?
       return unless %w[http https].include?(target_uri.scheme)
@@ -116,15 +133,19 @@ module Collavre
       nil
     end
 
-    def allowed_destination?(uri)
+    # Resolve the host, reject if it maps to any unsafe address, and return the
+    # single IP to pin the connection to. Rejecting when ANY resolved address is
+    # unsafe (not just the pinned one) keeps defense-in-depth against split-horizon
+    # DNS returning a mix of public and private records.
+    def pinned_address(uri)
       host = uri.hostname
-      return false if host.nil? || host.empty?
+      return if host.nil? || host.empty?
 
       addresses = resolve_addresses(host)
-      return false if addresses.empty?
-      return false if addresses.any? { |address| unsafe_ip?(address) }
+      return if addresses.empty?
+      return if addresses.any? { |address| unsafe_ip?(address) }
 
-      true
+      addresses.first
     end
 
     def resolve_addresses(host)
@@ -225,6 +246,53 @@ module Collavre
       return if text.blank?
 
       text.to_s.gsub(/\s+/, " ").strip
+    end
+
+    # Performs a single (non-redirect-following) GET against a pre-resolved IP
+    # while keeping the original hostname for the Host header and TLS SNI/cert
+    # verification. Net::HTTP#ipaddr= pins the socket to `ip`, so no second DNS
+    # lookup happens between validation and connect. Enforces the caller's open/
+    # read timeouts and byte cap.
+    class PinnedHttpClient
+      def get(uri, ip:, headers:, open_timeout:, read_timeout:, max_bytes:)
+        http = Net::HTTP.new(uri.hostname, uri.port)
+        http.use_ssl = uri.scheme == "https"
+        http.ipaddr = ip
+        http.open_timeout = open_timeout
+        http.read_timeout = read_timeout
+
+        request = Net::HTTP::Get.new(uri, headers)
+        response_struct = nil
+
+        http.start do |conn|
+          conn.request(request) do |response|
+            body = read_capped_body(response, max_bytes)
+            response_struct = Response.new(
+              code: response.code.to_i,
+              content_type: response.content_type,
+              body: body,
+              location: response["location"]
+            )
+          end
+        end
+
+        response_struct
+      ensure
+        http&.finish if http&.started?
+      end
+
+      private
+
+      def read_capped_body(response, max_bytes)
+        return nil unless response.is_a?(Net::HTTPSuccess)
+
+        body = +""
+        response.read_body do |chunk|
+          body << chunk
+          break if body.bytesize >= max_bytes
+        end
+        body.byteslice(0, max_bytes)
+      end
     end
   end
 end
