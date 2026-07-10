@@ -137,6 +137,7 @@ ko:
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.
       topic_search_placeholder: 토픽 검색...
       topic_main: 전체 메세지
+      topic_list: 토픽 목록
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
       typo_keep_label: 유지

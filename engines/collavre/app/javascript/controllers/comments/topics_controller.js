@@ -468,6 +468,53 @@ export default class extends Controller {
         this.restoreSelection()
     }
 
+    openTopicListPopup(event) {
+        const btnRect = event.currentTarget.getBoundingClientRect()
+
+        const openWith = (popup) => {
+            popup.openForTopics(
+                {
+                    topics: this.topics || [],
+                    archivedTopics: this.archivedTopics || [],
+                    mainTopicId: this.mainTopicId,
+                    allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
+                },
+                btnRect,
+                (item) => this.selectTopic(item.id),
+                this.element
+            )
+        }
+
+        let modal = document.getElementById('topic-list-modal')
+        if (modal) {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+            if (popup) openWith(popup)
+            return
+        }
+
+        modal = document.createElement('div')
+        modal.id = 'topic-list-modal'
+        modal.className = 'common-popup'
+        modal.style.display = 'none'
+        modal.dataset.controller = 'topic-list'
+        modal.innerHTML = `
+          <button type="button" class="popup-close-btn" data-topic-list-target="close">&times;</button>
+          <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+            placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
+            data-topic-list-target="input">
+          <ul class="common-popup-list" data-popup-list data-topic-list-target="list"></ul>
+        `
+        // Append into the chat box (this.element === #comments-popup) so the popup
+        // is caged within it and shares its stacking context.
+        this.element.appendChild(modal)
+
+        requestAnimationFrame(() => {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+            if (popup) openWith(popup)
+            else console.error('topic-list controller not found after creation')
+        })
+    }
+
     showInput(event) {
         event.preventDefault()
         const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')

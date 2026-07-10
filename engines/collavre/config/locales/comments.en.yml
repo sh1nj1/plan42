@@ -140,6 +140,7 @@ en:
       batch_delete_not_found: Some selected messages could not be found.
       topic_search_placeholder: Search topics...
       topic_main: All Messages
+      topic_list: Topic list
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
       typo_keep_label: keep
