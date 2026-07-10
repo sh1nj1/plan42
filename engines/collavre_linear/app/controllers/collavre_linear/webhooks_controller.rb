@@ -163,14 +163,15 @@ module CollavreLinear
     end
 
     def valid_signature?(raw_body, secret)
-      return false if secret.blank?
-
       signature = request.headers["Linear-Signature"] ||
         request.get_header("HTTP_LINEAR_SIGNATURE")
-      return false if signature.blank?
 
-      expected = OpenSSL::HMAC.hexdigest("SHA256", secret, raw_body)
-      ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+      Collavre::WebhookSignature.verify(
+        scheme: :linear,
+        secret: secret,
+        body: raw_body,
+        signature: signature
+      )
     end
 
     def fresh_timestamp?(payload)

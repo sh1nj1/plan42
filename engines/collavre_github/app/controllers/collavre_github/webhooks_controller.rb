@@ -441,28 +441,19 @@ module CollavreGithub
 
     def valid_signature?(raw_body)
       secret = webhook_secret
-      signature_header = request.headers["X-Hub-Signature-256"] || request.headers["X-Hub-Signature"]
-
       if secret.blank?
         Rails.logger.warn("GitHub webhook secret missing; rejecting request")
         return false
       end
 
-      return false if signature_header.blank?
+      signature_header = request.headers["X-Hub-Signature-256"] || request.headers["X-Hub-Signature"]
 
-      algorithm =
-        if signature_header.start_with?("sha256=")
-          "sha256"
-        elsif signature_header.start_with?("sha1=")
-          "sha1"
-        end
-
-      return false if algorithm.blank?
-
-      digest = OpenSSL::HMAC.hexdigest(algorithm.upcase, secret, raw_body)
-      expected_signature = "#{algorithm}=#{digest}"
-
-      ActiveSupport::SecurityUtils.secure_compare(expected_signature, signature_header)
+      Collavre::WebhookSignature.verify(
+        scheme: :github,
+        secret: secret,
+        body: raw_body,
+        signature: signature_header
+      )
     end
 
     def webhook_secret

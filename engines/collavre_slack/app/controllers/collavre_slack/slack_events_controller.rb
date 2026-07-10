@@ -49,11 +49,16 @@ module CollavreSlack
       signature = request.headers["X-Slack-Signature"].to_s
       return false if timestamp.blank? || signature.blank?
 
+      # Replay window (stays here: it depends on the wall clock, not the secret).
       return false if (Time.current.to_i - timestamp.to_i).abs > 300
 
-      base = "v0:#{timestamp}:#{body}"
-      expected = "v0=" + OpenSSL::HMAC.hexdigest("SHA256", signing_secret, base)
-      ActiveSupport::SecurityUtils.secure_compare(expected, signature)
+      Collavre::WebhookSignature.verify(
+        scheme: :slack,
+        secret: signing_secret,
+        body: body,
+        signature: signature,
+        timestamp: timestamp
+      )
     end
 
     def signing_secret
