@@ -6,8 +6,15 @@ module Collavre
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
 
-    # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
-    # Removed unauthenticated access to index and show actions
+    # Authorization for these read actions is not open-to-public: each action
+    # enforces per-Creative read access via has_permission?(Current.user, :read)
+    # (index/children go through Creatives::IndexQuery, which permission-filters;
+    # show/slide_view/export_markdown check has_permission? directly). Anonymous
+    # requests only ever see Creatives whose share grants public read. Requiring
+    # a login for all reads is gated by SystemSetting.creatives_login_required?
+    # via enforce_creatives_login_policy below. A broader per-Creative role model
+    # (beyond the read/feedback/write/admin share levels) is a product decision
+    # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
@@ -39,7 +46,7 @@ module Collavre
           else
             {}
           end
-          index_result = ::Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
+          index_result = ::Creatives::IndexQuery.new(user: Current.user, params: index_query_params).call
           @creatives = index_result.creatives || []
           @parent_creative = index_result.parent_creative
           @shared_creative = index_result.shared_creative
@@ -555,6 +562,19 @@ module Collavre
 
       def creative_params
         params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
+      end
+
+      # Whitelist of query parameters consumed by Creatives::IndexQuery and its
+      # FilterPipeline. Passing an explicitly permitted hash (rather than
+      # params.to_unsafe_h) keeps arbitrary client-supplied keys out of the
+      # query layer while preserving every filter the index endpoint supports.
+      def index_query_params
+        params.permit(
+          :id, :simple, :search, :search_mode, :comment, :has_comments,
+          :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
+          :assignee_id, :unassigned, :show_archived, :page, :per_page,
+          tags: []
+        ).to_h
       end
 
       def any_filter_active?
