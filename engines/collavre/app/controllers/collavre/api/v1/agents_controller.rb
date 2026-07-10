@@ -29,14 +29,14 @@ module Collavre
             return
           end
 
-          ai_user = find_or_create_session_agent(agent_name)
+          ai_user = session_provisioner.find_or_create_agent(agent_name)
           unless ai_user
             render json: { error: "Session agent email is already in use by a different account" }, status: :conflict
             return
           end
 
           inbox = Creative.inbox_for(current_user)
-          topic = find_or_create_session_topic(inbox, ai_user, session_id, params[:session_label])
+          topic = session_provisioner.find_or_create_topic(inbox, ai_user, session_id, params[:session_label])
           topic.unarchive! if topic.archived?
           topic.set_primary_agent!(ai_user)
 
@@ -202,7 +202,7 @@ module Collavre
           )
 
           if comment.save
-            finalize_claimed_task(agent, claimed_task, comment) if claimed_task
+            task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment) if claimed_task
             dispatch_a2a(agent, comment)
             render json: { comment_id: comment.id }, status: :created
           else
@@ -463,90 +463,6 @@ module Collavre
           nil
         end
 
-        # Atomically claim a delegated task for completion. Two-step:
-        #   1. Find a candidate task in delegated state, scoped to this
-        #      agent + topic. With task_id supplied, exact match (required
-        #      under topic concurrency > 1 where multiple delegated tasks
-        #      coexist; the client echoes the dispatch's task_id). Without
-        #      task_id (legacy clients), oldest-first.
-        #   2. Inside a transaction: SELECT FOR UPDATE the row, re-check
-        #      status == 'delegated' under the lock, then update! to 'done'.
-        #      Concurrent claimers block on the lock; the loser sees the
-        #      already-flipped status post-lock and returns nil so the
-        #      caller can refuse the duplicate.
-        # update_all (NOT update!) is required to skip Task's
-        # after_update_commit callbacks at claim time. The callbacks fire
-        # check_trigger_loop_completion (which enqueues TriggerLoopCheckJob)
-        # and broadcast_stop_button_removal (which reads reply_comment).
-        # Both depend on the reply comment already existing — but reply()
-        # claims BEFORE comment.save to win the race against concurrent
-        # /reply calls. If update! fired the trigger-loop check here, the
-        # job could run (cooldown_seconds: 0) before comment.save commits,
-        # find no agent comment, and leave the loop stuck in "running".
-        # finalize_claimed_task replays both callbacks after the comment is
-        # persisted via Task#fire_completion_callbacks_after_external_claim.
-        def claim_delegated_task(agent, topic, requested_task_id)
-          scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
-          candidate =
-            if requested_task_id.present?
-              scope.find_by(id: requested_task_id)
-            else
-              scope.order(:created_at).first
-            end
-          return nil unless candidate
-
-          claimed = nil
-          Task.transaction do
-            locked = Task.lock.find_by(id: candidate.id)
-            next unless locked && locked.status == "delegated"
-
-            Task.where(id: locked.id).update_all(status: "done", pending_tool_call: nil, updated_at: Time.current)
-            claimed = locked.reload
-          end
-          claimed
-        end
-
-        # Post-claim side effects, run only after the reply comment is saved.
-        # Links the comment to the claimed task, releases the ResourceTracker
-        # slot the AiAgentJob held under task.id, advances the parent
-        # workflow (if any), and drains the topic queue — mirroring
-        # AiAgentJob#perform's success path for non-delegated runs.
-        def finalize_claimed_task(agent, task, comment)
-          comment.update_column(:task_id, task.id)
-
-          Orchestration::ResourceTracker.for(agent).release!(task.id)
-
-          if task.parent_task_id.present?
-            Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
-          end
-
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
-
-          # Replay the after_update_commit callbacks that were bypassed by
-          # update_all in claim_delegated_task — now that the reply comment
-          # is linked, TriggerLoopCheckJob can read it and decide whether to
-          # advance/await/complete the drop-trigger loop, and the stop-button
-          # broadcast has a comment to render.
-          task.fire_completion_callbacks_after_external_claim
-
-          # Clear the typing indicator immediately on reply. ClaudeChannelPresenceJob
-          # would also stop on its next beat (task no longer "delegated"), but that
-          # is up to HEARTBEAT_SECONDS away — broadcast idle now so the indicator
-          # drops the moment Claude's reply lands.
-          broadcast_claude_idle(agent, task, comment)
-        end
-
-        # Clear the chat typing indicator via the canonical status broadcaster
-        # (the same one AiAgentService uses for every other agent), so the Claude
-        # path emits an identical "idle" agent_status payload.
-        def broadcast_claude_idle(agent, task, comment)
-          creative = comment.creative&.effective_origin
-          return unless creative
-
-          AiAgent::AgentLifecycleManager.new(task: task, agent: agent, creative: creative)
-                                        .broadcast_status("idle")
-        end
-
         # When an MCP session unregisters, any tasks still in delegated state
         # are abandoned — the client that would have called /reply is gone.
         # Mirror the cancel path so the agent's slot and each topic's queue
@@ -665,111 +581,24 @@ module Collavre
           ).dispatch
         end
 
-        # Deterministic, collision-free email key for a (current_user, agent_name)
-        # agent. The readable slug is lossy — "qa/bot", "qa bot" and "qa--bot" all
-        # squeeze to "qa-bot", and any all-symbol name collapses to "session" — so
-        # a short digest of the normalized raw name disambiguates distinct
-        # configured names that would otherwise alias onto ONE shared agent
-        # identity (ActionCable stream, routing state, tasks, creative shares).
-        # The slug stays for human readability; the digest decides identity. Same
-        # normalized name -> same key, so idempotent re-register/reuse is
-        # preserved. Normalization (strip+downcase) keeps case/whitespace-only
-        # differences folded, matching the prior behavior — only the lossy
-        # punctuation/spacing collapse is fixed.
-        def session_agent_email(agent_name)
-          normalized = agent_name.to_s.strip.downcase
-          slug = normalized.gsub(/[^a-z0-9-]+/, "-").squeeze("-").gsub(/\A-|-\z/, "")
-          slug = "session" if slug.blank?
-          digest = Digest::SHA256.hexdigest(normalized)[0, 10]
-          "claude-channel-#{current_user.id}-#{slug}-#{digest}@agent.collavre.local"
+        # Provisions the (agent, topic) identities for a Claude Code
+        # registration. Memoized per request; behavior extracted verbatim.
+        def session_provisioner
+          @session_provisioner ||= AiAgent::SessionProvisioner.new(current_user)
         end
 
-        # One ai_user per (current_user, agent_name) so a human's sessions share
-        # one Agent identity. Same agent_name re-registering reuses the existing
-        # row — idempotent retries (and every additional session) don't
-        # proliferate agents.
-        #
-        # Returns nil when a row with the deterministic email already exists
-        # but is owned by someone else or isn't a Claude Channel ai_user. The
-        # email format is human-derivable (current_user.id + slug + digest), so a
-        # foreign row could be planted by signup/import; silently reusing it
-        # would attach the caller's inbox feedback share to that foreign User
-        # and leave the plugin's AgentChannel subscription rejected on
-        # ownership mismatch. Caller renders 409 in that case.
-        def find_or_create_session_agent(agent_name)
-          email = session_agent_email(agent_name)
-
-          existing = User.find_by(email: email)
-          return verified_session_agent(existing) if existing
-
-          # routing_expression: nil so the new ai_user is not matchable until
-          # the client claims the per-agent stream via AgentChannel. See the
-          # comment on verified_session_agent.
-          User.create!(
-            email: email,
-            name: "Claude Channel (#{agent_name})",
-            password: SecureRandom.hex(32),
-            llm_vendor: "anthropic",
-            llm_model: "claude-code",
-            created_by_id: current_user.id,
-            searchable: false,
-            routing_expression: nil
-          )
-        rescue ActiveRecord::RecordNotUnique
-          # A concurrent registration for the same (user, agent_name) won the
-          # users.email unique race. The desired row now exists — re-find and
-          # re-verify ownership instead of surfacing a 500 that aborts one of the
-          # two simultaneously launching plugin instances.
-          verified_session_agent(User.find_by(email: email))
+        # Claims and finalizes delegated tasks on /reply. Stateless, so a single
+        # instance is reused for the request.
+        def task_claim_service
+          @task_claim_service ||= AiAgent::TaskClaimService.new
         end
 
-        # Returns the agent only when it is the current user's own Claude Channel
-        # agent; nil otherwise (the caller renders :conflict). Routing activation
-        # stays deferred to AgentChannel#subscribe_to_agent_stream so the agent
-        # becomes matchable only once a WebSocket subscriber exists for
-        # agent:user:<id> — otherwise comments matched between this POST returning
-        # and the client's subsequent cable subscribe would broadcast into an
-        # empty stream, stranding delegated tasks until stuck recovery.
-        def verified_session_agent(ai_user)
-          return nil unless ai_user &&
-                            ai_user.created_by_id == current_user.id &&
-                            ai_user.ai_user? &&
-                            ai_user.claude_channel_agent?
-
-          ai_user
-        end
-
-        # One Topic per (agent, session_id). On re-register (including --resume
-        # from the same cwd, which yields the same session_id) the existing
-        # topic is reused — even if archived — so the conversation persists
-        # instead of orphaning. A fresh session gets a new topic under the same
-        # shared agent, which is how one agent fans out to many sessions.
-        def find_or_create_session_topic(inbox, ai_user, session_id, session_label)
-          existing = inbox.topics.find_by(primary_agent_id: ai_user.id, session_id: session_id)
-          return existing if existing
-
-          label = session_label.to_s.strip.presence || session_id
-          inbox.topics.create!(
-            name: unique_topic_name(inbox, "Claude #{label}"),
-            user: current_user,
-            primary_agent_id: ai_user.id,
-            session_id: session_id
-          )
-        end
-
-        # Topics carry a UNIQUE (creative_id, name) index, so two sessions whose
-        # friendly labels collide (e.g. both rooted at a dir named "src") cannot
-        # share a name. Append the smallest numeric suffix that is free.
-        def unique_topic_name(inbox, desired)
-          return desired unless inbox.topics.exists?(name: desired)
-
-          n = 2
-          loop do
-            candidate = "#{desired} (#{n})"
-            return candidate unless inbox.topics.exists?(name: candidate)
-
-            n += 1
-          end
+        # Thin delegator to TaskClaimService#claim. Kept as a controller method
+        # (rather than calling the service inline in #reply) so the concurrency
+        # test that patches AgentsController#claim_delegated_task to inject a race
+        # keeps exercising the same seam.
+        def claim_delegated_task(agent, topic, requested_task_id)
+          task_claim_service.claim(agent: agent, topic: topic, requested_task_id: requested_task_id)
         end
       end
     end
