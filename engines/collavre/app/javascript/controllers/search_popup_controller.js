@@ -1,9 +1,24 @@
 import { Controller } from '@hotwired/stimulus'
 
+// localStorage key holding the user's most recent creative-index filter set.
+// Persisted per browser so search/progress/tag/… conditions survive navigation
+// away from and back to the index, matching the "search conditions must
+// persist" requirement.
+const STORAGE_KEY = 'collavre.creativeSearchFilters'
+
 export default class extends Controller {
   static targets = ['input', 'popup', 'overlay']
 
+  // filterKeys: the canonical list of filter param names (rendered from the
+  //   Ruby FilterParams::DISPLAY_KEYS single source of truth).
+  // indexPath: the creatives index path; restore only fires there.
+  static values = { filterKeys: Array, indexPath: String }
+
   connect() {
+    // Reapply persisted filters when landing on a bare index view. Done first,
+    // before wiring handlers, so the (possible) navigation happens immediately.
+    this._restoreFilters()
+
     this._escHandler = (e) => {
       if (e.key === 'Escape') this.close()
     }
@@ -93,8 +108,7 @@ export default class extends Controller {
       url.searchParams.set('max_progress', '0.99')
     }
 
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate(url)
   }
 
   // Apply comment filter
@@ -106,8 +120,7 @@ export default class extends Controller {
     } else {
       url.searchParams.set('comment', 'true')
     }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate(url)
   }
 
   // Toggle search mode (flat/tree)
@@ -122,8 +135,7 @@ export default class extends Controller {
     } else {
       url.searchParams.delete('search_mode')
     }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate(url)
   }
 
   // Toggle archive visibility via URL parameter
@@ -135,8 +147,15 @@ export default class extends Controller {
     } else {
       url.searchParams.set('show_archived', 'true')
     }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate(url)
+  }
+
+  // Clear all persisted filters and navigate to the unfiltered index.
+  reset(event) {
+    if (event) event.preventDefault()
+    this._clearStored()
+    const target = this.hasIndexPathValue ? this.indexPathValue : window.location.pathname
+    this._visit(target)
   }
 
   _applyFilters(overrides = {}) {
@@ -148,7 +167,106 @@ export default class extends Controller {
         url.searchParams.delete('search')
       }
     }
+    this._navigate(url)
+  }
+
+  // Persist the resulting filter set, then navigate. Persisting happens on the
+  // *write* path (a deliberate filter change) — never on plain page load — so
+  // that clearing all filters and navigating to a bare URL leaves the store
+  // empty instead of resurrecting stale conditions.
+  _navigate(url) {
+    this._persist(url)
     const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._visit(query ? `${url.pathname}?${query}` : url.pathname)
+  }
+
+  // Navigation seams (isolated so behavior can be asserted in tests without a
+  // real browser navigation).
+  _visit(href) {
+    window.location.href = href
+  }
+
+  _replaceWith(href) {
+    window.location.replace(href)
+  }
+
+  _filterKeys() {
+    return this.hasFilterKeysValue ? this.filterKeysValue : []
+  }
+
+  _persist(url) {
+    const stored = {}
+    for (const key of this._filterKeys()) {
+      const values = url.searchParams.getAll(key)
+      if (values.length === 1) {
+        stored[key] = values[0]
+      } else if (values.length > 1) {
+        stored[key] = values
+      }
+    }
+    try {
+      if (Object.keys(stored).length > 0) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
+      } else {
+        window.localStorage.removeItem(STORAGE_KEY)
+      }
+    } catch (_) {
+      // localStorage unavailable (private mode, disabled) — persistence is a
+      // progressive enhancement, so silently continue.
+    }
+  }
+
+  _clearStored() {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY)
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  _readStored() {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? parsed : null
+    } catch (_) {
+      return null
+    }
+  }
+
+  // Reapply persisted filters, but only on a genuinely bare index view:
+  //   - we're on the index path,
+  //   - no filter param is present (an explicit filtered URL is authoritative),
+  //   - no `id` param (a subtree drill-in must not be hijacked into a global
+  //     filtered search).
+  // Uses location.replace so the bare URL doesn't pollute history, and never
+  // loops: after the replace the URL carries filter params, so the guard below
+  // short-circuits on the next connect.
+  _restoreFilters() {
+    if (!this.hasIndexPathValue) return
+    if (window.location.pathname !== this.indexPathValue) return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('id')) return
+    if (this._filterKeys().some((key) => params.has(key))) return
+
+    const stored = this._readStored()
+    if (!stored) return
+
+    const restored = new URLSearchParams()
+    for (const key of this._filterKeys()) {
+      const value = stored[key]
+      if (Array.isArray(value)) {
+        value.forEach((entry) => restored.append(key, entry))
+      } else if (value != null && value !== '') {
+        restored.set(key, value)
+      }
+    }
+
+    const query = restored.toString()
+    if (!query) return
+
+    this._replaceWith(`${this.indexPathValue}?${query}`)
   }
 }

@@ -1,4 +1,7 @@
-<div class="search-popup-wrapper" data-controller="search-popup">
+<div class="search-popup-wrapper"
+     data-controller="search-popup"
+     data-search-popup-filter-keys-value="<%= Collavre::Creatives::FilterParams::DISPLAY_KEYS.to_json %>"
+     data-search-popup-index-path-value="<%= collavre.creatives_path %>">
   <%
     raw_url = begin; request.original_url; rescue; request.url; end
     url = URI.parse(raw_url)
@@ -8,7 +11,9 @@
     has_archived = url_params['show_archived'] == 'true'
     has_search = url_params['search'].present?
     search_mode = url_params['search_mode'] || 'flat'
-    has_any_filter = has_progress || has_archived || has_search
+    # Single source of truth (shared with the controller, IndexQuery and the
+    # client-side persistence) for whether the view is currently narrowed.
+    has_any_filter = Collavre::Creatives::FilterParams.active?(url_params)
 
     progress_state = if url_params['min_progress'] == '1' && url_params['max_progress'] == '1'
                        :complete
@@ -82,6 +87,9 @@
     </div>
 
     <div class="search-popup-footer">
+      <button type="button"
+              class="search-popup-reset-btn"
+              data-action="click->search-popup#reset"><%= t('collavre.search_popup.reset') %></button>
       <div class="search-popup-footer-hints">
         <span class="search-popup-footer-hint"><kbd>↵</kbd> <%= t('collavre.search_popup.to_search') %></span>
         <span class="search-popup-footer-hint"><kbd>ESC</kbd> <%= t('collavre.search_popup.to_close') %></span>

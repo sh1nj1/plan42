@@ -8,5 +8,6 @@ en:
       flat_view: "Flat"
       tree_view: "Tree"
       other_filters: "Filters"
+      reset: "Reset"
       to_search: "to search"
       to_close: "to close"
