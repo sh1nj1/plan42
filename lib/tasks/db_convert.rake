@@ -26,15 +26,33 @@
 #   DATABASE_URL=postgresql://user:pw@host:5432/collavre_production \
 #     bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"
 #
+#   # Local one-shot: keep the app's own DATABASE_URL (app role) and just supply
+#   # a superuser to RUN the copy with. Works even when dotenv `overload` rewrites
+#   # a CLI DATABASE_URL back to the app role (which is why passing the superuser
+#   # via DATABASE_URL alone does NOT work in this repo):
+#   MIGRATION_RUN_USER=soonoh \
+#     bin/rails "db:sqlite_to_postgres[storage/development-primary.sqlite3,development]"
+#
 # Options (environment variables):
 #   BATCH_SIZE=1000        rows per INSERT batch (default 1000)
 #   SKIP_SCHEMA_LOAD=1     do NOT load db/schema.rb into the target first
 #                          (use when the target already has an empty schema)
 #   ONLY=t1,t2             copy only these tables
 #   EXCLUDE=t1,t2          skip these tables (in addition to the built-ins)
+#   MIGRATION_RUN_USER=name       run the migration as this (superuser) role,
+#                          connecting to the SAME target database. Use this when
+#                          the app's DATABASE_URL points at a non-superuser role:
+#                          the RI-disable step needs a superuser, but the app keeps
+#                          its own role and ownership is handed back to it at the
+#                          end. Preferred locally because dotenv `overload` clobbers
+#                          a CLI DATABASE_URL, but never touches MIGRATION_RUN_*.
+#   MIGRATION_RUN_PASSWORD=pw      password for MIGRATION_RUN_USER. If a user is
+#                          given but this is unset and a TTY is attached, the task
+#                          prompts (hidden input). Omit entirely for trust/peer auth.
 #   APP_ROLE=name          after the copy, reassign ownership of every
-#                          public-schema object to this role (default: the
-#                          target database's owner). A superuser-run schema:load
+#                          public-schema object to this role. Default: the app's
+#                          own role when MIGRATION_RUN_USER is used, otherwise the
+#                          target database's owner. A superuser-run schema:load
 #                          owns every object, so the app role would otherwise get
 #                          "permission denied"; the task fixes this automatically.
 #
@@ -106,10 +124,33 @@ namespace :db do
       MSG
     end
 
+    # --- Build the connection used to RUN the migration ----------------------
+    # The copy disables referential integrity, a superuser-only operation. When
+    # the app's DATABASE_URL points at a non-superuser role, pass a superuser via
+    # MIGRATION_RUN_USER and we connect to the SAME target database as that role.
+    # (Preferred locally: this repo's dotenv `overload` rewrites a CLI DATABASE_URL
+    # back to the app role, but never touches MIGRATION_RUN_*.) The app keeps its
+    # own role, so ownership is handed back to it at the end.
+    run_user = ENV["MIGRATION_RUN_USER"].presence
+    run_config = target_config
+    # APP_ROLE default: the app's own role when we only added a superuser for the
+    # run; otherwise nil, so reassign falls back to the target database's owner.
+    app_role = ENV["APP_ROLE"].presence
+    if run_user
+      run_config = ActiveRecord::DatabaseConfigurations::HashConfig.new(
+        target_config.env_name, target_config.name,
+        target_config.configuration_hash.merge(
+          username: run_user, password: resolve_run_password(run_user)
+        )
+      )
+      app_role ||= target_config.configuration_hash[:username]
+    end
+
     puts "=" * 72
     puts "SQLite -> PostgreSQL data migration"
     puts "  source : #{sqlite_path}"
     puts "  target : #{target_env} / primary -> #{safe_target_desc(target_config)}"
+    puts "  run as : #{run_config.configuration_hash[:username]}#{' (MIGRATION_RUN_USER)' if run_user}"
     puts "  batch  : #{batch_size} rows"
     puts "=" * 72
 
@@ -118,7 +159,7 @@ namespace :db do
     source_conn = SqliteMigrationSource.connection
 
     # --- Connect the primary (default) connection to the TARGET --------------
-    ActiveRecord::Base.establish_connection(target_config)
+    ActiveRecord::Base.establish_connection(run_config)
 
     # --- Require a SUPERUSER role (RI disable is superuser-only) --------------
     # Fail fast with instructions instead of dying deep in the copy with a
@@ -130,9 +171,9 @@ namespace :db do
       puts "\n[schema] SKIP_SCHEMA_LOAD set — assuming target schema already exists."
     else
       puts "\n[schema] Loading db/schema.rb into the target database..."
-      load_portable_schema(target_config)
+      load_portable_schema(run_config)
       # load_schema may leave the connection pointed elsewhere; re-pin to target.
-      ActiveRecord::Base.establish_connection(target_config)
+      ActiveRecord::Base.establish_connection(run_config)
       puts "[schema] Done."
     end
     target_conn = ActiveRecord::Base.connection
@@ -177,7 +218,7 @@ namespace :db do
     # --- Reassign ownership to the app role ----------------------------------
     # schema:load ran as the (required) superuser, so it owns every object; hand
     # them to the app role or the app gets "permission denied for table ...".
-    reassign_owner_to_app_role(target_conn)
+    reassign_owner_to_app_role(target_conn, app_role)
 
     # --- Verify row counts ---------------------------------------------------
     puts "\n[verify] Comparing row counts (source vs target)..."
@@ -203,6 +244,25 @@ namespace :db do
     puts "=" * 72
   end
 
+  # Resolve the password for MIGRATION_RUN_USER. Precedence: MIGRATION_RUN_PASSWORD
+  # (even empty, for explicit no-password); else prompt with hidden input when a
+  # TTY is attached (keeps the password out of shell history / the process list);
+  # else nil, for local trust/peer auth. Returns nil for a blank password.
+  def resolve_run_password(run_user)
+    return ENV["MIGRATION_RUN_PASSWORD"].presence if ENV.key?("MIGRATION_RUN_PASSWORD")
+    return nil unless $stdin.tty?
+
+    require "io/console"
+    $stderr.print "Password for PostgreSQL role '#{run_user}' (blank for trust/peer auth): "
+    pw = begin
+      $stdin.noecho(&:gets)
+    rescue StandardError
+      $stdin.gets # no console control available — fall back to echoed input
+    end
+    $stderr.puts
+    pw.to_s.chomp.presence
+  end
+
   # Abort with copy/paste instructions unless the target connection is a
   # PostgreSQL superuser. The copy relies on disable_referential_integrity
   # (ALTER TABLE ... DISABLE TRIGGER ALL), which silently no-ops for a
@@ -223,26 +283,38 @@ namespace :db do
       on and the alphabetical insert order raises ForeignKeyViolation (first
       offender: activity_logs).
 
-      Re-run with a superuser role, e.g.:
+      Re-run so the migration connects as a superuser. Simplest — keep the app's
+      DATABASE_URL and just name a superuser to run the copy with:
+        MIGRATION_RUN_USER=<superuser> [MIGRATION_RUN_PASSWORD=<pw>] \\
+          bin/rails "db:sqlite_to_postgres[#{rel_sqlite},#{target_env}]"
+
+      (Omit MIGRATION_RUN_PASSWORD for local trust/peer auth; with a TTY you'll be
+      prompted for it otherwise.) This is the reliable local path because this
+      repo's dotenv `overload` rewrites a CLI DATABASE_URL back to the app role —
+      so passing the superuser via DATABASE_URL alone gets silently clobbered.
+      Alternatively point the whole DATABASE_URL at a superuser where dotenv does
+      not override it:
         DATABASE_URL=postgresql://<superuser>@<host>/<db> \\
           bin/rails "db:sqlite_to_postgres[#{rel_sqlite},#{target_env}]"
 
-      The copied objects are then owned by that superuser; this task reassigns
-      them to the app role automatically at the end (override with APP_ROLE).
-      On a Kamal Postgres accessory the app role is already a superuser, so this
-      check passes there automatically.
+      Either way the copied objects are owned by that superuser; this task
+      reassigns them to the app role automatically at the end (override with
+      APP_ROLE). On a Kamal Postgres accessory the app role is already a
+      superuser, so this check passes there automatically.
       #{'=' * 72}
     MSG
   end
 
   # Reassign every public-schema table/sequence/view to the application role.
   # A superuser-run schema:load owns every object, so without this the app role
-  # gets "permission denied for table ..." on every query. The app role defaults
-  # to the target DATABASE's owner (createdb --owner=<app_role>); override with
-  # APP_ROLE. No-op when the connecting role already owns everything (Kamal).
-  def reassign_owner_to_app_role(conn)
+  # gets "permission denied for table ..." on every query. +app_role+ is resolved
+  # by the caller (APP_ROLE, or the app's own role when MIGRATION_RUN_USER added a
+  # superuser only for the run); when blank it falls back to the target DATABASE's
+  # owner (createdb --owner=<app_role>). No-op when the connecting role already
+  # owns everything (Kamal).
+  def reassign_owner_to_app_role(conn, app_role = nil)
     current_role = conn.select_value("SELECT current_user")
-    app_role = ENV["APP_ROLE"].presence || conn.select_value(<<~SQL).to_s
+    app_role = app_role.presence || conn.select_value(<<~SQL).to_s
       SELECT pg_catalog.pg_get_userbyid(datdba)
       FROM pg_database WHERE datname = current_database()
     SQL
