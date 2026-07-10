@@ -228,7 +228,7 @@
 }
 
 .search-popup-reset-btn:hover {
-  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
