@@ -2,17 +2,19 @@
 -- setup_postgres_databases.sql
 -- =============================================================================
 --
--- Provision the four PostgreSQL databases this app uses in production, all owned
--- by the application role. Rails 8 keeps primary / cache / queue / cable in
--- SEPARATE databases (see config/database.yml). If they collapse onto one
--- physical database they share a single `schema_migrations` table and the
--- primary (version 2026...) and the Solid Cache/Queue/Cable schemas (version 1)
--- clobber each other, which breaks `db:migrate` on deploy.
+-- Provision the production PostgreSQL database this app uses, owned by the
+-- application role.
 --
---   primary -> collavre_production          (real app data)
---   cache   -> collavre_production_cache     (Solid Cache, volatile)
---   queue   -> collavre_production_queue     (Solid Queue, volatile)
---   cable   -> collavre_production_cable     (Solid Cable, volatile)
+--   primary -> collavre_production   (real app data)
+--
+-- This app keeps everything in ONE database: the Solid Queue / Cache / Cable
+-- tables (solid_queue_jobs, etc.) are created by a primary `db/migrate`
+-- migration and live in the single `db/schema.rb` — there are no separate
+-- queue/cache/cable schema files. The production topology (config/render.yaml)
+-- sets only DATABASE_URL, so cache/queue/cable connect to this same database.
+-- Do NOT create separate _cache/_queue/_cable databases: they would be empty
+-- with no path to load the Solid tables, and CronScheduler/SolidQueue would
+-- boot-fail with `relation "solid_queue_jobs" does not exist`.
 --
 -- The script is IDEMPOTENT: it only creates what is missing and re-asserts
 -- ownership, so it is safe to re-run. It never drops a database or any data.
@@ -26,17 +28,14 @@
 --     -v ON_ERROR_STOP=1 -f db/setup_postgres_databases.sql
 --
 -- Overrides (all optional):
---   -v db_user=collavre_user      application role name (default collavre_user)
---   -v db_prefix=collavre_production   base DB name; the other three append
---                                 _cache/_queue/_cable (default collavre_production)
+--   -v db_user=collavre_user          application role name (default collavre_user)
+--   -v db_name=collavre_production     database name (default collavre_production)
 --   DB_PASSWORD=...               (env) sets/updates the role password. If unset,
 --                                 an existing role's password is left untouched
 --                                 and a missing role is created with LOGIN only.
 --
--- After this runs, point the four *_DATABASE_URL env vars at these databases and
--- migrate data into the primary with `bin/rails db:sqlite_to_postgres[...]`
--- (see lib/tasks/db_convert.rake). The cache/queue/cable databases hold volatile
--- data only — never copy rows into them; `db:prepare` loads their schemas.
+-- After this runs, point DATABASE_URL at this database and migrate data into it
+-- with `bin/rails db:sqlite_to_postgres[...]` (see lib/tasks/db_convert.rake).
 -- =============================================================================
 
 \set ON_ERROR_STOP on
@@ -46,9 +45,9 @@
 \else
   \set db_user 'collavre_user'
 \endif
-\if :{?db_prefix}
+\if :{?db_name}
 \else
-  \set db_prefix 'collavre_production'
+  \set db_name 'collavre_production'
 \endif
 
 -- Read the desired role password from the environment (empty when unset).
@@ -67,29 +66,19 @@ SELECT format('ALTER ROLE %I PASSWORD %L', :'db_user', :'db_password')
 WHERE :'db_password' <> ''
 \gexec
 
-\echo '--- Ensuring databases owned by' :'db_user'
+\echo '--- Ensuring database' :'db_name' 'owned by' :'db_user'
 
--- Create each missing database owned by the app role. CREATE DATABASE cannot run
--- inside a transaction/DO block, so we generate the statements with \gexec.
-SELECT format('CREATE DATABASE %I OWNER %I', :'db_prefix' || suffix, :'db_user')
-FROM (VALUES (''), ('_cache'), ('_queue'), ('_cable')) AS d(suffix)
-WHERE NOT EXISTS (
-  SELECT FROM pg_database WHERE datname = :'db_prefix' || suffix
-)
+-- Create the database owned by the app role if it does not exist yet. CREATE
+-- DATABASE cannot run inside a transaction/DO block, so we generate it with \gexec.
+SELECT format('CREATE DATABASE %I OWNER %I', :'db_name', :'db_user')
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db_name')
 \gexec
 
--- Re-assert ownership in case a database already existed with a different owner.
-SELECT format('ALTER DATABASE %I OWNER TO %I', :'db_prefix' || suffix, :'db_user')
-FROM (VALUES (''), ('_cache'), ('_queue'), ('_cable')) AS d(suffix)
+-- Re-assert ownership in case the database already existed with a different owner.
+SELECT format('ALTER DATABASE %I OWNER TO %I', :'db_name', :'db_user')
 \gexec
 
-\echo '--- Done. Databases:'
+\echo '--- Done. Database:'
 SELECT datname, pg_catalog.pg_get_userbyid(datdba) AS owner
 FROM pg_database
-WHERE datname IN (
-  :'db_prefix',
-  :'db_prefix' || '_cache',
-  :'db_prefix' || '_queue',
-  :'db_prefix' || '_cable'
-)
-ORDER BY datname;
+WHERE datname = :'db_name';
