@@ -10,6 +10,49 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
+    # Vendor <select> options for AI-agent config. Core ships only its built-in
+    # (stateless) providers; vendor engines append their own through
+    # register_vendor_option, so core never names a vendor engine.
+    BASE_VENDOR_OPTIONS = [
+      [ "Google (Gemini)", "google" ],
+      [ "OpenAI", "openai" ],
+      [ "Anthropic", "anthropic" ]
+    ].freeze
+
+    class << self
+      def registered_vendor_options
+        @registered_vendor_options ||= []
+      end
+
+      # Append a vendor <select> option ([label, value]). Idempotent by value.
+      def register_vendor_option(label, value)
+        value = value.to_s
+        return if BASE_VENDOR_OPTIONS.any? { |_l, v| v == value }
+        return if registered_vendor_options.any? { |_l, v| v == value }
+
+        registered_vendor_options << [ label, value ]
+      end
+
+      def vendor_options
+        BASE_VENDOR_OPTIONS + registered_vendor_options
+      end
+
+      # Vendors that use stateful/incremental sessions. Base providers are
+      # stateless; vendor engines that add session support register here so core
+      # never string-matches a vendor name to decide session behavior.
+      def session_vendors
+        @session_vendors ||= Set.new
+      end
+
+      def register_session_vendor(vendor)
+        session_vendors << vendor.to_s.downcase
+      end
+
+      def vendor_supports_session?(vendor)
+        session_vendors.include?(vendor.to_s.downcase)
+      end
+    end
+
     # log_interactions: persist each call to ActivityLog. Default true. Pass false
     # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
     # inline typo correction on debounced typing) so private drafts are never

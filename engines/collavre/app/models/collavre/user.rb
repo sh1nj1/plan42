@@ -132,12 +132,14 @@ module Collavre
     end
 
     # Whether this agent uses stateful sessions (incremental messaging).
-    # nil in agent_conf = auto-detect by vendor (openclaw → true).
+    # nil in agent_conf = auto-detect via the AiClient adapter layer, which
+    # vendor engines register into (core never string-matches a vendor name).
     def supports_session?
       explicit = parsed_agent_conf.dig("session", "enabled")
       return ActiveModel::Type::Boolean.new.cast(explicit) unless explicit.nil?
+      return false if llm_vendor.blank?
 
-      llm_vendor&.downcase == "openclaw"
+      Collavre::AiClient.vendor_supports_session?(llm_vendor)
     end
 
     encrypts :llm_api_key, deterministic: false
@@ -183,12 +185,17 @@ module Collavre
       device_on && location_on
     end
 
-    LLM_VENDOR_OPTIONS = [
-      [ "Google (Gemini)", "google" ],
-      [ "OpenAI", "openai" ],
-      [ "Anthropic", "anthropic" ],
-      [ "OpenClaw", "openclaw" ]
-    ].freeze
+    # LLM_VENDOR_OPTIONS is resolved dynamically from the AiClient vendor-option
+    # registry so core lists only its built-in providers while vendor engines
+    # (e.g. OpenClaw) contribute their own. Resolved lazily via const_missing so
+    # the value always reflects registrations made after this class first loads
+    # (they run in a to_prepare hook), and existing views keep referring to the
+    # constant unchanged.
+    def self.const_missing(name)
+      return Collavre::AiClient.vendor_options if name == :LLM_VENDOR_OPTIONS
+
+      super
+    end
 
     SUPPORTED_LLM_MODELS = [
       "gemini-3.1-flash-lite",
