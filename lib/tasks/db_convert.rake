@@ -49,6 +49,14 @@
 #   MIGRATION_RUN_PASSWORD=pw      password for MIGRATION_RUN_USER. If a user is
 #                          given but this is unset and a TTY is attached, the task
 #                          prompts (hidden input). Omit entirely for trust/peer auth.
+#   MIGRATION_RUN_RESET=true      before loading the schema, DROP SCHEMA public
+#                          CASCADE and recreate it — a full clean slate. Use when
+#                          the target already holds data or stale tables from old
+#                          migrations (schema:load's force: :cascade only drops
+#                          the tables db/schema.rb still knows about). Equivalent
+#                          to dropdb+createdb but works while connected to the
+#                          target. Superuser-only (already required). Mutually
+#                          exclusive with SKIP_SCHEMA_LOAD.
 #   APP_ROLE=name          after the copy, reassign ownership of every
 #                          public-schema object to this role. Default: the app's
 #                          own role when MIGRATION_RUN_USER is used, otherwise the
@@ -62,6 +70,11 @@
 #     load creates their empty tables in the same Postgres database.
 #   * Run inside a maintenance window with the app stopped: rows inserted into
 #     SQLite while the copy runs would be lost.
+#   * Without MIGRATION_RUN_RESET the task does NOT reset the database: it only
+#     drops+recreates the tables db/schema.rb knows about (force: :cascade), so a
+#     pre-existing target keeps any stale tables absent from schema.rb and holds
+#     an open-connection risk if the app is still attached. Pass
+#     MIGRATION_RUN_RESET=true (or reset the DB by hand first) for a clean slate.
 #   * Active Storage: only DB metadata rows are copied. Blob files on disk/S3
 #     are untouched — leave the storage volume/bucket as-is.
 #   * Foreign keys are bypassed via disable_referential_integrity, which issues
@@ -103,8 +116,15 @@ namespace :db do
 
     batch_size = Integer(ENV.fetch("BATCH_SIZE", 1000))
     skip_schema_load = ENV["SKIP_SCHEMA_LOAD"].present?
+    reset_target     = ActiveModel::Type::Boolean.new.cast(ENV["MIGRATION_RUN_RESET"])
     only_tables    = ENV["ONLY"].to_s.split(",").map(&:strip).reject(&:empty?)
     exclude_tables = ENV["EXCLUDE"].to_s.split(",").map(&:strip).reject(&:empty?)
+
+    # A reset drops every table, so the schema MUST be reloaded afterwards.
+    if reset_target && skip_schema_load
+      abort "ERROR: MIGRATION_RUN_RESET and SKIP_SCHEMA_LOAD are mutually exclusive — " \
+            "a reset wipes the whole schema, so it must be reloaded, not skipped."
+    end
 
     # Tables Rails manages itself; schema:load populates these to the correct
     # versions, so copying them from SQLite would only cause conflicts.
@@ -165,6 +185,18 @@ namespace :db do
     # Fail fast with instructions instead of dying deep in the copy with a
     # confusing ForeignKeyViolation once DISABLE TRIGGER ALL silently no-ops.
     ensure_target_superuser!(ActiveRecord::Base.connection, sqlite_path, target_env)
+
+    # --- Optionally reset the target for a truly clean slate -----------------
+    # schema:load uses force: :cascade, which only drops the tables db/schema.rb
+    # knows about — stale tables left by old migrations survive. A full reset
+    # drops the entire public schema first, so the load starts from nothing
+    # (same clean slate as dropdb+createdb, but without a second connection,
+    # which is impossible while connected to the target database).
+    if reset_target
+      puts "\n[reset] MIGRATION_RUN_RESET set — dropping & recreating schema 'public' (ALL data)."
+      reset_public_schema!(ActiveRecord::Base.connection, app_role)
+      puts "[reset] Done."
+    end
 
     # --- Load schema into the target (correct Postgres types) ----------------
     if skip_schema_load
@@ -303,6 +335,23 @@ namespace :db do
       superuser, so this check passes there automatically.
       #{'=' * 72}
     MSG
+  end
+
+  # Drop and recreate the target's public schema for a full clean slate, run
+  # before schema:load. DROP SCHEMA public CASCADE removes EVERY object —
+  # including stale tables absent from db/schema.rb that force: :cascade would
+  # leave behind — so the reload starts from nothing, matching dropdb+createdb
+  # without a second connection. Superuser-/owner-only; the migration already
+  # enforces superuser. Restores the standard grants (and, when known, hands the
+  # fresh schema to +app_role+) so the non-superuser app role keeps USAGE/CREATE
+  # after the later table-ownership reassignment.
+  def reset_public_schema!(conn, app_role)
+    conn.execute("DROP SCHEMA IF EXISTS public CASCADE")
+    conn.execute("CREATE SCHEMA public")
+    # A freshly created schema (PG 15+) grants nothing to PUBLIC; restore the
+    # historical default so any role can use it, as dropdb+createdb would.
+    conn.execute("GRANT ALL ON SCHEMA public TO public")
+    conn.execute("ALTER SCHEMA public OWNER TO #{conn.quote_column_name(app_role)}") if app_role.present?
   end
 
   # Reassign every public-schema table/sequence/view to the application role.
