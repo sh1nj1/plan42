@@ -5,11 +5,23 @@ module Collavre
 
     self.table_name = "channels"
 
+    # Denormalized columns that mirror same-named keys in `config`. They exist
+    # so the channels UNIQUE indexes are plain-column indexes (which dump
+    # identically to schema.rb on SQLite and PostgreSQL) instead of JSON
+    # expression indexes (json_extract vs config->>), which serialize
+    # per-adapter and crash `db:schema:load` on PostgreSQL. `config` stays the
+    # source of truth; these columns are re-derived on every save. Declared
+    # here beside the table whose unique indexes are defined in this engine's
+    # migration, so subtype engines need not know about the denormalization.
+    INDEXED_CONFIG_COLUMNS = %w[repo_full_name pr_number worktree_id].freeze
+
     belongs_to :topic, class_name: "Collavre::Topic"
 
     enum :state, { active: 0, detached: 1 }, default: :active
 
     scope :not_dismissed, -> { where(dismissed_at: nil) }
+
+    before_save :sync_indexed_config_columns
 
     def handle(event:, payload:)
       raise NotImplementedError, "#{self.class} must implement #handle"
@@ -79,6 +91,16 @@ module Collavre
     after_update_commit  :broadcast_chips_changed
 
     private
+
+    # Keep the denormalized index columns in lockstep with `config` so the
+    # plain-column unique indexes enforce the same guarantees the old JSON
+    # expression indexes did. Writes go through `[]=` (not the subtype reader
+    # overrides) and only mark the record dirty when a value actually changes.
+    def sync_indexed_config_columns
+      INDEXED_CONFIG_COLUMNS.each do |column|
+        self[column] = config[column]
+      end
+    end
 
     def broadcast_chips_changed
       Collavre::CommentsPresenceChannel.broadcast_channel_chips_changed(topic.creative_id, topic_id: topic_id)
