@@ -29,8 +29,7 @@ export function deriveConnectState(status) {
  * Existing repositories linked by *other* members must not let an
  * unauthenticated user advance: organization lookup requires the user's own
  * connected GitHub account, so advancing would dead-end on an empty
- * organization list ("조회할 수 있는 Organization이 없습니다."). Such a user
- * must log in first.
+ * organization list. Such a user must log in first.
  *
  * @param {{hasExistingIntegration?:boolean, userConnected?:boolean}} state
  * @returns {boolean}
