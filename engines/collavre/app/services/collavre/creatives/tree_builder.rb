@@ -75,8 +75,8 @@ module Creatives
 
     def cached_can_write?(creative)
       return false unless user
-      # GitHub-synced creatives are always read-only
-      return false if creative.github_markdown?
+      # Read-only-source creatives are never writable
+      return false if creative.read_only_source?
 
       if @permission_cache.key?(creative.id)
         @permission_cache[creative.id]

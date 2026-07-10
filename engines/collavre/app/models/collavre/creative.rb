@@ -23,6 +23,20 @@ module Collavre
       def reserved_metadata_keys
         (BUILTIN_RESERVED_METADATA_KEYS + registered_reserved_metadata_keys).freeze
       end
+
+      # ------------------------------------------------------------------------
+      # Read-only source registry — vendor engines register the `data.source.type`
+      # values whose content is owned by an external system (e.g. a synced GitHub
+      # repository) and therefore must not be edited in-app. Core enforces the
+      # read-only behavior via `read_only_source?` without naming any vendor.
+      # ------------------------------------------------------------------------
+      def read_only_source_types
+        @read_only_source_types ||= Set.new
+      end
+
+      def register_read_only_source(type)
+        read_only_source_types << type.to_s
+      end
     end
 
     # Use non-namespaced partial path for backward compatibility
@@ -63,10 +77,28 @@ module Collavre
       data&.dig("kind") == "inbox"
     end
 
-    attr_accessor :skip_github_validation
+    # Bypass the read-only-source guard for a single save (used by the vendor
+    # sync services that legitimately write the synced content into core).
+    attr_accessor :skip_read_only_source_validation
 
+    # The registered source identifier for this creative, or nil when the
+    # description is authored in-app.
+    def source_type
+      data.is_a?(Hash) ? data.dig("source", "type") : nil
+    end
+
+    # Whether this creative's description is owned by an external, registered
+    # source and therefore read-only in-app.
+    def read_only_source?
+      type = source_type
+      type.present? && self.class.read_only_source_types.include?(type)
+    end
+
+    # GitHub-sourced content still needs a vendor-specific predicate for the
+    # comment view's inline-image rendering (a GitHub-only concern, distinct
+    # from the neutral read-only behavior above).
     def github_markdown?
-      data.is_a?(Hash) && data.dig("source", "type") == "github_markdown"
+      source_type == "github_markdown"
     end
 
     # Find or create the "System" topic for this inbox creative.

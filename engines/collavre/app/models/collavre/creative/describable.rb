@@ -18,7 +18,7 @@ module Collavre
 
         validates :description, presence: true, unless: -> { origin_id.present? }
         validate :description_cannot_change_if_has_origin, on: :update
-        validate :description_cannot_change_if_github_source, on: :update
+        validate :description_cannot_change_if_read_only_source, on: :update
 
         before_validation :convert_markdown_to_html
         before_save :sanitize_description_html
@@ -44,11 +44,11 @@ module Collavre
         CGI.unescapeHTML(ActionController::Base.helpers.strip_tags(effective_origin.description || "")).truncate(24, omission: "...")
       end
 
-      # GitHub-synced creatives reject any description change
-      # (description_cannot_change_if_github_source), so embedding would raise
+      # Read-only-source creatives reject any description change
+      # (description_cannot_change_if_read_only_source), so embedding would raise
       # and orphan the blob. Callers MUST check this before creating the blob.
       def attachments_embeddable?
-        !effective_origin.github_markdown?
+        !effective_origin.read_only_source?
       end
 
       # Append an attachment node and save; after_save reconcile attaches the
@@ -362,12 +362,12 @@ module Collavre
         end
       end
 
-      def description_cannot_change_if_github_source
+      def description_cannot_change_if_read_only_source
         return unless will_save_change_to_description?
-        return unless github_markdown?
-        return if @skip_github_validation
+        return unless read_only_source?
+        return if skip_read_only_source_validation
 
-        errors.add(:description, "cannot be changed directly for GitHub synced content")
+        errors.add(:description, "cannot be changed directly for read-only source content")
       end
     end
   end
