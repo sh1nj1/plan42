@@ -480,7 +480,8 @@ export default class extends Controller {
                     allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
                 },
                 btnRect,
-                (item) => this.selectTopic(item.id)
+                (item) => this.selectTopic(item.id),
+                this.element
             )
         }
 
@@ -503,7 +504,9 @@ export default class extends Controller {
             data-topic-list-target="input">
           <ul class="common-popup-list" data-popup-list data-topic-list-target="list"></ul>
         `
-        document.body.appendChild(modal)
+        // Append into the chat box (this.element === #comments-popup) so the popup
+        // is caged within it and shares its stacking context.
+        this.element.appendChild(modal)
 
         requestAnimationFrame(() => {
             const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')

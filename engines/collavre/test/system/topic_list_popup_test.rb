@@ -36,6 +36,8 @@ class TopicListPopupTest < ApplicationSystemTestCase
 
     find("#comments-popup .topic-list-btn").click
     assert_selector "#topic-list-modal", visible: :visible, wait: 5
+    # Caged inside the chat box, not appended to <body>
+    assert_selector "#comments-popup #topic-list-modal"
 
     within "#topic-list-modal" do
       assert_selector ".topic-list-item", text: "Alpha"

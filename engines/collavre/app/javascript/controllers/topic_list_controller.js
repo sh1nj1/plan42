@@ -23,12 +23,12 @@ export default class extends CommonPopupController {
         super.disconnect()
     }
 
-    openForTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }, anchorRect, onSelectCallback) {
+    openForTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }, anchorRect, onSelectCallback, boundsElement = null) {
         this.onSelectCallback = onSelectCallback
         this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
         this.inputTarget.value = ''
         this.setItems(this._allItems)
-        super.open(anchorRect)
+        super.open(anchorRect, boundsElement)
         requestAnimationFrame(() => this.inputTarget.focus())
     }
 

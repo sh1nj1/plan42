@@ -48,4 +48,14 @@ describe('TopicsController#openTopicListPopup', () => {
         expect(modal.querySelector('[data-topic-list-target="close"]')).not.toBeNull()
         expect(modal.querySelector('input').placeholder).toBe('Search topics...')
     })
+
+    test('appends the modal inside the chat box so it is caged within it', () => {
+        const btn = document.createElement('button')
+        document.body.appendChild(btn)
+        controller.openTopicListPopup({ currentTarget: btn })
+
+        const modal = document.getElementById('topic-list-modal')
+        // Bounded to the chat popup, not body-level.
+        expect(modal.parentElement).toBe(document.getElementById('comments-popup'))
+    })
 })
