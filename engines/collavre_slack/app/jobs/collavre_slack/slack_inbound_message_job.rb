@@ -4,12 +4,17 @@ module CollavreSlack
 
     # SlackEventsController acks Slack with 200 the instant it enqueues this job
     # (ack-before-apply), so Slack never re-delivers the event once accepted.
-    # Without a retry, a transient DB contention error would park the job as a
-    # failed execution and the inbound Slack message would be lost permanently.
-    # Scope is narrow: only transient contention retries; a real bug still raises
-    # and parks (loud, operator-visible) instead of looping.
-    retry_on ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout,
-             wait: 2.seconds, attempts: 5
+    # Without a retry, a transient DB contention error on the final write would
+    # park the job and the inbound Slack message would be lost permanently.
+    #
+    # We deliberately do NOT use a job-level `retry_on` for transient contention:
+    # re-running the whole `perform` would re-run CommandProcessor, whose commands
+    # (/calendar -> CalendarEvent, /work -> tasks, MCP commands) have
+    # non-idempotent, non-transactional side effects that already committed on the
+    # first attempt. A whole-job retry would duplicate those side effects. Instead
+    # CommandProcessor runs exactly once and only the final DB write is retried
+    # in place (see #persist_comment_with_link!), which is the sole point where a
+    # transient Deadlocked/LockWaitTimeout can actually surface.
 
     # Permanent/unprocessable failures: retrying cannot help. The referenced
     # creative/user/link was deleted, the payload can no longer deserialize, or a
@@ -71,31 +76,47 @@ module CollavreSlack
       # Mark this comment as coming from Slack to prevent loop
       comment.instance_variable_set(:@from_slack, true)
 
+      # Command side effects must happen exactly once — run before the retryable
+      # write and never inside the retry loop.
       response = Collavre::Comments::CommandProcessor.new(comment: comment, user: user).call
       if response.present?
         comment.content = "#{comment.content}\n\n#{response}"
         comment.skip_dispatch = true  # slash command responses should not trigger AI
       end
-      # Persist the comment and its Slack link atomically. Without this, a
-      # transient failure on the link write (after the comment already
-      # committed) would leave an orphan comment, and the retry would create a
-      # second comment. In one transaction, a failed link write rolls the
-      # comment back so the retry starts clean and produces exactly one comment.
-      ActiveRecord::Base.transaction do
-        comment.save!
 
-        # Create link between Slack message and comment for reaction sync
-        if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
-          SlackCommentLink.create!(
-            comment: comment,
-            slack_channel_link_id: data[:slack_channel_link_id],
-            message_ts: data[:slack_message_ts]
-          )
-        end
-      end
+      persist_comment_with_link!(comment, data)
     end
 
     private
+
+    # Persist the comment and its Slack link atomically, retrying only this write
+    # on transient DB contention. Retrying here (rather than the whole job) keeps
+    # the non-idempotent CommandProcessor side effects from being re-applied.
+    # Because `comment` is a fresh unsaved record, a rolled-back attempt re-saves
+    # the same instance, so retries produce exactly one comment and one link.
+    def persist_comment_with_link!(comment, data)
+      attempts = 0
+      begin
+        ActiveRecord::Base.transaction do
+          comment.save!
+
+          # Create link between Slack message and comment for reaction sync
+          if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
+            SlackCommentLink.create!(
+              comment: comment,
+              slack_channel_link_id: data[:slack_channel_link_id],
+              message_ts: data[:slack_message_ts]
+            )
+          end
+        end
+      rescue ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout
+        attempts += 1
+        raise if attempts >= 5
+
+        sleep(0.1 * (2**(attempts - 1)))
+        retry
+      end
+    end
 
     def slack_message_already_applied?(data)
       return false unless data[:slack_channel_link_id].present? && data[:slack_message_ts].present?

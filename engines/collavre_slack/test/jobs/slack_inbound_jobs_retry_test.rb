@@ -25,12 +25,35 @@ module CollavreSlack
       ActiveRecord::RecordInvalid
     ].freeze
 
-    test "every inbound job registers retry and discard handlers" do
+    # SlackInboundMessageJob handles transient contention with an in-place write
+    # retry rather than a job-level retry_on: a whole-job retry would re-run its
+    # non-idempotent CommandProcessor side effects (/calendar, /work, MCP
+    # commands). Its transient-error handling is verified behaviorally in
+    # slack_inbound_message_job_test.rb ("retries only the write on transient
+    # deadlock and runs commands exactly once"). The other inbound jobs have no
+    # such side effects and use a class-level retry_on.
+    JOB_LEVEL_RETRY_JOBS = [
+      SlackInboundReactionJob,
+      SlackInboundMessageUpdateJob,
+      SlackInboundMessageDeleteJob
+    ].freeze
+
+    test "every inbound job discards permanently-unprocessable payloads" do
       INBOUND_JOBS.each do |job|
         handled = job.rescue_handlers.map(&:first)
-        (TRANSIENT_ERRORS + PERMANENT_ERRORS).each do |error|
+        PERMANENT_ERRORS.each do |error|
           assert_includes handled, error,
-            "#{job} must handle #{error} so acked-but-crashed events are not lost"
+            "#{job} must discard #{error} so the queue self-heals instead of looping forever"
+        end
+      end
+    end
+
+    test "job-level-retry inbound jobs register transient-contention retries" do
+      JOB_LEVEL_RETRY_JOBS.each do |job|
+        handled = job.rescue_handlers.map(&:first)
+        TRANSIENT_ERRORS.each do |error|
+          assert_includes handled, error,
+            "#{job} must retry #{error} so acked-but-crashed events are not lost"
         end
       end
     end

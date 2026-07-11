@@ -171,6 +171,55 @@ module CollavreSlack
       end
     end
 
+    test "retries only the write on transient deadlock and runs commands exactly once" do
+      slack_user = create_user(email: "retry@example.com", name: "Retry User")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "retry me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.777777",
+        slack_display_name: "Retry User",
+        slack_email: "retry@example.com",
+        slack_user_id: "U777"
+      }
+
+      # CommandProcessor has non-idempotent side effects; it must run exactly once
+      # even when the final write is retried after a transient deadlock.
+      command_calls = 0
+      fake_processor = Object.new
+      fake_processor.define_singleton_method(:call) do
+        command_calls += 1
+        nil
+      end
+
+      # First link write deadlocks, second succeeds — exercises the in-place
+      # write retry (not a whole-job retry).
+      create_calls = 0
+      original_create = CollavreSlack::SlackCommentLink.method(:create!)
+
+      Collavre::Comments::CommandProcessor.stub(:new, ->(**) { fake_processor }) do
+        CollavreSlack::SlackCommentLink.stub(:create!, ->(**kwargs) {
+          create_calls += 1
+          raise ActiveRecord::Deadlocked, "deadlock victim" if create_calls == 1
+
+          original_create.call(**kwargs)
+        }) do
+          creative_comment_count = @creative.comments.count
+          SlackInboundMessageJob.perform_now(payload)
+          assert_equal creative_comment_count + 1, @creative.comments.reload.count
+        end
+      end
+
+      assert_equal 2, create_calls, "write should be retried once after the deadlock"
+      assert_equal 1, command_calls, "CommandProcessor must run exactly once despite the write retry"
+      assert_equal 1, CollavreSlack::SlackCommentLink.where(
+        slack_channel_link_id: @channel_link.id, message_ts: "1700000000.777777"
+      ).count
+    end
+
     test "creates comment without invitation when email is missing" do
       payload = {
         creative_id: @creative.id,
