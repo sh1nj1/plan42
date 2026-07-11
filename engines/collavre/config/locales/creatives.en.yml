@@ -160,6 +160,8 @@ en:
       errors:
         no_permission: You do not have permission to perform this action.
         metadata_must_be_object: Metadata must be an object.
+        description_read_only_source: cannot be changed directly for read-only source
+          content
       inline_editor:
         placeholder: Describe the creative…
         markdown_placeholder: Write in Markdown…

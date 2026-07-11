@@ -367,7 +367,7 @@ module Collavre
         return unless read_only_source?
         return if skip_read_only_source_validation
 
-        errors.add(:description, "cannot be changed directly for read-only source content")
+        errors.add(:description, I18n.t("collavre.creatives.errors.description_read_only_source"))
       end
     end
   end
