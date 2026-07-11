@@ -21,6 +21,15 @@ module CollavreSlack
 
     def perform(payload)
       data = payload.with_indifferent_access
+
+      # Idempotency guard. retry_on above re-runs the whole job on transient DB
+      # errors, and this job has multiple non-atomic writes. If a completed run
+      # is somehow re-delivered, reprocessing the same Slack message would create
+      # a duplicate comment. The (channel_link, message_ts) pair uniquely
+      # identifies the inbound message, so a matching SlackCommentLink means it
+      # was already applied — no-op.
+      return if slack_message_already_applied?(data)
+
       creative = Collavre::Creative.find(data[:creative_id])
       user = Collavre.user_class.find_by(id: data[:user_id])
       channel_link = SlackChannelLink.find_by(id: data[:slack_channel_link_id])
@@ -67,19 +76,35 @@ module CollavreSlack
         comment.content = "#{comment.content}\n\n#{response}"
         comment.skip_dispatch = true  # slash command responses should not trigger AI
       end
-      comment.save!
+      # Persist the comment and its Slack link atomically. Without this, a
+      # transient failure on the link write (after the comment already
+      # committed) would leave an orphan comment, and the retry would create a
+      # second comment. In one transaction, a failed link write rolls the
+      # comment back so the retry starts clean and produces exactly one comment.
+      ActiveRecord::Base.transaction do
+        comment.save!
 
-      # Create link between Slack message and comment for reaction sync
-      if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
-        SlackCommentLink.create!(
-          comment: comment,
-          slack_channel_link_id: data[:slack_channel_link_id],
-          message_ts: data[:slack_message_ts]
-        )
+        # Create link between Slack message and comment for reaction sync
+        if data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
+          SlackCommentLink.create!(
+            comment: comment,
+            slack_channel_link_id: data[:slack_channel_link_id],
+            message_ts: data[:slack_message_ts]
+          )
+        end
       end
     end
 
     private
+
+    def slack_message_already_applied?(data)
+      return false unless data[:slack_channel_link_id].present? && data[:slack_message_ts].present?
+
+      SlackCommentLink.exists?(
+        slack_channel_link_id: data[:slack_channel_link_id],
+        message_ts: data[:slack_message_ts]
+      )
+    end
 
     def grant_feedback_permission(creative:, user:, granter:)
       # Check if share already exists

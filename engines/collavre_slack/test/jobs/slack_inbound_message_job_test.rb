@@ -144,6 +144,33 @@ module CollavreSlack
       end
     end
 
+    test "reprocessing the same Slack message does not create a duplicate comment" do
+      slack_user = create_user(email: "idem@example.com", name: "Idem User")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "Only once please",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.000001",
+        slack_display_name: "Idem User",
+        slack_email: "idem@example.com",
+        slack_user_id: "U555"
+      }
+
+      creative_comment_count = @creative.comments.count
+      SlackInboundMessageJob.perform_now(payload)
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+      assert_equal 1, CollavreSlack::SlackCommentLink.where(slack_channel_link_id: @channel_link.id, message_ts: "1700000000.000001").count
+
+      # A retry / redelivery of the same message (same channel_link + ts) is a no-op:
+      # no duplicate comment on the creative and no duplicate Slack link.
+      assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackCommentLink.count" ] do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+    end
+
     test "creates comment without invitation when email is missing" do
       payload = {
         creative_id: @creative.id,
