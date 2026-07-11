@@ -185,6 +185,94 @@ module CollavreSlack
                    "the rolled-back first attempt must leave no orphan invitation"
     end
 
+    test "adapter-wrapped transient enqueue error is unwrapped and retried, delivering exactly once" do
+      # Solid Queue re-raises an Active Record error from the deliver_later enqueue
+      # INSERT as SolidQueue::Job::EnqueueError — a StandardError (NOT
+      # ActiveRecord::Deadlocked), so it propagates instead of being swallowed —
+      # preserving the original as #cause. with_transient_retry must unwrap the
+      # cause chain and still retry; otherwise the wrapped error escapes perform
+      # and the already-acked Slack message is lost. We simulate the wrapper with a
+      # plain StandardError whose #cause is a Deadlocked, matching how Ruby sets
+      # #cause when re-raising inside a rescue (and avoiding a hard dependency on
+      # the Solid Queue constant, which the test adapter never loads).
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me too",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.919191",
+        slack_display_name: "Wrapped User",
+        slack_email: "wrapped@slack.com",
+        slack_user_id: "U919"
+      }
+
+      deliver_calls = 0
+      fake_message = Object.new
+      fake_message.define_singleton_method(:deliver_later) do
+        deliver_calls += 1
+        if deliver_calls == 1
+          begin
+            raise ActiveRecord::Deadlocked, "enqueue deadlock"
+          rescue ActiveRecord::Deadlocked
+            raise StandardError, "SolidQueue::Job::EnqueueError: ActiveRecord::Deadlocked"
+          end
+        end
+        :enqueued
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { fake_message }
+
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        assert_difference "Collavre::Invitation.count", 1 do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      assert_equal 2, deliver_calls, "the adapter-wrapped transient enqueue error should be retried once"
+      assert_equal 1, Collavre::Invitation.where(email: "wrapped@slack.com", creative: @creative).count,
+                   "the rolled-back first attempt must leave no orphan invitation"
+    end
+
+    test "wrapped permanent enqueue error is not retried and self-heals via discard" do
+      # The mirror of the above: a wrapped error whose cause is NOT transient
+      # (e.g. a validation failure) must not be retried up to the cap. with_transient_retry
+      # re-raises it immediately; ActiveJob's rescue_with_handler then walks the cause
+      # chain and the existing `discard_on ActiveRecord::RecordInvalid` matches the
+      # cause, so the job self-heals (no permanent loop, no crash) rather than parking.
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.929292",
+        slack_display_name: "Permanent User",
+        slack_email: "permanent@slack.com",
+        slack_user_id: "U929"
+      }
+
+      deliver_calls = 0
+      fake_message = Object.new
+      fake_message.define_singleton_method(:deliver_later) do
+        deliver_calls += 1
+        begin
+          raise ActiveRecord::RecordInvalid.new(Collavre::Invitation.new)
+        rescue ActiveRecord::RecordInvalid
+          raise StandardError, "SolidQueue::Job::EnqueueError: ActiveRecord::RecordInvalid"
+        end
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { fake_message }
+
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        # Discarded (not re-raised) because the cause is a permanent RecordInvalid.
+        assert_nothing_raised do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      assert_equal 1, deliver_calls, "a permanent wrapped enqueue error must not be retried"
+    end
+
     test "reprocessing the same Slack message does not create a duplicate comment" do
       slack_user = create_user(email: "idem@example.com", name: "Idem User")
       Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)

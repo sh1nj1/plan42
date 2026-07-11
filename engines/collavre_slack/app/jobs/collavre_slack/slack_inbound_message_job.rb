@@ -122,13 +122,35 @@ module CollavreSlack
       attempts = 0
       begin
         yield
-      rescue ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout
+      rescue => e
+        raise unless transient_contention?(e)
+
         attempts += 1
         raise if attempts >= max_attempts
 
         sleep(0.1 * (2**(attempts - 1)))
         retry
       end
+    end
+
+    # Whether an error is a retryable transient DB contention, whether raised
+    # directly or wrapped by the queue adapter. A `deliver_later` enqueue INSERT
+    # runs inside the surrounding transaction (enqueue_after_transaction_commit is
+    # false), but Solid Queue re-raises any Active Record error from that INSERT as
+    # its own SolidQueue::Job::EnqueueError (not ActiveJob::EnqueueError, so it
+    # propagates instead of being swallowed), preserving the original as #cause. We
+    # match on the cause chain rather than that vendor class so a wrapped
+    # Deadlocked/LockWaitTimeout is still retried while a permanent wrapped failure
+    # (e.g. a validation error) is re-raised instead of looping.
+    def transient_contention?(error)
+      seen = []
+      while error && !seen.include?(error)
+        return true if error.is_a?(ActiveRecord::Deadlocked) || error.is_a?(ActiveRecord::LockWaitTimeout)
+
+        seen << error
+        error = error.cause
+      end
+      false
     end
 
     def slack_message_already_applied?(data)
@@ -187,11 +209,12 @@ module CollavreSlack
       # Create the invitation and enqueue its email atomically. `deliver_later`
       # enqueues synchronously (enqueue_after_transaction_commit is false), so the
       # Solid Queue enqueue INSERT participates in this transaction. If that INSERT
-      # raises a transient Deadlocked/LockWaitTimeout, the invitation create rolls
-      # back with it and the enclosing #with_transient_retry redoes both together.
-      # Without this transaction, a committed invitation with a failed enqueue
-      # would, on retry, hit the existing-invitation guard above and silently
-      # never send the email.
+      # raises a transient contention error — which Solid Queue surfaces as a
+      # SolidQueue::Job::EnqueueError wrapping the Deadlocked/LockWaitTimeout — the
+      # invitation create rolls back with it and the enclosing #with_transient_retry
+      # (which unwraps the cause chain) redoes both together. Without this
+      # transaction, a committed invitation with a failed enqueue would, on retry,
+      # hit the existing-invitation guard above and silently never send the email.
       ActiveRecord::Base.transaction do
         invitation = Collavre::Invitation.create!(
           email: email,
