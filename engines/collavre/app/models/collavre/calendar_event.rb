@@ -14,7 +14,9 @@ module Collavre
     def delete_google_event
       return unless google_event_id.present?
 
-      DeleteGoogleEventJob.perform_later(user_id, google_event_id)
+      GoogleCalendarService.new(user: user).delete_event(google_event_id)
+    rescue StandardError => e
+      Rails.logger.error("Failed to delete Google event #{google_event_id}: #{e.message}")
     end
   end
 end
