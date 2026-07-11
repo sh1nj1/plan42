@@ -158,17 +158,30 @@ module CollavreSlack
     end
 
     def invite_user_by_email(creative:, email:, inviter:)
-      # Check if invitation already exists
+      # A pre-existing invitation means an earlier attempt already created it AND
+      # enqueued its email in the same transaction (below), so there is nothing
+      # left to do — this guard is only ever hit for a genuinely repeated invite,
+      # never for a partially-applied one.
       existing_invitation = Collavre::Invitation.find_by(creative: creative, email: email)
       return if existing_invitation
 
-      invitation = Collavre::Invitation.create!(
-        email: email,
-        inviter: inviter,
-        creative: creative,
-        permission: :feedback
-      )
-      Collavre::InvitationMailer.with(invitation: invitation).invite.deliver_later
+      # Create the invitation and enqueue its email atomically. `deliver_later`
+      # enqueues synchronously (enqueue_after_transaction_commit is false), so the
+      # Solid Queue enqueue INSERT participates in this transaction. If that INSERT
+      # raises a transient Deadlocked/LockWaitTimeout, the invitation create rolls
+      # back with it and the enclosing #with_transient_retry redoes both together.
+      # Without this transaction, a committed invitation with a failed enqueue
+      # would, on retry, hit the existing-invitation guard above and silently
+      # never send the email.
+      ActiveRecord::Base.transaction do
+        invitation = Collavre::Invitation.create!(
+          email: email,
+          inviter: inviter,
+          creative: creative,
+          permission: :feedback
+        )
+        Collavre::InvitationMailer.with(invitation: invitation).invite.deliver_later
+      end
     end
 
     def format_comment_content(content, user, slack_display_name)

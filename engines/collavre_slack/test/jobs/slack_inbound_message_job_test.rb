@@ -144,6 +144,47 @@ module CollavreSlack
       end
     end
 
+    test "invite email enqueue failure rolls back the invitation and retry delivers exactly once" do
+      # An unmapped Slack user triggers invite_user_by_email. deliver_later enqueues
+      # synchronously (enqueue_after_transaction_commit is false), so a transient
+      # Deadlocked on the Solid Queue enqueue INSERT must roll back the invitation
+      # create with it — otherwise a committed invitation with a failed enqueue
+      # would, on retry, hit the existing-invitation guard and never send the email.
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.909090",
+        slack_display_name: "Atomic User",
+        slack_email: "atomic@slack.com",
+        slack_user_id: "U909"
+      }
+
+      deliver_calls = 0
+      fake_message = Object.new
+      fake_message.define_singleton_method(:deliver_later) do
+        deliver_calls += 1
+        raise ActiveRecord::Deadlocked, "enqueue deadlock" if deliver_calls == 1
+
+        :enqueued
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { fake_message }
+
+      # The first enqueue deadlocks (rolling back its invitation create), the
+      # second succeeds — net exactly one invitation persisted.
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        assert_difference "Collavre::Invitation.count", 1 do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      assert_equal 2, deliver_calls, "enqueue should be retried once after the transient deadlock"
+      assert_equal 1, Collavre::Invitation.where(email: "atomic@slack.com", creative: @creative).count,
+                   "the rolled-back first attempt must leave no orphan invitation"
+    end
+
     test "reprocessing the same Slack message does not create a duplicate comment" do
       slack_user = create_user(email: "idem@example.com", name: "Idem User")
       Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
