@@ -298,6 +298,45 @@ module CollavreSlack
       assert_equal creative_comment_count + 1, @creative.comments.reload.count
     end
 
+    test "does not drop the message when a concurrent grant trips the uniqueness validation" do
+      # Two inbound messages from the same access-less user can both pass the
+      # has_permission? check; one commits the CreativeShare, the other's create!
+      # trips the (creative_id, user_id) uniqueness validation and raises
+      # RecordInvalid. The job's global `discard_on ActiveRecord::RecordInvalid`
+      # must NOT drop the already-acked message when the grant is now satisfied.
+      slack_user = create_user(email: "concurrentgrant@example.com", name: "Concurrent Grant")
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "grant race then comment",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.999999",
+        slack_display_name: "Concurrent Grant",
+        slack_email: "concurrentgrant@example.com",
+        slack_user_id: "U999"
+      }
+
+      original_create = Collavre::CreativeShare.method(:create!)
+      creative_comment_count = @creative.comments.count
+
+      # Simulate the concurrent job: create the share (as the other message would),
+      # then trip the uniqueness validation on our own create!.
+      Collavre::CreativeShare.stub(:create!, ->(*args, **kwargs) {
+        original_create.call(*args, **kwargs)
+        raise ActiveRecord::RecordInvalid.new(Collavre::CreativeShare.new)
+      }) do
+        assert_nothing_raised do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      # Grant is satisfied and the message was not lost: comment created.
+      share = Collavre::CreativeShare.find_by(creative: @creative, user: slack_user)
+      assert_equal "feedback", share.permission
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+    end
+
     test "creates comment without invitation when email is missing" do
       payload = {
         creative_id: @creative.id,

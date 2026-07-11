@@ -143,7 +143,7 @@ module CollavreSlack
     def grant_feedback_permission(creative:, user:, granter:)
       # Check if share already exists
       existing_share = Collavre::CreativeShare.find_by(creative: creative, user: user)
-      return if existing_share && existing_share.permission_level >= Collavre::CreativeShare.permissions[:feedback]
+      return if feedback_or_higher?(existing_share)
 
       if existing_share
         existing_share.update!(permission: :feedback)
@@ -155,6 +155,25 @@ module CollavreSlack
           shared_by: granter
         )
       end
+    rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
+      # A concurrent inbound message for the same user can create the share between
+      # our find_by above and this write, tripping the (creative_id, user_id)
+      # uniqueness validation (RecordInvalid) or its backing unique index
+      # (RecordNotUnique). The grant is already satisfied by that other job, so
+      # re-check and treat it as success. Without this, the RecordInvalid would
+      # escape to the job's global `discard_on ActiveRecord::RecordInvalid` and
+      # drop this still-unposted Slack message even though the grant succeeded.
+      raise unless feedback_or_higher?(Collavre::CreativeShare.find_by(creative: creative, user: user))
+    end
+
+    # Whether a CreativeShare already grants feedback access or higher. `permission`
+    # is an enum whose reader returns the string label, so rank it against the enum
+    # mapping the same way Collavre::Creative::Permissible does.
+    def feedback_or_higher?(share)
+      return false unless share
+
+      Collavre::CreativeShare.permissions.fetch(share.permission) >=
+        Collavre::CreativeShare.permissions.fetch("feedback")
     end
 
     def invite_user_by_email(creative:, email:, inviter:)
