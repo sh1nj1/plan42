@@ -220,6 +220,43 @@ module CollavreSlack
       ).count
     end
 
+    test "retries the pre-command permission grant on transient deadlock" do
+      # The permission grant runs before CommandProcessor and is not covered by a
+      # job-level retry_on. A transient deadlock there must be retried in place —
+      # otherwise the already-acked Slack message would be lost.
+      slack_user = create_user(email: "grantretry@example.com", name: "Grant Retry")
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "grant then comment",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.888888",
+        slack_display_name: "Grant Retry",
+        slack_email: "grantretry@example.com",
+        slack_user_id: "U888"
+      }
+
+      grant_calls = 0
+      original_create = Collavre::CreativeShare.method(:create!)
+
+      creative_comment_count = @creative.comments.count
+      Collavre::CreativeShare.stub(:create!, ->(*args, **kwargs) {
+        grant_calls += 1
+        raise ActiveRecord::Deadlocked, "deadlock victim" if grant_calls == 1
+
+        original_create.call(*args, **kwargs)
+      }) do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+
+      assert_equal 2, grant_calls, "permission grant should be retried once after the deadlock"
+      # Message was not lost: permission granted and comment created.
+      share = Collavre::CreativeShare.find_by(creative: @creative, user: slack_user)
+      assert_equal "feedback", share.permission
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+    end
+
     test "creates comment without invitation when email is missing" do
       payload = {
         creative_id: @creative.id,

@@ -12,9 +12,12 @@ module CollavreSlack
     # (/calendar -> CalendarEvent, /work -> tasks, MCP commands) have
     # non-idempotent, non-transactional side effects that already committed on the
     # first attempt. A whole-job retry would duplicate those side effects. Instead
-    # CommandProcessor runs exactly once and only the final DB write is retried
-    # in place (see #persist_comment_with_link!), which is the sole point where a
-    # transient Deadlocked/LockWaitTimeout can actually surface.
+    # CommandProcessor runs exactly once, and the DB writes on either side of it
+    # are wrapped in an in-place #with_transient_retry: the pre-command permission
+    # grant / invite writes (both idempotent — each checks for an existing record
+    # first) and the final comment+link write. Every point where a transient
+    # Deadlocked/LockWaitTimeout can surface is covered, without ever re-running
+    # the non-idempotent commands.
 
     # Permanent/unprocessable failures: retrying cannot help. The referenced
     # creative/user/link was deleted, the payload can no longer deserialize, or a
@@ -27,12 +30,12 @@ module CollavreSlack
     def perform(payload)
       data = payload.with_indifferent_access
 
-      # Idempotency guard. retry_on above re-runs the whole job on transient DB
-      # errors, and this job has multiple non-atomic writes. If a completed run
-      # is somehow re-delivered, reprocessing the same Slack message would create
-      # a duplicate comment. The (channel_link, message_ts) pair uniquely
-      # identifies the inbound message, so a matching SlackCommentLink means it
-      # was already applied — no-op.
+      # Idempotency guard. The controller acks Slack before this job runs
+      # (at-least-once delivery), and this job has multiple non-atomic writes. If a
+      # completed run is somehow re-delivered, reprocessing the same Slack message
+      # would create a duplicate comment. The (channel_link, message_ts) pair
+      # uniquely identifies the inbound message, so a matching SlackCommentLink
+      # means it was already applied — no-op.
       return if slack_message_already_applied?(data)
 
       creative = Collavre::Creative.find(data[:creative_id])
@@ -41,36 +44,36 @@ module CollavreSlack
 
       return unless creative && channel_link
 
-      comment_user = user
-      slack_email = data[:slack_email]
-      slack_display_name = data[:slack_display_name]
+      comment_user = user.presence || channel_link.created_by
 
-      # Case 1: User exists in Collavre but lacks permission
-      if user && !creative.has_permission?(user, :feedback)
-        grant_feedback_permission(creative: creative, user: user, granter: channel_link.created_by)
-        Rails.logger.info("[CollavreSlack] Granted feedback permission to user #{user.id} on creative #{creative.id}")
-      end
-
-      # Case 2: User not in Collavre - invite by email
-      unless user
-        if slack_email.present?
-          invite_user_by_email(
-            creative: creative,
-            email: slack_email,
-            inviter: channel_link.created_by
-          )
-          Rails.logger.info("[CollavreSlack] Sent invitation to #{slack_email} for creative #{creative.id}")
+      # Pre-command permission grant / invite writes run before the non-idempotent
+      # CommandProcessor, so they must not be part of a whole-job retry. They are
+      # each idempotent (checking for an existing record first), so we retry them
+      # in place on transient contention — otherwise a Deadlocked here would lose
+      # the already-acked Slack message.
+      with_transient_retry do
+        # Case 1: User exists in Collavre but lacks permission
+        if user && !creative.has_permission?(user, :feedback)
+          grant_feedback_permission(creative: creative, user: user, granter: channel_link.created_by)
+          Rails.logger.info("[CollavreSlack] Granted feedback permission to user #{user.id} on creative #{creative.id}")
         end
 
-        # Use channel creator as fallback for comment
-        comment_user = channel_link.created_by
+        # Case 2: User not in Collavre - invite by email
+        if user.nil? && data[:slack_email].present?
+          invite_user_by_email(
+            creative: creative,
+            email: data[:slack_email],
+            inviter: channel_link.created_by
+          )
+          Rails.logger.info("[CollavreSlack] Sent invitation to #{data[:slack_email]} for creative #{creative.id}")
+        end
       end
 
       # Create comment with appropriate user
       comment = Collavre::Comment.new(
         creative: creative,
         user: comment_user,
-        content: format_comment_content(data[:content], user, slack_display_name)
+        content: format_comment_content(data[:content], user, data[:slack_display_name])
       )
 
       # Mark this comment as coming from Slack to prevent loop
@@ -95,8 +98,7 @@ module CollavreSlack
     # Because `comment` is a fresh unsaved record, a rolled-back attempt re-saves
     # the same instance, so retries produce exactly one comment and one link.
     def persist_comment_with_link!(comment, data)
-      attempts = 0
-      begin
+      with_transient_retry do
         ActiveRecord::Base.transaction do
           comment.save!
 
@@ -109,9 +111,20 @@ module CollavreSlack
             )
           end
         end
+      end
+    end
+
+    # Retry an idempotent block on transient DB contention with exponential
+    # backoff. Only ever wrap idempotent work — a retry re-runs the block from the
+    # top. This is the deliberate substitute for a job-level `retry_on`, which
+    # would also re-run the non-idempotent CommandProcessor.
+    def with_transient_retry(max_attempts: 5)
+      attempts = 0
+      begin
+        yield
       rescue ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout
         attempts += 1
-        raise if attempts >= 5
+        raise if attempts >= max_attempts
 
         sleep(0.1 * (2**(attempts - 1)))
         retry
