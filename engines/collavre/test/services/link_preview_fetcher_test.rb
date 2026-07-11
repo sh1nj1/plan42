@@ -195,6 +195,25 @@ class LinkPreviewFetcherTest < ActiveSupport::TestCase
     assert_equal 1, client.calls.size
   end
 
+  test "falls back to the next safe address when the first is unreachable" do
+    url = "https://example.com/dual-stack"
+    # First (e.g. AAAA/no egress) address raises at connect; the second succeeds.
+    client = FakeClient.new(
+      [ :raise, SocketError.new("no route to host") ],
+      [ :response, ok_response(HTML) ]
+    )
+    fetcher = Collavre::LinkPreviewFetcher.new(url, http_client: client, logger: NullLogger.new)
+
+    metadata = stub_addresses(fetcher, URI.parse(url).hostname => [ "2606:2800:220:1:248:1893:25c8:1946", "93.184.216.34" ]) do
+      fetcher.fetch
+    end
+
+    assert_equal "Example Title", metadata[:title]
+    assert_equal 2, client.calls.size
+    assert_equal "2606:2800:220:1:248:1893:25c8:1946", client.calls.first.ip
+    assert_equal "93.184.216.34", client.calls.second.ip
+  end
+
   test "rejects a host that resolves to a mix of public and private addresses" do
     url = "https://example.com/split-horizon"
     client = FakeClient.new

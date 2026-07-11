@@ -65,17 +65,10 @@ module Collavre
       # as public here can no longer be re-resolved to a private/metadata IP at
       # connect time, because the connection targets the pinned address (with the
       # original hostname preserved for Host/SNI).
-      address = pinned_address(uri)
-      return [ nil, nil ] unless address
+      addresses = safe_addresses(uri)
+      return [ nil, nil ] if addresses.empty?
 
-      response = @http_client.get(
-        uri,
-        ip: address,
-        headers: REQUEST_OPTIONS,
-        open_timeout: OPEN_TIMEOUT,
-        read_timeout: READ_TIMEOUT,
-        max_bytes: MAX_BYTES
-      )
+      response = fetch_via_pinned_addresses(uri, addresses)
       return [ nil, nil ] unless response
 
       if redirect?(response.code)
@@ -133,19 +126,45 @@ module Collavre
       nil
     end
 
-    # Resolve the host, reject if it maps to any unsafe address, and return the
-    # single IP to pin the connection to. Rejecting when ANY resolved address is
-    # unsafe (not just the pinned one) keeps defense-in-depth against split-horizon
-    # DNS returning a mix of public and private records.
-    def pinned_address(uri)
+    # Resolve the host, reject if it maps to ANY unsafe address, and return every
+    # validated public IP to pin against. Rejecting when any resolved address is
+    # unsafe (not just the one we pick) keeps defense-in-depth against
+    # split-horizon DNS returning a mix of public and private records. Returning
+    # all safe addresses lets the caller fall back to the next one when the first
+    # is unreachable (e.g. an AAAA record with no IPv6 egress).
+    def safe_addresses(uri)
       host = uri.hostname
-      return if host.nil? || host.empty?
+      return [] if host.nil? || host.empty?
 
       addresses = resolve_addresses(host)
-      return if addresses.empty?
-      return if addresses.any? { |address| unsafe_ip?(address) }
+      return [] if addresses.empty?
+      return [] if addresses.any? { |address| unsafe_ip?(address) }
 
-      addresses.first
+      addresses
+    end
+
+    # Try each pre-validated address in turn, pinning the connection to it, and
+    # return the first response we can actually open. Connection-level failures
+    # fall through to the next candidate; if none connect, the caller treats it
+    # as an empty preview. Every address here already passed safe_addresses, so
+    # falling back never targets an unsafe IP.
+    def fetch_via_pinned_addresses(uri, addresses)
+      last_error = nil
+      addresses.each do |address|
+        return @http_client.get(
+          uri,
+          ip: address,
+          headers: REQUEST_OPTIONS,
+          open_timeout: OPEN_TIMEOUT,
+          read_timeout: READ_TIMEOUT,
+          max_bytes: MAX_BYTES
+        )
+      rescue SocketError, IOError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout,
+             OpenSSL::SSL::SSLError => e
+        last_error = e
+      end
+      @logger&.info("Link preview fetch skipped for #{@url}: #{last_error.class} #{last_error.message}") if last_error
+      nil
     end
 
     def resolve_addresses(host)
@@ -255,7 +274,11 @@ module Collavre
     # read timeouts and byte cap.
     class PinnedHttpClient
       def get(uri, ip:, headers:, open_timeout:, read_timeout:, max_bytes:)
-        http = Net::HTTP.new(uri.hostname, uri.port)
+        # Pass an explicit nil proxy: Net::HTTP.new defaults p_addr to :ENV, so a
+        # set http_proxy/HTTP_PROXY would route through the proxy, which resolves
+        # the hostname itself and defeats `http.ipaddr = ip` pinning — reopening
+        # the DNS-rebinding/SSRF gap. nil forces a direct, pinned connection.
+        http = Net::HTTP.new(uri.hostname, uri.port, nil)
         http.use_ssl = uri.scheme == "https"
         http.ipaddr = ip
         http.open_timeout = open_timeout
