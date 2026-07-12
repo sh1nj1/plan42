@@ -2,27 +2,14 @@ module CollavreSlack
   class SlackInboundMessageJob < ApplicationJob
     queue_as :default
 
-    # SlackEventsController acks Slack with 200 the instant it enqueues this job
-    # (ack-before-apply), so Slack never re-delivers the event once accepted.
-    # Without a retry, a transient DB contention error on the final write would
-    # park the job and the inbound Slack message would be lost permanently.
-    #
-    # We deliberately do NOT use a job-level `retry_on` for transient contention:
-    # re-running the whole `perform` would re-run CommandProcessor, whose commands
-    # (/calendar -> CalendarEvent, /work -> tasks, MCP commands) have
-    # non-idempotent, non-transactional side effects that already committed on the
-    # first attempt. A whole-job retry would duplicate those side effects. Instead
-    # CommandProcessor runs exactly once, and the DB writes on either side of it
-    # are wrapped in an in-place #with_transient_retry: the pre-command permission
-    # grant / invite writes (both idempotent — each checks for an existing record
-    # first) and the final comment+link write. Every point where a transient
-    # Deadlocked/LockWaitTimeout can surface is covered, without ever re-running
-    # the non-idempotent commands.
+    # Slack is acked (200) the instant this job is enqueued, so a lost job means a
+    # lost message. We can't use a job-level `retry_on`: re-running `perform` would
+    # re-run CommandProcessor's non-idempotent commands (/calendar, /work, MCP). So
+    # CommandProcessor runs exactly once and each DB write around it is retried in
+    # place via #with_transient_retry.
 
-    # Permanent/unprocessable failures: retrying cannot help. The referenced
-    # creative/user/link was deleted, the payload can no longer deserialize, or a
-    # record is structurally invalid. Discard so the queue self-heals rather than
-    # looping forever.
+    # Retrying can't help these — the record was deleted, the payload can't
+    # deserialize, or it's structurally invalid — so discard to let the queue self-heal.
     discard_on ActiveJob::DeserializationError
     discard_on ActiveRecord::RecordNotFound
     discard_on ActiveRecord::RecordInvalid
@@ -36,46 +23,29 @@ module CollavreSlack
 
       return unless creative && channel_link
 
-      # Exactly-once guard, claimed BEFORE any side effect but AFTER the reads above.
-      # The controller acks Slack before this job runs (at-least-once delivery), so the
-      # same message can be delivered twice — either sequentially (a redelivery after a
-      # completed run) or concurrently (a near-simultaneous retry of an unacked event,
-      # producing two in-flight jobs). A read-only "already applied?" check cannot cover
-      # the concurrent case: both jobs read "not applied" and both run the non-idempotent
-      # side effects below (the grant/invite writes and, critically, CommandProcessor's
-      # /calendar, /work and MCP commands), duplicating them.
+      # Exactly-once guard claimed before any side effect. Slack is acked before this
+      # job runs, so a message can arrive twice — sequentially or concurrently. A
+      # read-only "already applied?" check can't cover the concurrent case: both jobs
+      # read "not applied" and both run the non-idempotent side effects below. Instead
+      # we atomically claim (channel_link, message_ts) via a unique index; only the
+      # winner proceeds, so every write below runs at most once.
       #
-      # Instead we atomically claim the (channel_link, message_ts) pair via a unique
-      # index. Only the row's winner proceeds past this line; a loser (a concurrent
-      # RecordNotUnique or a sequential-redelivery RecordInvalid) no-ops without running
-      # any side effect. This is reserve-before-side-effects: the claim gates every write
-      # below, so they run at most once across all deliveries of the message.
+      # Claimed AFTER the reads so the only pre-claim failure is a RecordNotFound on a
+      # deleted creative (deterministic, unrecoverable — nothing lost by leaving it
+      # un-gated), and channel_link is guaranteed present so a RecordInvalid can only
+      # mean "already claimed".
       #
-      # Placement is deliberate. Claiming AFTER the reads (not at the top of perform)
-      # keeps the only pre-claim failure a RecordNotFound on a deleted creative — which
-      # is deterministic and undeliverable, so leaving it un-gated loses nothing a retry
-      # could recover. It also guarantees channel_link exists before the claim, so the
-      # reservation's belongs_to/FK can never fail and a RecordInvalid here can only mean
-      # "already claimed".
-      #
-      # Trade-off: a discard (via discard_on) or crash AFTER this claim keeps the
-      # reservation, so that message is not retried. This is intentional — by that point
-      # CommandProcessor may already have run, and a retry would duplicate its
-      # non-idempotent commands, which is exactly the bug this change fixes. We prefer
-      # commands-exactly-once over comment-recovery, and use no time-lease (expiry-based
-      # reclaim is fragile). Transient contention on the writes below is still retried in
-      # place, so the realistic loss window is a hard crash (process death) after the
-      # claim but before the comment is persisted — spanning the grant/invite writes and
-      # CommandProcessor. The grant/invite writes there are themselves idempotent.
+      # Trade-off: a discard/crash after the claim keeps the reservation and skips
+      # retry — intentional, since CommandProcessor may have run and a retry would
+      # duplicate it. No time-lease (expiry reclaim is fragile). The only real loss
+      # window is a hard crash after the claim but before the comment persists.
       return unless claim_inbound_message(data)
 
       comment_user = user.presence || channel_link.created_by
 
-      # Pre-command permission grant / invite writes run before the non-idempotent
-      # CommandProcessor, so they must not be part of a whole-job retry. They are
-      # each idempotent (checking for an existing record first), so we retry them
-      # in place on transient contention — otherwise a Deadlocked here would lose
-      # the already-acked Slack message.
+      # Idempotent permission grant / invite writes, run before the non-idempotent
+      # CommandProcessor so they can't ride a whole-job retry. Retried in place on
+      # transient contention — otherwise a Deadlocked here loses the acked message.
       with_transient_retry do
         # Case 1: User exists in Collavre but lacks permission
         if user && !creative.has_permission?(user, :feedback)
@@ -104,8 +74,7 @@ module CollavreSlack
       # Mark this comment as coming from Slack to prevent loop
       comment.instance_variable_set(:@from_slack, true)
 
-      # Command side effects must happen exactly once — run before the retryable
-      # write and never inside the retry loop.
+      # Non-idempotent side effects: run once, outside the retryable write below.
       response = Collavre::Comments::CommandProcessor.new(comment: comment, user: user).call
       if response.present?
         comment.content = "#{comment.content}\n\n#{response}"
@@ -117,11 +86,9 @@ module CollavreSlack
 
     private
 
-    # Persist the comment and its Slack link atomically, retrying only this write
-    # on transient DB contention. Retrying here (rather than the whole job) keeps
-    # the non-idempotent CommandProcessor side effects from being re-applied.
-    # Because `comment` is a fresh unsaved record, a rolled-back attempt re-saves
-    # the same instance, so retries produce exactly one comment and one link.
+    # Persist comment + Slack link atomically, retrying only this write (not the whole
+    # job) so CommandProcessor isn't re-applied. `comment` is a fresh unsaved record,
+    # so a rolled-back retry re-saves the same instance — exactly one comment and link.
     def persist_comment_with_link!(comment, data)
       with_transient_retry do
         ActiveRecord::Base.transaction do
@@ -139,10 +106,9 @@ module CollavreSlack
       end
     end
 
-    # Retry an idempotent block on transient DB contention with exponential
-    # backoff. Only ever wrap idempotent work — a retry re-runs the block from the
-    # top. This is the deliberate substitute for a job-level `retry_on`, which
-    # would also re-run the non-idempotent CommandProcessor.
+    # Retry an idempotent block on transient DB contention. Only wrap idempotent work
+    # — the deliberate substitute for a job-level `retry_on`, which would also re-run
+    # the non-idempotent CommandProcessor.
     def with_transient_retry(max_attempts: 5)
       attempts = 0
       begin
@@ -158,15 +124,10 @@ module CollavreSlack
       end
     end
 
-    # Whether an error is a retryable transient DB contention, whether raised
-    # directly or wrapped by the queue adapter. A `deliver_later` enqueue INSERT
-    # runs inside the surrounding transaction (enqueue_after_transaction_commit is
-    # false), but Solid Queue re-raises any Active Record error from that INSERT as
-    # its own SolidQueue::Job::EnqueueError (not ActiveJob::EnqueueError, so it
-    # propagates instead of being swallowed), preserving the original as #cause. We
-    # match on the cause chain rather than that vendor class so a wrapped
-    # Deadlocked/LockWaitTimeout is still retried while a permanent wrapped failure
-    # (e.g. a validation error) is re-raised instead of looping.
+    # Whether an error is retryable transient contention, raised directly or wrapped.
+    # Solid Queue re-raises a failed `deliver_later` enqueue INSERT as its own
+    # EnqueueError with the original as #cause, so we match the cause chain — retrying
+    # a wrapped Deadlocked/LockWaitTimeout while re-raising a wrapped permanent failure.
     def transient_contention?(error)
       seen = []
       while error && !seen.include?(error)
@@ -178,19 +139,13 @@ module CollavreSlack
       false
     end
 
-    # Atomically claim this inbound message before any side effect runs. Returns true
-    # if this job won the claim (or the message carries no dedup key, so no dedup is
-    # possible — same as the prior behaviour) and false if another job already owns
-    # it and this run must no-op.
-    #
-    # A transient DB contention error (Deadlocked/LockWaitTimeout) on the INSERT is
-    # retried in place — it is NOT a "someone else claimed it" signal. Only a
-    # uniqueness violation means another delivery holds the claim: the DB unique index
-    # (RecordNotUnique) is the authoritative gate under true concurrency, and the model
-    # validation (RecordInvalid) covers the already-committed sequential case. Because
-    # the caller has already verified channel_link exists and message_ts is present,
-    # uniqueness is the ONLY validation that can fail here, so a RecordInvalid
-    # unambiguously means "already claimed" rather than a malformed reservation.
+    # Atomically claim this message before any side effect. True if we won the claim
+    # (or there's no dedup key — same as prior behaviour), false if another job owns it.
+    # Transient contention on the INSERT is retried in place, not a "claimed" signal.
+    # Only uniqueness means already-claimed: RecordNotUnique is the authoritative gate
+    # under concurrency, RecordInvalid covers the committed sequential case. channel_link
+    # and message_ts are verified present, so uniqueness is the only validation that can
+    # fail — RecordInvalid here unambiguously means "already claimed".
     def claim_inbound_message(data)
       channel_link_id = data[:slack_channel_link_id]
       message_ts = data[:slack_message_ts]
@@ -223,19 +178,15 @@ module CollavreSlack
         )
       end
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
-      # A concurrent inbound message for the same user can create the share between
-      # our find_by above and this write, tripping the (creative_id, user_id)
-      # uniqueness validation (RecordInvalid) or its backing unique index
-      # (RecordNotUnique). The grant is already satisfied by that other job, so
-      # re-check and treat it as success. Without this, the RecordInvalid would
-      # escape to the job's global `discard_on ActiveRecord::RecordInvalid` and
-      # drop this still-unposted Slack message even though the grant succeeded.
+      # A concurrent message for the same user can create the share between the find_by
+      # above and this write, tripping the (creative_id, user_id) uniqueness. The grant
+      # is already satisfied, so re-check and treat as success — otherwise RecordInvalid
+      # would hit the job's `discard_on` and drop this still-unposted message.
       raise unless feedback_or_higher?(Collavre::CreativeShare.find_by(creative: creative, user: user))
     end
 
-    # Whether a CreativeShare already grants feedback access or higher. `permission`
-    # is an enum whose reader returns the string label, so rank it against the enum
-    # mapping the same way Collavre::Creative::Permissible does.
+    # Whether a CreativeShare grants feedback access or higher. `permission` is an enum
+    # returning the string label, so rank it via the enum mapping like Permissible does.
     def feedback_or_higher?(share)
       return false unless share
 
@@ -244,22 +195,16 @@ module CollavreSlack
     end
 
     def invite_user_by_email(creative:, email:, inviter:)
-      # A pre-existing invitation means an earlier attempt already created it AND
-      # enqueued its email in the same transaction (below), so there is nothing
-      # left to do — this guard is only ever hit for a genuinely repeated invite,
-      # never for a partially-applied one.
+      # A pre-existing invitation was created AND had its email enqueued in the same
+      # transaction below, so there's nothing left to do.
       existing_invitation = Collavre::Invitation.find_by(creative: creative, email: email)
       return if existing_invitation
 
-      # Create the invitation and enqueue its email atomically. `deliver_later`
-      # enqueues synchronously (enqueue_after_transaction_commit is false), so the
-      # Solid Queue enqueue INSERT participates in this transaction. If that INSERT
-      # raises a transient contention error — which Solid Queue surfaces as a
-      # SolidQueue::Job::EnqueueError wrapping the Deadlocked/LockWaitTimeout — the
-      # invitation create rolls back with it and the enclosing #with_transient_retry
-      # (which unwraps the cause chain) redoes both together. Without this
-      # transaction, a committed invitation with a failed enqueue would, on retry,
-      # hit the existing-invitation guard above and silently never send the email.
+      # Create invitation + enqueue email atomically. `deliver_later` enqueues
+      # synchronously, so its INSERT joins this transaction; a transient EnqueueError
+      # rolls both back and #with_transient_retry redoes them together. Without the
+      # transaction, a committed invitation with a failed enqueue would, on retry, hit
+      # the guard above and silently never send the email.
       ActiveRecord::Base.transaction do
         invitation = Collavre::Invitation.create!(
           email: email,
