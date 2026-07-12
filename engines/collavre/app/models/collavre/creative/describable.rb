@@ -29,7 +29,13 @@ module Collavre
       # Linked Creative의 description을 안전하게 반환
       def effective_description(variation_id = nil, html = true)
         if variation_id.present?
-          variation_tag = tags.find_by(label_id: variation_id)
+          # `find_by` on a loaded association still round-trips; the browse tree
+          # preloads tags per level and reaches here once per node.
+          variation_tag = if tags.loaded?
+            tags.find { |tag| tag.label_id.to_s == variation_id.to_s }
+          else
+            tags.find_by(label_id: variation_id)
+          end
           return variation_tag.value if variation_tag&.value.present?
         end
         description_val = origin_id.nil? ? description : origin.description
