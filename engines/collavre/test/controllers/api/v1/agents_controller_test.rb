@@ -53,6 +53,16 @@ module Collavre
           assert_equal "Invalid authentication token", JSON.parse(@response.body)["error"]
         end
 
+        test "ApiError renders the single-message envelope at its status" do
+          # The auth branches now raise ApiError; a missing token must still yield
+          # {error: "..."} at 401 (contract preserved).
+          post "/api/v1/agent/register", params: { name: "x" }, as: :json
+          assert_response :unauthorized
+          body = JSON.parse(@response.body)
+          assert_equal "Missing authentication token", body["error"]
+          assert_nil body["errors"], "must not accidentally emit the array-shaped envelope"
+        end
+
         # --- Register ---
 
         test "register creates single Claude Channel agent and topic" do
