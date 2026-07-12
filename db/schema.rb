@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_02_000005) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -87,14 +87,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
     t.datetime "last_event_at"
     t.string "latest_label"
     t.string "latest_link"
+    t.integer "pr_number"
+    t.string "repo_full_name"
     t.integer "state", default: 0, null: false
     t.integer "topic_id", null: false
     t.string "type", null: false
     t.datetime "updated_at", null: false
-    t.index "topic_id, json_extract(config, '$.worktree_id')", name: "index_channels_on_topic_preview_worktree", unique: true, where: "type = 'Collavre::PreviewChannel'"
-    t.index "type, topic_id, json_extract(config, '$.repo_full_name'), json_extract(config, '$.pr_number')", name: "index_channels_on_type_topic_repo_pr", unique: true
+    t.string "worktree_id"
     t.index ["dismissed_at"], name: "index_channels_on_dismissed_at"
+    t.index ["topic_id", "worktree_id"], name: "index_channels_on_topic_preview_worktree", unique: true, where: "type = 'Collavre::PreviewChannel'"
     t.index ["topic_id"], name: "index_channels_on_topic_id"
+    t.index ["type", "topic_id", "repo_full_name", "pr_number"], name: "index_channels_on_type_topic_repo_pr", unique: true
     t.index ["type"], name: "index_channels_on_type"
   end
 
@@ -170,6 +173,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
     t.integer "user_id"
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
+    t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
@@ -348,6 +352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
     t.string "type"
     t.datetime "updated_at", null: false
     t.string "value"
+    t.index ["creative_id", "type"], name: "index_labels_on_creative_id_and_type"
     t.index ["creative_id"], name: "index_labels_on_creative_id"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
   end
@@ -778,7 +783,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
 
   create_table "system_settings", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.string "key"
+    t.string "key", null: false
     t.datetime "updated_at", null: false
     t.text "value"
     t.index ["key"], name: "index_system_settings_on_key", unique: true
@@ -790,6 +795,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
     t.integer "label_id"
     t.datetime "updated_at", null: false
     t.string "value"
+    t.index ["creative_id"], name: "index_tags_on_creative_id"
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
@@ -1002,6 +1008,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_01_000008) do
   add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "tags", "creatives"
   add_foreign_key "tags", "labels"
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "creatives", on_delete: :nullify
