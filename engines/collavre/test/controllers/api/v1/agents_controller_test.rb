@@ -40,6 +40,19 @@ module Collavre
           assert_response :unauthorized
         end
 
+        test "missing token returns collavre-shaped 401 body" do
+          post "/api/v1/agent/register", params: { name: "x" }, as: :json
+          assert_response :unauthorized
+          assert_equal "Missing authentication token", JSON.parse(@response.body)["error"]
+        end
+
+        test "invalid token returns collavre-shaped 401 body" do
+          post "/api/v1/agent/register", params: { name: "x" },
+            headers: { "Authorization" => "Bearer invalid" }, as: :json
+          assert_response :unauthorized
+          assert_equal "Invalid authentication token", JSON.parse(@response.body)["error"]
+        end
+
         # --- Register ---
 
         test "register creates single Claude Channel agent and topic" do
