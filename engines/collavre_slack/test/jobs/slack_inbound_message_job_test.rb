@@ -144,6 +144,287 @@ module CollavreSlack
       end
     end
 
+    test "invite email enqueue failure rolls back the invitation and retry delivers exactly once" do
+      # An unmapped Slack user triggers invite_user_by_email. deliver_later enqueues
+      # synchronously (enqueue_after_transaction_commit is false), so a transient
+      # Deadlocked on the Solid Queue enqueue INSERT must roll back the invitation
+      # create with it — otherwise a committed invitation with a failed enqueue
+      # would, on retry, hit the existing-invitation guard and never send the email.
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.909090",
+        slack_display_name: "Atomic User",
+        slack_email: "atomic@slack.com",
+        slack_user_id: "U909"
+      }
+
+      deliver_calls = 0
+      fake_message = Object.new
+      fake_message.define_singleton_method(:deliver_later) do
+        deliver_calls += 1
+        raise ActiveRecord::Deadlocked, "enqueue deadlock" if deliver_calls == 1
+
+        :enqueued
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { fake_message }
+
+      # The first enqueue deadlocks (rolling back its invitation create), the
+      # second succeeds — net exactly one invitation persisted.
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        assert_difference "Collavre::Invitation.count", 1 do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      assert_equal 2, deliver_calls, "enqueue should be retried once after the transient deadlock"
+      assert_equal 1, Collavre::Invitation.where(email: "atomic@slack.com", creative: @creative).count,
+                   "the rolled-back first attempt must leave no orphan invitation"
+    end
+
+    test "adapter-wrapped transient enqueue error is unwrapped and retried, delivering exactly once" do
+      # Solid Queue re-raises an Active Record error from the deliver_later enqueue
+      # INSERT as SolidQueue::Job::EnqueueError — a StandardError (NOT
+      # ActiveRecord::Deadlocked), so it propagates instead of being swallowed —
+      # preserving the original as #cause. with_transient_retry must unwrap the
+      # cause chain and still retry; otherwise the wrapped error escapes perform
+      # and the already-acked Slack message is lost. We simulate the wrapper with a
+      # plain StandardError whose #cause is a Deadlocked, matching how Ruby sets
+      # #cause when re-raising inside a rescue (and avoiding a hard dependency on
+      # the Solid Queue constant, which the test adapter never loads).
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me too",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.919191",
+        slack_display_name: "Wrapped User",
+        slack_email: "wrapped@slack.com",
+        slack_user_id: "U919"
+      }
+
+      deliver_calls = 0
+      fake_message = Object.new
+      fake_message.define_singleton_method(:deliver_later) do
+        deliver_calls += 1
+        if deliver_calls == 1
+          begin
+            raise ActiveRecord::Deadlocked, "enqueue deadlock"
+          rescue ActiveRecord::Deadlocked
+            raise StandardError, "SolidQueue::Job::EnqueueError: ActiveRecord::Deadlocked"
+          end
+        end
+        :enqueued
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { fake_message }
+
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        assert_difference "Collavre::Invitation.count", 1 do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      assert_equal 2, deliver_calls, "the adapter-wrapped transient enqueue error should be retried once"
+      assert_equal 1, Collavre::Invitation.where(email: "wrapped@slack.com", creative: @creative).count,
+                   "the rolled-back first attempt must leave no orphan invitation"
+    end
+
+    test "wrapped permanent enqueue error is not retried and self-heals via discard" do
+      # The mirror of the above: a wrapped error whose cause is NOT transient
+      # (e.g. a validation failure) must not be retried up to the cap. with_transient_retry
+      # re-raises it immediately; ActiveJob's rescue_with_handler then walks the cause
+      # chain and the existing `discard_on ActiveRecord::RecordInvalid` matches the
+      # cause, so the job self-heals (no permanent loop, no crash) rather than parking.
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.929292",
+        slack_display_name: "Permanent User",
+        slack_email: "permanent@slack.com",
+        slack_user_id: "U929"
+      }
+
+      deliver_calls = 0
+      fake_message = Object.new
+      fake_message.define_singleton_method(:deliver_later) do
+        deliver_calls += 1
+        begin
+          raise ActiveRecord::RecordInvalid.new(Collavre::Invitation.new)
+        rescue ActiveRecord::RecordInvalid
+          raise StandardError, "SolidQueue::Job::EnqueueError: ActiveRecord::RecordInvalid"
+        end
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { fake_message }
+
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        # Discarded (not re-raised) because the cause is a permanent RecordInvalid.
+        assert_nothing_raised do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      assert_equal 1, deliver_calls, "a permanent wrapped enqueue error must not be retried"
+    end
+
+    test "reprocessing the same Slack message does not create a duplicate comment" do
+      slack_user = create_user(email: "idem@example.com", name: "Idem User")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "Only once please",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.000001",
+        slack_display_name: "Idem User",
+        slack_email: "idem@example.com",
+        slack_user_id: "U555"
+      }
+
+      creative_comment_count = @creative.comments.count
+      SlackInboundMessageJob.perform_now(payload)
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+      assert_equal 1, CollavreSlack::SlackCommentLink.where(slack_channel_link_id: @channel_link.id, message_ts: "1700000000.000001").count
+
+      # A retry / redelivery of the same message (same channel_link + ts) is a no-op:
+      # no duplicate comment on the creative and no duplicate Slack link.
+      assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackCommentLink.count" ] do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+    end
+
+    test "retries only the write on transient deadlock and runs commands exactly once" do
+      slack_user = create_user(email: "retry@example.com", name: "Retry User")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "retry me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.777777",
+        slack_display_name: "Retry User",
+        slack_email: "retry@example.com",
+        slack_user_id: "U777"
+      }
+
+      # CommandProcessor has non-idempotent side effects; it must run exactly once
+      # even when the final write is retried after a transient deadlock.
+      command_calls = 0
+      fake_processor = Object.new
+      fake_processor.define_singleton_method(:call) do
+        command_calls += 1
+        nil
+      end
+
+      # First link write deadlocks, second succeeds — exercises the in-place
+      # write retry (not a whole-job retry).
+      create_calls = 0
+      original_create = CollavreSlack::SlackCommentLink.method(:create!)
+
+      Collavre::Comments::CommandProcessor.stub(:new, ->(**) { fake_processor }) do
+        CollavreSlack::SlackCommentLink.stub(:create!, ->(**kwargs) {
+          create_calls += 1
+          raise ActiveRecord::Deadlocked, "deadlock victim" if create_calls == 1
+
+          original_create.call(**kwargs)
+        }) do
+          creative_comment_count = @creative.comments.count
+          SlackInboundMessageJob.perform_now(payload)
+          assert_equal creative_comment_count + 1, @creative.comments.reload.count
+        end
+      end
+
+      assert_equal 2, create_calls, "write should be retried once after the deadlock"
+      assert_equal 1, command_calls, "CommandProcessor must run exactly once despite the write retry"
+      assert_equal 1, CollavreSlack::SlackCommentLink.where(
+        slack_channel_link_id: @channel_link.id, message_ts: "1700000000.777777"
+      ).count
+    end
+
+    test "retries the pre-command permission grant on transient deadlock" do
+      # The permission grant runs before CommandProcessor and is not covered by a
+      # job-level retry_on. A transient deadlock there must be retried in place —
+      # otherwise the already-acked Slack message would be lost.
+      slack_user = create_user(email: "grantretry@example.com", name: "Grant Retry")
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "grant then comment",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.888888",
+        slack_display_name: "Grant Retry",
+        slack_email: "grantretry@example.com",
+        slack_user_id: "U888"
+      }
+
+      grant_calls = 0
+      original_create = Collavre::CreativeShare.method(:create!)
+
+      creative_comment_count = @creative.comments.count
+      Collavre::CreativeShare.stub(:create!, ->(*args, **kwargs) {
+        grant_calls += 1
+        raise ActiveRecord::Deadlocked, "deadlock victim" if grant_calls == 1
+
+        original_create.call(*args, **kwargs)
+      }) do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+
+      assert_equal 2, grant_calls, "permission grant should be retried once after the deadlock"
+      # Message was not lost: permission granted and comment created.
+      share = Collavre::CreativeShare.find_by(creative: @creative, user: slack_user)
+      assert_equal "feedback", share.permission
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+    end
+
+    test "does not drop the message when a concurrent grant trips the uniqueness validation" do
+      # Two inbound messages from the same access-less user can both pass the
+      # has_permission? check; one commits the CreativeShare, the other's create!
+      # trips the (creative_id, user_id) uniqueness validation and raises
+      # RecordInvalid. The job's global `discard_on ActiveRecord::RecordInvalid`
+      # must NOT drop the already-acked message when the grant is now satisfied.
+      slack_user = create_user(email: "concurrentgrant@example.com", name: "Concurrent Grant")
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "grant race then comment",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.999999",
+        slack_display_name: "Concurrent Grant",
+        slack_email: "concurrentgrant@example.com",
+        slack_user_id: "U999"
+      }
+
+      original_create = Collavre::CreativeShare.method(:create!)
+      creative_comment_count = @creative.comments.count
+
+      # Simulate the concurrent job: create the share (as the other message would),
+      # then trip the uniqueness validation on our own create!.
+      Collavre::CreativeShare.stub(:create!, ->(*args, **kwargs) {
+        original_create.call(*args, **kwargs)
+        raise ActiveRecord::RecordInvalid.new(Collavre::CreativeShare.new)
+      }) do
+        assert_nothing_raised do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      # Grant is satisfied and the message was not lost: comment created.
+      share = Collavre::CreativeShare.find_by(creative: @creative, user: slack_user)
+      assert_equal "feedback", share.permission
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+    end
+
     test "creates comment without invitation when email is missing" do
       payload = {
         creative_id: @creative.id,
