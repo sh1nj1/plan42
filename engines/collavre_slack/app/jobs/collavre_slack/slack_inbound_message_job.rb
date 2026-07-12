@@ -23,29 +23,14 @@ module CollavreSlack
 
       return unless creative && channel_link
 
-      # Exactly-once guard claimed before any side effect. Slack is acked before this
-      # job runs, so a message can arrive twice — sequentially or concurrently. A
-      # read-only "already applied?" check can't cover the concurrent case: both jobs
-      # read "not applied" and both run the non-idempotent side effects below. Instead
-      # we atomically claim (channel_link, message_ts) via a unique index; only the
-      # winner proceeds, so every write below runs at most once.
-      #
-      # Claimed AFTER the reads so the only pre-claim failure is a RecordNotFound on a
-      # deleted creative (deterministic, unrecoverable — nothing lost by leaving it
-      # un-gated), and channel_link is guaranteed present so a RecordInvalid can only
-      # mean "already claimed".
-      #
-      # Trade-off: a discard/crash after the claim keeps the reservation and skips
-      # retry — intentional, since CommandProcessor may have run and a retry would
-      # duplicate it. No time-lease (expiry reclaim is fragile). The only real loss
-      # window is a hard crash after the claim but before the comment persists.
-      return unless claim_inbound_message(data)
-
       comment_user = user.presence || channel_link.created_by
 
-      # Idempotent permission grant / invite writes, run before the non-idempotent
-      # CommandProcessor so they can't ride a whole-job retry. Retried in place on
-      # transient contention — otherwise a Deadlocked here loses the acked message.
+      # Idempotent permission grant / invite writes. Run BEFORE the exactly-once claim so
+      # a transient failure here (e.g. a Solid Queue enqueue deadlock that exhausts the
+      # in-place retries) commits no reservation — a failed-job retry can still reprocess
+      # the message. Each re-checks the existing share/invitation, so a sequential re-run
+      # is a no-op. Retried in place on transient contention — otherwise a Deadlocked here
+      # loses the acked message.
       with_transient_retry do
         # Case 1: User exists in Collavre but lacks permission
         if user && !creative.has_permission?(user, :feedback)
@@ -63,6 +48,22 @@ module CollavreSlack
           Rails.logger.info("[CollavreSlack] Sent invitation to #{data[:slack_email]} for creative #{creative.id}")
         end
       end
+
+      # Exactly-once guard, claimed here: after the idempotent writes above, immediately
+      # before the non-idempotent CommandProcessor (/calendar, /work, MCP). Slack is acked
+      # before this job runs, so a message can arrive twice (sequentially or concurrently);
+      # a read-only "already applied?" check can't cover concurrency — both jobs read "not
+      # applied" and both run the commands. We atomically claim (channel_link, message_ts)
+      # via a unique index, so only the winner runs CommandProcessor and persists.
+      #
+      # Placed after the reads and the idempotent writes so no recoverable failure leaves a
+      # reservation behind: every pre-claim error is either a deterministic RecordNotFound
+      # (deleted creative) or a transient grant/invite failure a retry can redo. Only past
+      # the claim do we reach the non-idempotent commands, so the sole loss window is a
+      # discard/crash between the claim and the comment persisting — intentional, since a
+      # retry there would duplicate the commands. No time-lease (expiry reclaim is fragile).
+      # channel_link is verified present, so a RecordInvalid can only mean "already claimed".
+      return unless claim_inbound_message(data)
 
       # Create comment with appropriate user
       comment = Collavre::Comment.new(
@@ -139,7 +140,7 @@ module CollavreSlack
       false
     end
 
-    # Atomically claim this message before any side effect. True if we won the claim
+    # Atomically claim this message before the non-idempotent commands. True if we won the claim
     # (or there's no dedup key — same as prior behaviour), false if another job owns it.
     # Transient contention on the INSERT is retried in place, not a "claimed" signal.
     # Only uniqueness means already-claimed: RecordNotUnique is the authoritative gate
@@ -196,7 +197,12 @@ module CollavreSlack
 
     def invite_user_by_email(creative:, email:, inviter:)
       # A pre-existing invitation was created AND had its email enqueued in the same
-      # transaction below, so there's nothing left to do.
+      # transaction below, so there's nothing left to do. This dedups sequential
+      # redelivery; a true concurrent double-delivery can still create two invitations
+      # (no unique index on (creative_id, email)) — accepted, since a duplicate invite
+      # email is far less harmful than a lost message. If such an index is ever added,
+      # rescue RecordNotUnique + re-check here like #grant_feedback_permission does,
+      # otherwise the concurrent loser's create! would escape as a hard job failure.
       existing_invitation = Collavre::Invitation.find_by(creative: creative, email: email)
       return if existing_invitation
 

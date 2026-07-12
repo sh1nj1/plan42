@@ -479,6 +479,52 @@ module CollavreSlack
       end
     end
 
+    test "a failed pre-command write leaves no reservation, so a retry still reprocesses" do
+      # Codex P2 regression: the exactly-once claim sits AFTER the idempotent grant/invite
+      # writes. If one of those exhausts its in-place retries and raises, no reservation is
+      # committed — so the failed job (or a redelivery) reprocesses the still-unposted
+      # message instead of being permanently no-op'd by a stale claim.
+      ts = "1700000000.424242"
+      payload = {
+        creative_id: @creative.id,
+        user_id: nil,
+        content: "invite me",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: ts,
+        slack_display_name: "Recover User",
+        slack_email: "recover@slack.com",
+        slack_user_id: "U424"
+      }
+
+      # First delivery: the invite enqueue deadlocks on every attempt, exhausting the
+      # in-place retries so perform raises (the acked message is momentarily lost).
+      always_deadlock = Object.new
+      always_deadlock.define_singleton_method(:deliver_later) do
+        raise ActiveRecord::Deadlocked, "persistent enqueue deadlock"
+      end
+      fake_mailer = Object.new
+      fake_mailer.define_singleton_method(:invite) { always_deadlock }
+
+      Collavre::InvitationMailer.stub(:with, ->(**_kwargs) { fake_mailer }) do
+        assert_raises(ActiveRecord::Deadlocked) { SlackInboundMessageJob.perform_now(payload) }
+      end
+
+      # The crux: the pre-claim failure committed NO reservation (and rolled back its
+      # invitation) — nothing is wedged, so the redelivery below is not a stale-claim no-op.
+      assert_equal 0, CollavreSlack::SlackInboundReservation.where(
+        slack_channel_link_id: @channel_link.id, message_ts: ts
+      ).count, "a pre-claim failure must not leave a reservation behind"
+      assert_equal 0, Collavre::Invitation.where(email: "recover@slack.com", creative: @creative).count
+
+      # Retry with the transient fault cleared: the message reprocesses to completion.
+      assert_difference [ "Collavre::Invitation.count", "Collavre::Comment.count" ], 1 do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+      assert_equal 1, CollavreSlack::SlackInboundReservation.where(
+        slack_channel_link_id: @channel_link.id, message_ts: ts
+      ).count, "the successful retry claims the reservation exactly once"
+    end
+
     test "retries only the write on transient deadlock and runs commands exactly once" do
       slack_user = create_user(email: "retry@example.com", name: "Retry User")
       Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
