@@ -51,7 +51,7 @@ module Collavre
         end
     end
 
-    belongs_to :creative, class_name: "Collavre::Creative"
+    belongs_to :creative, class_name: "Collavre::Creative", counter_cache: true
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :approver, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :action_executed_by, class_name: Collavre.configuration.user_class_name, optional: true

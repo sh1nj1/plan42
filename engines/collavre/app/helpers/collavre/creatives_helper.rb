@@ -38,7 +38,7 @@ module Collavre
           safe_join([])
         elsif creative.has_permission?(Current.user, :feedback)
           origin = creative.effective_origin
-          comments_count = origin.comments.size
+          comments_count = origin.comments_count
           pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
           last_read_id = pointer&.last_read_comment_id
           unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
