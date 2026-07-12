@@ -300,6 +300,185 @@ module CollavreSlack
       end
     end
 
+    test "a message already claimed by a concurrent delivery no-ops before running commands" do
+      # The claim precedes CommandProcessor, so a loser whose winner already claimed
+      # the pair must bail without running the non-idempotent commands.
+      slack_user = create_user(email: "concurrent-claim@example.com", name: "Concurrent Claim")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      ts = "1700000000.246810"
+      # Stand in for the winning job: it already claimed this message.
+      CollavreSlack::SlackInboundReservation.create!(slack_channel_link: @channel_link, message_ts: ts)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "duplicate delivery",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: ts,
+        slack_display_name: "Concurrent Claim",
+        slack_email: "concurrent-claim@example.com",
+        slack_user_id: "U246"
+      }
+
+      command_called = false
+      fake_processor = Object.new
+      fake_processor.define_singleton_method(:call) do
+        command_called = true
+        nil
+      end
+
+      Collavre::Comments::CommandProcessor.stub(:new, ->(**) { fake_processor }) do
+        assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackCommentLink.count",
+                              "CollavreSlack::SlackInboundReservation.count" ] do
+          SlackInboundMessageJob.perform_now(payload)
+        end
+      end
+
+      refute command_called,
+             "CommandProcessor must not run when the message is already claimed (reserve-before-side-effects)"
+    end
+
+    test "duplicate deliveries run CommandProcessor exactly once and claim exactly one reservation" do
+      slack_user = create_user(email: "once@example.com", name: "Once User")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      ts = "1700000000.135791"
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "exactly once",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: ts,
+        slack_display_name: "Once User",
+        slack_email: "once@example.com",
+        slack_user_id: "U135"
+      }
+
+      command_calls = 0
+      fake_processor = Object.new
+      fake_processor.define_singleton_method(:call) do
+        command_calls += 1
+        nil
+      end
+
+      creative_comment_count = @creative.comments.count
+      Collavre::Comments::CommandProcessor.stub(:new, ->(**) { fake_processor }) do
+        SlackInboundMessageJob.perform_now(payload)
+        # Redelivery of the identical message (the concurrent-loser / retry path).
+        SlackInboundMessageJob.perform_now(payload)
+      end
+
+      assert_equal 1, command_calls, "CommandProcessor must run exactly once across duplicate deliveries"
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count, "exactly one comment"
+      assert_equal 1, CollavreSlack::SlackInboundReservation.where(
+        slack_channel_link_id: @channel_link.id, message_ts: ts
+      ).count, "exactly one reservation claimed"
+    end
+
+    test "a transient deadlock on the reservation claim is retried, not mistaken for a duplicate" do
+      # Transient contention on the claim INSERT is not a "claimed" signal — treating
+      # it as one would drop the acked message. Only uniqueness may no-op the job.
+      slack_user = create_user(email: "claimretry@example.com", name: "Claim Retry")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      ts = "1700000000.112233"
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "claim then comment",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: ts,
+        slack_display_name: "Claim Retry",
+        slack_email: "claimretry@example.com",
+        slack_user_id: "U112"
+      }
+
+      claim_calls = 0
+      original_create = CollavreSlack::SlackInboundReservation.method(:create!)
+      creative_comment_count = @creative.comments.count
+
+      CollavreSlack::SlackInboundReservation.stub(:create!, ->(*args, **kwargs) {
+        claim_calls += 1
+        raise ActiveRecord::Deadlocked, "claim deadlock" if claim_calls == 1
+
+        original_create.call(*args, **kwargs)
+      }) do
+        SlackInboundMessageJob.perform_now(payload)
+      end
+
+      assert_equal 2, claim_calls, "the claim should be retried once after a transient deadlock"
+      # The message was NOT dropped: the comment was created and the claim persisted.
+      assert_equal creative_comment_count + 1, @creative.comments.reload.count
+      assert_equal 1, CollavreSlack::SlackInboundReservation.where(
+        slack_channel_link_id: @channel_link.id, message_ts: ts
+      ).count
+    end
+
+    test "a concurrent claim losing the DB unique index (RecordNotUnique) no-ops before running commands" do
+      # Under true concurrency both jobs' uniqueness SELECT passes (neither sees the
+      # other's uncommitted row), so the loser is rejected by the DB index as
+      # RecordNotUnique — the authoritative gate the fix relies on. Drive it directly;
+      # the loser must no-op without running CommandProcessor.
+      slack_user = create_user(email: "dbrace@example.com", name: "DB Race")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "lost the index race",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.202020",
+        slack_display_name: "DB Race",
+        slack_email: "dbrace@example.com",
+        slack_user_id: "U202"
+      }
+
+      command_called = false
+      fake_processor = Object.new
+      fake_processor.define_singleton_method(:call) do
+        command_called = true
+        nil
+      end
+
+      Collavre::Comments::CommandProcessor.stub(:new, ->(**) { fake_processor }) do
+        CollavreSlack::SlackInboundReservation.stub(:create!, ->(**_kwargs) {
+          raise ActiveRecord::RecordNotUnique, "duplicate key value violates unique constraint"
+        }) do
+          assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackCommentLink.count" ] do
+            assert_nothing_raised { SlackInboundMessageJob.perform_now(payload) }
+          end
+        end
+      end
+
+      refute command_called,
+             "CommandProcessor must not run when the DB unique index rejects the claim (concurrent loser)"
+    end
+
+    test "a message for a deleted channel link claims no reservation and no-ops" do
+      # The claim runs only after channel_link is verified, so a deleted link returns
+      # at the guard — no reservation inserted (which would wedge a valid redelivery).
+      slack_user = create_user(email: "deadlink@example.com", name: "Dead Link")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+      missing_link_id = @channel_link.id
+      @channel_link.destroy!
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "channel link is gone",
+        slack_channel_link_id: missing_link_id,
+        slack_message_ts: "1700000000.303030",
+        slack_display_name: "Dead Link",
+        slack_email: "deadlink@example.com",
+        slack_user_id: "U303"
+      }
+
+      assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackInboundReservation.count" ] do
+        assert_nothing_raised { SlackInboundMessageJob.perform_now(payload) }
+      end
+    end
+
     test "retries only the write on transient deadlock and runs commands exactly once" do
       slack_user = create_user(email: "retry@example.com", name: "Retry User")
       Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
