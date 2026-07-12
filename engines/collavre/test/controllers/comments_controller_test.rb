@@ -24,6 +24,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "index renders version navigator only for comments with versions" do
+    with_versions = @creative.comments.create!(content: "has versions", user: @user)
+    Collavre::CommentVersion.create!(comment: with_versions, content: "v1", version_number: 1)
+    Collavre::CommentVersion.create!(comment: with_versions, content: "v2", version_number: 2)
+    without_versions = @creative.comments.create!(content: "no versions", user: @user)
+
+    get creative_comments_path(@creative)
+    assert_response :success
+
+    assert_includes @response.body,
+                    "data-comment-version-comment-id-value=\"#{with_versions.id}\"",
+                    "expected version navigator for comment WITH versions"
+    assert_not_includes @response.body,
+                        "data-comment-version-comment-id-value=\"#{without_versions.id}\"",
+                        "expected no version navigator for comment WITHOUT versions"
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do

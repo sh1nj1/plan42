@@ -166,4 +166,31 @@ class CommentTest < ActiveSupport::TestCase
     assert inbox_broadcasts.any? { |payload| payload[:target] == "mobile-inbox-badge" && payload.dig(:locals, :count) == 1 }
     assert_equal 1, Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
   end
+
+  test "creating and destroying a comment maintains creatives.comments_count" do
+    user = User.create!(email: "cc-counter@example.com", password: TEST_PASSWORD, name: "CC")
+    creative = Creative.create!(user: user, description: "Root")
+    assert_equal 0, creative.comments_count
+
+    c1 = Comment.create!(creative: creative, user: user, content: "one")
+    Comment.create!(creative: creative, user: user, content: "two", private: true)
+    assert_equal 2, creative.reload.comments_count, "counts all comments incl. private"
+
+    c1.destroy!
+    assert_equal 1, creative.reload.comments_count
+  end
+
+  test "creating and destroying versions maintains comment_versions_count" do
+    user = User.create!(email: "cv-counter@example.com", password: TEST_PASSWORD, name: "CV")
+    creative = Creative.create!(user: user, description: "Root")
+    comment = Comment.create!(creative: creative, user: user, content: "hi")
+    assert_equal 0, comment.comment_versions_count
+
+    v1 = Collavre::CommentVersion.create!(comment: comment, content: "v1", version_number: 1)
+    Collavre::CommentVersion.create!(comment: comment, content: "v2", version_number: 2)
+    assert_equal 2, comment.reload.comment_versions_count
+
+    v1.destroy!
+    assert_equal 1, comment.reload.comment_versions_count
+  end
 end

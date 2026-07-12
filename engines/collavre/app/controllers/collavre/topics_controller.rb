@@ -145,6 +145,11 @@ module Collavre
         topic.update!(creative: target_creative)
       end
 
+      # update_all above skips counter-cache callbacks, so recompute
+      # comments_count on both sides after re-parenting the comments.
+      Creative.reset_counters(source_creative.id, :comments)
+      Creative.reset_counters(target_creative.id, :comments)
+
       broadcast_topic_event("deleted", topic_id: topic.id)
       broadcast_topic_event("created", creative: target_creative, topic: topic.slice(:id, :name))
 
