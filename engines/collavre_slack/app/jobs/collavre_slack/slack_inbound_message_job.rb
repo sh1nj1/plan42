@@ -197,7 +197,12 @@ module CollavreSlack
 
     def invite_user_by_email(creative:, email:, inviter:)
       # A pre-existing invitation was created AND had its email enqueued in the same
-      # transaction below, so there's nothing left to do.
+      # transaction below, so there's nothing left to do. This dedups sequential
+      # redelivery; a true concurrent double-delivery can still create two invitations
+      # (no unique index on (creative_id, email)) — accepted, since a duplicate invite
+      # email is far less harmful than a lost message. If such an index is ever added,
+      # rescue RecordNotUnique + re-check here like #grant_feedback_permission does,
+      # otherwise the concurrent loser's create! would escape as a hard job failure.
       existing_invitation = Collavre::Invitation.find_by(creative: creative, email: email)
       return if existing_invitation
 
