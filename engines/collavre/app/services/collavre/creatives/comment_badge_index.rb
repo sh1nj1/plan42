@@ -50,14 +50,23 @@ module Creatives
     end
 
     # One grouped COUNT for the whole level. Each origin carries its own read
-    # watermark, so the thresholds are OR-ed together rather than shared.
+    # watermark, so the thresholds are OR-ed together rather than shared. Built
+    # from relations rather than a SQL fragment: a hand-built string here would
+    # be safe (literal template, bound values) but unprovably so to a scanner.
     def unread_counts(watermarks)
       return {} if watermarks.empty?
 
-      clause = Array.new(watermarks.size, "(creative_id = ? AND id > ?)").join(" OR ")
-      binds = watermarks.flat_map { |origin_id, last_read_id| [ origin_id, last_read_id ] }
+      newer_than_watermark = watermarks
+        .map { |origin_id, last_read_id| unread_scope(origin_id, last_read_id) }
+        .reduce { |combined, scope| combined.or(scope) }
 
-      Comment.where(private: false).where(clause, *binds).group(:creative_id).count
+      Comment.where(private: false).merge(newer_than_watermark).group(:creative_id).count
+    end
+
+    def unread_scope(origin_id, last_read_id)
+      Comment
+        .where(creative_id: origin_id)
+        .where(Comment.arel_table[:id].gt(last_read_id))
     end
   end
 end
