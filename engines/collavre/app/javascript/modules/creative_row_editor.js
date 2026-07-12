@@ -11,12 +11,17 @@ import { isHtmlEmpty } from './html_content_empty'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
+import {
+  treeRowElement,
+  hasDatasetValue,
+  setRowDatasetValue,
+  isMarkdownEmpty,
+  buildChildrenLoadUrl,
+  readRowLevel,
+  editorPaddingForLevel,
+} from './creative_row_editor_helpers'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
-
-const BULLET_STARTING_LEVEL = 3;
-const HEADING_INDENT_STEP_EM = 0.4;
-const BULLET_INDENT_STEP_PX = 30;
 
 let initialized = false;
 let creativeEditClickHandler = null;
@@ -236,28 +241,10 @@ export function initializeCreativeRowEditor() {
       }
     }
 
-    function treeRowElement(node) {
-      return node && node.closest ? node.closest('creative-tree-row') : null;
-    }
-
     function currentRowHasChildren() {
       const row = currentRowElement || (currentTree ? treeRowElement(currentTree) : null);
       if (!row) return false;
       return !!(row.hasChildren || row.getAttribute?.('has-children'));
-    }
-
-    function hasDatasetValue(element, key) {
-      if (!element || !element.dataset) return false;
-      return Object.prototype.hasOwnProperty.call(element.dataset, key);
-    }
-
-    function setRowDatasetValue(row, key, value) {
-      if (!row || !row.dataset) return;
-      if (value === undefined || value === null) {
-        delete row.dataset[key];
-      } else {
-        row.dataset[key] = String(value);
-      }
     }
 
     function updateRowFromData(row, data) {
@@ -329,10 +316,6 @@ export function initializeCreativeRowEditor() {
         markdown_editor: row.dataset?.markdownEditor || null,
         markdown_source: row.dataset?.markdownSource || null
       };
-    }
-
-    function isMarkdownEmpty(md) {
-      return !md || md.trim().length === 0;
     }
 
     function activateMarkdownMode(source) {
@@ -538,13 +521,6 @@ export function initializeCreativeRowEditor() {
       return null;
     }
 
-    function buildChildrenLoadUrl(parentId, childLevel, selectMode) {
-      const params = new URLSearchParams();
-      params.set('level', String(childLevel));
-      params.set('select_mode', selectMode ? '1' : '0');
-      return `/creatives/${parentId}/children?${params.toString()}`;
-    }
-
     function ensureChildrenContainer(tree) {
       if (!tree) return null;
       let container = childrenContainerForTree(tree);
@@ -692,31 +668,6 @@ export function initializeCreativeRowEditor() {
       scheduleSave();
     }
 
-    function readRowLevel(row) {
-      if (!row) return null;
-      if (row.isTitle) return 0;
-      if (row.getAttribute) {
-        const levelAttr = row.getAttribute('level');
-        if (levelAttr) {
-          const parsed = Number(levelAttr);
-          if (!Number.isNaN(parsed)) return parsed;
-        }
-      }
-      if (typeof row.level === 'number') {
-        return row.level;
-      }
-      if (row.level) {
-        const parsed = Number(row.level);
-        if (!Number.isNaN(parsed)) return parsed;
-      }
-      const tree = row.querySelector ? row.querySelector('.creative-tree') : null;
-      if (tree && tree.dataset?.level) {
-        const parsed = Number(tree.dataset.level);
-        if (!Number.isNaN(parsed)) return parsed;
-      }
-      return 1;
-    }
-
     function computeNewRowLevel(parentId, referenceNode, afterId) {
       if (parentId) {
         const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`);
@@ -733,18 +684,6 @@ export function initializeCreativeRowEditor() {
       }
       const normalized = normalizeRowNode(referenceNode) || (afterId ? treeRowElement(document.getElementById(`creative-${afterId}`)) : null);
       return readRowLevel(normalized);
-    }
-
-    function editorPaddingForLevel(level) {
-      if (typeof level !== 'number' || Number.isNaN(level) || level <= 1) {
-        return '0px';
-      }
-      if (level <= BULLET_STARTING_LEVEL) {
-        const emValue = (level - 1) * HEADING_INDENT_STEP_EM;
-        return emValue ? `${emValue}em` : '0px';
-      }
-      const pxValue = (level - BULLET_STARTING_LEVEL) * BULLET_INDENT_STEP_PX;
-      return `${pxValue}px`;
     }
 
     function syncInlineEditorPadding(source) {

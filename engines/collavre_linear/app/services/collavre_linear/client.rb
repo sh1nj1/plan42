@@ -332,22 +332,19 @@ module CollavreLinear
     # Execute a GraphQL operation and return the `data` hash.
     # Raises Client::Error if the response contains a top-level `errors` key.
     def post!(query, variables)
-      uri  = URI.parse(endpoint)
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = uri.scheme == "https"
-      http.open_timeout = 10
-      http.read_timeout = 30
-
-      request = Net::HTTP::Post.new(uri.path.presence || "/")
-      request["Content-Type"] = "application/json"
-      request["Authorization"] = "Bearer #{fresh_access_token}"
-      request.body = { query: query, variables: variables }.to_json
+      token = fresh_access_token
 
       response =
         begin
-          http.request(request)
-        rescue SocketError, SystemCallError, Timeout::Error, IOError,
-               OpenSSL::SSL::SSLError => e
+          http_client.post(
+            endpoint,
+            body: { query: query, variables: variables }.to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Authorization" => "Bearer #{token}"
+            }
+          )
+        rescue Collavre::HttpClient::ConnectionError => e
           # Transport-layer failures (connection refused/reset, DNS, TLS,
           # open/read timeouts) raise before any GraphQL response exists, so they
           # bypass the parsed-`errors` path below. Wrap them in Error so the
@@ -368,11 +365,17 @@ module CollavreLinear
         raise Error, "Linear GraphQL error(s): #{messages}"
       end
 
-      unless response.is_a?(Net::HTTPSuccess)
+      unless response.success?
         raise Error, "Linear HTTP error: #{response.code} #{response.message}"
       end
 
       parsed["data"]
+    end
+
+    # Shared Net::HTTP wrapper preserving Linear's original 10s connect / 30s
+    # read timeouts.
+    def http_client
+      @http_client ||= Collavre::HttpClient.new(open_timeout: 10, read_timeout: 30)
     end
 
     # Return a non-expired access token, refreshing via the refresh_token grant
