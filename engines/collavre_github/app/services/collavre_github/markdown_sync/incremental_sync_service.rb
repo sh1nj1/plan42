@@ -73,7 +73,7 @@ module CollavreGithub
             "sha" => @tree_cache[path]
           )
           source.delete("rendered_html")
-          creative.skip_github_validation = true
+          creative.skip_read_only_source_validation = true
           creative.update!(data: creative.data.merge("source" => source))
 
           processed, blobs = processor.process(content, path)
@@ -107,7 +107,7 @@ module CollavreGithub
               }
             }
           )
-          creative.skip_github_validation = true
+          creative.skip_read_only_source_validation = true
           creative.save!
           @synced_creatives[path] = creative
 
@@ -216,7 +216,7 @@ module CollavreGithub
                 }
               }
             )
-            dir_creative.skip_github_validation = true
+            dir_creative.skip_read_only_source_validation = true
             dir_creative.save!
             @synced_creatives[dir_path] = dir_creative
             new_dirs << dir_creative

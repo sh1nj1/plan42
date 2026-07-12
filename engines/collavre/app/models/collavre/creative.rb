@@ -23,6 +23,20 @@ module Collavre
       def reserved_metadata_keys
         (BUILTIN_RESERVED_METADATA_KEYS + registered_reserved_metadata_keys).freeze
       end
+
+      # ------------------------------------------------------------------------
+      # Read-only source registry — vendor engines register the `data.source.type`
+      # values whose content is owned by an external system (e.g. a synced GitHub
+      # repository) and therefore must not be edited in-app. Core enforces the
+      # read-only behavior via `read_only_source?` without naming any vendor.
+      # ------------------------------------------------------------------------
+      def read_only_source_types
+        @read_only_source_types ||= Set.new
+      end
+
+      def register_read_only_source(type)
+        read_only_source_types << type.to_s
+      end
     end
 
     # Use non-namespaced partial path for backward compatibility
@@ -63,10 +77,28 @@ module Collavre
       data&.dig("kind") == "inbox"
     end
 
-    attr_accessor :skip_github_validation
+    # Bypass the read-only-source guard for a single save (used by the vendor
+    # sync services that legitimately write the synced content into core).
+    attr_accessor :skip_read_only_source_validation
 
+    # The registered source identifier for this creative, or nil when the
+    # description is authored in-app.
+    def source_type
+      data.is_a?(Hash) ? data.dig("source", "type") : nil
+    end
+
+    # Whether this creative's description is owned by an external, registered
+    # source and therefore read-only in-app.
+    def read_only_source?
+      type = source_type
+      type.present? && self.class.read_only_source_types.include?(type)
+    end
+
+    # GitHub-sourced content still needs a vendor-specific predicate for the
+    # comment view's inline-image rendering (a GitHub-only concern, distinct
+    # from the neutral read-only behavior above).
     def github_markdown?
-      data.is_a?(Hash) && data.dig("source", "type") == "github_markdown"
+      source_type == "github_markdown"
     end
 
     # Find or create the "System" topic for this inbox creative.
@@ -153,7 +185,14 @@ module Collavre
 
     after_save :update_parent_progress
     after_destroy :update_parent_progress
-    after_save :update_mcp_tools
+    # Re-derive MCP tools only when the description (the tool source of truth)
+    # actually changed, and defer the HTML parsing to a background job so it
+    # never runs inline on progress/move/autosave writes. The dirty flag is
+    # captured in after_save (where saved_change_to_description? is reliable);
+    # a later same-transaction save can clobber saved_changes before the
+    # after_commit hook runs.
+    after_save :mark_mcp_tools_sync_pending, if: :saved_change_to_description?
+    after_commit :enqueue_mcp_tools_sync, if: :mcp_tools_sync_pending?
 
     # --- Drop Trigger ---
     def drop_trigger_enabled?
@@ -312,8 +351,17 @@ module Collavre
       @progress_service ||= Collavre::Creatives::ProgressService.new(self)
     end
 
-    def update_mcp_tools
-      McpService.new.update_from_creative(self)
+    def mark_mcp_tools_sync_pending
+      @mcp_tools_sync_pending = true
+    end
+
+    def mcp_tools_sync_pending?
+      @mcp_tools_sync_pending == true
+    end
+
+    def enqueue_mcp_tools_sync
+      @mcp_tools_sync_pending = false
+      UpdateMcpToolsJob.perform_later(id)
     end
 
     def progress_cannot_change_if_has_origin

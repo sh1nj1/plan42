@@ -7,12 +7,21 @@ class EncryptOauthTokens < ActiveRecord::Migration[8.1]
       encrypt_column(User, :google_refresh_token)
     end
 
-    say_with_time "Encrypting GithubAccount tokens" do
-      encrypt_column(GithubAccount, :token)
+    # Vendor account tokens live in vendor engines. Guard each block so this
+    # core migration runs cleanly on an install where the engine is absent
+    # (the constant would otherwise raise NameError). When the engine is
+    # present on a fresh DB there are no plaintext rows yet, so the block is a
+    # no-op; encryption of new writes is handled by the model's `encrypts`.
+    if defined?(CollavreGithub::Account)
+      say_with_time "Encrypting CollavreGithub::Account tokens" do
+        encrypt_column(CollavreGithub::Account, :token)
+      end
     end
 
-    say_with_time "Encrypting NotionAccount tokens" do
-      encrypt_column(CollavreNotion::NotionAccount, :token)
+    if defined?(CollavreNotion::NotionAccount)
+      say_with_time "Encrypting CollavreNotion::NotionAccount tokens" do
+        encrypt_column(CollavreNotion::NotionAccount, :token)
+      end
     end
   end
 

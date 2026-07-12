@@ -64,8 +64,28 @@ module Collavre
       signed_id = blob.signed_id
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
 
-      Creative.where("description LIKE ?", pattern).any? do |creative|
-        creative.has_permission?(Current.user, :write)
+      creatives = Creative.where("description LIKE ?", pattern).includes(:origin)
+      return false if creatives.empty?
+
+      # Permission is evaluated on the origin for linked creatives. Resolve every
+      # referencing creative to its permission base and batch-load the cache
+      # entries once, rather than letting each has_permission? call fire its own
+      # per-row CreativeSharesCache lookups (an N+1). Mirrors
+      # Creatives::PermissionChecker#allowed?(:write): a user-specific entry
+      # (including an explicit no_access deny) takes precedence over the public
+      # share entry.
+      bases = creatives.map { |c| c.origin_id.nil? ? c : c.origin }.compact.uniq
+      return true if bases.any? { |base| base.user_id == Current.user.id }
+
+      write_rank = CreativeSharesCache.permissions[:write]
+      entries = CreativeSharesCache
+        .where(creative_id: bases.map(&:id), user_id: [ Current.user.id, nil ])
+        .to_a
+
+      bases.any? do |base|
+        entry = entries.find { |e| e.creative_id == base.id && e.user_id == Current.user.id } ||
+                entries.find { |e| e.creative_id == base.id && e.user_id.nil? }
+        entry && !entry.no_access? && CreativeSharesCache.permissions[entry.permission] >= write_rank
       end
     end
   end
