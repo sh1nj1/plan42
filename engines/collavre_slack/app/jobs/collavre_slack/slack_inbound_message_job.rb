@@ -63,8 +63,10 @@ module CollavreSlack
       # CommandProcessor may already have run, and a retry would duplicate its
       # non-idempotent commands, which is exactly the bug this change fixes. We prefer
       # commands-exactly-once over comment-recovery, and use no time-lease (expiry-based
-      # reclaim is fragile). Transient contention BEFORE the commands is still retried in
-      # place below, so the realistic loss window is a hard crash mid-CommandProcessor.
+      # reclaim is fragile). Transient contention on the writes below is still retried in
+      # place, so the realistic loss window is a hard crash (process death) after the
+      # claim but before the comment is persisted — spanning the grant/invite writes and
+      # CommandProcessor. The grant/invite writes there are themselves idempotent.
       return unless claim_inbound_message(data)
 
       comment_user = user.presence || channel_link.created_by
