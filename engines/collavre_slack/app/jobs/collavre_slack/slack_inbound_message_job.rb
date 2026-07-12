@@ -30,33 +30,42 @@ module CollavreSlack
     def perform(payload)
       data = payload.with_indifferent_access
 
-      # Exactly-once guard, claimed BEFORE any side effect. The controller acks Slack
-      # before this job runs (at-least-once delivery), so the same message can be
-      # delivered twice — either sequentially (a redelivery after a completed run) or
-      # concurrently (a near-simultaneous retry of an unacked event, producing two
-      # in-flight jobs). A read-only "already applied?" check cannot cover the
-      # concurrent case: both jobs read "not applied" and both run the non-idempotent
-      # CommandProcessor below, duplicating its /calendar, /work and MCP side effects.
-      #
-      # Instead we atomically claim the (channel_link, message_ts) pair up front via a
-      # unique index. Only the row's winner proceeds; a loser (uniqueness violation)
-      # no-ops without ever reaching the commands. This is reserve-before-side-effects:
-      # the claim is deliberately taken before CommandProcessor, not after, so the
-      # commands run at most once across all deliveries of the message.
-      #
-      # Trade-off: a winner that hard-crashes between the claim and the final comment
-      # write loses that message (a later redelivery sees the claim and no-ops). This
-      # matches the existing crash-before-persist behaviour, and because the realistic
-      # duplicate is a near-simultaneous retry the winner almost always completes. We
-      # use no time-lease (expiry-based reclaim is fragile) rather than trading that
-      # narrow loss for a re-introduced duplicate-side-effect window.
-      return unless claim_inbound_message(data)
-
       creative = Collavre::Creative.find(data[:creative_id])
       user = Collavre.user_class.find_by(id: data[:user_id])
       channel_link = SlackChannelLink.find_by(id: data[:slack_channel_link_id])
 
       return unless creative && channel_link
+
+      # Exactly-once guard, claimed BEFORE any side effect but AFTER the reads above.
+      # The controller acks Slack before this job runs (at-least-once delivery), so the
+      # same message can be delivered twice — either sequentially (a redelivery after a
+      # completed run) or concurrently (a near-simultaneous retry of an unacked event,
+      # producing two in-flight jobs). A read-only "already applied?" check cannot cover
+      # the concurrent case: both jobs read "not applied" and both run the non-idempotent
+      # side effects below (the grant/invite writes and, critically, CommandProcessor's
+      # /calendar, /work and MCP commands), duplicating them.
+      #
+      # Instead we atomically claim the (channel_link, message_ts) pair via a unique
+      # index. Only the row's winner proceeds past this line; a loser (a concurrent
+      # RecordNotUnique or a sequential-redelivery RecordInvalid) no-ops without running
+      # any side effect. This is reserve-before-side-effects: the claim gates every write
+      # below, so they run at most once across all deliveries of the message.
+      #
+      # Placement is deliberate. Claiming AFTER the reads (not at the top of perform)
+      # keeps the only pre-claim failure a RecordNotFound on a deleted creative — which
+      # is deterministic and undeliverable, so leaving it un-gated loses nothing a retry
+      # could recover. It also guarantees channel_link exists before the claim, so the
+      # reservation's belongs_to/FK can never fail and a RecordInvalid here can only mean
+      # "already claimed".
+      #
+      # Trade-off: a discard (via discard_on) or crash AFTER this claim keeps the
+      # reservation, so that message is not retried. This is intentional — by that point
+      # CommandProcessor may already have run, and a retry would duplicate its
+      # non-idempotent commands, which is exactly the bug this change fixes. We prefer
+      # commands-exactly-once over comment-recovery, and use no time-lease (expiry-based
+      # reclaim is fragile). Transient contention BEFORE the commands is still retried in
+      # place below, so the realistic loss window is a hard crash mid-CommandProcessor.
+      return unless claim_inbound_message(data)
 
       comment_user = user.presence || channel_link.created_by
 
@@ -175,8 +184,11 @@ module CollavreSlack
     # A transient DB contention error (Deadlocked/LockWaitTimeout) on the INSERT is
     # retried in place — it is NOT a "someone else claimed it" signal. Only a
     # uniqueness violation means another delivery holds the claim: the DB unique index
-    # (RecordNotUnique) is the authoritative gate under true concurrency, and the
-    # model validation (RecordInvalid) covers the already-committed sequential case.
+    # (RecordNotUnique) is the authoritative gate under true concurrency, and the model
+    # validation (RecordInvalid) covers the already-committed sequential case. Because
+    # the caller has already verified channel_link exists and message_ts is present,
+    # uniqueness is the ONLY validation that can fail here, so a RecordInvalid
+    # unambiguously means "already claimed" rather than a malformed reservation.
     def claim_inbound_message(data)
       channel_link_id = data[:slack_channel_link_id]
       message_ts = data[:slack_message_ts]

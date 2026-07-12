@@ -419,6 +419,74 @@ module CollavreSlack
       ).count
     end
 
+    test "a concurrent claim losing the DB unique index (RecordNotUnique) no-ops before running commands" do
+      # Under TRUE concurrency the model's uniqueness validation SELECT can pass in both
+      # jobs (neither sees the other's uncommitted row), so the losing job is rejected by
+      # the DB unique index — surfacing as ActiveRecord::RecordNotUnique, not
+      # RecordInvalid. That authoritative-gate branch is what the fix relies on; drive it
+      # directly by simulating the index rejecting our INSERT. The loser must no-op
+      # WITHOUT running CommandProcessor (reserve-before-side-effects).
+      slack_user = create_user(email: "dbrace@example.com", name: "DB Race")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "lost the index race",
+        slack_channel_link_id: @channel_link.id,
+        slack_message_ts: "1700000000.202020",
+        slack_display_name: "DB Race",
+        slack_email: "dbrace@example.com",
+        slack_user_id: "U202"
+      }
+
+      command_called = false
+      fake_processor = Object.new
+      fake_processor.define_singleton_method(:call) do
+        command_called = true
+        nil
+      end
+
+      Collavre::Comments::CommandProcessor.stub(:new, ->(**) { fake_processor }) do
+        CollavreSlack::SlackInboundReservation.stub(:create!, ->(**_kwargs) {
+          raise ActiveRecord::RecordNotUnique, "duplicate key value violates unique constraint"
+        }) do
+          assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackCommentLink.count" ] do
+            assert_nothing_raised { SlackInboundMessageJob.perform_now(payload) }
+          end
+        end
+      end
+
+      refute command_called,
+             "CommandProcessor must not run when the DB unique index rejects the claim (concurrent loser)"
+    end
+
+    test "a message for a deleted channel link claims no reservation and no-ops" do
+      # The claim is taken only after channel_link is verified present, so a payload
+      # whose channel link has been deleted returns at the `creative && channel_link`
+      # guard — it must NOT insert a reservation (which would otherwise wedge a valid
+      # redelivery) and must not raise.
+      slack_user = create_user(email: "deadlink@example.com", name: "Dead Link")
+      Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
+      missing_link_id = @channel_link.id
+      @channel_link.destroy!
+
+      payload = {
+        creative_id: @creative.id,
+        user_id: slack_user.id,
+        content: "channel link is gone",
+        slack_channel_link_id: missing_link_id,
+        slack_message_ts: "1700000000.303030",
+        slack_display_name: "Dead Link",
+        slack_email: "deadlink@example.com",
+        slack_user_id: "U303"
+      }
+
+      assert_no_difference [ "@creative.comments.count", "CollavreSlack::SlackInboundReservation.count" ] do
+        assert_nothing_raised { SlackInboundMessageJob.perform_now(payload) }
+      end
+    end
+
     test "retries only the write on transient deadlock and runs commands exactly once" do
       slack_user = create_user(email: "retry@example.com", name: "Retry User")
       Collavre::CreativeShare.create!(creative: @creative, user: slack_user, permission: :feedback)
