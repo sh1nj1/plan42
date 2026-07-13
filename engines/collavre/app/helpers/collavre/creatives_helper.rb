@@ -18,14 +18,25 @@ module Collavre
     end
 
     def render_creative_tags(creative)
-      labels = creative.tags&.includes(:label)&.map(&:label)&.compact
+      # The browse tree preloads tags -> label per level; `includes` on an
+      # already-loaded association builds a fresh relation and re-queries it,
+      # which would reinstate the N+1 this is called from.
+      labels = if creative.tags.loaded?
+        creative.tags.map(&:label).compact
+      else
+        creative.tags&.includes(:label)&.map(&:label)&.compact
+      end
       return "" if labels&.empty?
       content_tag(:div, class: "creative-tags", style: "display: none;") do
         render_tags(labels, "unstyled-link", true)
       end
     end
 
-    def render_creative_progress(creative, select_mode: false, has_children: nil)
+    # `can_write`, `can_feedback` and `unread_count` let a caller rendering many
+    # creatives at once (the browse tree) resolve them in batch and hand them in.
+    # Left nil, each is resolved for this creative alone — correct, but a query
+    # per node. Single-creative call sites take that path.
+    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil)
       progress_value = if params[:tags].present?
         tag_ids = Array(params[:tags]).map(&:to_s)
         creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
@@ -33,15 +44,15 @@ module Collavre
         creative.progress
       end
 
+      can_feedback = creative.has_permission?(Current.user, :feedback) if can_feedback.nil?
+
       content_tag(:div, class: "creative-row-end") do
         comment_part = if creative.archived?
           safe_join([])
-        elsif creative.has_permission?(Current.user, :feedback)
+        elsif can_feedback
           origin = creative.effective_origin
           comments_count = origin.comments_count
-          pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
-          last_read_id = pointer&.last_read_comment_id
-          unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
+          unread_count = unread_count_for(origin, comments_count) if unread_count.nil?
           if Current.user && CommentPresenceStore.list(origin.id).include?(Current.user.id)
             unread_count = 0
           end
@@ -70,7 +81,7 @@ module Collavre
           safe_join([])
         end
         is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
-        can_write = creative.has_permission?(Current.user, :write)
+        can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
         progress_part = if is_leaf && can_write && !select_mode
           render_progress_toggle(creative, progress_value)
         else
@@ -84,6 +95,17 @@ module Collavre
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
         ])
       end
+    end
+
+    # Unread comments on `origin` for the current user. With no read pointer,
+    # every comment is unread. Batched by CommentBadgeIndex for the browse tree;
+    # this is the single-creative path.
+    def unread_count_for(origin, comments_count)
+      pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
+      last_read_id = pointer&.last_read_comment_id
+      return comments_count unless last_read_id
+
+      origin.comments.where("id > ? and private = ?", last_read_id, false).count
     end
 
     def render_progress_toggle(creative, value)
