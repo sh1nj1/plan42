@@ -6,29 +6,77 @@
 # (DEMO_LLM_URL). A genuine `@Vrex:` mention then drives the real Collavre
 # streaming pipeline against scripted responses — no rails-runner insert trick.
 #
+# Two scenarios, selected with DEMO_SCENARIO:
+#
+#   landing  (default, Korean)  A fully-populated workspace. Everything the video
+#                               shows already exists; the recording is a tour.
+#
+#   launch   (English)          A near-empty workspace. The video BUILDS the tree
+#                               on camera (markdown import), pins context, mentions
+#                               the agent, and checks tasks off — so the claim
+#                               "nothing was ever copied" is demonstrated rather
+#                               than asserted. Seeds only what must pre-exist: the
+#                               handbook to pin, and an empty project root that
+#                               already shares :feedback with Vrex.
+#
 # Env:
-#   DEMO_LLM_URL  OpenAI-compatible base url for Vrex (default http://127.0.0.1:8730/v1)
+#   DEMO_LLM_URL   OpenAI-compatible base url for Vrex (default http://127.0.0.1:8730/v1)
+#   DEMO_SCENARIO  landing | launch  (default: landing)
+#   DEMO_THEME     light | dark      (forces the login user's theme)
 
-llm_url = ENV.fetch("DEMO_LLM_URL", "http://127.0.0.1:8730/v1")
+llm_url  = ENV.fetch("DEMO_LLM_URL", "http://127.0.0.1:8730/v1")
+scenario = ENV.fetch("DEMO_SCENARIO", "landing")
+
+unless %w[landing launch].include?(scenario)
+  abort "seed: unknown DEMO_SCENARIO=#{scenario.inspect} (expected landing|launch)"
+end
 
 def html(text)
   "<div><p class=\"lexical-paragraph\"><span style=\"white-space:pre-wrap;\">#{text}</span></p></div>"
 end
 
+# Multi-paragraph body — used for the handbook, whose whole point is that it has
+# real content an agent can quote back at you.
+def html_lines(lines)
+  body = lines.map do |line|
+    "<p class=\"lexical-paragraph\"><span style=\"white-space:pre-wrap;\">#{line}</span></p>"
+  end.join
+  "<div>#{body}</div>"
+end
+
 pw = "demo1234"
 
-users = {
-  ceo:      { name: "김대표",   email: "ceo@collabre.dev" },
-  pm:       { name: "박기획",   email: "pm@collabre.dev" },
-  lead:     { name: "이시니어", email: "lead@collabre.dev" },
-  fe1:      { name: "정프론트", email: "fe1@collabre.dev" },
-  fe2:      { name: "한프론트", email: "fe2@collabre.dev" },
-  be1:      { name: "송백엔드", email: "be1@collabre.dev" },
-  be2:      { name: "윤백엔드", email: "be2@collabre.dev" },
-  designer: { name: "조디자인", email: "design@collabre.dev" },
-  qa:       { name: "최테스트", email: "qa@collabre.dev" },
-  devops:   { name: "강데옵스", email: "devops@collabre.dev" }
-}
+# The launch scenario is recorded in English for an international audience, so its
+# team reads as one. Emails are shared across scenarios: the cleanup below scopes
+# on them, and switching scenarios must not strand the other one's creatives.
+users =
+  if scenario == "launch"
+    {
+      ceo:      { name: "Dana Reed",     email: "ceo@collabre.dev" },
+      pm:       { name: "Alex Park",     email: "pm@collabre.dev" },
+      lead:     { name: "Sam Okafor",    email: "lead@collabre.dev" },
+      fe1:      { name: "Rin Tanaka",    email: "fe1@collabre.dev" },
+      fe2:      { name: "Nora Vidal",    email: "fe2@collabre.dev" },
+      be1:      { name: "Ivan Petrov",   email: "be1@collabre.dev" },
+      be2:      { name: "Mei Lin",       email: "be2@collabre.dev" },
+      designer: { name: "Jules Moreau",  email: "design@collabre.dev" },
+      qa:       { name: "Priya Nair",    email: "qa@collabre.dev" },
+      devops:   { name: "Tomas Brandt",  email: "devops@collabre.dev" }
+    }
+  else
+    {
+      ceo:      { name: "김대표",   email: "ceo@collabre.dev" },
+      pm:       { name: "박기획",   email: "pm@collabre.dev" },
+      lead:     { name: "이시니어", email: "lead@collabre.dev" },
+      fe1:      { name: "정프론트", email: "fe1@collabre.dev" },
+      fe2:      { name: "한프론트", email: "fe2@collabre.dev" },
+      be1:      { name: "송백엔드", email: "be1@collabre.dev" },
+      be2:      { name: "윤백엔드", email: "be2@collabre.dev" },
+      designer: { name: "조디자인", email: "design@collabre.dev" },
+      qa:       { name: "최테스트", email: "qa@collabre.dev" },
+      devops:   { name: "강데옵스", email: "devops@collabre.dev" }
+    }
+  end
 
 created_users = {}
 users.each do |role, attrs|
@@ -98,6 +146,69 @@ def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
     data: data,
     sequence: seq
   )
+end
+
+if scenario == "launch"
+  # The recording is in English, and Collavre picks its UI locale from the user —
+  # not from the browser's Accept-Language. Without this the app chrome renders in
+  # whatever the seeded default is and the video is unusable for its audience.
+  pm_user.update!(locale: "en") if pm_user.respond_to?(:locale=)
+
+  # ─── The handbook: the context block the video pins at the root ───
+  #
+  # This must carry REAL, quotable rules. The climax of the video is Vrex citing a
+  # rule it was never told — so if the handbook were lorem ipsum, the scripted
+  # answer in launch.yml would be a lie the viewer could not check. It is the one
+  # thing the recording asserts and the seed must make true.
+  handbook = create_creative(
+    parent: nil, user: created_users[:lead], progress: 1.0, seq: 2,
+    desc: html_lines([
+      "<b>Engineering Handbook</b>",
+      "Every public endpoint is rate-limited. Default: 100 requests/minute per token.",
+      "Every write endpoint accepts an Idempotency-Key header and must be safe to retry.",
+      "Any API change ships with a migration guide in the same pull request.",
+      "No merge without a green CI run. No exceptions, including hotfixes."
+    ])
+  )
+
+  # ─── The project root: deliberately EMPTY ───
+  #
+  # The tree is built on camera by importing markdown into this node. Seeding it
+  # empty is the point: a pre-populated tree would prove nothing about the import.
+  payments = create_creative(
+    parent: nil, user: pm_user, progress: 0.0, seq: 1,
+    desc: html("Payments v2")
+  )
+
+  # Vrex is shared on the root BEFORE the import runs. Creative::Permissible
+  # rebuilds the permission cache on every parent_id change — including on create —
+  # so the children the import creates inherit this share without a background
+  # worker having to catch up mid-recording.
+  [ payments, handbook ].each do |root|
+    share = Collavre::CreativeShare.find_or_initialize_by(creative: root, user: ai)
+    share.permission = :feedback
+    share.shared_by = pm_user if share.respond_to?(:shared_by=)
+    share.save!
+    Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: root.id, user_id: ai.id)
+  end
+  $stdout.puts "Granted Vrex :feedback on the project root and the handbook"
+
+  # The handbook is owned by the tech lead, not by the PM who records the video —
+  # deliberately. The point being demonstrated is that context someone ELSE wrote,
+  # pinned once, reaches your agent. But owning an ancestor does not cascade, so
+  # the PM needs an explicit share or the handbook is invisible in their tree and
+  # in the link-creative picker the video drives.
+  pm_share = Collavre::CreativeShare.find_or_initialize_by(creative: handbook, user: pm_user)
+  pm_share.permission = :feedback
+  pm_share.shared_by = created_users[:lead] if pm_share.respond_to?(:shared_by=)
+  pm_share.save!
+  Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: handbook.id, user_id: pm_user.id)
+  $stdout.puts "Granted PM :feedback on the lead-owned handbook"
+
+  $stdout.puts "\n=== Demo seed complete (scenario=launch) ==="
+  $stdout.puts "Users: #{Collavre::User.count}"
+  $stdout.puts "Creatives: #{Collavre::Creative.count} (project root is intentionally empty)"
+  exit 0
 end
 
 # ─── Project: Collabre v2.0 release ───

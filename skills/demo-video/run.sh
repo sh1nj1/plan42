@@ -126,8 +126,9 @@ SIZE_ARG=()
 IFS=',' read -ra THEME_LIST <<< "$THEMES"
 for theme in "${THEME_LIST[@]}"; do
   if [[ "$DO_SEED" == "1" ]]; then
-    echo "→ seeding demo data (theme=$theme, DEMO_LLM_URL=$LLM_URL/v1)"
-    ( cd "$RAILS_ROOT" && DEMO_LLM_URL="$LLM_URL/v1" DEMO_THEME="$theme" bin/rails runner "$LIB/seed.rb" \
+    echo "→ seeding demo data (scenario=$SCENARIO_NAME, theme=$theme, DEMO_LLM_URL=$LLM_URL/v1)"
+    ( cd "$RAILS_ROOT" && DEMO_LLM_URL="$LLM_URL/v1" DEMO_THEME="$theme" \
+        DEMO_SCENARIO="$SCENARIO_NAME" bin/rails runner "$LIB/seed.rb" \
         > /tmp/demo-video-seed-$theme.log 2>&1 ) || { echo "seed failed (see /tmp/demo-video-seed-$theme.log)"; exit 1; }
   fi
   echo "→ recording theme=$theme"

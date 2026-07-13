@@ -85,7 +85,27 @@ steps:
 | `wait_stream` | `{timeout?}` | Wait until the AI reply stops streaming |
 | `scroll_bottom` | `{selector?}` | Scroll a list to the bottom (default `#comments-list`) |
 | `press` | `<key>` | Press a keyboard key |
+| `upload` | `{selector, file}` | `setInputFiles` on a hidden `<input type=file>`; `file` is relative to the scenario |
+| `wait_for` | `{selector, text?, state?, timeout?}` | Wait for an element (optionally filtered by text). Throws on timeout |
+| `caption` | `{text, ms?, hold?}` | On-screen caption. `hold: true` keeps it up; `caption: null` clears it |
+| `highlight` | `{selector, ms?}` | Ring-highlight an element. **Throws if missing** unless `optional: true` |
 | `js` | `<code>` | Escape hatch: `page.evaluate(code)` |
+
+`caption` and `highlight` are not decoration. A silent screen recording cannot make
+a claim, and the elements worth highlighting are the ones the video exists to show —
+so `highlight` fails the run when its target is absent rather than shipping a demo
+that quietly fails to demonstrate its own point.
+
+## Scenarios
+
+| Scenario | Locale | Shape |
+|----------|--------|-------|
+| `landing` | ko | Fully-seeded workspace; the recording tours what already exists |
+| `launch` | en | Near-empty workspace; the recording **builds** the tree on camera — markdown import → topic → pinned context inherited at a leaf → real agent reply → progress rollup |
+
+`run.sh` passes the scenario name to the seed as `DEMO_SCENARIO`, so each scenario
+gets exactly the starting state it needs. `launch` deliberately seeds an **empty**
+project root: a pre-built tree would prove nothing about the import.
 
 ## fake_llm.py
 

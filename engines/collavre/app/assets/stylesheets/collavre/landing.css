@@ -94,6 +94,18 @@
   z-index: 0;
 }
 
+.landing-hero-eyebrow {                 /* L4 — category line, above the claim */
+  font-size: var(--text-2);
+  font-weight: var(--weight-6);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-active);
+  margin: 0 auto var(--space-4);
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
 .landing-hero-title {                   /* L1 — main headline */
   font-size: var(--text-7);
   font-weight: var(--weight-8);
@@ -113,6 +125,17 @@
   margin: 0 auto var(--space-5);
   max-width: 900px;
   text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero-tagline {                 /* L4 — the mechanism, one line */
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  margin: 0 auto var(--space-6);
+  max-width: 720px;
+  text-align: center;
+  line-height: var(--leading-2);
   position: relative;
   z-index: 1;
 }
@@ -238,11 +261,13 @@
   background: var(--surface-section);
 }
 
+/* 2×2 on desktop: the four cards ARE the argument (four copies of the same
+   thing), so they read as a set rather than a 3+1 orphan row. */
 .landing-problem-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-5);
-  max-width: 900px;
+  max-width: 820px;
   margin: var(--space-7) auto 0;
 }
 
@@ -256,6 +281,12 @@
 
 .landing-problem-card:hover {
   border-color: var(--text-muted);
+}
+
+/* The fourth card is the punchline — the copy the AI era added. */
+.landing-problem-card-accent {
+  border-color: var(--color-active);
+  background: color-mix(in srgb, var(--color-active) 6%, var(--surface-bg));
 }
 
 .landing-problem-icon {
@@ -494,14 +525,18 @@ body.dark-mode .landing-demo-dark { display: block; }
   }
 }
 
+.landing-hero-eyebrow,
 .landing-hero-title,
 .landing-hero-sub,
+.landing-hero-tagline,
 .landing-hero-brand,
 .landing-hero-actions {
   animation: landing-fade-up 0.6s var(--ease-out-3) both;
 }
 
-.landing-hero-title { animation-delay: 0s; }
-.landing-hero-sub { animation-delay: 0.1s; }
-.landing-hero-brand { animation-delay: 0.2s; }
-.landing-hero-actions { animation-delay: 0.3s; }
+.landing-hero-eyebrow { animation-delay: 0s; }
+.landing-hero-title { animation-delay: 0.05s; }
+.landing-hero-sub { animation-delay: 0.15s; }
+.landing-hero-tagline { animation-delay: 0.25s; }
+.landing-hero-brand { animation-delay: 0.35s; }
+.landing-hero-actions { animation-delay: 0.45s; }

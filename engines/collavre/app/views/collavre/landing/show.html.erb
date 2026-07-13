@@ -5,8 +5,10 @@
   <section class="landing-hero">
     <div class="landing-hero-glow"></div>
     <div class="landing-container">
+      <p class="landing-hero-eyebrow"><%= t('collavre.landing.hero.eyebrow') %></p>
       <h1 class="landing-hero-title"><%= t('collavre.landing.hero.headline_html') %></h1>
       <p class="landing-hero-sub"><%= t('collavre.landing.hero.subline') %></p>
+      <p class="landing-hero-tagline"><%= t('collavre.landing.hero.tagline') %></p>
       <p class="landing-hero-brand"><%= t('app.name') %></p>
       <div class="landing-hero-actions">
         <a href="#problem" class="landing-btn landing-btn-lg"><%= t('collavre.landing.hero.learn_more') %></a>
@@ -35,6 +37,11 @@
           <h3><%= t('collavre.landing.problem.slack.title') %></h3>
           <p><%= t('collavre.landing.problem.slack.desc') %></p>
         </div>
+        <div class="landing-problem-card landing-problem-card-accent">
+          <span class="landing-problem-icon">🤖</span>
+          <h3><%= t('collavre.landing.problem.ai.title') %></h3>
+          <p><%= t('collavre.landing.problem.ai.desc') %></p>
+        </div>
       </div>
     </div>
   </section>
@@ -53,15 +60,15 @@
         </div>
 
         <div class="landing-feature-card">
-          <div class="landing-feature-icon">🤖</div>
-          <h3><%= t('collavre.landing.features.ai.title') %></h3>
-          <p><%= t('collavre.landing.features.ai.desc') %></p>
-        </div>
-
-        <div class="landing-feature-card">
           <div class="landing-feature-icon">💡</div>
           <h3><%= t('collavre.landing.features.context.title') %></h3>
           <p><%= t('collavre.landing.features.context.desc') %></p>
+        </div>
+
+        <div class="landing-feature-card">
+          <div class="landing-feature-icon">🤖</div>
+          <h3><%= t('collavre.landing.features.ai.title') %></h3>
+          <p><%= t('collavre.landing.features.ai.desc') %></p>
         </div>
 
         <div class="landing-feature-card">
@@ -69,7 +76,6 @@
           <h3><%= t('collavre.landing.features.chat.title') %></h3>
           <p><%= t('collavre.landing.features.chat.desc') %></p>
         </div>
-
 
       </div>
     </div>
@@ -79,6 +85,7 @@
   <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.demo.subtitle') %></p>
       <%# Light mode video %>
       <div class="landing-demo-frame landing-demo-light" data-controller="landing-video">
         <video class="landing-demo-video"

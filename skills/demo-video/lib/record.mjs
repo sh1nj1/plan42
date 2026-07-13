@@ -157,6 +157,100 @@ async function waitStream(page, timeoutMs = 40000) {
   );
 }
 
+// On-screen caption. The narrative videos make a claim per scene ("nothing was
+// retyped"), and a silent screen recording cannot make a claim — so captions are
+// part of the payload, not decoration. Rendered into the page so they land in the
+// recording without a separate compositing pass.
+//
+// `hold: true` leaves the caption up across subsequent steps (cleared by the next
+// caption, by `caption: null`, or by a navigation).
+async function caption(page, val) {
+  const text = val == null ? '' : typeof val === 'string' ? val : val.text || '';
+  const hold = typeof val === 'object' && val !== null && val.hold === true;
+  const ms = (typeof val === 'object' && val !== null && val.ms) || 2600;
+
+  await page.evaluate((t) => {
+    let el = document.getElementById('__demo_caption');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__demo_caption';
+      el.style.cssText = [
+        'position:fixed',
+        'left:50%',
+        'bottom:44px',
+        'transform:translateX(-50%)',
+        'z-index:2147483647',
+        'padding:14px 30px',
+        'border-radius:999px',
+        'background:rgba(15,17,21,0.9)',
+        'color:#fff',
+        'font:600 22px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif',
+        'box-shadow:0 10px 40px rgba(0,0,0,0.35)',
+        'pointer-events:none',
+        'opacity:0',
+        'transition:opacity 240ms ease',
+        'white-space:nowrap',
+        'max-width:92vw',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    if (!t) {
+      el.style.opacity = '0';
+      return;
+    }
+    el.textContent = t;
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+    });
+  }, text);
+
+  if (!text) return;
+  await sleep(ms);
+  if (hold) return;
+  await page
+    .evaluate(() => {
+      const el = document.getElementById('__demo_caption');
+      if (el) el.style.opacity = '0';
+    })
+    .catch(() => {});
+  await sleep(260);
+}
+
+// Ring-highlight an element. Required by default (throws on a miss): the elements
+// worth highlighting are the ones the video exists to show — e.g. the inherited
+// context chip. Silently recording a scene with no highlight would ship a demo
+// that fails to demonstrate its own claim.
+async function highlight(page, val) {
+  const sel = typeof val === 'string' ? val : val.selector;
+  const ms = (typeof val === 'object' && val.ms) || 2400;
+  const optional = typeof val === 'object' && val.optional === true;
+
+  const el = page.locator(sel).first();
+  try {
+    await el.waitFor({ state: 'visible', timeout: 8000 });
+  } catch (e) {
+    if (!optional) throw new Error(`highlight ${sel}: not visible — ${e.message.split('\n')[0]}`);
+    console.log(`  ⚠️ optional highlight ${sel}: not visible`);
+    return;
+  }
+
+  await el.evaluate((node) => {
+    node.dataset.demoPrevStyle = node.getAttribute('style') || '';
+    node.style.outline = '3px solid #ff8a00';
+    node.style.outlineOffset = '3px';
+    node.style.boxShadow = '0 0 0 8px rgba(255,138,0,0.22)';
+    node.style.borderRadius = '10px';
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+  await sleep(ms);
+  await el
+    .evaluate((node) => {
+      node.setAttribute('style', node.dataset.demoPrevStyle || '');
+      delete node.dataset.demoPrevStyle;
+    })
+    .catch(() => {});
+}
+
 async function runStep(page, step) {
   const [kind, val] = stepKind(step);
   switch (kind) {
@@ -270,6 +364,35 @@ async function runStep(page, step) {
     case 'press':
       await page.keyboard.press(val);
       return;
+    case 'caption':
+      await caption(page, val);
+      return;
+    case 'highlight':
+      await highlight(page, val);
+      return;
+    case 'upload': {
+      // The markdown-import dropzone opens a native OS file dialog on click, which
+      // Playwright cannot drive. setInputFiles on the hidden <input type="file">
+      // fires the same `change` event the Stimulus controller listens for.
+      const sel = val.selector || '#import-markdown-input';
+      const file = path.resolve(path.dirname(SCENARIO), val.file);
+      if (!fs.existsSync(file)) throw new Error(`upload: file not found: ${file}`);
+      await page.setInputFiles(sel, file);
+      return;
+    }
+    case 'wait_for': {
+      const sel = typeof val === 'string' ? val : val.selector;
+      const timeout = (typeof val === 'object' && val.timeout) || 15000;
+      const state = (typeof val === 'object' && val.state) || 'visible';
+      let loc = page.locator(sel);
+      if (typeof val === 'object' && val.text) loc = loc.filter({ hasText: val.text });
+      try {
+        await loc.first().waitFor({ state, timeout });
+      } catch (e) {
+        throw new Error(`wait_for ${sel}: ${e.message.split('\n')[0]}`);
+      }
+      return;
+    }
     case 'js':
       await page.evaluate((code) => eval(code), val); // escape hatch
       return;
