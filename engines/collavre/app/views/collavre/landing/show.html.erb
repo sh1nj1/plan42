@@ -81,6 +81,34 @@
     </div>
   </section>
 
+  <%# ═════════════════════════════════════ THE INTERFACE ══════════════════════════════════════ %>
+  <%# A still before the film: the reader decides in two seconds whether this is a surface they
+      would write in, and a video they have not pressed play on cannot answer that. %>
+  <section id="interface" class="landing-section landing-interface">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.interface.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.interface.subtitle') %></p>
+
+      <div class="landing-shot-frame landing-shot-light">
+        <%= image_tag "collavre/landing/interface-#{I18n.locale == :ko ? 'ko' : 'en'}.png",
+                      class: "landing-shot-img",
+                      alt: t('collavre.landing.interface.alt'), loading: "lazy" %>
+      </div>
+      <div class="landing-shot-frame landing-shot-dark">
+        <%= image_tag "collavre/landing/interface-#{I18n.locale == :ko ? 'ko' : 'en'}-dark.png",
+                      class: "landing-shot-img",
+                      alt: t('collavre.landing.interface.alt'), loading: "lazy" %>
+      </div>
+
+      <ul class="landing-interface-points">
+        <li><%= t('collavre.landing.interface.markdown') %></li>
+        <li><%= t('collavre.landing.interface.rich') %></li>
+        <li><%= t('collavre.landing.interface.drag') %></li>
+        <li><%= t('collavre.landing.interface.presence') %></li>
+      </ul>
+    </div>
+  </section>
+
   <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
   <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">

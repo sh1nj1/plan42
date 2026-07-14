@@ -43,6 +43,20 @@ traverse the rest of the tree itself over MCP.
 That last one is the whole idea: **the unit of work is the unit of agent context.** It is
 lexical scoping, but for work.
 
+## The document is the tree
+
+A structure this good is worthless if writing in it feels like filing a ticket. So the tree
+is not a list of task titles with documents hidden behind them — it *is* the document. A
+heading, a paragraph, a fenced code block, a table: each is a block, rendered in place,
+each carrying its own progress and its own thread.
+
+- **Markdown-first.** Any block flips between rich text and raw markdown; markdown is what
+  gets stored. Import a `.md` file by dropping it on the tree, export any subtree back out.
+- **A real editor.** Fenced code with syntax highlighting (Prism), tables, images, video,
+  attachments, links, colors — [Lexical](https://lexical.dev), not a textarea.
+- **Drag a block and its subtree comes with it**, re-parenting included.
+- **Presence.** See who is in the document and who is editing which block.
+
 ## Why not just MCP?
 
 We ship an MCP server too, and agents search and traverse the tree through it. Still:

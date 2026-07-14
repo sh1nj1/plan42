@@ -10,6 +10,14 @@ en:
         subline: "A block is a doc, a task, a discussion, and your agent's context — one object, not three copies your agent has to choose between."
         tagline: "Pin a rule once at the root. Every task below inherits it — for people and agents alike."
         learn_more: "See how it works"
+      interface:
+        title: "The document is the tree"
+        subtitle: "A heading, a paragraph, a code block, a table — each one is a block, carrying its own progress on the right and its own thread inside. You do not fill in a tracker. You write the spec, and the plan is already there."
+        alt: "A refund spec in Collavre. Prose, a syntax-highlighted code block and a table sit as siblings next to work items, each with its own progress and its own discussion."
+        markdown: "Markdown-first. Flip any block between rich text and raw markdown."
+        rich: "Fenced code with syntax highlighting, tables, images — rendered in the tree, not hidden behind a detail page."
+        drag: "Drag a block and its whole subtree comes with it."
+        presence: "See who is in the document and who is editing which block."
       demo:
         title: "Watch: nothing gets copied"
         subtitle: "A markdown spec becomes a task tree. The team works it. An agent joins with the context already attached. Progress rolls up to the root. Ninety seconds, nothing retyped."

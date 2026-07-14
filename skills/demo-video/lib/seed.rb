@@ -19,6 +19,13 @@
 #                               handbook to pin, and an empty project root that
 #                               already shares :feedback with Vrex.
 #
+#   interface (both)            A still, not a video. One spec that is ALSO the plan:
+#                               headings, prose, a syntax-highlighted code block and a
+#                               table are each their own block, each carrying its own
+#                               progress and its own thread. Used for the landing
+#                               screenshot, where the claim being made is not the
+#                               mechanism but the surface.
+#
 # Env:
 #   DEMO_LLM_URL   OpenAI-compatible base url for Vrex (default http://127.0.0.1:8730/v1)
 #   DEMO_SCENARIO  landing | launch  (default: landing)
@@ -30,15 +37,15 @@
 llm_url  = ENV.fetch("DEMO_LLM_URL", "http://127.0.0.1:8730/v1")
 scenario = ENV.fetch("DEMO_SCENARIO", "landing")
 
-unless %w[landing launch].include?(scenario)
-  abort "seed: unknown DEMO_SCENARIO=#{scenario.inspect} (expected landing|launch)"
+unless %w[landing launch interface].include?(scenario)
+  abort "seed: unknown DEMO_SCENARIO=#{scenario.inspect} (expected landing|launch|interface)"
 end
 
 # The launch video ships in both languages, and the scenario clicks rows *by their
 # text* — so this is not just chrome. Whatever language the seed writes its
 # creatives in is the language launch.yml's `strings:` table must resolve to, or
 # the recording fails on a missing row rather than shipping a mixed-language demo.
-locale = ENV.fetch("DEMO_LOCALE") { scenario == "launch" ? "en" : "ko" }
+locale = ENV.fetch("DEMO_LOCALE") { scenario == "landing" ? "ko" : "en" }
 unless %w[en ko].include?(locale)
   abort "seed: unknown DEMO_LOCALE=#{locale.inspect} (expected en|ko)"
 end
@@ -239,6 +246,102 @@ if scenario == "launch"
   $stdout.puts "\n=== Demo seed complete (scenario=launch, locale=#{locale}) ==="
   $stdout.puts "Users: #{Collavre::User.count}"
   $stdout.puts "Creatives: #{Collavre::Creative.count} (project root is intentionally empty)"
+  exit 0
+end
+
+if scenario == "interface"
+  # A spec document whose every element is a block. The screenshot has to make one
+  # thing self-evident without a caption: the prose, the heading, the code and the
+  # table are not *attached to* tasks — they ARE the tasks, each with its own
+  # progress on the right and its own thread. So the tree must contain content that
+  # only a real editor could produce (a Prism-highlighted fence, a table), sitting
+  # as siblings next to ordinary work items.
+  #
+  # Everything here is a capability the editor actually has: headings (h1–h3),
+  # prose, fenced code with syntax highlighting, tables, images. Deliberately
+  # absent: checklists (read-only in the view, unauthorable in the editor) and any
+  # assignee/due-date chrome (no such fields exist on a block).
+  def heading(text, level = 2)
+    "<div><h#{level}><span style=\"white-space:pre-wrap;\">#{text}</span></h#{level}></div>"
+  end
+
+  def code_block(code, lang)
+    "<div><pre><code class=\"language-#{lang}\">#{ERB::Util.html_escape(code)}</code></pre></div>"
+  end
+
+  def table_block(head, rows)
+    th = head.map { |c| "<th>#{c}</th>" }.join
+    tb = rows.map { |r| "<tr>#{r.map { |c| "<td>#{c}</td>" }.join}</tr>" }.join
+    "<div><table><thead><tr>#{th}</tr></thead><tbody>#{tb}</tbody></table></div>"
+  end
+
+  refund_code = <<~RUBY.strip
+    def refund(charge_id, amount:, idempotency_key:)
+      Idempotency.guard(idempotency_key) do
+        charge = Charge.lock.find(charge_id)
+        raise OverRefund if charge.refunded + amount > charge.total
+
+        Payments.gateway.refund(charge, amount)
+      end
+    end
+  RUBY
+
+  spec = create_creative(
+    parent: nil, user: pm_user, seq: 1,
+    desc: html(ko ? "결제 v2 — 환불 스펙" : "Payments v2 — Refund spec")
+  )
+
+  refunds = create_creative(parent: spec, user: pm_user, seq: 1,
+    desc: heading(ko ? "환불" : "Refunds"))
+
+  create_creative(parent: refunds, user: pm_user, seq: 1, progress: 1.0, desc: html(
+    ko ? "결제는 전액 또는 부분 환불할 수 있다. 부분 환불은 반복될 수 있고, 그 합은 원 결제 금액을 넘지 않는다." \
+       : "A charge can be refunded in full or in part. Partial refunds may repeat, and their sum must never exceed the original charge."
+  ))
+
+  endpoint = create_creative(parent: refunds, user: created_users[:be1], seq: 2, progress: 1.0,
+    desc: html(ko ? "환불 API 추가" : "Add refund endpoint"))
+
+  create_creative(parent: refunds, user: created_users[:be1], seq: 3, progress: 1.0,
+    desc: code_block(refund_code, "ruby"))
+
+  create_creative(parent: refunds, user: created_users[:be2], seq: 4,
+    desc: html(ko ? "환불 웹훅" : "Refund webhook"))
+
+  payouts = create_creative(parent: spec, user: pm_user, seq: 2,
+    desc: heading(ko ? "정산" : "Payouts"))
+
+  create_creative(parent: payouts, user: created_users[:lead], seq: 1, progress: 1.0, desc: table_block(
+    ko ? %w[게이트웨이 마감 정산주기] : %w[Gateway Cutoff Settles],
+    ko ? [ [ "Stripe", "23:00 UTC", "T+2" ], [ "Toss", "16:00 KST", "T+1" ] ]
+       : [ [ "Stripe", "23:00 UTC", "T+2" ], [ "Adyen", "16:00 CET", "T+1" ] ]
+  ))
+
+  create_creative(parent: payouts, user: created_users[:be2], seq: 2,
+    desc: html(ko ? "정산 스케줄링" : "Payout scheduling"))
+  create_creative(parent: payouts, user: created_users[:qa], seq: 3,
+    desc: html(ko ? "정산 대사" : "Payout reconciliation"))
+
+  # The thread has to hang off the leaf it is about — that is the whole claim of
+  # the "a thread on every block" card, and the unread badge on that one row is
+  # what makes it visible in a still.
+  topic = Collavre::Topic.create!(creative: endpoint, user: created_users[:be1],
+    name: ko ? "멱등성 버그" : "Idempotency bug", position: 1)
+  Collavre::Comment.create!(creative: endpoint, user: created_users[:qa], topic: topic, content:
+    ko ? "같은 Idempotency-Key로 두 번 호출하면 환불이 두 번 나갑니다." \
+       : "Calling twice with the same Idempotency-Key refunds the charge twice.")
+  Collavre::Comment.create!(creative: endpoint, user: created_users[:be1], topic: topic, content:
+    ko ? "재현했습니다. 가드가 커밋 뒤에 걸려 있어요. 트랜잭션 안으로 옮깁니다." \
+       : "Reproduced. The guard runs after the commit. Moving it inside the transaction.")
+
+  share = Collavre::CreativeShare.find_or_initialize_by(creative: spec, user: pm_user)
+  share.permission = :feedback
+  share.shared_by = pm_user if share.respond_to?(:shared_by=)
+  share.save!
+  Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: spec.id, user_id: pm_user.id)
+
+  $stdout.puts "\n=== Demo seed complete (scenario=interface, locale=#{locale}) ==="
+  $stdout.puts "Creatives: #{Collavre::Creative.count}"
   exit 0
 end
 

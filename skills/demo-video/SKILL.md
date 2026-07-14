@@ -142,10 +142,15 @@ that quietly fails to demonstrate its own point.
 |----------|--------|-------|
 | `landing` | ko | Fully-seeded workspace; the recording tours what already exists |
 | `launch` | en | Near-empty workspace; the recording **builds** the tree on camera — markdown import → topic → pinned context inherited at a leaf → real agent reply → progress rollup |
+| `interface` | en | **A still, not a film.** A spec whose heading, prose, highlighted code fence and table are each their own block, each with its own progress and thread. The artifact is `shots-*/02-interface.png`, which the landing page ships; run it with `--no-post` and ignore the `.mp4`. |
 
 `run.sh` passes the scenario name to the seed as `DEMO_SCENARIO`, so each scenario
 gets exactly the starting state it needs. `launch` deliberately seeds an **empty**
 project root: a pre-built tree would prove nothing about the import.
+
+Viewports (`viewport:` in the scenario): `landing` 1280x720, `doc` 1280x1160 (stills —
+tall enough to hold a whole document, narrow enough that the max-width-capped app
+column fills the frame instead of floating in gutter), `wide`, `square`, `portrait`.
 
 ## fake_llm.py
 

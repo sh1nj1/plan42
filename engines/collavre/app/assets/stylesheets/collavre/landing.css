@@ -463,6 +463,68 @@ body.dark-mode .landing-demo-dark { display: block; }
   body:not(.light-mode) .landing-demo-dark { display: block; }
 }
 
+/* ─── Interface: the product still ─────────────────────────────────────────── */
+.landing-shot-frame {
+  max-width: 980px;
+  margin: 0 auto;
+  border-radius: var(--radius-4);
+  border: var(--border-1) solid var(--border-color);
+  background: var(--surface-section);
+  overflow: hidden;
+  box-shadow: var(--shadow-3);
+}
+
+.landing-shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Same light/dark pairing the demo video uses: the screenshot is app chrome, so a
+   light shot on a dark page reads as a bug, not as a screenshot. */
+.landing-shot-dark { display: none; }
+
+body.dark-mode .landing-shot-light { display: none; }
+body.dark-mode .landing-shot-dark { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode) .landing-shot-light { display: none; }
+  body:not(.light-mode) .landing-shot-dark { display: block; }
+}
+
+.landing-interface-points {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-5) auto 0;
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-5);
+}
+
+.landing-interface-points li {
+  position: relative;
+  padding-left: var(--space-4);
+  font-size: var(--text-3);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.landing-interface-points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent, var(--text-muted));
+}
+
+@media (max-width: 780px) {
+  .landing-interface-points { grid-template-columns: 1fr; }
+}
+
 /* ─── Responsive ────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .landing-container {

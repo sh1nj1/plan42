@@ -45,6 +45,10 @@ if (!SCENARIO) {
 
 const SIZES = {
   landing: { width: 1280, height: 720 },
+  // Stills, not film. The app column is max-width capped, so a 1920 viewport spends
+  // half the frame on empty gutter; 1280 fills it. The height is whatever it takes to
+  // fit a whole document in one frame.
+  doc: { width: 1280, height: 920 },
   wide: { width: 1920, height: 1080 },
   square: { width: 1080, height: 1080 },
   portrait: { width: 1080, height: 1920 },
