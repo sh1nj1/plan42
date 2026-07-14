@@ -54,6 +54,9 @@ A scenario is data, not code. Add a feature-intro video = add a new YAML file.
 name: landing
 viewport: landing            # landing | wide | square | portrait
 locale: ko-KR
+poster_at: 28                # seconds; frame used as the poster. Default 0 —
+                             # if the video opens on an empty screen, set this,
+                             # or the poster ships as a blank rectangle.
 ai_turns:                    # FIFO; one entry consumed per @mention
   - |
     이번 스프린트 우선순위를 분석해보겠습니다 ...

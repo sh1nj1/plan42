@@ -417,7 +417,14 @@ function postProcess(rawPath) {
     console.error('  ❌ ffmpeg failed:', (r.stderr || '').toString().split('\n').slice(-4).join('\n'));
     return null;
   }
-  spawnSync('ffmpeg', ['-y', '-i', mp4, '-vframes', '1', '-q:v', '2', poster], { stdio: 'pipe' });
+  // Frame 0 is the initial page load — almost always blank. Seek to a frame that
+  // actually shows the product, or the poster ships as an empty rectangle.
+  const posterAt = Number(scenario.poster_at ?? scenario.posterAt ?? 0);
+  spawnSync(
+    'ffmpeg',
+    ['-y', '-ss', String(posterAt), '-i', mp4, '-frames:v', '1', '-q:v', '2', poster],
+    { stdio: 'pipe' }
+  );
   const kb = (fs.statSync(mp4).size / 1024).toFixed(0);
   console.log(`  🎬 ${mp4} (${kb} KB)`);
   console.log(`  🖼  ${poster}`);

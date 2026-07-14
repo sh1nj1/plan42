@@ -16,6 +16,11 @@ name: launch
 viewport: landing
 locale: en-US
 
+# The frame the landing page shows before anyone presses play. Scene 1 opens on an
+# empty project, so the default (t=0) would ship a blank white rectangle. t=28 lands
+# on the climax: the inherited handbook chip on a leaf, caption still on screen.
+poster_at: 28
+
 # One scripted turn, consumed by the single @Vrex mention below.
 #
 # This answer is the load-bearing claim of the whole video: every rule it cites is
