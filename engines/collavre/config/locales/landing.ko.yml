@@ -3,11 +3,11 @@ ko:
     landing:
       meta:
         title: "문서, 일감, 대화, 그리고 AI 컨텍스트를 하나의 살아있는 트리로"
-        description: "Collavre는 하나의 블록이 문서이자 일감이자 대화이자 AI 에이전트의 컨텍스트인 셀프호스팅 워크스페이스입니다. 사본 네 벌이 아니라 하나의 객체입니다. 루트에 규칙을 한 번 꽂아두면 그 아래 모든 일감이 상속받습니다 — 사람에게도, 에이전트에게도."
+        description: "Collavre는 하나의 블록이 문서이자 일감이자 대화이자 AI 에이전트의 컨텍스트인 셀프호스팅 워크스페이스입니다. 에이전트가 골라내야 할 사본 세 벌이 아니라, 하나의 객체입니다. 루트에 규칙을 한 번 꽂아두면 그 아래 모든 일감이 상속받습니다 — 사람에게도, 에이전트에게도."
       hero:
         eyebrow: "사람과 AI 에이전트를 위한 워크스페이스"
         headline_html: "하나의 살아있는 트리로"
-        subline: "하나의 블록이 문서이자 일감이자 대화이자 에이전트의 컨텍스트입니다. 사본 네 벌이 아니라 하나의 객체입니다."
+        subline: "하나의 블록이 문서이자 일감이자 대화이자 에이전트의 컨텍스트입니다. 에이전트가 골라내야 할 사본 세 벌이 아니라, 하나의 객체입니다."
         tagline: "루트에 규칙을 한 번만 꽂아두세요. 그 아래 모든 일감이 상속받습니다 — 사람에게도, 에이전트에게도."
         learn_more: "어떻게 동작하나요"
       demo:
@@ -18,7 +18,7 @@ ko:
         video_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcyLCJwdXIiOiJibG9iX2lkIn19--6d635234d2070b43f16c404a9e81e7642062c172/launch-ko-dark.mp4"
         poster_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDczLCJwdXIiOiJibG9iX2lkIn19--094d1e6e8691ea987effeca29195e5fc313bff33/launch-ko-dark-poster.jpg"
       problem:
-        title: "같은 내용을 네 번 씁니다"
+        title: "같은 내용을 세 번 씁니다"
         notion:
           title: "문서"
           desc: "스펙을 씁니다. 아무도 고치지 않는 무덤이 되고, 구조는 조용히 검색으로 대체됩니다."
@@ -29,10 +29,10 @@ ko:
           title: "대화"
           desc: "세 번째로 채팅에서 다시 설명합니다. 결정은 아무 데도 붙어 있지 않은 채 스크롤 너머로 사라집니다."
         ai:
-          title: "그리고 이제, AI"
-          desc: "세션마다 그 전부를 손으로 다시 붙여넣습니다. 다섯 번째 사본 — 그리고 에이전트가 볼 수 있는 유일한 사본입니다."
+          title: "그리고 에이전트"
+          desc: "이제 아무도 붙여넣지 않습니다. MCP로 연결해 세 벌을 다 읽죠. 그래도 어느 사본이 진짜인지, 이 일의 경계가 어디까지인지는 여전히 추측해야 합니다."
       features:
-        title: "사본 네 벌이 아니라, 하나의 객체"
+        title: "사본 세 벌이 아니라, 하나의 객체"
         subtitle: "하나의 블록이 동시에 문서이고 일감이고 대화이고 에이전트 컨텍스트의 단위입니다. 블록은 트리로 중첩되고, 그 트리가 곧 스코프입니다."
         tree:
           title: "마크다운을 넣으면 일감 트리가 나옵니다"
@@ -53,7 +53,7 @@ ko:
           title: "실시간 진행률"
           desc: "리프부터 루트까지 완료율 추적. 태그, 계획, 상태별 필터. 프로젝트 건강도를 한눈에."
       cta:
-        title: "사본 네 벌을 맞추는 일은 그만"
+        title: "사본 세 벌을 맞추는 일은 그만"
         subtitle: "셀프호스팅. AGPL 오픈소스. MCP 네이티브."
         start: "시작하기"
       footer:

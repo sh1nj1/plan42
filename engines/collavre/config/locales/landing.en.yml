@@ -3,11 +3,11 @@ en:
     landing:
       meta:
         title: "One living tree for docs, tasks, discussions, and AI agent context"
-        description: "Collavre is a self-hosted workspace where every block is at once a document, a task, a discussion, and a unit of AI agent context — one object, not four copies. Pin a rule at the root and every task below it inherits it, for people and agents alike."
+        description: "Collavre is a self-hosted workspace where every block is at once a document, a task, a discussion, and a unit of AI agent context — one object, not three copies your agent has to choose between. Pin a rule at the root and every task below it inherits it, for people and agents alike."
       hero:
         eyebrow: "Workspace for humans and AI agents"
         headline_html: "Everything in one living tree"
-        subline: "A block is a doc, a task, a discussion, and your agent's context — one object, not four copies."
+        subline: "A block is a doc, a task, a discussion, and your agent's context — one object, not three copies your agent has to choose between."
         tagline: "Pin a rule once at the root. Every task below inherits it — for people and agents alike."
         learn_more: "See how it works"
       demo:
@@ -20,7 +20,7 @@ en:
         video_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY4LCJwdXIiOiJibG9iX2lkIn19--63349dc7270a3e6a0503c45a413d3b176f791dc2/launch-dark.mp4"
         poster_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY5LCJwdXIiOiJibG9iX2lkIn19--25a756ed0d6ff5b4f40ef864b8216c7aa540449c/launch-dark-poster.jpg"
       problem:
-        title: "You write the same thing four times"
+        title: "You write the same thing three times"
         notion:
           title: "The doc"
           desc: "You write the spec. It ages into a graveyard nobody edits, and search quietly replaces structure."
@@ -31,10 +31,10 @@ en:
           title: "The thread"
           desc: "You explain it a third time in chat. The decision scrolls away, attached to nothing."
         ai:
-          title: "And now, the AI"
-          desc: "Every session, you paste it all in again by hand. A fifth copy — and the only one your agent can actually see."
+          title: "And now, the agent"
+          desc: "Nobody pastes anymore — you connected it over MCP, so it reads all three. It still has to guess which copy is true, and where this task ends."
       features:
-        title: "One object, not four copies"
+        title: "One object, not three copies"
         subtitle: "A block is simultaneously a document, a task, a discussion thread, and a unit of agent context. Blocks nest into a tree, and the tree is the scope."
         tree:
           title: "Markdown in, task tree out"
@@ -55,7 +55,7 @@ en:
           title: "Live Progress"
           desc: "Track completion from leaf to root. Filter by tags, plans, or status. See your project's real health at a glance."
       cta:
-        title: "Stop keeping four copies in sync"
+        title: "Stop keeping three copies in sync"
         subtitle: "Self-hosted. Open source under AGPL. MCP-native."
         start: "Get Started"
       footer:

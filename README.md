@@ -2,8 +2,9 @@
 
 **One living tree for docs, tasks, discussions, and AI agent context.**
 
-A block in Collavre is all four at once — not four copies you keep in sync by hand.
-Pin a rule at the root and every task below it inherits it, for people and agents alike.
+Today those are three copies you keep in sync by hand, plus an agent wired to all of them
+that still has to guess which one is true. A block in Collavre is all four at once — one
+object. Pin a rule at the root and every task below it inherits it, for people and agents alike.
 
 [**Live demo**](https://collavre.com) · [**Watch the 90-second demo**](https://collavre.com/landing#demo) · [Features](docs/features_summary.md) · AGPL-3.0
 
@@ -11,20 +12,24 @@ Pin a rule at the root and every task below it inherits it, for people and agent
 
 ## The problem
 
-You write the same thing four times.
+You write the same thing three times.
 
 1. **The doc.** You write the spec.
 2. **The tracker.** You retype it as tickets — and the link back to the paragraph it came from is never written down anywhere.
 3. **The thread.** You explain it a third time in chat, where the decision scrolls away attached to nothing.
-4. **The AI.** Every session, you paste it all in again by hand. A fifth copy, and the only one your agent can actually see.
 
-The duplication was always waste, but people carry context in their heads, so it stayed
-tolerable. Agents don't. They arrive empty every single time — which turns a quiet tax
-into a daily one.
+Then you bring in an agent. Nobody pastes context by hand anymore — you connect it over
+MCP and it can read all three. But it reads three copies that have drifted apart, with no
+record of how they relate, and no boundary telling it where this task ends. So it guesses,
+from keywords, every single session.
+
+The duplication was always waste, but people carry the missing structure in their heads,
+so it stayed tolerable. An agent carries nothing between calls. That is what turns a quiet
+tax into a daily one.
 
 ## How it works
 
-**One object, not four copies.** A *block* is simultaneously a document, a task, a
+**One object, not three copies.** A *block* is simultaneously a document, a task, a
 discussion thread, and a unit of agent context. Blocks nest into a tree.
 
 **Markdown in, task tree out.** Import a spec and heading depth becomes tree depth, one
