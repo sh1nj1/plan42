@@ -6,13 +6,15 @@
 # and post-processes to .mp4 + poster. Targets a LOCAL dev server.
 #
 # Usage:
-#   ./run.sh [scenario] [--theme light,dark] [--size landing|wide|square|portrait]
+#   ./run.sh [scenario] [--theme light,dark] [--locale en,ko]
+#            [--size landing|wide|square|portrait]
 #            [--base URL] [--port N] [--llm-port N] [--no-seed] [--no-post]
 #            [--speed N] [--out DIR]
 #
 # Examples:
 #   ./run.sh                       # landing scenario, light+dark, server on :53000
 #   ./run.sh landing --theme dark
+#   ./run.sh launch --locale en,ko # four takes: {en,ko} x {light,dark}
 #   ./run.sh landing --base http://localhost:3000 --no-seed
 #
 set -euo pipefail
@@ -29,6 +31,10 @@ done
 # ── defaults ────────────────────────────────────────────────────────────
 SCENARIO_NAME="landing"
 THEMES="light,dark"
+# Empty means "whatever the scenario declares as default_locale" — seed.rb and
+# record.mjs each fall back on their own, so an unset locale reproduces the
+# pre-i18n behaviour exactly.
+LOCALES=""
 SIZE=""
 PORT="53000"
 BASE=""
@@ -44,6 +50,7 @@ if [[ $# -gt 0 && "${1:0:2}" != "--" ]]; then SCENARIO_NAME="$1"; shift; fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --theme) THEMES="$2"; shift 2;;
+    --locale) LOCALES="$2"; shift 2;;
     --size) SIZE="$2"; shift 2;;
     --base) BASE="$2"; shift 2;;
     --port) PORT="$2"; shift 2;;
@@ -100,7 +107,12 @@ else
   # captures the wrapper subshell on bash 3.2 (macOS), so the cleanup trap kills
   # the wrapper and leaks the actual server. `( cd … && exec … ) &` + `$!` binds
   # SERVER_PID to the process the trap must kill.
+  # --pid is not optional: Rails defaults every server in a given app dir to the
+  # same tmp/pids/server.pid, so booting here while a PR-preview server is up in
+  # the same worktree makes Rails print "a server is already running" and exit —
+  # and the recording then fails on a dev server that never came up.
   ( cd "$RAILS_ROOT" && exec env PORT="$PORT" bin/rails server -p "$PORT" -b 0.0.0.0 \
+      --pid "tmp/pids/demo-video-$PORT.pid" \
       > /tmp/demo-video-server-$PORT.log 2>&1 ) &
   SERVER_PID=$!
   echo "$SERVER_PID" > /tmp/demo-video-server-$PORT.pid
@@ -117,29 +129,48 @@ if [[ ! -d "$SKILL_DIR/node_modules/playwright" || ! -d "$SKILL_DIR/node_modules
   ( cd "$SKILL_DIR" && npm install --silent --no-audit --no-fund )
 fi
 
-# ── 4. seed + record each theme ─────────────────────────────────────────
-# Re-seeding per theme keeps recordings isolated: each run starts from a clean
-# topic so the @Vrex mention streams fresh (no "another task running" state),
-# and the login user's theme is set to match.
+# ── 4. seed + record each locale x theme ────────────────────────────────
+# Re-seeding per take keeps recordings isolated: each run starts from a clean
+# topic so the @Vrex mention streams fresh (no "another task running" state), the
+# login user's theme is set to match, and — because Collavre reads its UI locale
+# off the user record, not off Accept-Language — so is the login user's locale.
+# The seed also writes its content in that locale, which the scenario then clicks
+# on by text, so seeding and recording must never disagree about it.
 SIZE_ARG=()
 [[ -n "$SIZE" ]] && SIZE_ARG=(--size "$SIZE")
 IFS=',' read -ra THEME_LIST <<< "$THEMES"
-for theme in "${THEME_LIST[@]}"; do
-  if [[ "$DO_SEED" == "1" ]]; then
-    echo "→ seeding demo data (scenario=$SCENARIO_NAME, theme=$theme, DEMO_LLM_URL=$LLM_URL/v1)"
-    ( cd "$RAILS_ROOT" && DEMO_LLM_URL="$LLM_URL/v1" DEMO_THEME="$theme" \
-        DEMO_SCENARIO="$SCENARIO_NAME" bin/rails runner "$LIB/seed.rb" \
-        > /tmp/demo-video-seed-$theme.log 2>&1 ) || { echo "seed failed (see /tmp/demo-video-seed-$theme.log)"; exit 1; }
-  fi
-  echo "→ recording theme=$theme"
-  node "$LIB/record.mjs" \
-    --scenario "$SCENARIO_FILE" \
-    --theme "$theme" \
-    --base "$BASE" \
-    --llm "$LLM_URL" \
-    --out "$OUT" \
-    --speed "$SPEED" \
-    ${SIZE_ARG[@]+"${SIZE_ARG[@]}"} $NO_POST
+IFS=',' read -ra LOCALE_LIST <<< "$LOCALES"
+[[ ${#LOCALE_LIST[@]} -eq 0 ]] && LOCALE_LIST=("")
+for locale in "${LOCALE_LIST[@]}"; do
+  for theme in "${THEME_LIST[@]}"; do
+    take="${locale:+$locale-}$theme"
+    # An empty locale must vanish entirely rather than reach the callee as "".
+    # `${locale:+DEMO_LOCALE=$locale}` cannot do that job: bash only treats a word
+    # as an assignment if it looks like one BEFORE expansion, so the expanded form
+    # is run as a command ("DEMO_LOCALE=ko: command not found"). Hence `env`.
+    SEED_ENV=(DEMO_LLM_URL="$LLM_URL/v1" DEMO_THEME="$theme" DEMO_SCENARIO="$SCENARIO_NAME")
+    LOCALE_ARG=()
+    if [[ -n "$locale" ]]; then
+      SEED_ENV+=(DEMO_LOCALE="$locale")
+      LOCALE_ARG=(--locale "$locale")
+    fi
+
+    if [[ "$DO_SEED" == "1" ]]; then
+      echo "→ seeding demo data (scenario=$SCENARIO_NAME, locale=${locale:-default}, theme=$theme)"
+      ( cd "$RAILS_ROOT" && exec env "${SEED_ENV[@]}" bin/rails runner "$LIB/seed.rb" \
+          > /tmp/demo-video-seed-$take.log 2>&1 ) || { echo "seed failed (see /tmp/demo-video-seed-$take.log)"; exit 1; }
+    fi
+    echo "→ recording locale=${locale:-default} theme=$theme"
+    node "$LIB/record.mjs" \
+      --scenario "$SCENARIO_FILE" \
+      --theme "$theme" \
+      ${LOCALE_ARG[@]+"${LOCALE_ARG[@]}"} \
+      --base "$BASE" \
+      --llm "$LLM_URL" \
+      --out "$OUT" \
+      --speed "$SPEED" \
+      ${SIZE_ARG[@]+"${SIZE_ARG[@]}"} $NO_POST
+  done
 done
 
 echo "✅ done. Output in: $OUT"

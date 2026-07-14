@@ -8,6 +8,7 @@
  *
  * Usage:
  *   node record.mjs --scenario <path> [--theme light|dark] [--size landing]
+ *                   [--locale en|ko]
  *                   [--base http://localhost:53000] [--llm http://127.0.0.1:8730]
  *                   [--out <dir>] [--no-post] [--speed 2]
  */
@@ -30,6 +31,7 @@ function arg(name, def) {
 const SCENARIO = arg('scenario');
 const THEME = arg('theme', 'light');
 const SIZE = arg('size', null);
+const LOCALE = arg('locale', null);
 const BASE = (arg('base', 'http://localhost:53000') || '').replace(/\/$/, '');
 const LLM = (arg('llm', 'http://127.0.0.1:8730') || '').replace(/\/$/, '');
 const OUT = arg('out', path.join(__dirname, '..', 'output'));
@@ -48,11 +50,56 @@ const SIZES = {
   portrait: { width: 1080, height: 1920 },
 };
 
-const scenario = parseYaml(fs.readFileSync(SCENARIO, 'utf8'));
+const raw = parseYaml(fs.readFileSync(SCENARIO, 'utf8'));
+
+// ── locale ───────────────────────────────────────────────────────────────
+// A scenario is one script, not one language. The step list is a long pile of
+// selectors, waits and orderings that took real debugging to get right; forking
+// it per language would guarantee the copies drift and one of them silently
+// starts recording a lie.
+//
+// So the script stays single-source and every human-readable string in it is a
+// `{{key}}` into the `strings:` table, whose values are keyed by locale. That
+// covers the ones buried inside selectors too — `:has-text("{{project}}")` —
+// which a caption-only translation layer could not reach.
+//
+// The table has to agree with seed.rb: the video clicks rows *by their text*, so
+// a key whose Korean value does not match what the Korean seed wrote is not a
+// typo, it is a failed run.
+const LOCALES = { en: 'en-US', ko: 'ko-KR' };
+const locale = LOCALE || raw.default_locale || 'en';
+if (!LOCALES[locale]) {
+  console.error(`error: --locale ${locale} (expected one of: ${Object.keys(LOCALES).join(', ')})`);
+  process.exit(2);
+}
+
+function localize(node, strings) {
+  if (typeof node === 'string') {
+    return node.replace(/\{\{(\w+)\}\}/g, (m, key) => {
+      const entry = strings[key];
+      if (entry == null) throw new Error(`scenario: {{${key}}} is not in strings:`);
+      const val = typeof entry === 'string' ? entry : entry[locale];
+      if (val == null) throw new Error(`scenario: strings.${key} has no "${locale}" value`);
+      return val;
+    });
+  }
+  if (Array.isArray(node)) return node.map((v) => localize(v, strings));
+  if (node && typeof node === 'object') {
+    return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, localize(v, strings)]));
+  }
+  return node;
+}
+
+const scenario = localize(raw, raw.strings || {});
+
 const sizeKey = SIZE || scenario.viewport || 'landing';
 const size = SIZES[sizeKey] || SIZES.landing;
 const name = scenario.name || path.basename(SCENARIO).replace(/\.ya?ml$/, '');
-const suffix = THEME === 'dark' ? '-dark' : '';
+// Locale and theme both fan out into separate files in a shared OUT dir, so both
+// belong in the name. The base locale stays unsuffixed so existing output paths
+// (launch.mp4, launch-dark.mp4) keep pointing at the same thing.
+const localeSuffix = locale === (raw.default_locale || 'en') ? '' : `-${locale}`;
+const suffix = `${localeSuffix}${THEME === 'dark' ? '-dark' : ''}`;
 const SHOT_DIR = path.join(OUT, `${name}${suffix}-shots`);
 const VIDEO_DIR = path.join(OUT, `${name}${suffix}-raw`);
 
@@ -419,7 +466,12 @@ function postProcess(rawPath) {
   }
   // Frame 0 is the initial page load — almost always blank. Seek to a frame that
   // actually shows the product, or the poster ships as an empty rectangle.
-  const posterAt = Number(scenario.poster_at ?? scenario.posterAt ?? 0);
+  // May be a bare number or a per-locale map: the takes do not share a clock, so
+  // the same second does not land on the same beat in every language.
+  const posterRaw = scenario.poster_at ?? scenario.posterAt ?? 0;
+  const posterAt = Number(
+    posterRaw !== null && typeof posterRaw === 'object' ? posterRaw[locale] ?? 0 : posterRaw
+  );
   spawnSync(
     'ffmpeg',
     ['-y', '-ss', String(posterAt), '-i', mp4, '-frames:v', '1', '-q:v', '2', poster],
@@ -433,7 +485,7 @@ function postProcess(rawPath) {
 
 // ── main ─────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n▶ scenario=${name} theme=${THEME} size=${sizeKey} (${size.width}x${size.height})`);
+  console.log(`\n▶ scenario=${name} locale=${locale} theme=${THEME} size=${sizeKey} (${size.width}x${size.height})`);
   await llmReset();
   await llmInject(scenario.ai_turns || scenario.aiTurns);
 
@@ -441,7 +493,7 @@ async function main() {
   const context = await browser.newContext({
     viewport: size,
     recordVideo: { dir: VIDEO_DIR, size },
-    locale: scenario.locale || 'ko-KR',
+    locale: LOCALES[locale],
     colorScheme: THEME === 'dark' ? 'dark' : 'light',
     deviceScaleFactor: 2,
   });

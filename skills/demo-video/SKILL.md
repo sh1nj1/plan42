@@ -24,11 +24,18 @@ skills/demo-video/run.sh
 # One theme, a specific size
 skills/demo-video/run.sh landing --theme dark --size wide
 
+# Four takes: {en,ko} x {light,dark}
+skills/demo-video/run.sh launch --locale en,ko --theme light,dark
+
 # Reuse an already-running dev server, skip reseeding
 skills/demo-video/run.sh landing --base http://localhost:3000 --no-seed
 ```
 
-Output lands in `skills/demo-video/output/<name>[-dark].mp4` (+ `-poster.jpg`).
+Output lands in `skills/demo-video/output/<name>[-<locale>][-dark].mp4` (+ `-poster.jpg`).
+The scenario's `default_locale` is the unsuffixed one.
+
+Run it from a shell where **mise is active** — otherwise `bin/rails` picks up the
+system Ruby 2.6 and the dev server never boots.
 
 ## Architecture (4 decoupled units)
 
@@ -53,10 +60,11 @@ A scenario is data, not code. Add a feature-intro video = add a new YAML file.
 ```yaml
 name: landing
 viewport: landing            # landing | wide | square | portrait
-locale: ko-KR
+default_locale: ko           # locale used when --locale is omitted
 poster_at: 28                # seconds; frame used as the poster. Default 0 —
                              # if the video opens on an empty screen, set this,
                              # or the poster ships as a blank rectangle.
+                             # May be a per-locale map: {en: 28, ko: 26}
 ai_turns:                    # FIFO; one entry consumed per @mention
   - |
     이번 스프린트 우선순위를 분석해보겠습니다 ...
@@ -70,6 +78,35 @@ steps:
   - wait_stream: { timeout: 45000 }
   - shot: 09-ai-response
 ```
+
+### Multi-language scenarios
+
+One scenario, N languages — never one file per language. The step list is a
+hard-won pile of selectors, waits and orderings; forking it guarantees the copies
+drift until one of them quietly records something untrue.
+
+Put every human-readable string in a `strings:` table and reference it as
+`{{key}}` anywhere in the scenario. `--locale` picks the column:
+
+```yaml
+default_locale: en
+strings:
+  project:  { en: "Payments v2", ko: "결제 v2" }
+  cap_tree: { en: "Nothing retyped.", ko: "다시 친 건 없습니다." }
+steps:
+  - click_row: "{{project}}"
+  - caption: { text: "{{cap_tree}}", ms: 3200 }
+  - click: 'creative-tree-row:has-text("{{project}}") [data-progress-toggle]'
+```
+
+Interpolation runs over the *whole* scenario, so it reaches text buried inside
+selectors — which a captions-only translation layer could not.
+
+**The table must agree with `seed.rb`.** Scenarios click rows *by their text*, and
+`DEMO_LOCALE` decides the language the seed writes its creatives in. A key whose
+Korean value does not match what the Korean seed wrote is not a typo — it is a
+failed run. Same for content the scenario imports: `launch` uploads
+`payments-v2-spec.md` in English and `payments-v2-spec.ko.md` in Korean.
 
 ### Step vocabulary
 

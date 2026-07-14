@@ -23,6 +23,9 @@
 #   DEMO_LLM_URL   OpenAI-compatible base url for Vrex (default http://127.0.0.1:8730/v1)
 #   DEMO_SCENARIO  landing | launch  (default: landing)
 #   DEMO_THEME     light | dark      (forces the login user's theme)
+#   DEMO_LOCALE    en | ko           (forces the login user's locale AND the language
+#                                     the seeded content is written in; defaults to the
+#                                     language each scenario was originally authored in)
 
 llm_url  = ENV.fetch("DEMO_LLM_URL", "http://127.0.0.1:8730/v1")
 scenario = ENV.fetch("DEMO_SCENARIO", "landing")
@@ -30,6 +33,16 @@ scenario = ENV.fetch("DEMO_SCENARIO", "landing")
 unless %w[landing launch].include?(scenario)
   abort "seed: unknown DEMO_SCENARIO=#{scenario.inspect} (expected landing|launch)"
 end
+
+# The launch video ships in both languages, and the scenario clicks rows *by their
+# text* — so this is not just chrome. Whatever language the seed writes its
+# creatives in is the language launch.yml's `strings:` table must resolve to, or
+# the recording fails on a missing row rather than shipping a mixed-language demo.
+locale = ENV.fetch("DEMO_LOCALE") { scenario == "launch" ? "en" : "ko" }
+unless %w[en ko].include?(locale)
+  abort "seed: unknown DEMO_LOCALE=#{locale.inspect} (expected en|ko)"
+end
+ko = locale == "ko"
 
 def html(text)
   "<div><p class=\"lexical-paragraph\"><span style=\"white-space:pre-wrap;\">#{text}</span></p></div>"
@@ -46,11 +59,12 @@ end
 
 pw = "demo1234"
 
-# The launch scenario is recorded in English for an international audience, so its
-# team reads as one. Emails are shared across scenarios: the cleanup below scopes
-# on them, and switching scenarios must not strand the other one's creatives.
+# The team reads in the language of the take, not of the scenario: a Korean
+# recording with a roster of English names looks like a translation of someone
+# else's product. Emails are shared across scenarios and locales — the cleanup
+# below scopes on them, so switching either must not strand the other's creatives.
 users =
-  if scenario == "launch"
+  if !ko
     {
       ceo:      { name: "Dana Reed",     email: "ceo@collabre.dev" },
       pm:       { name: "Alex Park",     email: "pm@collabre.dev" },
@@ -117,6 +131,12 @@ if %w[light dark].include?(demo_theme) && pm_user.respond_to?(:theme=)
   $stdout.puts "Login user theme set to: #{demo_theme}"
 end
 
+# Collavre picks its UI locale off the user record, NOT off the browser's
+# Accept-Language — so Playwright's `locale:` alone leaves the app chrome in
+# whatever the seeded default was, and the take is unusable for its audience.
+pm_user.update!(locale: locale) if pm_user.respond_to?(:locale=)
+$stdout.puts "Login user locale set to: #{locale}"
+
 # Clean existing demo data so re-runs don't stack duplicate creative trees.
 # Scope to the exact demo users upserted above instead of a magic id threshold
 # (`user_id > 3` assumed exactly three reserved system users), and let failures
@@ -149,26 +169,37 @@ def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
 end
 
 if scenario == "launch"
-  # The recording is in English, and Collavre picks its UI locale from the user —
-  # not from the browser's Accept-Language. Without this the app chrome renders in
-  # whatever the seeded default is and the video is unusable for its audience.
-  pm_user.update!(locale: "en") if pm_user.respond_to?(:locale=)
-
   # ─── The handbook: the context block the video pins at the root ───
   #
   # This must carry REAL, quotable rules. The climax of the video is Vrex citing a
   # rule it was never told — so if the handbook were lorem ipsum, the scripted
   # answer in launch.yml would be a lie the viewer could not check. It is the one
   # thing the recording asserts and the seed must make true.
+  #
+  # Both language versions therefore have to state the SAME four rules: the
+  # scripted answer in launch.yml quotes three of them back, per locale.
+  handbook_lines =
+    if ko
+      [
+        "<b>엔지니어링 핸드북</b>",
+        "모든 공개 엔드포인트에는 속도 제한을 건다. 기본값은 토큰당 분당 100회.",
+        "모든 쓰기 엔드포인트는 Idempotency-Key 헤더를 받고, 재시도해도 안전해야 한다.",
+        "API를 바꾸면 마이그레이션 가이드를 같은 PR에 함께 올린다.",
+        "CI가 초록이 아니면 머지하지 않는다. 핫픽스도 예외가 아니다."
+      ]
+    else
+      [
+        "<b>Engineering Handbook</b>",
+        "Every public endpoint is rate-limited. Default: 100 requests/minute per token.",
+        "Every write endpoint accepts an Idempotency-Key header and must be safe to retry.",
+        "Any API change ships with a migration guide in the same pull request.",
+        "No merge without a green CI run. No exceptions, including hotfixes."
+      ]
+    end
+
   handbook = create_creative(
     parent: nil, user: created_users[:lead], progress: 1.0, seq: 2,
-    desc: html_lines([
-      "<b>Engineering Handbook</b>",
-      "Every public endpoint is rate-limited. Default: 100 requests/minute per token.",
-      "Every write endpoint accepts an Idempotency-Key header and must be safe to retry.",
-      "Any API change ships with a migration guide in the same pull request.",
-      "No merge without a green CI run. No exceptions, including hotfixes."
-    ])
+    desc: html_lines(handbook_lines)
   )
 
   # ─── The project root: deliberately EMPTY ───
@@ -177,7 +208,7 @@ if scenario == "launch"
   # empty is the point: a pre-populated tree would prove nothing about the import.
   payments = create_creative(
     parent: nil, user: pm_user, progress: 0.0, seq: 1,
-    desc: html("Payments v2")
+    desc: html(ko ? "결제 v2" : "Payments v2")
   )
 
   # Vrex is shared on the root BEFORE the import runs. Creative::Permissible
@@ -205,7 +236,7 @@ if scenario == "launch"
   Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: handbook.id, user_id: pm_user.id)
   $stdout.puts "Granted PM :feedback on the lead-owned handbook"
 
-  $stdout.puts "\n=== Demo seed complete (scenario=launch) ==="
+  $stdout.puts "\n=== Demo seed complete (scenario=launch, locale=#{locale}) ==="
   $stdout.puts "Users: #{Collavre::User.count}"
   $stdout.puts "Creatives: #{Collavre::Creative.count} (project root is intentionally empty)"
   exit 0

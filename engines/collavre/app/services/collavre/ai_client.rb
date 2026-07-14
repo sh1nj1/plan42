@@ -84,8 +84,16 @@ module Collavre
       add_messages(@conversation, contents)
 
       response = @conversation.complete do |chunk|
-        delta = extract_chunk_content(chunk)
-        next if delta.blank?
+        delta = extract_chunk_content(chunk).to_s
+        # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
+        # break, which providers routinely emit as a token of its own — is
+        # blank? == true, so skipping blanks deletes it. And the deleted delta is
+        # never yielded, so it is gone from the caller's stream too: AiAgentService
+        # persists ResponseStreamer#content, which is built only from the yielded
+        # deltas, and the reply lands in the database with its paragraphs glued
+        # together. Only truly empty deltas (role-only / tool-call chunks carry no
+        # content) are skippable.
+        next if delta.empty?
 
         response_content << delta
         yield delta if block_given?
