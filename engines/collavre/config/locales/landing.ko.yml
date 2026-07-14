@@ -13,6 +13,10 @@ ko:
       demo:
         title: "복사는 한 번도 일어나지 않습니다"
         subtitle: "마크다운 스펙이 그대로 일감 트리가 됩니다. 팀이 그 위에서 일하고, 에이전트는 컨텍스트를 이미 지닌 채 합류하며, 진행률은 루트까지 저절로 집계됩니다. 90초, 재입력 0회."
+        video: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcwLCJwdXIiOiJibG9iX2lkIn19--d2e47d9773e9179a4f6a2a69f5740f3551c69e08/launch-ko.mp4"
+        poster: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcxLCJwdXIiOiJibG9iX2lkIn19--9d63bb60ec693416eddd73ea3ff3532bc09ed71e/launch-ko-poster.jpg"
+        video_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcyLCJwdXIiOiJibG9iX2lkIn19--6d635234d2070b43f16c404a9e81e7642062c172/launch-ko-dark.mp4"
+        poster_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDczLCJwdXIiOiJibG9iX2lkIn19--094d1e6e8691ea987effeca29195e5fc313bff33/launch-ko-dark-poster.jpg"
       problem:
         title: "같은 내용을 네 번 씁니다"
         notion:
