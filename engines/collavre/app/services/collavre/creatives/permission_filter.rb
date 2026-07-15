@@ -13,9 +13,29 @@ module Creatives
     end
 
     # Returns the subset of `ids` the user may read, as an Array.
+    #
+    # Each id is resolved to its effective (origin) creative via the SAME
+    # logic PermissionChecker uses, so a linked creative yields identical
+    # permission whether checked one-by-one or filtered in a batch.
     def readable_ids(ids)
       ids = ids.to_a
       return [] if ids.empty?
+
+      effective_by_id = EffectiveCreativeResolution.effective_creative_ids(ids)
+      readable_effective = readable_effective_ids(effective_by_id.values.uniq)
+
+      ids.select { |id| readable_effective.include?(effective_by_id[id]) }
+    end
+
+    private
+
+    attr_reader :user
+
+    # Returns the subset of already-origin-resolved ids the user may read,
+    # as a Set. no_access wins over a public share; owned creatives are
+    # always readable.
+    def readable_effective_ids(ids)
+      return Set.new if ids.empty?
 
       accessible_ids = Set.new
 
@@ -39,12 +59,8 @@ module Creatives
           .where.not(permission: :no_access).pluck(:creative_id).to_set
       end
 
-      accessible_ids.to_a
+      accessible_ids
     end
-
-    private
-
-    attr_reader :user
   end
 end
 end
