@@ -60,12 +60,14 @@ module Collavre
       calls = capture_permission_cache_jobs do
         share.update!(creative: @other_root)
       end
-      # The stale-row purge is now enqueued (async), mirroring the destroy path,
-      # rather than deleted synchronously inside after_commit.
-      assert_includes calls, [ :purge_share_cache, { creative_share_id: share.id } ]
+      # The stale-row purge now rides on the propagate_share job (purge_stale:),
+      # not a standalone enqueue, so it can never run after the re-propagation on
+      # a separate authz-queue thread. It is still async (off the commit path).
       assert_includes calls,
         [ :rebuild_user_cache_for_subtree, { creative_id: old_creative_id, user_id: @user1.id } ]
-      assert_includes calls, [ :propagate_share, { creative_share_id: share.id } ]
+      assert_includes calls, [ :propagate_share, { creative_share_id: share.id, purge_stale: true } ]
+      refute_includes calls.map(&:first), :purge_share_cache,
+        "the purge must not be enqueued as its own job (it would race propagate_share)"
     end
 
     test "changing user_id reassigns: rebuild old user's subtree then propagate" do
@@ -73,10 +75,11 @@ module Collavre
       calls = capture_permission_cache_jobs do
         share.update!(user: @user2)
       end
-      assert_includes calls, [ :purge_share_cache, { creative_share_id: share.id } ]
       assert_includes calls,
         [ :rebuild_user_cache_for_subtree, { creative_id: @root.id, user_id: @user1.id } ]
-      assert_includes calls, [ :propagate_share, { creative_share_id: share.id } ]
+      assert_includes calls, [ :propagate_share, { creative_share_id: share.id, purge_stale: true } ]
+      refute_includes calls.map(&:first), :purge_share_cache,
+        "the purge must not be enqueued as its own job (it would race propagate_share)"
     end
 
     test "an untracked-only update still re-propagates the share (fail-closed)" do
@@ -106,30 +109,55 @@ module Collavre
         "the permission change must survive a later same-transaction untracked save"
     end
 
-    test "relocate purges stale cache rows via the enqueued job, not synchronously at commit" do
+    test "relocate purges stale cache rows via the propagate job, not synchronously at commit" do
       share = create_share(@root, @user1, :read)
       stale_rows = -> { CreativeSharesCache.where(source_share_id: share.id, creative_id: @root.id) }
+      fresh_rows = -> { CreativeSharesCache.where(source_share_id: share.id, creative_id: @other_root.id) }
       assert stale_rows.call.exists?,
         "precondition: propagate_share populated the share's cache row at the old creative"
 
-      # Under a deferred (test) adapter the relocate enqueues purge_share_cache
-      # but does NOT run it — proving the stale-row delete is async now, not a
-      # synchronous delete_all inside after_commit. The revoke of the vacated
-      # access is therefore prolonged by the queue latency, which is the accepted
-      # trade-off (it only extends an existing grant, never creates a new one).
-      # The suite's default adapter is :inline, so switch to :test to observe the
-      # commit boundary independently of the job execution.
+      # Under a deferred (test) adapter the relocate enqueues propagate_share with
+      # purge_stale: true but does NOT run it — proving the stale-row delete is
+      # async now, not a synchronous delete_all inside after_commit. The revoke of
+      # the vacated access is therefore prolonged by the queue latency, which is
+      # the accepted trade-off (it only extends an existing grant, never creates a
+      # new one). The suite's default adapter is :inline, so switch to :test to
+      # observe the commit boundary independently of the job execution.
       with_deferred_jobs do
         share.update!(creative: @other_root)
         assert_enqueued_with(job: PermissionCacheJob,
-          args: [ :purge_share_cache, { creative_share_id: share.id } ])
+          args: [ :propagate_share, { creative_share_id: share.id, purge_stale: true } ])
         assert stale_rows.call.exists?,
           "stale rows must survive the commit; the purge is deferred to the job"
         perform_enqueued_jobs
       end
 
       assert_not stale_rows.call.exists?,
-        "the enqueued purge job deletes the stale rows the share vacated"
+        "the propagate job deletes the stale rows the share vacated"
+      assert fresh_rows.call.exists?,
+        "and repopulates the share's cache at the new creative in the same job"
+    end
+
+    test "relocate cache is correct regardless of job execution order (no purge/propagate race)" do
+      # The authz queue runs two threads, so purge and propagate could execute in
+      # any order. Folding the purge INTO propagate_share removes the race: there
+      # is no standalone purge job that can delete freshly propagated rows. Prove
+      # it by running the relocate's enqueued jobs in reverse (adversarial) order.
+      share = create_share(@root, @user1, :read)
+      new_rows = -> { CreativeSharesCache.where(source_share_id: share.id, creative_id: @other_root.id) }
+      old_rows = -> { CreativeSharesCache.where(source_share_id: share.id, creative_id: @root.id) }
+
+      with_deferred_jobs do
+        share.update!(creative: @other_root)
+        # Adversarial scheduling: perform the last-enqueued job first.
+        enqueued_jobs.reverse_each { |job| ActiveJob::Base.execute(job) }
+        clear_enqueued_jobs
+      end
+
+      assert new_rows.call.exists?,
+        "the moved share must have cache rows at the new location no matter the order"
+      assert_not old_rows.call.exists?,
+        "and no stale rows at the old location"
     end
 
     test "destroying a share enqueues remove_share" do

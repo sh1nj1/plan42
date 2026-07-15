@@ -118,33 +118,37 @@ module Collavre
     # fail-closed refresh matching the prior propagate_cache, correct even when
     # a multi-save transaction clobbers an earlier permission change out of the
     # final saved_changes. On an update, a move (creative_id) or reassignment
-    # (user_id) additionally purges the stale rows this share left behind — now
-    # enqueued on the job queue (like the destroy path) rather than deleted
-    # synchronously, so timing is uniform and the purge no longer blocks commit.
+    # (user_id) additionally purges the stale rows this share left behind — the
+    # purge is carried on the same propagate_share job (purge_stale:) rather than
+    # deleted synchronously, so timing is uniform and it no longer blocks commit.
     def dispatch_share_cache_invalidation
+      propagate_args = { creative_share_id: id }
+
       unless previously_new_record?
         operations = (saved_changes.keys & PERMISSION_INVALIDATING_ATTRIBUTES.keys)
           .map { |attr| PERMISSION_INVALIDATING_ATTRIBUTES[attr] }
           .uniq
 
         # A move (creative_id) or reassignment (user_id) leaves stale rows keyed
-        # to this share. Purge them asynchronously via the job queue — the same
-        # in-job delete_all the destroy path already uses (remove_share), so all
-        # invalidation timing is uniform and the large-subtree purge no longer
-        # blocks the commit. In production the revoke of the vacated access is
-        # deferred by the queue latency (~1-2s); under the inline/test adapters
-        # it still runs at commit, so final-state tests stay behavior-preserving.
-        # This only PROLONGS an already-granted permission by that window; it
-        # never grants a brand-new permission, which the CTO judged acceptable in
-        # favor of the perf win. Then rebuild the vacated subtree. creative_id
-        # takes precedence when both change, preserving the prior branch order.
+        # to this share. The purge rides ON the propagate_share job (purge_stale:
+        # true), which deletes those rows immediately before re-propagating — in
+        # one job, never as a standalone enqueue. The authz queue runs two
+        # threads, so a separate purge could otherwise run AFTER propagate and
+        # delete the freshly written rows (both key on source_share_id), dropping
+        # the share's access until an unrelated rebuild. Folding it in keeps the
+        # work async (off the commit path) so the revoke of the vacated access is
+        # merely deferred by the queue latency (~1-2s) — it only PROLONGS an
+        # already-granted permission by that window, never grants a new one,
+        # which the CTO judged acceptable for the perf win. Then rebuild the
+        # vacated subtree. creative_id takes precedence when both change,
+        # preserving the prior branch order.
         if operations.include?(:relocate) || operations.include?(:reassign)
-          PermissionCacheJob.perform_later(:purge_share_cache, creative_share_id: id)
+          propagate_args[:purge_stale] = true
           rebuild_vacated_subtree(relocated: operations.include?(:relocate))
         end
       end
 
-      PermissionCacheJob.perform_later(:propagate_share, creative_share_id: id)
+      PermissionCacheJob.perform_later(:propagate_share, **propagate_args)
     end
 
     # Rebuild the cache the moved/reassigned share vacated, for the old user in
