@@ -281,3 +281,37 @@ The `initializer "my_custom_feature.assets"` block (shown above) automatically a
 
 ### JS Tests (Jest)
 *   **Run Everything**: `npm test`
+
+## 6. Database & Migrations
+
+### Indexing into a JSON column
+
+**Do NOT add a JSON-expression index** (e.g. `json_extract(config, '$.x')` or
+`config->>'x'`). Those expressions serialize differently per adapter: schema.rb
+is dumped from the SQLite dev DB and carries the `json_extract` form, which is
+not a PostgreSQL function, so `db:schema:load` crashes on the production
+PostgreSQL database. Such migrations also force per-adapter
+`connection.adapter_name == "PostgreSQL"` branches.
+
+Instead, **promote the JSON key to a real column and index that**. Real columns
+index and dump identically on both SQLite and PostgreSQL, so the adapter branch
+disappears. Keep the promoted column synced from the JSON column with the
+`Collavre::IndexedJsonColumns` concern:
+
+```ruby
+class Channel < ApplicationRecord
+  include Collavre::IndexedJsonColumns
+
+  # config stays the source of truth; these columns are re-derived on save.
+  indexed_json_columns json: :config, columns: {
+    repo_full_name: "repo_full_name",
+    pr_number:      "pr_number",
+  }
+end
+```
+
+The concern installs a `before_save` that copies each JSON key into its promoted
+column, so a plain-column (unique) index enforces the same guarantee a JSON
+expression index would. See migration
+`20260702000005_promote_channel_config_index_columns` for the reference
+promote-and-reindex pattern.
