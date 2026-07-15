@@ -39,19 +39,23 @@ module Creatives
       readable_effective = readable_effective_ids(effective_by_id.values.uniq, min_rank)
 
       # A linked creative borrows its ORIGIN's permission, but the shell row
-      # itself is private to the user who created it (Linkable creates exactly
-      # one shell per user+origin). Returning a shell solely because its origin
-      # is readable would leak other users' shell placements into search/filter
-      # results — a batch can be fed foreign shells (e.g. FilterPipeline#resolve_ancestors
-      # pulls every Creative.where(origin_id: ...) regardless of owner). So a
-      # shell is gated on ownership in ADDITION to origin readability; non-shell
-      # ids keep origin-readability-only behaviour.
-      owned_shells = owned_shell_ids(effective_by_id)
+      # itself represents a specific PLACEMENT of that link inside a tree.
+      # Returning a shell solely because its origin is readable would leak other
+      # users' private shell placements into search/filter results — a batch can
+      # be fed foreign shells (e.g. FilterPipeline#resolve_ancestors pulls every
+      # Creative.where(origin_id: ...) regardless of owner). So a shell is gated
+      # on the viewer being able to SEE its placement, in ADDITION to origin
+      # readability: either the viewer owns the shell, or the shell sits in a
+      # subtree shared with the viewer (a propagated CreativeSharesCache entry on
+      # the shell row itself — e.g. a public help doc's linked child). A shell in
+      # a foreign PRIVATE tree has no such entry and stays hidden. Non-shell ids
+      # keep origin-readability-only behaviour.
+      visible_shells = visible_shell_ids(effective_by_id)
 
       ids.select do |id|
         next false unless readable_effective.include?(effective_by_id[id])
 
-        effective_by_id[id] == id || owned_shells.include?(id)
+        effective_by_id[id] == id || visible_shells.include?(id)
       end
     end
 
@@ -111,16 +115,21 @@ module Creatives
       CreativeShare.permissions.fetch(permission.to_s)
     end
 
-    # The subset of shell ids (effective != self) that the viewer owns. Shells
-    # have no cache/share rows of their own, so ownership of the shell row is
-    # the only thing that scopes a shell to a viewer.
-    def owned_shell_ids(effective_by_id)
-      return Set.new unless user
-
+    # The subset of shell ids (effective != self) whose PLACEMENT the viewer can
+    # see: shells the viewer owns, plus shells sitting in a subtree shared with
+    # the viewer. A shell inside a shared/public tree inherits a propagated
+    # CreativeSharesCache entry keyed on its own id (PermissionCacheBuilder
+    # #propagate_share walks [creative] + descendants, which includes placed
+    # shells), so readability of the shell id itself — at :read, since placement
+    # visibility is a read concept independent of the caller's min_permission —
+    # captures exactly "the viewer may see this link here". A shell in a foreign
+    # private tree has no such entry and is excluded, preserving the anti-leak
+    # guarantee against FilterPipeline#resolve_ancestors' owner-agnostic pull.
+    def visible_shell_ids(effective_by_id)
       shell_ids = effective_by_id.filter_map { |id, effective| id if effective != id }
       return Set.new if shell_ids.empty?
 
-      Creative.where(id: shell_ids, user_id: user.id).pluck(:id).to_set
+      readable_effective_ids(shell_ids, rank_for(:read))
     end
 
     # Returns the subset of already-origin-resolved ids the user may access at
