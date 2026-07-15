@@ -261,13 +261,12 @@
   background: var(--surface-section);
 }
 
-/* 2×2 on desktop: the four cards ARE the argument (four copies of the same
-   thing), so they read as a set rather than a 3+1 orphan row. */
+/* Three tools, three cards — one row on desktop. */
 .landing-problem-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--space-5);
-  max-width: 820px;
+  max-width: 900px;
   margin: var(--space-7) auto 0;
 }
 
@@ -505,9 +504,9 @@ body.dark-mode .landing-shot-dark { display: block; }
 .landing-interface-points li {
   position: relative;
   padding-left: var(--space-4);
-  font-size: var(--text-3);
-  color: var(--text-secondary);
-  line-height: 1.6;
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  line-height: var(--leading-2);
 }
 
 .landing-interface-points li::before {
