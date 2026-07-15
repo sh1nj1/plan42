@@ -51,6 +51,10 @@ en:
         presence: "See who is in the document and who is editing which block."
       demo:
         title: "See it in action"
+        video: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY2LCJwdXIiOiJibG9iX2lkIn19--724536948e4fa3474e57997958427e1850775c08/launch.mp4"
+        poster: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY3LCJwdXIiOiJibG9iX2lkIn19--7713d27bd154806053991bc8e8abca60475a2ab8/launch-poster.jpg"
+        video_dark: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY4LCJwdXIiOiJibG9iX2lkIn19--63349dc7270a3e6a0503c45a413d3b176f791dc2/launch-dark.mp4"
+        poster_dark: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY5LCJwdXIiOiJibG9iX2lkIn19--25a756ed0d6ff5b4f40ef864b8216c7aa540449c/launch-dark-poster.jpg"
       cta:
         title: "Ready to collaborate smarter?"
         subtitle: "Start organizing your work with AI-powered context."

@@ -104,21 +104,26 @@
   </section>
 
   <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
-  <%# Demo videos/posters resolve from the demo Creative's attachments (see
-      LandingController). Render the section only when the current locale's
-      assets are present so a fresh DB shows no broken <video>. %>
-  <% if @demo[:video].present? || @demo[:video_dark].present? %>
+  <%# Demo video/poster URLs are full absolute URLs stored per-locale in
+      config/locales/landing.*.yml. They point at the hosted assets directly, so
+      they resolve from any environment (preview included) with no DB lookup and
+      no env-bound blob ids. Render the section only when a video URL is set. %>
+  <% demo_video = t('collavre.landing.demo.video', default: nil) %>
+  <% demo_poster = t('collavre.landing.demo.poster', default: nil) %>
+  <% demo_video_dark = t('collavre.landing.demo.video_dark', default: nil) %>
+  <% demo_poster_dark = t('collavre.landing.demo.poster_dark', default: nil) %>
+  <% if demo_video.present? || demo_video_dark.present? %>
   <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
       <%# Light mode video %>
-      <% if @demo[:video].present? %>
+      <% if demo_video.present? %>
       <div class="landing-demo-frame landing-demo-light" data-controller="landing-video">
         <video class="landing-demo-video"
                data-landing-video-target="video"
                autoplay muted loop playsinline
-               poster="<%= @demo[:poster] %>">
-          <source src="<%= @demo[:video] %>" type="video/mp4">
+               poster="<%= demo_poster %>">
+          <source src="<%= demo_video %>" type="video/mp4">
         </video>
         <div class="landing-demo-progress" data-landing-video-target="progressBar">
           <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
@@ -129,13 +134,13 @@
       </div>
       <% end %>
       <%# Dark mode video %>
-      <% if @demo[:video_dark].present? %>
+      <% if demo_video_dark.present? %>
       <div class="landing-demo-frame landing-demo-dark" data-controller="landing-video">
         <video class="landing-demo-video"
                data-landing-video-target="video"
                autoplay muted loop playsinline
-               poster="<%= @demo[:poster_dark] %>">
-          <source src="<%= @demo[:video_dark] %>" type="video/mp4">
+               poster="<%= demo_poster_dark %>">
+          <source src="<%= demo_video_dark %>" type="video/mp4">
         </video>
         <div class="landing-demo-progress" data-landing-video-target="progressBar">
           <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
