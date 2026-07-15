@@ -32,6 +32,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: prod
+    # workflow_dispatch lets the operator pick any branch/ref, and checkout
+    # takes that ref by default — so a dispatch from an unmerged/untested
+    # branch would otherwise ship to prod with production secrets. Pin deploys
+    # to main (the only branch that gets push CI). A dispatch from any other
+    # ref skips harmlessly rather than deploying untested code.
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
