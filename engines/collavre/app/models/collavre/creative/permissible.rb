@@ -3,13 +3,28 @@ module Collavre
     module Permissible
       extend ActiveSupport::Concern
 
+      # Single declarative registry of which persisted-attribute changes
+      # invalidate the permission cache, and how each is rebuilt. A single
+      # after_commit dispatcher intersects saved_changes.keys with this map so
+      # a new mutation path can never silently skip a required rebuild.
+      #
+      #   :rebuild       -> rebuild_for_creative (self + descendant subtree)
+      #   :rebuild_owner -> update_owner (move the owner cache entry)
+      #
+      # origin_id is immutable after create (see Linkable#attr_readonly), so its
+      # entry only fires on link creation and is defensive.
+      PERMISSION_INVALIDATING_ATTRIBUTES = {
+        "parent_id" => :rebuild,
+        "user_id"   => :rebuild_owner,
+        "origin_id" => :rebuild
+      }.freeze
+
       included do
         has_many :creative_shares, class_name: "Collavre::CreativeShare", dependent: :destroy
         has_many :creative_shares_caches, class_name: "Collavre::CreativeSharesCache", dependent: :delete_all
 
-        after_commit :rebuild_permission_cache, if: :saved_change_to_parent_id?, unless: :destroyed?
+        after_commit :dispatch_permission_cache_invalidation, unless: :destroyed?
         after_commit :cache_owner_permission, on: :create
-        after_commit :update_owner_cache, if: :saved_change_to_user_id?, unless: :destroyed?
       end
 
       def has_permission?(user, required_permission = :read)
@@ -105,21 +120,34 @@ module Collavre
 
       private
 
-      def rebuild_permission_cache
-        PermissionCacheJob.perform_later(:rebuild_for_creative, creative_id: id)
+      # Single dispatch point for permission-cache invalidation. Intersects the
+      # attributes that actually changed with PERMISSION_INVALIDATING_ATTRIBUTES
+      # and enqueues each distinct rebuild exactly once.
+      def dispatch_permission_cache_invalidation
+        operations = (saved_changes.keys & PERMISSION_INVALIDATING_ATTRIBUTES.keys)
+          .map { |attr| PERMISSION_INVALIDATING_ATTRIBUTES[attr] }
+          .uniq
+        return if operations.empty?
+
+        operations.each { |operation| run_permission_cache_operation(operation) }
+      end
+
+      def run_permission_cache_operation(operation)
+        case operation
+        when :rebuild
+          PermissionCacheJob.perform_later(:rebuild_for_creative, creative_id: id)
+        when :rebuild_owner
+          old_user_id, new_user_id = saved_changes["user_id"]
+          PermissionCacheJob.perform_later(:update_owner,
+            creative_id: id,
+            old_user_id: old_user_id,
+            new_user_id: new_user_id
+          )
+        end
       end
 
       def cache_owner_permission
         PermissionCacheJob.perform_later(:cache_owner, creative_id: id)
-      end
-
-      def update_owner_cache
-        old_user_id, new_user_id = saved_change_to_user_id
-        PermissionCacheJob.perform_later(:update_owner,
-          creative_id: id,
-          old_user_id: old_user_id,
-          new_user_id: new_user_id
-        )
       end
     end
   end

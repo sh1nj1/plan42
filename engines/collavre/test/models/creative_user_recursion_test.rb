@@ -8,9 +8,10 @@ class CreativeUserRecursionTest < ActiveSupport::TestCase
     a = Creative.create!(description: "A", user: user)
     b = Creative.create!(description: "B", user: user, origin: a)
 
-    # Force cycle by bypassing validations if necessary, or just setting origin_id directly
-    # Using update_columns to bypass potential validations preventing cycle creation if any
-    a.update_columns(origin_id: b.id)
+    # origin_id is attr_readonly (immutable after create), so update_columns would
+    # raise. Force the cycle at the SQL level with update_all, which bypasses the
+    # readonly guard.
+    Creative.where(id: a.id).update_all(origin_id: b.id)
 
     # Now accessing a.user should not crash
     assert_nothing_raised do
