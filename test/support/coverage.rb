@@ -32,7 +32,7 @@ SimpleCov.start "rails" do
   merge_timeout 3600
 
   # Group each engine so per-engine coverage is visible alongside the host app.
-  Dir.glob(File.expand_path("../../../engines/*", __dir__)).each do |engine_path|
+  Dir.glob(File.expand_path("../../engines/*", __dir__)).each do |engine_path|
     next unless File.directory?(engine_path)
 
     engine = File.basename(engine_path)
