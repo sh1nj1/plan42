@@ -6,7 +6,10 @@ module.exports = {
   testMatch: ["**/__tests__/**/*.test.[jt]s?(x)"],
   roots: [
     "<rootDir>/app/javascript",
-    "<rootDir>/engines"
+    "<rootDir>/engines",
+    // Served production JS outside app/javascript (PWA service worker). Needed so
+    // Jest's file crawler discovers it for coverage; no tests live here.
+    "<rootDir>/app/views/pwa"
   ],
   moduleDirectories: [
     "node_modules",
@@ -21,6 +24,11 @@ module.exports = {
   collectCoverageFrom: [
     "app/javascript/**/*.js",
     "engines/*/app/javascript/**/*.js",
+    // Served production JS that lives outside app/javascript: the PWA service
+    // worker is delivered via `rails/pwa#service_worker` (config/routes.rb) and
+    // registered at runtime by register_service_worker.js. No test imports it,
+    // so without this glob it is absent from the report instead of counted at 0%.
+    "app/views/pwa/**/*.js",
     "!**/__tests__/**",
     "!**/node_modules/**"
   ],
