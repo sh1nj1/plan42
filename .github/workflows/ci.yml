@@ -38,8 +38,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Jest tests
-        run: npm test
+      - name: Run Jest tests with coverage
+        run: npm run test:coverage
+
+      - name: JavaScript coverage summary
+        if: ${{ !cancelled() }}
+        run: node bin/coverage_summary_js.mjs coverage/js/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload JavaScript coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/js/lcov.info
+          flags: javascript
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Scan for security vulnerabilities in JavaScript dependencies
         run: npm audit --production
@@ -139,8 +152,25 @@ jobs:
       - name: Run tests
         env:
           RAILS_ENV: test
+          # COVERAGE activates the SimpleCov bootstrap (test/support/coverage.rb),
+          # which is a no-op otherwise. Both `rake test` and `rake test:system`
+          # run in separate processes and merge into one report via merge_timeout.
+          COVERAGE: "1"
           # REDIS_URL: redis://localhost:6379/0
         run: bin/rails db:test:prepare && bundle exec rake test && bundle exec rake test:system
+
+      - name: Ruby coverage summary
+        if: ${{ !cancelled() }}
+        run: ruby bin/coverage_summary coverage/lcov.info >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Ruby coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/lcov.info
+          flags: ruby
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v7
