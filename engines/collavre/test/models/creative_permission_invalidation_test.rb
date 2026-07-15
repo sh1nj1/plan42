@@ -46,6 +46,61 @@ module Collavre
       refute_includes rebuild_ops, :update_owner
     end
 
+    # --- Multi-save clobber (mirrors CreativeShare #1393 / 00502d7d) ---
+    # after_commit sees only the LAST save's saved_changes. If a permission
+    # attribute changes in one save and a later same-transaction save touches
+    # only untracked columns, the permission change is clobbered out of
+    # saved_changes and a saved_changes-gated dispatcher silently skips the
+    # rebuild, leaving the permission cache stale (fail-open).
+
+    # Reachable today: reorder_multiple_as_child/sibling wrap update!(parent:)
+    # and resequence!'s update_column(:sequence) in one Creative.transaction.
+    # update_column wipes saved_changes, so at the deferred after_commit the
+    # parent_id change is gone and the subtree rebuild is skipped -> the moved
+    # subtree keeps its old inherited shares (fail-open).
+    test "re-parenting via reorder_multiple rebuilds the moved subtree cache" do
+      new_parent = Creative.create!(user: @owner, description: "New parent", progress: 0.0)
+      # Give new_parent an existing child so the dragged creative's sequence
+      # actually changes during resequence! (0 -> 1); an unchanged sequence is a
+      # no-op that would not exercise the update_column clobber.
+      perform_enqueued_jobs do
+        Creative.create!(user: @owner, description: "Existing", progress: 0.0, parent: new_parent, sequence: 0)
+      end
+      reorderer = Creatives::Reorderer.new(user: @owner)
+      calls = capture_permission_cache_jobs do
+        reorderer.reorder_multiple(
+          dragged_ids: [ @creative.id ],
+          target_id: new_parent.id,
+          direction: "child"
+        )
+      end
+      assert_includes calls, [ :rebuild_for_creative, { creative_id: @creative.id } ],
+        "re-parenting via reorder_multiple must rebuild the moved subtree's permission cache"
+    end
+
+    test "a parent_id change survives a later same-transaction untracked save" do
+      calls = capture_permission_cache_jobs do
+        ActiveRecord::Base.transaction do
+          @creative.update!(parent: @other_parent) # tracked -> :rebuild
+          @creative.update!(description: "Renamed") # untracked; clobbers saved_changes
+        end
+      end
+      assert_includes calls, [ :rebuild_for_creative, { creative_id: @creative.id } ],
+        "the parent_id change must survive a later same-transaction untracked save"
+    end
+
+    test "a user_id change survives a later same-transaction untracked save with correct old/new" do
+      calls = capture_permission_cache_jobs do
+        ActiveRecord::Base.transaction do
+          @creative.update!(user: @other) # tracked -> :rebuild_owner
+          @creative.update!(description: "Renamed") # untracked; clobbers saved_changes
+        end
+      end
+      assert_includes calls,
+        [ :update_owner, { creative_id: @creative.id, old_user_id: @owner.id, new_user_id: @other.id } ],
+        "the owner change must survive a later same-transaction untracked save with the correct old/new pair"
+    end
+
     test "origin_id is immutable once persisted" do
       origin_a = @root
       origin_b = @other_parent
