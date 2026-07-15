@@ -59,6 +59,49 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+  # Production runs PostgreSQL while dev/test run SQLite, so db/schema.rb is
+  # dumped from SQLite and can silently pick up SQLite-only constructs (e.g.
+  # json_extract expression indexes) that crash `db:schema:load` on Postgres —
+  # a failure that would only surface in production. This smoke job loads the
+  # schema against a real Postgres to fail fast. Everything lives in the single
+  # db/schema.rb (Solid Queue/Cache/Cable tables included, and all engine
+  # tables), so loading that one file covers every engine's schema too.
+  postgres_schema_load:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: collavre
+          POSTGRES_PASSWORD: collavre
+          POSTGRES_DB: collavre_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U collavre"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+
+      - name: Load schema on PostgreSQL (fail on SQLite-only constructs)
+        env:
+          RAILS_ENV: test
+          # postgresql:// scheme so config/database.yml derives the correct
+          # "postgresql" adapter; the URL overrides the SQLite test database.
+          DATABASE_URL: postgresql://collavre:collavre@localhost:5432/collavre_test
+        run: bin/rails db:schema:load
+
   test:
     runs-on: ubuntu-latest
 
