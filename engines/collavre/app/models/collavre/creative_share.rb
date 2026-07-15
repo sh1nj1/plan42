@@ -21,19 +21,20 @@ module Collavre
     validates :user_id, uniqueness: { scope: :creative_id }, allow_nil: true
 
     # Single declarative registry mirroring Creative::Permissible: which
-    # persisted CreativeShare attributes invalidate the permission cache, and
-    # how. A single after_commit dispatcher intersects saved_changes.keys with
-    # this map so a new share-mutation path can never silently skip a required
-    # cache rebuild. propagate_share is a pure function of these three columns,
-    # so a change touching none of them leaves the cache untouched.
+    # persisted CreativeShare attributes affect the permission cache, and how.
+    # Every create and update re-propagates the share unconditionally (see
+    # dispatch_share_cache_invalidation) — a fail-closed refresh that matches
+    # the prior propagate_cache and survives a multi-save transaction clobbering
+    # an earlier permission change out of the final saved_changes. This map
+    # governs the *extra* cleanup a move or reassignment needs on top of that
+    # base refresh, so a new share-mutation path still can't silently skip it:
     #
     #   :relocate    -> creative_id moved: purge this share's rows and rebuild
     #                   the vacated (old creative, old user) subtree
     #   :reassign    -> user_id changed: purge this share's rows and rebuild the
     #                   old user's subtree at the current creative
-    #   :repropagate -> permission changed: re-propagate in place
-    #
-    # Every tracked update then re-propagates the share into its subtree.
+    #   :repropagate -> permission changed: covered by the unconditional
+    #                   re-propagate above (listed to document the invariant)
     PERMISSION_INVALIDATING_ATTRIBUTES = {
       "creative_id" => :relocate,
       "user_id"     => :reassign,
@@ -113,28 +114,25 @@ module Collavre
     end
 
     # Single dispatch point for permission-cache invalidation on share writes.
-    # On create there is no prior location to reconcile, so the share is simply
-    # propagated. On update, the attributes that actually changed are
-    # intersected with PERMISSION_INVALIDATING_ATTRIBUTES; a change to none of
-    # them leaves the cache untouched.
+    # Every create and update re-propagates the share unconditionally — a
+    # fail-closed refresh matching the prior propagate_cache, correct even when
+    # a multi-save transaction clobbers an earlier permission change out of the
+    # final saved_changes. On an update, a move (creative_id) or reassignment
+    # (user_id) additionally purges the stale rows this share left behind.
     def dispatch_share_cache_invalidation
-      if previously_new_record?
-        PermissionCacheJob.perform_later(:propagate_share, creative_share_id: id)
-        return
-      end
+      unless previously_new_record?
+        operations = (saved_changes.keys & PERMISSION_INVALIDATING_ATTRIBUTES.keys)
+          .map { |attr| PERMISSION_INVALIDATING_ATTRIBUTES[attr] }
+          .uniq
 
-      operations = (saved_changes.keys & PERMISSION_INVALIDATING_ATTRIBUTES.keys)
-        .map { |attr| PERMISSION_INVALIDATING_ATTRIBUTES[attr] }
-        .uniq
-      return if operations.empty?
-
-      # A move (creative_id) or reassignment (user_id) leaves stale rows keyed
-      # to this share. Purge them synchronously — a prompt, fail-closed revoke
-      # of the vacated access — then rebuild the vacated subtree. creative_id
-      # takes precedence when both change, preserving the prior branch order.
-      if operations.include?(:relocate) || operations.include?(:reassign)
-        CreativeSharesCache.where(source_share_id: id).delete_all
-        rebuild_vacated_subtree(relocated: operations.include?(:relocate))
+        # A move (creative_id) or reassignment (user_id) leaves stale rows keyed
+        # to this share. Purge them synchronously — a prompt, fail-closed revoke
+        # of the vacated access — then rebuild the vacated subtree. creative_id
+        # takes precedence when both change, preserving the prior branch order.
+        if operations.include?(:relocate) || operations.include?(:reassign)
+          CreativeSharesCache.where(source_share_id: id).delete_all
+          rebuild_vacated_subtree(relocated: operations.include?(:relocate))
+        end
       end
 
       PermissionCacheJob.perform_later(:propagate_share, creative_share_id: id)

@@ -9,7 +9,8 @@ module Collavre
   # The end-state semantics (which cache rows exist after each mutation) are
   # already pinned by CreativePermissionCacheTest. This file pins the dispatch
   # *mechanism*: the declarative map, which job each change enqueues, and that
-  # an untracked change enqueues nothing.
+  # every update re-propagates unconditionally (fail-closed) so a multi-save
+  # transaction can't silently drop a permission change.
   class CreativeShareInvalidationTest < ActiveSupport::TestCase
     include ActiveJob::TestHelper
 
@@ -74,13 +75,31 @@ module Collavre
       assert_includes calls, [ :propagate_share, { creative_share_id: share.id } ]
     end
 
-    test "an untracked attribute change enqueues no cache job" do
+    test "an untracked-only update still re-propagates the share (fail-closed)" do
       share = create_share(@root, @user1, :read)
       calls = capture_permission_cache_jobs do
         share.update!(shared_by_id: @user2.id)
       end
-      assert_empty calls,
-        "changing shared_by_id must not touch the permission cache"
+      # The prior propagate_cache re-propagated on EVERY update. Preserve that
+      # fail-closed refresh: gating propagate on saved_changes would drop a
+      # permission change that a later same-transaction save clobbers out of the
+      # final saved_changes (untracked columns only carry the base propagate).
+      assert_equal [ [ :propagate_share, { creative_share_id: share.id } ] ], calls,
+        "every update must re-propagate, even when only an untracked column changed"
+    end
+
+    test "a permission change is not lost when a later same-transaction save clobbers saved_changes" do
+      share = create_share(@root, @user1, :read)
+      calls = capture_permission_cache_jobs do
+        ActiveRecord::Base.transaction do
+          share.update!(permission: :write)      # tracked change
+          share.update!(shared_by_id: @user2.id) # untracked; clobbers saved_changes at commit
+        end
+      end
+      # at after_commit, saved_changes reflects only the final (untracked) save,
+      # so an operations-gated dispatcher would skip the write grant entirely.
+      assert_includes calls, [ :propagate_share, { creative_share_id: share.id } ],
+        "the permission change must survive a later same-transaction untracked save"
     end
 
     test "destroying a share enqueues remove_share" do
