@@ -208,6 +208,12 @@ class CreativeTreeRow extends LitElement {
     if (this._progressToggle) this._progressToggle.addEventListener("click", this._handleProgressToggle, { passive: false });
   }
 
+  // parentId convention (single source of truth): `data-parent-id` is ALWAYS
+  // emitted on the `.creative-tree` element. A non-empty value is the parent
+  // creative id; an empty string ("") means "root / no parent". This mirrors
+  // the dynamic-creation path (`dataset.parentId = parentId || ''`) so readers
+  // never have to disambiguate an *absent* attribute (unknown) from a real
+  // root, which previously dropped the parent for newly-added siblings.
   render() {
     if (this.isTitle) {
       return this._renderTitle();
@@ -224,7 +230,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
         data-action=${dragActions}
@@ -250,7 +256,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree creative-tree-title"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">

@@ -397,6 +397,8 @@ export function initializeCreativeRowEditor() {
       setProgressState(normalizedProgress);
       updateProgressInputAvailability(normalizedProgress);
       completionCascadePending = false;
+      // parentId convention: `data-parent-id` is always present ("" === root),
+      // so this DOM fallback is unambiguous when server data lacks parent_id.
       const fallbackParent = tree?.dataset?.parentId || '';
       parentInput.value = data.parent_id ?? fallbackParent ?? '';
       beforeInput.value = '';
@@ -1620,7 +1622,10 @@ export function initializeCreativeRowEditor() {
           insertBefore = normalizeRowNode(firstChild);
           beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
         } else {
-          parentId = prev.dataset.parentId;
+          // parentId convention: `data-parent-id` is always present; "" means
+          // root. Normalize to '' so an absent attribute (legacy DOM) and a
+          // real root are treated identically, and a real parent id is kept.
+          parentId = prev.dataset.parentId || '';
           container = treeContainerElement(prev);
           afterId = prev.dataset.id;
           insertBefore = nodeAfterTreeBlock(prev);
