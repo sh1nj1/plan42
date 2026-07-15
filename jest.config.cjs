@@ -33,5 +33,7 @@ module.exports = {
     "!**/node_modules/**"
   ],
   coverageDirectory: "coverage/js",
-  coverageReporters: ["text-summary", "text", "lcov"]
+  // lcov -> Codecov upload; json-summary -> machine-readable totals for the CI
+  // job summary; text-summary -> human-readable console output.
+  coverageReporters: ["text-summary", "text", "lcov", "json-summary"]
 }

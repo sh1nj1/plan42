@@ -17,7 +17,12 @@ return unless ENV["COVERAGE"]
 require "simplecov"
 require "simplecov-lcov"
 
+# Emit a single lcov file at a deterministic path (coverage/lcov.info) so CI can
+# upload it and generate the summary regardless of the checkout directory name.
+# The default lcov file name is derived from the repo directory basename, which
+# differs between the main checkout and git worktrees.
 SimpleCov::Formatter::LcovFormatter.config.report_with_single_file = true
+SimpleCov::Formatter::LcovFormatter.config.single_report_path = File.join(SimpleCov.coverage_path, "lcov.info")
 SimpleCov.formatters = SimpleCov::Formatter::MultiFormatter.new(
   [
     SimpleCov::Formatter::HTMLFormatter,

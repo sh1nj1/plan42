@@ -1,5 +1,7 @@
 # Collavre
 
+[![CI](https://github.com/sh1nj1/plan42/actions/workflows/ci.yml/badge.svg)](https://github.com/sh1nj1/plan42/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/sh1nj1/plan42/graph/badge.svg)](https://codecov.io/gh/sh1nj1/plan42)
+
 **One living tree for docs, tasks, discussions, and AI agent context.**
 
 Today those are three copies you keep in sync by hand, plus an agent wired to all of them
