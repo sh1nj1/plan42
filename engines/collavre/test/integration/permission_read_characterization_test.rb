@@ -80,6 +80,35 @@ class PermissionReadCharacterizationTest < ActiveSupport::TestCase
       "the no_access deny is user-specific to @user, so a stranger still reads @deny_over_public via its public share"
   end
 
+  # Linked-shell children: a shell (origin_id set) has no cache rows of its own,
+  # so children_with_permission decides purely on shell ROW ownership + the
+  # origin's readability. These pin the two edges the PermissionFilter anti-leak
+  # gate treats differently from raw ownership, so PR 2 convergence must preserve
+  # them: (a) a shell the viewer OWNS is listed even when its origin is NOT
+  # readable to the viewer (stale link stays visible in one's own tree), and
+  # (b) a foreign shell (owned by another user) is NOT listed even when its
+  # origin is public-readable (no leak of another user's placement).
+  test "children_with_permission lists an owned shell child whose origin is NOT readable" do
+    perform_enqueued_jobs do
+      hidden_origin = Creative.create!(user: @stranger, description: "Hidden origin", progress: 0.0)
+      @owned_shell = Creative.create!(user: @user, parent: @root, origin: hidden_origin)
+    end
+    result = @root.children_with_permission(@user, :read)
+    assert_includes ids(result), @owned_shell.id,
+      "viewer owns the shell row, so it is listed even though its origin is not shared with them"
+  end
+
+  test "children_with_permission omits a foreign shell child even if its origin is public-readable" do
+    perform_enqueued_jobs do
+      shared_origin = Creative.create!(user: @stranger, description: "Public origin", progress: 0.0)
+      CreativeShare.create!(creative: shared_origin, user: nil, permission: "read")
+      @foreign_shell = Creative.create!(user: @stranger, parent: @root, origin: shared_origin)
+    end
+    result = @root.children_with_permission(@user, :read)
+    refute_includes ids(result), @foreign_shell.id,
+      "the shell row belongs to @stranger; @user must not see it despite the origin's public read"
+  end
+
   # ---------------------------------------------------------------------------
   # Site 2 — Concerns::SlideViewable#accessible_child_ids (mirrors site 1)
   # ---------------------------------------------------------------------------

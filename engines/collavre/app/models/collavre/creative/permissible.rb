@@ -38,42 +38,20 @@ module Collavre
         children_ids = children_scope.pluck(:id)
         return [] if children_ids.empty?
 
-        min_rank = CreativeShare.permissions[min_permission.to_s]
-        accessible_ids = Set.new
+        # The deny-invariant (owner wins → user entry, incl. a no_access deny,
+        # beats public → effective-origin resolution) now lives in exactly one
+        # place: PermissionFilter. This site used to re-implement it inline.
+        accessible_ids = Collavre::Creatives::PermissionFilter.new(user: user)
+          .readable_ids(children_ids, min_permission: min_permission)
 
-        if user
-          user_entries = CreativeSharesCache
-            .where(creative_id: children_ids, user_id: user.id)
-            .pluck(:creative_id, :permission)
+        # readable_ids gates a linked shell on the viewer owning the shell row
+        # AND its origin being readable. Listing one's OWN tree keeps the prior
+        # policy that a viewer always sees their own children — including a shell
+        # they own whose origin is no longer shared with them — so union those
+        # owned rows back in. (Owner has admin, so this is rank-independent.)
+        accessible_ids |= children_scope.where(user_id: user.id).pluck(:id) if user
 
-          user_has_entry = Set.new
-          user_entries.each do |cid, perm|
-            user_has_entry << cid
-            perm_rank = CreativeSharesCache.permissions[perm]
-            if perm_rank && perm_rank >= min_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
-              accessible_ids << cid
-            end
-          end
-
-          public_accessible = CreativeSharesCache
-            .where(creative_id: children_ids, user_id: nil)
-            .where("permission >= ?", min_rank)
-            .where.not(permission: :no_access)
-            .pluck(:creative_id)
-          accessible_ids.merge(public_accessible - user_has_entry.to_a)
-
-          owned_ids = children_scope.where(user_id: user.id).pluck(:id)
-          accessible_ids.merge(owned_ids)
-        else
-          accessible_ids = CreativeSharesCache
-            .where(creative_id: children_ids, user_id: nil)
-            .where("permission >= ?", min_rank)
-            .where.not(permission: :no_access)
-            .pluck(:creative_id)
-            .to_set
-        end
-
-        children_scope.where(id: accessible_ids.to_a).order(:sequence).to_a
+        children_scope.where(id: accessible_ids).order(:sequence).to_a
       end
 
       def all_shared_users(required_permission = :no_access)
