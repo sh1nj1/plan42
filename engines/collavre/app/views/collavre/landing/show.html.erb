@@ -104,16 +104,21 @@
   </section>
 
   <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
+  <%# Demo videos/posters resolve from the demo Creative's attachments (see
+      LandingController). Render the section only when the current locale's
+      assets are present so a fresh DB shows no broken <video>. %>
+  <% if @demo[:video].present? || @demo[:video_dark].present? %>
   <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
       <%# Light mode video %>
+      <% if @demo[:video].present? %>
       <div class="landing-demo-frame landing-demo-light" data-controller="landing-video">
         <video class="landing-demo-video"
                data-landing-video-target="video"
                autoplay muted loop playsinline
-               poster="<%= t('collavre.landing.demo.poster') %>">
-          <source src="<%= t('collavre.landing.demo.video') %>" type="video/mp4">
+               poster="<%= @demo[:poster] %>">
+          <source src="<%= @demo[:video] %>" type="video/mp4">
         </video>
         <div class="landing-demo-progress" data-landing-video-target="progressBar">
           <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
@@ -122,13 +127,15 @@
           <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
         </button>
       </div>
+      <% end %>
       <%# Dark mode video %>
+      <% if @demo[:video_dark].present? %>
       <div class="landing-demo-frame landing-demo-dark" data-controller="landing-video">
         <video class="landing-demo-video"
                data-landing-video-target="video"
                autoplay muted loop playsinline
-               poster="<%= t('collavre.landing.demo.poster_dark') %>">
-          <source src="<%= t('collavre.landing.demo.video_dark') %>" type="video/mp4">
+               poster="<%= @demo[:poster_dark] %>">
+          <source src="<%= @demo[:video_dark] %>" type="video/mp4">
         </video>
         <div class="landing-demo-progress" data-landing-video-target="progressBar">
           <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
@@ -137,8 +144,10 @@
           <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
         </button>
       </div>
+      <% end %>
     </div>
   </section>
+  <% end %>
 
   <%# ═══════════════════════════════════════ FINAL CTA ════════════════════════════════════════ %>
   <section class="landing-section landing-cta">

@@ -51,10 +51,6 @@ ko:
         presence: "누가 문서에 들어와 있고 누가 어느 블록을 편집 중인지 보입니다."
       demo:
         title: "직접 확인하세요"
-        video: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcwLCJwdXIiOiJibG9iX2lkIn19--d2e47d9773e9179a4f6a2a69f5740f3551c69e08/launch-ko.mp4"
-        poster: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcxLCJwdXIiOiJibG9iX2lkIn19--9d63bb60ec693416eddd73ea3ff3532bc09ed71e/launch-ko-poster.jpg"
-        video_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcyLCJwdXIiOiJibG9iX2lkIn19--6d635234d2070b43f16c404a9e81e7642062c172/launch-ko-dark.mp4"
-        poster_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDczLCJwdXIiOiJibG9iX2lkIn19--094d1e6e8691ea987effeca29195e5fc313bff33/launch-ko-dark-poster.jpg"
       cta:
         title: "더 똑똑하게 협업할 준비 되셨나요?"
         subtitle: "AI 기반 컨텍스트로 작업을 정리하세요."
