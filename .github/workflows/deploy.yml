@@ -23,6 +23,11 @@ on:
   #   branches:
   #     - main
 
+# Least-privilege GITHUB_TOKEN: this workflow only checks out code and shells
+# out to Kamal over SSH; it never writes back to the repo.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     # Manual dispatch always runs; the CI-completed trigger only proceeds on success.
@@ -34,6 +39,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          # Pin the deploy to the exact commit CI tested. On a workflow_run
+          # event GITHUB_SHA/ref point at the default branch tip, which may have
+          # advanced past the tested commit — checking out head_sha keeps the
+          # deploy gated on what actually passed CI. Falls back to the dispatch
+          # ref for manual runs (head_sha is empty there).
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up SSH key
         run: |
