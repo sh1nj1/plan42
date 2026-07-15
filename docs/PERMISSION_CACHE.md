@@ -49,9 +49,7 @@ Any invalid or potentially malicious input will safely default to 7 days and log
 
 2. **Inheritance**: Child creatives inherit permissions from parent creatives, and these results are cached independently
 
-3. **Selective Invalidation**: When a `CreativeShare` is created, updated, or deleted, only the affected cache keys are cleared:
-   - The specific creative + user combination (all permission levels)
-   - All descendants of that creative + user (to handle inheritance)
+3. **Declarative Invalidation**: When a `CreativeShare` or `Creative` changes, a single `after_commit` dispatcher maps the changed persisted attributes through a declarative `PERMISSION_INVALIDATING_ATTRIBUTES` registry and enqueues the required rebuild(s) on the async `authz` queue (via `PermissionCacheJob`). `CreativeShare` re-propagates unconditionally (fail-closed); `Creative::Permissible` accumulates changes across saves to keep its hot write path cheap. A relocate/reassign additionally purges stale rows, folded into the same propagate job. See [`.collavre-docs/patterns/permissions.md`](../.collavre-docs/patterns/permissions.md) ("Converged Permission Architecture") for the full design and rationale.
 
 4. **Performance**: Provides significant performance improvement for users with many creatives (estimated ~33-48KB memory usage per 1000 creatives per user)
 
