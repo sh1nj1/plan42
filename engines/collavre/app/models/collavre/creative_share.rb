@@ -118,7 +118,9 @@ module Collavre
     # fail-closed refresh matching the prior propagate_cache, correct even when
     # a multi-save transaction clobbers an earlier permission change out of the
     # final saved_changes. On an update, a move (creative_id) or reassignment
-    # (user_id) additionally purges the stale rows this share left behind.
+    # (user_id) additionally purges the stale rows this share left behind — now
+    # enqueued on the job queue (like the destroy path) rather than deleted
+    # synchronously, so timing is uniform and the purge no longer blocks commit.
     def dispatch_share_cache_invalidation
       unless previously_new_record?
         operations = (saved_changes.keys & PERMISSION_INVALIDATING_ATTRIBUTES.keys)
@@ -126,11 +128,18 @@ module Collavre
           .uniq
 
         # A move (creative_id) or reassignment (user_id) leaves stale rows keyed
-        # to this share. Purge them synchronously — a prompt, fail-closed revoke
-        # of the vacated access — then rebuild the vacated subtree. creative_id
+        # to this share. Purge them asynchronously via the job queue — the same
+        # in-job delete_all the destroy path already uses (remove_share), so all
+        # invalidation timing is uniform and the large-subtree purge no longer
+        # blocks the commit. In production the revoke of the vacated access is
+        # deferred by the queue latency (~1-2s); under the inline/test adapters
+        # it still runs at commit, so final-state tests stay behavior-preserving.
+        # This only PROLONGS an already-granted permission by that window; it
+        # never grants a brand-new permission, which the CTO judged acceptable in
+        # favor of the perf win. Then rebuild the vacated subtree. creative_id
         # takes precedence when both change, preserving the prior branch order.
         if operations.include?(:relocate) || operations.include?(:reassign)
-          CreativeSharesCache.where(source_share_id: id).delete_all
+          PermissionCacheJob.perform_later(:purge_share_cache, creative_share_id: id)
           rebuild_vacated_subtree(relocated: operations.include?(:relocate))
         end
       end

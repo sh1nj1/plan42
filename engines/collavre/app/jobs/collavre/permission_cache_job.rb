@@ -22,6 +22,8 @@ class PermissionCacheJob < ApplicationJob
       propagate_share(args[:creative_share_id])
     when :remove_share
       remove_share(args[:creative_share_id], args[:creative_id], args[:user_id])
+    when :purge_share_cache
+      purge_share_cache(args[:creative_share_id])
     when :rebuild_user_cache_for_subtree
       rebuild_user_cache_for_subtree(args[:creative_id], args[:user_id])
     else
@@ -60,6 +62,13 @@ class PermissionCacheJob < ApplicationJob
     creative = Creative.find_by(id: creative_id)
     return unless creative
     Creatives::PermissionCacheBuilder.rebuild_from_ancestors_for_user(creative, user_id)
+  end
+
+  # Purge the stale cache rows a relocated/reassigned share left behind. Mirrors
+  # the delete_all in remove_share, but as its own operation for the update path
+  # so the same purge no longer runs synchronously inside the after_commit.
+  def purge_share_cache(creative_share_id)
+    CreativeSharesCache.where(source_share_id: creative_share_id).delete_all
   end
 
   def rebuild_user_cache_for_subtree(creative_id, user_id)

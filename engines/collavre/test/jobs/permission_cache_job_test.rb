@@ -188,6 +188,28 @@ class PermissionCacheJobTest < ActiveJob::TestCase
     end
   end
 
+  test "purge_share_cache deletes the cache rows keyed to the share" do
+    share = nil
+    perform_enqueued_jobs do
+      share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+    end
+    assert CreativeSharesCache.exists?(source_share_id: share.id)
+
+    perform_enqueued_jobs do
+      PermissionCacheJob.perform_later(:purge_share_cache, creative_share_id: share.id)
+    end
+
+    refute CreativeSharesCache.exists?(source_share_id: share.id)
+  end
+
+  test "purge_share_cache handles a share id with no cache rows gracefully" do
+    assert_nothing_raised do
+      perform_enqueued_jobs do
+        PermissionCacheJob.perform_later(:purge_share_cache, creative_share_id: -1)
+      end
+    end
+  end
+
   test "rebuild_user_cache_for_subtree rebuilds cache for specific user" do
     perform_enqueued_jobs do
       CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")

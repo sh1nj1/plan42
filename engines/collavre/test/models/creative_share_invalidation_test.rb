@@ -60,6 +60,9 @@ module Collavre
       calls = capture_permission_cache_jobs do
         share.update!(creative: @other_root)
       end
+      # The stale-row purge is now enqueued (async), mirroring the destroy path,
+      # rather than deleted synchronously inside after_commit.
+      assert_includes calls, [ :purge_share_cache, { creative_share_id: share.id } ]
       assert_includes calls,
         [ :rebuild_user_cache_for_subtree, { creative_id: old_creative_id, user_id: @user1.id } ]
       assert_includes calls, [ :propagate_share, { creative_share_id: share.id } ]
@@ -70,6 +73,7 @@ module Collavre
       calls = capture_permission_cache_jobs do
         share.update!(user: @user2)
       end
+      assert_includes calls, [ :purge_share_cache, { creative_share_id: share.id } ]
       assert_includes calls,
         [ :rebuild_user_cache_for_subtree, { creative_id: @root.id, user_id: @user1.id } ]
       assert_includes calls, [ :propagate_share, { creative_share_id: share.id } ]
@@ -102,6 +106,32 @@ module Collavre
         "the permission change must survive a later same-transaction untracked save"
     end
 
+    test "relocate purges stale cache rows via the enqueued job, not synchronously at commit" do
+      share = create_share(@root, @user1, :read)
+      stale_rows = -> { CreativeSharesCache.where(source_share_id: share.id, creative_id: @root.id) }
+      assert stale_rows.call.exists?,
+        "precondition: propagate_share populated the share's cache row at the old creative"
+
+      # Under a deferred (test) adapter the relocate enqueues purge_share_cache
+      # but does NOT run it — proving the stale-row delete is async now, not a
+      # synchronous delete_all inside after_commit. The revoke of the vacated
+      # access is therefore prolonged by the queue latency, which is the accepted
+      # trade-off (it only extends an existing grant, never creates a new one).
+      # The suite's default adapter is :inline, so switch to :test to observe the
+      # commit boundary independently of the job execution.
+      with_deferred_jobs do
+        share.update!(creative: @other_root)
+        assert_enqueued_with(job: PermissionCacheJob,
+          args: [ :purge_share_cache, { creative_share_id: share.id } ])
+        assert stale_rows.call.exists?,
+          "stale rows must survive the commit; the purge is deferred to the job"
+        perform_enqueued_jobs
+      end
+
+      assert_not stale_rows.call.exists?,
+        "the enqueued purge job deletes the stale rows the share vacated"
+    end
+
     test "destroying a share enqueues remove_share" do
       share = create_share(@root, @user1, :read)
       calls = capture_permission_cache_jobs do
@@ -119,6 +149,17 @@ module Collavre
         share = CreativeShare.create!(creative: creative, user: user, permission: permission)
       end
       share
+    end
+
+    # The suite runs on the :inline adapter (jobs execute at enqueue time), which
+    # can't distinguish "enqueued" from "performed". Swap to the :test adapter so
+    # a block can inspect the commit boundary before the jobs run.
+    def with_deferred_jobs
+      old_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+      yield
+    ensure
+      ActiveJob::Base.queue_adapter = old_adapter
     end
 
     def capture_permission_cache_jobs(&block)
