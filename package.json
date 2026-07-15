@@ -15,6 +15,7 @@
   "scripts": {
     "build": "node script/build.cjs",
     "test": "node --experimental-vm-modules ./node_modules/.bin/jest",
+    "test:coverage": "node --experimental-vm-modules ./node_modules/.bin/jest --coverage",
     "lint:css": "stylelint 'engines/**/stylesheets/**/*.css'",
     "lint:css:fix": "stylelint 'engines/**/stylesheets/**/*.css' --fix"
   },
