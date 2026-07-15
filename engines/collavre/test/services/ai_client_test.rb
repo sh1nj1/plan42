@@ -452,4 +452,34 @@ class AiClientTest < ActiveSupport::TestCase
     assert_not_includes joined, draft, "draft text leaked to app log on error path"
     assert(logged.any? { |m| m.include?("StandardError") }, "error class should still be logged")
   end
+
+  test "yields whitespace-only deltas instead of dropping them" do
+    # Providers routinely emit a paragraph break as a chunk of its own. "\n\n" is
+    # blank? == true, so skipping blank deltas deletes it — and since the delta is
+    # then never yielded either, AiAgentService (which persists only what it was
+    # yielded, via ResponseStreamer) writes the reply to the database with its
+    # paragraphs glued together. Empty deltas — role-only and tool-call chunks
+    # carry no content — must still be skipped.
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      [ "First.", "\n\n", "Second.", "" ].each { |d| block.call(OpenStruct.new(content: d)) }
+      block.call(OpenStruct.new(content: nil))
+      OpenStruct.new(content: nil)
+    end
+
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: "system",
+      llm_api_key: "api-key"
+    )
+
+    yielded = []
+    result = client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |delta| yielded << delta }
+    end
+
+    assert_equal [ "First.", "\n\n", "Second." ], yielded
+    assert_equal "First.\n\nSecond.", result
+  end
 end
