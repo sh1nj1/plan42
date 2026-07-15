@@ -587,18 +587,14 @@ body.dark-mode .landing-shot-dark { display: block; }
   }
 }
 
-.landing-hero-eyebrow,
 .landing-hero-title,
 .landing-hero-sub,
-.landing-hero-tagline,
 .landing-hero-brand,
 .landing-hero-actions {
   animation: landing-fade-up 0.6s var(--ease-out-3) both;
 }
 
-.landing-hero-eyebrow { animation-delay: 0s; }
-.landing-hero-title { animation-delay: 0.05s; }
-.landing-hero-sub { animation-delay: 0.15s; }
-.landing-hero-tagline { animation-delay: 0.25s; }
-.landing-hero-brand { animation-delay: 0.35s; }
-.landing-hero-actions { animation-delay: 0.45s; }
+.landing-hero-title { animation-delay: 0s; }
+.landing-hero-sub { animation-delay: 0.1s; }
+.landing-hero-brand { animation-delay: 0.2s; }
+.landing-hero-actions { animation-delay: 0.3s; }

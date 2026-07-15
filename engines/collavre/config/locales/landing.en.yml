@@ -2,14 +2,44 @@ en:
   collavre:
     landing:
       meta:
-        title: "One living tree for docs, tasks, discussions, and AI agent context"
-        description: "Collavre is a self-hosted workspace where every block is at once a document, a task, a discussion, and a unit of AI agent context — one object, not three copies your agent has to choose between. Pin a rule at the root and every task below it inherits it, for people and agents alike."
+        title: "Where Teams Think Together"
+        description: "The collaborative workspace where hierarchical blocks, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
       hero:
-        eyebrow: "Workspace for humans and AI agents"
-        headline_html: "Everything in one living tree"
-        subline: "A block is a doc, a task, a discussion, and your agent's context — one object, not three copies your agent has to choose between."
-        tagline: "Pin a rule once at the root. Every task below inherits it — for people and agents alike."
-        learn_more: "See how it works"
+        headline_html: "A platform for both AI agents and people."
+        subline: "Achieve sustainable productivity gains."
+        learn_more: "Learn More"
+      problem:
+        title: "Your tools are failing you"
+        notion:
+          title: "Docs"
+          desc: "Docs become graveyards. Nobody edits someone else's page. Search replaces structure."
+        jira:
+          title: "Trackers"
+          desc: "Great for tasks, terrible for knowledge. Results never sync back to the wiki. Information overload."
+        slack:
+          title: "Chat"
+          desc: "Conversations vanish in the stream. Flat channel lists explode. Context is lost daily."
+      features:
+        title: "Everything in one living tree"
+        subtitle: "Blocks are hierarchical units that organize your work, track progress, and carry context — all at once."
+        tree:
+          title: "Hierarchical blocks"
+          desc: "Organize work as a tree. Drag, link, and reuse blocks across projects. Progress rolls up automatically."
+        ai:
+          title: "AI Agents as Teammates"
+          desc: "Add AI agents to any conversation. They review, collaborate, and respond to @mentions — just like a colleague."
+        context:
+          title: "Context System"
+          desc: "Reduce cognitive load for people, and inject the knowledge and skills AI needs."
+        chat:
+          title: "Real-time Chat & Topics"
+          desc: "Every block has a chat. Organize conversations with topics, move messages between blocks, and keep discussions focused."
+        integrations:
+          title: "Integrations"
+          desc: "GitHub PRs auto-analyzed, Slack messages synced, Google Calendar events linked, MCP tools built-in."
+        progress:
+          title: "Live Progress"
+          desc: "Track completion from leaf to root. Filter by tags, plans, or status. See your project's real health at a glance."
       interface:
         title: "The document is the tree"
         subtitle: "A heading, a paragraph, a code block, a table — each one is a block, carrying its own progress on the right and its own thread inside. You do not fill in a tracker. You write the spec, and the plan is already there."
@@ -19,52 +49,14 @@ en:
         drag: "Drag a block and its whole subtree comes with it."
         presence: "See who is in the document and who is editing which block."
       demo:
-        title: "Watch: nothing gets copied"
-        subtitle: "A markdown spec becomes a task tree. The team works it. An agent joins with the context already attached. Progress rolls up to the root. Ninety seconds, nothing retyped."
-        # The demo is recorded per locale — the app chrome in it is localized, so
-        # the asset is part of the translation, not a shared file.
+        title: "See it in action"
         video: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY2LCJwdXIiOiJibG9iX2lkIn19--724536948e4fa3474e57997958427e1850775c08/launch.mp4"
         poster: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY3LCJwdXIiOiJibG9iX2lkIn19--7713d27bd154806053991bc8e8abca60475a2ab8/launch-poster.jpg"
         video_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY4LCJwdXIiOiJibG9iX2lkIn19--63349dc7270a3e6a0503c45a413d3b176f791dc2/launch-dark.mp4"
         poster_dark: "/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY5LCJwdXIiOiJibG9iX2lkIn19--25a756ed0d6ff5b4f40ef864b8216c7aa540449c/launch-dark-poster.jpg"
-      problem:
-        title: "You write the same thing three times"
-        notion:
-          title: "The doc"
-          desc: "You write the spec. It ages into a graveyard nobody edits, and search quietly replaces structure."
-        jira:
-          title: "The tracker"
-          desc: "You retype the spec as tickets. The link back to the paragraph it came from is never written down anywhere."
-        slack:
-          title: "The thread"
-          desc: "You explain it a third time in chat. The decision scrolls away, attached to nothing."
-        ai:
-          title: "And now, the agent"
-          desc: "Nobody pastes anymore — you connected it over MCP, so it reads all three. It still has to guess which copy is true, and where this task ends."
-      features:
-        title: "One object, not three copies"
-        subtitle: "A block is simultaneously a document, a task, a discussion thread, and a unit of agent context. Blocks nest into a tree, and the tree is the scope."
-        tree:
-          title: "Markdown in, task tree out"
-          desc: "Import a spec and heading depth becomes tree depth, one to one. Nothing is retyped. Progress rolls up from leaf to root on its own."
-        context:
-          title: "Context is lexically scoped"
-          desc: "Pin coding rules, a design doc, anything — at any node. Every descendant inherits it. Call an agent on a task three levels down and it arrives already knowing."
-        ai:
-          title: "Agents are teammates, not tabs"
-          desc: "@mention an agent in any thread. It answers with the block's subtree and inherited context already attached, then explores the rest of the tree itself over MCP."
-        chat:
-          title: "A thread on every block"
-          desc: "Discussion lives on the work it is about. Found a bug? Add a topic to that block. Done? Archive it. Nothing left to cross-reference."
-        integrations:
-          title: "Integrations"
-          desc: "Two-way sync with GitHub, Linear, Slack, and Notion. An MCP server and an OpenAI-compatible API come built in."
-        progress:
-          title: "Live Progress"
-          desc: "Track completion from leaf to root. Filter by tags, plans, or status. See your project's real health at a glance."
       cta:
-        title: "Stop keeping three copies in sync"
-        subtitle: "Self-hosted. Open source under AGPL. MCP-native."
+        title: "Ready to collaborate smarter?"
+        subtitle: "Start organizing your work with AI-powered context."
         start: "Get Started"
       footer:
         rights: "All rights reserved."
