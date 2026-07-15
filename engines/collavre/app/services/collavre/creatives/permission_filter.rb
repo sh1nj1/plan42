@@ -18,7 +18,10 @@ module Creatives
     # logic PermissionChecker uses, so a linked creative yields identical
     # permission whether checked one-by-one or filtered in a batch.
     def readable_ids(ids)
-      ids = ids.to_a
+      # Normalize to Integer so the final select (and owned-shell lookup) compare
+      # against pluck-derived integer ids rather than string inputs; keeps the
+      # canonical batch filter robust to param-sourced ids. Non-numeric ids drop.
+      ids = ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq
       return [] if ids.empty?
 
       effective_by_id = EffectiveCreativeResolution.effective_creative_ids(ids)

@@ -74,6 +74,21 @@ module Creatives
       assert_equal [ @linked.id ], batch
     end
 
+    test "batch filter normalizes string ids so param-sourced ids resolve identically to integers" do
+      # ids reaching readable_ids from request params arrive as strings. Without
+      # coercion the string key misses the integer-keyed origin lookup and the
+      # integer-keyed readable Set, so a readable linked creative would silently
+      # disappear (fail-closed). Coercion keeps string and integer inputs equal.
+      string_batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ @linked.id.to_s ])
+      integer_batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ @linked.id ])
+
+      assert_equal [ @linked.id ], string_batch,
+        "a string id must resolve the linked creative to its origin exactly like the integer id"
+      assert_equal integer_batch, string_batch
+    end
+
     test "batch filter excludes a foreign shell but keeps the viewer's own rows in the same batch" do
       owner_direct = perform_enqueued_jobs do
         Creative.create!(user: @owner, description: "Owner direct child", parent: @origin)

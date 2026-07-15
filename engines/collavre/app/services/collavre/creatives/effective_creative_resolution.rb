@@ -22,7 +22,11 @@ module Creatives
     # not found in the table) maps to itself. This mirrors
     # +effective_creative+ so the batch reader resolves origin identically.
     def effective_creative_ids(ids)
-      ids = ids.to_a
+      # Coerce to Integer: origin_by_id is keyed by integer ids from pluck, so a
+      # string id (e.g. sourced from request params) would miss origin lookup
+      # and later miss the integer-keyed readable Set. Non-numeric ids can't
+      # identify a Creative, so drop them.
+      ids = ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq
       return {} if ids.empty?
 
       origin_by_id = Creative.where(id: ids).pluck(:id, :origin_id).to_h
