@@ -116,6 +116,49 @@ module Creatives
         "a foreign shell in an unshared private tree must not leak to the viewer"
     end
 
+    test "shell placement in a READ-shared tree is excluded when the caller asks for a higher rank" do
+      # A foreign-owned shell sits in a subtree shared with the viewer at READ,
+      # while the viewer independently has ADMIN on the origin. The placement
+      # visibility must honor the caller's min_permission: at :admin the shell
+      # must NOT be returned, because the viewer only has read on that placement.
+      # DestroyService#destroy_descendants_recursively uses
+      # children_with_permission(user, :admin), so a read-only placement leaking
+      # into an :admin filter would let recursive deletion reach a shell the
+      # viewer cannot modify.
+      shell = perform_enqueued_jobs do
+        # Viewer holds ADMIN on the origin (independent of the placement).
+        admin_origin = Creative.create!(user: @owner, description: "Admin origin", progress: 0.0)
+        CreativeShare.create!(creative: admin_origin, user: @shared_user, permission: "admin")
+        read_root = Creative.create!(user: @owner, description: "Read-shared tree", progress: 0.0)
+        CreativeShare.create!(creative: read_root, user: @shared_user, permission: "read")
+        Creative.create!(origin: admin_origin, user: @owner, parent: read_root)
+      end
+
+      pf = Creatives::PermissionFilter.new(user: @shared_user)
+      assert_equal [ shell.id ], pf.readable_ids([ shell.id ], min_permission: :read),
+        "the read-shared placement is still visible for display (:read)"
+      assert_equal [], pf.readable_ids([ shell.id ], min_permission: :admin),
+        "a read-only placement must not satisfy an :admin filter (recursive-delete guard)"
+    end
+
+    test "shell placement in an ADMIN-shared tree is still returned for an :admin caller" do
+      # Complement to the guard above: when the placement subtree itself grants
+      # the viewer ADMIN, the shell must remain deletable via an :admin filter.
+      shell = perform_enqueued_jobs do
+        admin_origin = Creative.create!(user: @owner, description: "Admin origin", progress: 0.0)
+        CreativeShare.create!(creative: admin_origin, user: @shared_user, permission: "admin")
+        admin_root = Creative.create!(user: @owner, description: "Admin-shared tree", progress: 0.0)
+        CreativeShare.create!(creative: admin_root, user: @shared_user, permission: "admin")
+        Creative.create!(origin: admin_origin, user: @owner, parent: admin_root)
+      end
+
+      batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ shell.id ], min_permission: :admin)
+
+      assert_equal [ shell.id ], batch,
+        "an admin-shared placement must satisfy an :admin filter"
+    end
+
     test "batch filter normalizes string ids so param-sourced ids resolve identically to integers" do
       # ids reaching readable_ids from request params arrive as strings. Without
       # coercion the string key misses the integer-keyed origin lookup and the

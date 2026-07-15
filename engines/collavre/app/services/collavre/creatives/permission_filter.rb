@@ -44,13 +44,17 @@ module Creatives
       # users' private shell placements into search/filter results — a batch can
       # be fed foreign shells (e.g. FilterPipeline#resolve_ancestors pulls every
       # Creative.where(origin_id: ...) regardless of owner). So a shell is gated
-      # on the viewer being able to SEE its placement, in ADDITION to origin
-      # readability: either the viewer owns the shell, or the shell sits in a
-      # subtree shared with the viewer (a propagated CreativeSharesCache entry on
-      # the shell row itself — e.g. a public help doc's linked child). A shell in
-      # a foreign PRIVATE tree has no such entry and stays hidden. Non-shell ids
-      # keep origin-readability-only behaviour.
-      visible_shells = visible_shell_ids(effective_by_id)
+      # on the viewer being able to SEE its placement at the requested rank, in
+      # ADDITION to origin readability: either the viewer owns the shell, or the
+      # shell sits in a subtree shared with the viewer AT >= min_permission (a
+      # propagated CreativeSharesCache entry on the shell row itself — e.g. a
+      # public help doc's linked child). The placement is checked at min_rank
+      # (not always :read) because higher-privilege callers share this batch —
+      # children_with_permission(user, :admin), used by DestroyService's
+      # recursive delete, must not reach a shell the viewer only has read on. A
+      # shell in a foreign PRIVATE tree (no viewer entry) stays hidden. Non-shell
+      # ids keep origin-readability-only behaviour.
+      visible_shells = visible_shell_ids(effective_by_id, min_rank)
 
       ids.select do |id|
         next false unless readable_effective.include?(effective_by_id[id])
@@ -116,20 +120,24 @@ module Creatives
     end
 
     # The subset of shell ids (effective != self) whose PLACEMENT the viewer can
-    # see: shells the viewer owns, plus shells sitting in a subtree shared with
-    # the viewer. A shell inside a shared/public tree inherits a propagated
-    # CreativeSharesCache entry keyed on its own id (PermissionCacheBuilder
-    # #propagate_share walks [creative] + descendants, which includes placed
-    # shells), so readability of the shell id itself — at :read, since placement
-    # visibility is a read concept independent of the caller's min_permission —
-    # captures exactly "the viewer may see this link here". A shell in a foreign
-    # private tree has no such entry and is excluded, preserving the anti-leak
-    # guarantee against FilterPipeline#resolve_ancestors' owner-agnostic pull.
-    def visible_shell_ids(effective_by_id)
+    # see AT `min_rank`: shells the viewer owns, plus shells sitting in a subtree
+    # shared with the viewer at >= min_rank. A shell inside a shared/public tree
+    # inherits a propagated CreativeSharesCache entry keyed on its own id
+    # (PermissionCacheBuilder#propagate_share walks [creative] + descendants,
+    # which includes placed shells), so readability of the shell id itself
+    # captures exactly "the viewer may act on this link here at this rank". The
+    # placement is checked at the caller's min_rank rather than always :read
+    # because higher-privilege callers share this batch — e.g.
+    # children_with_permission(user, :admin) drives DestroyService's recursive
+    # delete, which must not reach a placement the viewer only has read on. A
+    # shell in a foreign private tree has no entry and is excluded, preserving
+    # the anti-leak guarantee against FilterPipeline#resolve_ancestors' owner-
+    # agnostic pull.
+    def visible_shell_ids(effective_by_id, min_rank = rank_for(:read))
       shell_ids = effective_by_id.filter_map { |id, effective| id if effective != id }
       return Set.new if shell_ids.empty?
 
-      readable_effective_ids(shell_ids, rank_for(:read))
+      readable_effective_ids(shell_ids, min_rank)
     end
 
     # Returns the subset of already-origin-resolved ids the user may access at
