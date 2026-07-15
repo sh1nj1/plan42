@@ -206,5 +206,41 @@ module Creatives
           "ranks_for rank #{rank} vs allowed?(#{threshold}) must agree"
       end
     end
+
+    # --- PR 1: anonymous (user: nil) path --------------------------------
+    # An unauthenticated viewer has no user cache entries, so both entry points
+    # resolve purely against public shares. These pin that branch (no user
+    # entries queried; public shares still honor the min_permission threshold).
+
+    test "readable_ids for an anonymous user resolves against public shares only, honoring the threshold" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @origin, user: nil, permission: "read")
+      end
+      pf = Creatives::PermissionFilter.new(user: nil)
+      assert_equal [ @origin.id ], pf.readable_ids([ @origin.id ], min_permission: :read),
+        "public read share grants read to an anonymous viewer"
+      assert_equal [], pf.readable_ids([ @origin.id ], min_permission: :write),
+        "public read share must not satisfy :write for an anonymous viewer"
+    end
+
+    test "readable_ids for an anonymous user excludes a creative with no public share" do
+      assert_equal [], Creatives::PermissionFilter.new(user: nil).readable_ids([ @origin.id ]),
+        "with no public share, an anonymous viewer reads nothing"
+    end
+
+    test "ranks_for for an anonymous user falls back to the public share rank" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @origin, user: nil, permission: "feedback")
+      end
+      ranks = Creatives::PermissionFilter.new(user: nil).ranks_for([ @origin.id ])
+      assert_equal CreativeShare.permissions[:feedback], ranks[@origin.id],
+        "an anonymous viewer's rank comes solely from the public share"
+    end
+
+    test "ranks_for for an anonymous user omits a creative with no public share" do
+      ranks = Creatives::PermissionFilter.new(user: nil).ranks_for([ @origin.id ])
+      refute ranks.key?(@origin.id),
+        "no public share => absent for an anonymous viewer (not the owner, no user entry)"
+    end
   end
 end
