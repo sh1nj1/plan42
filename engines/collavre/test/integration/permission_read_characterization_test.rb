@@ -238,6 +238,13 @@ class PermissionReadCharacterizationTest < ActiveSupport::TestCase
     refute editable_for?(blob, @stranger), "public read grants read, not write"
   end
 
+  test "editable_creative_reference? grants a non-owner via a public write share" do
+    public_write = Creative.create!(user: @owner, parent: @root, description: "Public write")
+    CreativeShare.create!(creative: public_write, user: nil, permission: "write")
+    blob = reference_blob_in(public_write)
+    assert editable_for?(blob, @stranger), "public write share grants write to any user with no deny entry"
+  end
+
   # ---------------------------------------------------------------------------
   # Site 5 — Tools::CreativeRetrievalService#accessible_creative_ids
   # NOTE: this site diverges by design — it counts a user's OWN creatives plus

@@ -68,25 +68,15 @@ module Collavre
       return false if creatives.empty?
 
       # Permission is evaluated on the origin for linked creatives. Resolve every
-      # referencing creative to its permission base and batch-load the cache
-      # entries once, rather than letting each has_permission? call fire its own
-      # per-row CreativeSharesCache lookups (an N+1). Mirrors
-      # Creatives::PermissionChecker#allowed?(:write): a user-specific entry
-      # (including an explicit no_access deny) takes precedence over the public
-      # share entry.
+      # referencing creative to its permission base, then delegate the write-rank
+      # deny-invariant to the canonical PermissionFilter (owner wins; a
+      # user-specific entry — including an explicit no_access deny — takes
+      # precedence over the public share). readable_ids batch-loads the cache
+      # entries once, preserving the prior N+1 avoidance.
       bases = creatives.map { |c| c.origin_id.nil? ? c : c.origin }.compact.uniq
-      return true if bases.any? { |base| base.user_id == Current.user.id }
-
-      write_rank = CreativeSharesCache.permissions[:write]
-      entries = CreativeSharesCache
-        .where(creative_id: bases.map(&:id), user_id: [ Current.user.id, nil ])
-        .to_a
-
-      bases.any? do |base|
-        entry = entries.find { |e| e.creative_id == base.id && e.user_id == Current.user.id } ||
-                entries.find { |e| e.creative_id == base.id && e.user_id.nil? }
-        entry && !entry.no_access? && CreativeSharesCache.permissions[entry.permission] >= write_rank
-      end
+      Collavre::Creatives::PermissionFilter.new(user: Current.user)
+        .readable_ids(bases.map(&:id), min_permission: :write)
+        .any?
     end
   end
 end
