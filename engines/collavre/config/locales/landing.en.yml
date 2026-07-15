@@ -10,6 +10,7 @@ en:
         learn_more: "Learn More"
       problem:
         title: "Your tools are failing you"
+        subtitle: "Docs, trackers, chat — you write the same thing in all three, then spend the day moving between them to keep them in sync. Don't repeat yourself."
         notion:
           title: "Docs"
           desc: "Docs become graveyards. Nobody edits someone else's page. Search replaces structure."
@@ -21,7 +22,7 @@ en:
           desc: "Conversations vanish in the stream. Flat channel lists explode. Context is lost daily."
       features:
         title: "Everything in one living tree"
-        subtitle: "Blocks are hierarchical units that organize your work, track progress, and carry context — all at once."
+        subtitle: "Write it once. Every block is a doc, a task, and a discussion at the same time — one source of truth, self-hosted in your own database, that you inject straight into your AI agents."
         tree:
           title: "Hierarchical blocks"
           desc: "Organize work as a tree. Drag, link, and reuse blocks across projects. Progress rolls up automatically."
