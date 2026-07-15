@@ -11,7 +11,8 @@ module Creatives
   # over a more permissive public share). Owned creatives are always readable.
   class PermissionFilter
     # An owner always resolves to admin, the top rank, so it satisfies any
-    # min_permission threshold. Matches TreeBuilder::OWNER_RANK.
+    # min_permission threshold. This is the canonical owner rank the read-path
+    # callers (TreeBuilder, SlideViewable) inherit via #ranks_for / #readable_ids.
     OWNER_RANK = CreativeShare.permissions[:admin]
 
     def initialize(user:)

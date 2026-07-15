@@ -107,6 +107,24 @@ class PermissionReadCharacterizationTest < ActiveSupport::TestCase
       "anonymous sees every public read share; the no_access deny is user-scoped and does not apply to nil"
   end
 
+  test "accessible_child_ids includes a candidate shell the viewer owns even when its origin is unreadable" do
+    # A linked shell (origin_id set) owned by @user, whose origin belongs to a
+    # stranger and is NOT shared with @user. The shell has no cache entries of
+    # its own, so it is reachable ONLY via the "always show my own children"
+    # listing policy — the exact case readable_ids gates out but the owned union
+    # restores. Pin it so convergence keeps the viewer's own children visible.
+    shell = nil
+    perform_enqueued_jobs do
+      origin = Creative.create!(user: @stranger, description: "Stranger origin", progress: 0.0)
+      shell = Creative.create!(origin: origin, user: @user, parent_id: nil)
+    end
+
+    host = Class.new { include Collavre::Concerns::SlideViewable }.new
+    result = host.send(:accessible_child_ids, [ shell.id ], [ shell ], @user)
+    assert_includes result.to_a, shell.id,
+      "the viewer owns the shell row, so it stays visible even though its origin is unreadable"
+  end
+
   # ---------------------------------------------------------------------------
   # Site 3 — Creatives::TreeBuilder#preload_permissions
   # ---------------------------------------------------------------------------

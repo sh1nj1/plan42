@@ -3,10 +3,6 @@ module Creatives
   class TreeBuilder
     FILTER_IGNORED_KEYS = %w[id controller action format level select_mode].freeze
 
-    # A creative's own row grants no permission; the check resolves to its origin
-    # (PermissionChecker), and the owner of that origin always has full access.
-    OWNER_RANK = CreativeShare.permissions[:admin]
-
     def initialize(user:, params:, view_context:, expanded_state_map:, select_mode:, max_level:, allowed_creative_ids: nil, progress_map: nil)
       @user = user
       @view_context = view_context
@@ -60,42 +56,17 @@ module Creatives
       children_index.load(expanding) if expanding.any?
     end
 
-    # Mirrors PermissionChecker exactly, in batch: owner wins, then the user's own
-    # cache entry (a no_access entry is rank 0 and so denies everything, even when
-    # a public share exists), then the public entry. Absent everywhere means no
-    # access at all, which is distinct from rank 0 only in intent.
+    # Batch effective-origin permission ranks via the single PermissionFilter
+    # read path (owner wins, then the user's own cache entry incl. a no_access
+    # deny, then the public entry). Every pending creative gets an explicit
+    # entry — nil when no share resolves — so #allowed? can trust
+    # @permission_rank.key? and never falls back per-item for absent ids.
     def preload_permissions(creatives)
       pending = creatives.reject { |creative| @permission_rank.key?(creative.id) }
       return if pending.empty?
 
-      base_id_by_id = pending.to_h { |c| [ c.id, c.origin_id || c.id ] }
-      owner_id_by_id = pending.to_h { |c| [ c.id, c.origin_id.nil? ? c.user_id : c.origin&.user_id ] }
-      base_ids = base_id_by_id.values.uniq
-
-      user_entries = if user
-        CreativeSharesCache.where(creative_id: base_ids, user_id: user.id).pluck(:creative_id, :permission).to_h
-      else
-        {}
-      end
-
-      needs_public = base_ids - user_entries.keys
-      public_entries = if needs_public.any?
-        CreativeSharesCache.where(creative_id: needs_public, user_id: nil).pluck(:creative_id, :permission).to_h
-      else
-        {}
-      end
-
-      pending.each do |creative|
-        base_id = base_id_by_id[creative.id]
-        permission = user_entries[base_id] || public_entries[base_id]
-
-        @permission_rank[creative.id] =
-          if user && owner_id_by_id[creative.id] == user.id
-            OWNER_RANK
-          elsif permission
-            CreativeSharesCache.permissions[permission]
-          end
-      end
+      ranks = PermissionFilter.new(user: user).ranks_for(pending.map(&:id))
+      pending.each { |creative| @permission_rank[creative.id] = ranks[creative.id] }
     end
 
     # Equivalent to `creative.has_permission?(user, permission)`, served from the
