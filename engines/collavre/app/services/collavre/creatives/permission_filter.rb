@@ -24,12 +24,38 @@ module Creatives
       effective_by_id = EffectiveCreativeResolution.effective_creative_ids(ids)
       readable_effective = readable_effective_ids(effective_by_id.values.uniq)
 
-      ids.select { |id| readable_effective.include?(effective_by_id[id]) }
+      # A linked creative borrows its ORIGIN's permission, but the shell row
+      # itself is private to the user who created it (Linkable creates exactly
+      # one shell per user+origin). Returning a shell solely because its origin
+      # is readable would leak other users' shell placements into search/filter
+      # results — a batch can be fed foreign shells (e.g. FilterPipeline#resolve_ancestors
+      # pulls every Creative.where(origin_id: ...) regardless of owner). So a
+      # shell is gated on ownership in ADDITION to origin readability; non-shell
+      # ids keep origin-readability-only behaviour.
+      owned_shells = owned_shell_ids(effective_by_id)
+
+      ids.select do |id|
+        next false unless readable_effective.include?(effective_by_id[id])
+
+        effective_by_id[id] == id || owned_shells.include?(id)
+      end
     end
 
     private
 
     attr_reader :user
+
+    # The subset of shell ids (effective != self) that the viewer owns. Shells
+    # have no cache/share rows of their own, so ownership of the shell row is
+    # the only thing that scopes a shell to a viewer.
+    def owned_shell_ids(effective_by_id)
+      return Set.new unless user
+
+      shell_ids = effective_by_id.filter_map { |id, effective| id if effective != id }
+      return Set.new if shell_ids.empty?
+
+      Creative.where(id: shell_ids, user_id: user.id).pluck(:id).to_set
+    end
 
     # Returns the subset of already-origin-resolved ids the user may read,
     # as a Set. no_access wins over a public share; owned creatives are

@@ -52,13 +52,38 @@ module Creatives
       assert_equal [ @origin.id ], batch
     end
 
-    test "owner of the origin can read the linked creative via both paths" do
-      single = Creatives::PermissionChecker.new(@linked, @owner).allowed?(:read)
+    test "batch filter excludes a linked shell the viewer does not own, even when its origin is readable" do
+      # @owner can read the origin (owns it), but @linked is @shared_user's
+      # private shell row. FilterPipeline#resolve_ancestors pulls every
+      # Creative.where(origin_id: ...) regardless of owner, so a batch can be
+      # fed foreign shells. Origin readability alone must NOT surface another
+      # user's shell placement — that would leak their tree structure.
       batch = Creatives::PermissionFilter.new(user: @owner)
         .readable_ids([ @linked.id ])
 
-      assert single
+      assert_equal [], batch,
+        "the origin owner must not receive another user's shell just because the origin is readable"
+    end
+
+    test "batch filter still returns a linked shell to the user who owns it" do
+      # Guards the anti-leak gate against over-restriction: the shell's own
+      # owner still reads it (origin readable + shell owned).
+      batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ @linked.id ])
+
       assert_equal [ @linked.id ], batch
+    end
+
+    test "batch filter excludes a foreign shell but keeps the viewer's own rows in the same batch" do
+      owner_direct = perform_enqueued_jobs do
+        Creative.create!(user: @owner, description: "Owner direct child", parent: @origin)
+      end
+
+      batch = Creatives::PermissionFilter.new(user: @owner)
+        .readable_ids([ @linked.id, owner_direct.id, @origin.id ])
+
+      assert_equal [ owner_direct.id, @origin.id ].sort, batch.sort,
+        "foreign shell dropped; owned/readable rows in the same batch preserved"
     end
   end
 end
