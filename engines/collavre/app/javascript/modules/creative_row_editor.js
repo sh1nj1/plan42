@@ -8,6 +8,7 @@ import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom
 import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
+import { CreativeSaveQueue } from './creative_save_queue'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
@@ -179,10 +180,12 @@ export function initializeCreativeRowEditor() {
 
     let currentTree = null;
     let currentRowElement = null;
-    let saveTimer = null;
+    // Owns the autosave request lifecycle: the debounce timer and the
+    // single-flight guard around the in-flight request. `pendingSave` /
+    // `isDirty` remain the editor's dirty-tracking flags (what changed), while
+    // the queue governs when the request runs. See creative_save_queue.js.
+    const saveQueue = new CreativeSaveQueue();
     let pendingSave = false;
-    let saving = false;
-    let savePromise = Promise.resolve();
     let uploadsPending = false;
     let uploadCompletionPromise = null;
     let resolveUploadCompletion = null;
@@ -1028,11 +1031,13 @@ export function initializeCreativeRowEditor() {
       // scheduleSave(), so without this an attachment upload still in flight would
       // let the toolbar keep a stale "saved" label for the whole upload window.
       // Gated on the editor still being bound to this row (mirrors applySaveStatus).
-      if (tree === currentTree && (pendingSave || saving || isDirty)) setSaveStatus('pending');
-      return waitForUploads().then(function () {
-        if (saving) return savePromise;
-        clearTimeout(saveTimer);
-
+      if (tree === currentTree && (pendingSave || saveQueue.saving || isDirty)) setSaveStatus('pending');
+      // Build and run the persist request under the queue's single-flight
+      // guard: runExclusive cancels any pending debounce, invokes performSave,
+      // and (only when it returns a request for non-empty content) holds the
+      // in-flight state until that request settles. Returning null keeps the
+      // queue idle without ever flipping the in-flight flag.
+      function performSave() {
         // Sync markdown form fields before saving
         if (markdownMode) syncMarkdownToForm();
 
@@ -1043,13 +1048,12 @@ export function initializeCreativeRowEditor() {
           pendingSave = false;
           // Nothing to persist — don't strand the "pending" label set above.
           if (tree === currentTree) setSaveStatus('');
-          return Promise.resolve();
+          return null;
         }
 
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
         pendingSave = false;
-        if (!form.action) return Promise.resolve();
-        saving = true;
+        if (!form.action) return null;
         // Only reflect this save's outcome while the editor is still bound to the
         // creative it started on. If the user navigates to another row mid-flight
         // (move() reattaches the shared #inline-save-status span to the new row),
@@ -1075,7 +1079,7 @@ export function initializeCreativeRowEditor() {
           if (progressHiddenInput) progressHiddenInput.disabled = true;
         }
 
-        savePromise = creativesApi.save(form.action, method, form).then(function (r) {
+        return creativesApi.save(form.action, method, form).then(function (r) {
           if (!r.ok) {
             applySaveStatus('error');
             return r;
@@ -1184,13 +1188,14 @@ export function initializeCreativeRowEditor() {
           applySaveStatus('error');
           throw err;
         }).finally(function () {
-          saving = false;
           if (!shouldPersistProgress) {
             if (progressInput) progressInput.disabled = progressInputsDisabled;
             if (progressHiddenInput) progressHiddenInput.disabled = hiddenProgressDisabled;
           }
         });
-        return savePromise;
+      }
+      return waitForUploads().then(function () {
+        return saveQueue.runExclusive(performSave);
       });
     }
 
@@ -1217,7 +1222,7 @@ export function initializeCreativeRowEditor() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = (pendingSave || saving) ? saveForm(tree, parentId) : Promise.resolve();
+        const p = (pendingSave || saveQueue.saving) ? saveForm(tree, parentId) : Promise.resolve();
         return p.then(() => {
           if (wasNew && !form.dataset.creativeId) {
             removeTreeElement(tree);
@@ -1274,7 +1279,7 @@ export function initializeCreativeRowEditor() {
     }
 
     function beforeNewOrMove(wasNew, prev, prevParent) {
-      const needsSave = pendingSave || wasNew || saving;
+      const needsSave = pendingSave || wasNew || saveQueue.saving;
       const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
       return p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
@@ -1477,7 +1482,7 @@ export function initializeCreativeRowEditor() {
       }
       isDirty = false;
       pendingSave = false;
-      clearTimeout(saveTimer);
+      saveQueue.cancelTimer();
     }
 
     async function move(delta) {
@@ -1974,8 +1979,7 @@ export function initializeCreativeRowEditor() {
       // up/down, reorder) schedule a save without setting isDirty, and must not
       // keep showing the previous "saved" label.
       setSaveStatus('pending');
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveForm, 5000);
+      saveQueue.schedule(function () { saveForm(); });
     }
 
     function onLexicalChange(payload) {
@@ -2092,7 +2096,7 @@ export function initializeCreativeRowEditor() {
         // Save immediately on checkbox change to prevent losing the last toggle
         // when the user navigates away before the debounce timer fires.
         pendingSave = true;
-        clearTimeout(saveTimer);
+        saveQueue.cancelTimer();
         saveForm();
       });
     }
