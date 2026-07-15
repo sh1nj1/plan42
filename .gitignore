@@ -66,3 +66,6 @@ db/videos-dark/
 
 .DS_Store
 
+
+# Test coverage reports
+/coverage

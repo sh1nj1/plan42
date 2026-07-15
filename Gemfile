@@ -91,6 +91,10 @@ group :test do
   gem "selenium-webdriver"
   gem "minitest-mock"
   gem "webmock"
+
+  # Test coverage (activated only when COVERAGE env var is set; see test/support/coverage.rb)
+  gem "simplecov", require: false
+  gem "simplecov-lcov", require: false
 end
 
 gem "doorkeeper", "~> 5.9"
