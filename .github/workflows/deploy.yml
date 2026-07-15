@@ -1,14 +1,34 @@
 name: Deploy
 
-# we change deploy to arm64 and github actions runner not supported native arm64 runners yet so it will take too long time
-# you can use self-hosted runner for arm64 to speed up the deploy process until then prevent this workflow from running
-#on:
-#  push:
-#    branches:
-#      - main
+on:
+  # Manual "one-click" deploy. Run this after CI is green to ship to prod.
+  workflow_dispatch:
+
+  # Automatic deploy gated on CI success. When the "CI" workflow finishes on
+  # main, this fires; the job below only proceeds if that run succeeded.
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+  # NOTE: the native `push` trigger is intentionally disabled. The image builder
+  # targets arm64 (see `builder.arch` in config/deploy.yml) and GitHub-hosted
+  # runners don't offer native arm64 yet, so building on push would fall back to
+  # slow emulation. The real fix is to build via `builder.remote` (an arm64 build
+  # host) or a self-hosted / multi-arch runner in config/deploy.yml. Re-enable
+  # this block once that lands.
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   deploy:
+    # Manual dispatch always runs; the CI-completed trigger only proceeds on success.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     environment: prod
     steps:
@@ -37,4 +57,4 @@ jobs:
           bundler-cache: true
 
       - name: Deploy with Kamal
-        run: GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }} GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }} GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
+        run: GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }} GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }} GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} COLLAVRE_SERVER=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
