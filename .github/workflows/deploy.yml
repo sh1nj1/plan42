@@ -2,26 +2,26 @@ name: Deploy
 
 on:
   # Manual "one-click" deploy. Run this after CI is green to ship to prod.
+  #
+  # This is intentionally the ONLY trigger. Unattended auto-deploy (native
+  # `push` or a CI `workflow_run`) stays disabled until three prerequisites
+  # land, because each would otherwise let a merge ship to prod with no human
+  # in the loop:
+  #   1. Builder arch: `builder.arch` is arm64 (config/deploy.yml) but
+  #      GitHub-hosted runners are amd64, so an auto build falls back to slow
+  #      QEMU emulation. Needs `builder.remote` (an arm64 build host) or a
+  #      self-hosted / multi-arch runner.
+  #   2. Runtime secrets: the deploy step below forwards only a handful of vars
+  #      to Kamal. config/deploy.yml and .kamal/secrets also read DATABASE_URL,
+  #      SECRET_KEY_BASE, KAMAL_REGISTRY_USER, etc. from the runner env — these
+  #      must be wired and validated before any unattended run.
+  #   3. Trusted-trigger guard: a CI `workflow_run` auto-deploy must assert the
+  #      run came from a push on this repo (github.event.workflow_run.event ==
+  #      'push' && head_repository == this repo) so a fork PR branch named
+  #      `main` can't reach prod with production secrets.
+  # Manual dispatch keeps a human in the loop, so none of the above can
+  # silently break prod.
   workflow_dispatch:
-
-  # Automatic deploy gated on CI success. When the "CI" workflow finishes on
-  # main, this fires; the job below only proceeds if that run succeeded.
-  workflow_run:
-    workflows: ["CI"]
-    types:
-      - completed
-    branches:
-      - main
-
-  # NOTE: the native `push` trigger is intentionally disabled. The image builder
-  # targets arm64 (see `builder.arch` in config/deploy.yml) and GitHub-hosted
-  # runners don't offer native arm64 yet, so building on push would fall back to
-  # slow emulation. The real fix is to build via `builder.remote` (an arm64 build
-  # host) or a self-hosted / multi-arch runner in config/deploy.yml. Re-enable
-  # this block once that lands.
-  # push:
-  #   branches:
-  #     - main
 
 # Least-privilege GITHUB_TOKEN: this workflow only checks out code and shells
 # out to Kamal over SSH; it never writes back to the repo.
@@ -30,22 +30,11 @@ permissions:
 
 jobs:
   deploy:
-    # Manual dispatch always runs; the CI-completed trigger only proceeds on success.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     environment: prod
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-        with:
-          # Pin the deploy to the exact commit CI tested. On a workflow_run
-          # event GITHUB_SHA/ref point at the default branch tip, which may have
-          # advanced past the tested commit — checking out head_sha keeps the
-          # deploy gated on what actually passed CI. Falls back to the dispatch
-          # ref for manual runs (head_sha is empty there).
-          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up SSH key
         run: |
