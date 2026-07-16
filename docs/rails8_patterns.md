@@ -17,7 +17,7 @@ generates_token_for :email_verification, expires_in: 24.hours
 # app/models/current.rb
 class Current < ActiveSupport::CurrentAttributes
   attribute :user, :session
-  
+
   def user=(user)
     super
     Time.zone = user&.timezone if user&.timezone.present?
@@ -70,7 +70,7 @@ import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
   static targets = ["description"]
-  
+
   update() {
     this.descriptionTarget.classList.add("updated")
   }
@@ -85,7 +85,7 @@ Collavre uses Solid Queue (Rails 8 default):
 # app/jobs/notion_export_job.rb
 class NotionExportJob < ApplicationJob
   queue_as :default
-  
+
   def perform(creative_id)
     creative = Creative.find(creative_id)
     NotionCreativeExporter.new(creative).export

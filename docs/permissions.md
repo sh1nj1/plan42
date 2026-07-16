@@ -106,6 +106,13 @@ The convergence effort collapsed each half onto a single canonical
 implementation so that no future code path can quietly disagree with the
 authoritative resolution.
 
+> **Cache lifetime — no TTL, no env var.** The permission cache is a **database
+> table** (`creative_shares_caches`) kept correct by invalidation jobs, **not** a
+> time-expiring `Rails.cache` store. There is deliberately no cache-expiry
+> environment variable: correctness comes from the invalidation invariant below,
+> not from a timeout. (A now-removed doc described a `PERMISSION_CACHE_EXPIRES_IN`
+> knob and per-key `Rails.cache` entries — neither exists in the code.)
+
 ## 1. Single Read Path — `PermissionFilter`
 
 **File:** `engines/collavre/app/services/collavre/creatives/permission_filter.rb`
