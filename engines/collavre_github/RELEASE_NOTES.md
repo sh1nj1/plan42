@@ -1,3 +1,11 @@
+## v0.6.2 (2026-07-16)
+
+### Changes
+- 2acfda29 refactor(collavre_github): replace SQLite-only json_extract with portable JSON access (#1394)
+- 5268b7d7 refactor(collavre): make core engine vendor-neutral (#1364)
+- 05c315fb fix(security): encrypt repository-link webhook secret at rest and block SSRF DNS rebinding (#1369)
+- 60f68e5f fix: gate GitHub wizard Next button on the current user's own connection (#1362)
+
 ## v0.6.1 (2026-06-23)
 
 ### Changes

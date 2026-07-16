@@ -1,3 +1,8 @@
+## v0.1.5 (2026-07-16)
+
+### Changes
+- a314632e refactor: mechanical code-quality cleanups (token-leak, HTTP client, method decomposition) (#1366)
+
 ## v0.1.4 (2026-06-23)
 
 ### Changes
