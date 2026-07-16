@@ -63,6 +63,14 @@ module CollavreLinear
         assert_includes html, I18n.t("collavre_linear.integration.project_select_placeholder")
       end
 
+      test "link form renders the done-state combobox for completion mapping" do
+        html = render_modal(connected: true)
+
+        assert_match %r{<select[^>]*name="done_state_id"}, html
+        assert_includes html, I18n.t("collavre_linear.integration.done_state_label")
+        assert_includes html, I18n.t("collavre_linear.integration.done_state_placeholder")
+      end
+
       test "shows resync + unlink actions when a project link already exists" do
         account = CollavreLinear::Account.create!(
           user: @user,

@@ -407,6 +407,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_000000) do
     t.integer "account_id", null: false
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.string "done_state_id"
     t.datetime "last_outbound_at"
     t.datetime "last_synced_at"
     t.string "linear_project_id", null: false

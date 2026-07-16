@@ -73,6 +73,7 @@ if (!linearIntegrationInitialized) {
     const status = form.querySelector('.linear-options-status');
     const projectSelect = form.querySelector('select[name="linear_project_id"]');
     const teamSelect = form.querySelector('select[name="team_id"]');
+    const stateSelect = form.querySelector('select[name="done_state_id"]');
     const submitBtn = form.querySelector('input[type="submit"],button[type="submit"]');
     if (!projectSelect || !teamSelect) return;
 
@@ -88,6 +89,7 @@ if (!linearIntegrationInitialized) {
       .then(function (data) {
         const teams = data.teams || [];
         const projects = data.projects || [];
+        const states = data.states || [];
         const teamName = {};
         teams.forEach(function (t) { teamName[t.id] = t.name; });
 
@@ -119,7 +121,33 @@ if (!linearIntegrationInitialized) {
           // Auto-select when the project has exactly one team.
           teamSelect.value = ids.length === 1 ? ids[0] : '';
           teamSelect.disabled = !projectSelect.value;
+          syncStates();
           refreshSubmit();
+        }
+
+        // Rebuild the done-state dropdown for the selected team and default to
+        // that team's Completed state. Optional field — no completed state (or no
+        // team chosen) leaves it blank and completion mapping stays off.
+        function syncStates() {
+          if (!stateSelect) return;
+          const teamId = teamSelect.value;
+          while (stateSelect.options.length > 1) stateSelect.remove(1);
+          const teamStates = states
+            .filter(function (s) { return s.team_id === teamId; })
+            .sort(function (a, b) { return (a.position || 0) - (b.position || 0); });
+          teamStates.forEach(function (s) {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.name;
+            opt.dataset.type = s.type || '';
+            stateSelect.appendChild(opt);
+          });
+          const completed = teamStates.filter(function (s) { return s.type === 'completed'; });
+          const named = completed.find(function (s) {
+            return (s.name || '').toLowerCase() === 'completed';
+          });
+          stateSelect.value = named ? named.id : (completed[0] ? completed[0].id : '');
+          stateSelect.disabled = !teamId;
         }
 
         function refreshSubmit() {
@@ -127,7 +155,7 @@ if (!linearIntegrationInitialized) {
         }
 
         projectSelect.addEventListener('change', syncTeams);
-        teamSelect.addEventListener('change', refreshSubmit);
+        teamSelect.addEventListener('change', function () { syncStates(); refreshSubmit(); });
 
         projectSelect.disabled = false;
         if (status) status.style.display = 'none';

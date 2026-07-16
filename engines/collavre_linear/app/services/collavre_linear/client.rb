@@ -191,9 +191,57 @@ module CollavreLinear
       }
     GQL
 
+    # List workflow states with their owning team id and type so the link modal
+    # can offer a "done state" combobox scoped to the chosen team. `type` is
+    # Linear's state category (triage/backlog/unstarted/started/completed/
+    # canceled) — the picker defaults to the team's "completed" state.
+    WORKFLOW_STATES = <<~GQL.freeze
+      query WorkflowStates {
+        workflowStates(first: 250) {
+          nodes {
+            id
+            name
+            type
+            position
+            team {
+              id
+            }
+          }
+        }
+      }
+    GQL
+
+    # Fetch a single issue's current workflow state (for seeding the pre-done
+    # snapshot when a leaf is completed with no locally-known Linear state).
+    ISSUE_QUERY = <<~GQL.freeze
+      query Issue($id: String!) {
+        issue(id: $id) {
+          id
+          state {
+            id
+            name
+            type
+          }
+        }
+      }
+    GQL
+
     def initialize(account)
       @account = account
       @endpoint = resolve_endpoint
+    end
+
+    # Fetch a single Linear issue's current workflow state.
+    # @param id [String] Linear issue UUID
+    # @return [Hash, nil] {"id" =>, "name" =>, "type" =>} (string keys, matching
+    #   the shape stored under data["linear"]["state"]), or nil when the issue or
+    #   its state is absent.
+    def fetch_issue_state(id)
+      data  = post!(ISSUE_QUERY, { id: id })
+      state = data.dig("issue", "state")
+      return nil if state.nil?
+
+      state.slice("id", "name", "type")
     end
 
     # Create a Linear issue.
@@ -311,6 +359,24 @@ module CollavreLinear
           id:       n["id"],
           name:     n["name"],
           team_ids: (n.dig("teams", "nodes") || []).map { |t| t["id"] }
+        }
+      end
+    end
+
+    # List workflow states for the "done state" picker, each with its owning
+    # team id and category type so the UI can scope states to the selected team
+    # and default to the completed one.
+    # @return [Array<Hash>] each with :id, :name, :type, :position, :team_id
+    def list_workflow_states
+      data  = post!(WORKFLOW_STATES, {})
+      nodes = data.dig("workflowStates", "nodes") || []
+      nodes.map do |n|
+        {
+          id:       n["id"],
+          name:     n["name"],
+          type:     n["type"],
+          position: n["position"],
+          team_id:  n.dig("team", "id")
         }
       end
     end

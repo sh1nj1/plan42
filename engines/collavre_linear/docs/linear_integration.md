@@ -113,9 +113,35 @@ Handled by the pure (no-I/O) `FieldMapper`. Native fields use **Last-Writer-Wins
 | `state` | `creative.data["linear"]["state"]` | ↔ | not a native Creative field |
 | `labels` | `creative.data["linear"]["labels"]` | ↔ | from `labels.nodes` inbound |
 | `assignee` | `creative.data["linear"]["assignee"]` | inbound | Linear → Collavre only; `FieldMapper` does not send `assignee_id` outbound (needs cross-system user-identity mapping — follow-up) |
-| — (Creative `progress`) | — | **not synced** | `FieldMapper` never reads or writes `progress` |
+| workflow `state` == configured done state | **`creative.progress`** (leaf only) | ↔ | **Completion mapping.** `FieldMapper` still ignores `progress`; the LEAF-only done↔100% mapping lives in `CreativeExporter.apply_completion!` (outbound) and `InboundApplier#reconcile_leaf_progress!` (inbound). See below |
 | comments | `Collavre::Comment` ↔ `CommentLink` | ↔ | Outbound: a human, non-private, non-placeholder Main-topic comment on a linked creative is pushed via `CommentSyncObserver` → `OutboundCommentSyncJob`/`OutboundCommentUpdateJob`/`OutboundCommentDeleteJob` → `Client#create_comment`/`#update_comment`/`#delete_comment` (create/edit/delete all propagate). Inbound comments created with `skip_dispatch: true`; inbound edits/removals set `skip_linear_sync` to avoid echo. See Known limitations for what outbound omits |
 | issue archive/remove | `creative.data["linear"]["archived"] = true` | inbound | **no destroy, no reparent of children** (decision B6) |
+
+## Completion mapping (done state ↔ 100%)
+
+At link time the admin picks the Linear workflow **done state** from a combobox
+(defaulting to the team's `Completed` state); it is stored on
+`linear_project_links.done_state_id` (nullable — blank turns the mapping off).
+`Client#list_workflow_states` feeds the picker (scoped to the chosen team).
+
+Only **leaf** creatives participate — a parent's `progress` is a rollup average
+of its children, so only leaves carry independent progress, and a parent issue's
+state follows from its children.
+
+- **Outbound (Collavre → Linear)** — `CreativeExporter.apply_completion!`: a leaf
+  at `progress >= 1.0` exports with `state_id = done_state_id`. The override is
+  also folded into `content_hash_for`, so completing a leaf changes the hash and
+  drives an `issueUpdate`. Adding `progress` to
+  `CreativeSyncObserver::LINEAR_RELEVANT_COLUMNS` is what enqueues that sync. We
+  do **not** move an issue back OUT of done when a leaf drops below 100% (the
+  un-done target state is ambiguous — out of scope).
+- **Inbound (Linear → Collavre)** — `InboundApplier#reconcile_leaf_progress!`: an
+  issue reaching `done_state_id` sets the leaf's `progress` to `1.0`; leaving the
+  done state after having been complete resets it to `0.0`. A sub-100% partial
+  progress is **preserved** (the mapping is binary, so a non-done state must not
+  clobber partial Collavre progress). Reconciliation runs on create and on
+  updates that actually apply the `state` field (a title-only edit is skipped).
+  Origin-linked creatives (delegated progress) are skipped.
 
 ## Conflict policy
 

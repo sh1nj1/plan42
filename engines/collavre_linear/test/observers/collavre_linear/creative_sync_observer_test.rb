@@ -286,17 +286,31 @@ module CollavreLinear
     test "an update with no Linear-relevant column change does not run the ProjectLink query" do
       unrelated = Collavre::Creative.create!(description: "<p>Unrelated</p>", user: @user)
 
-      # `progress` is not a Linear-relevant column, so the observer must
-      # short-circuit before querying linear_project_links.
+      # `archived_at` is not a Linear-relevant column, so the observer must
+      # short-circuit before querying linear_project_links. (progress IS relevant
+      # now — it drives the leaf completion → done-state mapping.)
       queries = count_project_link_queries do
         assert_no_enqueued_jobs only: CollavreLinear::OutboundSyncJob do
-          unrelated.update!(progress: 0.5)
+          unrelated.update!(archived_at: Time.current)
         end
       end
 
       assert_equal 0, queries,
         "observer must short-circuit before the ProjectLink subtree query when " \
         "no Linear-relevant column changed"
+    end
+
+    test "a leaf progress change inside a linked subtree enqueues OutboundSyncJob (completion)" do
+      leaf = Collavre::Creative.new(description: "<p>Leaf</p>", user: @user, parent: @root_creative)
+      leaf.skip_linear_sync = true
+      leaf.save!
+
+      # progress is now Linear-relevant: a leaf reaching 100% must reach the
+      # exporter (which pushes the project's done state). Load a FRESH instance so
+      # the transient skip_linear_sync used during setup doesn't suppress the sync.
+      assert_enqueued_with(job: CollavreLinear::OutboundSyncJob, args: [ leaf.id ]) do
+        Collavre::Creative.find(leaf.id).update!(progress: 1.0)
+      end
     end
 
     test "an update that touches a Linear-relevant column still runs the subtree query" do

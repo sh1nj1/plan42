@@ -159,6 +159,23 @@
                          style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
           </div>
 
+          <%# Done-state combobox: which Linear workflow state marks an issue as
+              "완료". JS scopes the options to the chosen team and defaults to that
+              team's Completed state. Optional — a team with no completed state
+              leaves it blank and completion mapping stays off. %>
+          <div style="margin-bottom:1em;">
+            <%= f.label :done_state_id, t("collavre_linear.integration.done_state_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.select :done_state_id,
+                         [],
+                         { include_blank: t("collavre_linear.integration.done_state_placeholder") },
+                         disabled: true,
+                         style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
+            <p style="margin:0.25em 0 0;color:var(--text-muted);font-size:0.85em;">
+              <%= t("collavre_linear.integration.done_state_help") %>
+            </p>
+          </div>
+
           <%= f.submit t("collavre_linear.integration.link_button"),
                        class: "btn btn-primary", disabled: true %>
         <% end %>
