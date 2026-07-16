@@ -1,5 +1,8 @@
 # Testing Conventions
 
+Automated-test conventions for contributors. For **manual** QA of the live site
+(test accounts, credentials), see [test.md](test.md).
+
 ## Running Tests
 
 ```bash
@@ -16,6 +19,11 @@ bin/rails test engines/collavre_notion/test/
 # System tests
 bin/rails test:system
 ```
+
+> **Note:** `rake test` runs the host app plus every engine. Plain `rails test`
+> runs the host app only, and `rails test engines/` runs the engines. Run engine
+> tests from the **host root**, not from inside the engine directory, or the load
+> path resolves incorrectly.
 
 ## Test Structure
 
@@ -78,7 +86,7 @@ end
 test "handles external API" do
   mock_response = Minitest::Mock.new
   mock_response.expect :body, { status: "ok" }.to_json
-  
+
   NotionClient.stub :request, mock_response do
     # Test code
   end

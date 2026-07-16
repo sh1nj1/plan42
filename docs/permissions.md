@@ -106,6 +106,13 @@ The convergence effort collapsed each half onto a single canonical
 implementation so that no future code path can quietly disagree with the
 authoritative resolution.
 
+> **Cache lifetime — no TTL, no env var.** The permission cache is a **database
+> table** (`creative_shares_caches`) kept correct by invalidation jobs, **not** a
+> time-expiring `Rails.cache` store. There is deliberately no cache-expiry
+> environment variable: correctness comes from the invalidation invariant below,
+> not from a timeout. (A now-removed doc described a `PERMISSION_CACHE_EXPIRES_IN`
+> knob and per-key `Rails.cache` entries — neither exists in the code.)
+
 ## 1. Single Read Path — `PermissionFilter`
 
 **File:** `engines/collavre/app/services/collavre/creatives/permission_filter.rb`
@@ -126,9 +133,15 @@ the single-item `PermissionChecker`, then applies the deny-invariant:
 Two entry points:
 
 - `readable_ids(ids, min_permission:)` — returns the accessible subset as an
-  Array, and additionally applies the **shell-ownership anti-leak gate**: a
-  linked "shell" creative is returned only if the viewer owns the shell row AND
-  its origin is readable (a batch can be fed foreign shells).
+  Array, and additionally applies the **shell placement anti-leak gate**: a
+  linked "shell" creative is returned only if its origin is readable AND its
+  placement is visible to the viewer — i.e. the viewer either owns the shell row
+  or the shell sits in a subtree shared with the viewer (a propagated
+  `CreativeSharesCache` entry on the shell row itself, e.g. a public help doc's
+  linked child). The placement is checked at the caller's `min_permission`, not
+  hardcoded to `:read`, so a viewer with only read on a shared tree cannot reach
+  a shell that requires `admin` (e.g. recursive delete). A shell in a foreign
+  private tree has no entry and stays hidden (a batch can be fed foreign shells).
 - `ranks_for(ids)` — returns `{ id => rank }` for callers that already operate
   inside the viewer's own tree and want the raw rank (no shell gate).
 

@@ -1,5 +1,10 @@
 # Collavre Engines
 
+A per-engine reference of the models, controllers, services, and routes that
+make up each engine. For the host-shell loading mechanism and engine
+responsibilities at a glance, see [host_architecture.md](host_architecture.md);
+for how to build a new engine, see [engine_development.md](engine_development.md).
+
 ## Core Engine (`engines/collavre/`)
 
 The main application engine containing:

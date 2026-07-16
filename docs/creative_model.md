@@ -9,7 +9,7 @@ Creatives use `closure_tree` gem for nested hierarchy:
 ```ruby
 class Creative < ApplicationRecord
   has_closure_tree order: 'sort_order', numeric_order: true
-  
+
   # Tree navigation
   creative.parent          # Direct parent
   creative.children        # Direct children
@@ -51,6 +51,8 @@ creative.has_permission?(user, :admin)
 # Permission levels (in ascending order)
 # :no_access, :read, :feedback, :write, :admin
 ```
+
+See [permissions.md](permissions.md) for the full permission architecture.
 
 ## Rich Text & Attachments
 
