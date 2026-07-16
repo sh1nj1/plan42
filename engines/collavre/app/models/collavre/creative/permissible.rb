@@ -46,11 +46,12 @@ module Collavre
         accessible_ids = Collavre::Creatives::PermissionFilter.new(user: user)
           .readable_ids(children_ids, min_permission: min_permission)
 
-        # readable_ids gates a linked shell on the viewer owning the shell row
-        # AND its origin being readable. Listing one's OWN tree keeps the prior
-        # policy that a viewer always sees their own children — including a shell
-        # they own whose origin is no longer shared with them — so union those
-        # owned rows back in. (Owner has admin, so this is rank-independent.)
+        # readable_ids gates a linked shell on its origin being readable AND the
+        # viewer being able to see the shell's placement (owns it, or it sits in
+        # a subtree shared with the viewer). Listing one's OWN tree keeps the
+        # prior policy that a viewer always sees their own children — including a
+        # shell they own whose origin is no longer shared with them — so union
+        # those owned rows back in. (Owner has admin, so this is rank-independent.)
         accessible_ids |= children_scope.where(user_id: user.id).pluck(:id) if user
 
         children_scope.where(id: accessible_ids).order(:sequence).to_a

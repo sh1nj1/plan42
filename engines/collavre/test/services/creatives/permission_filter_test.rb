@@ -74,6 +74,91 @@ module Creatives
       assert_equal [ @linked.id ], batch
     end
 
+    test "batch filter returns a foreign-owned shell placed inside a tree shared with the viewer" do
+      # Regression: a linked shell the viewer does NOT own, but which sits inside
+      # a subtree shared with the viewer (e.g. a public help doc), was dropped by
+      # the ownership-only gate — so every foreign-owned linked child under a
+      # shared tree vanished for non-owner viewers. The shell inherits a
+      # propagated CreativeSharesCache entry from the shared ancestor, so the
+      # viewer CAN legitimately see this placement; only placements with no
+      # viewer-visible cache entry (a foreign PRIVATE tree) must stay hidden.
+      shared_root, shell = perform_enqueued_jobs do
+        root = Creative.create!(user: @owner, description: "Shared help doc", progress: 0.0)
+        CreativeShare.create!(creative: root, user: @shared_user, permission: "read")
+        # @owner places a link to @origin inside the shared tree. The shell is
+        # owned by @owner (the tree author), NOT by the viewer @shared_user.
+        placed = Creative.create!(origin: @origin, user: @owner, parent: root)
+        [ root, placed ]
+      end
+
+      batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ shell.id ])
+
+      assert_equal [ shell.id ], batch,
+        "a foreign-owned shell in a tree shared with the viewer must be visible (help-doc linked child)"
+      assert_not_nil shared_root
+    end
+
+    test "batch filter still hides a foreign-owned shell in a tree NOT shared with the viewer" do
+      # Complement to the above: the anti-leak gate must survive. A shell placed
+      # in the owner's PRIVATE tree (no share reaches the viewer) has no
+      # viewer-visible cache entry, so it stays hidden even though the origin is
+      # readable to the viewer.
+      shell = perform_enqueued_jobs do
+        private_root = Creative.create!(user: @owner, description: "Owner private tree", progress: 0.0)
+        Creative.create!(origin: @origin, user: @owner, parent: private_root)
+      end
+
+      batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ shell.id ])
+
+      assert_equal [], batch,
+        "a foreign shell in an unshared private tree must not leak to the viewer"
+    end
+
+    test "shell placement in a READ-shared tree is excluded when the caller asks for a higher rank" do
+      # A foreign-owned shell sits in a subtree shared with the viewer at READ,
+      # while the viewer independently has ADMIN on the origin. The placement
+      # visibility must honor the caller's min_permission: at :admin the shell
+      # must NOT be returned, because the viewer only has read on that placement.
+      # DestroyService#destroy_descendants_recursively uses
+      # children_with_permission(user, :admin), so a read-only placement leaking
+      # into an :admin filter would let recursive deletion reach a shell the
+      # viewer cannot modify.
+      shell = perform_enqueued_jobs do
+        # Viewer holds ADMIN on the origin (independent of the placement).
+        admin_origin = Creative.create!(user: @owner, description: "Admin origin", progress: 0.0)
+        CreativeShare.create!(creative: admin_origin, user: @shared_user, permission: "admin")
+        read_root = Creative.create!(user: @owner, description: "Read-shared tree", progress: 0.0)
+        CreativeShare.create!(creative: read_root, user: @shared_user, permission: "read")
+        Creative.create!(origin: admin_origin, user: @owner, parent: read_root)
+      end
+
+      pf = Creatives::PermissionFilter.new(user: @shared_user)
+      assert_equal [ shell.id ], pf.readable_ids([ shell.id ], min_permission: :read),
+        "the read-shared placement is still visible for display (:read)"
+      assert_equal [], pf.readable_ids([ shell.id ], min_permission: :admin),
+        "a read-only placement must not satisfy an :admin filter (recursive-delete guard)"
+    end
+
+    test "shell placement in an ADMIN-shared tree is still returned for an :admin caller" do
+      # Complement to the guard above: when the placement subtree itself grants
+      # the viewer ADMIN, the shell must remain deletable via an :admin filter.
+      shell = perform_enqueued_jobs do
+        admin_origin = Creative.create!(user: @owner, description: "Admin origin", progress: 0.0)
+        CreativeShare.create!(creative: admin_origin, user: @shared_user, permission: "admin")
+        admin_root = Creative.create!(user: @owner, description: "Admin-shared tree", progress: 0.0)
+        CreativeShare.create!(creative: admin_root, user: @shared_user, permission: "admin")
+        Creative.create!(origin: admin_origin, user: @owner, parent: admin_root)
+      end
+
+      batch = Creatives::PermissionFilter.new(user: @shared_user)
+        .readable_ids([ shell.id ], min_permission: :admin)
+
+      assert_equal [ shell.id ], batch,
+        "an admin-shared placement must satisfy an :admin filter"
+    end
+
     test "batch filter normalizes string ids so param-sourced ids resolve identically to integers" do
       # ids reaching readable_ids from request params arrive as strings. Without
       # coercion the string key misses the integer-keyed origin lookup and the
