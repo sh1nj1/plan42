@@ -133,9 +133,15 @@ the single-item `PermissionChecker`, then applies the deny-invariant:
 Two entry points:
 
 - `readable_ids(ids, min_permission:)` — returns the accessible subset as an
-  Array, and additionally applies the **shell-ownership anti-leak gate**: a
-  linked "shell" creative is returned only if the viewer owns the shell row AND
-  its origin is readable (a batch can be fed foreign shells).
+  Array, and additionally applies the **shell placement anti-leak gate**: a
+  linked "shell" creative is returned only if its origin is readable AND its
+  placement is visible to the viewer — i.e. the viewer either owns the shell row
+  or the shell sits in a subtree shared with the viewer (a propagated
+  `CreativeSharesCache` entry on the shell row itself, e.g. a public help doc's
+  linked child). The placement is checked at the caller's `min_permission`, not
+  hardcoded to `:read`, so a viewer with only read on a shared tree cannot reach
+  a shell that requires `admin` (e.g. recursive delete). A shell in a foreign
+  private tree has no entry and stays hidden (a batch can be fed foreign shells).
 - `ranks_for(ids)` — returns `{ id => rank }` for callers that already operate
   inside the viewer's own tree and want the raw rank (no shell gate).
 
