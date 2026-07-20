@@ -111,6 +111,30 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
     expect(alertDialog).toHaveBeenCalledWith('에이전트를 지정할 수 없습니다.')
   })
 
+  // A successful response with no topic payload must not throw; the broadcast
+  // remains the fallback path in that case.
+  test('is a no-op when a successful response carries no topic', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    })
+
+    await controller.setTopicPrimaryAgent('1', AGENT)
+
+    expect(alertDialog).not.toHaveBeenCalled()
+    expect(controller.listTarget.querySelector('.topic-agent-avatar')).toBeNull()
+  })
+
+  test('does not issue a request when the controller has no creative', async () => {
+    controller.creativeIdValue = ''
+    global.fetch = jest.fn()
+
+    await controller.setTopicPrimaryAgent('1', AGENT)
+
+    expect(global.fetch).not.toHaveBeenCalled()
+    expect(alertDialog).not.toHaveBeenCalled()
+  })
+
   test('falls back to English when the partial supplied no localized string', async () => {
     delete document.getElementById('topics').dataset.topicSetAgentError
     global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'))
