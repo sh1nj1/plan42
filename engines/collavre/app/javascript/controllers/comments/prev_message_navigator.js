@@ -34,7 +34,10 @@ export default class PrevMessageNavigator {
 
     if (this.anchorId !== null) {
       const anchorIdx = items.findIndex((item) => item.id === this.anchorId)
-      if (anchorIdx !== -1) return anchorIdx - 1
+      if (anchorIdx !== -1 && this.anchorIsOnItsWay(items[anchorIdx].top, viewportTop)) {
+        return anchorIdx - 1
+      }
+      this.anchorId = null
     }
 
     let currentIdx = items.findIndex((item) => item.top >= viewportTop - TOP_TOLERANCE)
@@ -44,9 +47,23 @@ export default class PrevMessageNavigator {
     return isAtTop ? currentIdx - 1 : currentIdx
   }
 
-  // Called once we start scrolling towards `id`.
-  commit(id) {
+  // The anchor travels from wherever it sat when we committed up to `viewportTop`,
+  // and nothing else moves it. Outside that corridor the list was scrolled by
+  // something other than us - a new message arriving, a permalink jump - none of
+  // which fire a user input event, so the anchor would otherwise survive and wedge
+  // the button (anchored on the oldest item, every click resolves to -1 forever).
+  //
+  // Comparing the anchor against its own start position rather than the list's
+  // scroll offset keeps this correct when older comments are prepended: that
+  // shifts `scrollTop` but leaves the anchor where it is on screen.
+  anchorIsOnItsWay(anchorTop, viewportTop) {
+    return anchorTop >= this.anchorStartTop - TOP_TOLERANCE && anchorTop <= viewportTop + TOP_TOLERANCE
+  }
+
+  // Called once we start scrolling towards `id`, which currently sits at `top`.
+  commit(id, top) {
     this.anchorId = id
+    this.anchorStartTop = top
   }
 
   // Called when the user interacts with the list (wheel, touch, key, pointer).

@@ -47,7 +47,7 @@ describe('PrevMessageNavigator', () => {
     test('keeps stepping backwards while the smooth scroll is still in flight', () => {
       // First click: item 2 is flush with the top, so we head for item 1.
       expect(nav.resolveTargetIndex(items(-200, -100, 100, 300), VIEWPORT_TOP)).toBe(1)
-      nav.commit('1')
+      nav.commit('1', -100)
 
       // Second click lands mid-animation: item 1 has not reached the top yet, so
       // geometry alone would send us back down to item 1. The anchor must win.
@@ -55,41 +55,62 @@ describe('PrevMessageNavigator', () => {
     })
 
     test('survives older comments being prepended (anchor is id based)', () => {
-      nav.commit('c5')
+      // Prepending shifts scrollTop but leaves the anchor where it is on screen,
+      // so it is still on its way from -300 up to the viewport top.
+      nav.commit('c5', -300)
       const prepended = [
-        { id: 'c3', top: -100 },
-        { id: 'c4', top: 0 },
-        { id: 'c5', top: 400 },
+        { id: 'c3', top: -500 },
+        { id: 'c4', top: -300 },
+        { id: 'c5', top: -100 },
       ]
       expect(nav.resolveTargetIndex(prepended, VIEWPORT_TOP)).toBe(1)
     })
 
     test('falls back to geometry when the anchored comment is gone', () => {
-      nav.commit('deleted-comment')
+      nav.commit('deleted-comment', -100)
       expect(nav.resolveTargetIndex(items(-200, -100, 100, 300), VIEWPORT_TOP)).toBe(1)
     })
 
     test('returns -1 when the anchor is already the oldest item', () => {
-      nav.commit('0')
+      nav.commit('0', -100)
       expect(nav.resolveTargetIndex(items(100, 300), VIEWPORT_TOP)).toBe(-1)
+    })
+
+    test('ignores an anchor the list has scrolled away from', () => {
+      // A programmatic jump (new message arriving, permalink highlight) moves the
+      // list without any user gesture, so nothing drops the anchor. It is now far
+      // above where it started, which our own animation can never produce - that
+      // only ever walks the anchor down towards the viewport top.
+      nav.commit('0', -100)
+      expect(nav.resolveTargetIndex(items(-900, -700, 100, 300), VIEWPORT_TOP)).toBe(1)
+    })
+
+    test('a stale anchor stops wedging the button at the oldest message', () => {
+      // Regression: anchored on the oldest item, every later click returned -1
+      // forever once there was nothing more to load, so the button went dead.
+      nav.commit('0', -100)
+      nav.resolveTargetIndex(items(100, 300), VIEWPORT_TOP)
+
+      // The list is jumped back to the bottom; clicking must resume stepping.
+      expect(nav.resolveTargetIndex(items(-900, -700, 100, 300), VIEWPORT_TOP)).toBe(1)
     })
   })
 
   describe('anchor invalidation', () => {
     test('drops the anchor when the user moves the list', () => {
-      nav.commit('1')
+      nav.commit('1', -100)
       nav.notifyUserInput()
       expect(nav.anchorId).toBeNull()
     })
 
     test('reset clears the anchor', () => {
-      nav.commit('1')
+      nav.commit('1', -100)
       nav.reset()
       expect(nav.anchorId).toBeNull()
     })
 
     test('after a user scroll, geometry drives the next click again', () => {
-      nav.commit('1')
+      nav.commit('1', -100)
       nav.notifyUserInput()
       expect(nav.resolveTargetIndex(items(-200, -100, 130, 330), VIEWPORT_TOP)).toBe(2)
     })

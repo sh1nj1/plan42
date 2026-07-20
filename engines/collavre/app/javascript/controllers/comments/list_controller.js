@@ -1118,7 +1118,7 @@ export default class extends Controller {
 
     const target = elements[targetIdx]
     const targetTop = target.offsetTop - list.offsetTop
-    this.prevMsgNavigator.commit(measured[targetIdx].id)
+    this.prevMsgNavigator.commit(measured[targetIdx].id, measured[targetIdx].top)
     list.scrollTo({ top: targetTop, behavior: 'smooth' })
     this.stickToBottom = false
 
