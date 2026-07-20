@@ -128,6 +128,20 @@ describe('TopicsController create-button placement', () => {
     expect(document.querySelector('.add-topic-btn')).not.toBeNull()
   })
 
+  // Alt+Left/Right chat navigation switches creatives without blurring the input,
+  // so a preserved draft would otherwise be posted to the wrong creative.
+  test('drops an in-progress topic name when the creative changes', () => {
+    controller.renderTopics(TOPICS, true, true)
+    controller.showInput({ preventDefault() {} })
+    controller.creationContainerTarget.querySelector('.topic-input').value = 'for-42'
+
+    controller.creativeIdValue = '77'
+    controller.renderTopics(TOPICS, true, true)
+
+    expect(controller.creationContainerTarget.querySelector('.topic-input')).toBeNull()
+    expect(document.querySelector('.add-topic-btn')).not.toBeNull()
+  })
+
   // The container is static markup, but rendering must not throw if a caller
   // mounts the controller on a stripped-down strip.
   test('no-ops when the container is absent', () => {

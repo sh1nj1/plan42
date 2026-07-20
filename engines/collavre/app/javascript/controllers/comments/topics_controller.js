@@ -209,7 +209,10 @@ export default class extends Controller {
 
         // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
         // `creating` marks an already-submitted name, whose input must give way to the button.
-        if (!this.creating && container.querySelector('.topic-input')) return
+        // A draft only survives re-renders of the creative it was typed for: chat-nav
+        // switches creatives without blurring, and posting it there is the wrong creative.
+        const draftIsCurrent = String(this._draftCreativeId) === String(this.creativeId)
+        if (!this.creating && draftIsCurrent && container.querySelector('.topic-input')) return
 
         this.renderAddButton()
     }
@@ -539,6 +542,7 @@ export default class extends Controller {
         if (!this.hasCreationContainerTarget) return
         const container = this.creationContainerTarget
 
+        this._draftCreativeId = this.creativeId
         const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
         container.innerHTML = `<input type="text" class="topic-input" placeholder="${placeholder}" 
                                   data-action="keydown->comments--topics#handleInputKey blur->comments--topics#resetInput"
