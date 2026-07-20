@@ -1013,13 +1013,23 @@ export default class extends Controller {
                 body: JSON.stringify({ agent_id: agent.id })
             })
 
+            const data = await response.json().catch(() => ({}))
+
             if (!response.ok) {
-                const data = await response.json()
-                console.error('Failed to set primary agent:', data.error)
+                alertDialog(data.error || "Failed to set primary agent")
+                return
             }
-            // Topic update comes via WebSocket broadcast
+
+            // Render the avatar from the response rather than waiting for the
+            // WebSocket broadcast. A dropped broadcast (e.g. the topics channel
+            // subscription was refused) would otherwise leave the avatar
+            // invisible until the next page load. The broadcast still runs and
+            // propagates the change to other connected users; re-applying it
+            // here is a no-op merge.
+            if (data.topic) this.updateTopicInList(data.topic)
         } catch (e) {
             console.error('Error setting primary agent', e)
+            alertDialog("Failed to set primary agent")
         }
     }
 
