@@ -6,6 +6,7 @@ import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 export default class extends Controller {
@@ -20,6 +21,7 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
     this.handleChange = this.handleChange.bind(this)
@@ -74,6 +76,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    clearTimeout(this.prevMsgSettleTimer)
     this.listTarget.removeEventListener('scroll', this.handleScroll)
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
@@ -151,6 +154,9 @@ export default class extends Controller {
   loadInitialComments() {
     if (!this.creativeId) return
     if (this.selection.size > 0) return
+
+    // The list is about to be replaced wholesale; any anchor we hold is stale.
+    this.prevMsgNavigator.reset()
 
     const params = {}
     if (this.highlightAfterLoad) {
@@ -358,6 +364,8 @@ export default class extends Controller {
   }
 
   handleScroll() {
+    this.prevMsgNavigator.handleScroll()
+
     if (!this.initialLoadComplete) return
 
     // Standard Column:
@@ -1078,28 +1086,16 @@ export default class extends Controller {
 
   scrollToPreviousMessage() {
     const list = this.listTarget
-    const items = Array.from(list.querySelectorAll('.comment-item'))
-    if (items.length === 0) return
+    const elements = Array.from(list.querySelectorAll('.comment-item'))
+    if (elements.length === 0) return
 
-    const listRect = list.getBoundingClientRect()
-    const viewportTop = listRect.top
+    const viewportTop = list.getBoundingClientRect().top
+    const measured = elements.map((el) => ({
+      id: el.dataset.commentId,
+      top: el.getBoundingClientRect().top,
+    }))
 
-    let currentIdx = -1
-    for (let i = 0; i < items.length; i++) {
-      const rect = items[i].getBoundingClientRect()
-      if (rect.top >= viewportTop - 2) {
-        currentIdx = i
-        break
-      }
-    }
-
-    if (currentIdx === -1) currentIdx = items.length - 1
-
-    const currentItem = items[currentIdx]
-    const currentRect = currentItem.getBoundingClientRect()
-    const isAtTop = Math.abs(currentRect.top - viewportTop) < 4
-
-    const targetIdx = isAtTop ? currentIdx - 1 : currentIdx
+    const targetIdx = this.prevMsgNavigator.resolveTargetIndex(measured, viewportTop)
     if (targetIdx < 0) {
       if (!this.allOlderLoaded) {
         this.loadOlderComments()
@@ -1107,10 +1103,16 @@ export default class extends Controller {
       return
     }
 
-    const target = items[targetIdx]
+    const target = elements[targetIdx]
     const targetTop = target.offsetTop - list.offsetTop
+    this.prevMsgNavigator.commit(measured[targetIdx].id)
     list.scrollTo({ top: targetTop, behavior: 'smooth' })
     this.stickToBottom = false
+
+    // The anchor stays authoritative until the smooth scroll lands; after that a
+    // scroll event means the user moved the list themselves.
+    clearTimeout(this.prevMsgSettleTimer)
+    this.prevMsgSettleTimer = setTimeout(() => this.prevMsgNavigator.settle(), 700)
 
     target.classList.add('highlight-flash')
     setTimeout(() => target.classList.remove('highlight-flash'), 2000)
