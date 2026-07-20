@@ -77,6 +77,16 @@ export default class PrevMessageNavigator {
     this.anchorId = null
   }
 
+  // Called when our own code repositions the list without going through the
+  // button - jumping to the newest message, a permalink highlight. These fire no
+  // user input event, and a small jump can leave the anchor inside the corridor
+  // above, where geometry cannot tell it apart from our own in-flight scroll. The
+  // corridor still catches larger jumps, but the caller drops the anchor at these
+  // known sites so a still-visible message is never skipped.
+  notifyProgrammaticScroll() {
+    this.anchorId = null
+  }
+
   // Called when the list contents are replaced wholesale.
   reset() {
     this.anchorId = null

@@ -166,6 +166,42 @@ describe('list_controller previous-message navigation', () => {
     }
   )
 
+  test('a programmatic jump to the bottom drops the anchor', () => {
+    // form_controller (after sending) and the fullscreen handlers call
+    // scrollToBottom() with no user gesture. A small jump can leave the anchor
+    // inside the corridor, where geometry cannot tell it from our own in-flight
+    // scroll, so the next click would step off the stale anchor (c3 -> c2)
+    // instead of resolving from where the list actually is (c4 -> c3).
+    const h = buildController()
+    h.scrollTo(4 * ITEM_HEIGHT)
+
+    h.controller.scrollToPreviousMessage() // anchor = c3, in flight
+    expect(h.controller.prevMsgNavigator.anchorId).toBe('c3')
+
+    h.controller.scrollToBottom()
+    expect(h.controller.prevMsgNavigator.anchorId).toBeNull()
+
+    h.controller.scrollToPreviousMessage()
+    expect(h.lastScrollTop()).toBe(3 * ITEM_HEIGHT) // c3 from geometry, not c2
+  })
+
+  test('a permalink highlight jump drops the anchor', () => {
+    const h = buildController()
+    h.scrollTo(4 * ITEM_HEIGHT)
+
+    h.controller.scrollToPreviousMessage() // anchor = c3
+    expect(h.controller.prevMsgNavigator.anchorId).toBe('c3')
+
+    // highlightComment looks the target up by DOM id and scrolls it into view
+    // (jsdom has no scrollIntoView, so stub it).
+    const target = h.list.querySelector('[data-comment-id="c1"]')
+    target.id = 'comment_c1'
+    target.scrollIntoView = () => {}
+    h.controller.highlightComment('c1')
+
+    expect(h.controller.prevMsgNavigator.anchorId).toBeNull()
+  })
+
   test('disconnect unhooks the user-input listeners', () => {
     const h = buildController()
     h.scrollTo(4 * ITEM_HEIGHT)

@@ -354,6 +354,7 @@ export default class extends Controller {
   highlightComment(commentId) {
     const comment = document.getElementById(`comment_${commentId}`)
     if (!comment) return
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
     comment.scrollIntoView({ behavior: 'auto', block: 'center' })
     comment.classList.add('highlight-flash')
     comment.dataset.highlighted = 'true'
@@ -1136,6 +1137,9 @@ export default class extends Controller {
   }
 
   scrollToBottom() {
+    // A jump to latest we did not initiate via the button - drop the anchor so
+    // the next previous-message click resolves from here, not a stale target.
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
     // In column reverse, bottom of scroll might be tricky.
     // Easiest is to set scrollTop to a large value.
     requestAnimationFrame(() => {
