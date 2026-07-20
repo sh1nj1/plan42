@@ -208,7 +208,8 @@ export default class extends Controller {
         }
 
         // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
-        if (container.querySelector('.topic-input')) return
+        // `creating` marks an already-submitted name, whose input must give way to the button.
+        if (!this.creating && container.querySelector('.topic-input')) return
 
         this.renderAddButton()
     }

@@ -103,6 +103,31 @@ describe('TopicsController create-button placement', () => {
     expect(input.value).toBe('half-typed')
   })
 
+  // createTopic keeps `creating` set across its loadTopics() await, so the
+  // re-render it triggers must not mistake the submitted input for live typing.
+  test('restores the add button after a successful creation', async () => {
+    controller.renderTopics(TOPICS, true, true)
+    controller.showInput({ preventDefault() {} })
+
+    const input = controller.creationContainerTarget.querySelector('.topic-input')
+    input.value = 'shipped'
+
+    document.head.innerHTML = '<meta name="csrf-token" content="tok">'
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 99, name: 'shipped' }),
+    })
+    controller.flushSaveLastTopic = jest.fn()
+    controller.loadTopics = jest.fn(async () => {
+      controller.renderTopics([...TOPICS, { id: 99, name: 'shipped' }], true, true)
+    })
+
+    await controller.createTopic('shipped')
+
+    expect(controller.creationContainerTarget.querySelector('.topic-input')).toBeNull()
+    expect(document.querySelector('.add-topic-btn')).not.toBeNull()
+  })
+
   // The container is static markup, but rendering must not throw if a caller
   // mounts the controller on a stripped-down strip.
   test('no-ops when the container is absent', () => {
