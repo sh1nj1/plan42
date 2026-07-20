@@ -884,6 +884,9 @@ export default class extends Controller {
         if (quote.id === store.activeId) {
           const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
           if (commentEl) {
+            // Programmatic list scroll — drop the prev-message anchor so the next
+            // previous-message click resolves from the quoted comment now in view.
+            this.listController?.notifyProgrammaticScroll()
             commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
             commentEl.classList.add('comment-highlight')
             setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)

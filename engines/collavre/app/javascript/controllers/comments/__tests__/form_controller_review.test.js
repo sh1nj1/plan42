@@ -343,4 +343,30 @@ describe('FormController - Review Quote Chips', () => {
       expect(controller.textareaTarget.value).toBe('fb2')
     })
   })
+
+  describe('active chip re-click - programmatic scroll', () => {
+    // Re-clicking the active chip scrolls its quoted comment into view. That is a
+    // programmatic list scroll, so it must drop the prev-message anchor the same way
+    // scrollToBottom/highlightComment do — otherwise a stale anchor inside the corridor
+    // survives and the next previous-message click skips the comment now in view.
+    test('re-clicking the active chip notifies the list of a programmatic scroll', () => {
+      const commentEl = document.createElement('div')
+      commentEl.setAttribute('data-comment-id', '1')
+      commentEl.scrollIntoView = jest.fn() // jsdom has no scrollIntoView
+      document.body.appendChild(commentEl)
+
+      const notifyProgrammaticScroll = jest.fn()
+      jest
+        .spyOn(controller, 'listController', 'get')
+        .mockReturnValue({ notifyProgrammaticScroll })
+
+      controller.appendReviewQuote(1, 'first') // freshly appended quote is active
+      container.querySelector('.review-quote-chip-text').click()
+
+      expect(commentEl.scrollIntoView).toHaveBeenCalled()
+      expect(notifyProgrammaticScroll).toHaveBeenCalled()
+
+      commentEl.remove()
+    })
+  })
 })

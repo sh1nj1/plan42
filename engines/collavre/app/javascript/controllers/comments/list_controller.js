@@ -351,6 +351,13 @@ export default class extends Controller {
     return parseInt(last.dataset.commentId)
   }
 
+  // Public seam for sibling controllers that scroll the list on their own
+  // (e.g. the review-quote chip). Lets them drop the prev-message anchor at the
+  // choke point without reaching into the navigator's internals.
+  notifyProgrammaticScroll() {
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
+  }
+
   highlightComment(commentId) {
     const comment = document.getElementById(`comment_${commentId}`)
     if (!comment) return
