@@ -9,6 +9,11 @@ import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
+// Gestures that mean the user moved the list themselves, invalidating the
+// previous-message anchor. Only user input fires these — our own smooth scroll
+// does not.
+const PREV_MSG_USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown']
+
 export default class extends Controller {
   static targets = ['list']
 
@@ -24,6 +29,7 @@ export default class extends Controller {
     this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
+    this.handlePrevMsgUserInput = this.handlePrevMsgUserInput.bind(this)
     this.handleChange = this.handleChange.bind(this)
     this.handleClick = this.handleClick.bind(this)
     this.handleSubmit = this.handleSubmit.bind(this)
@@ -35,6 +41,9 @@ export default class extends Controller {
     this.handleStreamRender = this.handleStreamRender.bind(this)
 
     this.listTarget.addEventListener('scroll', this.handleScroll)
+    PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
+      this.listTarget.addEventListener(name, this.handlePrevMsgUserInput)
+    })
     this.listTarget.addEventListener('change', this.handleChange)
     this.listTarget.addEventListener('click', this.handleClick)
     this.listTarget.addEventListener('submit', this.handleSubmit)
@@ -76,8 +85,10 @@ export default class extends Controller {
   }
 
   disconnect() {
-    clearTimeout(this.prevMsgSettleTimer)
     this.listTarget.removeEventListener('scroll', this.handleScroll)
+    PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
+      this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
+    })
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
@@ -363,9 +374,11 @@ export default class extends Controller {
     }, 2000);
   }
 
-  handleScroll() {
-    this.prevMsgNavigator.handleScroll()
+  handlePrevMsgUserInput() {
+    this.prevMsgNavigator.notifyUserInput()
+  }
 
+  handleScroll() {
     if (!this.initialLoadComplete) return
 
     // Standard Column:
@@ -1108,11 +1121,6 @@ export default class extends Controller {
     this.prevMsgNavigator.commit(measured[targetIdx].id)
     list.scrollTo({ top: targetTop, behavior: 'smooth' })
     this.stickToBottom = false
-
-    // The anchor stays authoritative until the smooth scroll lands; after that a
-    // scroll event means the user moved the list themselves.
-    clearTimeout(this.prevMsgSettleTimer)
-    this.prevMsgSettleTimer = setTimeout(() => this.prevMsgNavigator.settle(), 700)
 
     target.classList.add('highlight-flash')
     setTimeout(() => target.classList.remove('highlight-flash'), 2000)

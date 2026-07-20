@@ -76,31 +76,21 @@ describe('PrevMessageNavigator', () => {
   })
 
   describe('anchor invalidation', () => {
-    test('ignores the scroll events produced by our own animation', () => {
+    test('drops the anchor when the user moves the list', () => {
       nav.commit('1')
-      nav.handleScroll()
-      expect(nav.anchorId).toBe('1')
-    })
-
-    test('drops the anchor once the user scrolls after the animation settles', () => {
-      nav.commit('1')
-      nav.settle()
-      nav.handleScroll()
+      nav.notifyUserInput()
       expect(nav.anchorId).toBeNull()
     })
 
-    test('reset clears both the anchor and the in-flight flag', () => {
+    test('reset clears the anchor', () => {
       nav.commit('1')
       nav.reset()
-      expect(nav.anchorId).toBeNull()
-      nav.handleScroll()
       expect(nav.anchorId).toBeNull()
     })
 
     test('after a user scroll, geometry drives the next click again', () => {
       nav.commit('1')
-      nav.settle()
-      nav.handleScroll()
+      nav.notifyUserInput()
       expect(nav.resolveTargetIndex(items(-200, -100, 130, 330), VIEWPORT_TOP)).toBe(2)
     })
   })

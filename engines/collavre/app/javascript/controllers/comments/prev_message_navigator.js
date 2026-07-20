@@ -5,8 +5,14 @@
 // from geometry at that moment picks the item we just left (it has not reached
 // the top yet), which makes the list bounce up and down instead of walking
 // backwards. Remembering the last target as an anchor keeps each click stepping
-// one message further back, and geometry only takes over once the user scrolls
-// on their own.
+// one message further back.
+//
+// The anchor is dropped once the user moves the list themselves, so geometry
+// takes over from wherever they landed. Invalidation is driven by input events
+// rather than scroll events: a scroll event cannot be attributed to the user
+// without guessing how long our own animation runs, and guessing short brings
+// the bounce back. Dropping the anchor is always the safe direction — a settled
+// list resolves correctly from geometry alone.
 //
 // Kept free of DOM access so it can be unit tested: jsdom has no layout engine,
 // so the controller measures the items and passes `{ id, top }` pairs in.
@@ -18,7 +24,6 @@ const TOP_TOLERANCE = 4
 export default class PrevMessageNavigator {
   constructor() {
     this.anchorId = null
-    this.scrolling = false
   }
 
   // items: `{ id, top }` in DOM order (oldest first), top relative to viewport.
@@ -42,24 +47,15 @@ export default class PrevMessageNavigator {
   // Called once we start scrolling towards `id`.
   commit(id) {
     this.anchorId = id
-    this.scrolling = true
   }
 
-  // Called when the smooth scroll has landed.
-  settle() {
-    this.scrolling = false
-  }
-
-  // Called on every scroll event. Scroll events fired by our own animation must
-  // not clear the anchor — only a scroll the user drove themselves.
-  handleScroll() {
-    if (this.scrolling) return
+  // Called when the user interacts with the list (wheel, touch, key, pointer).
+  notifyUserInput() {
     this.anchorId = null
   }
 
   // Called when the list contents are replaced wholesale.
   reset() {
     this.anchorId = null
-    this.scrolling = false
   }
 }
