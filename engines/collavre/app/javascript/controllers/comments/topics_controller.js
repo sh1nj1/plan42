@@ -404,7 +404,7 @@ export default class extends Controller {
                 }
                 this.loadTopics()
             } else {
-                alertDialog("Failed to delete topic")
+                alertDialog(this._i18n("delete_error"))
             }
         } catch (e) {
             console.error("Error deleting topic", e)
@@ -431,7 +431,7 @@ export default class extends Controller {
                 }
                 this.loadTopics()
             } else {
-                alertDialog("Failed to archive topic")
+                alertDialog(this._i18n("archive_error"))
             }
         } catch (e) {
             console.error("Error archiving topic", e)
@@ -454,7 +454,7 @@ export default class extends Controller {
             if (response.ok) {
                 this.loadTopics()
             } else {
-                alertDialog("Failed to restore topic")
+                alertDialog(this._i18n("restore_error"))
             }
         } catch (e) {
             console.error("Error restoring topic", e)
@@ -661,7 +661,7 @@ export default class extends Controller {
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             } else {
-                alertDialog("Failed to update topic")
+                alertDialog(this._i18n("update_error"))
                 this.loadTopics() // Reload to restore state
             }
         } catch (e) {
@@ -752,7 +752,7 @@ export default class extends Controller {
                 // Dispatch change event manually since we skipped the click handler
                 this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
-                alertDialog("Failed to create topic")
+                alertDialog(this._i18n("create_error"))
             }
         } catch (e) {
             console.error("Error creating topic", e)
@@ -1000,6 +1000,21 @@ export default class extends Controller {
         }
     }
 
+    // Localized strings are handed down from the ERB partial as data
+    // attributes; the English literals are last-resort fallbacks for when the
+    // controller is mounted without them.
+    _i18n(key) {
+        const translations = {
+            set_agent_error: this.element.dataset.topicSetAgentError || 'Unable to assign the agent to this topic.',
+            create_error: this.element.dataset.topicCreateError || 'Unable to create the topic.',
+            update_error: this.element.dataset.topicUpdateError || 'Unable to update the topic.',
+            delete_error: this.element.dataset.topicDeleteError || 'Unable to delete the topic.',
+            archive_error: this.element.dataset.topicArchiveError || 'Unable to archive the topic.',
+            restore_error: this.element.dataset.topicRestoreError || 'Unable to restore the topic.'
+        }
+        return translations[key] || key
+    }
+
     async setTopicPrimaryAgent(topicId, agent) {
         if (!this.creativeId) return
 
@@ -1016,7 +1031,7 @@ export default class extends Controller {
             const data = await response.json().catch(() => ({}))
 
             if (!response.ok) {
-                alertDialog(data.error || "Failed to set primary agent")
+                alertDialog(data.error || this._i18n("set_agent_error"))
                 return
             }
 
@@ -1029,7 +1044,7 @@ export default class extends Controller {
             if (data.topic) this.updateTopicInList(data.topic)
         } catch (e) {
             console.error('Error setting primary agent', e)
-            alertDialog("Failed to set primary agent")
+            alertDialog(this._i18n("set_agent_error"))
         }
     }
 

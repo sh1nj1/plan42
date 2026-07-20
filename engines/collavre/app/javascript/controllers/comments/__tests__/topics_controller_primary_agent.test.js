@@ -33,7 +33,8 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
   beforeEach(() => {
     container = document.createElement('div')
     container.innerHTML = `
-      <div id="topics" data-controller="comments--topics">
+      <div id="topics" data-controller="comments--topics"
+           data-topic-set-agent-error="에이전트를 지정할 수 없습니다.">
         <div data-comments--topics-target="list"></div>
       </div>
     `
@@ -88,7 +89,10 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
     expect(controller.listTarget.querySelector('.topic-agent-avatar')).toBeNull()
   })
 
-  test('surfaces a message when the response body is not JSON', async () => {
+  // The fallback path has no server-supplied (already localized) error to show,
+  // so it must use the localized string handed down by the ERB partial rather
+  // than an English literal.
+  test('surfaces the localized fallback when the response body is not JSON', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       json: async () => { throw new SyntaxError('Unexpected token <') },
@@ -96,14 +100,23 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
 
     await controller.setTopicPrimaryAgent('1', AGENT)
 
-    expect(alertDialog).toHaveBeenCalledWith('Failed to set primary agent')
+    expect(alertDialog).toHaveBeenCalledWith('에이전트를 지정할 수 없습니다.')
   })
 
-  test('surfaces a message when the request itself fails', async () => {
+  test('surfaces the localized fallback when the request itself fails', async () => {
     global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'))
 
     await controller.setTopicPrimaryAgent('1', AGENT)
 
-    expect(alertDialog).toHaveBeenCalledWith('Failed to set primary agent')
+    expect(alertDialog).toHaveBeenCalledWith('에이전트를 지정할 수 없습니다.')
+  })
+
+  test('falls back to English when the partial supplied no localized string', async () => {
+    delete document.getElementById('topics').dataset.topicSetAgentError
+    global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+
+    await controller.setTopicPrimaryAgent('1', AGENT)
+
+    expect(alertDialog).toHaveBeenCalledWith('Unable to assign the agent to this topic.')
   })
 })
