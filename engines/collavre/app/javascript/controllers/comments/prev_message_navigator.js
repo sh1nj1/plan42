@@ -47,17 +47,23 @@ export default class PrevMessageNavigator {
     return isAtTop ? currentIdx - 1 : currentIdx
   }
 
-  // The anchor travels from wherever it sat when we committed up to `viewportTop`,
+  // The anchor travels from wherever it sat when we committed to `viewportTop`,
   // and nothing else moves it. Outside that corridor the list was scrolled by
   // something other than us - a new message arriving, a permalink jump - none of
   // which fire a user input event, so the anchor would otherwise survive and wedge
   // the button (anchored on the oldest item, every click resolves to -1 forever).
   //
+  // The corridor spans both endpoints because the anchor can approach the top from
+  // either side: usually from above (the next message back), but from below when
+  // the click started between messages and we pulled the partially visible one up.
+  //
   // Comparing the anchor against its own start position rather than the list's
   // scroll offset keeps this correct when older comments are prepended: that
   // shifts `scrollTop` but leaves the anchor where it is on screen.
   anchorIsOnItsWay(anchorTop, viewportTop) {
-    return anchorTop >= this.anchorStartTop - TOP_TOLERANCE && anchorTop <= viewportTop + TOP_TOLERANCE
+    const low = Math.min(this.anchorStartTop, viewportTop) - TOP_TOLERANCE
+    const high = Math.max(this.anchorStartTop, viewportTop) + TOP_TOLERANCE
+    return anchorTop >= low && anchorTop <= high
   }
 
   // Called once we start scrolling towards `id`, which currently sits at `top`.

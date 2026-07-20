@@ -54,6 +54,17 @@ describe('PrevMessageNavigator', () => {
       expect(nav.resolveTargetIndex(items(-150, -50, 150, 350), VIEWPORT_TOP)).toBe(0)
     })
 
+    test('keeps stepping when the first click started from a partially visible item', () => {
+      // First click from between messages: item 2 is cut off *below* the top, so
+      // we scroll it up into place and the anchor starts below the viewport top.
+      expect(nav.resolveTargetIndex(items(-200, -100, 130, 330), VIEWPORT_TOP)).toBe(2)
+      nav.commit('2', 130)
+
+      // Second click mid-animation: item 2 is on its way down to the top. The
+      // anchor must still win, otherwise we re-target item 2 and stall.
+      expect(nav.resolveTargetIndex(items(-215, -115, 115, 315), VIEWPORT_TOP)).toBe(1)
+    })
+
     test('survives older comments being prepended (anchor is id based)', () => {
       // Prepending shifts scrollTop but leaves the anchor where it is on screen,
       // so it is still on its way from -300 up to the viewport top.
