@@ -189,15 +189,32 @@ export default class extends Controller {
             }
         }
 
-        // Add create button container (write permission is sufficient for topic creation)
-        if (canCreateTopic) {
-            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer"
-                          data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop">
-                  <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
-                 </span>`
+        this.listTarget.innerHTML = html
+
+        // The create button lives outside the scrolling strip so it stays reachable
+        // without horizontal scrolling, no matter how many topics there are.
+        this.renderCreationContainer(canCreateTopic)
+    }
+
+    // Write permission is sufficient for topic creation.
+    renderCreationContainer(canCreateTopic) {
+        const container = this.creationContainer
+        if (!container) return
+
+        container.hidden = !canCreateTopic
+        if (!canCreateTopic) {
+            container.innerHTML = ''
+            return
         }
 
-        this.listTarget.innerHTML = html
+        // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
+        if (container.querySelector('.topic-input')) return
+
+        container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+    }
+
+    get creationContainer() {
+        return this.element.querySelector('[data-comments--topics-target="creationContainer"]')
     }
 
     handleDragOver(event) {
@@ -517,7 +534,7 @@ export default class extends Controller {
 
     showInput(event) {
         event.preventDefault()
-        const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
+        const container = this.creationContainer
         if (!container) return
 
         const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
@@ -532,7 +549,7 @@ export default class extends Controller {
     resetInput() {
         // Small delay to allow enter key to process first if that was the cause
         setTimeout(() => {
-            const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
+            const container = this.creationContainer
             if (container && !this.creating) {
                 container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
             }
