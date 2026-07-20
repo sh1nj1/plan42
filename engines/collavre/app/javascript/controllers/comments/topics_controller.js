@@ -7,7 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list"]
+    static targets = ["list", "creationContainer"]
 
     connect() {
         this.topics = []
@@ -198,8 +198,8 @@ export default class extends Controller {
 
     // Write permission is sufficient for topic creation.
     renderCreationContainer(canCreateTopic) {
-        const container = this.creationContainer
-        if (!container) return
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
 
         container.hidden = !canCreateTopic
         if (!canCreateTopic) {
@@ -210,11 +210,12 @@ export default class extends Controller {
         // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
         if (container.querySelector('.topic-input')) return
 
-        container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+        this.renderAddButton()
     }
 
-    get creationContainer() {
-        return this.element.querySelector('[data-comments--topics-target="creationContainer"]')
+    renderAddButton() {
+        this.creationContainerTarget.innerHTML =
+            `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
     }
 
     handleDragOver(event) {
@@ -534,8 +535,8 @@ export default class extends Controller {
 
     showInput(event) {
         event.preventDefault()
-        const container = this.creationContainer
-        if (!container) return
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
 
         const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
         container.innerHTML = `<input type="text" class="topic-input" placeholder="${placeholder}" 
@@ -549,9 +550,8 @@ export default class extends Controller {
     resetInput() {
         // Small delay to allow enter key to process first if that was the cause
         setTimeout(() => {
-            const container = this.creationContainer
-            if (container && !this.creating) {
-                container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+            if (this.hasCreationContainerTarget && !this.creating) {
+                this.renderAddButton()
             }
         }, 200)
     }

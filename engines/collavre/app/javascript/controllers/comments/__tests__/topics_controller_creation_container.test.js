@@ -75,7 +75,7 @@ describe('TopicsController create-button placement', () => {
     controller.renderTopics(TOPICS, true, true)
     controller.renderTopics(TOPICS, false, false)
 
-    const creation = controller.creationContainer
+    const creation = controller.creationContainerTarget
     expect(creation.hidden).toBe(true)
     expect(creation.innerHTML).toBe('')
     expect(document.querySelector('.add-topic-btn')).toBeNull()
@@ -85,7 +85,7 @@ describe('TopicsController create-button placement', () => {
     controller.renderTopics(TOPICS, false, false)
     controller.renderTopics(TOPICS, true, true)
 
-    expect(controller.creationContainer.hidden).toBe(false)
+    expect(controller.creationContainerTarget.hidden).toBe(false)
     expect(document.querySelector('.add-topic-btn')).not.toBeNull()
   })
 
@@ -94,12 +94,22 @@ describe('TopicsController create-button placement', () => {
     controller.renderTopics(TOPICS, true, true)
     controller.showInput({ preventDefault() {} })
 
-    const input = controller.creationContainer.querySelector('.topic-input')
+    const input = controller.creationContainerTarget.querySelector('.topic-input')
     input.value = 'half-typed'
 
     controller.renderTopics([...TOPICS, { id: 99, name: 'from-broadcast' }], true, true)
 
-    expect(controller.creationContainer.querySelector('.topic-input')).toBe(input)
+    expect(controller.creationContainerTarget.querySelector('.topic-input')).toBe(input)
     expect(input.value).toBe('half-typed')
+  })
+
+  // The container is static markup, but rendering must not throw if a caller
+  // mounts the controller on a stripped-down strip.
+  test('no-ops when the container is absent', () => {
+    controller.creationContainerTarget.remove()
+
+    expect(() => controller.renderTopics(TOPICS, true, true)).not.toThrow()
+    expect(() => controller.showInput({ preventDefault() {} })).not.toThrow()
+    expect(controller.listTarget.querySelector('.topic-tag[data-id="12"]')).not.toBeNull()
   })
 })
