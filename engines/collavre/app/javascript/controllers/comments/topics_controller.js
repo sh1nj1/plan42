@@ -7,7 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list"]
+    static targets = ["list", "creationContainer"]
 
     connect() {
         this.topics = []
@@ -189,15 +189,37 @@ export default class extends Controller {
             }
         }
 
-        // Add create button container (write permission is sufficient for topic creation)
-        if (canCreateTopic) {
-            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer"
-                          data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop">
-                  <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
-                 </span>`
+        this.listTarget.innerHTML = html
+
+        // The create button lives outside the scrolling strip so it stays reachable
+        // without horizontal scrolling, no matter how many topics there are.
+        this.renderCreationContainer(canCreateTopic)
+    }
+
+    // Write permission is sufficient for topic creation.
+    renderCreationContainer(canCreateTopic) {
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
+
+        container.hidden = !canCreateTopic
+        if (!canCreateTopic) {
+            container.innerHTML = ''
+            return
         }
 
-        this.listTarget.innerHTML = html
+        // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
+        // `creating` marks an already-submitted name, whose input must give way to the button.
+        // A draft only survives re-renders of the creative it was typed for: chat-nav
+        // switches creatives without blurring, and posting it there is the wrong creative.
+        const draftIsCurrent = String(this._draftCreativeId) === String(this.creativeId)
+        if (!this.creating && draftIsCurrent && container.querySelector('.topic-input')) return
+
+        this.renderAddButton()
+    }
+
+    renderAddButton() {
+        this.creationContainerTarget.innerHTML =
+            `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
     }
 
     handleDragOver(event) {
@@ -517,9 +539,10 @@ export default class extends Controller {
 
     showInput(event) {
         event.preventDefault()
-        const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
-        if (!container) return
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
 
+        this._draftCreativeId = this.creativeId
         const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
         container.innerHTML = `<input type="text" class="topic-input" placeholder="${placeholder}" 
                                   data-action="keydown->comments--topics#handleInputKey blur->comments--topics#resetInput"
@@ -532,9 +555,8 @@ export default class extends Controller {
     resetInput() {
         // Small delay to allow enter key to process first if that was the cause
         setTimeout(() => {
-            const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
-            if (container && !this.creating) {
-                container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+            if (this.hasCreationContainerTarget && !this.creating) {
+                this.renderAddButton()
             }
         }, 200)
     }

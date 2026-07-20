@@ -147,11 +147,12 @@ steps:
   # ── Scene 2 — the discussion lives on the work ───────────────────────────
   - open_chat: "{{leaf}}"
   - wait: 1800
-  - click: "#comment-topics .add-topic-btn"
+  # The creation control sits beside the topic strip, not inside it.
+  - click: ".topic-creation-container .add-topic-btn"
   - wait: 700
   # blur resets the input back to a "+" button, so type and press Enter with no
   # intervening click.
-  - type: { selector: "#comment-topics input.topic-input", text: "{{topic}}", delay: 60 }
+  - type: { selector: ".topic-creation-container input.topic-input", text: "{{topic}}", delay: 60 }
   - press: Enter
   - wait_for: { selector: "#comment-topics .topic-tag", text: "{{topic}}", timeout: 12000 }
   - wait: 1000
