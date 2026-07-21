@@ -41,28 +41,41 @@ module Collavre
     end
 
     # A duplicate profile is a split-brain hazard: prompt edits could land on one
-    # profile while agent execution reads another. A hard DB uniqueness index is
-    # not portable here — the discriminator lives in the `data` json column, and
-    # on Postgres `json ->>` is STABLE (not IMMUTABLE), so a partial-unique index
-    # WHERE data->>'kind' = 'profile' is rejected at schema load. Instead every
-    # profile lookup orders by id, so reads and writes converge on the oldest
-    # profile and a transient race-created duplicate is harmless, never a split
-    # brain. Both the write path (profile_for) and the read path
-    # (profile_creative_if_present) must pick the same one.
-    test "reads and writes converge on the oldest profile when a duplicate exists" do
-      first = Collavre::Creative.profile_for(@user)
-      second = Collavre::Creative.create!(
-        description: @user.name.to_s,
-        data: { "kind" => Collavre::Creative::PROFILE_KIND },
-        user: @user,
-        progress: 0.0
-      )
-      assert_operator second.id, :>, first.id, "second profile should be newer"
+    # profile (via the generic Creative tree) while agent execution reads another.
+    # A partial unique index (index_creatives_on_user_id_profile_unique) enforces
+    # one profile per user at the DB, so the duplicate can never exist. This is
+    # portable on the current `data` json column: `json ->>`
+    # (json_object_field_text) is IMMUTABLE on Postgres (verified pg14/pg16), so
+    # the partial predicate is accepted at schema load, and SQLite enforces it.
+    test "the database rejects a second profile creative for the same user" do
+      Collavre::Creative.profile_for(@user)
+      assert_raises(ActiveRecord::RecordNotUnique) do
+        Collavre::Creative.create!(
+          description: @user.name.to_s,
+          data: { "kind" => Collavre::Creative::PROFILE_KIND },
+          user: @user,
+          progress: 0.0
+        )
+      end
+    end
 
-      assert_equal first.id, Collavre::Creative.profile_for(@user).id,
-        "write path must target the oldest profile"
-      assert_equal first.id, @user.profile_creative_if_present.id,
-        "read path must return the same profile the write path targets"
+    # profile_for creates via create_or_find_by!: a create that loses the race
+    # (unique-index violation) must resolve to the surviving row, not raise and
+    # not add a second profile. Exercise that path directly against the real
+    # scope, since profile_for's read-first fast path would otherwise short it.
+    test "create_or_find_by resolves a lost create race to the surviving profile" do
+      first = Collavre::Creative.profile_for(@user)
+      resolved = nil
+      assert_no_difference -> { Collavre::Creative.profiles.where(user: @user).count } do
+        assert_nothing_raised do
+          resolved = Collavre::Creative.profiles.create_or_find_by!(user: @user) do |creative|
+            creative.description = @user.name.to_s
+            creative.data = { "kind" => Collavre::Creative::PROFILE_KIND }
+            creative.progress = 0.0
+          end
+        end
+      end
+      assert_equal first.id, resolved.id
     end
 
     # Profile and inbox share user_id but differ by kind; both must coexist.

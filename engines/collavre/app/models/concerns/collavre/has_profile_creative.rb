@@ -22,8 +22,9 @@ module Collavre
     def profile_creative_if_present
       return nil unless persisted?
 
-      # order(:id) matches profile_for's write-path selection so a read never
-      # diverges from the profile a write targets, even if a race created a dup.
+      # A partial unique index enforces one profile per user, so at most one row
+      # matches; order(:id) is defensive (matches profile_for's selection) for
+      # any pre-index legacy duplicate, keeping reads and writes on the same row.
       Collavre::Creative.profiles.where(user: self).order(:id).first
     end
 
