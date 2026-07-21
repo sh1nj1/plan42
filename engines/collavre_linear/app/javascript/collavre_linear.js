@@ -15,19 +15,38 @@
 // unconfirmed and errors would vanish. Route through the shared in-app modal
 // like the GitHub/Slack/Notion engines do.
 import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import {
+  markReopenAfterConnect,
+  consumeReopenAfterConnect,
+  safeSessionStorage,
+} from './linear_modal_reopen.js';
 
 let linearIntegrationInitialized = false;
 
 if (!linearIntegrationInitialized) {
   linearIntegrationInitialized = true;
 
-  // The OAuth popup posts `linearConnected` to the opener when it closes.
-  // Reload so the modal re-renders in the connected (link-a-project) state.
+  // The OAuth popup posts `linearConnected` to the opener once the account is
+  // connected. Reload so the modal re-renders in the connected (link-a-project)
+  // state, then reopen it (see turbo:load) so the user lands directly on the
+  // project settings step instead of a closed modal.
   // Bound to `window` once — it survives Turbo navigations, unlike the
   // per-navigation element listeners set up in turbo:load below.
   window.addEventListener('message', function (event) {
     if (event.origin !== window.location.origin) return;
     if (event.data && event.data.type === 'linearConnected') {
+      // Close the popup from here. window.close() inside the popup is unreliable
+      // after the cross-origin OAuth round trip and in the desktop WebView, so
+      // the popup's own "Close" button looked dead — closing the window we
+      // opened is the reliable path.
+      try {
+        if (event.source && !event.source.closed) event.source.close();
+      } catch (e) { /* cross-origin or already closed */ }
+      // Survive the reload: reopen the modal on the next load so the flow lands
+      // on the project-link step automatically. Scope it to the creative the
+      // popup was opened for (event.data.creativeId) so a mid-flow navigation to
+      // a different creative doesn't auto-open the wrong creative's link modal.
+      markReopenAfterConnect(safeSessionStorage(), event.data.creativeId);
       window.location.reload();
     }
   });
@@ -190,6 +209,15 @@ if (!linearIntegrationInitialized) {
     openBtn.addEventListener('click', function () {
       showModal();
     });
+
+    // Just returned from the OAuth popup: open the modal straight to the
+    // project-link step instead of leaving the (display:none) modal closed, so
+    // the user doesn't have to reopen the Linear menu by hand. Only reopen when
+    // this page's creative matches the one the popup connected for — otherwise a
+    // mid-flow navigation would surface the wrong creative's link modal.
+    if (consumeReopenAfterConnect(safeSessionStorage(), modal.dataset.creativeId)) {
+      showModal();
+    }
 
     closeBtn?.addEventListener('click', closeModal);
 
