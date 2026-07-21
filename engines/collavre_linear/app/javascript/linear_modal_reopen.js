@@ -4,7 +4,8 @@
 // full `window.location.reload()` so the server re-renders the modal in its
 // project-linking state (the account now exists). But the modal defaults to
 // `display:none` and nothing re-opens it after the reload — so the connect→link
-// step is invisible and the user has to click "Linear 연결" again to reach it.
+// step is invisible and the user has to click the Linear connect button again to
+// reach it.
 //
 // This module persists a one-shot "reopen the modal" flag across that reload.
 // Factored out of the side-effectful collavre_linear.js opener so the behavior
