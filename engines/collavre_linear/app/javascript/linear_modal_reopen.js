@@ -25,9 +25,13 @@ export function safeSessionStorage() {
   }
 }
 
-// Legacy/unscoped sentinel. Stored when the OAuth creative id is unknown so the
-// reopen still fires (matches any page) — the scoped path stores the id instead.
-const UNSCOPED = '1';
+// Unscoped sentinel. Stored when the OAuth creative id is unknown so the reopen
+// still fires (matches any page) — the scoped path stores the id instead. Must
+// be a value no serialized creative id can equal: ids are positive integers and
+// serialize to digit strings, so a non-digit marker never collides. (A previous
+// '1' sentinel collided with creative id 1 — that page's scoped reopen was
+// misread as unscoped and skipped the mismatch guard.)
+const UNSCOPED = '*';
 
 // Record that the modal should reopen after the next full-page reload, scoped to
 // the creative the OAuth popup was opened for. The popup posts its own

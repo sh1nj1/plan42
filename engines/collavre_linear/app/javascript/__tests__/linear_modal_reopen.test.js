@@ -45,7 +45,15 @@ describe('markReopenAfterConnect', () => {
   test('persists the unscoped sentinel when no creative id is given', () => {
     const storage = fakeStorage();
     markReopenAfterConnect(storage);
-    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('1');
+    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('*');
+  });
+
+  test('the unscoped sentinel cannot equal any serialized creative id', () => {
+    // Creative ids are positive integers → digit strings. The sentinel must be a
+    // non-digit so a real id never gets misread as "unscoped".
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage);
+    expect(storage.getItem(LINEAR_REOPEN_KEY)).not.toMatch(/^\d+$/);
   });
 
   test('persists the creative id when given (scoped reopen)', () => {
@@ -57,7 +65,7 @@ describe('markReopenAfterConnect', () => {
   test('falls back to the unscoped sentinel for an empty creative id', () => {
     const storage = fakeStorage();
     markReopenAfterConnect(storage, '');
-    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('1');
+    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('*');
   });
 
   test('tolerates a null storage without throwing', () => {
@@ -96,6 +104,21 @@ describe('consumeReopenAfterConnect', () => {
     // Opener moved to creative 99 before the reload → no reopen, flag cleared.
     expect(consumeReopenAfterConnect(storage, 99)).toBe(false);
     expect(storage.getItem(LINEAR_REOPEN_KEY)).toBeNull();
+  });
+
+  test('creative id 1 stays scoped and does NOT reopen a different creative', () => {
+    // Regression: the sentinel used to be '1', colliding with creative id 1 — so
+    // OAuth from creative 1 was misread as unscoped and reopened whatever modal
+    // the opener had navigated to. It must behave like any other scoped id.
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 1);           // popup connected creative 1
+    expect(consumeReopenAfterConnect(storage, 99)).toBe(false); // opener moved away
+  });
+
+  test('creative id 1 reopens when the opener is still on creative 1', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 1);
+    expect(consumeReopenAfterConnect(storage, 1)).toBe(true);
   });
 
   test('clears a mismatched intent so it never fires on a later matching visit', () => {
