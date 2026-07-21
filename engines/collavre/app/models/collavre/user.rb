@@ -208,6 +208,15 @@ module Collavre
       llm_vendor.present?
     end
 
+    # Mirror the agent's system prompt into its profile creative description,
+    # the canonical home for the prompt (the system_prompt column is legacy, pending removal).
+    # No-op for humans and for prompt-less agents (description keeps its name seed).
+    def sync_profile_system_prompt!
+      return unless ai_user? && system_prompt.present?
+      creative = profile_creative
+      creative.update!(description: system_prompt) unless creative.description == system_prompt
+    end
+
     def claude_channel_agent?
       llm_model == "claude-code"
     end

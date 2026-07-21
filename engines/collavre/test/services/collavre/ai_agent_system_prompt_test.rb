@@ -28,5 +28,18 @@ module Collavre
       svc.instance_variable_set(:@creative, nil)
       assert_includes svc.send(:render_system_prompt, {}), "COLUMN PROMPT"
     end
+
+    test "a normally created agent renders its prompt after sync, not its name" do
+      agent = Collavre::User.create!(name: "RenderBot", email: "renderbot@ai.local",
+                                     password: "password123", llm_vendor: "google",
+                                     system_prompt: "SYSTEM PROMPT TEXT")
+      agent.sync_profile_system_prompt!
+      svc = Collavre::AiAgentService.allocate
+      svc.instance_variable_set(:@agent, agent)
+      svc.instance_variable_set(:@creative, nil)
+      out = svc.send(:render_system_prompt, {})
+      assert_includes out, "SYSTEM PROMPT TEXT"
+      refute_includes out, "RenderBot"
+    end
   end
 end
