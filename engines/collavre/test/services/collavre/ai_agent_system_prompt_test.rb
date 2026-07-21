@@ -10,19 +10,29 @@ module Collavre
                                       system_prompt: "COLUMN PROMPT")
     end
 
-    test "prefers profile description over the column" do
-      @agent.profile_creative.update!(description: "PROFILE PROMPT")
+    test "prefers the profile markdown_source over the column" do
+      @agent.profile_creative.update!(content_type_input: "markdown", markdown_source: "PROFILE PROMPT")
       svc = Collavre::AiAgentService.allocate
       svc.instance_variable_set(:@agent, @agent)
       svc.instance_variable_set(:@creative, nil)
       assert_includes svc.send(:render_system_prompt, {}), "PROFILE PROMPT"
     end
 
-    test "falls back to the column when profile description is blank" do
-      # Creative#description carries a presence validation (via closure_tree's
-      # name_column), so update! rejects a blank value. Use update_column to
-      # bypass validation and simulate a legacy/blank row for this test.
-      @agent.profile_creative.update_column(:description, "")
+    test "renders a tag-bearing prompt verbatim, uncorrupted by the sanitizer" do
+      prompt = "Wrap reasoning in <thinking>...</thinking>. count < 5 and result > 3."
+      @agent.profile_creative.update!(content_type_input: "markdown", markdown_source: prompt)
+      svc = Collavre::AiAgentService.allocate
+      svc.instance_variable_set(:@agent, @agent)
+      svc.instance_variable_set(:@creative, nil)
+      out = svc.send(:render_system_prompt, {})
+      assert_includes out, "<thinking>...</thinking>"
+      assert_includes out, "count < 5 and result > 3"
+    end
+
+    test "falls back to the column when the profile has no markdown_source" do
+      # A profile creative not yet backfilled has no data["markdown_source"];
+      # render must fall back to the legacy column, not the name-seeded description.
+      assert_nil @agent.profile_creative.data&.dig("markdown_source")
       svc = Collavre::AiAgentService.allocate
       svc.instance_variable_set(:@agent, @agent)
       svc.instance_variable_set(:@creative, nil)

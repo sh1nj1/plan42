@@ -208,13 +208,19 @@ module Collavre
       llm_vendor.present?
     end
 
-    # Mirror the agent's system prompt into its profile creative description,
-    # the canonical home for the prompt (the system_prompt column is legacy, pending removal).
-    # No-op for humans and for prompt-less agents (description keeps its name seed).
+    # Mirror the agent's system prompt into its profile creative as Markdown,
+    # so the raw prompt lands losslessly in data["markdown_source"] — the
+    # canonical home for the prompt. Writing the prompt straight into
+    # `description` would run it through the HTML sanitizer (Describable), which
+    # strips <thinking>/<tool_call> tags and entity-escapes < > &, corrupting
+    # every prompt; the derived `description` is only a rendered display view.
+    # The system_prompt column is legacy, pending removal.
+    # No-op for humans and for prompt-less agents (profile keeps its name seed).
     def sync_profile_system_prompt!
       return unless ai_user? && system_prompt.present?
       creative = profile_creative
-      creative.update!(description: system_prompt) unless creative.description == system_prompt
+      return if creative.data&.dig("markdown_source") == system_prompt
+      creative.update!(content_type_input: "markdown", markdown_source: system_prompt)
     end
 
     def claude_channel_agent?

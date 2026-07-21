@@ -136,7 +136,11 @@ module Collavre
     end
 
     def render_system_prompt(rendering_context)
-      template = @agent.profile_creative&.description.presence || @agent.system_prompt
+      # The prompt lives losslessly in the profile creative's markdown_source
+      # (data["markdown_source"]); `description` is the sanitized rendered view
+      # and would corrupt tags/angle-brackets, so never read it here. Fall back
+      # to the legacy system_prompt column for rows not yet backfilled.
+      template = @agent.profile_creative&.data&.dig("markdown_source").presence || @agent.system_prompt
       rendered = AiSystemPromptRenderer.new(
         template: template,
         context: rendering_context
