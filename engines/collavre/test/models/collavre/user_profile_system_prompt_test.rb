@@ -46,6 +46,24 @@ module Collavre
       assert_equal prompt, agent.reload.effective_system_prompt
     end
 
+    test "editing the profile creative directly keeps a data-URI prompt verbatim" do
+      # The sync path sets skip_data_uri_rewrite, but a *direct* edit of the
+      # profile Creative through the normal Markdown save path does not — yet its
+      # markdown_source is equally LLM-bound. The data-URI rewrite must not fire
+      # for profile creatives regardless of caller (sync vs direct editor save).
+      prompt = "Watermark with this: " \
+               "![logo](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)"
+      agent = Collavre::User.create!(name: "DirectBot", email: "directbot@ai.local",
+                                     password: "password123", llm_vendor: "google")
+      # Simulate a direct Creative-editor save: Markdown mode, no skip flag set.
+      agent.profile_creative.update!(content_type_input: "markdown", markdown_source: prompt)
+      stored = agent.profile_creative.reload.data["markdown_source"]
+      assert_equal prompt, stored
+      refute_includes stored, "/rails/active_storage/blobs"
+      refute_includes stored, "/public-assets/blobs"
+      assert_equal prompt, agent.reload.effective_system_prompt
+    end
+
     test "sync is idempotent and does not re-write an unchanged prompt" do
       agent = Collavre::User.create!(name: "IdemBot", email: "idembot@ai.local",
                                      password: "password123", llm_vendor: "google",

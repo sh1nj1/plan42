@@ -154,7 +154,11 @@ module Collavre
             # data URI, so re-renders no longer create duplicate blobs.
             # skip_data_uri_rewrite callers (prompt sync) keep the source
             # verbatim; the derived HTML still renders the data URI inline.
-            rewritten_source = if skip_data_uri_rewrite
+            # Profile creatives are agent prompts: markdown_source is sent
+            # verbatim to the LLM, so the rewrite must never fire for them
+            # regardless of caller — a direct Creative-editor edit reaches this
+            # path without the skip flag, but its source is equally LLM-bound.
+            rewritten_source = if skip_data_uri_rewrite || data["kind"] == PROFILE_KIND
               new_source
             else
               Collavre::MarkdownConverter.rewrite_data_uri_images(new_source)
