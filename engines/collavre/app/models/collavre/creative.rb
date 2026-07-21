@@ -78,6 +78,11 @@ module Collavre
 
     scope :profiles, -> { where("data->>'kind' = ?", PROFILE_KIND) }
 
+    # A profile creative is an agent's system prompt, never a tool source.
+    def profile?
+      data&.dig("kind") == PROFILE_KIND
+    end
+
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
     CONTENT_TOPIC_NAME = "Content"
@@ -380,6 +385,10 @@ module Collavre
     end
 
     def mark_mcp_tools_sync_pending
+      # Profile creatives hold an agent's system prompt, so a fenced
+      # `extend ToolMeta` example in the prompt must not register a real tool.
+      return if profile?
+
       @mcp_tools_sync_pending = true
     end
 

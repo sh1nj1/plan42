@@ -121,5 +121,46 @@ module Collavre
       assert_nil agent.profile_creative.data&.dig("markdown_source")
       assert_equal "Blanky", agent.profile_creative.description
     end
+
+    test "a profile prompt containing a tool-definition example does not register an MCP tool" do
+      # The profile description is the agent's system prompt, NOT a tool source.
+      # A prompt may legitimately show a fenced `extend ToolMeta` example (to
+      # instruct the agent), but Creative's description-change callback must not
+      # feed a profile creative into McpService, or prompt examples would create
+      # real, approval-gated tools on backfill / AI-settings sync / direct edit.
+      prompt = <<~PROMPT
+        When defining a tool, write:
+
+        ```ruby
+        class Tools::PromptExampleTool
+          extend ToolMeta
+          tool_name "prompt_example_tool"
+          tool_description "Should never be registered from a prompt"
+        end
+        ```
+      PROMPT
+      agent = Collavre::User.create!(name: "ToolBot", email: "toolbot@ai.local",
+                                     password: "password123", llm_vendor: "google",
+                                     system_prompt: prompt)
+      # Queue adapter is :inline in test, so UpdateMcpToolsJob would run here.
+      agent.sync_profile_system_prompt!
+      assert_nil McpTool.find_by(name: "prompt_example_tool"),
+                 "profile prompt examples must not be registered as MCP tools"
+    end
+
+    test "McpService#update_from_creative skips profile creatives regardless of caller" do
+      agent = Collavre::User.create!(name: "ToolBot2", email: "toolbot2@ai.local",
+                                     password: "password123", llm_vendor: "google")
+      agent.profile_creative.update!(content_type_input: "html", description: <<~HTML)
+        <pre class="lexical-code-block">class Tools::DirectProfileTool
+          extend ToolMeta
+          tool_name "direct_profile_tool"
+          tool_description "Should never be registered from a profile"
+        end</pre>
+      HTML
+      McpService.new.update_from_creative(agent.profile_creative)
+      assert_nil McpTool.find_by(name: "direct_profile_tool"),
+                 "a profile creative is never a tool source"
+    end
   end
 end
