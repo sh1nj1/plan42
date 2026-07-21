@@ -423,7 +423,7 @@ module CollavreLinear
       parsed = begin
         JSON.parse(response.body)
       rescue JSON::ParserError
-        raise Error, "Linear returned non-JSON response (HTTP #{response.code}): #{response.body.to_s[0, 200]}"
+        raise Error, "Linear returned non-JSON response (HTTP #{response.code}) from #{endpoint}: #{response.body.to_s[0, 200]}"
       end
 
       if parsed["errors"].present?
@@ -470,9 +470,32 @@ module CollavreLinear
     end
 
     def resolve_endpoint
-      if defined?(Collavre::IntegrationSettings::Resolver)
-        Collavre::IntegrationSettings::Resolver.get(:linear_api_endpoint).presence
-      end || DEFAULT_ENDPOINT
+      configured =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:linear_api_endpoint).presence
+        end
+
+      normalize_endpoint(configured) || DEFAULT_ENDPOINT
+    end
+
+    # Guard a misconfigured `linear_api_endpoint` override. Linear's GraphQL API
+    # lives at the `/graphql` path; an admin who pastes only a base URL
+    # (e.g. `https://host:port` or `.../`) would otherwise POST to `/`, which a
+    # non-Linear server answers with a 404 ("Cannot POST /"). When the configured
+    # value carries no meaningful path, point it at `/graphql`. A value that
+    # already specifies a non-root path is left untouched.
+    def normalize_endpoint(value)
+      return nil if value.blank?
+
+      uri = URI.parse(value.strip)
+      return value if uri.path.present? && uri.path != "/"
+
+      uri.path = "/graphql"
+      uri.to_s
+    rescue URI::InvalidURIError
+      # Not a parseable URI: return as-is and let the request surface the failure
+      # rather than silently rewriting an unrecognizable value.
+      value
     end
 
     # Convert symbol keys to camelCase strings for GraphQL variables.

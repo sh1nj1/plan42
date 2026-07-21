@@ -710,5 +710,47 @@ module CollavreLinear
       assert_requested :post, LINEAR_ENDPOINT,
         headers: { "Content-Type" => "application/json" }, times: 1
     end
+
+    # ---------------------------------------------------------------------------
+    # endpoint resolution / normalization
+    # ---------------------------------------------------------------------------
+    def resolved_endpoint_for(configured)
+      Collavre::IntegrationSettings::Resolver.stub(:get, configured) do
+        CollavreLinear::Client.new(@account).send(:resolve_endpoint)
+      end
+    end
+
+    test "resolve_endpoint falls back to DEFAULT_ENDPOINT when unset" do
+      assert_equal LINEAR_ENDPOINT, resolved_endpoint_for(nil)
+      assert_equal LINEAR_ENDPOINT, resolved_endpoint_for("")
+    end
+
+    test "resolve_endpoint passes a full GraphQL URL through unchanged" do
+      assert_equal "https://api.linear.app/graphql", resolved_endpoint_for("https://api.linear.app/graphql")
+      assert_equal "http://mock:4000/api/graphql", resolved_endpoint_for("http://mock:4000/api/graphql")
+    end
+
+    test "resolve_endpoint appends /graphql to a base URL missing the path" do
+      # This is the rowan-mis2 misconfiguration: a base URL POSTs to "/" and a
+      # non-Linear server answers "Cannot POST /" (HTTP 404).
+      assert_equal "http://mock:4000/graphql", resolved_endpoint_for("http://mock:4000")
+      assert_equal "http://mock:4000/graphql", resolved_endpoint_for("http://mock:4000/")
+      assert_equal "https://api.linear.app/graphql", resolved_endpoint_for("https://api.linear.app")
+    end
+
+    test "resolve_endpoint leaves an unparseable value untouched" do
+      assert_equal "not a uri", resolved_endpoint_for("not a uri")
+    end
+
+    test "non-JSON error surfaces the endpoint that was posted to" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(status: 404, body: "<html>Cannot POST /</html>",
+                   headers: { "Content-Type" => "text/html" })
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "Boom")
+      end
+      assert_includes err.message, LINEAR_ENDPOINT
+    end
   end
 end
