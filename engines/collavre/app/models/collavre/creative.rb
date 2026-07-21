@@ -5,6 +5,15 @@ module Collavre
   class Creative < ApplicationRecord
     self.table_name = "creatives"
 
+    # Promote the `kind` discriminator (stored in `data`) to a real column so the
+    # profile-uniqueness index is a plain-column index that dumps identically on
+    # SQLite and PostgreSQL, instead of a JSON-expression index that serializes
+    # per-adapter and crashes `db:schema:load` on Postgres (see
+    # docs/engine_development.md and 20260721000010_add_unique_index_to_profile_creatives).
+    # `data` stays the source of truth; `kind` is re-derived from it on every save.
+    include Collavre::IndexedJsonColumns
+    indexed_json_columns json: :data, columns: { kind: "kind" }
+
     # ---------------------------------------------------------------------------
     # Reserved metadata key registry — engines register their own namespaces so
     # `update_metadata` preserves them without core naming vendor-specific keys.

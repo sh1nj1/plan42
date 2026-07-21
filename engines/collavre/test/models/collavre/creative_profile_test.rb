@@ -43,10 +43,10 @@ module Collavre
     # A duplicate profile is a split-brain hazard: prompt edits could land on one
     # profile (via the generic Creative tree) while agent execution reads another.
     # A partial unique index (index_creatives_on_user_id_profile_unique) enforces
-    # one profile per user at the DB, so the duplicate can never exist. This is
-    # portable on the current `data` json column: `json ->>`
-    # (json_object_field_text) is IMMUTABLE on Postgres (verified pg14/pg16), so
-    # the partial predicate is accepted at schema load, and SQLite enforces it.
+    # one profile per user at the DB, so the duplicate can never exist. The index
+    # is over the promoted `kind` column (IndexedJsonColumns keeps it synced from
+    # `data`), not a `data->>'kind'` JSON expression, so it dumps identically on
+    # SQLite and PostgreSQL and never crashes `db:schema:load`.
     test "the database rejects a second profile creative for the same user" do
       Collavre::Creative.profile_for(@user)
       assert_raises(ActiveRecord::RecordNotUnique) do
@@ -106,7 +106,7 @@ module Collavre
         assert_not Collavre::Topic.exists?(dup_topic_id), "duplicate's Main topic must not orphan"
       ensure
         conn.add_index :creatives, :user_id, unique: true,
-                       where: "data->>'kind' = 'profile'", name: index
+                       where: "kind = 'profile'", name: index
       end
     end
 
@@ -117,6 +117,20 @@ module Collavre
       assert_not_equal profile.id, inbox.id
       assert_equal "profile", profile.data["kind"]
       assert_equal "inbox", inbox.data["kind"]
+    end
+
+    # The `kind` discriminator is promoted from `data` into a real column
+    # (Collavre::IndexedJsonColumns) so the profile-uniqueness index is a portable
+    # plain-column index rather than a per-adapter JSON expression. The promoted
+    # column must stay synced with data["kind"] on every save — the DB index
+    # enforces uniqueness against it, so a stale column would defeat the guarantee.
+    test "promotes the kind discriminator from data into the real column on save" do
+      profile = Collavre::Creative.profile_for(@user)
+      assert_equal "profile", profile.kind
+      assert_equal "profile", Collavre::Creative.find(profile.id).kind
+
+      inbox = Collavre::Creative.inbox_for(@user)
+      assert_equal "inbox", inbox.reload.kind
     end
   end
 end

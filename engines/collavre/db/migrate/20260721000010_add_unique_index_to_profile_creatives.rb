@@ -5,30 +5,45 @@ class AddUniqueIndexToProfileCreatives < ActiveRecord::Migration[8.1]
   # oldest one. Deterministic order(:id) lookups only *converged* on a duplicate;
   # this *prevents* it.
   #
-  # The discriminator lives in the `data` json column. `data->>'kind'` compiles
-  # to json_object_field_text, which is IMMUTABLE on Postgres (provolatile = i,
-  # verified on pg14 and pg16), so a partial-unique index predicate on it is
-  # accepted at schema load — the `postgres_schema_load` CI job proves it. This
-  # corrects an earlier assumption that `->>` was STABLE and the index therefore
-  # impossible.
+  # The discriminator lives in the `data` json column, but a partial unique
+  # index must NOT reference a JSON expression (`data->>'kind'`): schema.rb is
+  # dumped from the SQLite dev DB, where the predicate serializes to
+  # `json_extract(data, '$.kind')`, which is not a PostgreSQL function, so
+  # `db:schema:load` crashes on production. (An earlier revision used the JSON
+  # expression and rationalized it as Postgres-IMMUTABLE; that missed the
+  # SQLite-dump path this project documents in docs/engine_development.md.)
+  # Instead promote the discriminator to a real `kind` column kept in sync from
+  # `data` by Collavre::IndexedJsonColumns, and index that plain column — it
+  # dumps identically on both adapters. Mirrors the reference promote-and-reindex
+  # migration 20260702000005_promote_channel_config_index_columns.
   def up
+    add_column :creatives, :kind, :string
+
+    if connection.adapter_name == "PostgreSQL"
+      execute "UPDATE creatives SET kind = data->>'kind'"
+    else
+      execute "UPDATE creatives SET kind = json_extract(data, '$.kind')"
+    end
+
     collapse_duplicate_profiles!
 
     add_index :creatives, :user_id,
               unique: true,
-              where: "data->>'kind' = 'profile'",
+              where: "kind = 'profile'",
               name: "index_creatives_on_user_id_profile_unique"
   end
 
   def down
     remove_index :creatives, name: "index_creatives_on_user_id_profile_unique"
+    remove_column :creatives, :kind
   end
 
   private
 
   # Keep the oldest profile per user (matches profile_for's order(:id) selection)
   # and remove any race-created duplicates, which are freshly-created-and-unused
-  # by definition. Portable across sqlite/pg — uses the same data->>'kind' scope.
+  # by definition. Runs after the `kind` column is backfilled, so it groups on
+  # the plain column.
   #
   # Destroy through the model, not delete_all: every Creative gets a `Main` topic
   # via after_create :create_main_topic, and topics.creative_id is a
@@ -38,14 +53,14 @@ class AddUniqueIndexToProfileCreatives < ActiveRecord::Migration[8.1]
   # topic (and its own dependents), which for a fresh duplicate are empty.
   def collapse_duplicate_profiles!
     dup_user_ids = Collavre::Creative
-                   .where("data->>'kind' = ?", "profile")
+                   .where(kind: "profile")
                    .group(:user_id)
                    .having("COUNT(*) > 1")
                    .pluck(:user_id)
 
     dup_user_ids.each do |uid|
       duplicates = Collavre::Creative
-                   .where("data->>'kind' = ?", "profile")
+                   .where(kind: "profile")
                    .where(user_id: uid)
                    .order(:id)
                    .to_a
