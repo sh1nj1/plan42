@@ -9,7 +9,7 @@ module Collavre
     # Reserved metadata key registry — engines register their own namespaces so
     # `update_metadata` preserves them without core naming vendor-specific keys.
     # ---------------------------------------------------------------------------
-    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor].freeze
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor profile skill].freeze
 
     class << self
       def registered_reserved_metadata_keys
@@ -68,6 +68,12 @@ module Collavre
 
     # --- Inbox ---
     scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
+
+    # --- Profile ---
+    PROFILE_KIND = "profile"
+    SKILL_KIND = "skill"
+
+    scope :profiles, -> { where("data->>'kind' = ?", PROFILE_KIND) }
 
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
@@ -130,6 +136,20 @@ module Collavre
       create!(
         description: I18n.t("collavre.inbox.default_name"),
         data: { "kind" => "inbox" },
+        user: user,
+        progress: 0.0
+      )
+    end
+
+    # Find or create the profile creative for a given user.
+    # Places it as a root creative (no parent) owned by the user.
+    def self.profile_for(user)
+      existing = profiles.where(user: user).first
+      return existing if existing
+
+      create!(
+        description: user.name.to_s,
+        data: { "kind" => PROFILE_KIND },
         user: user,
         progress: 0.0
       )
