@@ -48,12 +48,13 @@ module CollavreLinear
       # existing project links were created under would orphan those links: their
       # team_id / linear_project_id belong to the old workspace, so resync and
       # outbound jobs would run them against the new token and fail or target the
-      # wrong Linear context. Refuse when we can prove the workspace changed and
-      # links exist; the admin must unlink first. workspace_id is blank on legacy
-      # rows, so an unprovable change falls through and never blocks a plain
-      # same-workspace token refresh (the reconnect button's actual purpose).
+      # wrong Linear context. Refuse a linked reconnect unless we can PROVE it
+      # stays in the same workspace; the admin must unlink first. A blank stored
+      # workspace_id ("old workspace unknown") is unprovable, so it must also
+      # block rather than fall through — a blank id never equals the incoming
+      # organization, so `!=` covers both the known-different and unknown cases.
+      # Unlinked accounts skip this and refresh in place (the button's purpose).
       if account.persisted? &&
-         account.workspace_id.present? &&
          account.workspace_id != viewer[:organization_id] &&
          account.project_links.exists?
         redirect_to collavre.creatives_path,

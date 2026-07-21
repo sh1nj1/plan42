@@ -203,6 +203,39 @@ module CollavreLinear
       assert_equal "new-at", account.access_token, "a same-workspace reconnect must refresh the token"
     end
 
+    test "callback refuses a reconnect when the old workspace is unknown and links exist" do
+      sign_in_as(@user)
+
+      # Linked account whose stored workspace is blank (unprovable origin). We
+      # cannot prove the reconnect stays in the same workspace, so it must fail
+      # safe rather than silently orphan the links against the new token.
+      account = CollavreLinear::Account.create!(
+        user: @user,
+        linear_uid: "user-uid-1",
+        access_token: "old-token",
+        workspace_id: nil
+      )
+      CollavreLinear::ProjectLink.create!(
+        account: account,
+        creative: @creative,
+        linear_project_id: "proj-blank",
+        team_id: "team-blank"
+      )
+
+      stub_token_exchange
+      stub_viewer_query # returns organization org-xyz
+
+      state = initiate_oauth
+      get "/linear/auth/callback", params: { code: "auth-code-unknown-ws", state: state }
+
+      assert_response :redirect
+      account.reload
+      assert_equal "old-token", account.access_token,
+        "token must not be overwritten when the old workspace is unknown and links exist"
+      assert_nil account.workspace_id,
+        "workspace must not be backfilled from an unprovable reconnect under existing links"
+    end
+
     test "callback redirects to setup when creative_id is in session" do
       sign_in_as(@user)
 
