@@ -18,6 +18,7 @@ import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
 import {
   markReopenAfterConnect,
   consumeReopenAfterConnect,
+  safeSessionStorage,
 } from './linear_modal_reopen.js';
 
 let linearIntegrationInitialized = false;
@@ -43,7 +44,7 @@ if (!linearIntegrationInitialized) {
       } catch (e) { /* cross-origin or already closed */ }
       // Survive the reload: reopen the modal on the next load so the flow lands
       // on the project-link step automatically.
-      markReopenAfterConnect(window.sessionStorage);
+      markReopenAfterConnect(safeSessionStorage());
       window.location.reload();
     }
   });
@@ -210,7 +211,7 @@ if (!linearIntegrationInitialized) {
     // Just returned from the OAuth popup: open the modal straight to the
     // project-link step instead of leaving the (display:none) modal closed, so
     // the user doesn't have to reopen the Linear menu by hand.
-    if (consumeReopenAfterConnect(window.sessionStorage)) {
+    if (consumeReopenAfterConnect(safeSessionStorage())) {
       showModal();
     }
 

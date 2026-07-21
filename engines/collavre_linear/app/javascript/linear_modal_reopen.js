@@ -12,6 +12,19 @@
 
 export const LINEAR_REOPEN_KEY = 'linearReopenModal';
 
+// Read window.sessionStorage defensively. When Web Storage is disabled by policy
+// (packaged WKWebView, a browser blocking storage for the site) the property
+// getter *itself* throws — before any value reaches mark/consume — so guarding
+// only inside those functions is not enough; the access site must be guarded
+// too. Returns null when unavailable so callers never take an uncaught throw.
+export function safeSessionStorage() {
+  try {
+    return window.sessionStorage;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Record that the modal should reopen after the next full-page reload. Tolerates
 // a missing or throwing storage (private-mode Safari, packaged WKWebView) — the
 // reopen is a convenience and must never throw inside the postMessage handler.

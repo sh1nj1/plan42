@@ -2,6 +2,7 @@ import {
   LINEAR_REOPEN_KEY,
   markReopenAfterConnect,
   consumeReopenAfterConnect,
+  safeSessionStorage,
 } from '../linear_modal_reopen.js';
 
 // Minimal in-memory Storage stand-in (jsdom's is fine too, but this keeps the
@@ -15,6 +16,30 @@ function fakeStorage() {
     _size: () => map.size,
   };
 }
+
+describe('safeSessionStorage', () => {
+  test('returns the storage object when Web Storage is available', () => {
+    // jsdom provides a working window.sessionStorage.
+    expect(safeSessionStorage()).toBe(window.sessionStorage);
+  });
+
+  test('returns null when the window.sessionStorage getter itself throws', () => {
+    // Web Storage disabled by policy (packaged WKWebView, storage-blocked
+    // browser) throws on the property *access*, before any value is passed to
+    // mark/consume. safeSessionStorage must absorb it so callers never throw.
+    const original = Object.getOwnPropertyDescriptor(window, 'sessionStorage');
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      get() { throw new Error('SecurityError: storage disabled'); },
+    });
+    try {
+      expect(() => safeSessionStorage()).not.toThrow();
+      expect(safeSessionStorage()).toBeNull();
+    } finally {
+      if (original) Object.defineProperty(window, 'sessionStorage', original);
+    }
+  });
+});
 
 describe('markReopenAfterConnect', () => {
   test('persists the reopen flag under the shared key', () => {
@@ -56,6 +81,17 @@ describe('consumeReopenAfterConnect', () => {
   test('swallows storage errors and reports no pending reopen', () => {
     const throwing = { getItem: () => { throw new Error('SecurityError'); } };
     expect(consumeReopenAfterConnect(throwing)).toBe(false);
+  });
+
+  test('end-to-end via safeSessionStorage: mark on connect, consume once', () => {
+    // The call sites pass safeSessionStorage() rather than window.sessionStorage
+    // directly, so the whole flow must survive a storage-backed session.
+    const s = safeSessionStorage();
+    if (!s) return; // jsdom always provides it; guard just in case
+    s.removeItem(LINEAR_REOPEN_KEY);
+    markReopenAfterConnect(s);
+    expect(consumeReopenAfterConnect(s)).toBe(true);
+    expect(consumeReopenAfterConnect(s)).toBe(false);
   });
 
   test('end-to-end: mark on connect, consume on the next load', () => {
