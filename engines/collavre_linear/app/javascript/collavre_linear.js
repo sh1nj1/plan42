@@ -15,6 +15,7 @@
 // unconfirmed and errors would vanish. Route through the shared in-app modal
 // like the GitHub/Slack/Notion engines do.
 import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import { markReopenAfterConnect, consumeReopenAfterConnect } from './linear_modal_reopen.js';
 
 let linearIntegrationInitialized = false;
 
@@ -22,12 +23,16 @@ if (!linearIntegrationInitialized) {
   linearIntegrationInitialized = true;
 
   // The OAuth popup posts `linearConnected` to the opener when it closes.
-  // Reload so the modal re-renders in the connected (link-a-project) state.
-  // Bound to `window` once — it survives Turbo navigations, unlike the
-  // per-navigation element listeners set up in turbo:load below.
+  // Mark the modal to reopen, then reload so it re-renders in the connected
+  // (link-a-project) state. The reopen flag survives the reload; turbo:load
+  // below consumes it and re-opens the modal, so the user lands directly on
+  // the project-linking step instead of a hidden modal. Bound to `window` once
+  // — it survives Turbo navigations, unlike the per-navigation element
+  // listeners set up in turbo:load below.
   window.addEventListener('message', function (event) {
     if (event.origin !== window.location.origin) return;
     if (event.data && event.data.type === 'linearConnected') {
+      markReopenAfterConnect(window.sessionStorage);
       window.location.reload();
     }
   });
@@ -190,6 +195,12 @@ if (!linearIntegrationInitialized) {
     openBtn.addEventListener('click', function () {
       showModal();
     });
+
+    // Just reloaded from a successful OAuth connect? Reopen the modal straight
+    // onto the project-linking step so the connect→link transition is visible
+    // without the user re-selecting "Linear 연결". One-shot: the flag is cleared
+    // on read, so a later link-success reload doesn't reopen it.
+    if (consumeReopenAfterConnect(window.sessionStorage)) showModal();
 
     closeBtn?.addEventListener('click', closeModal);
 
