@@ -27,8 +27,15 @@ class AddUniqueIndexToProfileCreatives < ActiveRecord::Migration[8.1]
   private
 
   # Keep the oldest profile per user (matches profile_for's order(:id) selection)
-  # and delete any race-created duplicates, which are freshly-created-and-unused
+  # and remove any race-created duplicates, which are freshly-created-and-unused
   # by definition. Portable across sqlite/pg — uses the same data->>'kind' scope.
+  #
+  # Destroy through the model, not delete_all: every Creative gets a `Main` topic
+  # via after_create :create_main_topic, and topics.creative_id is a
+  # non-cascading foreign key. delete_all would bypass has_many :topics,
+  # dependent: :destroy — on Postgres the FK rejects the DELETE, and on SQLite
+  # (FKs often off) it leaves orphaned topic rows. destroy cascades to the Main
+  # topic (and its own dependents), which for a fresh duplicate are empty.
   def collapse_duplicate_profiles!
     dup_user_ids = Collavre::Creative
                    .where("data->>'kind' = ?", "profile")
@@ -37,12 +44,12 @@ class AddUniqueIndexToProfileCreatives < ActiveRecord::Migration[8.1]
                    .pluck(:user_id)
 
     dup_user_ids.each do |uid|
-      ids = Collavre::Creative
-            .where("data->>'kind' = ?", "profile")
-            .where(user_id: uid)
-            .order(:id)
-            .pluck(:id)
-      Collavre::Creative.where(id: ids.drop(1)).delete_all
+      duplicates = Collavre::Creative
+                   .where("data->>'kind' = ?", "profile")
+                   .where(user_id: uid)
+                   .order(:id)
+                   .to_a
+      duplicates.drop(1).each(&:destroy!)
     end
   end
 end

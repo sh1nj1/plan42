@@ -78,6 +78,38 @@ module Collavre
       assert_equal first.id, resolved.id
     end
 
+    # The State A migration collapses any pre-index duplicate profiles onto the
+    # oldest before adding the unique index. Each duplicate Creative has a `Main`
+    # topic (after_create :create_main_topic) behind a non-cascading
+    # topics.creative_id FK, so a raw delete_all would be rejected on Postgres and
+    # leave orphaned topics on SQLite. The collapse must destroy through the model
+    # so the Main topic goes with it.
+    test "collapse_duplicate_profiles removes duplicates and their Main topics" do
+      conn = Collavre::Creative.connection
+      index = "index_creatives_on_user_id_profile_unique"
+      conn.remove_index :creatives, name: index
+      begin
+        keeper = Collavre::Creative.profile_for(@user)
+        duplicate = Collavre::Creative.create!(
+          description: @user.name.to_s,
+          data: { "kind" => Collavre::Creative::PROFILE_KIND },
+          user: @user,
+          progress: 0.0
+        )
+        dup_topic_id = duplicate.topics.find_by(name: Collavre::Creative::MAIN_TOPIC_NAME).id
+
+        require Rails.root.join("engines/collavre/db/migrate/20260721000010_add_unique_index_to_profile_creatives").to_s
+        AddUniqueIndexToProfileCreatives.new.send(:collapse_duplicate_profiles!)
+
+        assert Collavre::Creative.exists?(keeper.id), "oldest profile must survive"
+        assert_not Collavre::Creative.exists?(duplicate.id), "duplicate profile must be removed"
+        assert_not Collavre::Topic.exists?(dup_topic_id), "duplicate's Main topic must not orphan"
+      ensure
+        conn.add_index :creatives, :user_id, unique: true,
+                       where: "data->>'kind' = 'profile'", name: index
+      end
+    end
+
     # Profile and inbox share user_id but differ by kind; both must coexist.
     test "profile and inbox creatives coexist for the same user" do
       profile = Collavre::Creative.profile_for(@user)
