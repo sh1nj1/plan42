@@ -48,10 +48,25 @@ module Collavre
       agent.sync_profile_system_prompt!
       assert_nil agent.profile_creative.reload.data&.dig("markdown_source")
 
+      # The old rendered prompt must not linger as the visible profile description;
+      # it is reseeded back to the name so it isn't searchable/shown on the root.
+      assert_equal "ClearBot", agent.profile_creative.reload.description
+
       svc = Collavre::AiAgentService.allocate
       svc.instance_variable_set(:@agent, agent)
       svc.instance_variable_set(:@creative, nil)
       refute_includes svc.send(:render_system_prompt, {}), "FIRST PROMPT"
+    end
+
+    test "effective_system_prompt prefers profile markdown_source over the legacy column" do
+      agent = Collavre::User.create!(name: "EffBot", email: "effbot@ai.local",
+                                     password: "password123", llm_vendor: "google",
+                                     system_prompt: "LEGACY COLUMN")
+      # Before sync the column is the only source.
+      assert_equal "LEGACY COLUMN", agent.effective_system_prompt
+      # A direct profile edit (no column write) must take effect for all readers.
+      agent.profile_creative.update!(content_type_input: "markdown", markdown_source: "EDITED IN PROFILE")
+      assert_equal "EDITED IN PROFILE", agent.reload.effective_system_prompt
     end
 
     test "sync is a no-op for human users" do

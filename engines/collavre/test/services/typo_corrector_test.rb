@@ -164,7 +164,7 @@ module Collavre
       # OpenClaw (and any context-driven adapter) reads the gateway/key from the
       # context user, not the llm_api_key/gateway_url kwargs. Without this, the
       # adapter is built with user: nil and silently returns no edits.
-      agent = Struct.new(:llm_vendor, :llm_model, :system_prompt, :llm_api_key, :gateway_url).new
+      agent = Struct.new(:llm_vendor, :llm_model, :effective_system_prompt, :llm_api_key, :gateway_url).new
 
       Collavre.user_class.stub :find_by, agent do
         client = TypoCorrector.new.send(:build_client)

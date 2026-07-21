@@ -226,9 +226,21 @@ module Collavre
         # The prompt was cleared. Demote out of markdown mode so the stale
         # markdown_source is dropped and render falls back to the (now-blank)
         # column — matching the pre-profile behavior where blanking the prompt
-        # took effect immediately. Without this, the old prompt stays authoritative.
-        creative.update!(content_type_input: "html")
+        # took effect immediately. Also reseed `description` back to the name
+        # seed so the old rendered prompt doesn't stay visible/searchable on the
+        # owned profile root. Without this, the old prompt stays authoritative.
+        creative.update!(content_type_input: "html", description: name.to_s)
       end
+    end
+
+    # The effective system prompt for all read consumers. The canonical prompt
+    # lives in the profile creative's data["markdown_source"]; the legacy
+    # `system_prompt` column is the fallback for rows not yet backfilled. Every
+    # prompt reader (orchestration matching, type classification, typo agent,
+    # admin view) must route here so that editing the profile creative directly
+    # takes effect everywhere, not just in AiAgentService.
+    def effective_system_prompt
+      profile_creative&.data&.dig("markdown_source").presence || system_prompt
     end
 
     def claude_channel_agent?

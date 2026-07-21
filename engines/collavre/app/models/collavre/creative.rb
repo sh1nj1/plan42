@@ -8,8 +8,11 @@ module Collavre
     # ---------------------------------------------------------------------------
     # Reserved metadata key registry — engines register their own namespaces so
     # `update_metadata` preserves them without core naming vendor-specific keys.
+    # "kind" is the discriminator (`inbox`/`profile`/`skill`) that scopes like
+    # `profiles` query on (`data->>'kind'`); it must be preserved or a metadata
+    # save that omits it makes the row undiscoverable and a duplicate is created.
     # ---------------------------------------------------------------------------
-    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor profile skill].freeze
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
 
     class << self
       def registered_reserved_metadata_keys

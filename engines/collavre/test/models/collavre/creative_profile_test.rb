@@ -18,9 +18,26 @@ module Collavre
       end
     end
 
-    test "profile is a reserved metadata kind" do
-      assert_includes Collavre::Creative.reserved_metadata_keys, "profile"
-      assert_includes Collavre::Creative.reserved_metadata_keys, "skill"
+    test "kind discriminator is a reserved metadata key" do
+      # `kind` scopes profile/inbox/skill discovery; it must survive a metadata
+      # save that omits it, or the profile becomes undiscoverable and duplicates.
+      assert_includes Collavre::Creative.reserved_metadata_keys, "kind"
+    end
+
+    test "preserving reserved keys keeps a profile discoverable after a metadata save" do
+      profile = Collavre::Creative.profile_for(@user)
+      # Simulate update_metadata's preservation loop with a payload omitting kind.
+      incoming = { "theme" => "dark" }
+      Collavre::Creative.reserved_metadata_keys.each do |key|
+        if profile.data.key?(key)
+          incoming[key] = profile.data[key]
+        else
+          incoming.delete(key)
+        end
+      end
+      profile.update!(data: incoming)
+      assert_equal profile.id, Collavre::Creative.profile_for(@user).id
+      assert_equal "profile", profile.reload.data["kind"]
     end
   end
 end

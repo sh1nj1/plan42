@@ -140,7 +140,7 @@ module Collavre
       # (data["markdown_source"]); `description` is the sanitized rendered view
       # and would corrupt tags/angle-brackets, so never read it here. Fall back
       # to the legacy system_prompt column for rows not yet backfilled.
-      template = @agent.profile_creative&.data&.dig("markdown_source").presence || @agent.system_prompt
+      template = @agent.effective_system_prompt
       rendered = AiSystemPromptRenderer.new(
         template: template,
         context: rendering_context
