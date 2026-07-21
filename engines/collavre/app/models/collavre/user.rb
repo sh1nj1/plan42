@@ -221,6 +221,10 @@ module Collavre
       creative = profile_creative
       if system_prompt.present?
         return if creative.data&.dig("markdown_source") == system_prompt
+        # Store the prompt verbatim: markdown_source is the canonical text sent
+        # to the LLM, so an inline data-URI image must NOT be rewritten into a
+        # blob path (which would mutate the prompt the agent receives).
+        creative.skip_data_uri_rewrite = true
         creative.update!(content_type_input: "markdown", markdown_source: system_prompt)
       elsif creative.data&.dig("markdown_source").present?
         # The prompt was cleared. Demote out of markdown mode so the stale

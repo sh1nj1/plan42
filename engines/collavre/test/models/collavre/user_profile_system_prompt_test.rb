@@ -26,6 +26,26 @@ module Collavre
       assert_equal prompt, agent.profile_creative.reload.data["markdown_source"]
     end
 
+    test "sync stores an inline data-URI image in the prompt losslessly" do
+      # A prompt may legitimately reference an inline data-URI image outside a
+      # code span. The Markdown save path rewrites data-URI images into Active
+      # Storage blob paths (to avoid duplicate blobs on editor re-render), but
+      # effective_system_prompt sends markdown_source straight to the LLM, so the
+      # agent must receive the exact prompt the user entered — not a blob path.
+      prompt = "Reference logo you must watermark: " \
+               "![logo](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)"
+      agent = Collavre::User.create!(name: "ImgBot", email: "imgbot@ai.local",
+                                     password: "password123", llm_vendor: "google",
+                                     system_prompt: prompt)
+      agent.sync_profile_system_prompt!
+      stored = agent.profile_creative.reload.data["markdown_source"]
+      assert_equal prompt, stored
+      refute_includes stored, "/rails/active_storage/blobs"
+      refute_includes stored, "/public-assets/blobs"
+      # The canonical prompt reaches every reader verbatim.
+      assert_equal prompt, agent.reload.effective_system_prompt
+    end
+
     test "sync is idempotent and does not re-write an unchanged prompt" do
       agent = Collavre::User.create!(name: "IdemBot", email: "idembot@ai.local",
                                      password: "password123", llm_vendor: "google",

@@ -10,6 +10,11 @@ module Collavre
         # textarea. Stored in data["editor"]; decoupled from the storage format
         # (content_type), which is now Markdown for both surfaces.
         attr_accessor :markdown_editor
+        # When true, convert_markdown_to_html stores markdown_source verbatim
+        # instead of rewriting inline data-URI images into Active Storage blobs.
+        # Used by prompt sync, where markdown_source is the canonical text sent
+        # to the LLM and must stay byte-for-byte what the user entered.
+        attr_accessor :skip_data_uri_rewrite
         attr_reader :markdown_source
 
         def markdown_source=(value)
@@ -147,7 +152,13 @@ module Collavre
             # FIRST, then persist the rewritten source. Subsequent edits
             # around the same image carry the blob path instead of the
             # data URI, so re-renders no longer create duplicate blobs.
-            rewritten_source = Collavre::MarkdownConverter.rewrite_data_uri_images(new_source)
+            # skip_data_uri_rewrite callers (prompt sync) keep the source
+            # verbatim; the derived HTML still renders the data URI inline.
+            rewritten_source = if skip_data_uri_rewrite
+              new_source
+            else
+              Collavre::MarkdownConverter.rewrite_data_uri_images(new_source)
+            end
             self.data["markdown_source"] = rewritten_source
             self.description = Collavre::MarkdownConverter.markdown_to_html(rewritten_source)
           else
