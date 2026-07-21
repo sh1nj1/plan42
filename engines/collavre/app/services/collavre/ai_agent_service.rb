@@ -136,8 +136,9 @@ module Collavre
     end
 
     def render_system_prompt(rendering_context)
+      template = @agent.profile_creative&.description.presence || @agent.system_prompt
       rendered = AiSystemPromptRenderer.new(
-        template: @agent.system_prompt,
+        template: template,
         context: rendering_context
       ).render
 
