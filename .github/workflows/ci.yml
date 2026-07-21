@@ -47,7 +47,7 @@ jobs:
 
       - name: Upload JavaScript coverage to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage/js/lcov.info
           flags: javascript
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload Ruby coverage to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage/lcov.info
           flags: ruby
