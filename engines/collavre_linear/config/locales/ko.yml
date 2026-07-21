@@ -5,6 +5,7 @@ ko:
       invalid_state: "OAuth 상태가 유효하지 않습니다. 다시 연결해 주세요."
       login_first: "먼저 로그인해 주세요."
       already_linked_other: "이 Linear 계정은 이미 다른 Collavre 사용자에 연결되어 있습니다."
+      workspace_changed_relink: "다시 연결하려는 Linear 워크스페이스가 기존에 연결된 프로젝트의 워크스페이스와 다릅니다. 먼저 기존 프로젝트 연결을 해제한 뒤 다시 연결해 주세요."
       oauth_config_missing: "Linear OAuth가 설정되지 않았습니다 (%{keys}). 연결 전에 설정해 주세요."
     integration:
       label: "Linear"
@@ -12,6 +13,8 @@ ko:
       setup: "설정"
       connect_prompt: "Linear 계정을 연결하여 동기화를 시작하세요."
       connect_button: "Linear 연결"
+      reconnect_hint: "Linear 프로젝트를 불러오지 못하나요? 연결이 만료되었거나 Linear에서 해제되었을 수 있습니다. 다시 연결하세요."
+      reconnect_button: "Linear 다시 연결"
       link_prompt: "이 크리에이티브에 연결할 Linear 프로젝트와 팀을 선택하세요."
       team_id_label: "팀"
       project_id_label: "프로젝트"
