@@ -39,5 +39,39 @@ module Collavre
       assert_equal profile.id, Collavre::Creative.profile_for(@user).id
       assert_equal "profile", profile.reload.data["kind"]
     end
+
+    # A duplicate profile is a split-brain hazard: prompt edits could land on one
+    # profile while agent execution reads another. A hard DB uniqueness index is
+    # not portable here — the discriminator lives in the `data` json column, and
+    # on Postgres `json ->>` is STABLE (not IMMUTABLE), so a partial-unique index
+    # WHERE data->>'kind' = 'profile' is rejected at schema load. Instead every
+    # profile lookup orders by id, so reads and writes converge on the oldest
+    # profile and a transient race-created duplicate is harmless, never a split
+    # brain. Both the write path (profile_for) and the read path
+    # (profile_creative_if_present) must pick the same one.
+    test "reads and writes converge on the oldest profile when a duplicate exists" do
+      first = Collavre::Creative.profile_for(@user)
+      second = Collavre::Creative.create!(
+        description: @user.name.to_s,
+        data: { "kind" => Collavre::Creative::PROFILE_KIND },
+        user: @user,
+        progress: 0.0
+      )
+      assert_operator second.id, :>, first.id, "second profile should be newer"
+
+      assert_equal first.id, Collavre::Creative.profile_for(@user).id,
+        "write path must target the oldest profile"
+      assert_equal first.id, @user.profile_creative_if_present.id,
+        "read path must return the same profile the write path targets"
+    end
+
+    # Profile and inbox share user_id but differ by kind; both must coexist.
+    test "profile and inbox creatives coexist for the same user" do
+      profile = Collavre::Creative.profile_for(@user)
+      inbox = Collavre::Creative.inbox_for(@user)
+      assert_not_equal profile.id, inbox.id
+      assert_equal "profile", profile.data["kind"]
+      assert_equal "inbox", inbox.data["kind"]
+    end
   end
 end

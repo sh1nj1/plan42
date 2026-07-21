@@ -22,7 +22,9 @@ module Collavre
     def profile_creative_if_present
       return nil unless persisted?
 
-      Collavre::Creative.profiles.where(user: self).first
+      # order(:id) matches profile_for's write-path selection so a read never
+      # diverges from the profile a write targets, even if a race created a dup.
+      Collavre::Creative.profiles.where(user: self).order(:id).first
     end
 
     private

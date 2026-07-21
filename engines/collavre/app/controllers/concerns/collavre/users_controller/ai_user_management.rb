@@ -62,7 +62,12 @@ module Collavre
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
 
       if @user.update(ai_params)
-        @user.sync_profile_system_prompt!
+        # Only mirror the column into the canonical profile prompt when the form
+        # actually submitted system_prompt. A partial PATCH (e.g. routing_expression
+        # only) leaves the legacy column at its stored value, which may be stale
+        # relative to a directly-edited profile; syncing it would clobber the
+        # canonical data["markdown_source"].
+        @user.sync_profile_system_prompt! if ai_params.key?(:system_prompt)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
         @available_tools = load_available_tools

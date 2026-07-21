@@ -146,8 +146,16 @@ module Collavre
 
     # Find or create the profile creative for a given user.
     # Places it as a root creative (no parent) owned by the user.
+    #
+    # Selection is ordered by id so that reads and writes always converge on the
+    # same (oldest) profile. A hard DB uniqueness constraint is not used: the
+    # discriminator lives in the `data` json column, and on Postgres `json ->>`
+    # is STABLE (not IMMUTABLE), so a partial-unique index on
+    # (user_id) WHERE data->>'kind' = 'profile' is rejected during schema load.
+    # Deterministic ordering keeps a transient race-created duplicate harmless
+    # (never a split brain) rather than guaranteeing single-row creation.
     def self.profile_for(user)
-      existing = profiles.where(user: user).first
+      existing = profiles.where(user: user).order(:id).first
       return existing if existing
 
       create!(

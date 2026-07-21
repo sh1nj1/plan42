@@ -153,4 +153,24 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "CANONICAL EDITED PROMPT", @ai_user.effective_system_prompt
     assert_equal "CANONICAL EDITED PROMPT", @ai_user.profile_creative.data["markdown_source"]
   end
+
+  # Regression: a partial settings update that omits system_prompt entirely
+  # (e.g. a routing_expression-only PATCH) must not run the prompt sync at all.
+  # Otherwise the stale legacy column is copied back over the canonical
+  # profile-authored prompt, silently erasing a directly-edited prompt.
+  test "update_ai does not clobber the canonical prompt on a PATCH that omits system_prompt" do
+    @ai_user.update_column(:system_prompt, "STALE COLUMN PROMPT")
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "CANONICAL EDITED PROMPT")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        routing_expression: 'event_name == "comment_created"'
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.profile_creative.data["markdown_source"]
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.effective_system_prompt
+  end
 end
