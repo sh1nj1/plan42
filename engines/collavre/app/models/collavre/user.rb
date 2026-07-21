@@ -217,10 +217,18 @@ module Collavre
     # The system_prompt column is legacy, pending removal.
     # No-op for humans and for prompt-less agents (profile keeps its name seed).
     def sync_profile_system_prompt!
-      return unless ai_user? && system_prompt.present?
+      return unless ai_user?
       creative = profile_creative
-      return if creative.data&.dig("markdown_source") == system_prompt
-      creative.update!(content_type_input: "markdown", markdown_source: system_prompt)
+      if system_prompt.present?
+        return if creative.data&.dig("markdown_source") == system_prompt
+        creative.update!(content_type_input: "markdown", markdown_source: system_prompt)
+      elsif creative.data&.dig("markdown_source").present?
+        # The prompt was cleared. Demote out of markdown mode so the stale
+        # markdown_source is dropped and render falls back to the (now-blank)
+        # column — matching the pre-profile behavior where blanking the prompt
+        # took effect immediately. Without this, the old prompt stays authoritative.
+        creative.update!(content_type_input: "html")
+      end
     end
 
     def claude_channel_agent?

@@ -36,6 +36,24 @@ module Collavre
       assert_equal before, agent.profile_creative.reload.updated_at
     end
 
+    test "clearing the system prompt drops the stale markdown_source" do
+      agent = Collavre::User.create!(name: "ClearBot", email: "clearbot@ai.local",
+                                     password: "password123", llm_vendor: "google",
+                                     system_prompt: "FIRST PROMPT")
+      agent.sync_profile_system_prompt!
+      assert_equal "FIRST PROMPT", agent.profile_creative.reload.data["markdown_source"]
+
+      # Admin blanks the prompt textarea — the old prompt must NOT stay authoritative.
+      agent.update!(system_prompt: "")
+      agent.sync_profile_system_prompt!
+      assert_nil agent.profile_creative.reload.data&.dig("markdown_source")
+
+      svc = Collavre::AiAgentService.allocate
+      svc.instance_variable_set(:@agent, agent)
+      svc.instance_variable_set(:@creative, nil)
+      refute_includes svc.send(:render_system_prompt, {}), "FIRST PROMPT"
+    end
+
     test "sync is a no-op for human users" do
       human = Collavre::User.create!(name: "Human", email: "human1@example.com", password: "password123")
       human.sync_profile_system_prompt!
