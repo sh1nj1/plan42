@@ -119,6 +119,24 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
   end
 
+  # Regression: on a validation-error re-render, the form must preserve the
+  # user's submitted prompt edit. The failed save never synced the profile, so
+  # rendering value: @user.effective_system_prompt would read the old canonical
+  # markdown_source and silently discard the unsaved edit.
+  test "update_ai preserves the submitted prompt edit on a validation error" do
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "OLD CANONICAL PROMPT")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        name: "", # invalid -> validation error, re-render
+        system_prompt: "MY EDITED PROMPT"
+      }
+    }
+    assert_response :unprocessable_entity
+    assert_select "textarea#user_system_prompt", text: /MY EDITED PROMPT/
+    assert_select "textarea#user_system_prompt", text: /OLD CANONICAL PROMPT/, count: 0
+  end
+
   # Regression: the edit form must pre-fill the prompt from the canonical
   # profile creative (data["markdown_source"]), not the legacy system_prompt
   # column. If the profile creative was edited directly, the column is stale;
