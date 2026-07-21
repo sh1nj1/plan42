@@ -25,25 +25,43 @@ export function safeSessionStorage() {
   }
 }
 
-// Record that the modal should reopen after the next full-page reload. Tolerates
-// a missing or throwing storage (private-mode Safari, packaged WKWebView) — the
-// reopen is a convenience and must never throw inside the postMessage handler.
-export function markReopenAfterConnect(storage) {
+// Legacy/unscoped sentinel. Stored when the OAuth creative id is unknown so the
+// reopen still fires (matches any page) — the scoped path stores the id instead.
+const UNSCOPED = '1';
+
+// Record that the modal should reopen after the next full-page reload, scoped to
+// the creative the OAuth popup was opened for. The popup posts its own
+// creativeId; storing it lets consume verify the reloaded page still shows that
+// same creative before reopening — otherwise, if the opener navigated to a
+// different creative while the popup was open, the reload would auto-open the
+// wrong creative's link modal and the user could link the project to it.
+// Tolerates a missing or throwing storage (private-mode Safari, packaged
+// WKWebView) — the reopen is a convenience and must never throw inside the
+// postMessage handler.
+export function markReopenAfterConnect(storage, creativeId) {
+  const value =
+    creativeId != null && String(creativeId) !== '' ? String(creativeId) : UNSCOPED;
   try {
-    if (storage) storage.setItem(LINEAR_REOPEN_KEY, '1');
+    if (storage) storage.setItem(LINEAR_REOPEN_KEY, value);
   } catch (e) {
     /* storage unavailable — skip the reopen nicety */
   }
 }
 
 // Consume the reopen intent: returns true at most once, then clears the flag so
-// a later unrelated reload (e.g. after linking succeeds) does not reopen it.
-export function consumeReopenAfterConnect(storage) {
+// a later unrelated reload (e.g. after linking succeeds) does not reopen it. The
+// flag is cleared on the first consume regardless of match, so a stale intent
+// (opener navigated elsewhere) never lingers to reopen the modal on some later
+// visit. Returns true only when the stored creative id matches the current page
+// (or when the legacy unscoped sentinel was stored).
+export function consumeReopenAfterConnect(storage, currentCreativeId) {
   try {
-    if (storage && storage.getItem(LINEAR_REOPEN_KEY)) {
-      storage.removeItem(LINEAR_REOPEN_KEY);
-      return true;
-    }
+    if (!storage) return false;
+    const stored = storage.getItem(LINEAR_REOPEN_KEY);
+    if (!stored) return false;
+    storage.removeItem(LINEAR_REOPEN_KEY); // one-shot regardless of match
+    if (stored === UNSCOPED) return true;
+    return String(currentCreativeId == null ? '' : currentCreativeId) === stored;
   } catch (e) {
     /* storage unavailable — treat as no pending reopen */
   }

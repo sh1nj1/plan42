@@ -43,8 +43,10 @@ if (!linearIntegrationInitialized) {
         if (event.source && !event.source.closed) event.source.close();
       } catch (e) { /* cross-origin or already closed */ }
       // Survive the reload: reopen the modal on the next load so the flow lands
-      // on the project-link step automatically.
-      markReopenAfterConnect(safeSessionStorage());
+      // on the project-link step automatically. Scope it to the creative the
+      // popup was opened for (event.data.creativeId) so a mid-flow navigation to
+      // a different creative doesn't auto-open the wrong creative's link modal.
+      markReopenAfterConnect(safeSessionStorage(), event.data.creativeId);
       window.location.reload();
     }
   });
@@ -210,8 +212,10 @@ if (!linearIntegrationInitialized) {
 
     // Just returned from the OAuth popup: open the modal straight to the
     // project-link step instead of leaving the (display:none) modal closed, so
-    // the user doesn't have to reopen the Linear menu by hand.
-    if (consumeReopenAfterConnect(safeSessionStorage())) {
+    // the user doesn't have to reopen the Linear menu by hand. Only reopen when
+    // this page's creative matches the one the popup connected for — otherwise a
+    // mid-flow navigation would surface the wrong creative's link modal.
+    if (consumeReopenAfterConnect(safeSessionStorage(), modal.dataset.creativeId)) {
       showModal();
     }
 

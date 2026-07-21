@@ -42,9 +42,21 @@ describe('safeSessionStorage', () => {
 });
 
 describe('markReopenAfterConnect', () => {
-  test('persists the reopen flag under the shared key', () => {
+  test('persists the unscoped sentinel when no creative id is given', () => {
     const storage = fakeStorage();
     markReopenAfterConnect(storage);
+    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('1');
+  });
+
+  test('persists the creative id when given (scoped reopen)', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 42);
+    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('42');
+  });
+
+  test('falls back to the unscoped sentinel for an empty creative id', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, '');
     expect(storage.getItem(LINEAR_REOPEN_KEY)).toBe('1');
   });
 
@@ -68,6 +80,42 @@ describe('consumeReopenAfterConnect', () => {
     expect(consumeReopenAfterConnect(storage)).toBe(true);
     expect(consumeReopenAfterConnect(storage)).toBe(false);
     expect(storage.getItem(LINEAR_REOPEN_KEY)).toBeNull();
+  });
+
+  test('reopens only when the current creative matches the stored one', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 42); // popup connected creative 42
+    // Opener is on the same creative → reopen.
+    expect(consumeReopenAfterConnect(storage, 42)).toBe(true);
+  });
+
+  test('does NOT reopen when the opener navigated to a different creative', () => {
+    // Codex P2: mid-flow navigation must not surface the wrong creative's modal.
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 42); // popup connected creative 42
+    // Opener moved to creative 99 before the reload → no reopen, flag cleared.
+    expect(consumeReopenAfterConnect(storage, 99)).toBe(false);
+    expect(storage.getItem(LINEAR_REOPEN_KEY)).toBeNull();
+  });
+
+  test('clears a mismatched intent so it never fires on a later matching visit', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 42);
+    consumeReopenAfterConnect(storage, 99); // mismatch on the reload
+    // Later navigation back to creative 42 must NOT auto-open — intent was spent.
+    expect(consumeReopenAfterConnect(storage, 42)).toBe(false);
+  });
+
+  test('matches across id string/number coercion', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage, 42);        // stored as '42'
+    expect(consumeReopenAfterConnect(storage, '42')).toBe(true); // dataset is a string
+  });
+
+  test('unscoped sentinel reopens regardless of current creative (legacy)', () => {
+    const storage = fakeStorage();
+    markReopenAfterConnect(storage);            // no id → '1'
+    expect(consumeReopenAfterConnect(storage, 7)).toBe(true);
   });
 
   test('returns false when no reopen was pending', () => {

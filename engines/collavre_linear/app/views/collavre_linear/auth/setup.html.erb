@@ -57,7 +57,15 @@
     function notifyOpener() {
       try {
         if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ type: 'linearConnected' }, window.location.origin);
+          // Include the creative this popup was opened for so the opener only
+          // reopens the modal when it's still showing that same creative — not
+          // whatever creative it may have navigated to while the popup was open.
+          var wizard = document.getElementById('linear-wizard');
+          var creativeId = wizard ? wizard.dataset.creativeId : '';
+          window.opener.postMessage(
+            { type: 'linearConnected', creativeId: creativeId },
+            window.location.origin
+          );
         }
       } catch (e) {}
     }
