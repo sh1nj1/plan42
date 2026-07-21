@@ -1,3 +1,10 @@
+## v0.24.1 (2026-07-21)
+
+### Changes
+- a5de926f fix(comments): keep previous-message button stepping back on rapid clicks (#1407)
+- e1ce6bad feat: pin the add-topic button left of the topic-list button (#1406)
+- 5b49a09b fix(collavre): render dropped agent avatar from response, surface failures (#1405)
+
 ## v0.24.0 (2026-07-16)
 
 ### Changes
