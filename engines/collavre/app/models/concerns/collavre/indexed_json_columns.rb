@@ -51,6 +51,14 @@ module Collavre
     def sync_indexed_json_columns
       json = public_send(indexed_json_source) || {}
       indexed_json_column_map.each do |column, json_key|
+        # A promoted column may not exist yet when a record is saved during a
+        # migration that runs before the add-column migration -- a full replay
+        # reaches older record-saving migrations (e.g. 20251230113607_refactor_labels
+        # calls Creative.create!) first. The JSON attribute stays the source of
+        # truth, so skip the promoted column until it exists rather than aborting
+        # the save with MissingAttributeError; the next save re-derives it.
+        next unless has_attribute?(column)
+
         self[column] = json[json_key]
       end
     end
