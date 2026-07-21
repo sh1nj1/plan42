@@ -12,6 +12,8 @@ ko:
       setup: "설정"
       connect_prompt: "Linear 계정을 연결하여 동기화를 시작하세요."
       connect_button: "Linear 연결"
+      reconnect_hint: "Linear 프로젝트를 불러오지 못하나요? 연결이 만료되었거나 Linear에서 해제되었을 수 있습니다. 다시 연결하세요."
+      reconnect_button: "Linear 다시 연결"
       link_prompt: "이 크리에이티브에 연결할 Linear 프로젝트와 팀을 선택하세요."
       team_id_label: "팀"
       project_id_label: "프로젝트"

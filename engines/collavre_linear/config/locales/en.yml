@@ -12,6 +12,8 @@ en:
       setup: "Setup"
       connect_prompt: "Connect your Linear account to start syncing."
       connect_button: "Connect Linear"
+      reconnect_hint: "Can't load your Linear projects? The connection may have expired or been revoked in Linear. Reconnect to fix it."
+      reconnect_button: "Reconnect Linear"
       link_prompt: "Select a Linear project and team to link this creative."
       team_id_label: "Team"
       project_id_label: "Project"
