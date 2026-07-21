@@ -17,7 +17,7 @@ PATH
 PATH
   remote: engines/collavre_linear
   specs:
-    collavre_linear (0.2.1)
+    collavre_linear (0.2.2)
       collavre
       rails (>= 8.0)
 

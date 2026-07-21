@@ -1,3 +1,8 @@
+## v0.2.2 (2026-07-21)
+
+### Changes
+- 705fd0d1 fix(collavre_linear): allow re-connecting Linear when the stored token is dead (#1424)
+
 ## v0.2.1 (2026-07-21)
 
 ### Changes
