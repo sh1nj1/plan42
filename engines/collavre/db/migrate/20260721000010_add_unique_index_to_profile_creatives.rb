@@ -16,15 +16,12 @@ class AddUniqueIndexToProfileCreatives < ActiveRecord::Migration[8.1]
   # `data` by Collavre::IndexedJsonColumns, and index that plain column — it
   # dumps identically on both adapters. Mirrors the reference promote-and-reindex
   # migration 20260702000005_promote_channel_config_index_columns.
+  #
+  # The `kind` column itself is added earlier by 20260720235959, BEFORE the
+  # profile backfills (20260721000000/000001) run, so those model saves don't
+  # raise on a missing column. By the time this migration runs, every profile
+  # row (pre-existing and backfilled) already carries kind = 'profile'.
   def up
-    add_column :creatives, :kind, :string
-
-    if connection.adapter_name == "PostgreSQL"
-      execute "UPDATE creatives SET kind = data->>'kind'"
-    else
-      execute "UPDATE creatives SET kind = json_extract(data, '$.kind')"
-    end
-
     collapse_duplicate_profiles!
 
     add_index :creatives, :user_id,
@@ -35,7 +32,6 @@ class AddUniqueIndexToProfileCreatives < ActiveRecord::Migration[8.1]
 
   def down
     remove_index :creatives, name: "index_creatives_on_user_id_profile_unique"
-    remove_column :creatives, :kind
   end
 
   private

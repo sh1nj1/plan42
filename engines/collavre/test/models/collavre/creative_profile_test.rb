@@ -132,5 +132,30 @@ module Collavre
       inbox = Collavre::Creative.inbox_for(@user)
       assert_equal "inbox", inbox.reload.kind
     end
+
+    # IndexedJsonColumns installs a before_save that writes `self["kind"]` from
+    # `data` on EVERY Creative save. The profile backfill migrations save
+    # Creatives through the full model, so on an upgrade from main the `kind`
+    # column MUST be added before those backfills run — otherwise each save
+    # raises MissingAttributeError, the backfill's rescue swallows it, and the
+    # migration silently creates no profiles. CI can't catch this (it loads
+    # schema.rb, never replaying migration order), so lock the invariant here.
+    test "the kind column is added before any migration that backfills profiles" do
+      migrate_dir = Collavre::Engine.root.join("db", "migrate")
+      version = ->(glob) do
+        path = Dir[migrate_dir.join(glob)].sort.first
+        assert path, "expected a migration matching #{glob}"
+        File.basename(path)[/\A\d+/]
+      end
+
+      add_kind = version.call("*_add_kind_column_to_creatives.rb")
+      backfill_creatives = version.call("*_backfill_profile_creatives.rb")
+      backfill_descriptions = version.call("*_backfill_profile_descriptions.rb")
+
+      assert add_kind < backfill_creatives,
+             "kind column (#{add_kind}) must be added before backfilling profiles (#{backfill_creatives})"
+      assert add_kind < backfill_descriptions,
+             "kind column (#{add_kind}) must be added before backfilling descriptions (#{backfill_descriptions})"
+    end
   end
 end
