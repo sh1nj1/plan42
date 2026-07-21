@@ -178,7 +178,7 @@ module Collavre
       end
 
       def extract_agent_description(user)
-        prompt = user.system_prompt.to_s
+        prompt = user.effective_system_prompt.to_s
         # Extract first meaningful line or sentence
         first_line = prompt.lines.find { |l| l.strip.present? && !l.start_with?("#") }
         return "AI Agent" unless first_line
