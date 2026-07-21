@@ -50,13 +50,25 @@
   </div>
 
   <script>
-    document.getElementById('close-btn').addEventListener('click', function() {
+    // Tell the opener the account is connected so it advances straight to the
+    // project-link step. The opener also closes this popup (window.close() below
+    // is unreliable after the cross-origin OAuth round trip and in the desktop
+    // WebView, which is why the "Close" button used to look dead).
+    function notifyOpener() {
       try {
-        if (window.opener) {
+        if (window.opener && !window.opener.closed) {
           window.opener.postMessage({ type: 'linearConnected' }, window.location.origin);
         }
       } catch (e) {}
-      window.close();
+    }
+
+    // Auto-advance on load: no click required — the opener reloads and jumps to
+    // the project settings ("link a project") step.
+    notifyOpener();
+
+    document.getElementById('close-btn').addEventListener('click', function() {
+      notifyOpener();
+      try { window.close(); } catch (e) {}
     });
   </script>
 </body>
