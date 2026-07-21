@@ -9,8 +9,20 @@ module Collavre
     end
 
     # Returns the user's profile creative, creating one if it doesn't exist.
+    # Use only from write paths (e.g. sync_profile_system_prompt!) — never from
+    # a hot read path, since creating a profile creative also creates a Topic.
     def profile_creative
       Collavre::Creative.profile_for(self)
+    end
+
+    # Read-only lookup: the existing profile creative or nil, never creating one.
+    # Read paths (effective_system_prompt) must use this so a hot-path read never
+    # writes, and so rendering never fails when the in-memory user is invalid
+    # (e.g. re-rendering the AI form after a failed save leaves name blank).
+    def profile_creative_if_present
+      return nil unless persisted?
+
+      Collavre::Creative.profiles.where(user: self).first
     end
 
     private

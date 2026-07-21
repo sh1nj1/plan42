@@ -240,7 +240,7 @@ module Collavre
     # admin view) must route here so that editing the profile creative directly
     # takes effect everywhere, not just in AiAgentService.
     def effective_system_prompt
-      profile_creative&.data&.dig("markdown_source").presence || system_prompt
+      profile_creative_if_present&.data&.dig("markdown_source").presence || system_prompt
     end
 
     def claude_channel_agent?

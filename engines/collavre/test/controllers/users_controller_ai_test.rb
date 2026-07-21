@@ -118,4 +118,39 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "Name can't be blank", flash[:alert]
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
   end
+
+  # Regression: the edit form must pre-fill the prompt from the canonical
+  # profile creative (data["markdown_source"]), not the legacy system_prompt
+  # column. If the profile creative was edited directly, the column is stale;
+  # rendering it would post it back and update_ai's sync would clobber the
+  # profile-authored prompt on any unrelated setting change.
+  test "edit_ai pre-fills the prompt from the canonical profile creative, not the stale column" do
+    @ai_user.update_column(:system_prompt, "STALE COLUMN PROMPT")
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "CANONICAL EDITED PROMPT")
+
+    get edit_ai_user_url(@ai_user)
+    assert_response :success
+    assert_select "textarea#user_system_prompt", text: /CANONICAL EDITED PROMPT/
+    assert_select "textarea#user_system_prompt", text: /STALE COLUMN PROMPT/, count: 0
+  end
+
+  # Regression: with the form now posting the effective value, an unrelated
+  # setting change (model) re-posts the canonical prompt and must not erase a
+  # directly-edited profile prompt.
+  test "update_ai preserves a directly-edited profile prompt when re-posting the effective value" do
+    @ai_user.update_column(:system_prompt, "STALE COLUMN PROMPT")
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "CANONICAL EDITED PROMPT")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        system_prompt: @ai_user.effective_system_prompt, # what the fixed form posts
+        llm_model: "gemini-1.5-pro"
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal "gemini-1.5-pro", @ai_user.llm_model
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.effective_system_prompt
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.profile_creative.data["markdown_source"]
+  end
 end
