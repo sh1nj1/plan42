@@ -68,9 +68,15 @@ module Collavre
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
       end
 
-      # Default order: Newest first (created_at DESC)
+      # Default order: Newest first (id DESC).
+      # id is the single-sequence canonical insert order; the pagination cursors
+      # below already treat id as the source of truth ("Newer = higher id").
+      # Sorting by created_at instead reverses adjacent messages when an agent
+      # reply placeholder is stamped by a background worker whose clock lags the
+      # web process that stamped the triggering user message (cross-process
+      # clock skew), so the reply gets a higher id but an earlier created_at.
       # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
-      scope = scope.order(created_at: :desc)
+      scope = scope.order(id: :desc)
 
 
       @comments = if params[:around_comment_id].present?
@@ -81,7 +87,7 @@ module Collavre
         # Older messages have LOWER IDs.
 
         # Newer bundle (including target): ID >= target_id
-        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(created_at: :asc).limit(limit / 2 + 1)
+        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(id: :asc).limit(limit / 2 + 1)
 
         # Older bundle: ID < target_id
         older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
@@ -105,7 +111,7 @@ module Collavre
         # We want the ones just above `after_id`.
 
         # Use reorder(ASC) to get the ones immediately larger than after_id, then reverse back to DESC.
-        scope.where("comments.id > ?", params[:after_id].to_i).reorder(created_at: :asc).limit(limit)
+        scope.where("comments.id > ?", params[:after_id].to_i).reorder(id: :asc).limit(limit)
       else
         # Initial Load (Latest messages)
         scope.limit(limit).to_a.reverse
