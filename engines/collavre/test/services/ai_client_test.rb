@@ -453,6 +453,96 @@ class AiClientTest < ActiveSupport::TestCase
     assert(logged.any? { |m| m.include?("StandardError") }, "error class should still be logged")
   end
 
+  test "surfaces provider error response body when RubyLLM masks the reason" do
+    # RubyLLM raises BadRequestError with the generic "Invalid request" fallback
+    # when the provider's 400 body isn't in OpenAI's {error:{message}} shape (e.g.
+    # OpenAI-compatible gateways like Cerebras). The real reason lives only on the
+    # raw HTTP response; the client must surface its status + body to the app log.
+    raw_body = { "detail" => "tools[0].function.parameters: invalid schema" }.to_json
+    response = OpenStruct.new(status: 400, body: raw_body)
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+    end
+
+    client = AiClient.new(
+      vendor: "openai", model: "gpt-oss-120b", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    logged = []
+    fake_logger = Object.new
+    fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
+    fake_logger.define_singleton_method(:debug) { |*_| }
+
+    Rails.stub(:logger, fake_logger) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hi" } ] } ])
+      end
+    end
+
+    joined = logged.join("\n")
+    assert_includes joined, "status=400"
+    assert_includes joined, "tools[0].function.parameters: invalid schema"
+  end
+
+  test "reinterprets ASCII-8BIT provider error body as UTF-8 so non-ASCII is readable" do
+    # Provider error bodies arrive tagged ASCII-8BIT even when the bytes are valid
+    # UTF-8; without reinterpretation the transcode into the UTF-8 log fails (the
+    # original "log writing failed" symptom) and Korean/other text is unreadable.
+    binary_body = "잘못된 요청".dup.force_encoding("ASCII-8BIT")
+    response = OpenStruct.new(status: 400, body: binary_body)
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+    end
+
+    client = AiClient.new(
+      vendor: "openai", model: "gpt-oss-120b", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    logged = []
+    fake_logger = Object.new
+    fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
+    fake_logger.define_singleton_method(:debug) { |*_| }
+
+    Rails.stub(:logger, fake_logger) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hi" } ] } ])
+      end
+    end
+
+    assert(logged.any? { |m| m.include?("잘못된 요청") }, "Korean error body should be logged readably")
+  end
+
+  test "does not surface provider error response body when log_interactions is false" do
+    # A 400 validation body can echo the offending input, so the response-body log
+    # is gated by log_interactions just like the error-message log.
+    secret = "unsubmitted-draft-qwerty"
+    response = OpenStruct.new(status: 400, body: { "input" => secret }.to_json)
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+    end
+
+    client = AiClient.new(
+      vendor: "openai", model: "gpt-oss-120b", system_prompt: "system",
+      llm_api_key: "api-key", log_interactions: false
+    )
+
+    logged = []
+    fake_logger = Object.new
+    fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
+    fake_logger.define_singleton_method(:debug) { |*_| }
+
+    Rails.stub(:logger, fake_logger) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: secret } ] } ])
+      end
+    end
+
+    assert_not_includes logged.join("\n"), secret, "response body leaked despite log_interactions:false"
+  end
+
   test "yields whitespace-only deltas instead of dropping them" do
     # Providers routinely emit a paragraph break as a chunk of its own. "\n\n" is
     # blank? == true, so skipping blank deltas deletes it — and since the delta is

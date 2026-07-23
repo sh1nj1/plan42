@@ -127,6 +127,7 @@ module Collavre
       # ActivityLog gate below. error_message stays intact for the gated ensure log
       # and the streamed yield (which goes back to the same user).
       Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
+      log_error_response(e) if @log_interactions
       Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
       Rails.logger.debug e.backtrace.join("\n")
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
@@ -164,6 +165,30 @@ module Collavre
     private
 
     attr_reader :vendor, :model, :system_prompt, :llm_api_key, :gateway_url, :context
+
+    # RubyLLM masks provider 400s behind a generic "Invalid request - please check
+    # your input" fallback whenever the provider's error body is not in OpenAI's
+    # {error:{message}} shape — common for OpenAI-compatible gateways (Cerebras,
+    # local Ollama, etc.), whose real reason then lives only in the raw HTTP
+    # response. RubyLLM::Error carries that response (status + body); surface it to
+    # the app log so the actual cause is one grep away instead of buried in
+    # ruby_llm.log. Gated by @log_interactions at the call site, like the message
+    # log above, because a 400 validation body can echo the offending input.
+    def log_error_response(error)
+      return unless error.respond_to?(:response) && (response = error.response)
+
+      status = response.respond_to?(:status) ? response.status : nil
+      body = response.respond_to?(:body) ? response.body : nil
+      return if status.nil? && body.blank?
+
+      # Provider error bodies are frequently tagged ASCII-8BIT even though the bytes
+      # are valid UTF-8; reinterpret and scrub so non-ASCII text (e.g. Korean) is
+      # readable and never re-triggers the transcode failure we are eliminating.
+      body_text = body.is_a?(String) ? body.dup.force_encoding("UTF-8").scrub : body.inspect
+      Rails.logger.error "AI Client error response: status=#{status} body=#{body_text.to_s.truncate(2000)}"
+    rescue StandardError => e
+      Rails.logger.debug "AiClient#log_error_response failed: #{e.class}"
+    end
 
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
