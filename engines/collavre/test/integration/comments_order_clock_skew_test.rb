@@ -14,6 +14,9 @@ class CommentsOrderClockSkewTest < ActionDispatch::IntegrationTest
     @user = User.create!(email: "skew-user@example.com", password: TEST_PASSWORD, name: "SkewUser")
     @creative = Creative.create!(user: @user, description: "Skew creative")
 
+    # An earlier comment used as the pagination anchor (after_id) below. Lowest id.
+    @anchor = @creative.comments.create!(user: @user, content: "ANCHOR_MESSAGE")
+
     # Inserted first -> lower id. This is the user message.
     @user_message = @creative.comments.create!(user: @user, content: "FIRST_USER_MESSAGE")
 
@@ -41,5 +44,21 @@ class CommentsOrderClockSkewTest < ActionDispatch::IntegrationTest
     assert user_pos < agent_pos,
       "user message must render before the agent reply it triggered (id order), " \
       "not after it due to a backdated created_at"
+  end
+
+  test "after_id pagination orders by insertion (id) despite backdated agent reply created_at" do
+    sign_in_as(@user)
+    # Load the page above the anchor: returns the user message and its agent reply.
+    get creative_comments_path(@creative, after_id: @anchor.id)
+    assert_response :success
+
+    user_pos = response.body.index("FIRST_USER_MESSAGE")
+    agent_pos = response.body.index("SECOND_AGENT_REPLY")
+
+    assert user_pos, "user message must be rendered in the after_id page"
+    assert agent_pos, "agent reply must be rendered in the after_id page"
+    assert user_pos < agent_pos,
+      "after_id paging must also order by id, so the user message renders before " \
+      "the agent reply despite the backdated created_at"
   end
 end
