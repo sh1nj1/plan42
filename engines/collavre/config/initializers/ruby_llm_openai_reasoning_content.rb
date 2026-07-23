@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 return unless defined?(RubyLLM::Providers::OpenAI)
 
 module Collavre
@@ -43,7 +45,12 @@ module Collavre
 
       def custom_openai_gateway?
         base = config&.openai_api_base.to_s
-        base.present? && !base.start_with?("https://api.openai.com")
+        return false unless base.present?
+
+        uri = URI.parse(base)
+        !(uri.is_a?(URI::HTTPS) && uri.host == "api.openai.com")
+      rescue URI::InvalidURIError
+        true
       end
     end
   end
