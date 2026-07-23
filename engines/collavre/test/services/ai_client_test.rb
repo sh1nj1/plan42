@@ -580,6 +580,42 @@ class AiClientTest < ActiveSupport::TestCase
     assert_not_includes logged.join("\n"), secret, "response body leaked despite log_interactions:false"
   end
 
+  test "response-body logging never breaks the error path when the response is malformed" do
+    # log_error_response is a diagnostic helper on the failure path, so a malformed
+    # response object must never turn a provider error into a crash. A response that
+    # raises while its body is read exercises the defensive rescue: the AI error is
+    # still surfaced to the caller and only a debug breadcrumb is left behind.
+    response = Object.new
+    response.define_singleton_method(:status) { 400 }
+    response.define_singleton_method(:body) { raise "cannot read body" }
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+    end
+
+    client = AiClient.new(
+      vendor: "openai", model: "gpt-oss-120b", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    errors = []
+    debugs = []
+    fake_logger = Object.new
+    fake_logger.define_singleton_method(:error) { |msg| errors << msg.to_s }
+    fake_logger.define_singleton_method(:debug) { |*args| debugs << args.join }
+    fake_logger.define_singleton_method(:debug?) { true }
+
+    yielded = +""
+    Rails.stub(:logger, fake_logger) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hi" } ] } ]) { |delta| yielded << delta }
+      end
+    end
+
+    assert_includes yielded, "AI Error", "caller must still receive the error despite the malformed response"
+    assert(debugs.any? { |m| m.include?("log_error_response failed") },
+           "the defensive rescue should leave a debug breadcrumb")
+  end
+
   test "yields whitespace-only deltas instead of dropping them" do
     # Providers routinely emit a paragraph break as a chunk of its own. "\n\n" is
     # blank? == true, so skipping blank deltas deletes it — and since the delta is
