@@ -170,16 +170,30 @@ module Collavre
     # your input" fallback whenever the provider's error body is not in OpenAI's
     # {error:{message}} shape — common for OpenAI-compatible gateways (Cerebras,
     # local Ollama, etc.), whose real reason then lives only in the raw HTTP
-    # response. RubyLLM::Error carries that response (status + body); surface it to
-    # the app log so the actual cause is one grep away instead of buried in
-    # ruby_llm.log. Gated by @log_interactions at the call site, like the message
-    # log above, because a 400 validation body can echo the offending input.
+    # response. RubyLLM::Error carries that response (status + body); surface it so
+    # the actual cause is one grep away instead of buried in ruby_llm.log.
+    #
+    # A provider 400 body can echo the offending request (prompt or tool arguments),
+    # so the raw body is written to the app log only under debug logging — the same
+    # level that already gates RubyLLM's own request/response body log (see the
+    # ruby_llm initializer). At INFO (production) we record status + body size only,
+    # keeping user content out of centralized app logs while still capturing that the
+    # provider rejected the request and how large its reason was; raise the log level
+    # to recover the full body on demand. The whole path is additionally gated by
+    # @log_interactions at the call site, like the error-message log above.
     def log_error_response(error)
       return unless error.respond_to?(:response) && (response = error.response)
 
       status = response.respond_to?(:status) ? response.status : nil
       body = response.respond_to?(:body) ? response.body : nil
       return if status.nil? && body.blank?
+
+      unless Rails.logger.debug?
+        size = body.is_a?(String) ? "#{body.bytesize}B" : (body.nil? ? "none" : "non-string")
+        Rails.logger.error "AI Client error response: status=#{status} body_size=#{size} " \
+                           "(body suppressed at INFO; raise log level to capture it)"
+        return
+      end
 
       # Provider error bodies are frequently tagged ASCII-8BIT even though the bytes
       # are valid UTF-8; reinterpret and scrub so non-ASCII text (e.g. Korean) is

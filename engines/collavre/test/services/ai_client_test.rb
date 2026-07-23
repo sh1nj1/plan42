@@ -473,6 +473,8 @@ class AiClientTest < ActiveSupport::TestCase
     fake_logger = Object.new
     fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
     fake_logger.define_singleton_method(:debug) { |*_| }
+    # Debug logging (development) surfaces the full body; production is asserted below.
+    fake_logger.define_singleton_method(:debug?) { true }
 
     Rails.stub(:logger, fake_logger) do
       client.stub(:build_conversation, conversation) do
@@ -483,6 +485,40 @@ class AiClientTest < ActiveSupport::TestCase
     joined = logged.join("\n")
     assert_includes joined, "status=400"
     assert_includes joined, "tools[0].function.parameters: invalid schema"
+  end
+
+  test "suppresses provider error body at INFO but records status and size" do
+    # A 400 body can echo the offending prompt/tool arguments. At INFO (production)
+    # the raw body must not reach centralized app logs; only the status and body
+    # size are recorded so the rejection is still traceable without leaking content.
+    secret = "user-prompt-should-not-leak-to-prod-logs"
+    raw_body = { "detail" => secret }.to_json
+    response = OpenStruct.new(status: 400, body: raw_body)
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+    end
+
+    client = AiClient.new(
+      vendor: "openai", model: "gpt-oss-120b", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    logged = []
+    fake_logger = Object.new
+    fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
+    fake_logger.define_singleton_method(:debug) { |*_| }
+    fake_logger.define_singleton_method(:debug?) { false }
+
+    Rails.stub(:logger, fake_logger) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hi" } ] } ])
+      end
+    end
+
+    joined = logged.join("\n")
+    assert_includes joined, "status=400", "status must still be recorded at INFO"
+    assert_includes joined, "body_size=#{raw_body.bytesize}B", "body size must be recorded at INFO"
+    assert_not_includes joined, secret, "raw provider body leaked to app log at INFO"
   end
 
   test "reinterprets ASCII-8BIT provider error body as UTF-8 so non-ASCII is readable" do
@@ -504,6 +540,7 @@ class AiClientTest < ActiveSupport::TestCase
     fake_logger = Object.new
     fake_logger.define_singleton_method(:error) { |msg| logged << msg.to_s }
     fake_logger.define_singleton_method(:debug) { |*_| }
+    fake_logger.define_singleton_method(:debug?) { true }
 
     Rails.stub(:logger, fake_logger) do
       client.stub(:build_conversation, conversation) do
