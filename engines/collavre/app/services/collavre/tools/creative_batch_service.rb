@@ -18,9 +18,10 @@ module Collavre
       end
 
       tool_param :operations, description: "Array of operation objects. Each object must have an 'action' key.\n\n" \
-                 "For 'create': { action: 'create', parent_id: <int>, description: <string>, progress: <float>, after_id: <int>, before_id: <int> }\n" \
-                 "For 'update': { action: 'update', id: <int>, description: <string>, progress: 1.0, parent_id: <int> } — progress only accepts 1.0 (complete) and only on leaf Creatives\n" \
+                 "For 'create': { action: 'create', parent_id: <int>, description: <markdown string>, progress: <float>, after_id: <int>, before_id: <int> }\n" \
+                 "For 'update': { action: 'update', id: <int>, description: <markdown string>, progress: 1.0, parent_id: <int> } — progress only accepts 1.0 (complete) and only on leaf Creatives\n" \
                  "For 'delete': { action: 'delete', id: <int> }\n\n" \
+                 "The 'description' field is written as Markdown (GitHub-Flavored).\n" \
                  "Fields other than 'action' and 'id'/'parent_id' are optional.", required: true
 
       class BatchRollbackError < StandardError
@@ -99,7 +100,11 @@ module Collavre
         return { error: "Creative not found", id: id } unless creative
         return { error: "No write permission on this Creative", id: id } unless creative.has_permission?(Current.user, :write)
 
-        creative.destroy!
+        result = Creatives::DestroyService.new(
+          creative: creative,
+          user: Current.user
+        ).call
+        return { error: "Failed to destroy creative", id: id } unless result
         { success: true, id: id, deleted: true }
       end
     end

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="<%= I18n.locale %>">
   <head>
     <title><%= content_for(:title) || t('app.name') %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -29,15 +29,7 @@
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= stylesheet_link_tag "avatar_preview" %>
     <%= stylesheet_link_tag "doorkeeper" %>
-    <%= stylesheet_link_tag "collavre/creatives" %>
-    <%= stylesheet_link_tag "collavre/actiontext" %>
-    <%= stylesheet_link_tag "collavre/activity_logs" %>
-    <%= stylesheet_link_tag "collavre/design_tokens" %>
-    <%= stylesheet_link_tag "collavre/dark_mode" %>
-    <%= stylesheet_link_tag "collavre/print", media: 'print' %>
-    <%= stylesheet_link_tag "collavre/user_menu" %>
-    <%= stylesheet_link_tag "collavre/org_chart" %>
-    <%= stylesheet_link_tag "collavre/popup" %>
+    <%= collavre_stylesheets %>
     <%= stylesheet_link_tag "collavre_slack/slack_integration" %>
 
     <%= javascript_include_tag "application", "data-turbo-track": "reload", defer: true, type: "module" %>
@@ -48,27 +40,17 @@
       <style id="default-theme-styles" data-turbo-track="reload"><%= default_styles %></style>
     <% end %>
 
-    <% if Current.user&.theme.present? && !%w[light dark].include?(Current.user.theme) %>
-      <% if (custom_theme = UserTheme.find_by(id: Current.user.theme)) %>
-        <style id="user-theme-styles" data-turbo-track="reload">
-          body {
-            <% custom_theme.variables.each do |key, value| %>
-              <%= key %>: <%= value %> !important;
-            <% end %>
-            <% legacy_alias_declarations(custom_theme.variables).each do |key, value| %>
-              <%= key %>: <%= value %> !important;
-            <% end %>
-            <% if custom_theme.dark? %>
-              --color-scheme: dark !important;
-            <% end %>
-          }
-        </style>
-      <% end %>
-    <% end %>
+    <%= render 'collavre/shared/custom_theme_style' %>
   </head>
   <body class="<%= body_theme_class %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'collavre/shared/link_creative_modal' %>
-    <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
+    <% if Current.user %>
+      <%= turbo_stream_from ["inbox", Current.user] %>
+      <%# Holds an InboxBadgeChannel subscription so the server re-pushes the
+          authoritative inbox badge count on every WebSocket (re)connect,
+          self-healing counts missed while the socket was down. %>
+      <span data-controller="inbox-badge" hidden></span>
+    <% end %>
     <div class="notice"><%= notice %></div>
 
     <%= render 'collavre/shared/navigation' %>

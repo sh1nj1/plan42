@@ -32,7 +32,8 @@ module Collavre
         content: "⏳ 대기중 (이 토픽에서 다른 작업이 실행 중)",
         topic_id: @topic.id,
         private: false,
-        skip_default_user: true
+        skip_default_user: true,
+        topic_concurrency_defer: true
       )
 
       assert_equal "queued", task.reload.status
@@ -59,7 +60,8 @@ module Collavre
         content: "⏳ 대기중",
         topic_id: @topic.id,
         private: false,
-        skip_default_user: true
+        skip_default_user: true,
+        topic_concurrency_defer: true
       )
 
       notice.destroy!
@@ -114,13 +116,42 @@ module Collavre
         content: "⏳ 대기중",
         topic_id: @topic.id,
         private: false,
-        skip_default_user: true
+        skip_default_user: true,
+        topic_concurrency_defer: true
       )
 
       notice.destroy!
 
       assert_equal "queued", older_task.reload.status
       assert_equal "cancelled", newer_task.reload.status
+    end
+
+    test "deleting a non-concurrency :delayed notice does not cancel an unrelated queued waiter" do
+      # A genuine topic-concurrency waiter from a separate :deferred dispatch.
+      waiter = Task.create!(
+        name: "Concurrency waiter",
+        status: "queued",
+        agent: @ai_agent,
+        creative_id: @creative.id,
+        topic_id: @topic.id,
+        trigger_event_name: "comment.created",
+        trigger_event_payload: { "comment" => { "id" => 555 } }
+      )
+
+      # A :delayed (busy / rate_limited) notice shares the "⏳" prefix but queues
+      # no waiter of its own (topic_concurrency_defer: false). Deleting it must
+      # not abandon the unrelated concurrency waiter above.
+      delayed_notice = @creative.comments.create!(
+        content: "⏳ 대기중 (잠시 후 재시도)",
+        topic_id: @topic.id,
+        private: false,
+        skip_default_user: true,
+        topic_concurrency_defer: false
+      )
+
+      delayed_notice.destroy!
+
+      assert_equal "queued", waiter.reload.status
     end
 
     test "deleting trigger comment cancels its associated task" do

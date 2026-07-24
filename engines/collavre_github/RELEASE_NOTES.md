@@ -1,3 +1,64 @@
+## v0.6.3 (2026-07-21)
+
+### Changes
+- 19f2e413 docs: consolidate agent docs into developer docs; remove .collavre-docs (#1403)
+
+## v0.6.2 (2026-07-16)
+
+### Changes
+- 2acfda29 refactor(collavre_github): replace SQLite-only json_extract with portable JSON access (#1394)
+- 5268b7d7 refactor(collavre): make core engine vendor-neutral (#1364)
+- 05c315fb fix(security): encrypt repository-link webhook secret at rest and block SSRF DNS rebinding (#1369)
+- 60f68e5f fix: gate GitHub wizard Next button on the current user's own connection (#1362)
+
+## v0.6.1 (2026-06-23)
+
+### Changes
+- 36c3f897 feat: typo correction (Phase 0 backend + Phase 1 chat composer) (#1317)
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+
+## v0.6.0 (2026-06-04)
+
+### Changes
+- 6e3d2728 feat(collavre): Phase 2 GitHub — DB-backed webhook secret, API endpoint, mock toggle (#1266)
+- 3d73c334 feat(collavre): Phase 2 OmniAuth — DB-backed Google/GitHub/Notion OAuth keys (#1265)
+- 73876b13 feat(channels): topic-badge abstraction + preview MCP tools (#1259)
+- 199a0ebf fix(pr_monitor): default chip label/link fallback from channel config (#1255)
+- d43ea449 fix(pr_monitor): de-dup closed event, status badge chips, dismiss-on-X (#1242)
+- 7cd616ac fix(pr_monitor): auto-provision PR-channel webhook events and re-seed on reactivate (#1240)
+- a8cafca7 fix(pr_monitor): seed chip label/link and announce attach in topic (#1239)
+- bf9b1d57 feat(channels): GitHub PR comment listener via Channel abstraction (#1238)
+
+## v0.5.1 (2026-04-17)
+
+### Changes
+- 813a8a8a refactor: move github integration JS into collavre_github engine (#1218)
+
+## v0.5.0 (2026-04-17)
+
+### Changes
+- 64a9d540 fix: prevent NoMethodError when markdown_root_creative is nil during initial sync (#1207)
+- 0345f1f0 feat: GitHub markdown datasource with read-only sync (#1201)
+- 7e50303f refactor: extract shared error handling in GitHub PR services and Slack jobs (#1203)
+- cfd0e0fb fix: resolve openclaw test bootsnap error, replace puts with logger, fix bare rescue, batch N+1 query (#1191)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+
+## v0.4.1 (2026-04-09)
+
+### Changes
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+
+## v0.4.0 (2026-04-02)
+
+### Changes
+- 0365a14b refactor: move comment dispatch from controller to model callback (#1086)
+- cacedf7c feat(github): complete OAuth flow in popup with repository selection (#977)
+
+## v0.3.3 (2026-03-12)
+
+### Changes
+- f782b351 fix: move host-app migrations to their respective engines (#963)
+
 ## v0.3.2 (2026-03-12)
 
 ### Changes

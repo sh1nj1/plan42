@@ -5,7 +5,7 @@
   background: var(--surface-section);
   border: 1px solid var(--border-color);
   box-shadow: var(--shadow-2);
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   padding: 0.35em;
   max-width: min(420px, 90vw);
 }
@@ -38,7 +38,7 @@
 .mention-item.active,
 .common-popup-item:hover,
 .common-popup-item.active {
-  background: var(--border-drag-over);
+  background: var(--surface-hover);
 }
 
 .common-popup-item {

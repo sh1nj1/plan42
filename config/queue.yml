@@ -8,10 +8,19 @@ default: &default
       threads: 2
       processes: 1
       polling_interval: <%= ENV.fetch("AUTHZ_POLLING_INTERVAL", 0.1) %>
-    # Default worker for all other queues (excludes authz for strict priority)
+    # Default worker for all other queues (excludes authz for strict priority,
+    # and linear_inbound which gets its own sequential worker below)
     - queues: [default, mailers, active_storage_analysis, active_storage_purge]
       threads: 3
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
+      polling_interval: 0.1
+    # Sequential worker for inbound Linear webhooks. A single thread + single
+    # process makes this queue a strict FIFO consumer so events apply in receipt
+    # order (a comment can arrive before its issue's create). Do NOT raise
+    # threads/processes here — concurrency would reintroduce out-of-order applies.
+    - queues: [linear_inbound]
+      threads: 1
+      processes: 1
       polling_interval: 0.1
 
 development:
@@ -21,4 +30,8 @@ test:
   <<: *default
 
 production:
+  <<: *default
+
+# Desktop app runs the same in-process Solid Queue workers as production.
+desktop:
   <<: *default

@@ -1,7 +1,12 @@
 module CollavreGithub
   class Client
+    MOCK_SERVER_DEFAULT = "http://localhost:4567"
+
     def initialize(account)
-      @client = Octokit::Client.new(access_token: account.token)
+      options = { access_token: account.token }
+      api_endpoint = resolve_api_endpoint
+      options[:api_endpoint] = api_endpoint if api_endpoint.present?
+      @client = Octokit::Client.new(options)
       @client.auto_paginate = true
     end
 
@@ -80,6 +85,9 @@ module CollavreGithub
           active: true
         }
       )
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub create webhook failed for #{repo_full_name}: #{e.message}")
+      nil
     end
 
     def update_repository_webhook(repo_full_name, hook_id, url:, secret:, events:, content_type: "json")
@@ -97,14 +105,85 @@ module CollavreGithub
           active: true
         }
       )
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub update webhook failed for #{repo_full_name}: #{e.message}")
+      nil
     end
 
     def delete_repository_webhook(repo_full_name, hook_id)
       client.remove_hook(repo_full_name, hook_id)
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub delete webhook failed for #{repo_full_name}: #{e.message}")
+      nil
+    end
+
+    # Fetch the default branch name for a repository
+    def default_branch(repo_full_name)
+      repo = client.repository(repo_full_name)
+      repo.default_branch
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub default branch fetch failed: #{e.message}")
+      "main"
+    end
+
+    # Fetch the full recursive tree for a given branch/sha
+    def tree(repo_full_name, branch)
+      sha = client.ref(repo_full_name, "heads/#{branch}").object.sha
+      result = client.tree(repo_full_name, sha, recursive: true)
+      result.tree
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub tree fetch failed: #{e.message}")
+      []
+    end
+
+    # Fetch file content (decoded) for a given path and ref
+    def file_content(repo_full_name, path, ref: nil)
+      opts = ref ? { ref: ref } : {}
+      content = client.contents(repo_full_name, path: path, **opts)
+      if content.encoding == "base64"
+        Base64.decode64(content.content).force_encoding("UTF-8")
+      else
+        content.content
+      end
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub file content fetch failed for #{path}: #{e.message}")
+      nil
+    end
+
+    # Compare two commits and return changed files
+    def compare(repo_full_name, base, head)
+      client.compare(repo_full_name, base, head)
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub compare failed: #{e.message}")
+      nil
     end
 
     private
 
     attr_reader :client
+
+    # Resolve the API endpoint via Resolver (DB > ENV), otherwise fall back to
+    # the mock server in development when no real GitHub credentials are
+    # configured.
+    def resolve_api_endpoint
+      endpoint =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_api_endpoint).presence
+        else
+          ENV["GITHUB_API_ENDPOINT"].presence
+        end
+      return endpoint if endpoint.present?
+
+      github_client_id =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_client_id).presence
+        else
+          ENV["GITHUB_CLIENT_ID"].presence
+        end
+
+      if Rails.env.development? && github_client_id.blank?
+        MOCK_SERVER_DEFAULT
+      end
+    end
   end
 end

@@ -12,83 +12,99 @@ module Creatives
       @max_level = max_level
       @allowed_creative_ids = allowed_creative_ids
       @progress_map = progress_map
-      @permission_cache = {}
+      @permission_rank = {}
     end
 
     def build(collection, level: 1)
       return [] if collection.blank?
 
-      creatives = Array(collection)
-      # Preload permissions for all creatives in this batch to avoid N+1
-      preload_permissions(creatives)
-
-      build_nodes(creatives, level: level)
+      build_nodes(Array(collection), level: level)
     end
 
     private
 
-    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map, :permission_cache
+    attr_reader :user, :view_context, :raw_params, :expanded_state_map, :select_mode, :max_level, :allowed_creative_ids, :progress_map
 
-    def preload_permissions(creatives)
-      return unless user
-
-      creative_ids = creatives.map(&:id)
-      return if creative_ids.empty?
-
-      # Skip if already cached
-      uncached_ids = creative_ids - @permission_cache.keys
-      return if uncached_ids.empty?
-
-      write_rank = CreativeShare.permissions[:write]
-
-      # Batch query for user-specific permissions
-      user_permissions = CreativeSharesCache
-        .where(creative_id: uncached_ids, user_id: user.id)
-        .pluck(:creative_id, :permission)
-
-      user_permissions.each do |cid, perm|
-        perm_rank = CreativeSharesCache.permissions[perm]
-        @permission_cache[cid] = perm_rank && perm_rank >= write_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
-      end
-
-      # For remaining uncached, check public shares
-      still_uncached = uncached_ids - @permission_cache.keys
-      if still_uncached.any?
-        public_permissions = CreativeSharesCache
-          .where(creative_id: still_uncached, user_id: nil)
-          .pluck(:creative_id, :permission)
-
-        public_permissions.each do |cid, perm|
-          next if @permission_cache.key?(cid)
-          perm_rank = CreativeSharesCache.permissions[perm]
-          @permission_cache[cid] = perm_rank && perm_rank >= write_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
-        end
-      end
-
-      # Mark owned creatives as having write permission
-      owned_ids = creatives.select { |c| c.user_id == user.id }.map(&:id)
-      owned_ids.each { |cid| @permission_cache[cid] = true }
-
-      # Default to false for any remaining uncached
-      uncached_ids.each { |cid| @permission_cache[cid] ||= false }
+    def children_index
+      @children_index ||= ChildrenIndex.new(
+        user: user,
+        show_archived: raw_params["show_archived"].present?,
+        allowed_creative_ids: allowed_creative_ids
+      )
     end
 
-    def cached_can_write?(creative)
-      return false unless user
+    def comment_badge_index
+      @comment_badge_index ||= CommentBadgeIndex.new(user: user)
+    end
 
-      if @permission_cache.key?(creative.id)
-        @permission_cache[creative.id]
-      else
-        # Fallback to individual check if not cached
-        creative.has_permission?(user, :write)
-      end
+    # Everything a level of nodes needs, resolved in a fixed number of queries
+    # rather than a handful per node. The recursion re-enters here for each level,
+    # so total cost tracks tree *depth*, not node count.
+    def prepare_level(creatives)
+      ActiveRecord::Associations::Preloader.new(
+        records: creatives,
+        associations: [ :origin, { tags: :label } ]
+      ).call
+
+      preload_permissions(creatives)
+      preload_comment_badges(creatives)
+
+      return if children_suppressed?
+
+      children_index.index(creatives)
+      expanding = creatives.select { |creative| load_children_now?(creative) }
+      children_index.load(expanding) if expanding.any?
+    end
+
+    # Batch effective-origin permission ranks via the single PermissionFilter
+    # read path (owner wins, then the user's own cache entry incl. a no_access
+    # deny, then the public entry). Every pending creative gets an explicit
+    # entry — nil when no share resolves — so #allowed? can trust
+    # @permission_rank.key? and never falls back per-item for absent ids.
+    def preload_permissions(creatives)
+      pending = creatives.reject { |creative| @permission_rank.key?(creative.id) }
+      return if pending.empty?
+
+      ranks = PermissionFilter.new(user: user).ranks_for(pending.map(&:id))
+      pending.each { |creative| @permission_rank[creative.id] = ranks[creative.id] }
+    end
+
+    # Equivalent to `creative.has_permission?(user, permission)`, served from the
+    # level's batched ranks. Falls back for a creative the batch never saw.
+    def allowed?(creative, permission)
+      return creative.has_permission?(user, permission) unless @permission_rank.key?(creative.id)
+
+      rank = @permission_rank[creative.id]
+      return false if rank.nil?
+
+      rank >= CreativeShare.permissions[permission.to_s]
+    end
+
+    def can_write?(creative)
+      return false unless user
+      # Read-only-source creatives are never writable
+      return false if creative.read_only_source?
+
+      allowed?(creative, :write)
+    end
+
+    def can_feedback?(creative)
+      allowed?(creative, :feedback)
+    end
+
+    # Only rows that will actually render a badge are worth batching.
+    def preload_comment_badges(creatives)
+      visible = creatives.reject(&:archived?).select { |creative| can_feedback?(creative) }
+      return if visible.empty?
+
+      comment_badge_index.index(visible.map(&:effective_origin))
     end
 
     def build_nodes(creatives, level:)
       return [] if level > max_level
+      return [] if creatives.empty?
 
-      # Preload permissions for this batch of creatives
-      preload_permissions(creatives) if creatives.any?
+      prepare_level(creatives)
 
       creatives.flat_map do |creative|
         build_nodes_for_creative(creative, level: level)
@@ -100,15 +116,17 @@ module Creatives
         creative.filtered_progress = progress_map[creative.id.to_s]
       end
 
-      filtered_children = filtered_children_for(creative)
       expanded = expanded?(creative.id)
       skip = skip_creative?(creative)
       child_level = level + 1
       child_render_level = skip ? level : child_level
-      load_children_now = filters_applied? || expanded || skip
-      children_nodes = load_children_now ? build_nodes(filtered_children, level: child_render_level) : []
+      load_children_now = load_children_now?(creative)
+      has_children = !children_suppressed? && children_index.has_children?(creative)
+      children_nodes = load_children_now ? build_nodes(children_index.children_for(creative), level: child_render_level) : []
 
       return children_nodes if skip
+
+      can_write = can_write?(creative)
 
       [
         {
@@ -117,16 +135,22 @@ module Creatives
           parent_id: creative.parent_id,
           level: level,
           select_mode: !!select_mode,
-          can_write: cached_can_write?(creative),
-          has_children: filtered_children.any?,
+          can_write: can_write,
+          has_children: has_children,
           expanded: expanded,
-          is_root: creative.parent.nil?,
+          is_root: creative.parent_id.nil?,
+          archived: creative.archived?,
+          # `github_source` is the wire key the tree renderer JS reads; its value
+          # is now the neutral read-only-source flag (GitHub-synced content is one
+          # such source) so core names no vendor here.
+          github_source: creative.read_only_source?,
+          sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
-          templates: template_payload_for(creative),
-          inline_editor_payload: inline_editor_payload_for(creative),
+          templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
+          inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(
             creative,
-            filtered_children,
+            has_children: has_children,
             child_level: child_level,
             children_nodes: children_nodes,
             expanded: expanded,
@@ -144,15 +168,17 @@ module Creatives
       false
     end
 
-    def filtered_children_for(creative)
-      return [] if raw_params["comment"] == "true" || raw_params["search"].present?
+    # The chats feed and flat search render rows, not a tree: no node has children
+    # there, so the whole child resolution is skipped.
+    def children_suppressed?
+      return @children_suppressed if defined?(@children_suppressed)
 
-      children = creative.children_with_permission(user)
-      if allowed_creative_ids
-        children.select { |c| allowed_creative_ids.include?(c.id.to_s) }
-      else
-        children
-      end
+      @children_suppressed = raw_params["comment"] == "true" ||
+        (raw_params["search"].present? && raw_params["search_mode"] != "tree")
+    end
+
+    def load_children_now?(creative)
+      filters_applied? || expanded?(creative.id) || skip_creative?(creative)
     end
 
     def expanded?(creative_id)
@@ -168,9 +194,17 @@ module Creatives
       end
     end
 
-    def template_payload_for(creative)
+    def template_payload_for(creative, has_children: nil, can_write: nil)
       description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
-      progress_html = view_context.render_creative_progress(creative, select_mode: !!select_mode)
+      can_feedback = can_feedback?(creative)
+      progress_html = view_context.render_creative_progress(
+        creative,
+        select_mode: !!select_mode,
+        has_children: has_children,
+        can_write: can_write,
+        can_feedback: can_feedback,
+        unread_count: can_feedback ? comment_badge_index.unread_count_for(creative.effective_origin) : nil
+      )
 
       {
         description_html: description_html,
@@ -181,16 +215,21 @@ module Creatives
       }
     end
 
-    def inline_editor_payload_for(creative)
+    def inline_editor_payload_for(creative, can_write:)
+      effective = creative.effective_origin(Set.new)
+      origin_writable = effective.id == creative.id ? can_write : allowed?(creative, :write)
       {
         description_raw_html: creative.effective_description(nil, true),
         progress: creative.progress,
-        origin_id: creative.origin_id
+        origin_id: creative.origin_id,
+        content_type: effective.data&.dig("content_type"),
+        markdown_source: origin_writable ? effective.data&.dig("markdown_source") : nil,
+        markdown_editor: effective.data&.dig("editor")
       }
     end
 
-    def children_container_payload(creative, filtered_children, child_level:, children_nodes:, expanded:, load_children_now:)
-      return nil unless filtered_children.any?
+    def children_container_payload(creative, has_children:, child_level:, children_nodes:, expanded:, load_children_now:)
+      return nil unless has_children
 
       {
         id: "creative-children-#{creative.id}",

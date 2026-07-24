@@ -30,3 +30,10 @@ ai_bot:
   llm_model: gemini-1.5-flash
   system_prompt: "You are a bot."
   searchable: false
+
+channel_bot:
+  email: channel@collavre.local
+  password_digest: <%= password_digest %>
+  name: Channel
+  system_admin: false
+  searchable: false

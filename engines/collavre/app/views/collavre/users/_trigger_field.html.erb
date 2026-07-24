@@ -1,0 +1,51 @@
+<%# Shared trigger type selector for AI agent forms.
+     Locals:
+       form            – the form builder
+       routing_expression – current expression value (String or nil)
+%>
+<% current_expression = local_assigns.fetch(:routing_expression, nil).to_s %>
+
+<div class="form-group" data-controller="agent-trigger" data-agent-trigger-current-expression-value="<%= current_expression %>">
+  <label class="form-label"><%= t('collavre.users.new_ai.trigger_label') %></label>
+
+  <div class="form-check mb-1">
+    <input type="radio" name="trigger_type" value="auto" id="trigger_auto" class="form-check-input"
+           data-action="change->agent-trigger#change">
+    <label class="form-check-label" for="trigger_auto"><%= t('collavre.users.new_ai.trigger_auto') %></label>
+    <small class="form-text text-muted d-block"><%= t('collavre.users.new_ai.trigger_auto_help') %></small>
+  </div>
+
+  <div class="form-check mb-1">
+    <input type="radio" name="trigger_type" value="mention" id="trigger_mention" class="form-check-input"
+           data-action="change->agent-trigger#change">
+    <label class="form-check-label" for="trigger_mention"><%= t('collavre.users.new_ai.trigger_mention') %></label>
+    <small class="form-text text-muted d-block"><%= t('collavre.users.new_ai.trigger_mention_help') %></small>
+  </div>
+
+  <div class="form-check mb-1">
+    <input type="radio" name="trigger_type" value="keyword" id="trigger_keyword" class="form-check-input"
+           data-action="change->agent-trigger#change">
+    <label class="form-check-label" for="trigger_keyword"><%= t('collavre.users.new_ai.trigger_keyword') %></label>
+    <small class="form-text text-muted d-block"><%= t('collavre.users.new_ai.trigger_keyword_help') %></small>
+  </div>
+
+  <div class="ml-4 mt-1 mb-2" style="display: none;" data-agent-trigger-target="keywordGroup">
+    <input type="text" class="stacked-form-control" data-agent-trigger-target="keywordInput"
+           data-action="input->agent-trigger#keywordChanged"
+           placeholder="<%= t('collavre.users.new_ai.trigger_keyword_placeholder') %>">
+  </div>
+
+  <div class="form-check mb-1">
+    <input type="radio" name="trigger_type" value="advanced" id="trigger_advanced" class="form-check-input"
+           data-action="change->agent-trigger#change">
+    <label class="form-check-label" for="trigger_advanced"><%= t('collavre.users.new_ai.trigger_advanced') %></label>
+    <small class="form-text text-muted d-block"><%= t('collavre.users.new_ai.trigger_advanced_help') %></small>
+  </div>
+
+  <div class="ml-4 mt-1 mb-2" style="display: none;" data-agent-trigger-target="advancedGroup">
+    <textarea class="stacked-form-control" rows="2" data-agent-trigger-target="advancedInput"
+              data-action="input->agent-trigger#advancedChanged"></textarea>
+  </div>
+
+  <%= form.hidden_field :routing_expression, value: current_expression, data: { agent_trigger_target: "hiddenField" } %>
+</div>

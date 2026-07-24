@@ -11,6 +11,12 @@ en:
         append_as_parent_creative: New upper-creative
         append_below_creative: Add below
         delete: Delete
+        archive: Archive
+        archive_confirm: Archive this item and all children?
+        unarchive_confirm: Restore this creative from archive?
+        unarchive: Restore
+        show_archived: Show archived
+        hide_archived: Hide archived
         delete_only_this: Delete only this Creative
         delete_with_children: Delete this Creative and all its children
         are_you_sure: Are you sure?
@@ -30,12 +36,16 @@ en:
         are_you_sure_delete_selection: Are you sure you want to delete selected Creatives?
           This cannot be undone.
         creatives: Creatives
+        breadcrumb: Breadcrumb
+        root_breadcrumb: Top
         slide_view: Slide View
         recalculate_progress: Recalculate Progress
         recalculate_all_parent_progress: Recalculate all parent progress?
         no_creatives: No creatives found.
         no_sub_creatives: No sub-creatives found.
         no_search_results: No creatives match your search.
+        link_loading: Loading…
+        link_expand: Expand
         search_placeholder: Search creatives...
         recommend_parent: Recommend Category
         import_uploading: Uploading...
@@ -108,6 +118,8 @@ en:
         progress_complete: Complete
         progress_incomplete: Incomplete
         progress_complete_children_alert: Marking this creative complete will also mark all child creatives complete.
+        mark_complete: Mark as complete
+        mark_incomplete: Mark as incomplete
         set_plan_title: Set Plan for Selected Creative
         are_you_sure_delete_share: Are you sure delete share?
         share_deleted: The share are deleted.
@@ -122,11 +134,23 @@ en:
         metadata_tooltip: Edit metadata
         metadata_title: Metadata
         metadata_save: Save
+        toggle_markdown: Markdown
+        toggle_richtext: Rich Text
+        save_status_pending: Save pending
+        save_status_saving: Saving…
+        save_status_saved: Saved
+        save_status_error: Save failed
+        markdown_to_richtext_confirm: Switching to Rich Text will discard the Markdown
+          source. Continue?
+        richtext_to_markdown_confirm: Switching to Markdown will discard the current
+          rich text content. Continue?
       share:
         shared: Creative shared successfully.
         permission_updated: Permission updated successfully.
         network_error: A network error occurred. Please try again.
-        public_invite: Public Invite
+        public_invite: Public
+        inherited_from: "Inherited from %{name}"
+        inherited_short: Inherited
         already_shared_in_parent: Creative already shared in parent creative.
         can_not_share_by_no_access_in_parent: You can not share by no access in parent
           creative.
@@ -135,8 +159,13 @@ en:
         progress_recalculated: All parent progress recalculated.
       errors:
         no_permission: You do not have permission to perform this action.
+        metadata_must_be_object: Metadata must be an object.
+        description_read_only_source: cannot be changed directly for read-only source
+          content
       inline_editor:
         placeholder: Describe the creative…
+        markdown_placeholder: Write in Markdown…
+        markdown_preview_placeholder: Preview
       edit_title: Edit creative
       edit:
         inline_editor_only_html: Editing creatives now happens directly in the inline
@@ -155,6 +184,8 @@ en:
         submit: Submit
       slide_view:
         go_to_creative: Go to Creative
+    inbox:
+      default_name: Inbox
     creative_mailer:
       in_stock:
         subject: Good news!

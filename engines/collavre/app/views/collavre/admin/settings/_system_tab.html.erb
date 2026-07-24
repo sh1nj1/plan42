@@ -38,6 +38,14 @@
       </div>
     </div>
 
+    <div style="margin-top: 1.5em;">
+      <%= f.label :home_page_path_authenticated, t('admin.settings.home_page_path_authenticated') %>
+      <%= f.text_field :home_page_path_authenticated, value: @home_page_path_authenticated, placeholder: "/creatives" %>
+      <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+        <%= t('admin.settings.home_page_path_authenticated_hint') %>
+      </div>
+    </div>
+
     <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
       <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.account_lockout') %></h3>
       <div style="display: flex; gap: 2em; flex-wrap: wrap;">
@@ -114,6 +122,17 @@
         </div>
         <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
           <%= t('admin.settings.api_rate_hint') %>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">
+      <h3 style="font-size: 1.1em; margin-bottom: 1em;"><%= t('admin.settings.llm_settings') %></h3>
+      <div style="max-width: 300px;">
+        <%= f.label :llm_request_timeout_seconds, t('admin.settings.llm_request_timeout_seconds') %>
+        <%= f.number_field :llm_request_timeout_seconds, value: @llm_request_timeout_seconds, min: 30, style: "width: 100%;" %>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+          <%= t('admin.settings.llm_request_timeout_seconds_hint') %>
         </div>
       </div>
     </div>

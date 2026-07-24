@@ -35,6 +35,15 @@ module CollavreSlack
         }
       }
 
+      # Stub Slack users.info API call for unknown user mapping
+      stub_request(:get, "https://slack.com/api/users.info")
+        .with(query: hash_including("user" => "U999"))
+        .to_return(
+          status: 200,
+          body: { ok: true, user: { id: "U999", name: "slackuser", profile: { display_name: "Slack User", real_name: "Slack User" } } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
       result = SlackEventHandler.new(payload: payload).call
 
       assert_equal creative.id, result[:creative_id]

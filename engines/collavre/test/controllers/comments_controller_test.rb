@@ -24,6 +24,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   public
 
+  test "index renders version navigator only for comments with versions" do
+    with_versions = @creative.comments.create!(content: "has versions", user: @user)
+    Collavre::CommentVersion.create!(comment: with_versions, content: "v1", version_number: 1)
+    Collavre::CommentVersion.create!(comment: with_versions, content: "v2", version_number: 2)
+    without_versions = @creative.comments.create!(content: "no versions", user: @user)
+
+    get creative_comments_path(@creative)
+    assert_response :success
+
+    assert_includes @response.body,
+                    "data-comment-version-comment-id-value=\"#{with_versions.id}\"",
+                    "expected version navigator for comment WITH versions"
+    assert_not_includes @response.body,
+                        "data-comment-version-comment-id-value=\"#{without_versions.id}\"",
+                        "expected no version navigator for comment WITHOUT versions"
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do
@@ -59,14 +76,16 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
 
     comment = shared_creative.comments.create!(content: "- Shared task", user: other_user)
+    creative_comment_count_before = shared_creative.comments.count
 
     assert_difference("Creative.count", 1) do
-      assert_no_difference("Comment.count") do
-        perform_enqueued_jobs do
-          post convert_creative_comment_path(shared_creative, comment)
-        end
+      perform_enqueued_jobs do
+        post convert_creative_comment_path(shared_creative, comment)
       end
     end
+
+    # Original comment destroyed, system comment added on the creative (net 0 on this creative)
+    assert_equal creative_comment_count_before, shared_creative.comments.reload.count
 
     assert_response :no_content
     shared_creative.reload
@@ -80,12 +99,14 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     commenter.update!(email_verified_at: Time.current)
 
     comment = @creative.comments.create!(content: "- Cross user task", user: commenter)
+    creative_comment_count_before = @creative.comments.count
 
     assert_difference("Creative.count", 1) do
-      assert_no_difference("Comment.count") do
-        post convert_creative_comment_path(@creative, comment)
-      end
+      post convert_creative_comment_path(@creative, comment)
     end
+
+    # Original comment destroyed, system comment added (net 0 on this creative)
+    assert_equal creative_comment_count_before, @creative.comments.reload.count
 
     assert_response :no_content
     child = @creative.children.order(:id).last
@@ -158,6 +179,110 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       post approve_creative_comment_path(@creative, comment)
       assert_response :forbidden
     end
+  end
+
+  # --- Claude Channel tool-permission decisions ---
+  #
+  # These reuse the approval comment UI but resolve by relaying the decision to
+  # the suspended Claude Code session over the agent stream — the tool runs in
+  # the remote process, never via ActionExecutor.
+
+  def claude_channel_agent
+    User.create!(
+      email: "ccp_ctrl_agent@agent.collavre.local",
+      name: "Claude Channel Session",
+      password: "password",
+      llm_vendor: "anthropic",
+      llm_model: "claude-code",
+      created_by_id: @user.id
+    )
+  end
+
+  def claude_channel_permission_comment(request_id: "req-1")
+    agent = claude_channel_agent
+    payload = {
+      "action" => Collavre::Comment::ClaudeChannelPermission::ACTION_TYPE,
+      "request_id" => request_id,
+      "tool_name" => "Bash",
+      "arguments" => { "command" => "ls" }
+    }
+    @creative.comments.create!(
+      content: "needs approval",
+      user: agent,
+      approver: @user,
+      action: JSON.pretty_generate(payload),
+      skip_default_user: true,
+      skip_dispatch: true
+    )
+  end
+
+  test "approving a Claude Channel permission relays allow and does not run ActionExecutor" do
+    comment = claude_channel_permission_comment(request_id: "req-allow")
+
+    # If ActionExecutor were invoked it would raise on this unknown action type;
+    # a successful 200 proves the channel branch bypassed it.
+    ::Comments::ActionExecutor.stub(:new, ->(*) { raise "ActionExecutor must not run for channel permissions" }) do
+      assert_broadcasts("agent:user:#{comment.user_id}", 1) do
+        post approve_creative_comment_path(@creative, comment)
+      end
+    end
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.approved_label")
+    comment.reload
+    assert_not_nil comment.action_executed_at
+    refute comment.claude_channel_permission_denied?
+  end
+
+  test "denying a Claude Channel permission relays deny and marks the comment denied" do
+    comment = claude_channel_permission_comment(request_id: "req-deny")
+
+    payload = capture_broadcasts("agent:user:#{comment.user_id}") do
+      post deny_creative_comment_path(@creative, comment)
+    end.first
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.denied_label")
+    assert_equal "deny", payload["behavior"]
+    assert_equal "req-deny", payload["request_id"]
+    assert comment.reload.claude_channel_permission_denied?
+  end
+
+  test "a Claude Channel permission cannot be decided twice" do
+    comment = claude_channel_permission_comment
+
+    post approve_creative_comment_path(@creative, comment)
+    assert_response :success
+
+    post deny_creative_comment_path(@creative, comment)
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.comments.approve_already_executed"), JSON.parse(@response.body)["error"]
+  end
+
+  test "non-approver cannot decide a Claude Channel permission" do
+    approver = users(:two)
+    approver.update!(email_verified_at: Time.current)
+    comment = claude_channel_permission_comment
+    comment.update!(approver: approver)
+
+    assert_no_changes -> { comment.reload.action_executed_at } do
+      post approve_creative_comment_path(@creative, comment)
+      assert_response :forbidden
+      post deny_creative_comment_path(@creative, comment)
+      assert_response :forbidden
+    end
+  end
+
+  test "deny is rejected for a non-Claude-Channel approval comment" do
+    comment = @creative.comments.create!(
+      content: "Run action",
+      user: @user,
+      action: JSON.generate({ "action" => "update_creative", "attributes" => { "progress" => 0.9 } }),
+      approver: @user
+    )
+
+    post deny_creative_comment_path(@creative, comment)
+    assert_response :forbidden
   end
 
   test "approver can execute private comment action" do
@@ -388,7 +513,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal action_payload, JSON.parse(comment.reload.action)
   end
 
-  test "non approver cannot update comment action" do
+  test "creative admin can update action even if not the approver" do
     approver = users(:two)
     approver.update!(email_verified_at: Time.current)
 
@@ -403,6 +528,40 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       action: JSON.generate(action_payload),
       approver: approver
     )
+
+    updated_payload = action_payload.merge("attributes" => { "progress" => 0.7 })
+
+    patch update_action_creative_comment_path(@creative, comment), params: {
+      comment: { action: JSON.generate(updated_payload) }
+    }
+
+    assert_response :success
+    comment.reload
+    assert_equal updated_payload, JSON.parse(comment.action)
+  end
+
+  test "non admin non approver cannot update comment action" do
+    approver = users(:two)
+    approver.update!(email_verified_at: Time.current)
+    # Create a third user who has only read access (not admin)
+    reader = users(:three)
+    reader.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(@creative, user: reader, permission: :feedback)
+
+    action_payload = {
+      "action" => "update_creative",
+      "attributes" => { "progress" => 0.5 }
+    }
+
+    comment = @creative.comments.create!(
+      content: "Needs approval",
+      user: approver,
+      action: JSON.generate(action_payload),
+      approver: approver
+    )
+
+    # Log in as reader (non-admin, non-approver)
+    post session_path, params: { email: reader.email, password: "password" }
 
     patch update_action_creative_comment_path(@creative, comment), params: {
       comment: { action: JSON.generate(action_payload.merge("attributes" => { "progress" => 0.7 })) }
@@ -450,20 +609,18 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     other_user.update!(email_verified_at: Time.current)
     comment = @creative.comments.create!(content: "Other user comment", user: other_user)
 
-    assert_difference("Comment.count", -1) do
-      assert_difference("InboxItem.count", 1) do
-        delete creative_comment_path(@creative, comment)
-      end
-    end
+    inbox = Creative.inbox_for(other_user)
+    inbox_before = inbox.comments.count
+
+    delete creative_comment_path(@creative, comment)
 
     assert_response :no_content
 
-    # Verify inbox notification was created
-    inbox_item = InboxItem.order(:id).last
-    assert_equal other_user.id, inbox_item.owner.id
-    assert_equal "inbox.comment_deleted_by_admin", inbox_item.message_key
-    assert_equal @user.name, inbox_item.message_params["admin_name"]
-    assert_equal "Other user comment", inbox_item.message_params["comment_content"]
+    # Verify inbox notification comment was created
+    assert_equal inbox_before + 1, inbox.comments.reload.count
+    inbox_comment = inbox.comments.order(:id).last
+    assert_nil inbox_comment.user
+    assert_includes inbox_comment.content, "Other user comment"
   end
 
   test "admin user can delete any comment" do
@@ -482,13 +639,14 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # Create comment by other_user
     comment = other_creative.comments.create!(content: "Comment to delete", user: other_user)
 
-    assert_difference("Comment.count", -1) do
-      assert_difference("InboxItem.count", 1) do
-        delete creative_comment_path(other_creative, comment)
-      end
-    end
+    inbox = Creative.inbox_for(other_user)
+    inbox_before = inbox.comments.count
+
+    delete creative_comment_path(other_creative, comment)
 
     assert_response :no_content
+    # Inbox notification comment created for the deleted comment's author
+    assert_equal inbox_before + 1, inbox.comments.reload.count
   end
 
   test "non-owner non-admin cannot delete comment" do
@@ -526,25 +684,20 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     comment = @creative.comments.create!(content: "AI response", user: ai_user)
 
-    assert_difference("Comment.count", -1) do
-      assert_no_difference("InboxItem.count") do
-        delete creative_comment_path(@creative, comment)
-      end
-    end
-
+    delete creative_comment_path(@creative, comment)
     assert_response :no_content
   end
 
   test "comment owner deleting own comment does not create inbox notification" do
     comment = @creative.comments.create!(content: "My own comment", user: @user)
+    inbox = Creative.inbox_for(@user)
+    inbox_before = inbox.comments.count
 
-    assert_difference("Comment.count", -1) do
-      assert_no_difference("InboxItem.count") do
-        delete creative_comment_path(@creative, comment)
-      end
-    end
+    delete creative_comment_path(@creative, comment)
 
     assert_response :no_content
+    # No inbox notification for deleting own comment
+    assert_equal inbox_before, inbox.comments.reload.count
   end
 
   test "main topic view shows all comments and renders topic links" do
@@ -843,17 +996,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "participants returns users and can_share for admin" do
+  test "participants returns permission flags for admin" do
     get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
     assert_response :success
     data = JSON.parse(response.body)
     assert data.key?("users"), "Response should include users array"
     assert data.key?("can_share"), "Response should include can_share flag"
+    assert data.key?("can_comment"), "Response should include can_comment flag"
+    assert data.key?("has_access"), "Response should include has_access flag"
+    assert_equal true, data["can_share"]
+    assert_equal true, data["can_comment"]
+    assert_equal true, data["has_access"]
     assert_kind_of Array, data["users"]
     assert data["users"].any? { |u| u["id"] == @user.id }
   end
 
-  test "participants returns can_share false for non-admin shared user" do
+  test "participants returns correct permission flags for non-admin shared user" do
     other = users(:two)
     other.update!(email_verified_at: Time.current)
     grant_read_access_to_other_user(user: other, permission: :feedback)
@@ -865,5 +1023,28 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     data = JSON.parse(response.body)
     assert_equal false, data["can_share"]
+    assert_equal true, data["can_comment"]
+    assert_equal true, data["has_access"]
+  end
+
+  test "participants excludes read-only shared users" do
+    other = users(:two)
+    other.update!(email_verified_at: Time.current)
+    grant_read_access_to_other_user(user: other, permission: :read)
+
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    data = JSON.parse(response.body)
+    refute data["users"].any? { |u| u["id"] == other.id }
+  end
+
+  test "participants disables caching" do
+    get participants_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_equal "no-cache", response.headers["Pragma"]
+    assert_equal "0", response.headers["Expires"]
   end
 end

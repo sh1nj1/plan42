@@ -1,0 +1,149 @@
+/*
+ * Code Syntax Highlighting Theme
+ *
+ * Uses Collavre design tokens (--color-code-bg, --color-code-text, --font-mono).
+ * Defines the GitHub-style `--syntax-*` color variables (overridden per theme
+ * context) plus the code-block container and inline-code styling. The per-token
+ * color rules live in actiontext.css keyed on the `.lexical-token-*` classes that
+ * every surface now emits (editor + rendered creative + preview + comments all
+ * tokenize with the same Prism), and consume these `--syntax-*` variables.
+ *
+ * Scoped to the markdown rendering surfaces so they share container and
+ * inline-code styles:
+ *   .comment-content        — chat / comments
+ *   .markdown-preview       — creative inline editor live preview
+ *   .creative-content       — persisted creative description in the tree view
+ *   .creative-title-content — persisted creative description in the title (h1) area
+ */
+
+/* ============================================================================
+ * SYNTAX COLOR TOKENS (light mode defaults)
+ * ============================================================================ */
+:root {
+  --syntax-comment: #6a737d;
+  --syntax-keyword: #d73a49;
+  --syntax-string: #032f62;
+  --syntax-number: #005cc5;
+  --syntax-builtin: #6f42c1;
+  --syntax-title: #6f42c1;
+  --syntax-attr: #005cc5;
+  --syntax-variable: #e36209;
+  --syntax-regexp: #032f62;
+  --syntax-tag: #22863a;
+  --syntax-name: #22863a;
+  --syntax-selector: #6f42c1;
+  --syntax-meta: #6a737d;
+  --syntax-deletion-text: #b31d28;
+  --syntax-deletion-bg: #ffeef0;
+  --syntax-addition-text: #22863a;
+  --syntax-addition-bg: #f0fff4;
+}
+
+/* ============================================================================
+ * DARK MODE SYNTAX TOKENS
+ * ============================================================================ */
+body.dark-mode {
+  --syntax-comment: #8b949e;
+  --syntax-keyword: #ff7b72;
+  --syntax-string: #a5d6ff;
+  --syntax-number: #79c0ff;
+  --syntax-builtin: #d2a8ff;
+  --syntax-title: #d2a8ff;
+  --syntax-attr: #79c0ff;
+  --syntax-variable: #ffa657;
+  --syntax-regexp: #a5d6ff;
+  --syntax-tag: #7ee787;
+  --syntax-name: #7ee787;
+  --syntax-selector: #d2a8ff;
+  --syntax-meta: #8b949e;
+  --syntax-deletion-text: #ffa198;
+  --syntax-deletion-bg: rgba(248, 81, 73, 0.15);
+  --syntax-addition-text: #7ee787;
+  --syntax-addition-bg: rgba(63, 185, 80, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode):not(.dark-mode) {
+    --syntax-comment: #8b949e;
+    --syntax-keyword: #ff7b72;
+    --syntax-string: #a5d6ff;
+    --syntax-number: #79c0ff;
+    --syntax-builtin: #d2a8ff;
+    --syntax-title: #d2a8ff;
+    --syntax-attr: #79c0ff;
+    --syntax-variable: #ffa657;
+    --syntax-regexp: #a5d6ff;
+    --syntax-tag: #7ee787;
+    --syntax-name: #7ee787;
+    --syntax-selector: #d2a8ff;
+    --syntax-meta: #8b949e;
+    --syntax-deletion-text: #ffa198;
+    --syntax-deletion-bg: rgba(248, 81, 73, 0.15);
+    --syntax-addition-text: #7ee787;
+    --syntax-addition-bg: rgba(63, 185, 80, 0.15);
+  }
+}
+
+/* ============================================================================
+ * MERMAID DIAGRAM CONTAINER
+ * ============================================================================ */
+.comment-content .mermaid-chart,
+.markdown-preview .mermaid-chart,
+.creative-content .mermaid-chart,
+.creative-title-content .mermaid-chart {
+  margin: var(--space-2) 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.comment-content .mermaid-chart svg,
+.markdown-preview .mermaid-chart svg,
+.creative-content .mermaid-chart svg,
+.creative-title-content .mermaid-chart svg {
+  max-width: 100%;
+}
+
+/* ============================================================================
+ * CODE BLOCK CONTAINER
+ * ============================================================================ */
+.comment-content pre,
+.markdown-preview pre,
+.creative-content pre,
+.creative-title-content pre {
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
+  border: var(--border-1) solid var(--border-color);
+  border-radius: var(--radius-2);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-0);
+  line-height: var(--leading-3);
+}
+
+.comment-content pre code,
+.markdown-preview pre code,
+.creative-content pre code,
+.creative-title-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Inline code */
+.comment-content code,
+.markdown-preview code,
+.creative-content code,
+.creative-title-content code {
+  background: var(--color-code-bg);
+  color: var(--color-code-text);
+  border-radius: var(--radius-1);
+  padding: 0.15em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}

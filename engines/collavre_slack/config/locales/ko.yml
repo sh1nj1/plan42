@@ -55,3 +55,6 @@ ko:
       refresh: "새로고침"
       refresh_error: "채널 목록을 새로고침하는데 실패했습니다"
       linked_label: "(연결됨)"
+      search_channels: "채널 검색..."
+      no_channels_available: "사용 가능한 채널이 없습니다"
+      no_matching_channels: "일치하는 채널이 없습니다"

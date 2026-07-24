@@ -23,7 +23,7 @@ module Collavre
       has_many :collavre_labels, class_name: "Collavre::Label", foreign_key: :owner_id, dependent: :destroy
       has_many :collavre_activity_logs, class_name: "Collavre::ActivityLog", dependent: :destroy
       has_many :collavre_comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :destroy
-      has_many :collavre_creative_expanded_states, class_name: "Collavre::CreativeExpandedState", dependent: :destroy
+      has_many :collavre_user_creative_preferences, class_name: "Collavre::UserCreativePreference", dependent: :destroy
     end
   end
 end

@@ -8,10 +8,11 @@ module Collavre
       end
 
       def update_progress_from_children!
-        if creative.children.any?
+        active_children = creative.children.active
+        if active_children.any?
           # Use Ruby calculation to get effective progress (handling delegation for linked creatives)
           # instead of SQL average which reads potentially stale DB columns.
-          new_progress = creative.children.map(&:progress).sum.to_f / creative.children.size
+          new_progress = active_children.map(&:progress).sum.to_f / active_children.size
           creative.update(progress: new_progress)
         else
           creative.update(progress: 0)
@@ -37,8 +38,9 @@ module Collavre
         rescue ActiveRecord::RecordNotFound
           return
         end
-        new_progress = if parent.children.any?
-                         parent.children.map(&:progress).sum.to_f / parent.children.size
+        active_children = parent.children.active
+        new_progress = if active_children.any?
+                         active_children.map(&:progress).sum.to_f / active_children.size
         else
                          0
         end
@@ -51,9 +53,10 @@ module Collavre
 
       def progress_for_tags(tag_ids, user)
         return creative.progress if tag_ids.blank?
+        return nil if creative.archived?
 
         tag_ids = Array(tag_ids).map(&:to_s)
-        visible_children = creative.children_with_permission(user)
+        visible_children = creative.children_with_permission(user).select { |c| !c.archived? }
         child_values = visible_children.map do |child|
           self.class.new(child).progress_for_tags(tag_ids, user)
         end.compact
@@ -70,7 +73,9 @@ module Collavre
 
       # `tagged_ids` should be a Set of creative IDs tagged with the plan.
       def progress_for_plan(tagged_ids)
-        child_values = creative.children.map do |child|
+        return nil if creative.archived?
+
+        child_values = creative.children.active.map do |child|
           self.class.new(child).progress_for_plan(tagged_ids)
         end.compact
 

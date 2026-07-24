@@ -145,6 +145,7 @@
   --layer-popup: 100;
   --layer-modal: 1000;
   --layer-toast: 2000;
+  --layer-fullscreen: 9999;
   --layer-important: 2147483647;
 
   /* ============================================================================
@@ -193,6 +194,9 @@
   --color-accent-text: #03425f;      /* active element text */
   --color-code-bg: #f6f8fa;          /* code block background */
   --color-code-text: #1f2328;        /* code block text */
+
+  /* -- Surfaces (hover) -- */
+  --surface-hover: rgba(0, 0, 0, 0.06); /* hover background overlay */
 
   /* -- Borders & Dividers -- */
   --border-color: #e0e0e0;           /* default borders */
@@ -245,7 +249,7 @@ body.dark-mode {
   --text-input: #eaeaea;
 
   /* -- Interactive -- */
-  --color-link: #185ABC;
+  --color-link: #6EA8FE;
   --color-brand: oklch(50% 0.4 145);
   --color-active: #6a9eff;
   --color-badge-bg: red;
@@ -254,6 +258,9 @@ body.dark-mode {
   --color-accent-text: #8ecfef;
   --color-code-bg: #2d2d2d;
   --color-code-text: #e0e0e0;
+
+  /* -- Surfaces (hover) -- */
+  --surface-hover: rgba(255, 255, 255, 0.08);
 
   /* -- Borders & Dividers -- */
   --border-color: #333333;
@@ -292,7 +299,7 @@ body.dark-mode {
     --text-on-badge: white;
     --text-input: #eaeaea;
 
-    --color-link: #185ABC;
+    --color-link: #6EA8FE;
     --color-brand: oklch(50% 0.4 145);
     --color-active: #6a9eff;
     --color-badge-bg: red;
@@ -301,6 +308,8 @@ body.dark-mode {
     --color-accent-text: #8ecfef;
     --color-code-bg: #2d2d2d;
     --color-code-text: #e0e0e0;
+
+    --surface-hover: rgba(255, 255, 255, 0.08);
 
     --border-color: #333333;
     --border-drag-over: #383a40;

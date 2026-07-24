@@ -1,14 +1,15 @@
 module Collavre
 class PopupMenuComponent < ViewComponent::Base
-  def initialize(button_content:, button_classes: "", menu_id: nil, align: :left, button_attributes: {})
+  def initialize(button_content:, button_classes: "", menu_classes: "", menu_id: nil, align: :left, button_attributes: {})
     @button_content = button_content
     @button_classes = button_classes
+    @menu_classes = menu_classes
     @menu_id = menu_id || "popup-menu-#{SecureRandom.hex(4)}"
     @align = align
     @button_attributes = button_attributes
   end
 
-  attr_reader :button_content, :button_classes, :menu_id, :align, :button_attributes
+  attr_reader :button_content, :button_classes, :menu_classes, :menu_id, :align, :button_attributes
 
   def button_options
     defaults = {

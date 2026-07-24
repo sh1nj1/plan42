@@ -17,6 +17,16 @@ ko:
 
           승인 또는 거부해 주세요.
         no_arguments: "(인자 없음)"
+        summary_header: "📝 **요약:**"
+        summary_prompt: |
+          다음 도구 호출이 무엇을 할지 1-2문장으로 간결하게 요약해 주세요.
+          주요 파라미터, 대상 리소스, 의도된 효과를 구체적으로 언급하세요.
+
+          도구: %{tool_name}
+          인자:
+          ```json
+          %{arguments}
+          ```
       a2a:
         request_header: "## ⚡ Agent 요청"
         request_description: "이 메시지는 다른 AI Agent(@%{sender_name}, %{sender_type})가 보낸 요청입니다."

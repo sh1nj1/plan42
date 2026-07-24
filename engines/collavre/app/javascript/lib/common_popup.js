@@ -12,8 +12,20 @@ export default class CommonPopup {
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
   }
 
-  showAt(anchorRect) {
+  showAt(anchorRect, boundsElement = null) {
     if (!this.element) return
+
+    // When set, the popup is caged inside this element's rect (e.g. the chat
+    // box) instead of the viewport — see updatePosition.
+    this._boundsElement = boundsElement
+
+    // Re-opening while already open (e.g. clicking the same typo mark twice):
+    // a listener from the previous open is still live, so the opening mousedown
+    // would bubble to it and hide() the popup right after we set display:block,
+    // leaving it stuck (the rAF below only re-flips visibility, not display).
+    // Drop stale listeners first so the opening event can't self-close it.
+    document.removeEventListener('mousedown', this.handleOutsideClick)
+    document.removeEventListener('touchstart', this.handleOutsideClick)
 
     this.element.style.display = 'block'
     this.element.style.visibility = 'hidden'
@@ -21,12 +33,17 @@ export default class CommonPopup {
     requestAnimationFrame(() => {
       this.updatePosition(anchorRect)
       this.element.style.visibility = 'visible'
+      // Register the outside-click listeners only after the opening event has
+      // finished propagating. When a popup is opened from a mousedown handler
+      // (e.g. clicking a typo highlight), registering synchronously here would
+      // let that same mousedown keep bubbling to document, hit handleOutsideClick
+      // (target is outside the popup), and immediately hide() it — the popup
+      // would open and instantly vanish. Deferring one frame avoids that race.
+      if (this.closeOnOutsideClick) {
+        document.addEventListener('mousedown', this.handleOutsideClick)
+        document.addEventListener('touchstart', this.handleOutsideClick)
+      }
     })
-
-    if (this.closeOnOutsideClick) {
-      document.addEventListener('mousedown', this.handleOutsideClick)
-      document.addEventListener('touchstart', this.handleOutsideClick)
-    }
   }
 
   updatePosition(anchorRect) {
@@ -45,11 +62,26 @@ export default class CommonPopup {
     let viewportTop = (rect?.bottom || 0) + 4
 
     const { offsetWidth: width, offsetHeight: height } = this.element
-    const maxLeft = window.innerWidth - width - boundsPadding
-    const maxTop = window.innerHeight - height - boundsPadding
 
-    viewportLeft = Math.max(boundsPadding, Math.min(viewportLeft, maxLeft))
-    viewportTop = Math.max(boundsPadding, Math.min(viewportTop, maxTop))
+    // Clamp within a container's rect when bounded (keeps the popup caged inside
+    // the chat box), otherwise within the viewport.
+    const bounds = this._boundsElement?.getBoundingClientRect?.()
+    let minLeft = boundsPadding
+    let minTop = boundsPadding
+    let maxLeft = window.innerWidth - width - boundsPadding
+    let maxTop = window.innerHeight - height - boundsPadding
+    if (bounds) {
+      minLeft = bounds.left + boundsPadding
+      minTop = bounds.top + boundsPadding
+      maxLeft = bounds.right - width - boundsPadding
+      maxTop = bounds.bottom - height - boundsPadding
+      // Cap size so a long list scrolls inside the box instead of spilling past it.
+      this.element.style.maxWidth = `${bounds.width - boundsPadding * 2}px`
+      this.element.style.maxHeight = `${bounds.height - boundsPadding * 2}px`
+    }
+
+    viewportLeft = Math.max(minLeft, Math.min(viewportLeft, maxLeft))
+    viewportTop = Math.max(minTop, Math.min(viewportTop, maxTop))
 
     const left = viewportLeft - parentRect.left + parentScrollX
     const top = viewportTop - parentRect.top + parentScrollY

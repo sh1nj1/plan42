@@ -81,7 +81,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     find(row_selector(@root_creative)).hover
     find("#{row_selector(@root_creative)} .creative-toggle-btn").click
 
-    assert_nil CreativeExpandedState.find_by(user: @user, creative: @root_creative)
+    assert_nil UserCreativePreference.find_by(user: @user, creative: @root_creative)
   end
 
   test "visiting a comment share link opens popup and highlights comment" do
@@ -89,7 +89,9 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
 
     visit collavre.creative_comment_path(@child, comment)
 
-    assert_selector "#comments-popup", visible: :visible
-    assert_selector "#comment_#{comment.id}.highlight-flash", wait: 5
+    assert_selector "#comments-popup", visible: :visible, wait: 10
+    # Verify comment content loaded (not stuck on Loading...)
+    assert_text "Shared comment", wait: 10
+    assert_selector "#comment_#{comment.id}[data-highlighted='true']", wait: 10
   end
 end

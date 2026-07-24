@@ -25,8 +25,8 @@ module Tools
         query: T.nilable(String),
         level: T.nilable(Integer),
         tags: T.nilable(String),
-        progress_min: T.nilable(Float),
-        progress_max: T.nilable(Float),
+        progress_min: T.nilable(Numeric),
+        progress_max: T.nilable(Numeric),
         updated_since: T.nilable(String),
         include_comments: T.nilable(T::Boolean),
         format: T.nilable(String)

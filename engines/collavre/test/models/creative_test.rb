@@ -70,13 +70,13 @@ class CreativeTest < ActiveSupport::TestCase
     Current.session = OpenStruct.new(user: user)
 
     creative = Creative.create!(user: user, description: "Parent")
-    CreativeExpandedState.create!(creative: creative, user: user, expanded_status: { "1" => true })
+    UserCreativePreference.create!(creative: creative, user: user, expanded_status: { "1" => true })
 
     assert_difference("Creative.count", -1) do
       assert_nothing_raised { creative.destroy }
     end
 
-    assert_empty CreativeExpandedState.where(creative_id: creative.id)
+    assert_empty UserCreativePreference.where(creative_id: creative.id)
 
     Current.reset
   end
@@ -201,5 +201,28 @@ class CreativeTest < ActiveSupport::TestCase
     end
 
     assert_empty McpTool.where(id: tool.id)
+  end
+
+  test "sanitize_description_html preserves download attribute on anchor tags" do
+    user = users(:one)
+    creative = Creative.create!(
+      user: user,
+      description: '<a href="/rails/active_storage/blobs/redirect/abc123/report.pdf" download="report.pdf" data-filesize="1024">report.pdf</a>'
+    )
+    assert_includes creative.description, 'download="report.pdf"',
+      "download attribute should be preserved by sanitizer"
+    assert_includes creative.description, 'data-filesize="1024"',
+      "data-filesize attribute should be preserved by sanitizer"
+  end
+
+  test "sanitize_description_html preserves img tags with src and alt" do
+    user = users(:one)
+    creative = Creative.create!(
+      user: user,
+      description: '<img src="/rails/active_storage/blobs/redirect/abc123/photo.png" alt="photo.png" width="800" height="600">'
+    )
+    assert_includes creative.description, '<img'
+    assert_includes creative.description, 'src="/rails/active_storage/blobs/redirect/abc123/photo.png"'
+    assert_includes creative.description, 'alt="photo.png"'
   end
 end

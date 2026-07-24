@@ -11,23 +11,38 @@
 
 /* Share popup specific tweaks */
 #share-creative-modal .popup-box {
-  max-height: 80vh;
+  max-height: calc(100vh - 4em);
   overflow-y: auto;
 }
 
 #share-creative-modal .share-grid {
-  max-height: 40vh;
+  max-height: 30vh;
   overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  #share-creative-modal .popup-box {
+    max-width: calc(100vw - 1em) !important;
+  }
+
+  #share-creative-modal .share-grid {
+    max-height: 25vh;
+  }
+
+  .popup-box {
+    min-width: 0 !important;
+    max-width: calc(100vw - 1em) !important;
+  }
 }
 
 /* Ensure autocomplete popup inside share modal works without mention_menu.css */
 #share-creative-modal .common-popup {
   position: absolute;
-  z-index: var(--layer-modal, 100);
-  background: var(--surface-section, #fff);
-  border: 1px solid var(--border-color, #ddd);
-  box-shadow: var(--shadow-2, 0 2px 8px rgba(0,0,0,.15));
-  border-radius: 6px;
+  z-index: var(--layer-modal);
+  background: var(--surface-section);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-2);
+  border-radius: var(--radius-2);
   padding: 0.35em;
   max-width: min(420px, 90vw);
 }
@@ -45,7 +60,7 @@
   cursor: pointer;
 }
 #share-creative-modal .common-popup-list li:hover {
-  background: var(--border-drag-over, #f0f0f0);
+  background: var(--surface-hover);
 }
 
 .share-grid {
@@ -66,9 +81,17 @@
 }
 
 #link-creative-modal,
-#topic-search-modal {
+#topic-search-modal,
+#topic-list-modal {
   min-width: 320px;
   z-index: calc(var(--layer-modal) + 10);
+}
+
+/* When chat is fullscreen, these modals must sit above it */
+body.chat-fullscreen #link-creative-modal,
+body.chat-fullscreen #topic-search-modal,
+body.chat-fullscreen #topic-list-modal {
+  z-index: calc(var(--layer-fullscreen) + 1);
 }
 
 .common-popup {
@@ -89,7 +112,7 @@
   box-sizing: border-box;
   margin-bottom: 0.75em;
   padding: 0.5em;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   border: 1px solid var(--border-color);
   background: var(--surface-bg);
   color: var(--text-primary);
@@ -102,7 +125,7 @@
 }
 
 .popup-box input:not([type="radio"]):not([type="checkbox"]),
-.popup-box select {
+.popup-box select:not(.share-modal-permission-select) {
   width: 100%;
   box-sizing: border-box;
 }
@@ -151,27 +174,80 @@
   animation: share-modal-message-fade 4s ease-in-out;
 }
 .share-modal-message-success {
-  background: var(--success-bg, #d4edda);
-  color: var(--success-text, #155724);
-  border: 1px solid var(--success-border, #c3e6cb);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 .share-modal-message-error {
-  background: var(--danger-bg, #f8d7da);
-  color: var(--danger-text, #721c24);
-  border: 1px solid var(--danger-border, #f5c6cb);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
 }
+
 @keyframes share-modal-message-fade {
   0%, 80% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+.share-modal-permission-select {
+  width: auto;
+}
+
+.share-modal-permission-select[disabled] {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.share-inherited-link {
+  font-size: var(--text-0);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.share-inherited-link:hover {
+  color: var(--text-link);
+}
+
+.share-inherited-short {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .share-inherited-short {
+    display: inline;
+  }
+  .share-inherited-full {
+    display: none;
+  }
+}
+
+
 .share-modal-pending {
   opacity: 0.6;
 }
+
+.share-inherited-item {
+  opacity: 0.8;
+}
+
+.share-pending-item {
+  opacity: 0.7;
+}
+
+.share-pending-badge {
+  display: inline-block;
+  font-size: var(--text-00);
+  color: var(--color-warning);
+  font-weight: var(--weight-5);
+  margin-left: 0.3em;
+  vertical-align: middle;
+}
+
 .share-modal-spinner {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid var(--text-muted, #999);
+  border: 2px solid var(--text-muted);
   border-top-color: transparent;
   border-radius: 50%;
   animation: share-spinner 0.6s linear infinite;
@@ -222,12 +298,15 @@
   z-index: var(--layer-modal);
   background: var(--surface-section);
   border: 1px solid var(--border-color);
-  padding: 0.5em;
-  box-shadow: 0 2px 8px var(--border-color);
+  padding: var(--space-1);
+  box-shadow: var(--shadow-2);
+  border-radius: var(--radius-3);
   min-width: 220px;
   top: calc(100% + 4px);
   left: 0;
   transform: translateX(0);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .popup-menu-right {
@@ -235,11 +314,64 @@
   right: 0;
 }
 
+/* Wrapper div: layout only, no interaction styles */
+div.popup-menu-item {
+  display: flex;
+  width: 100%;
+}
+
+/* Ensure forms from button_to fill the full width */
+.popup-menu .popup-menu-item form {
+  width: 100%;
+}
+
+/* Interactive elements: button/a inside wrapper OR directly classed as popup-menu-item */
 .popup-menu-item button,
-.popup-menu-item a {
-  display: block;
+.popup-menu-item a,
+button.popup-menu-item,
+a.popup-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-2);
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--text-1);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out-2);
+  white-space: nowrap;
+}
+
+.popup-menu-item button:hover,
+.popup-menu-item a:hover,
+button.popup-menu-item:hover,
+a.popup-menu-item:hover {
+  background: var(--surface-hover);
+}
+
+/* Hide mobile-only items in popup menus on desktop (overrides display: flex from popup-menu-item) */
+.popup-menu .popup-menu-item.mobile-only,
+.popup-menu .mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .popup-menu .popup-menu-item.mobile-only {
+    display: flex !important;
+  }
+
+  .popup-menu .creative-overflow-divider.mobile-only {
+    display: block !important;
+  }
+}
+
+/* Inside popup menus, danger-link items inherit normal item styles */
+.popup-menu .popup-menu-item.danger-link {
+  color: inherit;
 }
 
 #user-menu button {
@@ -249,6 +381,10 @@
 }
 
 @media (max-width: 768px) {
+  .popup-menu {
+    min-width: min(220px, calc(100vw - 8px));
+    max-width: min(320px, calc(100vw - 8px));
+  }
 
   #mobile-more-menu button,
   #mobile-more-menu a {
@@ -261,4 +397,152 @@
     display: block;
     min-width: 100%;
   }
+}
+
+/* ── Link-creative picker: mini-tree + flat search results ── */
+.link-creative-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Tree (browse) rows */
+.link-tree-item {
+  list-style: none;
+}
+
+.link-tree-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.link-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.3em 0.5em;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.link-tree-row:hover,
+.link-tree-row.active {
+  background: var(--surface-hover);
+}
+
+.link-tree-toggle {
+  flex: 0 0 auto;
+  width: 1.75em;
+  height: 1.75em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-1);
+  padding: 0;
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+  appearance: none;
+}
+
+.link-tree-toggle svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.link-tree-toggle:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.link-tree-toggle-empty {
+  visibility: hidden;
+  cursor: default;
+}
+
+.link-tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.link-tree-loading,
+.link-tree-empty,
+.link-popup-message {
+  list-style: none;
+  padding: 0.35em 0.6em;
+  color: var(--text-muted);
+  font-size: var(--text-0);
+}
+
+/* Flat search results with breadcrumb */
+.link-result-item {
+  list-style: none;
+  padding: 0.4em 0.5em;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.link-result-item:hover,
+.link-result-item.active {
+  background: var(--surface-hover);
+}
+
+.link-result-label {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-result-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15em;
+  margin-top: 0.15em;
+  font-size: var(--text-00);
+  color: var(--text-muted);
+}
+
+.link-crumb {
+  background: transparent;
+  border: none;
+  padding: 0 0.1em;
+  font-size: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  appearance: none;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-crumb:hover {
+  color: var(--color-link);
+  text-decoration: underline;
+}
+
+.link-crumb-sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.link-crumb-restricted {
+  cursor: default;
+  opacity: 0.6;
+}
+.link-crumb-restricted:hover {
+  color: var(--text-muted);
+  text-decoration: none;
 }

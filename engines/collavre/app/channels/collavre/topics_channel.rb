@@ -7,6 +7,8 @@ class TopicsChannel < ApplicationCable::Channel
     return reject unless @creative.has_permission?(current_user, :read)
 
     stream_for @creative
+    # User-specific stream for preference sync (e.g. last_topic_changed)
+    stream_for "user_#{current_user.id}_creative_#{@creative.id}"
   end
 end
 end

@@ -39,6 +39,8 @@ module CollavreOpenclaw
       comment_id = context[:comment_id]
       content = payload[:content] || payload[:message]
 
+      normalize_topic_context!(context)
+
       if comment_id.present?
         # Update existing comment (streaming completion)
         comment = Collavre::Comment.find_by(id: comment_id)
@@ -56,8 +58,12 @@ module CollavreOpenclaw
     def handle_proactive(payload)
       creative_id = payload[:creative_id] || payload.dig(:context, :creative_id)
       content = payload[:content] || payload[:message]
-      thread_id = payload[:thread_id] || payload.dig(:context, :thread_id)
+      thread_id = payload[:thread_id] || payload[:topic_id] || payload.dig(:context, :thread_id) || payload.dig(:context, :topic_id)
       parent_comment_id = payload[:parent_comment_id] || payload.dig(:context, :parent_comment_id)
+      # Accept both casings: the HTTP CallbacksController path forwards the raw
+      # Gateway payload, which uses camelCase `runId`.
+      run_id = payload[:run_id] || payload[:runId] ||
+               payload.dig(:context, :run_id) || payload.dig(:context, :runId)
 
       unless creative_id.present?
         Rails.logger.error("[CollavreOpenclaw] Proactive message missing creative_id")
@@ -72,6 +78,7 @@ module CollavreOpenclaw
       context = {
         thread_id: thread_id,
         parent_comment_id: parent_comment_id,
+        openclaw_run_id: run_id,
         proactive: true
       }
 
@@ -94,6 +101,8 @@ module CollavreOpenclaw
     end
 
     def create_ai_comment(creative_id, content, context = {})
+      normalize_topic_context!(context)
+
       creative = Collavre::Creative.find_by(id: creative_id)
       unless creative
         Rails.logger.error("[CollavreOpenclaw] Creative not found: #{creative_id}")
@@ -101,6 +110,14 @@ module CollavreOpenclaw
       end
 
       effective_creative = creative.effective_origin
+      run_id = context[:openclaw_run_id].presence
+
+      # The Gateway broadcasts a run to every process, so non-initiating ones see
+      # the final as "proactive" — suppress them via the run's tombstone.
+      if run_id && CollavreOpenclaw::ProcessedAiRun.processed?(run_id)
+        Rails.logger.warn("[CollavreOpenclaw] Duplicate run #{run_id} suppressed for creative #{creative_id} (already processed)")
+        return CollavreOpenclaw::ProcessedAiRun.comment_for(run_id)
+      end
 
       # Dedup: skip if an identical comment was recently created
       existing = Collavre::Comment
@@ -128,12 +145,29 @@ module CollavreOpenclaw
       end
 
       comment = Collavre::Comment.create!(comment_attrs)
+
+      # Unique run_id row is the backstop for a concurrent same-run race: the
+      # loser discards its duplicate and returns the winner.
+      if run_id && !CollavreOpenclaw::ProcessedAiRun.claim_proactive(run_id, comment)
+        Rails.logger.warn("[CollavreOpenclaw] Race on run #{run_id} resolved; discarding duplicate comment #{comment.id}")
+        comment.destroy
+        return CollavreOpenclaw::ProcessedAiRun.comment_for(run_id)
+      end
+
       Rails.logger.info("[CollavreOpenclaw] Created AI comment #{comment.id} on creative #{creative_id}")
 
       comment
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.error("[CollavreOpenclaw] Failed to create comment: #{e.message}")
       nil
+    end
+
+    def normalize_topic_context!(context)
+      return unless context.is_a?(Hash)
+      return if context[:thread_id].present?
+
+      topic_id = context[:topic_id]
+      context[:thread_id] = topic_id if topic_id.present?
     end
   end
 end

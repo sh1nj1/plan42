@@ -1,5 +1,48 @@
 module Collavre
   module ApplicationHelper
+    # All Collavre engine stylesheets in load order.
+    # Host apps should call <%= collavre_stylesheets %> in their layout <head>
+    # instead of listing individual stylesheet_link_tags.
+    COLLAVRE_STYLESHEETS = %w[
+      collavre/design_tokens
+      collavre/dark_mode
+      collavre/gnb
+      collavre/creatives
+      collavre/actiontext
+      collavre/activity_logs
+      collavre/user_menu
+      collavre/org_chart
+      collavre/popup
+      collavre/comments_popup
+      collavre/tables
+      collavre/code_highlight
+      collavre/comment_versions
+      collavre/mention_menu
+      collavre/modal_dialog
+      collavre/slide_view
+      collavre/image_lightbox
+      collavre/search_popup
+    ].freeze
+
+    COLLAVRE_PRINT_STYLESHEETS = %w[
+      collavre/print
+    ].freeze
+
+    # Renders all Collavre engine stylesheet tags.
+    # Call this once in the host app's layout <head> section.
+    #
+    #   <%= collavre_stylesheets %>
+    #
+    def collavre_stylesheets
+      tags = COLLAVRE_STYLESHEETS.map do |sheet|
+        stylesheet_link_tag(sheet)
+      end
+      tags += COLLAVRE_PRINT_STYLESHEETS.map do |sheet|
+        stylesheet_link_tag(sheet, media: "print")
+      end
+      safe_join(tags, "\n    ")
+    end
+
     # Returns the body CSS class for the current user's theme.
     # Custom themes get "light-mode" to disable OS dark mode overrides,
     # ensuring the custom theme controls all colors regardless of OS setting.
@@ -36,15 +79,33 @@ module Collavre
         styles << render_theme_media_query(dark_theme, "dark")
       end
 
-      # Safe: CSS generated from admin-configured theme settings (CSS variables only)
-      styles.join("\n").html_safe # rubocop:disable Rails/OutputSafety
+      safe_join(styles, "\n")
+    end
+
+    def user_json(user, email: false, ai_user: false)
+      data = {
+        id: user.id,
+        name: user.display_name,
+        avatar_url: user_avatar_url(user, size: 20),
+        default_avatar: !user.avatar.attached? && user.avatar_url.blank?,
+        initial: user.display_name&.at(0)&.upcase || "?"
+      }
+      data[:email] = user.email if email
+      data[:ai_user] = user.ai_user? if ai_user
+      data
     end
 
     private
 
+    CSS_VARIABLE_KEY_PATTERN = /\A--[a-zA-Z0-9_-]+\z/
+    CSS_VARIABLE_VALUE_PATTERN = /\A[^;}{<>"']+\z/
+    ALLOWED_COLOR_SCHEMES = %w[light dark].freeze
+
     def render_theme_media_query(theme, mode)
-      vars = theme.variables.map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
-      legacy = legacy_alias_declarations(theme.variables).map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
+      return "" unless ALLOWED_COLOR_SCHEMES.include?(mode)
+
+      vars = safe_css_declarations(theme.variables)
+      legacy = safe_css_declarations(legacy_alias_declarations(theme.variables))
       dark_filter = theme.dark? ? "--date-icon-filter: invert(0.8) !important;" : ""
 
       <<~CSS
@@ -58,7 +119,55 @@ module Collavre
       CSS
     end
 
+    def safe_css_declarations(variables)
+      variables.filter_map { |k, v|
+        k = k.to_s
+        v = v.to_s
+        next unless k.match?(CSS_VARIABLE_KEY_PATTERN) && v.match?(CSS_VARIABLE_VALUE_PATTERN)
+        "#{k}: #{v} !important;"
+      }.join("\n            ")
+    end
+
     public
+
+    # Render all partials registered for a named extension slot.
+    # Engines register their partials via Collavre::ViewExtensions.register.
+    # Returns empty string if no partials are registered for the slot.
+    #
+    #   <%= render_extension_slot(:creative_toolbar) %>
+    #   <%= render_extension_slot(:creative_modals, parent_creative: @parent_creative) %>
+    #
+    def render_extension_slot(slot, **locals)
+      entries = Collavre::ViewExtensions.for_slot(slot)
+      return safe_join([]) if entries.empty?
+
+      safe_join(entries.map { |entry| render(partial: entry[:partial], locals: locals) })
+    end
+
+    # Render a label-type-specific partial if one exists.
+    # Engines provide partials at collavre/labels/_{type_underscore}_{suffix}.html.erb
+    # Falls back to nil when no matching partial is found.
+    #
+    #   <%= render_label_extra(label, parent_creative: @parent_creative) %>
+    #   <%= render_label_suffix(label) %>
+    #
+    def render_label_extra(label, **locals)
+      return nil if label.type.blank?
+
+      partial = "collavre/labels/#{label.type.underscore}_extra"
+      render(partial: partial, locals: locals.merge(label: label))
+    rescue ActionView::MissingTemplate
+      nil
+    end
+
+    def render_label_suffix(label)
+      return nil if label.type.blank?
+
+      partial = "collavre/labels/#{label.type.underscore}_suffix"
+      render(partial: partial, locals: { label: label })
+    rescue ActionView::MissingTemplate
+      nil
+    end
 
     # Maps semantic token names to their legacy alias names.
     # When custom themes inject semantic tokens on <body>, the legacy aliases

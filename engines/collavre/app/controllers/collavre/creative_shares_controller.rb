@@ -9,6 +9,9 @@ module Collavre
       @shared_list = CreativeShare.where(creative: @creative)
                                   .includes(user: [ avatar_attachment: :blob ])
 
+      # Build inherited shares from ancestor creatives
+      @inherited_shares = build_inherited_shares(@creative)
+
       @pending_invitations = Invitation.where(creative: @creative, accepted_at: nil)
                                        .where("expires_at > ?", Time.current)
                                        .order(created_at: :desc)
@@ -104,14 +107,7 @@ module Collavre
     end
 
     def update
-      @creative_share = CreativeShare.find(params[:id])
-      unless @creative_share.creative.has_permission?(Current.user, :admin)
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
-          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
-        end
-        return
-      end
+      @creative_share = find_admin_creative_share(params[:id])
 
       if @creative_share.update(permission: params[:permission])
         respond_to do |format|
@@ -127,14 +123,7 @@ module Collavre
     end
 
     def destroy
-      @creative_share = CreativeShare.find(params[:id])
-      unless @creative_share.creative.has_permission?(Current.user, :admin)
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
-          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
-        end
-        return
-      end
+      @creative_share = find_admin_creative_share(params[:id])
 
       @creative_share.destroy
       # remove linked creative if it exists
@@ -148,8 +137,42 @@ module Collavre
 
     private
 
+      # Scoped lookup: only returns the share if Current.user has admin permission
+      # on its creative. Raises ActiveRecord::RecordNotFound otherwise so that
+      # record existence is not leaked via 403 vs 404 distinction.
+      def find_admin_creative_share(id)
+        share = CreativeShare.find_by(id: id)
+        raise ActiveRecord::RecordNotFound unless share&.creative&.has_permission?(Current.user, :admin)
+
+        share
+      end
+
       def all_descendants(creative)
         creative.children.flat_map { |child| [ child ] + all_descendants(child) }
+      end
+
+      # Returns inherited shares from ancestor creatives.
+      # Each entry is a hash with :share, :source_creative keys.
+      # Only includes the closest (most specific) share per user.
+      def build_inherited_shares(creative)
+        ancestors = creative.ancestors
+        return [] if ancestors.empty?
+
+        ancestor_ids = ancestors.pluck(:id)
+        direct_user_ids = CreativeShare.where(creative: creative).pluck(:user_id).compact
+
+        ancestor_shares = CreativeShare
+          .where(creative_id: ancestor_ids)
+          .where.not(user_id: direct_user_ids) # Exclude users who already have direct shares
+          .includes(:creative, user: [ avatar_attachment: :blob ])
+
+        # Group by user_id and pick the closest ancestor share
+        ancestor_shares.group_by(&:user_id).filter_map do |_user_id, shares|
+          closest = CreativeShare.closest_parent_share(ancestor_ids, shares)
+          next unless closest && closest.permission != "no_access"
+
+          { share: closest, source_creative: closest.creative }
+        end
       end
   end
 end

@@ -62,10 +62,19 @@ done < "$RESOURCES_FILE"
 
 echo ""
 
+# Install gems
+echo "📦 Installing dependencies (bundle install)..."
+(cd "$CURRENT" && bundle install 2>&1) || echo "   ⚠️  bundle install failed — run manually if needed"
+
 # Build JS/CSS assets so Propshaft can find them
 if [ -f "$CURRENT/package.json" ]; then
   echo "📦 Building assets (npm run build)..."
   (cd "$CURRENT" && npm run build 2>&1) || echo "   ⚠️  npm run build failed — run manually if needed"
 fi
+
+# Prepare database (create + migrate) and seed
+echo "🗄️  Preparing database (db:prepare + db:seed)..."
+(cd "$CURRENT" && bin/rails db:prepare 2>&1) || echo "   ⚠️  db:prepare failed — run manually if needed"
+(cd "$CURRENT" && bin/rails db:seed 2>&1) || echo "   ⚠️  db:seed failed — run manually if needed"
 
 echo "🎉 Worktree setup complete!"

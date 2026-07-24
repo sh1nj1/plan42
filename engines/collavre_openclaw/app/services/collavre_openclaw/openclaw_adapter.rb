@@ -3,9 +3,11 @@ require "json"
 
 module CollavreOpenclaw
   class OpenclawAdapter
-    # Adapter for OpenClaw AI Gateway
+    # Pure transport adapter for OpenClaw AI Gateway.
+    # Session context filtering (full vs incremental) is handled upstream
+    # by SessionContextResolver — this adapter sends exactly what it receives.
     #
-    # Supports two transport modes:
+    # Transport modes:
     # 1. WebSocket (primary) - via faye-websocket + EventMachine
     # 2. HTTP (fallback) - via Faraday POST /v1/chat/completions
     #
@@ -20,7 +22,10 @@ module CollavreOpenclaw
       @context = context
     end
 
-    def chat(messages, &block)
+    # @param messages_data [Hash] { messages:, first_message:, context_changed: }
+    def chat(messages_data, &block)
+      parse_messages_data!(messages_data)
+
       unless @user&.gateway_url.present?
         Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
         yield "Error: OpenClaw Gateway URL not configured" if block_given?
@@ -37,12 +42,12 @@ module CollavreOpenclaw
       # Try WebSocket first, fall back to HTTP
       # Set OPENCLAW_TRANSPORT=http to force HTTP-only mode
       if CollavreOpenclaw.config.transport == "http"
-        Rails.logger.info("[CollavreOpenclaw] Using HTTP transport (forced by config)")
-        chat_via_http(messages, &block)
+        Rails.logger.info("[CollavreOpenclaw::WS] TRANSPORT mode=http_forced")
+        chat_via_http(&block)
       elsif websocket_available?
-        chat_via_websocket(messages, &block)
+        chat_via_websocket(&block)
       else
-        chat_via_http(messages, &block)
+        chat_via_http(&block)
       end
     end
 
@@ -69,6 +74,12 @@ module CollavreOpenclaw
 
     private
 
+    def parse_messages_data!(data)
+      @all_messages    = data[:messages] || []
+      @first_message   = data[:first_message]
+      @context_changed = data[:context_changed]
+    end
+
     # ─────────────────────────────────────────────
     # WebSocket transport
     # ─────────────────────────────────────────────
@@ -83,18 +94,20 @@ module CollavreOpenclaw
       false
     end
 
-    def chat_via_websocket(messages, &block)
+    def chat_via_websocket(&block)
       response_content = +""
 
       begin
         client = ConnectionManager.instance.connection_for(@user)
-        message_text = format_message_for_ws(messages)
+        payload = build_ws_chat_payload
 
-        Rails.logger.info("[CollavreOpenclaw] Sending via WebSocket (session: #{session_key})")
+        Rails.logger.info("[CollavreOpenclaw] Sending via WebSocket (session: #{session_key}, first: #{@first_message}, changed: #{@context_changed})")
 
         client.chat_send(
           session_key: session_key,
-          message: message_text
+          message: payload[:message],
+          attachments: payload[:attachments],
+          on_run_id: method(:persist_run_id_on_comment)
         ) do |event|
           case event[:state]
           when "delta"
@@ -119,8 +132,8 @@ module CollavreOpenclaw
         response_content.presence
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
-        Rails.logger.warn("[CollavreOpenclaw] WebSocket failed, falling back to HTTP: #{e.message}")
-        chat_via_http(messages, &block)
+        Rails.logger.warn("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
+        chat_via_http(&block)
       rescue CollavreOpenclaw::ChatError, CollavreOpenclaw::RpcError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
         error_msg = "OpenClaw Error: #{e.message}"
@@ -129,64 +142,44 @@ module CollavreOpenclaw
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
-        Rails.logger.info("[CollavreOpenclaw] Falling back to HTTP")
-        chat_via_http(messages, &block)
+        Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
+        chat_via_http(&block)
       end
     end
 
-    # Format messages for WebSocket chat.send (single message string).
-    # Gateway manages session history, so we only send the latest user message
-    # with optional context prefix on the FIRST message only.
-    def format_message_for_ws(messages)
-      formatted = Array(messages)
+    # Claim the run for the solicited reply so the same run's final, re-delivered
+    # as "proactive" to other processes, is suppressed. This reply is canonical
+    # (it carries the activity log), so it reclaims on a lost race.
+    def persist_run_id_on_comment(run_id)
+      return if run_id.blank?
 
-      # Extract the last user message
-      last_user = formatted.reverse.find do |m|
-        role = m[:role] || m["role"]
-        role.to_s == "user"
-      end
+      comment = @context[:comment]
+      return unless comment.respond_to?(:id) && comment.id.present?
 
-      return "" unless last_user
-
-      text = extract_message_text(last_user)
-
-      # Only prepend creative context on the first message in a session.
-      # If there are prior assistant replies, the Gateway already has context.
-      if first_message_in_session?(formatted)
-        context_prefix = build_context_prefix(formatted)
-        if context_prefix.present?
-          return "#{context_prefix}\n\n#{text}"
-        end
-      end
-
-      text.to_s
+      CollavreOpenclaw::ProcessedAiRun.claim_canonical(run_id, comment)
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to persist run_id on comment: #{e.message}")
     end
 
-    # Returns true when this looks like the first exchange in a session
-    # (no prior assistant messages in the conversation history).
-    def first_message_in_session?(messages)
-      messages.none? do |m|
-        role = (m[:role] || m["role"]).to_s
-        # "model" is used by some providers (e.g. Gemini) as an alias for "assistant"
-        role == "assistant" || role == "model"
-      end
+    def build_ws_chat_payload
+      {
+        message: format_message_for_ws,
+        attachments: extract_ws_attachments(@all_messages).presence
+      }
     end
 
-    # Build a context prefix from system/context messages if present.
-    # This includes creative tree markdown and other context that the Gateway
-    # wouldn't have from its own agent config.
-    def build_context_prefix(messages)
-      # Find the first "user" message that looks like creative context
-      # (typically starts with "Creative:\n")
-      context_msg = messages.find do |m|
-        role = m[:role] || m["role"]
+    # SessionContextResolver already decided what to include.
+    # We just format and send everything we received.
+    def format_message_for_ws
+      parts = []
+      parts << @system_prompt if @system_prompt.present?
+
+      @all_messages.each do |m|
         text = extract_message_text(m)
-        role.to_s == "user" && text&.start_with?("Creative:")
+        parts << text if text.present?
       end
 
-      return nil unless context_msg
-
-      extract_message_text(context_msg)
+      parts.join("\n\n")
     end
 
     def extract_message_text(message)
@@ -203,6 +196,12 @@ module CollavreOpenclaw
       return [] if parts.nil?
 
       Array(parts).filter_map { |part| part[:image] || part["image"] }
+    end
+
+    def extract_ws_attachments(messages)
+      Array(messages).flat_map do |message|
+        extract_image_sources(message).filter_map { |source| encode_image_source_for_ws(source) }
+      end
     end
 
     def encode_image_source(source)
@@ -239,17 +238,54 @@ module CollavreOpenclaw
       nil
     end
 
+    def encode_image_source_for_ws(source)
+      if defined?(ActiveStorage) && source.is_a?(ActiveStorage::Blob)
+        {
+          type: "image",
+          mimeType: source.content_type,
+          fileName: source.filename.to_s,
+          content: Base64.strict_encode64(source.download)
+        }
+      elsif source.respond_to?(:download)
+        blob = source.respond_to?(:blob) ? source.blob : source
+        return nil unless blob
+
+        {
+          type: "image",
+          mimeType: blob.content_type,
+          fileName: blob.filename.to_s,
+          content: Base64.strict_encode64(blob.download)
+        }
+      elsif source.is_a?(String) && source.match?(%r{^https?://})
+        nil
+      elsif source.is_a?(String)
+        return nil unless File.exist?(source)
+
+        {
+          type: "image",
+          mimeType: Marcel::MimeType.for(Pathname.new(source)),
+          fileName: File.basename(source),
+          content: Base64.strict_encode64(File.binread(source))
+        }
+      else
+        nil
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to encode WS image attachment: #{e.message}")
+      nil
+    end
+
     # ─────────────────────────────────────────────
     # HTTP transport (fallback)
     # ─────────────────────────────────────────────
 
-    def chat_via_http(messages, &block)
+    def chat_via_http(&block)
       response_content = +""
 
       begin
-        payload = build_payload(messages)
+        payload = build_payload
 
-        Rails.logger.info("[CollavreOpenclaw] Sending via HTTP to #{api_endpoint} (session: #{session_key})")
+        Rails.logger.info("[CollavreOpenclaw] Sending via HTTP to #{api_endpoint} (session: #{session_key}, first: #{@first_message}, changed: #{@context_changed})")
 
         stream_response(payload) do |chunk|
           response_content << chunk
@@ -281,7 +317,7 @@ module CollavreOpenclaw
     # Format: agent:<agent_id>:collavre:<user_id>:creative:<id>:topic:<id>
     def build_session_key
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
-      topic_id = @context[:thread_id] || @context[:topic_id]
+      topic_id = @context[:thread_id] || @context[:topic_id] || infer_topic_id
       agent_id = extract_agent_id_from_email || "main"
 
       parts = [ "agent", agent_id, "collavre", @user.id ]
@@ -295,22 +331,21 @@ module CollavreOpenclaw
     # HTTP payload building
     # ─────────────────────────────────────────────
 
-    def build_payload(messages)
+    # SessionContextResolver already decided what to include.
+    def build_payload
       agent_id = extract_agent_id_from_email
       model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
 
-      payload = {
+      formatted = []
+      formatted << { role: "system", content: @system_prompt } if @system_prompt.present?
+      @all_messages.each { |m| formatted << format_single_message(m) }
+
+      {
         model: model_value,
-        messages: format_messages(messages),
-        stream: true
+        messages: formatted,
+        stream: true,
+        user: build_user_context
       }
-
-      if @system_prompt.present?
-        payload[:messages].unshift({ role: "system", content: @system_prompt })
-      end
-
-      payload[:user] = build_user_context
-      payload
     end
 
     def build_user_context
@@ -318,7 +353,7 @@ module CollavreOpenclaw
 
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       comment_id = extract_id(@context, :comment) || @context[:comment_id]
-      topic_id = @context[:thread_id] || @context[:topic_id]
+      topic_id = @context[:thread_id] || @context[:topic_id] || infer_topic_id
 
       callback = callback_url
       if callback.present? && creative_id.present?
@@ -346,28 +381,26 @@ module CollavreOpenclaw
       end
     end
 
-    def format_messages(messages)
-      Array(messages).map do |msg|
-        role = msg[:role] || msg["role"]
-        text = extract_message_text(msg)
+    def format_single_message(msg)
+      role = msg[:role] || msg["role"]
+      text = extract_message_text(msg)
 
-        sender_name = msg[:sender_name] || msg["sender_name"]
-        if sender_name.present? && normalize_role(role) == "user"
-          text = "[#{sender_name}]: #{text}"
+      sender_name = msg[:sender_name] || msg["sender_name"]
+      if sender_name.present? && normalize_role(role) == "user"
+        text = "[#{sender_name}]: #{text}"
+      end
+
+      image_sources = extract_image_sources(msg)
+
+      if image_sources.any?
+        content_parts = [ { type: "text", text: text.to_s } ]
+        image_sources.each do |source|
+          image_data = encode_image_source(source)
+          content_parts << image_data if image_data
         end
-
-        image_sources = extract_image_sources(msg)
-
-        if image_sources.any?
-          content_parts = [ { type: "text", text: text.to_s } ]
-          image_sources.each do |source|
-            image_data = encode_image_source(source)
-            content_parts << image_data if image_data
-          end
-          { role: normalize_role(role), content: content_parts }
-        else
-          { role: normalize_role(role), content: text.to_s }
-        end
+        { role: normalize_role(role), content: content_parts }
+      else
+        { role: normalize_role(role), content: text.to_s }
       end
     end
 
@@ -539,13 +572,30 @@ module CollavreOpenclaw
       @user.email.split("@").first
     end
 
+    # Infer topic_id from the comment object in context when not explicitly provided.
+    # AiAgentService passes :comment (the reply or original comment) which carries topic_id.
+    def infer_topic_id
+      comment = @context[:comment]
+      return comment.topic_id if comment.respond_to?(:topic_id) && comment.topic_id.present?
+
+      nil
+    end
+
     def default_url_options
       options = Rails.application.config.action_mailer.default_url_options || {}
 
       host = options[:host]
       host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
-      host ||= ENV["APP_HOST"]
-      host ||= ENV["RAILS_HOST"]
+      # When the engine is mounted without core Collavre (gemspec has no `collavre`
+      # dependency), `IntegrationSettings` is undefined — fall back to the ENV
+      # path the previous code used so standalone deployments still resolve a host.
+      if defined?(Collavre::IntegrationSettings)
+        host ||= Collavre::IntegrationSettings.fetch(:app_host)
+        host ||= Collavre::IntegrationSettings.fetch(:rails_host)
+      else
+        host ||= ENV["APP_HOST"]
+        host ||= ENV["RAILS_HOST"]
+      end
 
       result = { host: host }
       result[:protocol] = options[:protocol] || "https"

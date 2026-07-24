@@ -21,6 +21,10 @@ module Collavre
 
       # Returns Array of User (AI agents) that are qualified to respond
       def match
+        # Priority 0: Review routing (exclusive)
+        review_result = match_by_review_author
+        return review_result unless review_result.nil?
+
         # Priority 1: Mention-based routing (exclusive)
         mentioned_result = match_by_mention
         return mentioned_result unless mentioned_result.nil?
@@ -30,6 +34,39 @@ module Collavre
       end
 
       private
+
+      # Returns [author] for a routable review message, [] for an unroutable one,
+      # nil when this is not a review message.
+      #
+      # A review message can ONLY be handled by the author of the quoted comment:
+      # ReviewHandler#eligible? requires quoted_comment.user_id == agent.id, so any
+      # other agent would post a stray reply instead of the in-place review update.
+      # Route exclusively to that author — independent of mention or
+      # routing_expression — so the Review button is reliable even when the author
+      # has none (e.g. /compress summaries authored by a primary agent resolved via
+      # primary_agent_id). Without this the button renders but the feedback no-ops.
+      #
+      # Once this IS a review message, the only safe outcomes are exclusive-route or
+      # block ([]) — never nil. ResponseFinalizer keys on review_message? regardless
+      # of which agent the matcher picks, so a fall-through to mention/expression
+      # routing would schedule an agent that ReviewHandler#handle then bails on,
+      # producing the very stray reply this routing exists to prevent.
+      def match_by_review_author
+        return nil unless matched_comment&.review_message?
+
+        author = matched_comment.quoted_comment&.user
+        return [] unless author&.ai_user?
+
+        # Mirror ReviewHandler#eligible?: if the handler would reject this quote
+        # (private, or from another topic/creative), no agent can handle the review.
+        # Block rather than fall through, so it can't become a stray normal reply.
+        return [] unless Collavre::AiAgent::ReviewHandler.eligible?(matched_comment, author)
+
+        return [] unless has_creative_permission?(author)
+        return [] unless eligible_in_inbox?(author)
+
+        [ author ]
+      end
 
       # Returns Array of agents if mention found, nil if no mention
       # When mention IS found, this is exclusive routing
@@ -47,6 +84,11 @@ module Collavre
         # Permission check for mentioned AI agent
         return [] unless has_creative_permission?(mentioned_user)
 
+        # Inbox confinement applies to mentions too: a live Claude Channel
+        # session agent must not be pulled into an ordinary inbox topic, even by
+        # an explicit @mention (see #eligible_in_inbox?).
+        return [] unless eligible_in_inbox?(mentioned_user)
+
         [ mentioned_user ]
       end
 
@@ -57,9 +99,24 @@ module Collavre
 
         agents.select do |agent|
           next false unless has_creative_permission?(agent)
+          next false unless eligible_in_inbox?(agent)
 
           evaluate_routing_expression(agent)
         end
+      end
+
+      # A Claude Channel session agent holds inbox-wide :feedback +
+      # routing_expression="true", so within the user's Inbox it would otherwise
+      # match EVERY topic. Confine it to its own registered session topic (the
+      # topic it is primary_agent on, carrying a session_id) so ordinary inbox
+      # topics — Main, Content, user threads — stay identical to a normal topic
+      # and are never absorbed by a live session. Only the inbox is affected: on
+      # work/project creatives the agent still matches via routing_expression.
+      def eligible_in_inbox?(agent)
+        return true unless matched_creative&.inbox?
+        return true unless agent.claude_channel_agent?
+
+        matched_topic&.session_id.present? && matched_topic.primary_agent_id == agent.id
       end
 
       def evaluate_routing_expression(agent)
@@ -85,13 +142,31 @@ module Collavre
       def has_creative_permission?(agent)
         # All agents need feedback permission on the creative to respond
         # searchable only affects discoverability, not response permission
-        creative_id = @context.dig("creative", "id") || @context.dig(:creative, :id)
-        return false unless creative_id
-
-        creative = Creative.find_by(id: creative_id)
+        creative = matched_creative
         return false unless creative
 
         creative.has_permission?(agent, :feedback)
+      end
+
+      def matched_creative
+        return @matched_creative if defined?(@matched_creative)
+
+        creative_id = @context.dig("creative", "id") || @context.dig(:creative, :id)
+        @matched_creative = creative_id && Creative.find_by(id: creative_id)
+      end
+
+      def matched_topic
+        return @matched_topic if defined?(@matched_topic)
+
+        topic_id = @context.dig("topic", "id") || @context.dig(:topic, :id)
+        @matched_topic = topic_id && Topic.find_by(id: topic_id)
+      end
+
+      def matched_comment
+        return @matched_comment if defined?(@matched_comment)
+
+        comment_id = @context.dig("comment", "id") || @context.dig(:comment, :id)
+        @matched_comment = comment_id && Comment.find_by(id: comment_id)
       end
     end
   end

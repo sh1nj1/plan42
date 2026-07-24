@@ -10,11 +10,12 @@ class CreativeRecursionTest < ActiveSupport::TestCase
     a = Creative.create!(description: "A", user: user)
     b = Creative.create!(description: "B", user: user)
 
-    # We need to bypass validation/checks to create a cycle usually,
-    # or just set up origin_id directly.
-
-    a.update_columns(origin_id: b.id)
-    b.update_columns(origin_id: a.id)
+    # origin_id is attr_readonly (immutable after create), so update! / update_columns
+    # would raise. Inject the pathological cycle directly at the SQL level with
+    # update_all, which bypasses the readonly guard — exactly what this defensive
+    # test needs to exercise graceful handling of corrupt data.
+    Creative.where(id: a.id).update_all(origin_id: b.id)
+    Creative.where(id: b.id).update_all(origin_id: a.id)
 
     # Reload to ensure associations are fresh
     a.reload

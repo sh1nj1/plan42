@@ -55,3 +55,6 @@ en:
       refresh: "Refresh"
       refresh_error: "Failed to refresh channels"
       linked_label: "(Linked)"
+      search_channels: "Search channels..."
+      no_channels_available: "No channels available"
+      no_matching_channels: "No matching channels"

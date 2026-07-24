@@ -1,3 +1,3 @@
 module Collavre
-  VERSION = "0.7.1"
+  VERSION = "0.24.1"
 end

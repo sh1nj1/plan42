@@ -70,7 +70,7 @@ module Collavre
 
         # HTTP caching disabled for children endpoint:
         # Response depends on child updates, permission changes (CreativeSharesCache),
-        # and CreativeExpandedState. Tracking all dependencies reliably is expensive
+        # and UserCreativePreference. Tracking all dependencies reliably is expensive
         # (requires descendant_ids query). Stale 304 responses could leak data after
         # permission revocation. Re-enable when a cheap version key mechanism exists.
         # Use private + no-store to prevent any caching (proxy or browser).
@@ -117,7 +117,7 @@ module Collavre
       private
 
       def render_children_json(parent, user_id, allowed_ids, progress_map)
-        expanded_state_map = CreativeExpandedState
+        expanded_state_map = UserCreativePreference
                                 .where(user_id: user_id, creative_id: parent.id)
                                 .first&.expanded_status || {}
         children = parent.children_with_permission(Current.user)

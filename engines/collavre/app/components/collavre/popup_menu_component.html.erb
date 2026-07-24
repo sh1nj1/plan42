@@ -1,6 +1,6 @@
 <div class="popup-menu-wrapper" data-controller="popup-menu">
   <%= button_tag raw(button_content), button_options %>
-  <div id="<%= menu_id %>" class="popup-menu <%= 'popup-menu-right' if align.to_sym == :right %>" data-popup-menu-target="menu" data-action="click->popup-menu#menuClick">
+  <div id="<%= menu_id %>" class="<%= ['popup-menu', ('popup-menu-right' if align.to_sym == :right), menu_classes.presence].compact.join(' ') %>" data-popup-menu-target="menu" data-action="click->popup-menu#menuClick">
     <%= content %>
   </div>
 </div>
