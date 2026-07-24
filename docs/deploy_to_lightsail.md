@@ -53,7 +53,7 @@ Common overrides:
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump |
 | `DB_PASSWORD` | *(generated)* | Generated password is URL-safe |
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
-| `BACKUP_S3_URI` | *(empty)* | e.g. `s3://collavre-backups/pg` |
+| `BACKUP_S3_URI` | *(empty)* | e.g. `s3://collavre-backups/pg` — PostgreSQL only, [not uploaded files](#backup_s3_uri-does-not-cover-uploaded-files) |
 
 It also runs fine by hand on an existing instance, and re-running converges the
 host instead of duplicating config:
@@ -206,6 +206,33 @@ sudo -u postgres pg_restore --clean --if-exists -d collavre_production \
 
 Local dumps die with the instance. Enable `BACKUP_S3_URI`, or take a Lightsail
 snapshot schedule, before this host holds real customer data.
+
+### `BACKUP_S3_URI` does not cover uploaded files
+
+The nightly job dumps PostgreSQL and nothing else. Whether that is the whole of
+your data depends on how Active Storage resolved at boot: `production.rb` picks
+`:amazon` only when a **complete** S3 credential pair is available — from
+`AWS_S3_ACCESS_KEY_ID` / `AWS_S3_SECRET_ACCESS_KEY`, or from the pair saved in
+admin settings — and falls back to `:local` otherwise. There is no warning when
+it falls back; the app runs identically either way.
+
+On `:local`, every uploaded file and attachment is written inside the container
+to `/rails/storage`, which `config/deploy.yml` maps to the named Docker volume
+`plan42_storage`. That volume outlives redeploys, so nothing looks wrong day to
+day — but it lives on the instance's disk, is not in the dump, and is not
+touched by the backup script. Restoring `BACKUP_S3_URI` onto a fresh instance
+gives you a database whose `active_storage_blobs` rows all point at files that
+no longer exist.
+
+Pick one before going live:
+
+- **Configure app S3** (`AWS_S3_*` in `.env.production`, or admin settings), so
+  blobs are off-instance to begin with and the dump really is the whole backup.
+- **Or add a Lightsail snapshot schedule**, which captures the disk — volume
+  included — and covers both halves at once.
+
+A snapshot schedule is worth having regardless: it is the only thing that
+restores the host itself.
 
 ## 7. TLS
 
