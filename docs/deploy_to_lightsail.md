@@ -254,10 +254,29 @@ the SQLite converter needs the app image and so runs after it, app stopped.
 
   ```bash
   ./kamal.sh setup
-  ./kamal.sh app exec 'bin/rails db:schema:load db:seed' \
+  ./kamal.sh app exec 'bin/rails db:schema:load:primary db:seed' \
     -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1
   ./kamal.sh app boot   # restart on the schema you just loaded
   ```
+
+  **`:primary` is load-bearing.** `production:` in `config/database.yml` names
+  four configurations — primary, cache, queue, cable — and the plain
+  `db:schema:load` walks every one of them. It loads `db/schema.rb` for the
+  primary, then looks for `db/cache_schema.rb`, which does not exist and never
+  will: all four point at one database and the Solid tables come from a primary
+  migration (see [§3](#3-how-postgresql-is-reachable)). So the run stamps the
+  schema correctly and *then* aborts with
+
+  ```
+  db/cache_schema.rb doesn't exist yet. Run `bin/rails db:migrate` to create it, then try again.
+  ```
+
+  and exit status 1. `db:seed` never runs, so a fresh install ends with the
+  right schema, **no admin user**, and the on-screen advice being the migration
+  replay this section exists to avoid. `db:schema:load:primary` is the same
+  work minus the walk — `assume_migrated_upto_version` behaves identically, and
+  the task carries the same `check_protected_environments` prerequisite, so the
+  flag below is still required.
 
   `db/schema.rb` declares every table `force: :cascade`, so the load replaces
   the replayed tables instead of colliding with them, and it stamps
@@ -265,8 +284,8 @@ the SQLite converter needs the app image and so runs after it, app stopped.
   is a no-op.
 
   That covers the engine migrations too, which is worth stating because the
-  SQLite task above has to stamp them by hand. `db:schema:load` runs after
-  `db:load_config`, and that is where Rails widens
+  SQLite task above has to stamp them by hand. Both `db:schema:load` and its
+  `:primary` variant run after `db:load_config`, and that is where Rails widens
   `ActiveRecord::Migrator.migrations_paths` from `["db/migrate"]` (7 files) to
   every path the engines append (184). `db:sqlite_to_postgres` depends on
   `:environment` alone, so it never gets that widening: its schema load stamps
@@ -274,18 +293,20 @@ the SQLite converter needs the app image and so runs after it, app stopped.
   `assume_migrated_upto_version` inserts whether or not it can see the file
   behind it — and it must stamp the remaining 176 itself.
 
-  `DISABLE_DATABASE_ENVIRONMENT_CHECK` is not optional here. `db:schema:load`
+  `DISABLE_DATABASE_ENVIRONMENT_CHECK` is not optional here. The load task
   runs `check_protected_environments` first, which aborts with
   `ActiveRecord::ProtectedEnvironmentError` once the database records
   `production` in `ar_internal_metadata` — which is exactly what the replay in
   the preceding `setup` just wrote. Note the flag *trails* the command: `-e`
   takes a Thor hash and greedily consumes every following argument containing a
-  colon, so putting it first would swallow `bin/rails db:schema:load db:seed`
-  into the hash and leave kamal with no command to run.
+  colon, so putting it first would swallow
+  `bin/rails db:schema:load:primary db:seed` into the hash and leave kamal with
+  no command to run.
 
   This still works when the replay *fails* and `setup` dies at `app boot`: the
   env file and the network are uploaded before the container is started, and
-  `app exec` runs a **new** container whose command is `bin/rails db:schema:load`,
+  `app exec` runs a **new** container whose command is
+  `bin/rails db:schema:load:primary`,
   which the entrypoint does not migrate for (it only migrates the
   `./bin/rails server` command line). Run the `app exec` above and then
   `./kamal.sh deploy`.
