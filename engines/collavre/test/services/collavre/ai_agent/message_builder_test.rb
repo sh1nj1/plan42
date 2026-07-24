@@ -185,7 +185,7 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        messages = builder.build[:messages]
 
         agent_ctx_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.include?("Agent Context Creative") }
         assert_not_nil agent_ctx_msg, "Should include agent context creative"
@@ -193,7 +193,7 @@ module Collavre
 
         # Agent context should come before creative context
         agent_idx = messages.index(agent_ctx_msg)
-        creative_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
+        creative_msg = messages.find { |m| m[:kind] == :creative_context }
         creative_idx = messages.index(creative_msg)
         assert agent_idx < creative_idx, "Agent context should come before creative context"
       end
@@ -215,7 +215,7 @@ module Collavre
         }
 
         builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        messages = builder.build
+        messages = builder.build[:messages]
 
         # Should appear only once (as Agent Context Creative, not also as Context Creative)
         agent_msgs = messages.select { |m| m[:parts]&.first&.dig(:text)&.include?("Agent Context Creative") }

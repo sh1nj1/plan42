@@ -53,6 +53,7 @@ module Collavre
 
           messages << {
             role: "user",
+            kind: :agent_context_creative,
             parts: [ { text: "Agent Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
           }
         end
