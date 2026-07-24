@@ -22,8 +22,8 @@ export default class extends Controller {
         this.popup = null
     }
 
-    open(anchorRect) {
-        this.popup.showAt(anchorRect)
+    open(anchorRect, boundsElement = null) {
+        this.popup.showAt(anchorRect, boundsElement)
     }
 
     close() {

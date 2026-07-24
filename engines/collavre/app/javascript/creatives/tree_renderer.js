@@ -169,6 +169,9 @@ function applyRowProperties(row, node) {
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_source')) {
     setDatasetValue(row, 'markdownSource', inlinePayload.markdown_source ?? '')
   }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_editor')) {
+    setDatasetValue(row, 'markdownEditor', inlinePayload.markdown_editor ?? '')
+  }
 
   if (dirty && typeof row.requestUpdate === 'function') {
     // Before Lit re-renders, sync progressHtml from current DOM.

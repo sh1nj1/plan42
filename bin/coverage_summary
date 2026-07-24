@@ -1,0 +1,79 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Render a GitHub-flavoured Markdown coverage summary from a SimpleCov lcov file.
+#
+# Groups records into the host app and each Rails engine (engines/<name>/...),
+# summing line (LF/LH) and branch (BRF/BRH) counters, and prints an overall row
+# plus a per-group table. Written for GitHub Actions job summaries:
+#
+#   bin/coverage_summary coverage/lcov.info >> "$GITHUB_STEP_SUMMARY"
+#
+# Exits 0 with a friendly note if the lcov file is missing so a coverage-less
+# run never fails the job on the summary step alone.
+
+lcov_path = ARGV[0] || "coverage/lcov.info"
+
+unless File.file?(lcov_path)
+  puts "## 🧪 Ruby coverage (SimpleCov)\n\n_No lcov report found at `#{lcov_path}`._"
+  exit 0
+end
+
+# group_key => { lf:, lh:, brf:, brh: }
+groups = Hash.new { |h, k| h[k] = { lf: 0, lh: 0, brf: 0, brh: 0 } }
+
+def group_for(path)
+  path = path.sub(%r{\A\./}, "")
+  if (m = path.match(%r{\Aengines/([^/]+)/}))
+    "engine: #{m[1]}"
+  else
+    "host app"
+  end
+end
+
+current = nil
+File.foreach(lcov_path) do |line|
+  case line
+  when /\ASF:(.+)/
+    current = group_for(Regexp.last_match(1).strip)
+  when /\ALF:(\d+)/ then groups[current][:lf]  += Regexp.last_match(1).to_i if current
+  when /\ALH:(\d+)/ then groups[current][:lh]  += Regexp.last_match(1).to_i if current
+  when /\ABRF:(\d+)/ then groups[current][:brf] += Regexp.last_match(1).to_i if current
+  when /\ABRH:(\d+)/ then groups[current][:brh] += Regexp.last_match(1).to_i if current
+  when /\Aend_of_record/ then current = nil
+  end
+end
+
+if groups.empty?
+  puts "## 🧪 Ruby coverage (SimpleCov)\n\n_lcov report at `#{lcov_path}` had no records._"
+  exit 0
+end
+
+def pct(hit, found)
+  return "—" if found.zero?
+
+  format("%.2f%%", (hit.to_f / found) * 100)
+end
+
+total = groups.values.each_with_object({ lf: 0, lh: 0, brf: 0, brh: 0 }) do |g, acc|
+  acc[:lf] += g[:lf]; acc[:lh] += g[:lh]; acc[:brf] += g[:brf]; acc[:brh] += g[:brh]
+end
+
+out = []
+out << "## 🧪 Ruby coverage (SimpleCov)"
+out << ""
+out << "**Line: #{pct(total[:lh], total[:lf])}** (#{total[:lh]}/#{total[:lf]}) · " \
+       "**Branch: #{pct(total[:brh], total[:brf])}** (#{total[:brh]}/#{total[:brf]})"
+out << ""
+out << "| Group | Line | Branch |"
+out << "|---|---|---|"
+
+# Host first, then engines alphabetically.
+ordered = groups.keys.sort_by { |k| [ k == "host app" ? 0 : 1, k ] }
+ordered.each do |key|
+  g = groups[key]
+  out << "| #{key} | #{pct(g[:lh], g[:lf])} (#{g[:lh]}/#{g[:lf]}) | " \
+         "#{pct(g[:brh], g[:brf])} (#{g[:brh]}/#{g[:brf]}) |"
+end
+
+puts out.join("\n")

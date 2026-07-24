@@ -5,12 +5,64 @@ module Collavre
   class Creative < ApplicationRecord
     self.table_name = "creatives"
 
+    # ---------------------------------------------------------------------------
+    # Reserved metadata key registry — engines register their own namespaces so
+    # `update_metadata` preserves them without core naming vendor-specific keys.
+    # "kind" must be reserved: it is the discriminator `inbox?`/`Creative.inboxes`
+    # match on, so a metadata save that omits it makes the row undiscoverable and
+    # `inbox_for` creates a duplicate inbox for that user.
+    # ---------------------------------------------------------------------------
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
+
+    SubtreeTouchTransactionRecord = Data.define(:creative_id) do
+      def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
+
+      def trigger_transactional_callbacks? = true
+
+      def before_committed! = nil
+
+      def committed!(should_run_callbacks:)
+        TouchCreativeSubtreeJob.perform_later(creative_id) if should_run_callbacks
+      end
+
+      def rolledback!(**_options) = nil
+    end
+    private_constant :SubtreeTouchTransactionRecord
+
+    class << self
+      def registered_reserved_metadata_keys
+        @registered_reserved_metadata_keys ||= []
+      end
+
+      def register_reserved_metadata_key(key)
+        registered_reserved_metadata_keys << key.to_s unless registered_reserved_metadata_keys.include?(key.to_s)
+      end
+
+      def reserved_metadata_keys
+        (BUILTIN_RESERVED_METADATA_KEYS + registered_reserved_metadata_keys).freeze
+      end
+
+      # ------------------------------------------------------------------------
+      # Read-only source registry — vendor engines register the `data.source.type`
+      # values whose content is owned by an external system (e.g. a synced GitHub
+      # repository) and therefore must not be edited in-app. Core enforces the
+      # read-only behavior via `read_only_source?` without naming any vendor.
+      # ------------------------------------------------------------------------
+      def read_only_source_types
+        @read_only_source_types ||= Set.new
+      end
+
+      def register_read_only_source(type)
+        read_only_source_types << type.to_s
+      end
+    end
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "creatives/creative"
     end
 
-    after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
+    after_update :register_subtree_touch_after_commit, if: :saved_change_to_parent_id?
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
@@ -43,10 +95,28 @@ module Collavre
       data&.dig("kind") == "inbox"
     end
 
-    attr_accessor :skip_github_validation
+    # Bypass the read-only-source guard for a single save (used by the vendor
+    # sync services that legitimately write the synced content into core).
+    attr_accessor :skip_read_only_source_validation
 
+    # The registered source identifier for this creative, or nil when the
+    # description is authored in-app.
+    def source_type
+      data.is_a?(Hash) ? data.dig("source", "type") : nil
+    end
+
+    # Whether this creative's description is owned by an external, registered
+    # source and therefore read-only in-app.
+    def read_only_source?
+      type = source_type
+      type.present? && self.class.read_only_source_types.include?(type)
+    end
+
+    # GitHub-sourced content still needs a vendor-specific predicate for the
+    # comment view's inline-image rendering (a GitHub-only concern, distinct
+    # from the neutral read-only behavior above).
     def github_markdown?
-      data.is_a?(Hash) && data.dig("source", "type") == "github_markdown"
+      source_type == "github_markdown"
     end
 
     # Find or create the "System" topic for this inbox creative.
@@ -133,7 +203,14 @@ module Collavre
 
     after_save :update_parent_progress
     after_destroy :update_parent_progress
-    after_save :update_mcp_tools
+    # Re-derive MCP tools only when the description (the tool source of truth)
+    # actually changed, and defer the HTML parsing to a background job so it
+    # never runs inline on progress/move/autosave writes. The dirty flag is
+    # captured in after_save (where saved_change_to_description? is reliable);
+    # a later same-transaction save can clobber saved_changes before the
+    # after_commit hook runs.
+    after_save :mark_mcp_tools_sync_pending, if: :saved_change_to_description?
+    after_commit :enqueue_mcp_tools_sync, if: :mcp_tools_sync_pending?
 
     # --- Drop Trigger ---
     def drop_trigger_enabled?
@@ -292,8 +369,17 @@ module Collavre
       @progress_service ||= Collavre::Creatives::ProgressService.new(self)
     end
 
-    def update_mcp_tools
-      McpService.new.update_from_creative(self)
+    def mark_mcp_tools_sync_pending
+      @mcp_tools_sync_pending = true
+    end
+
+    def mcp_tools_sync_pending?
+      @mcp_tools_sync_pending == true
+    end
+
+    def enqueue_mcp_tools_sync
+      @mcp_tools_sync_pending = false
+      UpdateMcpToolsJob.perform_later(id)
     end
 
     def progress_cannot_change_if_has_origin
@@ -302,8 +388,15 @@ module Collavre
       end
     end
 
-    def touch_subtree_on_move
-      descendants.update_all(updated_at: Time.current)
+    # Register independently of the Creative instance because a transaction may
+    # update the same row through multiple instances, while Rails runs record
+    # callbacks on only one of them. Transaction-record equality deduplicates by
+    # creative id; Rails promotes records through committed savepoints and drops
+    # them on rollback.
+    def register_subtree_touch_after_commit
+      self.class.with_connection do |connection|
+        connection.add_transaction_record(SubtreeTouchTransactionRecord.new(id))
+      end
     end
 
     def fire_drop_trigger_on_move

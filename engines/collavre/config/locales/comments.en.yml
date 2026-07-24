@@ -18,6 +18,17 @@ en:
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
+        add_members:
+          title: Add members to the new location?
+          description: These people had access where the topic used to live, but not in "%{creative}". Add them so they keep access.
+          add: Add selected
+          skip: Not now
+          adding: Adding…
+          added:
+            one: 1 member added.
+            other: "%{count} members added."
+          partial: "%{added} added, %{failed} failed."
+          failed: Could not add members. Please try again.
     github_auth:
       login_first: Please sign in first.
       connected: Github account connected successfully.
@@ -96,6 +107,12 @@ en:
       navigate_forward: Next chat
       recent_chats: Recent chats
       remove_from_history: Remove from history
+      topic_set_agent_error: Unable to assign the agent to this topic.
+      topic_create_error: Unable to create the topic.
+      topic_update_error: Unable to update the topic.
+      topic_delete_error: Unable to delete the topic.
+      topic_archive_error: Unable to archive the topic.
+      topic_restore_error: Unable to restore the topic.
       inbox_reply_button: Reply
       replace_button: Replace
       move_no_selection: Select at least one message to move.
@@ -129,8 +146,12 @@ en:
       batch_delete_not_found: Some selected messages could not be found.
       topic_search_placeholder: Search topics...
       topic_main: All Messages
+      topic_list: Topic list
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
+      typo_keep_label: keep
+      typo_custom_label: custom
+      typo_input_label: correction
       move_invalid_target: Select a valid creative to move messages to.
       move_invalid_topic: Invalid topic selected.
       move_not_allowed: You do not have permission to move these messages.
@@ -200,6 +221,7 @@ en:
         delete_confirm: Are you sure you want to delete this version?
         select: Select
       stop_agent: Stop
+      stop_blocking_agent: Stop running task
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
       table_download:

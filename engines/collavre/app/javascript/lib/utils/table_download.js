@@ -161,3 +161,18 @@ export function addTableDownloadButtons(contentElement) {
     wrapper.appendChild(table)
   })
 }
+
+/**
+ * Wraps only the tables in a creative row's *display* areas
+ * (.creative-content / .creative-title-content). The inline edit form is
+ * appended into .creative-tree as a sibling of these areas, so scanning the
+ * whole row would move the live Lexical editor / markdown-preview <table>
+ * into a wrapper and corrupt in-progress table edits.
+ */
+export function addCreativeTableDownloadButtons(rowElement) {
+  if (!rowElement) return
+
+  rowElement
+    .querySelectorAll('.creative-content, .creative-title-content')
+    .forEach((area) => addTableDownloadButtons(area))
+}

@@ -182,6 +182,22 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "moving a topic keeps comments_count in sync on both creatives" do
+    target_creative = creatives(:root_parent)
+    Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "a")
+    Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "b")
+    source_before = @creative.reload.comments_count
+    target_before = target_creative.reload.comments_count
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+    assert_response :success
+
+    assert_equal source_before - 2, @creative.reload.comments_count, "source counter must drop by moved comments"
+    assert_equal target_before + 2, target_creative.reload.comments_count, "target counter must rise by moved comments"
+    assert_equal @creative.comments.count, @creative.comments_count, "source counter matches actual"
+    assert_equal target_creative.comments.count, target_creative.comments_count, "target counter matches actual"
+  end
+
   test "should not move topic without permission on source creative" do
     other_user = users(:two)
     sign_in_as other_user, password: "password"
@@ -211,6 +227,51 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     json = JSON.parse(response.body)
     assert json["error"].include?(@topic.name)
+  end
+
+  test "move returns members who had source access but are missing on target" do
+    target_creative = creatives(:root_parent)
+    shared_user = users(:two)
+    Collavre::CreativeShare.create!(creative: @creative, user: shared_user, shared_by: @user, permission: :feedback)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    emails = json["missing_members"].map { |m| m.dig("user", "email") }
+    assert_includes emails, shared_user.email
+    member = json["missing_members"].find { |m| m.dig("user", "email") == shared_user.email }
+    assert_equal "feedback", member["permission"]
+    assert_equal target_creative.creative_snippet, json["target_creative_name"]
+  end
+
+  test "move returns no missing members when target already has them" do
+    target_creative = creatives(:root_parent)
+    shared_user = users(:two)
+    Collavre::CreativeShare.create!(creative: @creative, user: shared_user, shared_by: @user, permission: :feedback)
+    Collavre::CreativeShare.create!(creative: target_creative, user: shared_user, shared_by: @user, permission: :read)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    emails = json["missing_members"].map { |m| m.dig("user", "email") }
+    assert_not_includes emails, shared_user.email
+  end
+
+  test "move omits missing members when mover lacks admin on target" do
+    target_creative = creatives(:root_parent)
+    target_creative.update!(user: users(:two))
+    # Give the mover write (so the move is allowed) but not admin on the target.
+    Collavre::CreativeShare.create!(creative: target_creative, user: @user, shared_by: users(:two), permission: :write)
+    # A source member who is missing on the target.
+    Collavre::CreativeShare.create!(creative: @creative, user: users(:three), shared_by: @user, permission: :feedback)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_empty json["missing_members"]
   end
 
   test "should set primary agent on topic" do

@@ -94,6 +94,18 @@
   z-index: 0;
 }
 
+.landing-hero-eyebrow {                 /* L4 — category line, above the claim */
+  font-size: var(--text-2);
+  font-weight: var(--weight-6);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-active);
+  margin: 0 auto var(--space-4);
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
 .landing-hero-title {                   /* L1 — main headline */
   font-size: var(--text-7);
   font-weight: var(--weight-8);
@@ -113,6 +125,17 @@
   margin: 0 auto var(--space-5);
   max-width: 900px;
   text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-hero-tagline {                 /* L4 — the mechanism, one line */
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  margin: 0 auto var(--space-6);
+  max-width: 720px;
+  text-align: center;
+  line-height: var(--leading-2);
   position: relative;
   z-index: 1;
 }
@@ -238,6 +261,7 @@
   background: var(--surface-section);
 }
 
+/* Three tools, three cards — one row on desktop. */
 .landing-problem-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -256,6 +280,12 @@
 
 .landing-problem-card:hover {
   border-color: var(--text-muted);
+}
+
+/* The fourth card is the punchline — the copy the AI era added. */
+.landing-problem-card-accent {
+  border-color: var(--color-active);
+  background: color-mix(in srgb, var(--color-active) 6%, var(--surface-bg));
 }
 
 .landing-problem-icon {
@@ -430,6 +460,68 @@ body.dark-mode .landing-demo-dark { display: block; }
 @media (prefers-color-scheme: dark) {
   body:not(.light-mode) .landing-demo-light { display: none; }
   body:not(.light-mode) .landing-demo-dark { display: block; }
+}
+
+/* ─── Interface: the product still ─────────────────────────────────────────── */
+.landing-shot-frame {
+  max-width: 980px;
+  margin: 0 auto;
+  border-radius: var(--radius-4);
+  border: var(--border-1) solid var(--border-color);
+  background: var(--surface-section);
+  overflow: hidden;
+  box-shadow: var(--shadow-3);
+}
+
+.landing-shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Same light/dark pairing the demo video uses: the screenshot is app chrome, so a
+   light shot on a dark page reads as a bug, not as a screenshot. */
+.landing-shot-dark { display: none; }
+
+body.dark-mode .landing-shot-light { display: none; }
+body.dark-mode .landing-shot-dark { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode) .landing-shot-light { display: none; }
+  body:not(.light-mode) .landing-shot-dark { display: block; }
+}
+
+.landing-interface-points {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-5) auto 0;
+  max-width: 980px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-5);
+}
+
+.landing-interface-points li {
+  position: relative;
+  padding-left: var(--space-4);
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  line-height: var(--leading-2);
+}
+
+.landing-interface-points li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent, var(--text-muted));
+}
+
+@media (max-width: 780px) {
+  .landing-interface-points { grid-template-columns: 1fr; }
 }
 
 /* ─── Responsive ────────────────────────────────────────────────────────────── */

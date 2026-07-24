@@ -2,6 +2,20 @@ module CollavreSlack
   class SlackInboundReactionJob < ApplicationJob
     queue_as :default
 
+    # SlackEventsController acks Slack with 200 the instant it enqueues this job
+    # (ack-before-apply), so Slack never re-delivers the event once accepted.
+    # Without a retry, a transient DB contention error would park the job and the
+    # inbound reaction would be lost permanently. Only transient contention
+    # retries; a real bug still raises and parks.
+    retry_on ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout,
+             wait: 2.seconds, attempts: 5
+
+    # Permanent/unprocessable failures: retrying cannot help. Discard so the
+    # queue self-heals rather than looping forever.
+    discard_on ActiveJob::DeserializationError
+    discard_on ActiveRecord::RecordNotFound
+    discard_on ActiveRecord::RecordInvalid
+
     def perform(payload)
       data = payload.with_indifferent_access
       comment = Collavre::Comment.find_by(id: data[:comment_id])

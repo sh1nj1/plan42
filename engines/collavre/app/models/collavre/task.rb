@@ -11,6 +11,18 @@ module Collavre
 
     validates :name, presence: true
 
+    enum :status, {
+      pending: "pending",
+      queued: "queued",
+      running: "running",
+      delegated: "delegated",
+      pending_approval: "pending_approval",
+      done: "done",
+      failed: "failed",
+      cancelled: "cancelled",
+      escalated: "escalated"
+    }, default: :pending
+
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
 
@@ -23,6 +35,21 @@ module Collavre
       rel = where(topic_id: topic_id, status: "queued")
       rel = rel.where(creative_id: creative_id) if creative_id
       rel.order(:created_at)
+    }
+    # Tasks that hold a topic concurrency slot: running/delegated (executing)
+    # plus pending — a task that has been claimed (dequeue_next_for_topic moves a
+    # waiter queued -> pending, a retry re-queues to pending, initial dispatch
+    # creates pending) but whose AiAgentJob has not started yet — plus
+    # pending_approval — a task paused awaiting tool approval that intentionally
+    # keeps its resource (AiAgentJob sets should_release = false) and does NOT
+    # drain the topic queue (dequeue_next_for_topic only fires on terminal
+    # statuses done/failed/cancelled/escalated). Orphan detection must count all
+    # of these, otherwise a claimed-but-not-started or approval-paused slot looks
+    # free and a second waiter gets promoted into the same slot.
+    scope :occupying_topic_slot, ->(topic_id, creative_id = nil) {
+      rel = where(topic_id: topic_id, status: %w[running delegated pending pending_approval])
+      rel = rel.where(creative_id: creative_id) if creative_id
+      rel
     }
 
     # Check if agent already has an in-flight task triggered by the same comment.

@@ -40,7 +40,8 @@ module Collavre
         )
       end
 
-      def create_policy_with_stuck_detection(enabled: true, task_threshold: 30, creative_threshold: 120)
+      def create_policy_with_stuck_detection(enabled: true, task_threshold: 30, creative_threshold: 120,
+                                             queued_orphan_threshold: 5)
         Collavre::OrchestratorPolicy.create!(
           policy_type: "stuck_detection",
           scope_type: nil,
@@ -48,6 +49,7 @@ module Collavre
             "enabled" => enabled,
             "task_stuck_threshold_minutes" => task_threshold,
             "creative_stall_threshold_minutes" => creative_threshold,
+            "queued_orphan_threshold_minutes" => queued_orphan_threshold,
             "create_system_comment" => true
           }
         )
@@ -363,6 +365,348 @@ module Collavre
 
         assert_equal "failed", task.reload.status
       ensure
+        policy&.destroy
+      end
+
+      # --- Orphaned queued waiter detection & self-heal ---
+
+      def create_queued_task(comment_id:, creative_id: @creative.id, topic_id: @topic.id, age: 30.minutes)
+        task = Collavre::Task.create!(
+          name: "Queued waiter",
+          agent: @ai_agent,
+          status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => creative_id },
+            "comment" => { "id" => comment_id, "content" => "queued" },
+            "topic" => { "id" => topic_id }
+          },
+          topic_id: topic_id,
+          creative_id: creative_id
+        )
+        task.update_columns(created_at: age.ago, updated_at: age.ago)
+        task
+      end
+
+      test "detects orphaned queued waiter with no live blocker" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        orphan = create_queued_task(comment_id: 2001)
+
+        stuck_items = StuckDetector.new.detect
+        orphan_item = stuck_items.find { |i| i.type == :queued_orphan }
+
+        assert_not_nil orphan_item
+        assert_equal :orphaned_waiter, orphan_item.reason
+        assert_equal orphan.id, orphan_item.item.id
+      ensure
+        policy&.destroy
+      end
+
+      test "does not flag queued waiter while a live blocker exists for the topic" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        create_queued_task(comment_id: 2002)
+
+        # Live blocker running in the same topic/creative
+        Collavre::Task.create!(
+          name: "Live blocker",
+          agent: @ai_agent,
+          status: "running",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        policy&.destroy
+      end
+
+      test "does not flag recently queued waiter within threshold" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        create_queued_task(comment_id: 2003, age: 1.minute)
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        policy&.destroy
+      end
+
+      test "self-heals orphaned queued waiter by draining the topic queue" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        orphan = create_queued_task(comment_id: 2004)
+
+        calls = []
+        Collavre::Orchestration::AgentOrchestrator.stub(
+          :dequeue_next_for_topic, ->(t, c) { calls << [ t, c ] }
+        ) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal [ [ @topic.id, @creative.id ] ], calls
+      ensure
+        policy&.destroy
+      end
+
+      test "does not escalate orphaned queued waiters to admins" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        create_queued_task(comment_id: 2005)
+
+        inbox = Collavre::Creative.inbox_for(@human_user)
+        initial_inbox_count = inbox.comments.count
+
+        result = nil
+        Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(_t, _c) { nil }) do
+          result = StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal 0, result.escalated_count
+        assert_equal initial_inbox_count, inbox.comments.reload.count
+      ensure
+        policy&.destroy
+      end
+
+      test "self-heal fills only the free slots when several waiters are orphaned" do
+        # No scheduling policy → the topic serializes (one slot). Each dequeue
+        # moves a waiter queued -> pending synchronously (occupying_topic_slot
+        # counts pending), so the capacity recheck stops after the single free
+        # slot is filled — only one promotion even with two orphaned waiters.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        create_queued_task(comment_id: 2006)
+        create_queued_task(comment_id: 2007)
+
+        calls = []
+        Collavre::Orchestration::AgentOrchestrator.stub(
+          :dequeue_next_for_topic, lambda { |t, c|
+            calls << [ t, c ]
+            Collavre::Task.queued_for_topic(t, c).first&.update!(status: "pending")
+          }
+        ) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal 1, calls.count
+        assert_equal [ @topic.id, @creative.id ], calls.first
+      ensure
+        policy&.destroy
+      end
+
+      test "self-heal fills every free slot under topic_max > 1" do
+        # topic_max=2 with no live blocker = two free slots, so two orphaned
+        # waiters must both be promoted in one detection cycle. The capacity
+        # recheck counts each just-promoted pending task, bounding promotions to
+        # the free-slot count; a per-topic dedupe would instead leave the second
+        # waiter orphaned until the next StuckDetector run.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+        create_queued_task(comment_id: 2020)
+        create_queued_task(comment_id: 2021)
+
+        calls = []
+        Collavre::Orchestration::AgentOrchestrator.stub(
+          :dequeue_next_for_topic, lambda { |t, c|
+            calls << [ t, c ]
+            Collavre::Task.queued_for_topic(t, c).first&.update!(status: "pending")
+          }
+        ) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal 2, calls.count
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      test "self-heal promotes every orphaned waiter without cancelling the rest" do
+        # Real dequeue path (the topic_max>1 test above stubs it). Promoting one
+        # waiter destroys the topic's ⏳ notices, and a notice's destroy callback
+        # cancels a queued waiter — so without suppression the second orphan is
+        # cancelled instead of promoted, dropping its work.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+
+        # A human comment so refresh_deferred_context! keeps the promoted waiters
+        # (it cancels a promoted task that has no eligible triggering comment).
+        @creative.comments.create!(
+          content: "please respond", topic_id: @topic.id,
+          user: @human_user, skip_dispatch: true
+        )
+
+        w1 = create_queued_task(comment_id: 2030)
+        w2 = create_queued_task(comment_id: 2031)
+        2.times do
+          @creative.comments.create!(
+            content: "⏳ waiting on the topic", topic_id: @topic.id,
+            private: false, skip_default_user: true, topic_concurrency_defer: true
+          )
+        end
+
+        Collavre::AiAgentJob.stub(:perform_later, ->(*) { nil }) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal "pending", w1.reload.status, "first orphan must be promoted"
+        assert_equal "pending", w2.reload.status,
+                     "second orphan must be promoted, not cancelled by notice cleanup"
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      def create_scheduling_policy(topic_max:)
+        Collavre::OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          scope_type: nil,
+          config: { "topic_max_concurrent_jobs" => topic_max }
+        )
+      end
+
+      def create_running_blocker(name:)
+        Collavre::Task.create!(
+          name: name,
+          agent: @ai_agent,
+          status: "running",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+      end
+
+      test "flags orphaned waiter when topic has a free slot under topic_max > 1" do
+        # topic_max=2 with a single live blocker leaves one free slot, so a
+        # missed dequeue orphans the waiter — it must be self-healed rather than
+        # suppressed until the last blocker terminates.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+        orphan = create_queued_task(comment_id: 2010)
+        create_running_blocker(name: "Live blocker 1")
+
+        stuck_items = StuckDetector.new.detect
+        orphan_item = stuck_items.find { |i| i.type == :queued_orphan }
+
+        assert_not_nil orphan_item
+        assert_equal orphan.id, orphan_item.item.id
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      test "does not flag waiter when topic is at capacity under topic_max > 1" do
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+        create_queued_task(comment_id: 2011)
+        create_running_blocker(name: "Live blocker 1")
+        create_running_blocker(name: "Live blocker 2")
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      def create_topic_scheduling_policy(topic_max:)
+        Collavre::OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          scope_type: "Topic",
+          scope_id: @topic.id,
+          config: { "topic_max_concurrent_jobs" => topic_max }
+        )
+      end
+
+      test "honors topic-scoped topic_max below the global limit" do
+        # Global allows 2 concurrent, but this topic is serialized to 1. A single
+        # live blocker therefore fills the topic — the waiter is legitimately
+        # queued and must NOT be flagged. Resolving against the empty-context
+        # detector resolver would see the global 2 and wrongly self-heal,
+        # violating the topic's serialization.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        global = create_scheduling_policy(topic_max: 2)
+        scoped = create_topic_scheduling_policy(topic_max: 1)
+        create_queued_task(comment_id: 2012)
+        create_running_blocker(name: "Live blocker 1")
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        scoped&.destroy
+        global&.destroy
+        policy&.destroy
+      end
+
+      test "honors topic-scoped topic_max above the global limit" do
+        # Global serializes to 1, but this topic allows 2. A single live blocker
+        # leaves a free slot, so a missed dequeue orphans the waiter — it must be
+        # self-healed, not suppressed by the global limit.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        global = create_scheduling_policy(topic_max: 1)
+        scoped = create_topic_scheduling_policy(topic_max: 2)
+        orphan = create_queued_task(comment_id: 2013)
+        create_running_blocker(name: "Live blocker 1")
+
+        stuck_items = StuckDetector.new.detect
+        orphan_item = stuck_items.find { |i| i.type == :queued_orphan }
+
+        assert_not_nil orphan_item
+        assert_equal orphan.id, orphan_item.item.id
+      ensure
+        scoped&.destroy
+        global&.destroy
+        policy&.destroy
+      end
+
+      def create_pending_claim(name:)
+        Collavre::Task.create!(
+          name: name,
+          agent: @ai_agent,
+          status: "pending",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+      end
+
+      test "does not flag waiter when a prior dequeue is still pending" do
+        # topic_max=1 and a waiter was already dequeued (queued -> pending) but its
+        # AiAgentJob has not started, so running_for_topic is empty. The remaining
+        # queued waiter must NOT be flagged: the pending task is a claimed slot, and
+        # promoting the waiter would double-dequeue into a topic_max=1 topic.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 1)
+        create_pending_claim(name: "Claimed but not started")
+        create_queued_task(comment_id: 2014)
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      def create_pending_approval(name:)
+        Collavre::Task.create!(
+          name: name,
+          agent: @ai_agent,
+          status: "pending_approval",
+          topic_id: @topic.id,
+          creative_id: @creative.id
+        )
+      end
+
+      test "does not flag waiter when a task is paused awaiting tool approval" do
+        # topic_max=1 and the slot holder is paused on pending_approval: it keeps
+        # its resource (should_release = false) and does NOT drain the queue
+        # (dequeue only fires on terminal statuses). running_for_topic is empty,
+        # but the queued waiter is still legitimately blocked — promoting it would
+        # run a second task concurrently with the approval-paused one, violating
+        # topic serialization. The waiter must NOT be flagged.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 1)
+        create_pending_approval(name: "Paused awaiting approval")
+        create_queued_task(comment_id: 2015)
+
+        stuck_items = StuckDetector.new.detect
+        assert_nil stuck_items.find { |i| i.type == :queued_orphan }
+      ensure
+        sched&.destroy
         policy&.destroy
       end
 

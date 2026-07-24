@@ -4,41 +4,23 @@ module Collavre
   module Api
     module V1
       class BaseController < ActionController::API
+        include Collavre::Api::Authenticatable
+
         before_action :authenticate!
+
+        rescue_from Collavre::ApiError do |e|
+          render json: { error: e.message }, status: e.status
+        end
 
         private
 
         def authenticate!
           token = extract_bearer_token
-          if token.blank?
-            render json: { error: "Missing authentication token" }, status: :unauthorized
-            return
+          raise Collavre::ApiError.new("Missing authentication token", status: :unauthorized) if token.blank?
+
+          unless find_user_by_bearer_token(token)
+            raise Collavre::ApiError.new("Invalid authentication token", status: :unauthorized)
           end
-
-          access_token = Doorkeeper::AccessToken.by_token(token)
-          unless access_token&.accessible?
-            render json: { error: "Invalid authentication token" }, status: :unauthorized
-            return
-          end
-
-          user = Collavre::User.find_by(id: access_token.resource_owner_id)
-          unless user
-            render json: { error: "User not found" }, status: :unauthorized
-            return
-          end
-
-          Collavre::Current.user = user
-        end
-
-        def extract_bearer_token
-          auth_header = request.headers["Authorization"]
-          return nil unless auth_header&.start_with?("Bearer ")
-
-          auth_header.sub("Bearer ", "")
-        end
-
-        def current_user
-          Collavre::Current.user
         end
       end
     end

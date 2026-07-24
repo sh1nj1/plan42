@@ -136,6 +136,10 @@ en:
         metadata_save: Save
         toggle_markdown: Markdown
         toggle_richtext: Rich Text
+        save_status_pending: Save pending
+        save_status_saving: Saving…
+        save_status_saved: Saved
+        save_status_error: Save failed
         markdown_to_richtext_confirm: Switching to Rich Text will discard the Markdown
           source. Continue?
         richtext_to_markdown_confirm: Switching to Markdown will discard the current
@@ -156,6 +160,8 @@ en:
       errors:
         no_permission: You do not have permission to perform this action.
         metadata_must_be_object: Metadata must be an object.
+        description_read_only_source: cannot be changed directly for read-only source
+          content
       inline_editor:
         placeholder: Describe the creative…
         markdown_placeholder: Write in Markdown…

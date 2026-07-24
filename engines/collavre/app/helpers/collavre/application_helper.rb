@@ -14,6 +14,7 @@ module Collavre
       collavre/org_chart
       collavre/popup
       collavre/comments_popup
+      collavre/tables
       collavre/code_highlight
       collavre/comment_versions
       collavre/mention_menu

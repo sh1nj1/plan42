@@ -57,7 +57,7 @@ env:
     - FIREBASE_AUTH_DOMAIN
     - FIREBASE_PROJECT_ID
     - FIREBASE_APP_ID
-    - FIREBASE_SERVICE_ACCOUNT
+    - FCM_WIF_SERVICE_ACCOUNT_EMAIL
     - FIREBASE_SERVICE_ACCOUNT_JSON
     - FCM_WIF_AUDIENCE
     - FCM_WIF_CREDENTIAL_SOURCE
@@ -75,10 +75,16 @@ env:
     - ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
     - ORIGIN_SHARED_SECRET
     - PUBLIC_ASSETS_HOST
+    - LINEAR_CLIENT_ID
+    - LINEAR_CLIENT_SECRET
+    - LINEAR_OAUTH_REDIRECT_URI
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
-    # When you start using multiple servers, you should split out job processing to a dedicated machine.
-    SOLID_QUEUE_IN_PUMA: true
+    # Defaults on for single-server deployments. Targets that share a database
+    # with another deployment set SOLID_QUEUE_IN_PUMA=false in their env file so
+    # only one host claims from the shared queue — a host running older code
+    # otherwise picks up jobs it cannot run.
+    SOLID_QUEUE_IN_PUMA: <%= ENV.fetch('SOLID_QUEUE_IN_PUMA', 'true') %>
 
     # Set number of processes dedicated to Solid Queue (default: 1)
     # JOB_CONCURRENCY: 3

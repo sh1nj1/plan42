@@ -18,6 +18,48 @@ module Collavre
       assert_equal "", MarkdownConverter.markdown_to_html(nil)
     end
 
+    test "markdown_to_html emits fenced code blocks without inline syntect styles" do
+      # comrak's default highlighter bakes a fixed base16-ocean.dark theme inline,
+      # which overrides our theme-aware CSS. We disable it and let the client
+      # re-tokenize, so the stored HTML must carry no inline color styles but keep
+      # the language hint for highlight.js.
+      html = MarkdownConverter.markdown_to_html("```ruby\nputs :hi\n```")
+      assert_includes html, '<pre lang="ruby">'
+      assert_includes html, "puts :hi"
+      refute_includes html, "background-color"
+      refute_includes html, "style=\"color"
+    end
+
+    test "markdown_to_html renders a single newline as a hard break" do
+      # Mirrors the JS renderer (marked breaks:true): consecutive rich-editor
+      # lines are stored one-per-line and must render as <br>, not be joined.
+      html = MarkdownConverter.markdown_to_html("abc\ndef")
+      assert_includes html, "<br"
+      assert_includes html, "abc"
+      assert_includes html, "def"
+      # Stays a single paragraph (line break, not a paragraph break).
+      assert_equal 1, html.scan("<p>").length
+    end
+
+    test "markdown_to_html keeps a blank line as a paragraph break" do
+      html = MarkdownConverter.markdown_to_html("abc\n\ndef")
+      assert_equal 2, html.scan("<p>").length
+    end
+
+    test "markdown_to_html renders a non-breaking-space line as a visible blank line" do
+      # The Lexical serializer stores a user's empty line as a U+00A0 line so it
+      # survives Markdown rendering instead of collapsing. With hardbreaks the
+      # nbsp line becomes a blank visual row inside one paragraph (a<br>nbsp<br>b),
+      # and N empty lines render as N blank rows.
+      html = MarkdownConverter.markdown_to_html("abc\n\u00A0\ndef")
+      assert_equal 1, html.scan("<p>").length
+      assert_equal 2, html.scan("<br").length
+      assert_includes html, "\u00A0"
+
+      two = MarkdownConverter.markdown_to_html("abc\n\u00A0\n\u00A0\ndef")
+      assert_equal 3, two.scan("<br").length
+    end
+
     test "html_to_markdown handles nil" do
       assert_equal "", MarkdownConverter.html_to_markdown(nil)
     end

@@ -9,14 +9,30 @@ export default class extends Controller {
     }
     document.addEventListener('keydown', this._escHandler)
 
-    // Global keyboard shortcut: Cmd/Ctrl + K to open search
+    // Global keyboard shortcut: Cmd/Ctrl + K to open search.
+    // Skip when focus is inside an editable element (input, textarea,
+    // contenteditable, or the inline Lexical editor) so that element's own
+    // Ctrl+K behavior (e.g. delete-to-end-of-line) takes precedence over the
+    // global search popup.
     this._shortcutHandler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        if (this._isEditableTarget(e.target)) return
         e.preventDefault()
         this.toggle()
       }
     }
     document.addEventListener('keydown', this._shortcutHandler)
+  }
+
+  _isEditableTarget(target) {
+    const el = target instanceof Element ? target : document.activeElement
+    if (!el || typeof el.closest !== 'function') return false
+    const tag = el.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+    if (el.isContentEditable) return true
+    return Boolean(
+      el.closest('[contenteditable]:not([contenteditable="false"]), [data-lexical-editor-root]')
+    )
   }
 
   disconnect() {

@@ -126,22 +126,8 @@ module Collavre
           "id" => @agent.id,
           "name" => @agent.name,
           "display_name" => @agent.display_name,
-          "type" => extract_agent_type
+          "type" => AgentTypeClassifier.classify(@agent)
         }
-      end
-
-      def extract_agent_type
-        # Extract agent type from system_prompt or default
-        prompt = @agent.system_prompt.to_s.downcase
-        case prompt
-        when /developer|개발/ then "developer"
-        when /pm|project.?manager|프로젝트/ then "pm"
-        when /qa|test|quality|테스트|품질/ then "qa"
-        when /research|조사|연구/ then "researcher"
-        when /market|마케팅/ then "marketer"
-        when /plan|기획/ then "planner"
-        else "agent"
-        end
       end
 
       def build_collaborators

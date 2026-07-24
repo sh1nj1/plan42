@@ -1,6 +1,11 @@
 require_relative "../application_system_test_case"
 
 class OauthProviderTest < ApplicationSystemTestCase
+  # Generous wait for full-page navigations, which can queue behind other system
+  # tests sharing the Puma server when the suite runs in parallel. Capybara's
+  # default 2s is too tight under that load and caused flaky failures.
+  NAV_WAIT = 15
+
   setup do
     @user = User.create!(
       email: "test@example.com",
@@ -27,9 +32,16 @@ class OauthProviderTest < ApplicationSystemTestCase
     )
 
     assert_content "Authorize Test Client to use your account?"
+    assert_button "Authorize"
     click_on "Authorize"
 
-    assert_content "Authorization code"
-    assert_selector "code", text: /.+/
+    # Consent is a plain full-page POST that renders the authorization code page.
+    # Under parallel-suite load this navigation can take longer than Capybara's
+    # default 2s wait, which left the assertion looking at the still-visible
+    # consent screen and failing flakily. Wait explicitly for the navigation to
+    # complete instead of relying on the default timeout.
+    assert_no_content "Authorize Test Client to use your account?", wait: NAV_WAIT
+    assert_content "Authorization code", wait: NAV_WAIT
+    assert_selector "code#authorization_code", text: /.+/, wait: NAV_WAIT
   end
 end
