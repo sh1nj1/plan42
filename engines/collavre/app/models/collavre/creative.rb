@@ -170,12 +170,50 @@ module Collavre
       existing = profiles.where(user: user).order(:id).first
       return existing if existing
 
-      profiles.create_or_find_by!(user: user) do |creative|
-        creative.description = user.name.to_s
-        creative.data = { "kind" => PROFILE_KIND }
-        creative.progress = 0.0
+      created = false
+      creative = profiles.create_or_find_by!(user: user) do |c|
+        c.description = user.name.to_s
+        c.data = { "kind" => PROFILE_KIND }
+        c.progress = 0.0
+        created = true
       end
+      grant_creator_admin_share(creative, user) if created
+      creative
     end
+
+    # A managed AI agent's profile creative is owned by the agent itself, so its
+    # human creator has no Creative-level path to it (permissions are owner or
+    # CreativeShare only). Give the creator `admin` on creation: admin — not
+    # write — because the profile subtree is where the agent's skills live, and
+    # approving an agent's use of a feedback-level skill is an owner/admin act.
+    #
+    # Only for AI agents: `created_by_id` is also set on humans invited by
+    # another user, and a person's own profile must never be exposed to whoever
+    # created their account.
+    #
+    # Granted once, at profile creation only — never re-asserted on later
+    # profile_for calls, so a creator who deliberately removes the share (or
+    # lowers it) keeps that decision.
+    def self.grant_creator_admin_share(creative, user)
+      return unless user.respond_to?(:ai_user?) && user.ai_user?
+
+      creator_id = user.try(:created_by_id)
+      return if creator_id.blank? || creator_id == user.id
+
+      share = Collavre::CreativeShare.new(
+        creative: creative,
+        user_id: creator_id,
+        shared_by: user,
+        permission: :admin
+      )
+      # The creator is the actor here, so the "X shared a creative with you"
+      # inbox message would be addressed from them to themselves.
+      share.skip_recipient_notification = true
+      share.save!
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      Rails.logger.warn("[Creative#profile_for] creator share skipped for user #{user.id}: #{e.message}")
+    end
+    private_class_method :grant_creator_admin_share
 
     attr_accessor :filtered_progress
 
