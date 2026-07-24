@@ -97,6 +97,10 @@ class VoiceCommandService @Inject constructor(
     private val _speakingEventId = MutableStateFlow<Long?>(null)
     val speakingEventId: StateFlow<Long?> = _speakingEventId
 
+    // Bumped by every interrupt(). A reply request spans a suspension point, so this is
+    // what tells its completion that the loop has already moved on without it.
+    private var currentTurn = 0L
+
     @Volatile private var loopStarted = false
 
     fun configure(locale: String, ttsRate: Float) {
@@ -170,6 +174,10 @@ class VoiceCommandService @Inject constructor(
     private fun markSpokenRead() {
         val eventId = _speakingEventId.value ?: return
         _speakingEventId.value = null
+        markRead(eventId)
+    }
+
+    private fun markRead(eventId: Long) {
         scope.launch { runCatching { repository.markRead(eventId) } }
     }
 
@@ -179,6 +187,9 @@ class VoiceCommandService @Inject constructor(
         tts.stop()
         recognizer.cancel() // discard any in-flight utterance; don't post it as a reply
         markSpokenRead()
+        // Retire the turn: a reply request may still be in flight, and its completion
+        // must not drive the session that is about to start.
+        currentTurn++
         _state.value = VoiceState.IDLE
     }
 
@@ -205,6 +216,9 @@ class VoiceCommandService @Inject constructor(
             return
         }
         val msg = _messages.value.firstOrNull { it.eventId == eventId } ?: return
+        // Reading it here IS its turn in the queue; leaving the entry there would have
+        // the pump() below immediately read it a second time.
+        queue.removeAll { it.eventId == eventId }
         interrupt() // whatever was mid-read settles its own read state first
         recognizer.reset()
         _activeEventId.value = eventId
@@ -219,6 +233,10 @@ class VoiceCommandService @Inject constructor(
      *  With the Inbox#Main sentinel active, the reply is a cold utterance to Main. */
     fun replyTo(eventId: Long) {
         interrupt() // drops the prior listen so its tail can't post to the old thread
+        // Answering a still-queued notice is dealing with it: drop the entry so it is not
+        // read aloud after the reply, and settle its read state — ingest's `seen` set now
+        // suppresses the re-emitted notice, so leaving it unread would strand it.
+        if (queue.removeAll { it.eventId == eventId }) markRead(eventId)
         _activeEventId.value = eventId
         listen()
     }
@@ -263,9 +281,19 @@ class VoiceCommandService @Inject constructor(
             return
         }
         _state.value = VoiceState.THINKING
+        val turn = currentTurn
         scope.launch {
             val result = runCatching {
                 if (eventId != null) repository.respond(eventId, text) else repository.sendCommand(text)
+            }
+            // An interruption during THINKING hands the loop to a new play/reply session
+            // while this request is still open. Everything below belongs to a turn that no
+            // longer owns the state — speaking here would talk over the new session, and
+            // pump()/clearing the selection would pull the queue and the reply target out
+            // from under it. Keep the answer in the log and stop.
+            if (turn != currentTurn) {
+                result.onSuccess { addExchange(text, it.reply) }
+                return@launch
             }
             result.onSuccess { resp ->
                 addExchange(text, resp.reply)
