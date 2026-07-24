@@ -193,14 +193,27 @@ module CollavreNotion
       id.to_s
     end
 
-    # An explicit endpoint always wins; otherwise follow the same mock decision
-    # the OmniAuth middleware made, so the token in hand and the host it is sent
-    # to always come from the same integration. Deciding it here separately —
-    # on ENV["NOTION_CLIENT_ID"] alone — sent developers whose credentials live
-    # in Rails credentials or in the admin UI to the mock server, and ignored
-    # NOTION_MOCK in both directions.
+    # Outside production an explicit endpoint wins: it is how the mock server and
+    # any local proxy are reached. Under RAILS_ENV=production it is ignored, the
+    # same early return CollavreNotion.mock_enabled? makes — Notion has no
+    # self-hosted edition, so there is no host to point at but api.notion.com,
+    # and #headers sends the user's real workspace token as a Bearer credential.
+    # One env var that redirects every user's token to an arbitrary host is not
+    # worth an override with no legitimate production use.
+    #
+    # GITHUB_API_ENDPOINT is deliberately not the same case: GitHub Enterprise
+    # Server is a real production target, which is why it is a registered
+    # integration setting (github_api_endpoint, admin UI, DB > ENV) rather than
+    # an ENV-only override. There is no notion_api_endpoint key to match it.
+    #
+    # Otherwise follow the same mock decision the OmniAuth middleware made, so
+    # the token in hand and the host it is sent to always come from the same
+    # integration. Deciding it here separately — on ENV["NOTION_CLIENT_ID"]
+    # alone — sent developers whose credentials live in Rails credentials or in
+    # the admin UI to the mock server, and ignored NOTION_MOCK in both directions.
     def resolve_base_url
-      return ENV["NOTION_API_ENDPOINT"] if ENV["NOTION_API_ENDPOINT"].present?
+      override = ENV["NOTION_API_ENDPOINT"].presence
+      return override if override && !Rails.env.production?
 
       CollavreNotion.mock_enabled? ? CollavreNotion.mock_server_base_url : DEFAULT_BASE_URL
     end

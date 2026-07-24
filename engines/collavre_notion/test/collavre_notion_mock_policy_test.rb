@@ -67,6 +67,18 @@ class CollavreNotionMockPolicyTest < ActiveSupport::TestCase
     end
   end
 
+  # The override is how the mock server is reached, so it is dev/test only —
+  # in production it would let one env var send every user's workspace token,
+  # which #headers sends as a Bearer credential, to a host of the setter's
+  # choosing. Notion has no self-hosted edition for it to legitimately name.
+  test "production ignores an explicit endpoint" do
+    in_env("production", "NOTION_CLIENT_ID" => "real-id", "NOTION_MOCK" => nil,
+           "NOTION_API_ENDPOINT" => "http://attacker.test/v1") do
+      assert_equal CollavreNotion::NotionClient::DEFAULT_BASE_URL, base_url,
+        "a deployed host must not be redirectable by an env var"
+    end
+  end
+
   # NOTION_MOCK_PORT is how a developer gets off a conflicting port. It moves the
   # server; a client default frozen on 4568 would then dial nothing.
   test "NOTION_MOCK_PORT moves the mocked client with the mock server" do
