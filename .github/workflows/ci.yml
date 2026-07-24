@@ -72,6 +72,11 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+      # script/lightsail_launch.sh provisions a host, so nothing else in CI can
+      # exercise it. These are its pure helpers, run as plain bash.
+      - name: Test shell script helpers
+        run: bash script/test/lightsail_launch_test.sh
+
   # Production runs PostgreSQL while dev/test run SQLite, so db/schema.rb is
   # dumped from SQLite and can silently pick up SQLite-only constructs (e.g.
   # json_extract expression indexes) that crash `db:schema:load` on Postgres —

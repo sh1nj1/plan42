@@ -127,17 +127,55 @@ urlencode() {
   printf '%s' "$out"
 }
 
-# Append a managed block to a config file exactly once, keyed by a marker.
+# Keep a managed block in a config file equal to $content, keyed by a marker.
+# Added on the first run; on later runs the body is replaced in place, so a
+# FORCE=1 re-run with a changed DOCKER_SUBNETS or INSTANCE_HOSTNAME converges
+# the host instead of leaving the previous value in force. In place, not
+# delete-and-append: pg_hba.conf is first-match-wins, and moving the rule to
+# the end of the file could park it behind one that already rejects.
 ensure_block() {
   local file="$1" marker="$2" content="$3"
-  if grep -qF "# BEGIN collavre:$marker" "$file" 2>/dev/null; then
+  local begin="# BEGIN collavre:$marker" end="# END collavre:$marker"
+
+  if ! grep -qF "$begin" "$file" 2>/dev/null; then
+    {
+      printf '\n%s (managed by script/lightsail_launch.sh)\n' "$begin"
+      printf '%s\n' "$content"
+      printf '%s\n' "$end"
+    } >> "$file"
     return 0
   fi
-  {
-    printf '\n# BEGIN collavre:%s (managed by script/lightsail_launch.sh)\n' "$marker"
-    printf '%s\n' "$content"
-    printf '# END collavre:%s\n' "$marker"
-  } >> "$file"
+
+  grep -qF "$end" "$file" || \
+    die "$file: '$begin' with no '$end'. Refusing to rewrite a block I cannot delimit — repair or delete it by hand."
+
+  local tmp
+  tmp="$(mktemp)"
+  # index() rather than an anchored match, so awk sees exactly the lines the
+  # grep above found. END exits non-zero on an unterminated block (END marker
+  # before BEGIN), which would otherwise swallow the rest of the file.
+  if ! BLOCK_BEGIN="$begin" BLOCK_END="$end" BLOCK_BODY="$content" awk '
+      BEGIN { b = ENVIRON["BLOCK_BEGIN"]; e = ENVIRON["BLOCK_END"] }
+      !inside && index($0, b) {
+        inside = 1
+        print b " (managed by script/lightsail_launch.sh)"
+        print ENVIRON["BLOCK_BODY"]
+        print e
+        next
+      }
+      inside && index($0, e) { inside = 0; next }
+      inside { next }
+      { print }
+      END { if (inside) exit 1 }
+    ' "$file" > "$tmp"; then
+    rm -f "$tmp"
+    die "$file: collavre:$marker block is malformed (END before BEGIN?). Repair it by hand."
+  fi
+
+  # Through the existing inode: pg_hba.conf is postgres:postgres 0640, and a
+  # mv from mktemp would hand it root:root 0600 and stop PostgreSQL reading it.
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
 }
 
 # --------------------------------------------------------------------------
