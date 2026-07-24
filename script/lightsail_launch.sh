@@ -11,7 +11,8 @@
 # What it does (host preparation only — it never builds or runs the app):
 #
 #   1. base packages, timezone, swap, SSH hardening
-#   2. a deploy user (default: collavre) in the docker group, for `kamal`
+#   2. a deploy user (default: collavre) in the docker group for `kamal`, with
+#      passwordless sudo for the maintenance commands in the runbook
 #   3. Docker CE + buildx + compose plugins, with log rotation
 #   4. PostgreSQL, reachable ONLY from containers on this host
 #   5. the collavre_production database + application role (idempotent)
@@ -178,6 +179,45 @@ ensure_block() {
   rm -f "$tmp"
 }
 
+# Give $1 passwordless sudo, and make sure it is the only deploy user holding
+# a grant this script wrote. `usermod -aG sudo` on its own does not work here:
+# `adduser --disabled-password` leaves `!` in /etc/shadow and Ubuntu's %sudo
+# rule is password-authenticated, so every sudo the runbook sends over ssh
+# fails with "a password is required".
+#
+# NOPASSWD:ALL rather than a command list. This user is already in the docker
+# group, which is root-equivalent — `docker run -v /:/host` is a root shell —
+# so an allowlist would withhold nothing it does not already have, while
+# breaking the next maintenance command someone documents.
+ensure_sudoers() {
+  local user="$1" dir="${2:-/etc/sudoers.d}" tmp existing
+  # sudo's includedir skips any filename that contains '.' or ends in '~', and
+  # a Linux username may legally contain a dot.
+  local name="90-collavre-${user//[^A-Za-z0-9_-]/_}"
+
+  tmp="$(mktemp)"
+  printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' "$user" > "$tmp"
+  chmod 0440 "$tmp"
+  # Validate before installing, never after. A syntax error anywhere under
+  # sudoers.d makes sudo refuse to run for *every* user ("no valid sudoers
+  # sources found"), and step 3 has just set PermitRootLogin no — there would
+  # be no way back into the host.
+  if ! visudo -cf "$tmp" >/dev/null 2>&1; then
+    rm -f "$tmp"
+    die "refusing to install an unparseable sudoers file for '$user'"
+  fi
+  # Owned by root by construction: this script runs as root (checked above).
+  install -m 0440 "$tmp" "$dir/$name"
+  rm -f "$tmp"
+
+  # Converge rather than accumulate: a FORCE=1 re-run with a changed
+  # APP_SSH_USER must not leave the previous user's grant in force.
+  for existing in "$dir"/90-collavre-*; do
+    [ -e "$existing" ] || continue
+    [ "$existing" = "$dir/$name" ] || rm -f "$existing"
+  done
+}
+
 # --------------------------------------------------------------------------
 log "1/9 base packages"
 # --------------------------------------------------------------------------
@@ -233,6 +273,8 @@ if ! id -u "$APP_SSH_USER" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "Collavre deploy" "$APP_SSH_USER"
 fi
 usermod -aG sudo "$APP_SSH_USER"
+install -d -m 0755 /etc/sudoers.d
+ensure_sudoers "$APP_SSH_USER"
 
 APP_HOME="$(getent passwd "$APP_SSH_USER" | cut -d: -f6)"
 install -d -m 0700 -o "$APP_SSH_USER" -g "$APP_SSH_USER" "$APP_HOME/.ssh"
@@ -536,7 +578,7 @@ Collavre Lightsail host — provisioned $(date -Is)
 
   public IP        $PUBLIC_IP
   private IP       $PRIVATE_IP
-  deploy user      $APP_SSH_USER (docker, sudo)
+  deploy user      $APP_SSH_USER (docker, passwordless sudo)
   PostgreSQL       $PG_MAJOR, listening on localhost + $DB_BIND_ADDRESS only
   database         $DB_NAME owned by $DB_USER
   db password      $STATE_DIR/db_password (root only)$PASSWORD_NOTE

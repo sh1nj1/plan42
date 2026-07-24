@@ -14,18 +14,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 [ -f "$SRC" ] || { echo "no such script: $SRC" >&2; exit 1; }
 
-# die() is a one-liner; ensure_block() runs to the first column-1 closing brace.
+# die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
-  /^die\(\) \{/ { print }
-  /^ensure_block\(\) \{/ { f = 1 }
+  /^die\(\) \{/ { print; next }
+  /^(ensure_block|ensure_sudoers)\(\) \{/ { f = 1 }
   f { print }
-  f && /^\}/ { exit }
+  f && /^\}/ { f = 0 }
 ' "$SRC")"
 
-declare -F die >/dev/null && declare -F ensure_block >/dev/null || {
-  echo "could not extract die/ensure_block from $SRC — has the definition moved?" >&2
-  exit 1
-}
+for fn in die ensure_block ensure_sudoers; do
+  declare -F "$fn" >/dev/null || {
+    echo "could not extract $fn() from $SRC — has the definition moved?" >&2
+    exit 1
+  }
+done
 
 fail=0
 chk() {
@@ -110,6 +112,43 @@ before="$(cat "$f")"
 (ensure_block "$f" docker "NEW") >/dev/null 2>&1
 chk "exits non-zero"  1          "$?"
 chk "file untouched"  "$before"  "$(cat "$f")"
+
+echo "8. the deploy user gets a sudoers grant sudo will actually read"
+d=$(mktemp -d)
+ensure_sudoers collavre "$d"
+chk "one file"        1        "$(ls "$d" | wc -l | tr -d ' ')"
+chk "readable name"   "90-collavre-collavre" "$(ls "$d")"
+chk "mode 0440"       "440"    "$(file_mode "$d/90-collavre-collavre")"
+chk "passwordless"    "collavre ALL=(ALL:ALL) NOPASSWD:ALL" "$(cat "$d/90-collavre-collavre")"
+# sudo's includedir ignores any filename containing a dot, so a grant written
+# for a dotted username would be silently skipped — the exact failure mode
+# this whole case exists to prevent.
+ensure_sudoers deploy.bot "$d"
+chk "dot sanitized"   "90-collavre-deploy_bot" \
+  "$(ls "$d" | grep deploy)"
+chk "no dot in name"  0 "$(ls "$d" | grep -c '\.')"
+
+echo "9. a changed APP_SSH_USER revokes the previous grant"
+# Same reason ensure_block replaces in place: converge the host, do not
+# accumulate. A stale NOPASSWD line is a login that outlives its purpose.
+chk "old user's grant gone" 0 "$(ls "$d" | grep -c 'collavre-collavre')"
+chk "only the current one"  1 "$(ls "$d" | wc -l | tr -d ' ')"
+# An operator's own file is not ours to delete.
+touch "$d/10-operator"
+ensure_sudoers collavre "$d"
+chk "operator file kept"    1 "$(ls "$d" | grep -c '^10-operator$')"
+
+echo "10. an unparseable grant is refused, and nothing is installed"
+d=$(mktemp -d)
+visudo() { return 1; }   # stands in for a sudoers syntax error
+out="$( (ensure_sudoers collavre "$d") 2>&1 )"
+chk "exits non-zero"  1  "$?"
+chk "no file written" 0  "$(ls "$d" | wc -l | tr -d ' ')"
+case "$out" in
+  *unparseable*) echo "  ok   says what is wrong" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+unset -f visudo
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

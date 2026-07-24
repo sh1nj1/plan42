@@ -49,7 +49,7 @@ Common overrides:
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys` |
-| `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER` |
+| `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt |
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump |
 | `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
@@ -355,6 +355,7 @@ both the Lightsail firewall and ufw (the script already allows 443).
 | Launch script did nothing | `/var/log/collavre-launch.log`, `/var/log/cloud-init-output.log` |
 | `kamal` can't SSH | `sudo cat /home/collavre/.ssh/authorized_keys` — empty means no `SSH_PUBLIC_KEY` and no key to copy |
 | `kamal` SSH works, Docker denied | Reconnect: `docker` group membership needs a new session |
+| `sudo: a password is required` | The deploy user has no password, so `%sudo` alone cannot authenticate it. `sudo ls /etc/sudoers.d/90-collavre-*` from the `ubuntu` account — missing means the host predates that grant; re-run the launch script with `FORCE=1` |
 | App: `could not connect to server` | `sudo ss -lntp \| grep 5432` should show `127.0.0.1:5432` **and** `172.17.0.1:5432` |
 | App: `password authentication failed` | `sudo cat /var/lib/collavre/db_password` vs `DATABASE_URL` — the URL holds the [percent-encoded](#a-custom-db_password-is-percent-encoded-in-database_url) form |
 | PostgreSQL won't start after reboot | `sysctl net.ipv4.ip_nonlocal_bind` must be `1`; `journalctl -u postgresql@17-main` |
