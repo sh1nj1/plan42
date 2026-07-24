@@ -16,9 +16,9 @@ module Collavre
       def handle(error, summary: nil)
         cleanup_placeholder
 
-        broadcast_idle
-
         update_task(error)
+
+        broadcast_pending_approval
 
         log_action(error)
 
@@ -31,12 +31,19 @@ module Collavre
         @reply_comment&.destroy! if @reply_comment&.content == Comment::STREAMING_PLACEHOLDER_CONTENT
       end
 
-      def broadcast_idle
+      # The agent has stopped producing output, but the task has not finished:
+      # it holds its topic slot until the tool call is approved or rejected, and
+      # TasksController#cancel still accepts it. Broadcasting "idle" here made
+      # the client drop the task and stop polling, so the pending_approval status
+      # this method announces was never observed and Stop disappeared on the one
+      # turn that is waiting on the user. Sent after update_task so a client that
+      # reacts by polling reads the status this payload claims.
+      def broadcast_pending_approval
         return unless @creative
 
         CommentsPresenceChannel.broadcast_agent_status(
           @creative.effective_origin.id,
-          status: "idle",
+          status: "pending_approval",
           agent_id: @agent.id,
           agent_name: @agent.display_name,
           task_id: @task.id,

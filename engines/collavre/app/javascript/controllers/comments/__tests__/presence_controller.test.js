@@ -321,4 +321,38 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       expect(controller.activeAgentTasks['9']).toEqual([77])
     })
   })
+
+  describe('agent_status for a task paused on approval', () => {
+    const agentStatus = (status) => ({
+      agent_status: { id: 9, name: 'Agent', status, task_id: 55, creative_id: '123' },
+    })
+
+    beforeEach(() => {
+      controller.handlePresenceMessage(agentStatus('streaming'))
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.agentTaskPollHandle).not.toBeNull()
+    })
+
+    // The server pauses the task on pending_approval while it still holds the
+    // topic slot and still accepts cancel. Dropping it here would also stop the
+    // poll, so nothing would ever observe that status.
+    test('keeps the task and the poll, and still offers Stop', () => {
+      controller.handlePresenceMessage(agentStatus('pending_approval'))
+
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.typingUsers['9']).toBe('Agent')
+      expect(controller.agentTaskPollHandle).not.toBeNull()
+      expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).not.toBeNull()
+    })
+
+    // The other direction: a genuinely finished turn must still clear at once,
+    // rather than lingering until the next poll.
+    test('idle still drops the task and stops the poll', () => {
+      controller.handlePresenceMessage(agentStatus('idle'))
+
+      expect(controller.activeAgentTasks['9']).toBeUndefined()
+      expect(controller.typingUsers['9']).toBeUndefined()
+      expect(controller.agentTaskPollHandle).toBeNull()
+    })
+  })
 })

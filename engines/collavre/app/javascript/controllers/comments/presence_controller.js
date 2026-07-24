@@ -16,6 +16,12 @@ const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if
 // still accepts both, so dropping them hides Stop exactly when it is wanted.
 const ACTIVE_TASK_STATUSES = new Set(['running', 'pending', 'queued', 'delegated', 'pending_approval'])
 
+// agent_status values that keep a task registered. thinking/streaming are the
+// agent producing output; pending_approval is it paused on a tool approval,
+// which is not the end of the task — treating it as idle would drop the task
+// and stop the poll, so the status above could never be seen.
+const LIVE_AGENT_STATUSES = new Set(['thinking', 'streaming', 'pending_approval'])
+
 export default class extends Controller {
   static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow']
 
@@ -265,7 +271,7 @@ export default class extends Controller {
         return
       }
       const isNewAgent = (status === 'thinking' || status === 'streaming') && !(id in this.typingUsers)
-      if (status === 'thinking' || status === 'streaming') {
+      if (LIVE_AGENT_STATUSES.has(status)) {
         this.typingUsers[id] = name
         this.agentStates[id] = status
         if (!this.activeAgentTasks[id]) this.activeAgentTasks[id] = []
