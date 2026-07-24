@@ -1,0 +1,37 @@
+en:
+  collavre:
+    drop_trigger:
+      child_entered: "🔔 Drop Trigger — Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
+      no_agent: "⚠️ Drop Trigger failed — No AI agent with write permission found on '%{parent_description}'. Please share an AI agent with write permission to enable automatic processing."
+
+      not_a_container: "Parent is not a trigger container"
+      toggle_on: "Drop Trigger enabled"
+      toggle_off: "Drop Trigger disabled"
+    trigger_loop:
+      instructions: |
+        ---
+        [LOOP INSTRUCTIONS]
+        This is a looped trigger. Report your status at the end of each response:
+        - [STATUS: DONE] — ALL actions fully executed and verified. Do NOT report DONE if any action remains unexecuted (e.g. moving creatives, creating PRs, updating records). If you describe remaining work in your response, you are NOT done — use CONTINUE instead.
+        - [STATUS: CONTINUE] — making progress, but some actions still need to be executed
+        - [STATUS: BLOCKED reason] — cannot proceed without help
+      continue: "🔄 Trigger Loop — iteration %{iteration}/%{max}. Previous work is incomplete. Please continue where you left off and report [STATUS: DONE/CONTINUE/BLOCKED]."
+      retry: "🔄 Trigger Loop — iteration %{iteration}/%{max}. The previous attempt failed due to an infrastructure error (timeout/connection). Please try again from the beginning and report [STATUS: DONE/CONTINUE/BLOCKED]."
+      awaiting_user: "⏸️ Trigger Loop paused — Awaiting user input at iteration %{iteration}. The agent has requested your approval or action. Reply in this topic to resume automatically."
+      user_resumed: "🔄 Trigger Loop — iteration %{iteration}/%{max}. User has responded. Please continue where you left off, incorporating the user's input, and report [STATUS: DONE/CONTINUE/BLOCKED]."
+      stuck: "⚠️ Trigger Loop paused — Agent reported BLOCKED at iteration %{iteration}. User intervention may be needed."
+      max_reached: "⚠️ Trigger Loop stopped — Reached maximum iterations (%{max}). Review progress and restart if needed."
+      infra_stuck: "⚠️ Trigger Loop paused — %{count} consecutive infrastructure errors (timeout/connection). The service may be unavailable. User intervention needed."
+      verification_failed: "🔍 Trigger Loop — iteration %{iteration}/%{max}. Your [STATUS: DONE] was not verified. The following actions were not completed:\n%{reason}\n\nPlease complete all remaining actions and report [STATUS: DONE/CONTINUE/BLOCKED]."
+      start: "Start"
+      pause: "Pause"
+      resume: "Resume"
+      restart: "Restart"
+      state_idle: "Idle"
+      state_running: "Running"
+      state_pending_verification: "Verifying"
+      state_completed: "Completed"
+      state_stuck: "Stuck"
+      state_max_reached: "Max iterations reached"
+      state_awaiting_user: "Awaiting user"
+      state_paused: "Paused"

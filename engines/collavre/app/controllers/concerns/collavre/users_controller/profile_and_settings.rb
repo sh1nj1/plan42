@@ -29,6 +29,7 @@ module Collavre
 
     def update
       @user = Collavre::User.find(params[:id])
+      return head :forbidden unless @user == Current.user || Current.user.system_admin?
       if @user.update(profile_params)
         redirect_to user_path(@user), notice: I18n.t("collavre.users.profile_updated")
       else
@@ -46,9 +47,18 @@ module Collavre
 
     def edit_password
       @user = Collavre::User.find(params[:id])
+      head :forbidden unless @user == Current.user || Current.user.system_admin?
     end
 
     def passkeys
+      @user = Collavre::User.find(params[:id])
+
+      unless @user == Current.user || Current.user.system_admin?
+        redirect_to user_path(Current.user), alert: I18n.t("collavre.users.destroy.not_authorized")
+      end
+    end
+
+    def typo_correction
       @user = Collavre::User.find(params[:id])
 
       unless @user == Current.user || Current.user.system_admin?
@@ -82,14 +92,19 @@ module Collavre
       params.require(:user).permit(
         :avatar,
         :avatar_url,
-        :display_level,
-        :completion_mark,
         :theme,
         :name,
         :notifications_enabled,
         :calendar_id,
         :timezone,
-        :locale
+        :locale,
+        :typo_correction_enabled,
+        :typo_correction_threshold,
+        :typo_correction_on_soft_keyboard,
+        :typo_correction_on_voice,
+        :typo_correction_on_physical_keyboard,
+        :typo_correction_in_chat,
+        :typo_correction_in_editor
       ).tap do |p|
         p[:locale] = normalize_supported_locale(p[:locale]) if p.key?(:locale)
       end

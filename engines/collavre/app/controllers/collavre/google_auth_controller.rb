@@ -33,7 +33,7 @@ module Collavre
       # Ensure app calendar exists if the granted scope allows creating an app calendar
       begin
         ::GoogleCalendarService.new(user: user).ensure_app_calendar!
-      rescue => e
+      rescue StandardError => e
         Rails.logger.error("Post-login calendar setup failed: #{e.message}")
       end
 

@@ -7,7 +7,7 @@ const DEFAULT_KEY = "creative-inline-editor"
 export function createInlineEditor(container, {
   onChange,
   onKeyDown,
-
+  onEnterKey,
   onUploadStateChange
 } = {}) {
   if (!container) {
@@ -46,12 +46,14 @@ export function createInlineEditor(container, {
         onKeyDown={(event, editor) => {
           if (onKeyDown) onKeyDown(event, editor)
         }}
+        onEnterKey={onEnterKey}
         onChange={(value) => {
           if (suppressNextChange) {
             suppressNextChange = false
             return
           }
-          currentHtml = value
+          // value is { html, markdown }; keep currentHtml for the render fallback.
+          currentHtml = value?.html ?? ""
           onChange?.(value)
         }}
         onReady={(api) => {

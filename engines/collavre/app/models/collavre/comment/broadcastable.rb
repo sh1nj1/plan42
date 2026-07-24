@@ -3,10 +3,18 @@ module Collavre
     module Broadcastable
       extend ActiveSupport::Concern
 
+      # The desktop and mobile inbox badge DOM ids kept in sync in real time.
+      INBOX_BADGE_TARGETS = %w[desktop-inbox-badge mobile-inbox-badge].freeze
+
       included do
-        after_create_commit :broadcast_create, :broadcast_badges
+        after_create_commit :broadcast_create
         after_update_commit :broadcast_update
-        after_destroy_commit :broadcast_destroy, :broadcast_badges
+        after_destroy_commit :broadcast_destroy
+        # Use after_commit with on: to avoid Rails callback deduplication.
+        # Registering the same method via both after_create_commit and
+        # after_destroy_commit causes the later registration to silently
+        # overwrite the earlier one.
+        after_commit :broadcast_badges, on: [ :create, :destroy ]
       end
 
       module ClassMethods
@@ -22,7 +30,7 @@ module Collavre
           pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
           present_user_ids = CommentPresenceStore.list(origin.id)
 
-          public_count = origin.comments.where(private: false).count
+          public_count = origin.comments.public_only.count
           private_counts = origin.comments
             .where(private: true, user_id: user_ids)
             .group(:user_id)
@@ -31,7 +39,9 @@ module Collavre
           last_read_ids = pointers.transform_values { |p| p.last_read_comment_id || 0 }
 
           unread_public_by_threshold = {}
-          last_read_ids.values.uniq.each do |threshold|
+          # Include 0 for users without a read pointer (never opened chat)
+          all_thresholds = (last_read_ids.values + [ 0 ]).uniq
+          all_thresholds.each do |threshold|
             unread_public_by_threshold[threshold] = origin.comments
               .where(private: false)
               .where("comments.id > ?", threshold)
@@ -68,12 +78,15 @@ module Collavre
                 show_zero: total_count.positive?
               }
             )
+
+            # Also update the global inbox badge when the creative is an inbox
+            broadcast_inbox_badge(origin, u, count: unread_count) if origin.inbox?
           end
         end
 
         def broadcast_badge(creative, user)
           origin = creative.effective_origin
-          visible_comments = origin.comments.where("comments.private = ? OR comments.user_id = ?", false, user.id)
+          visible_comments = origin.comments.visible_to(user)
           comments_count = visible_comments.count
           pointer = CommentReadPointer.find_by(user: user, creative: origin)
           last_read_id = pointer&.last_read_comment_id
@@ -90,6 +103,68 @@ module Collavre
               show_zero: comments_count.positive?
             }
           )
+
+          # Also update the global inbox badge when the creative is an inbox
+          broadcast_inbox_badge(origin, user, count: unread_count) if origin.inbox?
+        end
+
+        # Broadcast updated inbox badge count to the user's global inbox badge.
+        # Called when inbox comments are created (via Notifiable) and when the
+        # user reads their inbox (via read pointer update / presence unsubscribe).
+        # Accepts an optional pre-computed count to avoid duplicate queries.
+        def broadcast_inbox_badge(inbox_creative, owner, count: nil)
+          return unless inbox_creative && owner
+
+          count ||= inbox_badge_count(inbox_creative, owner)
+
+          INBOX_BADGE_TARGETS.each do |target_id|
+            Turbo::StreamsChannel.broadcast_replace_to(
+              [ "inbox", owner ],
+              target: target_id,
+              partial: "inbox/badge_component/count",
+              locals: inbox_badge_locals(count, target_id)
+            )
+          end
+        end
+
+        # Render the same inbox badge replacements as a Turbo Stream string so a
+        # channel can transmit them straight to its own confirmed subscriber
+        # (see InboxBadgeChannel), instead of re-broadcasting to the sibling
+        # ["inbox", user] stream and risking a reconnect race. Returns nil when
+        # there is nothing to render.
+        def inbox_badge_turbo_stream(inbox_creative, owner, count: nil)
+          return unless inbox_creative && owner
+
+          count ||= inbox_badge_count(inbox_creative, owner)
+
+          INBOX_BADGE_TARGETS.map do |target_id|
+            Turbo::StreamsChannel.turbo_stream_action_tag(
+              :replace,
+              target: target_id,
+              template: ApplicationController.render(
+                partial: "inbox/badge_component/count",
+                formats: [ :html ],
+                locals: inbox_badge_locals(count, target_id)
+              )
+            )
+          end.join.html_safe
+        end
+
+        private
+
+        # Inbox badge count when no caller-supplied count is available (e.g. the
+        # reconnect snapshot in InboxBadgeChannel). Mirrors broadcast_badge's
+        # suppression: a user actively viewing the inbox (present in
+        # CommentPresenceStore) sees 0, so a reconnect can't repaint unread items
+        # over the suppressed badge.
+        def inbox_badge_count(inbox_creative, owner)
+          return 0 if CommentPresenceStore.list(inbox_creative.id).include?(owner.id)
+
+          Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+        end
+
+        def inbox_badge_locals(count, target_id)
+          { count: count, badge_id: target_id, show_zero: false }
         end
       end
 

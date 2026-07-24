@@ -1,7 +1,10 @@
 import { LitElement, html, svg, nothing } from "lit";
-import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
+import { highlightCodeBlocks } from "../lib/utils/markdown";
+import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
+import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
+import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -24,8 +27,10 @@ class CreativeTreeRow extends LitElement {
     originLinkHtml: { state: true },
     isTitle: { type: Boolean, attribute: "is-title", reflect: true },
     archived: { type: Boolean, attribute: "archived", reflect: true },
+    githubSource: { type: Boolean, attribute: "github-source", reflect: true },
     loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
-    _loadingDotsState: { state: true }
+    _loadingDotsState: { state: true },
+    editingUsers: { state: true }
   };
 
   constructor() {
@@ -46,6 +51,8 @@ class CreativeTreeRow extends LitElement {
     this.editOffIconHtml = "";
     this.originLinkHtml = "";
     this.isTitle = false;
+    this.githubSource = false;
+    this.editingUsers = []; // [{ user_id, user_name, avatar_url }]
     this._templatesExtracted = false;
     this.loadingChildren = false;
     this._loadingDotsState = ['.', '.', '.'];
@@ -58,6 +65,7 @@ class CreativeTreeRow extends LitElement {
     this._handleToggleClick = this._handleToggleClick.bind(this);
     this._handleEditClick = this._handleEditClick.bind(this);
     this._handleCommentsClick = this._handleCommentsClick.bind(this);
+    this._handleProgressToggle = this._handleProgressToggle.bind(this);
   }
 
   createRenderRoot() {
@@ -72,6 +80,19 @@ class CreativeTreeRow extends LitElement {
   updated(changedProperties) {
     this._attachHandlers();
 
+    // Re-tokenize the server-rendered description code blocks with hljs so they
+    // match the editor's palette and follow light/dark theme. Idempotent: only
+    // unmarked blocks are processed, and lit re-renders description DOM (dropping
+    // the marker) only when descriptionHtml actually changes.
+    highlightCodeBlocks(this);
+
+    // Attach CSV/Excel download toolbars to markdown tables in the description
+    // display areas so creative tables match the chat-message table UI.
+    // Scoped to .creative-content/.creative-title-content (not the whole row)
+    // so the inline editor's own tables are never wrapped. Idempotent, safe on
+    // every Lit re-render.
+    addCreativeTableDownloadButtons(this);
+
     if (changedProperties.has('loadingChildren')) {
       if (this.loadingChildren) {
         this._startAnimation();
@@ -79,6 +100,7 @@ class CreativeTreeRow extends LitElement {
         this._stopAnimation();
       }
     }
+
   }
 
   disconnectedCallback() {
@@ -92,8 +114,10 @@ class CreativeTreeRow extends LitElement {
 
   set descriptionHtml(value) {
     const oldValue = this._descriptionHtml;
-    // Always sanitize when setting new HTML
-    const sanitized = DOMPurify.sanitize(value ?? "");
+    // Always sanitize when setting new HTML. Uses the shared sanitizer so the
+    // server-generated YouTube preview iframe survives (default DOMPurify config
+    // strips all iframes, which is what broke the YouTube link preview).
+    const sanitized = sanitizeDescriptionHtml(value);
     this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
     this.requestUpdate("descriptionHtml", oldValue);
@@ -171,16 +195,25 @@ class CreativeTreeRow extends LitElement {
     this._toggleBtn?.removeEventListener("click", this._handleToggleClick);
     this._editBtn?.removeEventListener("click", this._handleEditClick);
     this._commentsBtn?.removeEventListener("click", this._handleCommentsClick);
+    this._progressToggle?.removeEventListener("click", this._handleProgressToggle);
 
     this._toggleBtn = this.querySelector(".creative-toggle-btn");
     this._editBtn = this.querySelector(".edit-inline-btn");
     this._commentsBtn = this.querySelector(".comments-btn");
+    this._progressToggle = this.querySelector("[data-progress-toggle]");
 
     if (this._toggleBtn) this._toggleBtn.addEventListener("click", this._handleToggleClick, { passive: false });
     if (this._editBtn) this._editBtn.addEventListener("click", this._handleEditClick, { passive: false });
     if (this._commentsBtn) this._commentsBtn.addEventListener("click", this._handleCommentsClick, { passive: false });
+    if (this._progressToggle) this._progressToggle.addEventListener("click", this._handleProgressToggle, { passive: false });
   }
 
+  // parentId convention (single source of truth): `data-parent-id` is ALWAYS
+  // emitted on the `.creative-tree` element. A non-empty value is the parent
+  // creative id; an empty string ("") means "root / no parent". This mirrors
+  // the dynamic-creation path (`dataset.parentId = parentId || ''`) so readers
+  // never have to disambiguate an *absent* attribute (unknown) from a real
+  // root, which previously dropped the parent for newly-added siblings.
   render() {
     if (this.isTitle) {
       return this._renderTitle();
@@ -197,7 +230,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
         data-action=${dragActions}
@@ -210,7 +243,8 @@ class CreativeTreeRow extends LitElement {
             ${this._renderToggle()}
             ${this._renderContent()}
           </div>
-            ${unsafeHTML(this.progressHtml || "")}
+            ${this._renderEditingAvatars()}
+            <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
         </div>
       </div>
     `;
@@ -222,7 +256,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree creative-tree-title"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">
@@ -237,7 +271,7 @@ class CreativeTreeRow extends LitElement {
           </div>
           <div class="creative-row-end">
              <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
-               ${unsafeHTML(this.progressHtml || "")}
+               <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
              </h1>
           </div>
         </div>
@@ -290,12 +324,38 @@ class CreativeTreeRow extends LitElement {
     `;
   }
 
+  _renderEditingAvatars() {
+    if (!this.editingUsers || this.editingUsers.length === 0) return nothing;
+    return html`
+      <div class="creative-editing-avatars" title="${this.editingUsers.map(u => u.user_name).join(', ')}">
+        ${this.editingUsers.map(u => html`
+          <span class="creative-editing-avatar" title="${u.user_name} is editing">
+            ${u.avatar_url
+              ? html`<img src="${u.avatar_url}" alt="${u.user_name}" width="24" height="24" class="creative-editing-avatar-img">`
+              : html`<span class="creative-editing-avatar-initials">${(u.user_name || '?')[0]}</span>`
+            }
+          </span>
+        `)}
+      </div>
+    `;
+  }
+
+  _renderGithubBadge() {
+    if (!this.githubSource) return nothing;
+    return html`<span class="github-source-badge" title="Synced from GitHub (read-only)">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: -2px; opacity: 0.5;">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+    </span>`;
+  }
+
   _renderContent() {
     const level = Number(this.level) || 1;
     // Toggle is now rendered outside
+    const githubBadge = this._renderGithubBadge();
     const content = html`
       <div class="creative-content" @click=${this._handleContentClick}>
-        ${unsafeHTML(this.descriptionHtml || "")}
+        ${githubBadge}${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
@@ -485,7 +545,83 @@ class CreativeTreeRow extends LitElement {
     }));
   }
 
+  async _handleProgressToggle(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const wrap = event.currentTarget;
+    const creativeId = wrap.dataset.creativeId;
+    const newProgress = wrap.dataset.newProgress;
+    if (!creativeId || newProgress == null) return;
+
+    // Optimistic UI: toggle checkbox and class immediately
+    const checkbox = wrap.querySelector(".progress-toggle-checkbox");
+    const progressSpan = wrap.querySelector("[class^='creative-progress-']");
+    const wasComplete = checkbox?.checked;
+    if (checkbox) checkbox.checked = !wasComplete;
+    if (progressSpan) {
+      progressSpan.className = newProgress === "1" ? "creative-progress-complete" : "creative-progress-incomplete";
+    }
+    wrap.classList.add("progress-toggle-saving");
+
+    try {
+      const body = new FormData();
+      body.append("creative[progress]", newProgress);
+      const response = await csrfFetch(`/creatives/${creativeId}`, {
+        method: "PATCH",
+        headers: { Accept: "application/json" },
+        body,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      // Update this row's progressHtml from server response
+      if (data.progress_html) {
+        this.progressHtml = data.progress_html;
+        this.dataset.progressHtml = data.progress_html;
+      }
+      // Update progressValue for inline editor
+      if (data.progress != null) {
+        this.dataset.progressValue = String(data.progress);
+      }
+      // Update has_children if returned
+      if (data.has_children != null) {
+        this.hasChildren = data.has_children;
+      }
+      // Update ancestor rows progress if returned
+      if (data.ancestors) {
+        for (const ancestor of data.ancestors) {
+          const row = document.querySelector(`creative-tree-row[creative-id="${ancestor.id}"]`);
+          if (row) {
+            if (ancestor.progress_html) {
+              row.progressHtml = ancestor.progress_html;
+              row.dataset.progressHtml = ancestor.progress_html;
+            }
+            if (ancestor.progress != null) {
+              row.dataset.progressValue = String(ancestor.progress);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Revert optimistic UI
+      if (checkbox) checkbox.checked = wasComplete;
+      if (progressSpan) {
+        progressSpan.className = wasComplete ? "creative-progress-complete" : "creative-progress-incomplete";
+      }
+      console.error("Progress toggle failed:", err);
+    } finally {
+      wrap.classList.remove("progress-toggle-saving");
+    }
+  }
+
   _handleContentClick(event) {
+    // In select mode, block navigation — selection toggle is handled by
+    // select_mode_controller's mousedown handler to avoid double-toggling.
+    if (this.selectMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     // Check if the clicked element is an interactive element or inside one
     const target = event.target;
     if (target.tagName === 'A' || target.closest('a') ||

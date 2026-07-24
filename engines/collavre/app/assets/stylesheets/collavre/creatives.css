@@ -2,11 +2,19 @@
     --creative-row-text-offset: 1.8em;
     --creative-loading-emojis: "🚀,🧠,🧩,🤝,🗂️,⚡";
 
+    /* Icon size used for vertical centering calc */
+    --creative-icon-size: 16px;
+
     /* Creative tree heading styles — defaults match pre-#799 behavior.
        Themes that don't define these variables render identically to before. */
     --creative-h1-size: 1.3em;
     --creative-h2-size: 1.2em;
     --creative-h3-size: 1.1em;
+    /* Line heights for headings (used by calc-based vertical centering) */
+    --creative-h1-lh: 1.3;
+    --creative-h2-lh: 1.3;
+    --creative-h3-lh: 1.3;
+    --creative-body-lh: 1.5;
     --creative-h1-weight: bold;
     --creative-h2-weight: bold;
     --creative-h3-weight: bold;
@@ -44,17 +52,112 @@ html.creative-alignment-ready .page-title {
 }
 
 .creative-actions-row {
-    margin: 0.0em 1.0em 0.0em var(--creative-row-text-offset);
-    padding: 0.5em 0.5em 0.5em 0;
+    margin: 0 0 0 var(--creative-row-text-offset);
+    padding: var(--space-1) 0;
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    height: 48px;
+    justify-content: space-between;
     align-items: center;
+    min-height: 36px;
+    border: none;
 }
 
-.creative-actions-row button {
-    height: 32px;
+/* === Breadcrumb (left-aligned) === */
+.creative-breadcrumb {
+    display: flex;
+    align-items: center;
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    min-width: 0;
+    margin-right: var(--space-3);
+}
+
+.creative-breadcrumb::-webkit-scrollbar {
+    display: none;
+}
+
+/* Override application.css .creative-actions-row a for breadcrumb links */
+.creative-actions-row a.creative-breadcrumb-link {
+    color: var(--text-muted) !important;
+    text-decoration: underline !important;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    font-size: var(--text-0) !important;
+    filter: none !important;
+    line-height: normal;
+}
+
+.creative-actions-row a.creative-breadcrumb-link:hover {
+    color: var(--text-primary) !important;
+    text-decoration-color: var(--text-primary) !important;
+}
+
+.creative-actions-row a.creative-breadcrumb-current {
+    color: var(--text-secondary) !important;
+    font-weight: var(--weight-5);
+}
+
+.creative-breadcrumb-sep {
+    color: var(--text-muted);
+    opacity: 0.4;
+    margin: 0 var(--space-1);
+    font-size: var(--text-00);
+    user-select: none;
+}
+
+/* === Header actions (right-aligned) === */
+.creative-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-shrink: 0;
+}
+
+/* Outline button — GNB-like with border.
+   Higher specificity to override application.css .creative-actions-row button */
+.creative-actions-row .creative-header-actions .creative-header-outline-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-0);
+    transition: background 0.15s var(--ease-out-2), color 0.15s var(--ease-out-2), border-color 0.15s var(--ease-out-2);
+}
+
+.creative-actions-row .creative-header-actions .creative-header-outline-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+/* === Overflow popup menu — GNB style === */
+/* #creative-overflow-menu inherits base styles from .popup-menu in popup.css */
+#creative-overflow-menu {
+    min-width: 200px;
+}
+
+/* popup-menu-item base styles are now in popup.css */
+
+#creative-overflow-menu .popup-menu-item.active {
+    background: color-mix(in srgb, var(--color-active) 15%, transparent);
+    color: var(--color-active);
+}
+
+.creative-overflow-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: var(--space-1) 0;
 }
 
 .delete-options {
@@ -119,7 +222,6 @@ creative-tree-row.show-edit .creative-row {
 .creative-tree-li {
     display: flex;
     align-items: flex-start;
-    /* Changed from center to flex-start */
     position: relative;
 }
 
@@ -155,12 +257,21 @@ creative-tree-row.show-edit .creative-row {
     word-break: break-word;
 }
 
-/* Allow attachments and images to be clickable independently of the parent link */
+/* Allow attachments, images, and videos to be interactive independently of the
+   parent link. Without pointer-events on the video, the clickable creative row
+   would swallow clicks on the native playback controls (play/pause/fullscreen). */
 .creative-content a[download],
-.creative-content img {
+.creative-content img,
+.creative-content video {
     pointer-events: auto;
     position: relative;
     z-index: var(--layer-1);
+}
+
+.creative-content video {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-2);
 }
 
 .creative-row:hover .creative-content {
@@ -187,8 +298,7 @@ creative-tree-row.show-edit .creative-row {
     margin-left: 4px;
     margin-right: 8px;
     flex: 0 0 var(--creative-bullet-size, 5px);
-    margin-top: 10px;
-    /* Align with first line of text (approx) */
+    margin-top: calc((1em * var(--creative-body-lh, 1.5) - var(--creative-bullet-size, 5px)) / 2);
 }
 
 .creative-row-end {
@@ -198,8 +308,13 @@ creative-tree-row.show-edit .creative-row {
     white-space: nowrap;
     display: flex;
     align-items: flex-start;
-    /* Top align */
-    /* padding-top: 4px; - Removed to align comments button with edit button */
+}
+
+/* Reset row-start vertical centering for buttons inside row-end.
+   Uses .creative-row to boost specificity above .level-N rules. */
+.creative-row .creative-row-end .creative-action-btn,
+.creative-row .creative-row-end .comments-btn {
+    margin-top: 0;
 }
 
 .creative-tags {
@@ -208,27 +323,86 @@ creative-tree-row.show-edit .creative-row {
     white-space: nowrap;
     display: flex;
     flex-wrap: wrap;
-    padding-top: 4px;
-    /* Restore baseline alignment */
 }
 
 .creative-progress-complete,
 .creative-progress-incomplete {
     color: var(--color-brand);
-    padding-top: 4px;
-    /* Restore baseline alignment */
 }
 
 .creative-progress-incomplete {
     color: var(--text-muted);
 }
 
-/* .creative-progress-incomplete {} - removed empty rule */
+/* Progress toggle (hover-to-complete) */
+.progress-toggle-wrap {
+    position: relative;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    padding-top: 4px;
+}
+
+.progress-toggle-wrap .creative-progress-complete,
+.progress-toggle-wrap .creative-progress-incomplete {
+    padding-top: 0;
+}
+
+.progress-toggle-checkbox {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    margin: 0;
+    z-index: 1;
+}
+
+/* Desktop: show checkbox on row hover (same pattern as edit-btn, comments-btn) */
+@media (hover: hover) {
+    .progress-toggle-checkbox {
+        width: 1em;
+        height: 1em;
+        visibility: hidden;
+        opacity: 0;
+        position: absolute;
+        margin: auto;
+        pointer-events: none;
+    }
+
+    .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
+    .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
+        visibility: hidden;
+    }
+
+    .creative-row:hover .progress-toggle-checkbox {
+        visibility: visible;
+        opacity: 1;
+        position: absolute;
+        inset: 0;
+        margin: auto;
+        pointer-events: auto;
+        accent-color: var(--color-brand);
+    }
+}
+
+/* Touch devices: always show both text and clickable area */
+@media (hover: none) {
+    .progress-toggle-checkbox {
+        opacity: 0;
+        pointer-events: auto;
+    }
+}
+
+.progress-toggle-saving {
+    opacity: 0.5;
+    pointer-events: none;
+}
 
 .creative-row-start {
     display: flex;
     align-items: flex-start;
-    /* Changed from center to flex-start */
     flex-grow: 1;
 }
 
@@ -274,8 +448,8 @@ creative-tree-row.show-edit .creative-row {
     line-height: 1;
     display: inline-flex;
     flex-shrink: 0;
-    padding-top: 4px;
-    /* Align with text */
+    /* Default vertical centering for body-text rows (level 4+) */
+    margin-top: calc((1em * var(--creative-body-lh, 1.5) - var(--creative-icon-size, 16px)) / 2);
 }
 
 /* Ensure inline editor actions use the correct text color */
@@ -313,13 +487,12 @@ creative-tree-row.show-edit .creative-row {
     width: 16px;
     height: 16px;
     margin-right: 4px;
-    margin-top: 4px;
-    /* Align with text */
+    margin-top: calc((1em * var(--creative-body-lh, 1.5) - var(--creative-icon-size, 16px)) / 2);
     visibility: hidden;
     /* Hidden by default on desktop */
     /* Total width is 20px (16 + 4) */
     color: var(--text-secondary);
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
 }
@@ -419,17 +592,14 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     height: 16px;
     cursor: pointer;
     visibility: visible;
-    margin-top: 6px;
-    /* Align with text */
+    margin-top: calc((1em * var(--creative-body-lh, 1.5) - var(--creative-icon-size, 16px)) / 2);
 }
 
 .creative-row {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    /* Changed from center to flex-start */
     padding: 2px 0;
-    /* Add some vertical padding */
 }
 
 .creative-row.selected {
@@ -454,13 +624,17 @@ creative-tree-row.chat-active .creative-row {
     color: var(--text-muted);
     font-size: 0.9em;
     margin-left: 10px;
-    padding-top: 4px;
-    /* Align with text */
+    margin-top: calc((1em * var(--creative-body-lh, 1.5) - 1em) / 2);
 }
 
 .page-title {
     margin-left: var(--creative-row-text-offset);
     font-size: 1.4em;
+}
+
+/* ── Title text: larger than default h1 ── */
+.creative-tree-title .page-title {
+    font-size: var(--text-5, 2rem);
 }
 
 
@@ -494,6 +668,7 @@ creative-tree-row.chat-active .creative-row {
     font-size: var(--creative-h1-size, 1.3em);
     font-weight: var(--creative-h1-weight, bold);
     color: var(--creative-h1-color, inherit);
+    line-height: var(--creative-h1-lh, 1.3);
     margin: 0;
 }
 
@@ -501,6 +676,7 @@ creative-tree-row.chat-active .creative-row {
     font-size: var(--creative-h2-size, 1.2em);
     font-weight: var(--creative-h2-weight, bold);
     color: var(--creative-h2-color, inherit);
+    line-height: var(--creative-h2-lh, 1.3);
     margin: 0;
 }
 
@@ -508,6 +684,7 @@ creative-tree-row.chat-active .creative-row {
     font-size: var(--creative-h3-size, 1.1em);
     font-weight: var(--creative-h3-weight, bold);
     color: var(--creative-h3-color, inherit);
+    line-height: var(--creative-h3-lh, 1.3);
     margin: 0;
 }
 
@@ -523,23 +700,38 @@ creative-tree-row.chat-active .creative-row {
     font-weight: var(--creative-childless-weight, 400);
 }
 
-/* Headings need specific alignment adjustments */
-.level-1 .creative-action-btn,
+/* Dynamic vertical centering: calc((font-size × line-height − icon-size) / 2)
+   Scoped to .creative-row-start to avoid affecting .creative-row-end buttons. */
+.level-1 .creative-row-start > .creative-action-btn,
 .level-1 .select-creative-checkbox,
 .level-1 .creative-toggle-btn {
-    margin-top: 8px;
+    margin-top: calc((var(--creative-h1-size, 1.3em) * var(--creative-h1-lh, 1.3) - var(--creative-icon-size, 16px)) / 2);
 }
 
-.level-2 .creative-action-btn,
+.level-2 .creative-row-start > .creative-action-btn,
 .level-2 .select-creative-checkbox,
 .level-2 .creative-toggle-btn {
-    margin-top: 7px;
+    margin-top: calc((var(--creative-h2-size, 1.2em) * var(--creative-h2-lh, 1.3) - var(--creative-icon-size, 16px)) / 2);
 }
 
-.level-3 .creative-action-btn,
+.level-3 .creative-row-start > .creative-action-btn,
 .level-3 .select-creative-checkbox,
 .level-3 .creative-toggle-btn {
-    margin-top: 6px;
+    margin-top: calc((var(--creative-h3-size, 1.1em) * var(--creative-h3-lh, 1.3) - var(--creative-icon-size, 16px)) / 2);
+}
+
+/* Childless items (level 1-3 without children) use body font size.
+   Scoped to .creative-row-start to avoid affecting .creative-row-end buttons. */
+.level-1:has(.creative-childless) .creative-row-start > .creative-action-btn,
+.level-2:has(.creative-childless) .creative-row-start > .creative-action-btn,
+.level-3:has(.creative-childless) .creative-row-start > .creative-action-btn,
+.level-1:has(.creative-childless) .creative-toggle-btn,
+.level-2:has(.creative-childless) .creative-toggle-btn,
+.level-3:has(.creative-childless) .creative-toggle-btn,
+.level-1:has(.creative-childless) .select-creative-checkbox,
+.level-2:has(.creative-childless) .select-creative-checkbox,
+.level-3:has(.creative-childless) .select-creative-checkbox {
+    margin-top: calc((1em * var(--creative-body-lh, 1.5) - var(--creative-icon-size, 16px)) / 2);
 }
 
 
@@ -549,7 +741,6 @@ creative-tree-row.chat-active .creative-row {
     display: flex;
     align-items: flex-start;
     margin-left: 0;
-    /* Indentation now comes from tree lines; avoid extra left margin here */
 }
 
 .comments-btn {
@@ -557,15 +748,6 @@ creative-tree-row.chat-active .creative-row {
     height: 28px;
     position: relative;
     color: var(--text-primary);
-    margin-top: -2px;
-    /* Move higher as requested */
-}
-
-/* Ensure comments button stays high for headings, overriding generic action button margin */
-.level-1 .comments-btn,
-.level-2 .comments-btn,
-.level-3 .comments-btn {
-    margin-top: -2px;
 }
 
 /* Add spacing for headings via row padding to preserve alignment */
@@ -717,3 +899,156 @@ creative-tree-row[archived] .creative-tree {
 creative-tree-row[archived] .creative-row {
     background-color: var(--surface-input);
 }
+
+/* Import dropzone drag-over feedback */
+#import-markdown-dropzone.dragover {
+    border-color: var(--color-accent-border);
+    background-color: var(--surface-input);
+}
+
+/* --- Creative Presence Avatars --- */
+.creative-presence-avatars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: var(--space-2, 8px);
+    vertical-align: middle;
+}
+
+.creative-presence-user {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.creative-presence-user .avatar {
+    border: 2px solid var(--color-active, #4caf50);
+    width: 20px;
+    height: 20px;
+}
+
+/* --- Editing Conflict Indicator --- */
+creative-tree-row.is-being-edited {
+    position: relative;
+}
+
+creative-tree-row.is-being-edited .creative-tree {
+    border-left: 3px solid var(--color-warning, #ff9800);
+}
+
+.creative-editing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 4px);
+    font-size: var(--text-xs, 0.75rem);
+    color: var(--color-warning, #ff9800);
+    margin-left: var(--space-2, 8px);
+    white-space: nowrap;
+    animation: editing-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes editing-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Editing presence avatars */
+.creative-editing-avatars {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 2px);
+    margin-left: var(--space-1, 4px);
+}
+
+.creative-editing-avatar-img {
+    border-radius: var(--radius-round, 50%);
+    border: 2px solid var(--color-accent, #4a9eff);
+    object-fit: cover;
+}
+
+.creative-editing-avatar-initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-round, 50%);
+    background: var(--color-accent, #4a9eff);
+    color: var(--color-on-accent, white);
+    font-size: var(--text-xs, 11px);
+    font-weight: var(--weight-semibold, 600);
+    border: 2px solid var(--color-accent, #4a9eff);
+}
+
+/* Wrapper for progressHtml so DOM can be synced back to Lit state
+   after Turbo Streams mutations (e.g. badge count updates).
+   display:contents ensures no layout impact. */
+.creative-progress-area {
+    display: contents;
+}
+
+/* ─── Bundle drag image (shared by creatives + comments) ─── */
+
+.drag-bundle-image {
+    position: fixed;
+    top: -1000px;
+    left: -1000px;
+    width: 220px;
+    pointer-events: none;
+}
+
+.drag-bundle-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 42px;
+    border-radius: var(--radius-2);
+    border: var(--border-1) solid var(--border-muted);
+    background-color: var(--surface-base);
+    box-shadow: var(--shadow-2);
+}
+
+.drag-bundle-card--back {
+    transform: translate(6px, -6px) rotate(2deg);
+    opacity: 0.5;
+}
+
+.drag-bundle-card--mid {
+    transform: translate(3px, -3px) rotate(1deg);
+    opacity: 0.75;
+}
+
+.drag-bundle-card--front {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    font-size: var(--text-1);
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background-color: var(--surface-base);
+}
+
+.drag-bundle-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: var(--radius-round);
+    background-color: var(--color-active);
+    color: var(--color-badge-text);
+    font-size: var(--text-0);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-2);
+}
+

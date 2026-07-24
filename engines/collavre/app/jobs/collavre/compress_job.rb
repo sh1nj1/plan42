@@ -1,5 +1,8 @@
 module Collavre
   class CompressJob < ApplicationJob
+    include AiAgentResolvable
+    include CommentSerializable
+
     queue_as :default
 
     def perform(creative_id, topic_id, user_id, extra_prompt = nil)
@@ -11,7 +14,7 @@ module Collavre
       all_comments = creative.comments
         .where(topic_id: topic_id)
         .order(created_at: :asc)
-        .includes(:user)
+        .includes(:user, images_attachments: :blob)
 
       # Separate: comments to summarize vs the compress command itself
       compress_pattern = /\A\/compress\b/i
@@ -31,23 +34,38 @@ module Collavre
         system_prompt += "\n\nAdditional instruction from the user: #{extra_prompt}"
       end
 
-      # Find an AI agent on this creative, or use default config
-      agent = find_ai_agent(creative)
+      # Find an AI agent on this creative (no fallback — agent is required)
+      agent = resolve_ai_agent(creative, topic_id)
+
+      unless agent
+        error_msg = I18n.t("collavre.comments.compress_command.no_agent")
+        creative.comments.create!(user: user, topic_id: topic_id, content: "⚠️ #{error_msg}", skip_dispatch: true)
+        Rails.logger.error("[CompressJob] No AI agent found for creative #{creative_id}, topic #{topic_id}")
+        return
+      end
 
       client = AiClient.new(
-        vendor: agent&.llm_vendor || default_vendor,
-        model: agent&.llm_model || default_model,
+        vendor: agent.llm_vendor,
+        model: agent.llm_model,
         system_prompt: system_prompt,
-        llm_api_key: agent&.llm_api_key || agent&.creator&.llm_api_key
+        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
+        context: {
+          creative: creative,
+          user: agent,
+          topic_id: topic_id
+        }
       )
 
       summary = String.new
-      client.chat([ { role: "user", text: conversation } ]) do |delta|
+      result = client.chat([ { role: "user", text: conversation } ]) do |delta|
         summary << delta
       end
 
-      if summary.blank?
-        Rails.logger.error("[CompressJob] AI returned empty summary for topic #{topic_id}")
+      # AiClient returns nil on error (but still yields error text as delta).
+      # Check both: return value must be truthy AND content must be non-blank.
+      if result.nil? || summary.blank?
+        Rails.logger.error("[CompressJob] AI failed for topic #{topic_id}")
         return
       end
 
@@ -59,34 +77,36 @@ module Collavre
       # Store comment IDs to delete before creating the new one (all originals including /compress command)
       comment_ids_to_delete = all_comments.pluck(:id)
 
-      # Create the summary comment in the same topic
+      # Create the summary comment in the same topic.
+      # Author it as the AI agent (not the human who ran /compress) so the
+      # comment is recognized as AI-generated content: this makes ai_user? true,
+      # which is what gates the "Review" button in the comment view. The summary
+      # body is AI output, so the agent is the correct author.
       summary_comment = creative.comments.create!(
-        user: user,
+        user: agent,
         topic_id: topic_id,
-        content: summary_content
+        content: summary_content,
+        skip_dispatch: true  # system-generated summary, not user input
+      )
+
+      # Save snapshot for recovery before deleting originals
+      # Exclude the last comment only if it's the /compress command trigger
+      last_comment = all_comments.last
+      last_is_command = last_comment&.content.to_s.strip.match?(compress_pattern)
+      restorable_comments = last_is_command ? all_comments[0..-2] : all_comments.to_a
+      CommentSnapshot.create!(
+        creative: creative,
+        topic_id: topic_id,
+        user: user,
+        operation: "compress",
+        comments_data: serialize_comments(restorable_comments),
+        result_comment: summary_comment
       )
 
       # Delete original comments (excluding the newly created summary)
       creative.comments.where(id: comment_ids_to_delete).destroy_all
     rescue ActiveRecord::RecordNotFound => e
       Rails.logger.error("[CompressJob] Record not found: #{e.message}")
-    end
-
-    private
-
-    def find_ai_agent(creative)
-      # Look for an AI agent with access to this creative
-      creative.effective_origin.all_shared_users(:feedback)
-        .map(&:user)
-        .find(&:ai_user?)
-    end
-
-    def default_vendor
-      "google"
-    end
-
-    def default_model
-      "gemini-3-flash-preview"
     end
   end
 end

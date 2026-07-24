@@ -23,17 +23,14 @@ module CollavreGithub
 
       sig { params(creative_id: Integer, repo: String, pr_number: Integer).returns(T::Hash[Symbol, T.untyped]) }
       def call(creative_id:, repo:, pr_number:)
-        client = find_github_client(creative_id, repo)
-        return { error: "GitHub account not found for this creative and repository" } unless client
+        with_github_client(creative_id: creative_id, repo: repo, error_context: "fetch PR commits") do |client|
+          messages = client.pull_request_commit_messages(repo, pr_number)
 
-        messages = client.pull_request_commit_messages(repo, pr_number)
-
-        {
-          commits: messages.map.with_index(1) { |msg, i| { index: i, message: msg } },
-          count: messages.size
-        }
-      rescue StandardError => e
-        { error: "Failed to fetch PR commits: #{e.message}" }
+          {
+            commits: messages.map.with_index(1) { |msg, i| { index: i, message: msg } },
+            count: messages.size
+          }
+        end
       end
     end
   end

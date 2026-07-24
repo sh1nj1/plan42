@@ -7,7 +7,7 @@ module Collavre
       end
 
       def allowed?(required_permission = :read)
-        base = creative.origin_id.nil? ? creative : creative.origin
+        base = EffectiveCreativeResolution.effective_creative(creative)
 
         # Owner always has admin permission (fallback for fixtures and missing cache entries)
         return true if base.user_id == user&.id

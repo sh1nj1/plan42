@@ -1,0 +1,23 @@
+{
+  "name": "collavre",
+  "owner": {
+    "name": "VReRV",
+    "url": "https://collavre.com"
+  },
+  "metadata": {
+    "description": "Collavre plugins for Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "collavre",
+      "source": "./tools/collavre-claude-plugin",
+      "description": "Connects Claude Code sessions to a Collavre inbox for real-time, two-way communication via channels.",
+      "version": "0.1.0",
+      "author": {
+        "name": "VReRV"
+      },
+      "license": "MIT"
+    }
+  ]
+}

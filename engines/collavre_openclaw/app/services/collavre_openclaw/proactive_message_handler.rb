@@ -150,7 +150,7 @@ module CollavreOpenclaw
       effective_session_key = session_key || buffer&.dig(:session_key)
       context = self.class.parse_session_key(effective_session_key)
 
-      dispatch_to_job(user, content, context)
+      dispatch_to_job(user, content, context, run_id)
     end
 
     def handle_error(run_id, _user, payload)
@@ -208,7 +208,7 @@ module CollavreOpenclaw
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
-    def dispatch_to_job(user, content, context)
+    def dispatch_to_job(user, content, context, run_id = nil)
       creative_id = context[:creative_id]
 
       unless creative_id.present?
@@ -231,9 +231,11 @@ module CollavreOpenclaw
           "type" => "proactive",
           "content" => content,
           "creative_id" => creative_id,
+          "run_id" => run_id,
           "context" => {
             "creative_id" => creative_id,
-            "thread_id" => context[:topic_id]
+            "thread_id" => context[:topic_id],
+            "run_id" => run_id
           }
         }
       )

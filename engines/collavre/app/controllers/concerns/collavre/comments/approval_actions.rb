@@ -4,22 +4,15 @@ module Collavre
       extend ActiveSupport::Concern
 
       def approve
+        # Claude Channel permission prompts reuse the approval comment UI but the
+        # tool runs inside the remote Claude Code process — never execute it
+        # server-side. Approving relays an "allow" decision to the suspended
+        # session instead of invoking the ActionExecutor.
+        return decide_claude_channel_permission(:allow) if @comment.claude_channel_permission?
+
         status = @comment.approval_status(Current.user)
         if status != :ok
-          error_key = case status
-          when :invalid_action_format then "collavre.comments.approve_invalid_format"
-          when :missing_action then "collavre.comments.approve_missing_action"
-          when :missing_approver then "collavre.comments.approve_missing_approver"
-          when :admin_required then "collavre.comments.approve_admin_required"
-          else "collavre.comments.approve_not_allowed"
-          end
-          http_status = case status
-          when :invalid_action_format, :missing_action, :missing_approver
-                          :unprocessable_entity
-          else
-                          :forbidden
-          end
-          render json: { error: I18n.t(error_key) }, status: http_status and return
+          render_approval_status_error(status) and return
         end
 
         begin
@@ -29,6 +22,17 @@ module Collavre
         rescue ::Comments::ActionExecutor::ExecutionError => e
           render json: { error: e.message }, status: :unprocessable_entity
         end
+      end
+
+      # Reject a Claude Channel tool-permission prompt. There is no native
+      # equivalent (the native approval UI has approve-only; an un-approved
+      # action is simply left pending), so deny is exclusive to these comments.
+      def deny
+        unless @comment.claude_channel_permission?
+          render json: { error: I18n.t("collavre.comments.approve_not_allowed") }, status: :forbidden and return
+        end
+
+        decide_claude_channel_permission(:deny)
       end
 
       def update_action
@@ -107,6 +111,45 @@ module Collavre
         end
       rescue ::Comments::ActionValidator::ValidationError => e
         render json: { error: e.message }, status: :unprocessable_entity
+      end
+
+      private
+
+      # Resolve a Claude Channel permission prompt: gate on the approver, record
+      # the decision atomically (idempotent against double-clicks), relay it to
+      # the suspended session, and re-render the now-decided comment.
+      def decide_claude_channel_permission(behavior)
+        status = @comment.approval_status(Current.user)
+        if status != :ok
+          render_approval_status_error(status) and return
+        end
+
+        begin
+          @comment.decide_claude_channel_permission!(behavior, by: Current.user)
+        rescue Comment::ClaudeChannelPermission::AlreadyDecided
+          render json: { error: I18n.t("collavre.comments.approve_already_executed") }, status: :unprocessable_entity and return
+        end
+
+        @comment.broadcast_claude_channel_permission_decision(behavior)
+        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
+        render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
+      end
+
+      def render_approval_status_error(status)
+        error_key = case status
+        when :invalid_action_format then "collavre.comments.approve_invalid_format"
+        when :missing_action then "collavre.comments.approve_missing_action"
+        when :missing_approver then "collavre.comments.approve_missing_approver"
+        when :admin_required then "collavre.comments.approve_admin_required"
+        else "collavre.comments.approve_not_allowed"
+        end
+        http_status = case status
+        when :invalid_action_format, :missing_action, :missing_approver
+                        :unprocessable_entity
+        else
+                        :forbidden
+        end
+        render json: { error: I18n.t(error_key) }, status: http_status
       end
     end
   end

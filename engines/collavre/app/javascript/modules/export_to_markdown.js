@@ -1,3 +1,4 @@
+import { alertDialog } from '../lib/utils/dialog';
 
 if (!window.isExportMarkdownEnabled) {
     window.isExportMarkdownEnabled = true;
@@ -27,7 +28,7 @@ if (!window.isExportMarkdownEnabled) {
                             URL.revokeObjectURL(url);
                         }, 0);
                     })
-                    .catch(err => alert(err));
+                    .catch(err => alertDialog(err));
             });
         }
     });

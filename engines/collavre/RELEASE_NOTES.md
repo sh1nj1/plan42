@@ -1,3 +1,392 @@
+## v0.24.1 (2026-07-21)
+
+### Changes
+- a5de926f fix(comments): keep previous-message button stepping back on rapid clicks (#1407)
+- e1ce6bad feat: pin the add-topic button left of the topic-list button (#1406)
+- 5b49a09b fix(collavre): render dropped agent avatar from response, surface failures (#1405)
+
+## v0.24.0 (2026-07-16)
+
+### Changes
+- 721cf70a fix(collavre): show foreign-owned linked shells placed in shared trees (#1400)
+- ef0dd7da refactor(collavre): extract inline creative payload mapping cluster from creative_row_editor god-file (rot ① slice 3) (#1399)
+- c186f478 refactor(collavre): unify CreativeShare stale-cache delete timing to async (rot ②a) (#1397)
+- 00e1d5d8 refactor(collavre): accumulate Creative::Permissible permission changes across saves (fail-closed) (#1396)
+- 743758a8 refactor(collavre): extract tree-DOM navigation cluster from creative_row_editor god-file (#1395)
+- b989b187 refactor(collavre): unify CreativeShare cache invalidation via declarative dispatcher (rot ② PR 6) (#1393)
+- b510e921 refactor(collavre): converge attachments write check onto PermissionFilter (rot ② PR 4) (#1392)
+- cec2f853 refactor(collavre): converge slide_viewable + tree_builder onto PermissionFilter (rot 2 PR 3) (#1391)
+- f5e72c8c refactor(collavre): converge children_with_permission onto PermissionFilter (rot ② PR 2) (#1390)
+- 79d9e125 refactor(collavre): extend PermissionFilter with min_permission: and ranks_for (rot ② PR 1) (#1389)
+- b4f73dd3 test(collavre): characterize permission read-path bypass sites (#1388)
+- 35102cd3 test: add SimpleCov and Jest coverage measurement + baseline (#1385)
+- 2d645586 refactor(collavre): extract autosave request lifecycle into CreativeSaveQueue (#1386)
+- 2aaeab6f fix: unify linked-creative origin resolution across permission read paths (#1384)
+- d0fd95fa refactor: extract IndexedJsonColumns concern from Channel (#1383)
+- ae8a70cd fix: keep parentId for newly-added siblings via single data-parent-id convention (#1382)
+- 388a5239 ci: add Postgres schema-load smoke job to catch SQLite-only constructs (#1381)
+- 97ac2377 feat(landing): reposition around "one object, not four copies" (#1378)
+- f0e4439b perf(collavre): batch the browse tree per level instead of per node (#1376)
+- 4f9bfaae test(collavre): stabilize flaky oauth provider system test (#1375)
+- 87cf9abd refactor(api): extract bearer-auth concern + core ApiError envelope (#1374)
+- fe6d9529 refactor: back Task#status and InboxItem#state with string enums (#1372)
+- 1d273ae9 perf: add comments_count and comment_versions_count counter caches (#1373)
+- a314632e refactor: mechanical code-quality cleanups (token-leak, HTTP client, method decomposition) (#1366)
+- 449208e2 refactor(collavre): decompose creatives & agents god controllers into services (#1365)
+- 5268b7d7 refactor(collavre): make core engine vendor-neutral (#1364)
+- 05c315fb fix(security): encrypt repository-link webhook secret at rest and block SSRF DNS rebinding (#1369)
+- 3b8fdf65 fix(db): add channel indexes/constraints and remove Postgres-incompatible json_extract index (#1367)
+- 8181b6ba feat: vertical topic-list popup with search and archived topics (#1360)
+- 5cc1d00a feat: show save status in creative inline editor toolbar (#1359)
+- d67293db feat: source-block fence shortcut and multi-block code toggle in inline editor (#1358)
+- a17b4b0f feat: never dispatch approval-action messages to AI agents (#1357)
+- af72b2f5 fix(collavre): assign per-parent sequence on markdown import (#1356)
+- 0c4d8e85 feat: add collavre_linear bidirectional Linear integration engine (#1342)
+- d52d619d fix: let editable fields keep Ctrl+K instead of opening search popup (#1340)
+
+## v0.23.0 (2026-06-23)
+
+### Changes
+- 4c6b789c fix: show review button on /compress summary by authoring it as the AI agent (#1310)
+- 4efa9498 fix(collavre): resolve FCM SA-email env var at boot to fix PWA push (#1337)
+- 1386de71 fix: self-heal inbox badge count on WebSocket reconnect (#1338)
+- 482d9357 feat: self-heal orphaned queued waiters in StuckDetector (#1292)
+- 942677b1 feat(collavre): unify creative table rendering with chat-message tables (#1335)
+- dbd8e351 fix(collavre): focus inline editor when reopening rich-authored Markdown (#1334)
+- 55942b00 fix: preserve inline-editor blank lines as <br> markers (#1333)
+- 51276a03 fix(collavre): Shift+Tab leaves a top-level list; verify Enter-twice escape (#1331)
+- 369c729b fix(lexical): keep editor editable when content ends with an image (#1332)
+- 0574bb90 fix(creatives): keep ArrowUp inside inline editor when not at document start (#1330)
+- ad51fdba fix: keep YouTube preview iframe through client-side sanitizer (#1328)
+- a3682105 fix(creatives): apply markdown display styles to creative title area (#1327)
+- 9cc9ff6a fix: match rendered creative code highlighting to the Lexical editor (shared Prism) (#1319)
+- a89ad229 feat(creatives): table input in the Lexical editor (#1315)
+- 6e87e365 fix: surface server error payload in API failure alerts (#1322)
+- 36c3f897 feat: typo correction (Phase 0 backend + Phase 1 chat composer) (#1317)
+- 7c20de22 feat: preserve user blank lines in inline editor markdown (#1320)
+- 2576201f feat: nested list indentation via Tab/Shift+Tab in inline editor (#1318)
+- 4c9b8585 feat(creatives): make creative_create/update descriptions Markdown-canonical (#1316)
+- f13ffec2 feat(creatives): make the Lexical editor Markdown-canonical with color/bg spans (#1313)
+- 0fb1c5b1 fix(comments): make duplicate-send guard survive controller reconnect (#1311)
+- a3613103 feat(topics): offer to re-add dropped members when moving a topic (#1295)
+- e0e76f8f fix: delete topic by capturing id before awaiting confirm dialog (#1307)
+- 71007af2 feat(desktop): route Turbo data-turbo-confirm through in-app dialog (#1303)
+- b3c86fdc refactor(voice): drop client since cursor, server emits all pending approvals (#1304)
+- 90d1c058 feat: Collavre Voice Companion — Android app + Rails mobile API (#1297)
+- 5b12c212 fix: dispatch AI in all inbox topics except System (#1301)
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+- e5decd2b feat(desktop): Collavre desktop app foundation (Tauri macOS + SQLite single-process) (#1296)
+- d90dad91 feat: paginate the Chats (comment filter) list and kill its N+1s (#1294)
+- b412abc0 fix: keep native playback controls on displayed attached video nodes (#1291)
+
+## v0.22.0 (2026-06-10)
+
+### Changes
+- c186206e feat(claude-channel): structured tool-permission approval UI (#1287)
+- 71b3adee fix: dedup OpenClaw agent responses across processes via run_id (#1279)
+- ee3144ce feat: Claude Channel MCP stdio plugin for Collavre integration (#1161)
+- b580bd59 refactor: drop dead action_text_rich_texts table (#1281)
+- dad69dac feat(collavre): HTML-derived attachment upload (bearer endpoint + inline video) (#1280)
+- e5e34f21 feat(collavre): notify when a deleted topic orphans a cron job (#1278)
+- 0c9a3628 fix: bind lexical text color at import time to stop it drifting on reopen (#1276)
+- a28609ef feat: minimize Lexical inline editor HTML output (#1274)
+- efb94602 feat(collavre): FCM service account JSON + WIF via admin UI (#1271)
+- 216b5a38 fix(collavre): allow deleting a topic that has comment snapshots (#1275)
+- eda0c7ba feat(creatives): browsable mini-tree in creative picker popup (#1272)
+- afb933c8 feat: horizontal-scroll typing/badge row with stick-to-end auto-scroll (#1273)
+
+## v0.21.0 (2026-06-04)
+
+### Changes
+- 349546e1 feat: add Markdown content type for creatives (#1169)
+- f25448cc feat: render MCP tool response markdown in chat (#1213)
+- d0e18291 fix(inbox): create System topic on first visit so badge has matching sidebar entry (#1264)
+- 7c8b144a feat(collavre): Phase 3 AWS — DB-backed S3 + SES via boot + runtime interceptor (#1270)
+- 83d558a0 feat(collavre): Phase 3 batch — DB-backed firebase/fcm/llm/openclaw/mail/misc settings (#1267)
+- 6e3d2728 feat(collavre): Phase 2 GitHub — DB-backed webhook secret, API endpoint, mock toggle (#1266)
+- 3d73c334 feat(collavre): Phase 2 OmniAuth — DB-backed Google/GitHub/Notion OAuth keys (#1265)
+- 2e86a60d feat(collavre): DB-backed integration settings (Phase 1: Slack) (#1263)
+- 853fe428 fix(test): align sign-in landing assertion with authenticated home redirect (#1262)
+- d5142c79 feat(commands): auto-fill creative_id / topic_id from chat context (#1260)
+- 78a4fda3 feat(admin): split home page path into unauthenticated and authenticated (#1261)
+- c500dfab feat: store topic primary_agent_id in topics table (#1171)
+- 73876b13 feat(channels): topic-badge abstraction + preview MCP tools (#1259)
+- 53b3da6e feat: Add landing page for unauthenticated users (#827)
+- 0489e641 feat(collavre): Creative attachments with CDN-cached public URLs (#1257)
+- 8e7f12e3 fix(creatives): defer cable subscribe + retry transient fetch errors (#1256)
+- 21963486 feat(drop_trigger): branch Drop Trigger topic from Main on creation (#1258)
+- 199a0ebf fix(pr_monitor): default chip label/link fallback from channel config (#1255)
+- c9ce095a fix(channel-chip): align PR chip font-size with context chip token (#1254)
+- d43ea449 fix(pr_monitor): de-dup closed event, status badge chips, dismiss-on-X (#1242)
+- bf9b1d57 feat(channels): GitHub PR comment listener via Channel abstraction (#1238)
+- a618a1e9 build(deps): bump view_component from 4.5.0 to 4.9.0 (#1228)
+
+## v0.20.3 (2026-04-30)
+
+### Changes
+- 08062eaf Auto-verify email on successful password reset (#1224)
+
+## v0.20.2 (2026-04-17)
+
+### Changes
+- 14d9a0d1 perf: eliminate N+1 in slide_viewable#build_slide_ids (#1215)
+- 5a63037e fix: scope admin-only lookups in share/invitation/plan controllers (#1214)
+
+## v0.20.1 (2026-04-17)
+
+### Changes
+- 7bd18958 fix: move add_task_id_to_comments migration into collavre engine (#1217)
+
+## v0.20.0 (2026-04-17)
+
+### Changes
+- e5bfa732 fix: prevent duplicate topics and stale loadTopics race in comments popup (#1212)
+- 0ea762f7 fix: increase wait times for comment share link system test (#1211)
+- 25401173 fix: unify stop button text color in chat popup (#1208)
+- 0345f1f0 feat: GitHub markdown datasource with read-only sync (#1201)
+- 7d78cbe4 fix: resolve N+1 queries and inefficient task scan (#1204)
+- 18ba9832 feat: always inject ancestry breadcrumb in AI agent context (#1205)
+- a327e375 refactor: server-side stop button with comment-task 1:1 link (#1202)
+- b07334c7 feat: add stop button on streaming AI messages (#1200)
+- 6462f049 feat: separate Main topic from All Messages view (#1197)
+- bc598aa7 fix: skip orchestration dispatch for inbox comments (#1199)
+- 7e1b0860 feat: add scroll-to-previous-message button in chat popup (#1198)
+- d401ea61 fix: include primary_agent in topic update broadcast and response (#1196)
+- 589ff5b6 refactor: extract duplicated topic validation, broadcast helper, and user_json (#1195)
+- 74f54e9f refactor: extract permission guard concern, add public_only scope, consolidate set_creative (#1193)
+- c641a5f6 fix: remove dead code — unused methods, services, models, and JS modules (#1192)
+- cfd0e0fb fix: resolve openclaw test bootsnap error, replace puts with logger, fix bare rescue, batch N+1 query (#1191)
+- 7718c7d1 fix: add permission checks for IDOR and HTML-escape for XSS vulnerabilities (#1190)
+- 885f9531 fix: pass gateway_url to AiClient in background jobs (#1194)
+- dd0e4db0 fix: dispatch creative-editing:stop for new creatives without ID (#1189)
+- 5421ae46 feat: fade chat popup when inline editor is active (#1188)
+- adc3e698 feat(collavre): extract SessionContextResolver for common session management (#1186)
+- b60aa962 fix: inherit disabled_context_ids from ancestor creatives (#1182)
+- f94a0f56 fix: prevent vertical scroll blocking over horizontal-only scrollable elements (#1184)
+- 55b41b62 fix: reorder chat history entries on revisit to reflect visit order (#1181)
+- 2eed586f feat(collavre): support MCP tool defaults per creative (#1168)
+- 5463545f Feat/ai client session id header (#1180)
+- e2a11327 refactor: extract shared IntegrationWizard JS module from modal wizards (#1177)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+- ffdbbe4e fix: remove html_safe usage and add Google Calendar error handling (#1175)
+- a06cdbcb fix: replace SQL interpolation with parameterized query and standardize rescue clauses (#1173)
+- ff1196a4 fix: add authorization checks to InvitesController and InboxItemsController (#1172)
+- 8e2b2c2f fix: prevent layout shift on creative row hover progress toggle (#1170)
+- f611a051 fix: prevent popup jumping to (0,0) when exiting fullscreen quickly (#1167)
+- ad12b385 feat: add markdown shortcuts to Lexical inline editor (#1122)
+- 9dafb818 fix: broadcast MCP-triggered creative changes to all users (#1166)
+- e3df9d9f feat: swap Enter/Shift+Enter shortcuts in creative inline editor (#1164)
+- 35873c0b Merge pull request #1129 from sh1nj1/fix/select-mode-block-click
+- d1c0bd62 feat: add LLM request timeout to system settings (#1163)
+- cfefd9c2 fix: address code scan 2026-04-10 findings — security, duplication, quality (#1160)
+- 3214fd73 fix: remove duplicate toggle logic, keep navigation block only
+- 17ea986b fix: block navigation click in select mode, toggle selection only
+
+## v0.16.0 (2026-04-10)
+
+### Changes
+- b25234c5 fix: address mermaid code review issues
+- 5f4d787b feat: add Mermaid diagram rendering in markdown
+
+## v0.15.0 (2026-04-09)
+
+### Changes
+- e34a180e Merge pull request #1158 from sh1nj1/feat/table-download
+- 6e83bd4b fix: add table download buttons to server-rendered messages
+- 809fd1c0 feat: add CSV and Excel download buttons for tables in chat messages
+
+## v0.14.0 (2026-04-09)
+
+### Changes
+- ff48abc5 feat: replace routing expression with trigger type selector (#1157)
+- f998daf4 feat: inline reply from inbox System topic (#1156)
+- b6df34b3 fix: make branch icon clickable to navigate to source topic
+- aeae831d fix: remove unused branchComments export from topics.js
+- 95359707 test: add integration tests for chat branching
+- b2a59bb1 feat: add chat branching — copy selected messages into a new topic
+- c98ceab2 Merge pull request #1153 from sh1nj1/fix/review-popup-mouseup
+- 9c0e664c feat: add Ctrl+A to select all messages in chat popup (#1152)
+- c2ed1117 fix: bind mouseup to document so review popup appears when mouse released outside comment
+- 29d6e1c3 chore: add CommandMenuComponent test and remove dead search mode block (#1151)
+- 6ff9df2d fix: resolve N+1 queries in stuck_detector and creatives_controller (#1150)
+- aa2603c0 chore: remove dead code — unused partials, helpers, route, and model methods (#1149)
+- f5473d32 refactor: replace inline comment visibility queries with visible_to scope (#1148)
+- ddd75680 fix: add ownership checks for user profile, AI user, and Slack account (#1147)
+- 8639865c refactor: extract OpenClaw abort logic into shared service (#1146)
+- 390cb1f9 fix: patch XSS vulnerabilities and update action_text-trix (#1145)
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+- a615ace3 fix: use --layer-fullscreen design token instead of hardcoded z-index
+- aff11d22 fix: raise z-index of creative picker modal above fullscreen chat
+
+## v0.13.0 (2026-04-08)
+
+### Changes
+- 4ab957c8 Merge pull request #1134 from sh1nj1/feat/command-args-form
+- cd9195c1 Merge pull request #1135 from sh1nj1/feat/cancel-agent-task
+- 47952e4e fix: always use JSON format for MCP command args to preserve spaces
+- 1ffe06d4 feat: add focus trap to search popup via shared modal-dialog class
+- a08b1237 fix: use valid design tokens for agent stop button CSS
+- bfe2d4da refactor: extract focus trap into shared modal_dialog.js module
+- 0065a0fd feat: show stop label text next to icon on agent stop button
+- b8ab35a6 feat: add focus trap for Tab/Shift+Tab within command args form
+- 677ebb1a fix: position scoped modal from top instead of center to prevent clipping
+- da3e720e fix: address code review issues — XSS, design tokens, dead code, CSS duplication
+- c16f32ae fix: strip leading @ from mention field input before API search
+- 1d318174 fix: format mention values as @{name}: with colon suffix
+- 88be787d feat: add mention popup for agent_name fields in command args form
+- bc0e89b7 fix: resolve stop button not showing and session_key mismatch
+- e1a18e53 feat: scope command args form modal inside chat popup
+- 79a501ea fix: include modal_dialog.css in COLLAVRE_STYLESHEETS
+- 26f7b96b fix: raise modal-dialog z-index above comments-popup layer
+- 26197c0f refactor: extract shared modal-dialog CSS for search popup and command args form
+- 7c15ffd2 style: apply design tokens to command-args-form CSS
+- 32dd6488 fix: move stop button to typing indicator start and add ESC shortcut
+- a9e0ebe1 fix: skip textarea auto-focus on mobile to prevent keyboard push-up (#1137)
+- 20584a0a Fix dark mode syntax highlighting readability in code blocks (#1136)
+- d05ef8d4 test: add controller tests for task cancel endpoint
+- 5c12bd84 feat: add stop button for AI agent responses
+- 217a9ec4 feat: add auto-generated input form for slash command arguments
+- 030b0ba5 feat: optimize OpenClaw token usage with conditional context sending (#1133)
+- fee52691 feat: add inline image resize support in Creative editor (#1127)
+- 7f6a5cff fix: use relative paths for direct upload URLs in inline editor (#1132)
+- ed4a7fe2 fix: preserve attachment attributes in inline editor and fix upload issues (#1130)
+- ca84398f feat: bundle drag image for multi-select drag operations (#1126)
+- e869bb24 feat: add OpenAI provider support for AI agents (#1131)
+- 9e2664eb feat: add awaiting_user state for trigger loop BLOCKED handling (#1128)
+
+## v0.12.3 (2026-04-03)
+
+### Changes
+- 1f0a3734 fix: popup menu hover background bleeds past corners and click area limited to text (#1125)
+
+## v0.12.2 (2026-04-03)
+
+### Changes
+- a1352ea6 fix: render comments popup globally in navigation panels (#1124)
+- 5de865d1 fix: compute relative level from parent DOM in broadcast handlers (#1118)
+- 3fc34f0a fix: use existing semantic tokens in editor color pickers (#1120)
+- 2fa98449 feat: add design token colors to editor toolbar color pickers (#1119)
+
+## v0.12.1 (2026-04-03)
+
+### Changes
+- 68ced1a9 feat: increase creative tree title font size to 2rem (#1117)
+- 8b13bbf0 Revert "feat: render leaf creatives as plain text in markdown export (#1116)"
+- a8df93d3 feat: render leaf creatives as plain text in markdown export (#1116)
+- 65b25ba0 fix: make badge a perfect circle (#1114)
+
+## v0.12.0 (2026-04-02)
+
+### Changes
+- 463abba2 fix: pass name_only=true in render_tags test to avoid missing render_label_suffix (#1113)
+- 39630117 fix: remove emoji prefix from inbox creative (#1111)
+- 6cfb828c fix: respect autoFocusOnOpen in setCommentPermission (#1109)
+- f4cadd6f feat: extract plan feature into collavre_plan engine (#1093)
+- d6728603 fix: hide edit button in popup menu on desktop screens (#1107)
+- 796698c9 feat: add clear formatting button to Lexical inline editor toolbar (#1105)
+- 4be9628b fix: hide search GNB menu for unauthenticated users (#1106)
+- f719470c fix: keep inline delete popup on-screen on mobile (#1091)
+- cc5fdb90 fix: add real-time broadcast for creative creation via MCP tools (#1100)
+- 0936678c feat: show trigger task status for all children of trigger containers (#1104)
+- e0038593 fix: guard parent_id in creative_update_service against nil, 0, and self-reference (#1103)
+- e2e30cb9 fix: show empty completion mark when not configured (regression) (#1102)
+- 0c494630 feat: add trigger status UI with circular progress and action controls (#1097)
+- 5dcedae2 feat: move display_level and completion_mark from user profile to admin settings (#1094)
+- c1ba4ec4 feat: add LLM verification for trigger loop DONE claims (Phase 2) (#1096)
+- a74eb6bf fix: strengthen DONE instructions to prevent premature completion claims (#1095)
+- 7c74af91 fix: use task topic_id directly in trigger loop, remove stale topic_id storage (#1092)
+- a0bc8696 feat: add trigger loop for iterative AI agent work (Phase 1) (#1090)
+- 680ee2e3 feat: prevent screen dimming while chat popup is open (#1087)
+- 964e47e8 fix: raise DispatchFailedError and retry when drop trigger dispatch returns no agents (#1089)
+- e33566d2 fix: make DropTriggerJob end-to-end idempotent (#1088)
+- 9fc5b9d9 fix: prevent swipe-to-close when scrolling chat nav dropdown (#1061)
+- 0365a14b refactor: move comment dispatch from controller to model callback (#1086)
+- e2b96e3c fix: dismiss inbox badge immediately when messages are read (#1085)
+- 20123bd7 fix: preserve deep-linked topic selection in chat popup (#1083)
+- b938e7d8 fix: harden drop trigger orchestration dispatch (#1071)
+- b895655a fix: warn when enabling drop trigger without eligible AI agent (#1070)
+- 96da72d3 feat: refresh open chat on creative share changes (#1084)
+- 790cdccc fix: prevent inbox open autofocus (#1079)
+- d18d11a0 fix: restore mobile sign in navigation entry (#1080)
+- 725208fe fix: update inbox badge immediately for inbox notifications (#1074)
+- 58875cb1 test: align inbox chat popup system coverage (#1078)
+- 7e6618ee fix: show failure notice when drop trigger has no eligible AI agent (#1068)
+- a62e4dbc feat: transform inbox into creative-based chat system (#1008)
+- 41ba119d fix: ensure resource release in AiAgentJob via ensure block (#1063)
+- 52b70f9e fix: replace colon with em dash in drop trigger message (#1066)
+- 3e04526a fix: require write permission for drop trigger AI agent selection (#1065)
+- 9fae3030 feat: add Drop Trigger for creative workflow automation (#1064)
+- a00b952c feat: move inbox next to profile and help into user menu on mobile (#1062)
+- 81bd4a39 feat: notify absent users when AI streaming message is finalized (#1059)
+- 56185375 feat: add syntax highlighting to chat code blocks (#1060)
+- 340121ea feat: show default avatar with initial for topic agents (#1057)
+- f7cf2ce0 fix: require write permission for creative update (#1051)
+- 01c500cd feat: real-time creative collaboration sync with presence and edit conflict hints (#1037)
+- 97ad9b82 fix: prevent click navigation when long-press dropdown is triggered (#1054)
+- 73ce5223 fix: auto-resize textarea height when editing a chat message (#1053)
+- 95ac3060 feat: add Alt+→ keyboard shortcut for forward chat navigation (#1052)
+- 6aac1a69 fix: allow scroll in comments list when messages are selected (#1049)
+- 450ef127 fix: allow Alt+← chat navigation shortcut when textarea is focused (#1050)
+- f2195e76 feat: add remove button to chat navigation history dropdown (#1048)
+- 6ed8b0fc feat: add chat navigation with back/forward history buttons (#1047)
+- 110318e3 feat: restyle lexical toolbar buttons with outline style (#1046)
+- 7695c70c feat: search popup with integrated filters (#985)
+- 646fe89c feat: add snapshot recovery for compress and merge operations (#1043)
+- ca8578c6 feat: add mobile touch drag-and-drop for comments and agents (#1041)
+- de7ebbcc fix: prevent popup-box from overflowing on mobile (#1040)
+- 8c4477a9 feat: add image lightbox carousel with download and zoom support (#1039)
+
+## v0.11.1 (2026-03-24)
+
+### Changes
+- eead2373 fix: update inbox panel CSS test to reference engine gnb.css (#1035)
+- cb53e988 refactor: extract GNB styles from host app to collavre engine (#1033)
+
+## v0.11.0 (2026-03-24)
+
+### Changes
+- 646a3e44 style: add right padding to breadcrumb for action button spacing (#1032)
+- c46142fa feat: redesign creative-actions-row with breadcrumb and overflow menu (#1031)
+- e8ca266b feat: persist topic selection server-side via UserCreativePreference (#1025)
+- 151002ce fix: close fullscreen chat properly on swipe down (#1027)
+- d9cc5463 fix: ensure only one GNB popup is visible at a time on mobile (#1026)
+- eadbb422 feat: add inline progress toggle on hover (#1021)
+- 3f7a567a fix: update system test for Enter key shortcut change (#1024)
+- c3ab40e9 fix: swap Enter/Shift+Enter behavior in creative inline editor (#1019)
+- c34070fe fix: markdown import drop not working due to missing dragover class (#1020)
+- 8697d203 feat: multi-word AND search for creatives and comments (#1016)
+- 6d58c308 fix: constrain mobile chat popup max-height when keyboard opens (#1017)
+- 836a1bb1 fix: use calc-based dynamic vertical centering for creative row icons (#1018)
+
+## v0.10.0 (2026-03-20)
+
+### Changes
+- 284b1024 feat: drag & drop creative into chat form to insert markdown link (#1014)
+- 390a62f9 fix: prevent Rails callback deduplication from silencing badge broadcasts (#1013)
+- cba46cf4 feat: create new topic from selected messages via drag-drop and search popup (#1012)
+
+## v0.9.0 (2026-03-19)
+
+### Changes
+- 6c555730 feat: add select-all toggle checkbox to comment selection action bar (#1007)
+- b48750de refactor: use generic scrollable ancestor detection in chat popup (#1002)
+- e395638e feat: add merge selected chat messages action (#1004)
+- 9ccb9e5b feat: drag & drop AI agent to topic tabs to set primary agent (#1005)
+- 9f4bfb7e fix: prevent CompressJob from deleting comments when AI call fails (#1003)
+- efd7c517 fix: broadcast topic creation from /topic command to update UI instantly (#999)
+- 2f4f22bd feat: use orchestration rules for agent selection in CompressJob (#1001)
+- aab343d7 fix: allow scroll inside chat popup textarea and review quotes (#1000)
+- 20517e16 fix: close chat popup when creative is deleted (#996)
+- 454c5dfc fix: improve visibility of comment version buttons and activity log marker (#994)
+- 6fa2203a fix: allow creative admins to edit action payload in update_action (#995)
+- 737a8885 fix: allow scrolling inside action details and edit textarea in chat popup (#993)
+- 5be05ef8 feat: add drag-and-drop creative onto context area (#992)
+- 8199360e fix: render markdown when navigating comment versions (#991)
+- 0a58da8c feat: align chat popup to right of button when space available (#990)
+- b2bbcb9b fix: prevent wheel event handler from blocking share modal scroll (#989)
+- 35b3c419 fix: remove underline decoration from creative hover (#988)
+- 239632a0 fix: limit hover underline to first line of creative content (#987)
+
 ## v0.8.3 (2026-03-16)
 
 ### Changes

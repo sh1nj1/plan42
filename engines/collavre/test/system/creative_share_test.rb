@@ -20,11 +20,12 @@ class CreativeShareSystemTest < ApplicationSystemTestCase
     fill_in placeholder: I18n.t("collavre.users.new.enter_your_email"), with: @user.email
     fill_in placeholder: I18n.t("collavre.users.new.enter_your_password"), with: SystemHelpers::PASSWORD
     find("#sign-in-submit").click
-    assert_current_path root_path
+    assert_current_path post_sign_in_path
 
     visit collavre.creative_path(@creative)
 
-    # Share modal is loaded via AJAX when share button is clicked
+    # Open overflow menu first, then click share button (share is inside ⋯ menu)
+    find("#creative-overflow-menu", visible: :all).ancestor(".popup-menu-wrapper").find("button", match: :first).click
     find("#share-creative-btn").click
     assert_selector "#share-creative-modal", visible: :visible
 

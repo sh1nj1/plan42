@@ -5,7 +5,7 @@ module Collavre
 
       index = 0
       safe_join(labels.map do |label|
-        suffix = " 🗓#{label.target_date}" if label.type == "Plan" and !name_only
+        suffix = name_only ? nil : render_label_suffix(label)
         index += 1
         content_tag(:span, class: "tag") do
           safe_join([
@@ -18,14 +18,25 @@ module Collavre
     end
 
     def render_creative_tags(creative)
-      labels = creative.tags&.includes(:label)&.map(&:label)&.compact
+      # The browse tree preloads tags -> label per level; `includes` on an
+      # already-loaded association builds a fresh relation and re-queries it,
+      # which would reinstate the N+1 this is called from.
+      labels = if creative.tags.loaded?
+        creative.tags.map(&:label).compact
+      else
+        creative.tags&.includes(:label)&.map(&:label)&.compact
+      end
       return "" if labels&.empty?
       content_tag(:div, class: "creative-tags", style: "display: none;") do
         render_tags(labels, "unstyled-link", true)
       end
     end
 
-    def render_creative_progress(creative, select_mode: false)
+    # `can_write`, `can_feedback` and `unread_count` let a caller rendering many
+    # creatives at once (the browse tree) resolve them in batch and hand them in.
+    # Left nil, each is resolved for this creative alone — correct, but a query
+    # per node. Single-creative call sites take that path.
+    def render_creative_progress(creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil)
       progress_value = if params[:tags].present?
         tag_ids = Array(params[:tags]).map(&:to_s)
         creative.filtered_progress || creative.progress_for_tags(tag_ids) || 0
@@ -33,15 +44,15 @@ module Collavre
         creative.progress
       end
 
+      can_feedback = creative.has_permission?(Current.user, :feedback) if can_feedback.nil?
+
       content_tag(:div, class: "creative-row-end") do
         comment_part = if creative.archived?
           safe_join([])
-        elsif creative.has_permission?(Current.user, :feedback)
+        elsif can_feedback
           origin = creative.effective_origin
-          comments_count = origin.comments.size
-          pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
-          last_read_id = pointer&.last_read_comment_id
-          unread_count = last_read_id ? origin.comments.where("id > ? and private = ?", last_read_id, false).count : comments_count
+          comments_count = origin.comments_count
+          unread_count = unread_count_for(origin, comments_count) if unread_count.nil?
           if Current.user && CommentPresenceStore.list(origin.id).include?(Current.user.id)
             unread_count = 0
           end
@@ -69,8 +80,16 @@ module Collavre
         else
           safe_join([])
         end
+        is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
+        can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
+        progress_part = if is_leaf && can_write && !select_mode
+          render_progress_toggle(creative, progress_value)
+        else
+          render_progress_value(progress_value)
+        end
+
         safe_join([
-          render_progress_value(progress_value),
+          progress_part,
           comment_part,
           tag.br,
           (creative.tags ? render_creative_tags(creative) : safe_join([]))
@@ -78,20 +97,55 @@ module Collavre
       end
     end
 
-    def render_progress_value(value)
-      text = number_to_percentage(value * 100, precision: 0)
-      if value == 1 && !Current.user&.completion_mark.nil?
-        text = Current.user.completion_mark
-      end
-      content_tag(
-        :span,
-        text,
-        class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
-      )
+    # Unread comments on `origin` for the current user. With no read pointer,
+    # every comment is unread. Batched by CommentBadgeIndex for the browse tree;
+    # this is the single-creative path.
+    def unread_count_for(origin, comments_count)
+      pointer = CommentReadPointer.find_by(user: Current.user, creative: origin)
+      last_read_id = pointer&.last_read_comment_id
+      return comments_count unless last_read_id
+
+      origin.comments.where("id > ? and private = ?", last_read_id, false).count
     end
 
-    def expanded_from_expanded_state(creative_id, expanded_state_map)
-      !!(expanded_state_map && expanded_state_map[creative_id.to_s])
+    def render_progress_toggle(creative, value)
+      complete = value == 1
+      new_value = complete ? 0 : 1
+      tooltip = complete ? t("collavre.creatives.index.mark_incomplete") : t("collavre.creatives.index.mark_complete")
+      content_tag(
+        :span,
+        class: "progress-toggle-wrap",
+        data: {
+          progress_toggle: true,
+          creative_id: creative.id,
+          current_progress: value,
+          new_progress: new_value
+        },
+        title: tooltip
+      ) do
+        checkbox = tag.input(
+          type: "checkbox",
+          checked: complete || nil,
+          class: "progress-toggle-checkbox",
+          tabindex: -1,
+          "aria-label": tooltip
+        )
+        safe_join([ render_progress_value(value), checkbox ])
+      end
+    end
+
+    def render_progress_value(value)
+      text = number_to_percentage(value * 100, precision: 0)
+      completion_mark = Collavre::SystemSetting.completion_mark
+      if value == 1 && !completion_mark.nil?
+        text = completion_mark
+      end
+      display_text = text.blank? ? "\u00A0\u00A0" : text
+      content_tag(
+        :span,
+        display_text,
+        class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
+      )
     end
 
     def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)
@@ -147,10 +201,6 @@ module Collavre
     # These methods are used in views and by MarkdownImporter via ApplicationController.helpers.
     def markdown_links_to_html(text, image_refs = {})
       MarkdownConverter.markdown_to_html(text, image_refs)
-    end
-
-    def html_links_to_markdown(text)
-      MarkdownConverter.html_to_markdown(text)
     end
   end
 end

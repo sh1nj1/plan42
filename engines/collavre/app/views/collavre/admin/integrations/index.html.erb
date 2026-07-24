@@ -1,0 +1,42 @@
+<h1 class="no-top-margin"><%= t("collavre.admin.integrations.title") %></h1>
+
+<%= render "admin/shared/tabs" %>
+
+<div class="tab-panels">
+  <section class="tab-panel active">
+    <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+    <%= tag.div(flash[:warning], class: "flash-warning") if flash[:warning] %>
+    <%= tag.div(flash[:notice], class: "flash-notice") if flash[:notice] %>
+
+    <p style="color: var(--color-muted); margin-bottom: 1.5em;">
+      <%= t("collavre.admin.integrations.subtitle") %>
+    </p>
+
+    <% if @grouped_settings.empty? %>
+      <p class="empty-state" style="padding: 2em; text-align: center; color: var(--color-muted);">
+        <%= t("collavre.admin.integrations.empty_state") %>
+      </p>
+    <% else %>
+      <%# Bulk-save form is an empty container. Row inputs reference it via the HTML5
+          `form` attribute; per-row Reset/Seed `button_to` forms sit as siblings,
+          so we never nest <form> inside <form>. %>
+      <%= form_with url: collavre.bulk_update_admin_integrations_path,
+                    method: :patch,
+                    local: true,
+                    id: "integrations-bulk-form",
+                    html: { id: "integrations-bulk-form", class: "profile-form" } do %>
+      <% end %>
+
+      <% @grouped_settings.each do |category, rows| %>
+        <%= render partial: "category", locals: { category: category, rows: rows, bulk_form_id: "integrations-bulk-form" } %>
+      <% end %>
+
+      <div style="margin-top: 2em;">
+        <%= button_tag t("collavre.admin.integrations.actions.save"),
+              type: :submit,
+              form: "integrations-bulk-form",
+              class: "btn btn-primary" %>
+      </div>
+    <% end %>
+  </section>
+</div>

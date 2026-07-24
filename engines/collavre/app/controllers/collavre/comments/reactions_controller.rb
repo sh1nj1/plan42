@@ -1,6 +1,8 @@
 module Collavre
   module Comments
     class ReactionsController < ApplicationController
+      include Collavre::Comments::CommentScoping
+
       before_action :set_creative
       before_action :set_comment
       before_action :authorize_feedback!
@@ -46,22 +48,6 @@ module Collavre
 
       def broadcast_reaction_update
         CommentReaction.broadcast_reaction_update(@comment)
-      end
-
-      def set_creative
-        @creative = Creative.find(params[:creative_id]).effective_origin
-      end
-
-      def set_comment
-        comment_id = params[:comment_id] || params[:id]
-        @comment = @creative.comments
-                           .where(
-                             "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-                             false,
-                             Current.user.id,
-                             Current.user.id
-                           )
-                           .find(comment_id)
       end
 
       def authorize_feedback!

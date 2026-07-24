@@ -5,12 +5,11 @@ module Tools
   class CreativeCreateService
     extend T::Sig
     extend ToolMeta
-    include DescriptionNormalizable
 
     tool_name "creative_create_service"
-    tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field accepts HTML format for rich text content."
+    tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field is written as Markdown."
 
-    tool_param :description, description: "The content/title of the Creative. Accepts HTML format (e.g., '<p>Task title</p>'). Plain text will be wrapped in <p> tags automatically.", required: true
+    tool_param :description, description: "The content/title of the Creative, written in Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Plain text is stored as-is. Example: '# Title\\n\\n- item one\\n- item two'.", required: true
     tool_param :parent_id, description: "ID of the parent Creative. Required to create under a specific parent. If omitted, creates a root Creative.", required: false
     tool_param :progress, description: "Initial progress value (0.0 to 1.0). Default is 0.", required: false
     tool_param :after_id, description: "ID of a sibling Creative to insert after. Used for ordering.", required: false
@@ -32,15 +31,16 @@ module Tools
         end
       end
 
-      # Normalize description - wrap plain text in <p> tags if needed
-      normalized_description = normalize_description(description)
-
-      # Build the creative
+      # Build the creative. The description is authored as Markdown: store it as
+      # the canonical markdown_source and let Describable#convert_markdown_to_html
+      # render it to the HTML description (markdown_editor defaults to the
+      # advanced "source" surface for tool/MCP writes).
       creative = Creative.new(
-        description: normalized_description,
         parent: parent,
         progress: progress || 0
       )
+      creative.content_type_input = "markdown"
+      creative.markdown_source = description
 
       # Set user based on parent or current user
       creative.user = parent ? parent.user : Current.user
@@ -51,6 +51,10 @@ module Tools
 
       # Handle ordering
       handle_ordering(creative, before_id: before_id, after_id: after_id)
+
+      # Broadcast after ordering so sequence and previous_sibling are correct
+      creative.reload
+      creative.broadcast_creative_created(after_id: after_id)
 
       {
         success: true,

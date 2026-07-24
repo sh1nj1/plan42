@@ -1,0 +1,16 @@
+ko:
+  collavre:
+    mobile:
+      default_task_label: "작업"
+      summary:
+        a_tool: "도구 실행"
+        approval: "%{label}. 승인 요청: %{detail}. 승인할까요?"
+      reply:
+        approved: "승인했습니다."
+        denied: "거절했습니다."
+        already_decided: "이미 결정된 항목입니다."
+        not_authorized: "그 항목은 결정할 권한이 없습니다. 관리자 승인이 필요할 수 있습니다."
+        clarify_decision: "승인할까요, 거절할까요?"
+        empty_response: "응답을 듣지 못했습니다."
+        relayed: "에이전트에게 답변을 전달했습니다."
+        sent: "전송했습니다."

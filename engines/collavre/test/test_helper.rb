@@ -5,9 +5,21 @@ ENV["RAILS_ENV"] ||= "test"
 
 # Load the host application for testing
 # This allows engine tests to run against the full application stack
+require_relative "../../../test/support/coverage" # no-op unless COVERAGE is set; must precede app code
 require_relative "../../../config/environment"
 require "rails/test_help"
 require "minitest/mock"
+
+# The `collavre` test helper (below) exposes the bare
+# `Collavre::Engine.routes.url_helpers` module, which has no request context.
+# Its `*_url` helpers take the route set's optimized generation path, whose host
+# comes from the engine route set's `default_url_options` — empty by default in
+# test. Without a host these calls raise "Missing host to link to!" once any test
+# has warmed the optimized path (order-dependent). Seed the engine host so `_url`
+# helpers resolve regardless of suite ordering. Scoped to the engine route set
+# only; the app route host stays unset to preserve the OpenRedirect guard in
+# config/application.rb.
+Collavre::Engine.routes.default_url_options[:host] ||= "www.example.com"
 
 module ActiveSupport
   class TestCase
@@ -15,6 +27,15 @@ module ActiveSupport
 
     # Run tests in parallel with specified workers
     parallelize(workers: :number_of_processors)
+
+    if ENV["COVERAGE"]
+      parallelize_setup do |worker|
+        SimpleCov.command_name "#{SimpleCov.command_name}-#{worker}"
+      end
+      parallelize_teardown do |_worker|
+        SimpleCov.result
+      end
+    end
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all

@@ -47,12 +47,6 @@ module Collavre
       end
     end
 
-    def render_mobile_navigation_item(item)
-      content = render_navigation_item(item, mobile: true)
-      return if content.blank?
-      content_tag(:div, content)
-    end
-
     def render_navigation_item_with_children(item, mobile: false)
       return unless navigation_item_visible?(item, desktop: !mobile)
 

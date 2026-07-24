@@ -33,6 +33,16 @@ en:
         searchable_help: When enabled, others can find and mention this AI by name.
         submit: Add AI Agent
         tools_note: You can check and test available tools after creating the agent.
+        trigger_label: Trigger
+        trigger_auto: Auto-respond
+        trigger_auto_help: Agent responds to all new comments automatically.
+        trigger_mention: Respond on mention
+        trigger_mention_help: Agent responds only when @mentioned by name.
+        trigger_keyword: Respond on keyword
+        trigger_keyword_help: Agent responds when message contains a specific keyword.
+        trigger_keyword_placeholder: Enter keyword
+        trigger_advanced: Advanced (Liquid expression)
+        trigger_advanced_help: "Write a custom Liquid expression. Example: chat.content contains \"help\" and event_name == \"comment_created\""
       create_ai:
         success: AI User created successfully.
       copy_ai:
@@ -97,6 +107,7 @@ en:
       current_avatar: Current avatar
       new_avatar_preview: New avatar preview
       update_profile: Update Profile
+      update: Update
       delete: Delete
       make_system_admin: Make system admin
       make_normal_user: Make normal user
@@ -115,6 +126,20 @@ en:
         en: English
         ko: Korean
       timezone: Timezone
+      typo_correction:
+        legend: Typo correction
+        manage: Typo correction settings
+        description: Automatically suggest and fix typos as you type. Suggestions run only when both the typing device and the input location below are enabled.
+        enabled: Enable typo correction
+        threshold: Auto-apply threshold
+        threshold_hint: Edits at or above this confidence (0-100) are applied automatically; lower-confidence edits are only suggested.
+        device_legend: Typing devices
+        on_voice: Voice input
+        on_soft_keyboard: On-screen (soft) keyboard
+        on_physical_keyboard: Physical keyboard (Bluetooth/wired)
+        location_legend: Input locations
+        in_chat: Chat message input
+        in_editor: Creative editor
       profile_updated: Profile updated successfully.
       avatar_updated: Avatar updated successfully.
       password_updated: Password updated successfully.

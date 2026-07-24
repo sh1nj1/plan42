@@ -23,6 +23,7 @@ class Release
     @engine_versions = {}
     @engine_commits = {}
     @changed_engines = []
+    @original_contents = {}
   end
 
   def run
@@ -170,8 +171,22 @@ class Release
 
     # Update Gemfile.lock
     warn "Updating Gemfile.lock..."
+    remember_original(File.join(@project_root, "Gemfile.lock"))
     system("bundle install") || exit(1)
     success "Gemfile.lock updated"
+  end
+
+  # Snapshot a file before the release run overwrites it, so an aborted run can put
+  # it back byte-for-byte. A nil snapshot means the file did not exist yet (e.g. the
+  # first RELEASE_NOTES.md of a new engine) and must be deleted on rollback.
+  def remember_original(path)
+    @original_contents[path] = File.exist?(path) ? File.read(path) : nil unless @original_contents.key?(path)
+  end
+
+  def restore_originals
+    @original_contents.each do |path, original|
+      original.nil? ? FileUtils.rm_f(path) : File.write(path, original)
+    end
   end
 
   def run_tests
@@ -199,6 +214,11 @@ class Release
   def rollback_on_failure(reason)
     puts
     error reason
+    # Undo the version bump before switching branches. A bare `git checkout main`
+    # carries the uncommitted bump over to main, which both misreports the released
+    # version and makes the next run abort on the "uncommitted changes" check.
+    warn "Reverting version changes..."
+    restore_originals
     warn "Rolling back to main branch..."
     system("git checkout main")
     system("git branch -D #{@release_branch} 2>/dev/null")
@@ -218,6 +238,7 @@ class Release
   end
 
   def update_version_file(engine, version_file, new_version)
+    remember_original(version_file)
     module_name = engine.split("_").map(&:capitalize).join
     content = <<~RUBY
       module #{module_name}
@@ -229,6 +250,7 @@ class Release
 
   def update_release_notes(engine, engine_dir, new_version, commits)
     release_notes_file = File.join(engine_dir, "RELEASE_NOTES.md")
+    remember_original(release_notes_file)
     existing_content = File.exist?(release_notes_file) ? File.read(release_notes_file) : ""
 
     new_content = <<~MD

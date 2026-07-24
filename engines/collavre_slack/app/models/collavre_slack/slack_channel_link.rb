@@ -8,6 +8,7 @@ module CollavreSlack
 
     has_many :slack_message_logs, class_name: "CollavreSlack::SlackMessageLog", dependent: :destroy
     has_many :slack_comment_links, class_name: "CollavreSlack::SlackCommentLink", dependent: :destroy
+    has_many :slack_inbound_reservations, class_name: "CollavreSlack::SlackInboundReservation", dependent: :destroy
 
     validates :channel_id, :channel_name, presence: true
     # 1:1 relationship: one creative can only be linked to one Slack channel

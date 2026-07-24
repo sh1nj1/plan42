@@ -1,11 +1,13 @@
 import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
+import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
+import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list"]
+    static targets = ["list", "creationContainer"]
 
     connect() {
         this.topics = []
@@ -13,6 +15,7 @@ export default class extends Controller {
         this.canCreateTopic = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
+        this._loadTopicsVersion = 0
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
         if (this.creativeId) {
             this.loadTopics()
@@ -32,6 +35,15 @@ export default class extends Controller {
 
     onPopupOpened({ creativeId }) {
         this.creativeIdValue = creativeId
+        // Clear stale cached state from the previous creative — otherwise
+        // chat-context autofill (command_menu) reads stale values during the
+        // window between popup switch and the new topics fetch completing.
+        // form_controller's currentTopicId is cleared upstream in
+        // popup_controller.notifyChildControllers; here we clear our own
+        // mainTopicId (read directly as the autofill fallback) and the cached
+        // effective_creative_id. loadTopics() repopulates both.
+        delete this.element.dataset.effectiveCreativeId
+        this.mainTopicId = null
         this.subscribe()
         return this.loadTopics()
     }
@@ -60,8 +72,19 @@ export default class extends Controller {
     async loadTopics() {
         if (!this.creativeId) return
 
+        const version = ++this._loadTopicsVersion
+        // Clear stale topics from previous creative to prevent name-based
+        // dedupe in handleTopicMessage from blocking valid broadcasts
+        this.topics = []
+
         try {
             const response = await fetch(`/creatives/${this.creativeId}/topics`)
+            // Discard stale response if a newer loadTopics() call was made
+            if (version !== this._loadTopicsVersion) return
+
+            if (response.status === 404) {
+                throw new Error(`Creative ${this.creativeId} not found`)
+            }
             if (response.ok) {
                 const data = await response.json()
                 const topics = Array.isArray(data) ? data : data.topics
@@ -71,12 +94,26 @@ export default class extends Controller {
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
                 this.archivedTopics = data.archived_topics || []
+                this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+                this.isInbox = !!data.is_inbox
+                this.systemTopicId = data.system_topic_id ? String(data.system_topic_id) : null
+                this.mainTopicId = data.main_topic_id ? String(data.main_topic_id) : null
+                // Expose effective origin id so chat-context autofill (slash commands)
+                // and any other consumer can target the same creative the server uses
+                // (linked creatives resolve params[:creative_id] through effective_origin).
+                if (data.effective_creative_id) {
+                    this.element.dataset.effectiveCreativeId = String(data.effective_creative_id)
+                }
+
+                // Migrate localStorage to server if server has no value
+                this.migrateLocalStorage()
 
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             }
         } catch (e) {
             console.error("Failed to load topics", e)
+            throw e
         }
     }
 
@@ -91,10 +128,7 @@ export default class extends Controller {
             }
         }
 
-        // Always dispatch change event to ensure form controller gets the correct topic.
-        // Without this, switching to a creative with no stored topic leaves the form
-        // controller with a stale topic_id from the previous creative.
-        this.selectTopic("")
+        this.selectTopic(this.mainTopicId || "")
     }
 
     renderTopics(topics, canManage = false, canCreateTopic = canManage) {
@@ -106,26 +140,39 @@ export default class extends Controller {
             ? 'dragover->comments--topics#handleTopicReorderDragOver dragleave->comments--topics#handleTopicReorderDragLeave drop->comments--topics#handleTopicReorderDrop'
             : ''
 
-        let html = `<span class="topic-tag topic-drop-target ${this.currentTopicId ? '' : 'active'}" 
-                          data-action="click->comments--topics#select ${dropActions}" 
-                          data-id="">#Main</span>`
+        const allMessagesLabel = this.element.dataset.topicMainText || 'All Messages'
 
-        topics.forEach(topic => {
-            // Ensure comparison handles string/number difference
+        const mainTopic = this.mainTopicId ? topics.find(t => String(t.id) === String(this.mainTopicId)) : null
+        const otherTopics = topics.filter(t => !mainTopic || String(t.id) !== String(this.mainTopicId))
+
+        let html = ''
+
+        const renderTopic = (topic) => {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
-            html += `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
-                          data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}" 
-                          data-id="${topic.id}">
-                        #${topic.name}`
-
-            if (canManage) {
-                html += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
-                html += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
+            const agentAvatar = topic.primary_agent
+                ? this.renderAgentAvatar(topic.primary_agent)
+                : ''
+            const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
+            const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
+            let s = `<span class="topic-tag topic-drop-target ${isActive}" ${draggable}
+                          data-action="click->comments--topics#select ${dropActions} ${dragActions} ${topicDropActions}"
+                          data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
+                        ${agentAvatar}${branchIcon}#${topic.name}`
+            if (canManage && !isMainTopic) {
+                s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
+                s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
+            s += `</span>`
+            return s
+        }
 
-            html += `</span>`
-        })
+        if (mainTopic) html += renderTopic(mainTopic)
+        otherTopics.forEach(topic => { html += renderTopic(topic) })
+
+        html += `<span class="topic-tag topic-drop-target topic-all-messages ${this.currentTopicId ? '' : 'active'}"
+                      data-action="click->comments--topics#select ${dropActions}"
+                      data-id="">📋 ${allMessagesLabel}</span>`
 
         // Archived topics section
         if (this.archivedTopics && this.archivedTopics.length > 0) {
@@ -142,22 +189,47 @@ export default class extends Controller {
             }
         }
 
-        // Add create button container (write permission is sufficient for topic creation)
-        if (canCreateTopic) {
-            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer">
-                  <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
-                 </span>`
+        this.listTarget.innerHTML = html
+
+        // The create button lives outside the scrolling strip so it stays reachable
+        // without horizontal scrolling, no matter how many topics there are.
+        this.renderCreationContainer(canCreateTopic)
+    }
+
+    // Write permission is sufficient for topic creation.
+    renderCreationContainer(canCreateTopic) {
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
+
+        container.hidden = !canCreateTopic
+        if (!canCreateTopic) {
+            container.innerHTML = ''
+            return
         }
 
-        this.listTarget.innerHTML = html
+        // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
+        // `creating` marks an already-submitted name, whose input must give way to the button.
+        // A draft only survives re-renders of the creative it was typed for: chat-nav
+        // switches creatives without blurring, and posting it there is the wrong creative.
+        const draftIsCurrent = String(this._draftCreativeId) === String(this.creativeId)
+        if (!this.creating && draftIsCurrent && container.querySelector('.topic-input')) return
+
+        this.renderAddButton()
+    }
+
+    renderAddButton() {
+        this.creationContainerTarget.innerHTML =
+            `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
     }
 
     handleDragOver(event) {
-        // Only accept comment drops
-        if (!event.dataTransfer.types.includes('application/x-comment-ids')) return
+        // Accept comment drops or agent drops
+        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
+        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
+        if (!isComment && !isAgent) return
 
         event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
+        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
         event.currentTarget.classList.add('drag-over')
     }
 
@@ -169,13 +241,25 @@ export default class extends Controller {
         event.preventDefault()
         event.currentTarget.classList.remove('drag-over')
 
+        // Handle agent drop
+        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
+        if (agentJson) {
+            const agent = JSON.parse(agentJson)
+            const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
+            if (targetTopicId) {
+                await this.setTopicPrimaryAgent(targetTopicId, agent)
+            }
+            return
+        }
+
+        // Handle comment drop
         const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
         if (!commentIdsJson) return
 
         const commentIds = JSON.parse(commentIdsJson)
         if (!commentIds || commentIds.length === 0) return
 
-        const targetTopicId = event.currentTarget.dataset.id // Empty string for Main
+        const targetTopicId = event.currentTarget.dataset.id || this.mainTopicId
 
         // Dispatch event for list_controller to handle the move
         this.dispatch('move-to-topic', {
@@ -316,10 +400,15 @@ export default class extends Controller {
 
     async deleteTopic(event) {
         event.stopPropagation()
-        const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
-        if (!confirm(confirmText)) return
-
+        // Capture the topic id BEFORE awaiting the dialog: once the click
+        // dispatch completes, event.currentTarget is reset to null, so reading
+        // it after `await` throws. confirmDialog made this handler async, which
+        // exposed the latent stale-currentTarget hazard (the old sync confirm()
+        // never yielded the event loop).
         const topicId = event.currentTarget.dataset.id
+        const confirmText = this.listTarget.dataset.confirmDeleteText || "This will delete all messages in this topic. Are you sure?"
+        if (!(await confirmDialog(confirmText, { danger: true }))) return
+
         if (!topicId) return
 
         try {
@@ -333,11 +422,11 @@ export default class extends Controller {
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
                     this.currentTopicId = "" // Switch to Main
-                    this.dispatch("change", { detail: { topicId: "" } })
+                    this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
                 this.loadTopics()
             } else {
-                alert("Failed to delete topic")
+                alertDialog(this._i18n("delete_error"))
             }
         } catch (e) {
             console.error("Error deleting topic", e)
@@ -360,11 +449,11 @@ export default class extends Controller {
             if (response.ok) {
                 if (String(this.currentTopicId) === String(topicId)) {
                     this.currentTopicId = ""
-                    this.dispatch("change", { detail: { topicId: "" } })
+                    this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
                 this.loadTopics()
             } else {
-                alert("Failed to archive topic")
+                alertDialog(this._i18n("archive_error"))
             }
         } catch (e) {
             console.error("Error archiving topic", e)
@@ -387,7 +476,7 @@ export default class extends Controller {
             if (response.ok) {
                 this.loadTopics()
             } else {
-                alert("Failed to restore topic")
+                alertDialog(this._i18n("restore_error"))
             }
         } catch (e) {
             console.error("Error restoring topic", e)
@@ -401,11 +490,59 @@ export default class extends Controller {
         this.restoreSelection()
     }
 
+    openTopicListPopup(event) {
+        const btnRect = event.currentTarget.getBoundingClientRect()
+
+        const openWith = (popup) => {
+            popup.openForTopics(
+                {
+                    topics: this.topics || [],
+                    archivedTopics: this.archivedTopics || [],
+                    mainTopicId: this.mainTopicId,
+                    allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
+                },
+                btnRect,
+                (item) => this.selectTopic(item.id),
+                this.element
+            )
+        }
+
+        let modal = document.getElementById('topic-list-modal')
+        if (modal) {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+            if (popup) openWith(popup)
+            return
+        }
+
+        modal = document.createElement('div')
+        modal.id = 'topic-list-modal'
+        modal.className = 'common-popup'
+        modal.style.display = 'none'
+        modal.dataset.controller = 'topic-list'
+        modal.innerHTML = `
+          <button type="button" class="popup-close-btn" data-topic-list-target="close">&times;</button>
+          <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+            placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
+            data-topic-list-target="input">
+          <ul class="common-popup-list" data-popup-list data-topic-list-target="list"></ul>
+        `
+        // Append into the chat box (this.element === #comments-popup) so the popup
+        // is caged within it and shares its stacking context.
+        this.element.appendChild(modal)
+
+        requestAnimationFrame(() => {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+            if (popup) openWith(popup)
+            else console.error('topic-list controller not found after creation')
+        })
+    }
+
     showInput(event) {
         event.preventDefault()
-        const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
-        if (!container) return
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
 
+        this._draftCreativeId = this.creativeId
         const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
         container.innerHTML = `<input type="text" class="topic-input" placeholder="${placeholder}" 
                                   data-action="keydown->comments--topics#handleInputKey blur->comments--topics#resetInput"
@@ -418,9 +555,8 @@ export default class extends Controller {
     resetInput() {
         // Small delay to allow enter key to process first if that was the cause
         setTimeout(() => {
-            const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
-            if (container && !this.creating) {
-                container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+            if (this.hasCreationContainerTarget && !this.creating) {
+                this.renderAddButton()
             }
         }, 200)
     }
@@ -445,6 +581,15 @@ export default class extends Controller {
         // Ignore if clicking on edit input
         if (event.target.closest('.topic-edit-input')) return
 
+        // Navigate to source topic when clicking branch icon
+        if (event.target.closest('.topic-branch-icon')) {
+            const sourceTopicId = event.currentTarget.dataset.sourceTopicId
+            if (sourceTopicId) {
+                this.selectTopic(sourceTopicId)
+                return
+            }
+        }
+
         const id = event.currentTarget.dataset.id
 
         // If clicking on already active topic (not Main), show edit mode
@@ -462,7 +607,7 @@ export default class extends Controller {
             this.clearNewMessageBadge(id)
         }
         // Dispatch event
-        this.dispatch("change", { detail: { topicId: id } })
+        this.dispatch("change", { detail: { topicId: id, isInbox: this.isInbox, systemTopicId: this.systemTopicId, mainTopicId: this.mainTopicId } })
     }
 
     showEditInput(topicEl, topicId) {
@@ -531,15 +676,14 @@ export default class extends Controller {
 
             if (response.ok) {
                 const updatedTopic = await response.json()
-                // Update local topics array
                 const index = this.topics.findIndex(t => String(t.id) === String(topicId))
                 if (index !== -1) {
-                    this.topics[index] = updatedTopic
+                    this.topics[index] = { ...this.topics[index], ...updatedTopic }
                 }
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             } else {
-                alert("Failed to update topic")
+                alertDialog(this._i18n("update_error"))
                 this.loadTopics() // Reload to restore state
             }
         } catch (e) {
@@ -580,7 +724,7 @@ export default class extends Controller {
             // If we were viewing the moved topic, switch to Main
             if (String(this.currentTopicId) === String(topicId)) {
                 this.currentTopicId = ""
-                this.dispatch("change", { detail: { topicId: "" } })
+                this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
             }
             this.loadTopics()
         }
@@ -624,11 +768,13 @@ export default class extends Controller {
             if (response.ok) {
                 const topic = await response.json()
                 this.currentTopicId = topic.id
+                // Flush save immediately so loadTopics gets the correct value from server
+                await this.flushSaveLastTopic(topic.id)
                 await this.loadTopics()
                 // Dispatch change event manually since we skipped the click handler
-                this.dispatch("change", { detail: { topicId: topic.id } })
+                this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
-                alert("Failed to create topic")
+                alertDialog(this._i18n("create_error"))
             }
         } catch (e) {
             console.error("Error creating topic", e)
@@ -637,20 +783,59 @@ export default class extends Controller {
         }
     }
 
+    // Priority: overrideTopicId (one-shot, set by deep-link) → URL topic_id → serverLastTopicId.
+    // overrideTopicId is a plain JS property (not a Stimulus value) because it is
+    // transient per popup session and should not survive connect/disconnect cycles.
     get currentTopicId() {
+        if (this.overrideTopicId !== undefined && this.overrideTopicId !== null) {
+            return this.overrideTopicId
+        }
+
         const urlParams = new URLSearchParams(window.location.search)
         const urlTopicId = urlParams.get('topic_id')
         if (urlTopicId) return urlTopicId
 
-        return localStorage.getItem(`collavre_creative_${this.creativeId}_last_topic`) || ""
+        return this.serverLastTopicId || ""
+    }
+
+    setOverrideTopicId(id) {
+        this.overrideTopicId = id ? String(id) : ""
+    }
+
+    clearOverrideTopicId() {
+        this.overrideTopicId = undefined
     }
 
     set currentTopicId(id) {
-        if (id) {
-            localStorage.setItem(`collavre_creative_${this.creativeId}_last_topic`, id)
-        } else {
-            localStorage.removeItem(`collavre_creative_${this.creativeId}_last_topic`)
+        this.serverLastTopicId = id ? String(id) : ""
+        this.debounceSaveLastTopic(id)
+    }
+
+    debounceSaveLastTopic(id) {
+        if (this._saveLastTopicTimer) clearTimeout(this._saveLastTopicTimer)
+        this._saveLastTopicTimer = setTimeout(() => {
+            this.flushSaveLastTopic(id)
+        }, 500)
+    }
+
+    async flushSaveLastTopic(id) {
+        if (this._saveLastTopicTimer) {
+            clearTimeout(this._saveLastTopicTimer)
+            this._saveLastTopicTimer = null
         }
+        if (this.creativeId) {
+            await saveLastTopic(this.creativeId, id || null)
+        }
+    }
+
+    migrateLocalStorage() {
+        const key = `collavre_creative_${this.creativeId}_last_topic`
+        const localValue = localStorage.getItem(key)
+        if (localValue && !this.serverLastTopicId) {
+            this.serverLastTopicId = localValue
+            saveLastTopic(this.creativeId, localValue)
+        }
+        localStorage.removeItem(key)
     }
 
     subscribe() {
@@ -682,6 +867,17 @@ export default class extends Controller {
         if (!data) return
 
         const action = data.action || "created"
+
+        if (action === "last_topic_changed") {
+            // Broadcast is already scoped to the current user via user-specific channel
+            const newTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
+            if (newTopicId !== this.serverLastTopicId) {
+                this.serverLastTopicId = newTopicId
+                this.selectTopic(newTopicId)
+            }
+            return
+        }
+
         if (action === "deleted") {
             this.removeTopic(data.topic_id)
             return
@@ -705,12 +901,23 @@ export default class extends Controller {
         if (!data.topic) return
 
         const topics = this.topics || []
-        const exists = topics.some((topic) => String(topic.id) === String(data.topic.id))
-        if (exists) return
+        const existsById = topics.some((topic) => String(topic.id) === String(data.topic.id))
+        if (existsById) return
+        // Prevent duplicate topic names (e.g. two "Main" topics from race between
+        // HTTP loadTopics and WebSocket broadcast)
+        const existsByName = data.topic.name && topics.some((topic) => topic.name === data.topic.name)
+        if (existsByName) return
 
         this.topics = [...topics, data.topic]
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
-        this.restoreSelection()
+
+        // Auto-select the new topic if created by the current user
+        const currentUserId = document.body.dataset.currentUserId
+        if (data.user_id && currentUserId && String(data.user_id) === String(currentUserId)) {
+            this.selectTopic(String(data.topic.id))
+        } else {
+            this.restoreSelection()
+        }
     }
 
     reorderTopicsFromServer(topicIds) {
@@ -739,7 +946,7 @@ export default class extends Controller {
         const index = topics.findIndex(t => String(t.id) === String(updatedTopic.id))
         if (index === -1) return
 
-        this.topics[index] = updatedTopic
+        this.topics[index] = { ...this.topics[index], ...updatedTopic }
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
     }
@@ -754,10 +961,157 @@ export default class extends Controller {
         this.topics = nextTopics
         if (String(this.currentTopicId) === String(topicId)) {
             this.currentTopicId = ""
-            this.dispatch("change", { detail: { topicId: "" } })
+            this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }
 
         this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
         this.restoreSelection()
+    }
+
+    handleAddButtonDragOver(event) {
+        const isAgent = event.dataTransfer.types.includes('application/x-agent-drop')
+        const isComment = event.dataTransfer.types.includes('application/x-comment-ids')
+        if (!isAgent && !isComment) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = isAgent ? 'copy' : 'move'
+        event.currentTarget.classList.add('drag-over')
+    }
+
+    async handleAddButtonDrop(event) {
+        event.preventDefault()
+        event.currentTarget.classList.remove('drag-over')
+
+        // Handle comment drop → create new topic + move
+        const commentIdsJson = event.dataTransfer.getData('application/x-comment-ids')
+        if (commentIdsJson) {
+            const commentIds = JSON.parse(commentIdsJson)
+            if (commentIds && commentIds.length > 0) {
+                await this.createTopicAndMoveComments(commentIds)
+            }
+            return
+        }
+
+        // Handle agent drop (existing logic)
+        const agentJson = event.dataTransfer.getData('application/x-agent-drop')
+        if (!agentJson) return
+
+        const agent = JSON.parse(agentJson)
+        await this.createTopicWithAgent(agent)
+    }
+
+    async createTopicAndMoveComments(commentIds, topicName = null) {
+        if (!this.creativeId) return
+
+        const name = topicName || await fetchNextTopicName(this.creativeId)
+        if (!name) return
+
+        const result = await createTopicWithComments(this.creativeId, name, commentIds)
+        if (result.ok) {
+            this.currentTopicId = result.topic.id
+            await this.flushSaveLastTopic(result.topic.id)
+            await this.loadTopics()
+            this.dispatch("change", { detail: { topicId: result.topic.id, mainTopicId: this.mainTopicId } })
+
+            // Clear selection in list controller
+            const listController = this.application.getControllerForElementAndIdentifier(
+                this.element, 'comments--list'
+            )
+            if (listController) listController.clearSelection()
+        } else {
+            alertDialog(result.error)
+        }
+    }
+
+    // Localized strings are handed down from the ERB partial as data
+    // attributes; the English literals are last-resort fallbacks for when the
+    // controller is mounted without them.
+    _i18n(key) {
+        const translations = {
+            set_agent_error: this.element.dataset.topicSetAgentError || 'Unable to assign the agent to this topic.',
+            create_error: this.element.dataset.topicCreateError || 'Unable to create the topic.',
+            update_error: this.element.dataset.topicUpdateError || 'Unable to update the topic.',
+            delete_error: this.element.dataset.topicDeleteError || 'Unable to delete the topic.',
+            archive_error: this.element.dataset.topicArchiveError || 'Unable to archive the topic.',
+            restore_error: this.element.dataset.topicRestoreError || 'Unable to restore the topic.'
+        }
+        return translations[key] || key
+    }
+
+    async setTopicPrimaryAgent(topicId, agent) {
+        if (!this.creativeId) return
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics/${topicId}/set_primary_agent`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ agent_id: agent.id })
+            })
+
+            const data = await response.json().catch(() => ({}))
+
+            if (!response.ok) {
+                alertDialog(data.error || this._i18n("set_agent_error"))
+                return
+            }
+
+            // Render the avatar from the response rather than waiting for the
+            // WebSocket broadcast. A dropped broadcast (e.g. the topics channel
+            // subscription was refused) would otherwise leave the avatar
+            // invisible until the next page load. The broadcast still runs and
+            // propagates the change to other connected users; re-applying it
+            // here is a no-op merge.
+            if (data.topic) this.updateTopicInList(data.topic)
+        } catch (e) {
+            console.error('Error setting primary agent', e)
+            alertDialog(this._i18n("set_agent_error"))
+        }
+    }
+
+    async createTopicWithAgent(agent) {
+        if (!this.creativeId) return
+
+        const topicName = `Talk to ${agent.name}`
+
+        try {
+            const response = await fetch(`/creatives/${this.creativeId}/topics`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ topic: { name: topicName }, agent_id: agent.id })
+            })
+
+            if (response.ok) {
+                const topic = await response.json()
+                this.currentTopicId = topic.id
+                await this.flushSaveLastTopic(topic.id)
+                await this.loadTopics()
+                this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
+            } else {
+                console.error('Failed to create topic with agent')
+            }
+        } catch (e) {
+            console.error('Error creating topic with agent', e)
+        }
+    }
+
+    renderAgentAvatar(agent) {
+        const size = 16
+        let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper" style="width:${size}px;height:${size}px;" title="${this.escapeAttr(agent.name)}">`
+        html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
+        if (agent.default_avatar) {
+            html += `<span class="avatar-initial">${this.escapeAttr(agent.initial)}</span>`
+        }
+        html += `</span>`
+        return html
+    }
+
+    escapeAttr(str) {
+        if (!str) return ''
+        return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
 }

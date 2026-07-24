@@ -66,6 +66,7 @@ module CollavreOpenclaw
       payload[:context][:creative_id] ||= pending.creative_id
       payload[:context][:comment_id] ||= pending.comment_id
       payload[:context][:thread_id] ||= pending.thread_id
+      payload[:context][:topic_id] ||= pending.thread_id
 
       # Merge any extra context stored in pending callback
       if pending.context.present?

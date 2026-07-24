@@ -51,6 +51,37 @@ module Collavre
       assert_equal "cancelled", task.reload.status
     end
 
+    test "destroying comment cancels delegated tasks and releases agent slot" do
+      task = Task.create!(
+        name: "Response to comment_created",
+        status: "delegated",
+        trigger_event_name: "comment_created",
+        trigger_event_payload: {
+          "comment" => { "id" => @comment.id, "content" => "Hello AI" },
+          "creative" => { "id" => @creative.id }
+        },
+        agent: @agent,
+        creative_id: @creative.id
+      )
+
+      tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+      tracker.reset!
+      tracker.reserve!(task.id)
+      assert_equal 1, tracker.active_jobs
+
+      dequeue_called_with = nil
+      stub = ->(t, c = nil) { dequeue_called_with = [ t, c ] }
+
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, stub) do
+        @comment.destroy!
+      end
+
+      assert_equal "cancelled", task.reload.status
+      assert_equal 0, Collavre::Orchestration::ResourceTracker.for(@agent).active_jobs,
+        "Expected the delegated task's slot to be released when its trigger comment is deleted"
+      assert_equal [ nil, @creative.id ], dequeue_called_with
+    end
+
     test "destroying comment cancels queued tasks triggered by that comment" do
       task = Task.create!(
         name: "Response to comment_created",

@@ -107,14 +107,7 @@ module Collavre
     end
 
     def update
-      @creative_share = CreativeShare.find(params[:id])
-      unless @creative_share.creative.has_permission?(Current.user, :admin)
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
-          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
-        end
-        return
-      end
+      @creative_share = find_admin_creative_share(params[:id])
 
       if @creative_share.update(permission: params[:permission])
         respond_to do |format|
@@ -130,14 +123,7 @@ module Collavre
     end
 
     def destroy
-      @creative_share = CreativeShare.find(params[:id])
-      unless @creative_share.creative.has_permission?(Current.user, :admin)
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
-          format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
-        end
-        return
-      end
+      @creative_share = find_admin_creative_share(params[:id])
 
       @creative_share.destroy
       # remove linked creative if it exists
@@ -150,6 +136,16 @@ module Collavre
     end
 
     private
+
+      # Scoped lookup: only returns the share if Current.user has admin permission
+      # on its creative. Raises ActiveRecord::RecordNotFound otherwise so that
+      # record existence is not leaked via 403 vs 404 distinction.
+      def find_admin_creative_share(id)
+        share = CreativeShare.find_by(id: id)
+        raise ActiveRecord::RecordNotFound unless share&.creative&.has_permission?(Current.user, :admin)
+
+        share
+      end
 
       def all_descendants(creative)
         creative.children.flat_map { |child| [ child ] + all_descendants(child) }

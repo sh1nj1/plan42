@@ -1,0 +1,5 @@
+en:
+  collavre:
+    user_creative_preferences:
+      no_permission: "You do not have permission to update preferences for this creative."
+      invalid_topic: "The specified topic does not belong to this creative."

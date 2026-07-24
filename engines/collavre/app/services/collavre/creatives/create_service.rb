@@ -27,6 +27,10 @@ module Collavre
         insert_at_position(creative)
         apply_tags(creative)
 
+        # Broadcast AFTER insert_at_position so sequence and previous_sibling are correct
+        creative.reload # pick up resequenced values
+        creative.broadcast_creative_created(after_id: @after_id)
+
         Result.new(creative: creative, success?: true, errors: [])
       end
 

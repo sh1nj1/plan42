@@ -1,5 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
-import { renderCommentMarkdown } from "../lib/utils/markdown"
+import { renderCommentMarkdown, renderMermaidDiagrams } from "../lib/utils/markdown"
+import { confirmDialog } from "../lib/utils/dialog"
 
 export default class extends Controller {
   static targets = ["prevBtn", "nextBtn", "indicator", "deleteBtn", "selectBtn"]
@@ -80,7 +81,7 @@ export default class extends Controller {
     // Can't delete if it's the only version
     if (versions.length <= 1) return
 
-    if (!confirm(this.deleteBtnTarget.dataset.confirmMessage || "Are you sure?")) return
+    if (!(await confirmDialog(this.deleteBtnTarget.dataset.confirmMessage || "Are you sure?", { danger: true }))) return
 
     const response = await fetch(
       `${this.versionsUrlValue}/${version.id}`,
@@ -127,6 +128,7 @@ export default class extends Controller {
     if (target) {
       target.innerHTML = renderCommentMarkdown(text)
       target.dataset.rendered = "true"
+      renderMermaidDiagrams(target)
     }
   }
 

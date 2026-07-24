@@ -23,6 +23,7 @@ module CollavreOpenclaw
     end
 
     teardown do
+      CollavreOpenclaw::ProcessedAiRun.where(run_id: %w[run-aaa run-bbb run-ccc run-folded run-camel]).delete_all
       Collavre::Comment.where(creative: @creative).destroy_all
       @creative&.destroy
       @user&.destroy
@@ -73,71 +74,104 @@ module CollavreOpenclaw
     end
 
     test "creates comment for proactive message" do
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "creative_id" => @creative.id,
-          "content" => "This is a proactive message from OpenClaw!"
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "This is a proactive message from OpenClaw!"
+      })
 
-      comment = Collavre::Comment.last
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
       assert_equal @user, comment.user
       assert_equal @creative, comment.creative
       assert_equal "This is a proactive message from OpenClaw!", comment.content
     end
 
     test "creates comment for proactive message with nested context" do
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "context" => { "creative_id" => @creative.id },
-          "message" => "Proactive message via context"
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "context" => { "creative_id" => @creative.id },
+        "message" => "Proactive message via context"
+      })
 
-      comment = Collavre::Comment.last
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
       assert_equal "Proactive message via context", comment.content
     end
 
+    test "creates comment in topic when proactive payload uses topic_id" do
+      topic = Collavre::Topic.create!(creative: @creative, user: @owner, name: "Talk to Vrex")
+
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "topic_id" => topic.id,
+        "content" => "Topic scoped proactive message"
+      })
+
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
+      assert_equal topic, comment.topic
+      assert_equal "Topic scoped proactive message", comment.content
+    end
+
+    test "creates response comment in topic when context uses topic_id" do
+      topic = Collavre::Topic.create!(creative: @creative, user: @owner, name: "Talk to Vrex")
+
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "response",
+        "content" => "Async response in topic",
+        "context" => { "creative_id" => @creative.id, "topic_id" => topic.id }
+      })
+
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
+      assert_equal topic, comment.topic
+      assert_equal "Async response in topic", comment.content
+    end
+
     test "proactive message without creative_id logs error" do
-      assert_no_difference "Collavre::Comment.count" do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "content" => "Missing creative_id"
-        })
-      end
+      before_count = Collavre::Comment.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "content" => "Missing creative_id"
+      })
+      assert_equal before_count, Collavre::Comment.count
     end
 
     test "proactive message without content logs error" do
-      assert_no_difference "Collavre::Comment.count" do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "creative_id" => @creative.id
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id
+      })
+      assert_equal before_count, @creative.comments.reload.count
     end
 
     test "response with creative_id creates new comment" do
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "response",
-          "content" => "Async response to creative",
-          "context" => { "creative_id" => @creative.id }
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "response",
+        "content" => "Async response to creative",
+        "context" => { "creative_id" => @creative.id }
+      })
+      assert_equal before_count + 1, @creative.comments.reload.count
     end
 
     test "error with creative_id creates error comment" do
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "error",
-          "error" => "API limit exceeded",
-          "context" => { "creative_id" => @creative.id }
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "error",
+        "error" => "API limit exceeded",
+        "context" => { "creative_id" => @creative.id }
+      })
 
-      comment = Collavre::Comment.last
+      assert_equal before_count + 1, @creative.comments.reload.count
+      comment = @creative.comments.order(:id).last
       assert_includes comment.content, "OpenClaw Error"
       assert_includes comment.content, "API limit exceeded"
     end
@@ -145,56 +179,157 @@ module CollavreOpenclaw
     # --- Dedup tests ---
 
     test "duplicate proactive message within DEDUP_WINDOW is skipped" do
-      # Create first comment
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "creative_id" => @creative.id,
-          "content" => "Duplicate test message"
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Duplicate test message"
+      })
+      assert_equal before_count + 1, @creative.comments.reload.count
 
       # Second identical message within the dedup window should be skipped
-      assert_no_difference "Collavre::Comment.count" do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "creative_id" => @creative.id,
-          "content" => "Duplicate test message"
-        })
-      end
+      count_after_first = @creative.comments.reload.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Duplicate test message"
+      })
+      assert_equal count_after_first, @creative.comments.reload.count
     end
 
     test "same user different content still creates comment" do
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "creative_id" => @creative.id,
-          "content" => "First message"
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "First message"
+      })
+      assert_equal before_count + 1, @creative.comments.reload.count
 
-      assert_difference "Collavre::Comment.count", 1 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "proactive",
-          "creative_id" => @creative.id,
-          "content" => "Different message"
-        })
-      end
+      count_after_first = @creative.comments.reload.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Different message"
+      })
+      assert_equal count_after_first + 1, @creative.comments.reload.count
+    end
+
+    # --- run_id idempotency (cross-process duplicate suppression) ---
+
+    test "proactive message records the run via the ProcessedAiRun tombstone" do
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Run-keyed proactive message",
+        "run_id" => "run-aaa"
+      })
+
+      comment = @creative.comments.reload.order(:id).last
+      assert CollavreOpenclaw::ProcessedAiRun.processed?("run-aaa")
+      assert_equal comment.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-aaa")&.id
+    end
+
+    test "proactive message honors the Gateway camelCase runId field" do
+      # The Gateway emits camelCase `runId`; the HTTP CallbacksController path
+      # forwards the raw Gateway payload, so the job must read it even when the
+      # snake_case `run_id` is absent. Otherwise the dedup key is dropped and a
+      # cross-path duplicate slips through.
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "camelCase run-keyed proactive message",
+        "runId" => "run-camel"
+      })
+
+      comment = @creative.comments.reload.order(:id).last
+      assert_equal comment.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-camel")&.id
+    end
+
+    test "duplicate run_id is suppressed even with different content and past content window" do
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "First arrival of this run",
+        "run_id" => "run-bbb"
+      })
+      count_after_first = @creative.comments.reload.count
+      first = @creative.comments.order(:id).last
+
+      # Different content (so the 5s content-based dedup would NOT catch it)
+      # simulating another process classifying the same run as proactive.
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Second arrival, different framing",
+        "run_id" => "run-bbb"
+      })
+
+      assert_equal count_after_first, @creative.comments.reload.count
+      assert_equal first.id, @creative.comments.order(:id).last.id
+    end
+
+    test "proactive skips when the run is already claimed (solicited path won)" do
+      # Simulate the canonical solicited reply that already recorded the run.
+      solicited = @creative.comments.create!(
+        user: @user,
+        content: "Solicited reply with activity log"
+      )
+      CollavreOpenclaw::ProcessedAiRun.claim_canonical("run-ccc", solicited)
+      count_before = @creative.comments.reload.count
+
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Proactive duplicate of the solicited run",
+        "run_id" => "run-ccc"
+      })
+
+      assert_equal count_before, @creative.comments.reload.count
+      assert_equal solicited.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-ccc")&.id
+    end
+
+    test "proactive is suppressed when the run is recorded in the tombstone but no comment holds it" do
+      # Simulates the review workflow: the solicited reply that owned the run was
+      # folded into its quoted comment and destroyed, so NO comment carries it —
+      # only the durable ProcessedAiRun tombstone (comment_id nullified) remains.
+      CollavreOpenclaw::ProcessedAiRun.create!(run_id: "run-folded")
+      count_before = @creative.comments.reload.count
+
+      result = CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Late re-delivery of a folded run",
+        "run_id" => "run-folded"
+      })
+
+      assert_nil result, "no comment is created for an already-processed run"
+      assert_equal count_before, @creative.comments.reload.count
+    end
+
+    test "proactive without run_id still creates a comment" do
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "proactive",
+        "creative_id" => @creative.id,
+        "content" => "Keyless proactive message"
+      })
+      assert_equal before_count + 1, @creative.comments.reload.count
     end
 
     test "non-duplicate response messages create comments normally" do
-      assert_difference "Collavre::Comment.count", 2 do
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "response",
-          "content" => "Response A",
-          "context" => { "creative_id" => @creative.id }
-        })
-        CallbackProcessorJob.perform_now(@user.id, {
-          "type" => "response",
-          "content" => "Response B",
-          "context" => { "creative_id" => @creative.id }
-        })
-      end
+      before_count = @creative.comments.count
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "response",
+        "content" => "Response A",
+        "context" => { "creative_id" => @creative.id }
+      })
+      CallbackProcessorJob.perform_now(@user.id, {
+        "type" => "response",
+        "content" => "Response B",
+        "context" => { "creative_id" => @creative.id }
+      })
+      assert_equal before_count + 2, @creative.comments.reload.count
     end
   end
 end

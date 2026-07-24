@@ -22,24 +22,8 @@ module CollavreNotion
       # If opened in popup, close it and notify parent window
       if params[:popup] || request.referer&.include?("popup=true") || session[:oauth_popup]
         session.delete(:oauth_popup)
-        render html: <<-HTML.html_safe
-          <!DOCTYPE html>
-          <html>
-          <head><title>Notion Connected</title></head>
-          <body>
-            <script>
-              if (window.opener) {
-                window.opener.postMessage({ type: 'notion_oauth_success', connected: true }, '*');
-                window.close();
-              } else {
-                window.location.href = '#{collavre.creatives_path}';
-              }
-            </script>
-            <p>#{I18n.t("collavre_notion.notion_auth.connected")}</p>
-            <p>This window should close automatically. If not, you can close it manually.</p>
-          </body>
-          </html>
-        HTML
+        @fallback_path = collavre.creatives_path
+        render template: "collavre_notion/notion_auth/callback_success", layout: false
       else
         redirect_to collavre.creatives_path, notice: I18n.t("collavre_notion.notion_auth.connected")
       end

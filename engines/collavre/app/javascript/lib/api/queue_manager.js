@@ -1,7 +1,31 @@
-import csrfFetch from './csrf_fetch'
+import csrfFetch, { refreshCsrfToken } from './csrf_fetch'
+import { apiErrorFromResponse } from './api_error'
 
 const STORAGE_KEY = 'api_queue'
 const MAX_RETRIES = 3
+
+// Client errors that will never succeed on retry (validation, auth, conflict,
+// not-found). Retrying them just delays the real error and wastes round-trips,
+// so they fail fast straight to failedItems. 408 (timeout) and 429 (rate limit)
+// are intentionally excluded — those are worth retrying.
+const NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 409])
+
+// A 422 is ambiguous. A validation failure carries a server error payload
+// (e.g. { errors: [...] }) and will never succeed on retry. A stale CSRF token
+// (the meta-tag token drifts out of sync after the tab is backgrounded — see
+// Application#set_csrf_token_header) also returns 422 but with no payload, and
+// IS recoverable by refreshing the token and retrying.
+function isStaleCsrf(error) {
+    return !!error && error.status === 422 && !(error.errors && error.errors.length)
+}
+
+function isRetryable(error) {
+    if (!error) return true
+    if (NON_RETRYABLE_STATUSES.has(error.status)) return false
+    // Validation 422 (has payload) fails fast; payload-less 422 (stale CSRF) retries.
+    if (error.status === 422) return isStaleCsrf(error)
+    return true
+}
 
 /**
  * API Queue Manager
@@ -174,11 +198,11 @@ class ApiQueueManager {
         // Merge new callback with existing callbacks
         let mergedCallback = null
         if (existingCallbacks.length > 0 || request.onSuccess) {
-            mergedCallback = () => {
+            mergedCallback = (responseData) => {
                 // Run all existing callbacks first
                 existingCallbacks.forEach(cb => {
                     try {
-                        cb()
+                        cb(responseData)
                     } catch (error) {
                         console.error('Merged callback failed:', error)
                     }
@@ -186,7 +210,7 @@ class ApiQueueManager {
                 // Then run the new callback
                 if (typeof request.onSuccess === 'function') {
                     try {
-                        request.onSuccess()
+                        request.onSuccess(responseData)
                     } catch (error) {
                         console.error('New callback failed:', error)
                     }
@@ -229,8 +253,20 @@ class ApiQueueManager {
         while (this.queue.length > 0) {
             const item = this.queue[0]
 
+            let responseData = null
             try {
-                await this.executeRequest(item)
+                const response = await this.executeRequest(item)
+                // Parse JSON body so callbacks can react to server-side rewrites
+                // (e.g. markdown_source data: URIs → blob paths). Best-effort: empty
+                // or non-JSON bodies leave responseData null.
+                if (response && typeof response.text === 'function') {
+                    try {
+                        const text = await response.text()
+                        responseData = text ? JSON.parse(text) : null
+                    } catch (_parseError) {
+                        responseData = null
+                    }
+                }
                 // Success - handle cleanup actions
 
                 // Dispatch event for attachment cleanup if needed
@@ -243,7 +279,7 @@ class ApiQueueManager {
                 // Call onSuccess callback if provided (for non-serializable actions)
                 if (typeof item.onSuccess === 'function') {
                     try {
-                        item.onSuccess()
+                        item.onSuccess(responseData)
                     } catch (callbackError) {
                         console.error('onSuccess callback failed:', callbackError)
                     }
@@ -255,9 +291,17 @@ class ApiQueueManager {
             } catch (error) {
                 console.error('API request failed:', error, item)
 
-                // Retry logic
-                if (item.retries < MAX_RETRIES) {
+                // Retry logic — skip retries for client errors that can't
+                // succeed on a repeat (e.g. 422 validation): fail fast so the
+                // user sees the real error immediately.
+                if (isRetryable(error) && item.retries < MAX_RETRIES) {
                     item.retries++
+                    // A payload-less 422 is a stale CSRF token; refresh it first
+                    // so the retry has a fresh token (the failed response itself
+                    // carries none — the forgery exception skips the after_action).
+                    if (isStaleCsrf(error)) {
+                        await refreshCsrfToken()
+                    }
                     // Move to end of queue for retry
                     this.queue.shift()
                     this.queue.push(item)
@@ -341,7 +385,9 @@ class ApiQueueManager {
         const response = await csrfFetch(url, options)
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+            // Surface the server's error payload (e.g. Rails { errors: [...] })
+            // instead of an opaque "HTTP 422" so the UI can show the real reason.
+            throw await apiErrorFromResponse(response)
         }
 
         return response
