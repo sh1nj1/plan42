@@ -58,6 +58,7 @@ fun MainScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val activeEventId by viewModel.activeEventId.collectAsStateWithLifecycle()
+    val speakingEventId by viewModel.speakingEventId.collectAsStateWithLifecycle()
     val partial by viewModel.partialTranscript.collectAsStateWithLifecycle()
 
     val inboxMainMessage = remember {
@@ -124,7 +125,9 @@ fun MainScreen(
                     MessageRow(
                         message = msg,
                         selected = msg.eventId == activeEventId,
-                        speaking = state == VoiceState.SPEAKING && activeEventId == msg.eventId,
+                        // Keyed on what is actually being read: the selection can move
+                        // to another row mid-read, and a spoken reply is not a row.
+                        speaking = speakingEventId == msg.eventId,
                         isInboxMain = false,
                         onSelect = { viewModel.selectMessage(msg.eventId) },
                         onTogglePlay = { viewModel.playMessage(msg.eventId) },

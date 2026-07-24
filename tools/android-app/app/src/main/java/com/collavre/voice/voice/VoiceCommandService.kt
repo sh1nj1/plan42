@@ -91,8 +91,11 @@ class VoiceCommandService @Inject constructor(
     private val seen = mutableSetOf<Long>()
 
     // The notice whose OWN text is being spoken right now (null while speaking a
-    // reply). This is what an interruption marks read — see interrupt().
-    private var speakingEventId: Long? = null
+    // reply). This is what an interruption marks read — see interrupt(). It is also
+    // the row the Stop button belongs to: the selection can move to another row
+    // mid-read, so activeEventId would point the toggle at a row that is silent.
+    private val _speakingEventId = MutableStateFlow<Long?>(null)
+    val speakingEventId: StateFlow<Long?> = _speakingEventId
 
     @Volatile private var loopStarted = false
 
@@ -150,7 +153,7 @@ class VoiceCommandService @Inject constructor(
     /** Speak a notice's own text, remembering which one so an interruption can still
      *  settle its read state. */
     private fun speakNotice(msg: VoiceMessage, onDone: () -> Unit) {
-        speakingEventId = msg.eventId
+        _speakingEventId.value = msg.eventId
         speak(msg.text, onDone)
     }
 
@@ -165,8 +168,8 @@ class VoiceCommandService @Inject constructor(
      * at-least-once is for the unattended failure, not for an explicit stop.
      */
     private fun markSpokenRead() {
-        val eventId = speakingEventId ?: return
-        speakingEventId = null
+        val eventId = _speakingEventId.value ?: return
+        _speakingEventId.value = null
         scope.launch { runCatching { repository.markRead(eventId) } }
     }
 
@@ -193,8 +196,10 @@ class VoiceCommandService @Inject constructor(
      *  speaking. Inbox#Main has nothing to read, so it's a no-op there. */
     fun playMessage(eventId: Long) {
         if (eventId == INBOX_MAIN_ID) return
-        // Already reading this one → stop and let the queue advance.
-        if (_state.value == VoiceState.SPEAKING && _activeEventId.value == eventId) {
+        // Already reading this one → stop and let the queue advance. Keyed on what is
+        // actually being spoken, not on the selection: tapping another row moves the
+        // selection while this read continues.
+        if (_speakingEventId.value == eventId) {
             interrupt()
             pump()
             return

@@ -21,6 +21,7 @@ class VoiceViewModel @Inject constructor(
     val state = voice.state
     val messages = voice.messages
     val activeEventId = voice.activeEventId
+    val speakingEventId = voice.speakingEventId
     val exchanges = voice.exchanges
     val lastError = voice.lastError
     val partialTranscript = voice.partialTranscript
