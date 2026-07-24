@@ -7,6 +7,15 @@ module Collavre
         belongs_to :origin, class_name: "Collavre::Creative", optional: true
         has_many :linked_creatives, class_name: "Collavre::Creative", foreign_key: :origin_id, dependent: :destroy
 
+        # origin_id is immutable once a record is persisted. Permission
+        # resolution (PermissionChecker / PermissionFilter) treats a linked
+        # creative as its origin, and the permission cache has no invalidation
+        # path for a moved origin link. Promote the "origin_id is immutable"
+        # invariant from controller param-stripping to a model-level guard so
+        # no mutation path (mass-assignment, console, future controllers) can
+        # silently repoint a link and desync permissions.
+        attr_readonly :origin_id
+
         validate :origin_cannot_be_self
         before_validation :redirect_parent_to_origin
       end

@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Collavre desktop sidecar launcher.
+#
+# Boots the bundled Rails app in the `desktop` environment: SQLite + local-disk
+# Active Storage + no SSL, with all mutable state under a writable data dir
+# (the .app bundle itself is read-only). Spawned by the Tauri shell, but also
+# runnable directly from a dev checkout to validate the desktop env without
+# packaging:
+#
+#   PORT=4000 bin/desktop-server
+#
+# Env knobs:
+#   COLLAVRE_DATA_DIR   where DBs/blobs/secrets/logs live
+#                       (default: ~/Library/Application Support/Collavre)
+#   PORT                listen port (default: 3000)
+#   COLLAVRE_BIND_HOST  127.0.0.1 (closed, default) or 0.0.0.0 (open to LAN)
+#   COLLAVRE_ALLOWED_HOSTS  comma-separated extra Host headers to accept in open
+#                       mode (e.g. macbook-pro.tailadceed.ts.net). Loopback is
+#                       always allowed; required when reaching the app by hostname.
+#   COLLAVRE_RUBY       ruby binary to use (default: vendored if present, else `ruby`)
+set -euo pipefail
+
+# Resolve the app root (parent of this bin/ dir), following symlinks.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+BIN_DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+APP_ROOT="$(cd -P "$BIN_DIR/.." >/dev/null 2>&1 && pwd)"
+cd "$APP_ROOT"
+
+# Data dir: writable home for DBs, blobs, secrets, logs.
+DATA_DIR="${COLLAVRE_DATA_DIR:-$HOME/Library/Application Support/Collavre}"
+mkdir -p "$DATA_DIR"
+
+# Pick the Ruby runtime: an explicit override, then a vendored portable Ruby
+# (present in packaged builds), then whatever `ruby` is on PATH (dev checkout).
+VENDOR_DIR="$APP_ROOT/tools/desktop-app/vendor"
+VENDORED_RUBY="$VENDOR_DIR/ruby/bin/ruby"
+if [ -n "${COLLAVRE_RUBY:-}" ]; then
+  RUBY_BIN="$COLLAVRE_RUBY"
+elif [ -x "$VENDORED_RUBY" ]; then
+  RUBY_BIN="$VENDORED_RUBY"
+  # Point Bundler at the vendored gems by absolute path resolved at runtime, so
+  # the bundle works regardless of where the .app was installed (no reliance on
+  # a baked-in .bundle/config path).
+  export PATH="$VENDOR_DIR/ruby/bin:$PATH"
+  export BUNDLE_GEMFILE="$APP_ROOT/Gemfile"
+  export BUNDLE_PATH="$VENDOR_DIR/bundle"
+  export BUNDLE_WITHOUT="development:test:production"
+  export BUNDLE_WITH="desktop"
+else
+  RUBY_BIN="ruby"
+fi
+
+# Provision (or load) the stable SECRET_KEY_BASE. Encryption keys derive from it.
+SECRET_KEY_BASE="$(COLLAVRE_DATA_DIR="$DATA_DIR" "$RUBY_BIN" "$APP_ROOT/tools/desktop-app/scripts/provision-secrets.rb")"
+export SECRET_KEY_BASE
+
+export RAILS_ENV=desktop
+export COLLAVRE_DATA_DIR="$DATA_DIR"
+export ACTIVE_STORAGE_DISK_ROOT="$DATA_DIR/storage"
+# closure_tree writes a flock lock file (SQLite isn't MySQL/PG). Keep it under the
+# writable data dir — Rails.root is the read-only .app bundle in packaged builds.
+export FLOCK_DIR="$DATA_DIR/tmp"
+# boot.rb requires bootsnap/setup, which caches to Rails.root/tmp/cache by default —
+# also unwritable in the bundle. Point it at the data dir before Rails boots.
+export BOOTSNAP_CACHE_DIR="$DATA_DIR/tmp/cache"
+# Run Solid Queue jobs in-process so the desktop app is a single process.
+export SOLID_QUEUE_IN_PUMA=true
+export PORT="${PORT:-3000}"
+BIND_HOST="${COLLAVRE_BIND_HOST:-127.0.0.1}"
+
+# In open mode the app is reached over LAN/Tailscale, so generated mail links
+# (share invites, password resets) must point at the externally reachable host —
+# not the app default of localhost, which would resolve to the *remote* user's own
+# machine and dead-end the flow. application.rb builds default_url_options (mailer +
+# controller + routes) from DEFAULT_URL_HOST, so set it here from the first allowed
+# host. Only when bound to all interfaces with an allowlisted host (the documented
+# open-mode contract); closed loopback mode keeps localhost (the owner's machine),
+# and an explicit DEFAULT_URL_HOST always wins.
+if [ -z "${DEFAULT_URL_HOST:-}" ] && [ "$BIND_HOST" = "0.0.0.0" ] && [ -n "${COLLAVRE_ALLOWED_HOSTS:-}" ]; then
+  DEFAULT_URL_HOST="$(printf '%s' "$COLLAVRE_ALLOWED_HOSTS" | cut -d',' -f1 | tr -d '[:space:]')"
+  [ -n "$DEFAULT_URL_HOST" ] && export DEFAULT_URL_HOST
+fi
+
+mkdir -p "$ACTIVE_STORAGE_DISK_ROOT" "$FLOCK_DIR" "$BOOTSNAP_CACHE_DIR"
+
+echo "[desktop-server] root=$APP_ROOT data=$DATA_DIR ruby=$RUBY_BIN bind=$BIND_HOST:$PORT" >&2
+
+# Create + migrate the SQLite databases on first run; idempotent afterwards.
+#
+# Seeding runs in a SEPARATE process from the migration, on purpose. `db:prepare`
+# would create+migrate+seed in one process, but a fresh desktop DB replays the full
+# migration history — and a historical data migration loads the User model mid-run,
+# caching the users columns before a later migration drops display_level/
+# completion_mark. That stale column cache then poisons an in-process seed, so
+# User.create! emits an INSERT naming the dropped columns and SQLite aborts with
+# "table users has no column named display_level". A fresh process re-reads the final
+# schema, so seeding must never be folded back into db:migrate.
+DESKTOP_PRIMARY_DB="$DATA_DIR/desktop-primary.sqlite3"
+SEED_MARKER="$DATA_DIR/.seeded"
+
+# Create the databases on first run (db:create is per-db idempotent).
+[ -f "$DESKTOP_PRIMARY_DB" ] || "$RUBY_BIN" "$APP_ROOT/bin/rails" db:create
+"$RUBY_BIN" "$APP_ROOT/bin/rails" db:migrate
+
+# Re-seed when the bundled seed sources change, not only on first run. The seeds are
+# idempotent and also carry updatable records (channel bot, GitHub analyzer prompt/
+# routing/tools), so an upgraded bundle must re-apply them; a lifetime marker would
+# pin existing installs to their first-run seeds forever. The marker stores a
+# fingerprint of the seed files: seeding re-runs once after a bundle changes them and
+# is otherwise skipped (no redundant Rails boot per launch). Writing the marker only
+# after db:seed succeeds keeps the half-failed-install self-heal — a crashed seed
+# leaves the marker stale and retries next boot. Empty fingerprint (unreadable seeds)
+# falls back to always-seed rather than silently skipping a fresh install.
+SEED_FINGERPRINT="$(find "$APP_ROOT/db" "$APP_ROOT/engines" -type f -path '*/db/seeds.rb' -print0 2>/dev/null \
+  | sort -z | xargs -0 cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1 || true)"
+if [ -z "$SEED_FINGERPRINT" ] || [ "$(cat "$SEED_MARKER" 2>/dev/null || true)" != "$SEED_FINGERPRINT" ]; then
+  "$RUBY_BIN" "$APP_ROOT/bin/rails" db:seed
+  printf '%s\n' "$SEED_FINGERPRINT" > "$SEED_MARKER"
+fi
+
+# Hand off to Puma (Solid Queue runs in-process via SOLID_QUEUE_IN_PUMA).
+exec "$RUBY_BIN" "$APP_ROOT/bin/rails" server -b "$BIND_HOST" -p "$PORT"

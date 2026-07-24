@@ -20,16 +20,16 @@ module Collavre
     end
 
     test "creates a comment in the creative topic" do
-      assert_difference -> { Collavre::Comment.count }, 1 do
-        CronActionJob.perform_now(
-          creative_id: @creative.id,
-          topic_id: @topic.id,
-          agent_id: @agent.id,
-          message: "Scheduled check-in"
-        )
-      end
+      before_count = @creative.comments.where(topic: @topic).count
+      CronActionJob.perform_now(
+        creative_id: @creative.id,
+        topic_id: @topic.id,
+        agent_id: @agent.id,
+        message: "Scheduled check-in"
+      )
 
-      comment = Collavre::Comment.last
+      assert_equal before_count + 1, @creative.comments.where(topic: @topic).count
+      comment = @creative.comments.where(topic: @topic).order(:id).last
       assert_equal "Scheduled check-in", comment.content
       assert_equal @agent.id, comment.user_id
       assert_equal @topic.id, comment.topic_id

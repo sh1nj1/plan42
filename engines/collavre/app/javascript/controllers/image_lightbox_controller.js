@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { confirmDialog } from "../lib/utils/dialog"
 
 // Connects to data-controller="image-lightbox"
 // Provides a fullscreen image carousel with navigation, download, and zoom
@@ -338,7 +339,7 @@ export default class extends Controller {
 
   async _deleteCurrentImage() {
     if (!this.hasDownloadAllUrlValue) return
-    if (!confirm(this.i18nDeleteConfirmValue)) return
+    if (!(await confirmDialog(this.i18nDeleteConfirmValue, { danger: true }))) return
 
     const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
     const csrfToken = document.querySelector("meta[name='csrf-token']")?.content

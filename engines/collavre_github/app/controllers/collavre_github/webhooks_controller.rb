@@ -13,7 +13,16 @@ module CollavreGithub
       return head :unauthorized unless valid_signature?(raw_body)
 
       payload = payload.presence || {}
-      create_system_comment(event, payload) if @repository_link&.creative
+
+      # Process all links for this repo (same repo can be linked to multiple creatives)
+      all_links = all_repository_links_for(payload)
+      all_links.each do |link|
+        create_system_comment_for(link, event, payload) if link.creative && !channel_only_event?(event)
+        trigger_markdown_sync_for(link, event, payload) if link.markdown_sync_enabled?
+      end
+
+      maybe_auto_attach_channel(event, payload)
+      dispatch_to_channels(event, payload)
 
       head :ok
     rescue JSON::ParserError
@@ -22,36 +31,205 @@ module CollavreGithub
 
     private
 
-    def create_system_comment(event, payload)
-      creative = @repository_link.creative&.effective_origin
+    # `WebhookProvisioner` auto-subscribes every repo webhook to the events
+    # GithubPrChannel needs (`issue_comment`, `pull_request_review`,
+    # `pull_request_review_comment`). Those events must only reach attached
+    # PR channels — letting them through the creative feed would spam every
+    # linked creative with system comments from issues/PRs that nobody asked
+    # to monitor. `push` and `pull_request` continue to flow into the feed.
+    def channel_only_event?(event)
+      CollavreGithub::WebhookProvisioner::CHANNEL_EVENTS.include?(event)
+    end
+
+    def maybe_auto_attach_channel(event, payload)
+      return unless event == "pull_request" && %w[opened reopened].include?(payload["action"])
+      # GitHub repo identifiers are case-insensitive; normalize so stored
+      # channels (also lowercased) match incoming dispatch payloads regardless
+      # of how the repo casing arrives from clients.
+      repo = payload.dig("repository", "full_name")&.downcase
+      pr_number = payload.dig("pull_request", "number")
+      return unless repo && pr_number
+
+      # `reopened` must resurrect ANY existing channel for this (repo, pr) — not
+      # just channels whose PR body still contains a topic link. Manually attached
+      # channels (via `pr_monitor`) and PRs whose body link was later removed both
+      # have a valid channel but no link; without this branch, the body-link path
+      # below would short-circuit and dispatch_to_channels (.active scope) would
+      # skip the dismissed/detached row, leaving the chip hidden and the PR
+      # unmonitored for the rest of its reopened life.
+      reactivate_existing_channels_on_reopen(repo, pr_number) if payload["action"] == "reopened"
+
+      # Body-link path: only used to CREATE a new channel. Existing-channel paths
+      # are intentionally handled above (reopened) or as a strict no-op (opened
+      # redelivery — must not undo a user's X dismissal).
+      body = payload.dig("pull_request", "body")
+      topic_id = CollavreGithub::PrTopicLinkParser.call(body)
+      return unless topic_id
+
+      topic = Collavre::Topic.find_by(id: topic_id)
+      return unless topic
+
+      # Security: the PR description is attacker-controlled. Anyone able to open
+      # a PR on this repo could otherwise drop a link to an unrelated tenant's
+      # topic and have subsequent PR comments injected there. Only auto-attach
+      # when the topic's creative — or any of its ancestors — is linked to this
+      # repo (RepositoryLink applies to the whole subtree).
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+      creative = topic.creative
+      return unless creative
+      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      return if (linked_creative_ids & candidate_ids).empty?
+
+      existing = GithubPrChannel.where(topic_id: topic.id).find do |c|
+        c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
+      end
+      # Existing channel: strict no-op. `reopened` was already handled by the
+      # repo+pr scan above; `opened` redelivery must leave dismissed_at intact.
+      return existing if existing
+
+      GithubPrChannel.create!(
+        topic_id: topic.id,
+        config: { "repo_full_name" => repo, "pr_number" => pr_number, "pr_state" => "open" }
+      )
+    rescue ActiveRecord::RecordNotUnique
+      # concurrent webhook safe
+    rescue => e
+      Rails.logger.error("[CollavreGithub] auto-attach failed: #{e.class}: #{e.message}")
+    end
+
+    # Resurrect every existing channel for (repo, pr_number) on `pull_request.
+    # reopened`, regardless of whether the PR description currently contains a
+    # topic link. Mirrors dispatch's scope re-validation so a channel whose
+    # creative is no longer linked to this repo is NOT resurrected.
+    def reactivate_existing_channels_on_reopen(repo, pr_number)
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+      return if linked_creative_ids.empty?
+
+      GithubPrChannel.find_each do |channel|
+        next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
+        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+
+        begin
+          # Row-level lock + re-read guards against duplicate reopened announcements
+          # when two `pull_request.reopened` deliveries for the same dismissed/
+          # detached channel arrive concurrently (GitHub retries on 5xx, or
+          # duplicate fan-out). Without it, both requests can read was_inactive=true
+          # before either clears dismissed_at, then both inject the reopened
+          # message. Mirrors the close-path with_lock in dispatch_to_channels.
+          channel.with_lock do
+            was_inactive = !channel.active? || !channel.dismissed_at.nil?
+            if was_inactive || channel.pr_state != "open"
+              channel.state = :active unless channel.active?
+              channel.dismissed_at = nil unless channel.dismissed_at.nil?
+              channel.pr_state = "open" if channel.pr_state != "open"
+              channel.save!
+            end
+            # When the chip silently reappears after dismiss/detach, inject a
+            # one-line announcement so the user can trace the lifecycle —
+            # mirrors the attach announcement on first create.
+            if was_inactive
+              begin
+                channel.inject_into_topic!(channel.reopened_message)
+              rescue => e
+                Rails.logger.error("[CollavreGithub] reopened announce failed: #{e.class}: #{e.message}")
+              end
+            end
+          end
+        rescue => e
+          # Per-channel isolation: one bad row must not block sibling channels.
+          Rails.logger.error(
+            "[CollavreGithub] reopen reactivate failed for channel #{channel.id}: #{e.class}: #{e.message}"
+          )
+        end
+      end
+    end
+
+    def dispatch_to_channels(event, payload)
+      repo = payload.dig("repository", "full_name")&.downcase
+      pr_number = extract_pr_number(event, payload)
+      return if repo.blank? || pr_number.nil?
+
+      # Re-resolve which creatives are linked to this repo on every dispatch.
+      # The auto-attach guard validated the link at creation time, but a
+      # RepositoryLink can be removed or a topic can be moved to a different
+      # creative subtree after attachment. Without re-validating here, an
+      # orphaned channel would keep receiving cross-tenant PR events.
+      linked_creative_ids = CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+
+      # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
+      # Future optimization: switch to a jsonb-portable query once an established
+      # pattern exists in this codebase. Compare repo names case-insensitively
+      # so legacy mixed-case rows continue to match the canonical lowercase
+      # payload value.
+      GithubPrChannel.active.find_each do |channel|
+        next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
+        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+
+        begin
+          # Row-level lock + re-check guards against duplicate dispatch when the
+          # same webhook is redelivered (GitHub retries on 5xx) or two webhooks
+          # arrive concurrently. Without it, both processes read state=active
+          # and each inject the closing comment. The query-level .active scope
+          # alone does not race-protect the inject+detach window.
+          channel.with_lock do
+            next unless channel.active?
+
+            injected = channel.handle(event: event, payload: payload)
+            next if injected.nil?
+
+            channel.inject_into_topic!(injected)
+            # Detach AFTER injecting the closing message so the chip remains
+            # visible (now with merged/closed badge) until dismissed by the user.
+            channel.detach! if event == "pull_request" && payload["action"] == "closed"
+          end
+        rescue => e
+          # Isolate per-channel failures so one broken channel does not block
+          # sibling channels monitoring the same PR.
+          Rails.logger.error(
+            "[CollavreGithub] channel #{channel.id} dispatch failed: #{e.class}: #{e.message}"
+          )
+        end
+      end
+    end
+
+    # A channel is in-scope iff its topic's creative — or any ancestor — is
+    # still listed in a RepositoryLink for the webhook's repo. Mirrors the
+    # auto-attach guard so removing a link severs the dispatch, not just the
+    # ability to create new monitors.
+    def channel_in_repo_scope?(channel, linked_creative_ids)
+      return false if linked_creative_ids.empty?
+
+      creative = channel.topic&.creative
+      return false unless creative
+
+      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      (linked_creative_ids & candidate_ids).any?
+    end
+
+    def extract_pr_number(event, payload)
+      case event
+      when "issue_comment"
+        n = payload.dig("issue", "number")
+        n if payload.dig("issue", "pull_request")
+      when "pull_request_review_comment", "pull_request_review", "pull_request"
+        payload.dig("pull_request", "number")
+      end
+    end
+
+    def create_system_comment_for(link, event, payload)
+      creative = link.creative&.effective_origin
       return unless creative
 
       content = format_github_event(event, payload)
 
-      comment = creative.comments.create!(
+      creative.comments.create!(
         user: nil,
         content: content,
         private: false
       )
-
-      # Dispatch event for AI Agent routing
-      Collavre::SystemEvents::Dispatcher.dispatch("comment_created", {
-        comment: {
-          id: comment.id,
-          content: comment.content,
-          user_id: nil
-        },
-        creative: {
-          id: creative.id,
-          description: creative.description
-        },
-        topic: {
-          id: comment.topic_id
-        },
-        chat: {
-          content: comment.content
-        }
-      })
     end
 
     def format_github_event(event, payload)
@@ -220,6 +398,24 @@ module CollavreGithub
       I18n.t("collavre_github.webhooks.#{key}", **options)
     end
 
+    def trigger_markdown_sync_for(link, event, payload)
+      return unless event == "push"
+
+      CollavreGithub::MarkdownSyncJob.perform_later(
+        link.id,
+        payload.as_json
+      )
+    end
+
+    def all_repository_links_for(payload)
+      repo = payload&.dig("repository", "full_name") || payload&.dig(:repository, :full_name)
+      return [ @repository_link ].compact if repo.blank?
+
+      CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", repo.downcase)
+        .to_a
+    end
+
     def find_repository_link(payload)
       if payload.blank?
         Rails.logger.warn("[GitHub Webhook] Payload is blank")
@@ -238,7 +434,9 @@ module CollavreGithub
         return
       end
 
-      CollavreGithub::RepositoryLink.find_by(repository_full_name: full_name)
+      CollavreGithub::RepositoryLink
+        .where("LOWER(repository_full_name) = ?", full_name.downcase)
+        .first
     end
 
     def valid_signature?(raw_body)
@@ -272,7 +470,11 @@ module CollavreGithub
     end
 
     def fallback_webhook_secret
-      ENV["GITHUB_WEBHOOK_SECRET"] || Rails.application.credentials.dig(:github, :webhook_secret)
+      resolved =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:github_webhook_secret).presence
+        end
+      resolved || ENV["GITHUB_WEBHOOK_SECRET"] || Rails.application.credentials.dig(:github, :webhook_secret)
     end
 
     def parse_payload(raw_body)

@@ -49,6 +49,28 @@ module Creatives
       FILTERS.any? { |klass| klass.new(params: params, scope: scope).active? }
     end
 
+    # Public: the raw filter/search matches, skipping ancestor + progress
+    # resolution. Lets lightweight callers (the picker's flat search) avoid the
+    # full-page work in #call when they only need the matched rows.
+    def matched_ids
+      apply_filters
+    end
+
+    # Public: the search match as a relation, but only when the flat search is
+    # the *sole* active filter. Lets the picker order + window the matches in
+    # SQL (via a subquery) instead of plucking every id into Ruby. Returns nil
+    # when other filters are active — the matched set is then a Ruby
+    # intersection of several filters, which has no single-relation form, so
+    # callers must fall back to #matched_ids.
+    def search_only_relation
+      active = FILTERS
+        .map { |klass| klass.new(params: params, scope: scope) }
+        .select(&:active?)
+      return nil unless active.size == 1 && active.first.is_a?(Filters::SearchFilter)
+
+      active.first.matched_relation
+    end
+
     private
 
     attr_reader :user, :params, :scope
@@ -90,48 +112,10 @@ module Creatives
     end
 
     def filter_by_permission(ids)
-      # O(1) 캐시 테이블 조회
-      # no_access가 public share보다 우선하므로 별도 처리 필요
-      accessible_ids = Set.new
-
-      if user
-        # 사용자별 캐시 엔트리 확인
-        user_entries = CreativeSharesCache
-          .where(creative_id: ids, user_id: user.id)
-          .pluck(:creative_id, :permission)
-
-        user_accessible = []
-        user_denied = Set.new
-        user_entries.each do |cid, perm|
-          # perm is a string from enum (e.g., "no_access", "read")
-          if perm == "no_access"
-            user_denied << cid
-          else
-            user_accessible << cid
-          end
-        end
-        accessible_ids.merge(user_accessible)
-
-        # public share 확인 (no_access로 거부된 것 제외)
-        public_ids = CreativeSharesCache
-          .where(creative_id: ids, user_id: nil)
-          .where.not(permission: :no_access)
-          .pluck(:creative_id)
-        accessible_ids.merge(public_ids - user_denied.to_a)
-
-        # Fallback: owned creatives (for fixtures)
-        owned_ids = Creative.where(id: ids, user_id: user.id).pluck(:id)
-        accessible_ids.merge(owned_ids)
-      else
-        # 비로그인: public share만
-        accessible_ids = CreativeSharesCache
-          .where(creative_id: ids, user_id: nil)
-          .where.not(permission: :no_access)
-          .pluck(:creative_id)
-          .to_set
-      end
-
-      accessible_ids.to_a
+      # O(1) 캐시 테이블 조회. no_access가 public share보다 우선.
+      # Canonical batch permission logic lives in PermissionFilter so the picker
+      # can reuse the exact same posture (see PermissionFilter).
+      PermissionFilter.new(user: user).readable_ids(ids)
     end
 
     def calculate_progress(allowed_ids, matched_ids)

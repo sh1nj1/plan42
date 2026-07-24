@@ -76,6 +76,7 @@ module CollavreGithub
       github_pr_commits
       creative_retrieval_service
       creative_batch_service
+      pr_monitor
     ].freeze
 
     def self.call
@@ -121,7 +122,7 @@ module CollavreGithub
     end
 
     def default_llm_model
-      ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3-flash-preview")
+      ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite")
     end
   end
 end

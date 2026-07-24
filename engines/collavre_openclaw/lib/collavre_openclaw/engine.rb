@@ -33,6 +33,18 @@ module CollavreOpenclaw
       end
     end
 
+    # Register host keys consumed by `OpenclawAdapter#default_url_options` so
+    # the umbrella app's `integration_settings_app.rb` initializer is not
+    # required for ENV fallback to work. `register` is idempotent — the
+    # umbrella app may re-register without conflict.
+    initializer "collavre_openclaw.integration_settings_registry", before: :load_config_initializers do
+      if defined?(Collavre::IntegrationSettings::Registry)
+        registry = Collavre::IntegrationSettings::Registry.instance
+        registry.register(:app_host,   category: "mail", sensitive: false, requires_restart: false)
+        registry.register(:rails_host, category: "mail", sensitive: false, requires_restart: false)
+      end
+    end
+
     initializer "collavre_openclaw.migrations" do |app|
       unless app.root.to_s.match?(root.to_s)
         config.paths["db/migrate"].expanded.each do |expanded_path|
@@ -50,7 +62,7 @@ module CollavreOpenclaw
           ConnectionManager.instance.disconnect_all
         end
         EmReactor.stop! if EmReactor.running?
-      rescue => e
+      rescue StandardError => e
         Rails.logger.warn("[CollavreOpenclaw] Shutdown cleanup error: #{e.message}")
       end
     end

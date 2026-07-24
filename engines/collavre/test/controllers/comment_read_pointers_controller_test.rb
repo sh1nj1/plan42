@@ -8,15 +8,22 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     @creative = creatives(:tshirt)
   end
 
-  test "updating pointer marks inbox comment notifications as read" do
+  test "updating pointer sets last_read_comment_id" do
     commenter = users(:two)
 
     comment_one = Comment.create!(creative: @creative, user: commenter, content: "hi there")
     comment_two = Comment.create!(creative: @creative, user: commenter, content: "hello again")
 
-    items = InboxItem.where(owner: @user, message_key: "inbox.comment_added").order(:created_at)
-    assert_equal [ comment_one.id, comment_two.id ], items.map(&:comment_id)
-    assert_equal %w[new new], items.pluck(:state)
+    post "/comment_read_pointers/update", params: { creative_id: @creative.id }, as: :json
+
+    assert_response :success
+    pointer = CommentReadPointer.find_by(user: @user, creative: @creative.effective_origin)
+    assert_equal comment_two.id, pointer.last_read_comment_id
+  end
+
+  test "updating pointer broadcasts badge update" do
+    commenter = users(:two)
+    Comment.create!(creative: @creative, user: commenter, content: "hi there")
 
     broadcasts = []
     Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*args, **kwargs) {
@@ -26,8 +33,6 @@ class CommentReadPointersControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_equal [ comment_two.id ], CommentReadPointer.where(user: @user, creative: @creative.effective_origin).pluck(:last_read_comment_id)
-    assert_equal [ "read" ], InboxItem.where(id: items.pluck(:id)).pluck(:state).uniq
-    assert broadcasts.any? { |payload| payload.dig(:locals, :count) == 0 }, "expected badge update broadcast with zero new items"
+    assert broadcasts.any? { |payload| payload.dig(:locals, :count) == 0 }, "expected badge update broadcast with zero unread"
   end
 end

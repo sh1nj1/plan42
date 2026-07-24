@@ -1,6 +1,8 @@
 require "test_helper"
 
 class CommentTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   test "creating a comment notifies write-permission users not present" do
     creative = creatives(:tshirt)
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
@@ -9,21 +11,17 @@ class CommentTest < ActiveSupport::TestCase
     CreativeShare.create!(creative: creative, user: writer, permission: :write)
 
     comment = nil
-    assert_difference("InboxItem.count", 2) do
+    # Notifications now create comments on inbox creatives (one per recipient)
+    assert_difference("Comment.count", 3) do # 1 original + 2 inbox comments
       comment = Comment.create!(creative: creative, user: commenter, content: "hi")
     end
 
-    origin = creative.effective_origin
-
     [ creative.user, writer ].each do |recipient|
-      item = InboxItem.where(owner: recipient).last
-      assert_equal "inbox.comment_added", item.message_key
-      assert_includes item.localized_message, commenter.name
-      assert_includes item.localized_message, ActionController::Base.helpers.strip_tags(creative.description)
-      assert_equal comment.id, item.comment.id
-      assert_equal origin.id, item.creative.id
-      assert_equal comment.id, item.message_params["comment_id"]
-      assert_equal origin.id, item.message_params["creative_id"]
+      inbox = Creative.inbox_for(recipient)
+      inbox_comment = inbox.comments.where(quoted_comment: comment).last
+      assert inbox_comment, "Expected inbox comment for #{recipient.email}"
+      assert_nil inbox_comment.user, "Inbox comment should be system (user: nil)"
+      assert_equal comment.id, inbox_comment.quoted_comment_id
     end
   end
 
@@ -37,45 +35,70 @@ class CommentTest < ActiveSupport::TestCase
     CommentPresenceStore.add(creative.id, creative.user.id)
     CommentPresenceStore.add(creative.id, writer.id)
 
-    assert_no_difference("InboxItem.count") do
+    # Only the original comment should be created, no inbox comments
+    assert_difference("Comment.count", 1) do
       Comment.create!(creative: creative, user: commenter, content: "hi")
     end
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
   end
 
-  test "formats content before saving" do
+  test "saves content immediately and enqueues link preview formatting" do
     user = User.create!(email: "formatter@example.com", password: TEST_PASSWORD, name: "Formatter")
     creative = Creative.create!(user: user, description: "Root")
 
-    formatter = Minitest::Mock.new
-    formatter.expect(:format, "formatted content")
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
 
-    Collavre::CommentLinkFormatter.stub(:new, formatter) do
-      comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
-      assert_equal "formatted content", comment.content
-    end
+    comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
 
-    formatter.verify
+    assert_equal "https://example.com", comment.content
+    assert_enqueued_with(
+      job: Collavre::CommentLinkPreviewJob,
+      args: [ comment.id, "https://example.com", comment.notification_revision ]
+    )
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
   end
 
-  test "creates a single inbox item for mentioned users" do
+  test "enqueues inbox notifications instead of creating them during comment save" do
+    creative = creatives(:tshirt)
+    commenter = users(:two)
+    inbox = Creative.inbox_for(creative.user)
+    original_count = inbox.comments.count
+
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+
+    comment = Comment.create!(creative: creative, user: commenter, content: "async notification")
+
+    assert_enqueued_with(
+      job: Collavre::CommentNotificationJob,
+      args: [ comment.id, "created", comment.notification_event ]
+    )
+    assert_equal original_count, inbox.comments.count
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
+  end
+
+  test "creates inbox comment for mentioned users" do
     owner = User.create!(email: "mentions-owner@example.com", password: TEST_PASSWORD, name: "Owner")
     commenter = User.create!(email: "mentions-commenter@example.com", password: TEST_PASSWORD, name: "Commenter")
     mentioned = User.create!(email: "mentions-mentioned@example.com", password: TEST_PASSWORD, name: "Mentioned", searchable: true)
     creative = Creative.create!(user: owner, description: "Root")
 
+    inbox = Creative.inbox_for(mentioned)
     comment = nil
-    assert_difference("InboxItem.where(owner: mentioned).count", 1) do
+    assert_difference("inbox.comments.count", 1) do
       comment = Comment.create!(creative: creative, user: commenter, content: "hi @#{mentioned.name}:")
     end
 
-    item = InboxItem.where(owner: mentioned).last
-    assert_equal "inbox.user_mentioned", item.message_key
-    assert_includes item.localized_message, commenter.name
-    assert_equal comment.id, item.comment.id
-    assert_equal creative.effective_origin.id, item.creative.id
-    assert_equal comment.id, item.message_params["comment_id"]
-    assert_equal creative.effective_origin.id, item.message_params["creative_id"]
+    inbox_comment = inbox.comments.last
+    assert_nil inbox_comment.user
+    assert_equal comment.id, inbox_comment.quoted_comment_id
   end
 
   test "does not create duplicate mentions for existing recipient" do
@@ -83,12 +106,10 @@ class CommentTest < ActiveSupport::TestCase
     commenter = User.create!(email: "mentions-commenter-dup@example.com", password: TEST_PASSWORD, name: "CommenterDup")
     creative = Creative.create!(user: owner, description: "Root")
 
-    assert_difference("InboxItem.where(owner: owner).count", 1) do
+    inbox = Creative.inbox_for(owner)
+    assert_difference("inbox.comments.count", 1) do
       Comment.create!(creative: creative, user: commenter, content: "hi @#{owner.name}:")
     end
-
-    items = InboxItem.where(owner: owner)
-    assert_equal "inbox.user_mentioned", items.last.message_key
   end
 
   test "defaults user to Current.user when user missing" do
@@ -114,7 +135,7 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal origin, comment.creative
   end
 
-  test "streaming placeholder does not create inbox items" do
+  test "streaming placeholder does not create inbox comments" do
     owner = users(:one)
     ai_agent = users(:ai_bot)
 
@@ -124,14 +145,81 @@ class CommentTest < ActiveSupport::TestCase
     end
 
     creative = Creative.last
-
-    initial_inbox_count = InboxItem.count
+    inbox = Creative.inbox_for(owner)
+    initial_inbox_comment_count = inbox.comments.count
 
     perform_enqueued_jobs do
       creative.comments.create!(content: Collavre::Comment::STREAMING_PLACEHOLDER_CONTENT, user: ai_agent)
     end
 
-    # No inbox items should be created for "..." placeholder from AI agent
-    assert_equal initial_inbox_count, InboxItem.count
+    # No inbox comments should be created for "..." placeholder from AI agent
+    assert_equal initial_inbox_comment_count, inbox.comments.count
+  end
+
+  # Only the inbox System topic (alarms/notifications) is silenced; every other
+  # inbox topic dispatches like a normal topic (see comment_inbox_dispatch_test).
+  test "inbox System-topic comments do not dispatch to orchestration" do
+    owner = User.create!(email: "inbox-orch-owner@example.com", password: TEST_PASSWORD, name: "InboxOrchOwner")
+    commenter = User.create!(email: "inbox-orch-commenter@example.com", password: TEST_PASSWORD, name: "InboxOrchCommenter")
+    inbox = Creative.inbox_for(owner)
+    system_topic = inbox.system_topic(fallback_user: owner)
+
+    dispatched = false
+    SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true }) do
+      inbox.comments.create!(user: commenter, content: "alarm note", topic: system_topic)
+    end
+
+    refute dispatched, "Expected no orchestration dispatch for inbox System-topic comments"
+  end
+
+  test "creating an inbox notification broadcasts inbox badge immediately" do
+    creative = creatives(:tshirt)
+    commenter = users(:two)
+    owner = creative.user
+    inbox_creative = Creative.inbox_for(owner)
+
+    broadcasts = []
+
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*args, **kwargs) {
+      broadcasts << { stream: args.first, target: kwargs[:target], locals: kwargs[:locals] }
+    }) do
+      perform_enqueued_jobs do
+        Comment.create!(creative: creative, user: commenter, content: "immediate inbox badge")
+      end
+    end
+
+    inbox_broadcasts = broadcasts.select { |payload| payload[:stream] == [ "inbox", owner ] }
+
+    assert inbox_broadcasts.any?, "expected inbox badge broadcast"
+    assert inbox_broadcasts.any? { |payload| payload[:target] == "desktop-inbox-badge" && payload.dig(:locals, :count) == 1 }
+    assert inbox_broadcasts.any? { |payload| payload[:target] == "mobile-inbox-badge" && payload.dig(:locals, :count) == 1 }
+    assert_equal 1, Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+  end
+
+  test "creating and destroying a comment maintains creatives.comments_count" do
+    user = User.create!(email: "cc-counter@example.com", password: TEST_PASSWORD, name: "CC")
+    creative = Creative.create!(user: user, description: "Root")
+    assert_equal 0, creative.comments_count
+
+    c1 = Comment.create!(creative: creative, user: user, content: "one")
+    Comment.create!(creative: creative, user: user, content: "two", private: true)
+    assert_equal 2, creative.reload.comments_count, "counts all comments incl. private"
+
+    c1.destroy!
+    assert_equal 1, creative.reload.comments_count
+  end
+
+  test "creating and destroying versions maintains comment_versions_count" do
+    user = User.create!(email: "cv-counter@example.com", password: TEST_PASSWORD, name: "CV")
+    creative = Creative.create!(user: user, description: "Root")
+    comment = Comment.create!(creative: creative, user: user, content: "hi")
+    assert_equal 0, comment.comment_versions_count
+
+    v1 = Collavre::CommentVersion.create!(comment: comment, content: "v1", version_number: 1)
+    Collavre::CommentVersion.create!(comment: comment, content: "v2", version_number: 2)
+    assert_equal 2, comment.reload.comment_versions_count
+
+    v1.destroy!
+    assert_equal 1, comment.reload.comment_versions_count
   end
 end

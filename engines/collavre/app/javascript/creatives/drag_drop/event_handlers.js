@@ -26,6 +26,8 @@ import {
 import { createMoveContext, applyMove, revertMove } from './operations';
 import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/drag_drop';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
+import { showMissingMembersPopup } from '../topic_move_members_popup';
+import { alertDialog } from '../../lib/utils/dialog';
 
 const childZoneRatio = 0.3;
 const coordPrecision = 5;
@@ -500,9 +502,17 @@ function getDraggedContext(event) {
 
 function notifyInvalidDrop() {
   console.error('Rejected invalid creative drop payload');
-  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-    window.alert(INVALID_DROP_MESSAGE);
-  }
+  alertDialog(INVALID_DROP_MESSAGE);
+}
+
+import { attachBundleDragImage } from '../../utils/drag_bundle_image.js';
+
+function getCreativeText(id) {
+  if (typeof document === 'undefined') return '';
+  const rowEl = document.querySelector(`creative-tree-row[creative-id="${id}"]`);
+  if (!rowEl) return '';
+  const content = rowEl.querySelector('.creative-content');
+  return content ? content.textContent.trim() : '';
 }
 
 export function handleDragStart(event) {
@@ -525,6 +535,11 @@ export function handleDragStart(event) {
     selectedCreativeIds,
   });
   event.dataTransfer.effectAllowed = 'move';
+
+  // Custom bundle drag image for multi-select
+  if (selectedCreativeIds.length > 1) {
+    attachBundleDragImage(event, selectedCreativeIds.length, getCreativeText(creativeId));
+  }
 
   const sessionToken = ensureDragSessionToken();
   const serialized = serializeDragState(getDraggedState(), sessionToken);
@@ -625,15 +640,24 @@ export function handleDrop(event) {
       if (sourceCreativeId === targetCreativeId) return;
 
       sendTopicMove({ topicId, sourceCreativeId, targetCreativeId })
-        .then(() => {
+        .then((data) => {
           // Dispatch event so topic list refreshes
           window.dispatchEvent(new CustomEvent('collavre:topic-moved', {
             detail: { topicId, sourceCreativeId, targetCreativeId }
           }));
+
+          // Offer to re-add members who lose access at the new location.
+          if (data && Array.isArray(data.missing_members) && data.missing_members.length > 0) {
+            showMissingMembersPopup({
+              members: data.missing_members,
+              targetCreativeId: data.target_creative_id || targetCreativeId,
+              targetCreativeName: data.target_creative_name,
+            });
+          }
         })
         .catch((error) => {
           console.error('Failed to move topic', error);
-          alert(error.message || 'Failed to move topic');
+          alertDialog(error.message || 'Failed to move topic');
         });
     } catch (error) {
       console.error('Failed to parse topic move data', error);

@@ -57,7 +57,20 @@ module Collavre
     end
 
     def generate(prompt)
-      system_prompt = <<~PROMPT
+      parse_response(request_theme(prompt))
+    end
+
+    private
+
+    def request_theme(prompt)
+      @client.chat([
+        { role: :system, parts: [ { text: system_prompt } ] },
+        { role: :user, parts: [ { text: "Create a theme description: #{prompt}" } ] }
+      ])
+    end
+
+    def system_prompt
+      <<~PROMPT
         You are a color theme designer for a workspace app.
         Generate a JSON with ONLY these keys: #{REQUIRED_VARIABLES.join(', ')}.
 
@@ -181,21 +194,12 @@ module Collavre
              For dark/accent themes, h1 can use a subtle darker surface. Must not clash with text.
            - For playful themes, vary heading colors. For minimal themes, keep sizes uniform.
       PROMPT
-
-      response = @client.chat([
-        { role: :system, parts: [ { text: system_prompt } ] },
-        { role: :user, parts: [ { text: "Create a theme description: #{prompt}" } ] }
-      ])
-
-      parse_response(response)
     end
-
-    private
 
     def default_client
       AiClient.new(
         vendor: "google",
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite",
         system_prompt: nil
       )
     end

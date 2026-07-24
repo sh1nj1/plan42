@@ -1,0 +1,55 @@
+ko:
+  collavre:
+    admin:
+      integrations:
+        title: "통합"
+        subtitle: "외부 통합 비밀값을 설정합니다. DB 값이 ENV보다 우선하며, ENV는 시드/폴백입니다."
+        tab_label: "통합"
+        empty_state: "등록된 통합이 없습니다."
+        sensitive: "(민감)"
+        restart_required: "재시작 필요"
+        placeholder_leave_blank: "비워두면 현재 값 유지"
+        env_var_label: "환경변수"
+        confirm_reset: "DB 값을 삭제하고 ENV로 폴백할까요?"
+        headers:
+          key: "키"
+          value: "값"
+          actions: "작업"
+        source:
+          db: "DB"
+          env: "ENV"
+          default: "기본값"
+          unknown: "알 수 없음"
+        category:
+          slack: "Slack"
+          google_oauth: "Google OAuth"
+          github_oauth: "GitHub OAuth"
+          notion_oauth: "Notion OAuth"
+          github: "GitHub 연동"
+          aws_s3: "AWS S3"
+          aws_ses: "AWS SES"
+          firebase: "Firebase / FCM"
+          gemini: "Gemini"
+          llm: "LLM API 키"
+          openclaw: "OpenClaw 게이트웨이"
+          mail: "메일 / 호스트"
+          misc: "기타"
+        actions:
+          save: "변경사항 저장"
+          reset: "ENV로 초기화"
+        flash:
+          updated: "통합 설정이 저장되었습니다."
+          restart_required: "변경된 일부 키는 서버 재시작 후에 적용됩니다."
+          reset_done: "%{key}을(를) ENV/기본값으로 초기화했습니다."
+        descriptions:
+          firebase_project_id: "Firebase 프로젝트 ID (예: my-app-12345). 서버 푸시와 브라우저 SDK 모두에서 필수. Firebase Console → 프로젝트 설정 → 일반에서 확인."
+          firebase_service_account_json: "Google Cloud 서비스 계정 키 JSON 본문 전체를 붙여넣으세요. 서버 FCM 인증의 권장 경로 — 이 값만 설정하면 끝납니다. Firebase Console → 프로젝트 설정 → 서비스 계정 → 새 비공개 키 생성. WIF 보다 우선합니다."
+          fcm_wif_audience: "선택적 WIF 오버라이드 (AWS 전용). 위 JSON 키가 비어있을 때만 사용됩니다. 비워두면 production 에서 Sender ID 로부터 기본 aws-pool/aws-provider 를 사용해 자동 생성됩니다. 비표준 풀 오버라이드: //iam.googleapis.com/projects/{PROJECT_NUMBER}/locations/global/workloadIdentityPools/{POOL_ID}/providers/{PROVIDER_ID}."
+          fcm_wif_credential_source: "선택적 WIF 오버라이드: AWS credential source JSON (IMDS 엔드포인트). 비워두면 기본 AWS IMDS 엔드포인트를 사용합니다. 오버라이드 예시: {\"environment_id\":\"aws1\",\"region_url\":\"http://169.254.169.254/latest/meta-data/placement/availability-zone\",\"url\":\"http://169.254.169.254/latest/meta-data/iam/security-credentials\",\"regional_cred_verification_url\":\"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15\"}"
+          fcm_wif_service_account_email: "WIF 로 임퍼소네이션할 GCP 서비스 계정 이메일 (예: firebase-sender@PROJECT.iam.gserviceaccount.com). WIF 모드에서만 사용됩니다. FCM_WIF_SERVICE_ACCOUNT_EMAIL 환경변수를 폴백으로 읽습니다."
+          fcm_sender_id: "웹 푸시 전용: Firebase JS SDK 의 messagingSenderId (프로젝트 번호). 브라우저 푸시 구독에 필수. Firebase Console → 프로젝트 설정 → 클라우드 메시징 → 발신자 ID 에서 확인."
+          fcm_vapid_key: "웹 푸시 전용: 브라우저 푸시 구독용 VAPID 공개키. Firebase Console → 프로젝트 설정 → 클라우드 메시징 → 웹 구성 → 웹 푸시 인증서에서 생성."
+          fcm_server_key: "Legacy FCM 서버 키 (Google 에서 deprecated). 구버전 HTTP v0 API 를 쓰는 클라이언트가 있을 때만 설정하세요."
+          firebase_api_key: "웹 푸시 전용: Firebase JS SDK apiKey. 브라우저 Firebase 초기화 (웹 푸시, Auth, Firestore) 에 필수. Firebase Console → 프로젝트 설정 → 일반 → 웹 API 키에서 확인."
+          firebase_auth_domain: "웹 푸시 전용: Firebase Auth 리다이렉트 도메인 (보통 {project}.firebaseapp.com). 브라우저에서 Firebase Auth 를 쓸 때만 필요."
+          firebase_app_id: "웹 푸시 전용: Firebase 웹 앱 ID (예: 1:1234:web:abcd...). 브라우저 Firebase 초기화에 필수. Firebase Console → 프로젝트 설정 → 일반 → 내 앱에서 확인."

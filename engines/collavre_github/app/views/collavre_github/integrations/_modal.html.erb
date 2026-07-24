@@ -10,6 +10,11 @@
      data-delete-error="<%= t('collavre_github.integration.delete_error', default: 'Failed to remove the Github integration.') %>"
      data-delete-button-label="<%= t('collavre_github.integration.delete_button', default: 'Remove integration') %>"
      data-delete-select-warning="<%= t('collavre_github.integration.delete_select_warning', default: 'Select repositories to delete.') %>"
+     data-resync-button-label="<%= t('collavre_github.integration.resync_button', default: 'Resync all') %>"
+     data-resync-confirm="<%= t('collavre_github.integration.resync_confirm', default: 'Re-import all markdown files from the selected repositories?') %>"
+     data-resync-success="<%= t('collavre_github.integration.resync_success', default: 'Re-sync started. The tree will update shortly.') %>"
+     data-resync-error="<%= t('collavre_github.integration.resync_error', default: 'Failed to start re-sync.') %>"
+     data-resync-select-warning="<%= t('collavre_github.integration.resync_select_warning', default: 'Select repositories to resync.') %>"
      style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;align-items:center;justify-content:center;">
   <div class="popup-box" style="min-width:360px;max-width:90vw;">
     <button type="button" id="close-github-modal" class="popup-close-btn">&times;</button>
@@ -27,9 +32,14 @@
       <div id="github-existing-connections" style="display:none;margin-top:1.25em;">
         <p style="margin-bottom:0.5em;"><%= t('collavre_github.integration.existing_intro', default: 'Connected repositories:') %></p>
         <ul id="github-existing-repo-list" style="padding-left:1.2em;margin-bottom:0.75em;color:var(--color-text);"></ul>
-        <button type="button" id="github-delete-btn" class="btn btn-danger" style="display:none;">
-          <%= t('collavre_github.integration.delete_button', default: 'Remove integration') %>
-        </button>
+        <div style="display:flex;gap:0.5em;flex-wrap:wrap;">
+          <button type="button" id="github-delete-btn" class="btn btn-danger" style="display:none;">
+            <%= t('collavre_github.integration.delete_button', default: 'Remove integration') %>
+          </button>
+          <button type="button" id="github-resync-btn" class="btn btn-secondary" style="display:none;">
+            <%= t('collavre_github.integration.resync_button', default: 'Resync all') %>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -41,6 +51,11 @@
     <div class="github-wizard-step" id="github-step-repositories" style="display:none;">
       <p class="github-modal-subtext"><%= t('collavre_github.integration.choose_repo', default: 'Select repositories to link. You can choose multiple.') %></p>
       <div id="github-repository-list" class="github-list github-modal-list-box" style="max-height:240px;overflow:auto;"></div>
+    </div>
+
+    <div class="github-wizard-step" id="github-step-markdown-sync" style="display:none;">
+      <p class="github-modal-subtext"><%= t('collavre_github.markdown_sync.step_description', default: 'Enable Markdown Sync to import .md files as read-only creatives. Changes are auto-synced on push to the default branch.') %></p>
+      <div id="github-markdown-sync-list" class="github-list github-modal-list-box" style="max-height:240px;overflow:auto;"></div>
     </div>
 
     <div class="github-wizard-step" id="github-step-summary" style="display:none;">

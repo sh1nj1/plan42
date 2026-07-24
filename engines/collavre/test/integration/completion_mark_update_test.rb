@@ -1,16 +1,39 @@
 require "test_helper"
 
 class CompletionMarkUpdateTest < ActionDispatch::IntegrationTest
-  test "user can update completion mark" do
-    user = users(:one)
-    user.update!(email_verified_at: Time.current)
-    post session_path, params: { email: user.email, password: "password" }
+  test "admin can update completion mark via admin settings" do
+    admin = users(:one) # system_admin: true
+    admin.update!(email_verified_at: Time.current)
+    post session_path, params: { email: admin.email, password: "password" }
     assert_response :redirect
 
-    patch user_path(user), params: { user: { completion_mark: "✓" } }
-    assert_redirected_to user_path(user)
+    patch collavre.admin_uiux_path, params: {
+      completion_mark: "✓",
+      display_level: 6,
+      default_light_theme_id: "",
+      default_dark_theme_id: ""
+    }
+    assert_redirected_to collavre.admin_uiux_path
 
-    user.reload
-    assert_equal "✓", user.completion_mark
+    Rails.cache.delete("system_setting:completion_mark")
+    assert_equal "✓", Collavre::SystemSetting.completion_mark
+  end
+
+  test "admin can update display level via admin settings" do
+    admin = users(:one) # system_admin: true
+    admin.update!(email_verified_at: Time.current)
+    post session_path, params: { email: admin.email, password: "password" }
+    assert_response :redirect
+
+    patch collavre.admin_uiux_path, params: {
+      completion_mark: "",
+      display_level: 10,
+      default_light_theme_id: "",
+      default_dark_theme_id: ""
+    }
+    assert_redirected_to collavre.admin_uiux_path
+
+    Rails.cache.delete("system_setting:display_level")
+    assert_equal 10, Collavre::SystemSetting.display_level
   end
 end

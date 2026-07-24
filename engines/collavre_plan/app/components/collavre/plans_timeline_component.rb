@@ -1,0 +1,86 @@
+module Collavre
+class PlansTimelineComponent < ViewComponent::Base
+  # Accepts pre-filtered plans, calendar_events, registrations and modifications from the controller
+  def initialize(plans:, calendar_events: Collavre::CalendarEvent.none, registrations: [], show_registrations: false, modifications: [], show_modifications: false)
+    @start_date = Date.current - 30
+    @end_date = Date.current + 30
+    @plans = plans
+    @calendar_events = calendar_events
+    @registrations = registrations
+    @show_registrations = show_registrations
+    @modifications = modifications
+    @show_modifications = show_modifications
+  end
+
+  attr_reader :plans, :calendar_events, :registrations, :start_date, :end_date, :show_registrations, :modifications, :show_modifications
+
+  # Called after component enters render context - safe to use helpers here
+  def plan_data
+    @plan_data ||= @plans.map { |plan| plan_item(plan) } +
+                   @calendar_events.map { |event| calendar_item(event) } +
+                   @registrations.map { |creative| registration_item(creative) } +
+                   @modifications.map { |creative| modification_item(creative) }
+  end
+
+  private
+
+  def plan_item(plan)
+    {
+      id: plan.id,
+      name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
+      created_at: plan.created_at.to_date,
+      start_date: plan.start_date,
+      target_date: plan.target_date,
+      progress: plan.progress,
+      path: plan_creatives_path(plan),
+      deletable: plan.owner_id == Current.user&.id
+    }
+  end
+
+  def calendar_item(event)
+    {
+      id: "calendar_event_#{event.id}",
+      name: event.summary.presence || I18n.l(event.start_time.to_date),
+      created_at: event.start_time.to_date,
+      target_date: event.end_time.to_date,
+      progress: event.creative&.progress || 0,
+      path: event.creative ? helpers.collavre.creative_path(event.creative) : event.html_link,
+      deletable: event.user_id == Current.user&.id
+    }
+  end
+
+  def registration_item(creative)
+    {
+      id: "registration_#{creative.id}",
+      type: "registration",
+      name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.registration_fallback", id: creative.id)),
+      created_at: creative.created_at.to_date,
+      target_date: creative.created_at.to_date,
+      progress: creative.progress,
+      path: helpers.collavre.creative_path(creative),
+      deletable: false
+    }
+  end
+
+  def modification_item(creative)
+    {
+      id: "modification_#{creative.id}",
+      type: "modification",
+      name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.modification_fallback", id: creative.id)),
+      created_at: creative.updated_at.to_date,
+      target_date: creative.updated_at.to_date,
+      progress: creative.progress,
+      path: helpers.collavre.creative_path(creative),
+      deletable: false
+    }
+  end
+
+  def plan_creatives_path(plan)
+    if helpers.params[:id].present?
+      helpers.collavre.creative_path(helpers.params[:id], tags: [ plan.id ])
+    else
+      helpers.collavre.creatives_path(tags: [ plan.id ])
+    end
+  end
+end
+end

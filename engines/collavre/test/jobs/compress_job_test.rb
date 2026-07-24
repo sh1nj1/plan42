@@ -37,6 +37,55 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
     assert_includes summary.content, I18n.t("collavre.comments.compress_command.summary_title", topic: @topic.name)
   end
 
+  test "summary comment is authored by the AI agent so the review button shows" do
+    agent = create_ai_agent_for_creative
+
+    summary_text = "This is the AI summary of the conversation."
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    summary = @creative.comments.where(topic: @topic).last
+    assert summary.present?
+    # Authored by the AI agent, not the human who ran /compress.
+    assert_equal agent, summary.user
+    # ai_user? is what gates the "Review" button in _comment.html.erb.
+    assert summary.user.ai_user?, "summary author must be an AI user for the review button to render"
+  end
+
+  test "summary survives and snapshot keeps its restore anchor when the authoring agent is deleted" do
+    agent = create_ai_agent_for_creative
+
+    summary_text = "This is the AI summary of the conversation."
+    mock_client = Minitest::Mock.new
+    mock_client.expect(:chat, summary_text) do |messages, **kwargs, &block|
+      block.call(summary_text)
+      true
+    end
+
+    Collavre::AiClient.stub(:new, mock_client) do
+      Collavre::CompressJob.perform_now(@creative.id, @topic.id, @user.id)
+    end
+
+    summary = @creative.comments.where(topic: @topic).last
+    snapshot = Collavre::CommentSnapshot.find_by!(result_comment_id: summary.id)
+
+    # Deleting the agent must NOT cascade-destroy the durable summary, which would
+    # orphan the snapshot and erase the only restore path for the conversation.
+    agent.destroy!
+
+    assert Collavre::Comment.exists?(summary.id), "summary comment must survive agent deletion"
+    assert_nil summary.reload.user_id, "author is detached, not the comment destroyed"
+    assert_equal summary.id, snapshot.reload.result_comment_id, "snapshot keeps its restore anchor"
+    assert snapshot.restorable?, "snapshot remains restorable"
+  end
+
   test "does nothing when only one comment" do
     @comment2.destroy
     @comment3.destroy
@@ -65,15 +114,8 @@ class Collavre::CompressJobTest < ActiveSupport::TestCase
       permission: :feedback
     )
 
-    # Create a topic-level OrchestratorPolicy with primary_agent_id
-    Collavre::OrchestratorPolicy.create!(
-      policy_type: "arbitration",
-      scope_type: "Topic",
-      scope_id: @topic.id,
-      priority: 10,
-      config: { "strategy" => "primary_first", "primary_agent_id" => ai_agent.id },
-      enabled: true
-    )
+    # Set primary agent directly on topic
+    @topic.update!(primary_agent_id: ai_agent.id)
 
     captured_vendor = nil
     captured_model = nil

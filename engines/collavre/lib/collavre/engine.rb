@@ -16,6 +16,56 @@ module Collavre
       root.join("app/assets/stylesheets")
     end
 
+    # Register engine-internal integration settings keys with the central
+    # registry. These keys are consumed by engine code (mailer `from`, public
+    # assets helper, MCP upload service), so the engine itself must own their
+    # registration — host apps may not include the app-level
+    # `integration_settings_app.rb` initializer when mounting the engine as a gem.
+    # `register` is idempotent, so host app re-registration remains safe.
+    initializer "collavre.integration_settings_registry", before: :load_config_initializers do
+      if defined?(Collavre::IntegrationSettings::Registry)
+        registry = Collavre::IntegrationSettings::Registry.instance
+        registry.register(:default_mailer_from, category: "mail", sensitive: false, requires_restart: true)
+        registry.register(:public_assets_host,  category: "mail", sensitive: false, requires_restart: false)
+        # LLM keys consumed by Collavre::AiClient (engine service). Owned by the
+        # engine so gem-mounted host apps don't depend on the app-level
+        # `ruby_llm.rb` initializer for ENV fallback.
+        registry.register(:gemini_api_key,    category: "llm", sensitive: true,  requires_restart: true)
+        registry.register(:openai_api_key,    category: "llm", sensitive: true,  requires_restart: false)
+        registry.register(:anthropic_api_key, category: "llm", sensitive: true,  requires_restart: false)
+        registry.register(:gemini_api_base,   category: "llm", sensitive: false, requires_restart: true)
+      end
+    end
+
+    # AWS keys are consumed by `config/environments/*.rb` (active_storage.service
+    # decision, SMTP scaffold) and `config/storage.yml` ERB, both of which evaluate
+    # during the `:load_environment_config` initializer — earlier than
+    # `:load_config_initializers`. Register them in their own block so
+    # `IntegrationSettings.fetch` can resolve the keys at that earlier point.
+    # S3 keys are `requires_restart: true` because Rails resolves the storage
+    # service once at boot; SES keys are runtime-injected by SesSettingsInterceptor.
+    initializer "collavre.integration_settings_registry.aws", before: :load_environment_config do
+      if defined?(Collavre::IntegrationSettings::Registry)
+        registry = Collavre::IntegrationSettings::Registry.instance
+        registry.register(:aws_s3_access_key_id,     category: "aws_s3",  sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_secret_access_key, category: "aws_s3",  sensitive: true,  requires_restart: true)
+        registry.register(:aws_s3_bucket,            category: "aws_s3",  sensitive: false, requires_restart: true)
+        registry.register(:aws_region,               category: "aws_s3",  sensitive: false, requires_restart: true)
+        registry.register(:aws_ses_smtp_username,    category: "aws_ses", sensitive: true,  requires_restart: false)
+        registry.register(:aws_ses_smtp_password,    category: "aws_ses", sensitive: true,  requires_restart: false)
+      end
+    end
+
+    # Register the SES SMTP settings interceptor so each outgoing mail picks up
+    # the current DB > ENV > credentials value for SES creds at send time.
+    # Hooked after ActionMailer loads to ensure Mail::SMTP is defined.
+    initializer "collavre.ses_settings_interceptor" do
+      ActiveSupport.on_load(:action_mailer) do
+        require "mail"
+        ::Mail.register_interceptor(Collavre::SesSettingsInterceptor)
+      end
+    end
+
     # Add engine migrations to main app's migration path
     # This allows migrations to live in the engine but be run from the host app
     initializer "collavre.migrations" do |app|
@@ -97,6 +147,7 @@ module Collavre
     initializer "collavre.navigation_reset" do
       ActiveSupport::Reloader.to_prepare(prepend: true) do
         Navigation::Registry.instance.reset!
+        Collavre::ViewExtensions.reset!
       end
     end
 
@@ -113,23 +164,13 @@ module Collavre
           section: :main,
           type: :partial,
           partial: "collavre/shared/navigation/search_form",
-          priority: 105
+          priority: 105,
+          requires_auth: true
         )
 
         # ============================================
         # Main Section - Mobile Only
         # ============================================
-        Navigation::Registry.instance.register(
-          key: :mobile_plans,
-          label: "app.plans",
-          type: :partial,
-          partial: "collavre/shared/navigation/mobile_plans_button",
-          priority: 100,
-          requires_auth: true,
-          desktop: false,
-          mobile: true
-        )
-
         # ============================================
         # Main Section - Desktop Navigation
         # ============================================
@@ -139,16 +180,6 @@ module Collavre
           type: :button,
           path: -> { main_app.root_path },
           priority: 110
-        )
-
-        Navigation::Registry.instance.register(
-          key: :plans,
-          label: "app.plans",
-          type: :partial,
-          partial: "collavre/shared/navigation/plans_button",
-          priority: 120,
-          requires_auth: true,
-          mobile: false
         )
 
         # Progress filter moved into search popup (search_form partial)
@@ -200,10 +231,11 @@ module Collavre
 
         Navigation::Registry.instance.register(
           key: :help,
-          label: "?",
+          label: "app.help",
           type: :partial,
           partial: "collavre/shared/navigation/help_button",
-          priority: 170
+          priority: 170,
+          mobile: true
         )
 
         # ============================================
@@ -225,7 +257,6 @@ module Collavre
               label: "collavre.users.profile",
               type: :button,
               path: -> { Collavre::Engine.routes.url_helpers.user_path(Current.user) },
-              html_class: "popup-menu-item",
               priority: 100
             },
             {
@@ -235,6 +266,13 @@ module Collavre
               path: -> { Collavre::Engine.routes.url_helpers.session_path },
               method: :delete,
               priority: 900
+            },
+            {
+              key: :help_menu,
+              label: "app.help",
+              type: :partial,
+              partial: "collavre/shared/navigation/help_button",
+              priority: 950
             }
           ]
         )

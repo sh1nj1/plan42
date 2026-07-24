@@ -113,7 +113,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     sleep 0.5
 
     fill_inline_editor("First child")
-    inline_editor_field.send_keys(:enter)
+    inline_editor_field.send_keys([ :shift, :enter ])
     sleep 0.5
 
     fill_inline_editor("Second child")
@@ -211,8 +211,10 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     open_inline_editor(@root_creative)
 
-    assert_selector "#inline-move-up[disabled]", wait: 5
-    assert_selector "#inline-level-down[disabled]", wait: 5
+    # Inbox is now represented as a root creative, so the first user-created root
+    # has a visible previous sibling and can move up / level down immediately.
+    assert_no_selector "#inline-move-up[disabled]", wait: 5
+    assert_no_selector "#inline-level-down[disabled]", wait: 5
     assert_selector "#inline-level-up[disabled]", wait: 5
     assert_no_selector "#inline-move-down[disabled]", wait: 5
 

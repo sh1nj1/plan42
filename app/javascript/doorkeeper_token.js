@@ -1,5 +1,6 @@
 // Doorkeeper token copy functionality
 // Handles copying access tokens and closing the token modal
+import { alertDialog } from "collavre/lib/utils/dialog"
 
 function showCopyFeedback(btn, success) {
   if (!btn) return
@@ -105,7 +106,7 @@ function setupViewTokenListeners() {
           }
         })
         .catch(function() {
-          alert('Could not retrieve token.')
+          alertDialog('Could not retrieve token.')
         })
     }
   })

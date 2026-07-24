@@ -10,10 +10,25 @@ ko:
       archived_topics: "아카이브된 토픽 (%{count}개)"
       not_ai_agent: AI 에이전트만 Primary Agent로 설정할 수 있습니다.
       default_name_prefix: "토픽"
+      branch_prefix: "분기"
+      main_name: "메인"
+      cannot_delete_main: "메인 토픽은 삭제할 수 없습니다."
+      orphaned_cron_notice: "[시스템] '%{topic_name}' 토픽이 삭제되었지만, 이 토픽을 대상으로 하는 반복 크론 작업(%{cron_key})이 아직 남아 있어 실행될 때마다 아무 동작도 하지 않고 조용히 종료됩니다. 원래 메시지: \"%{message}\". 다른 토픽으로 다시 지정하거나 cron_cancel로 취소하세요."
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
+        add_members:
+          title: 새 위치에 멤버를 추가할까요?
+          description: 이 사람들은 토픽이 있던 곳에는 접근할 수 있었지만 "%{creative}"에는 없습니다. 계속 접근할 수 있도록 추가하세요.
+          add: 선택 추가
+          skip: 나중에
+          adding: 추가 중…
+          added:
+            one: 멤버 1명을 추가했습니다.
+            other: 멤버 %{count}명을 추가했습니다.
+          partial: "%{added}명 추가, %{failed}명 실패."
+          failed: 멤버를 추가하지 못했습니다. 다시 시도해 주세요.
     github_auth:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
@@ -30,6 +45,7 @@ ko:
       delete: 댓글 삭제
       delete_button: 삭제
       not_owner: 댓글 소유자만 수정할 수 있습니다.
+      github_synced_readonly: GitHub에서 동기화된 콘텐츠로 수정할 수 없습니다.
       no_permission: 댓글을 추가할 권한이 없습니다.
       archived_creative: 아카이브된 크리에이티브입니다. 채팅이 비활성화되었습니다.
       convert_not_allowed: 댓글 소유자 또는 크리에이티브 관리자만 이 메시지를 전환할 수 있습니다.
@@ -40,6 +56,7 @@ ko:
       copy_link_success: 링크가 복사되었습니다
       copy_link_error: 링크를 복사할 수 없습니다
       approve_button: 승인
+      deny_button: 거부
       approve_not_allowed: 지정된 승인자만 이 댓글을 승인할 수 있습니다.
       approve_invalid_format: 유효하지 않은 액션 형식입니다.
       approve_admin_required: 시스템 관리자 승인이 필요합니다.
@@ -57,6 +74,7 @@ ko:
       approve_invalid_progress: 댓글 작업 진행률은 숫자여야 합니다.
       approve_invalid_description: 댓글 작업 설명은 텍스트여야 합니다.
       approved_label: 승인됨
+      denied_label: 거부됨
       action_summary: Action JSON
       edit_action_button: Action 수정
       action_update_success: Action 이 업데이트되었습니다.
@@ -65,6 +83,7 @@ ko:
       convert_system_message: 'System: 메세지가 [%{title}](%{url}) 크리에이티브로 변환되었습니다'
       convert_system_message_default_title: 제목 없음
       system_user: System
+      scroll_to_prev: 이전 메시지
       search_button: 검색
       image_button: 이미지
       search_empty_prompt: 검색어 를 채팅 메세지 입력폼에 입력하시오
@@ -85,6 +104,13 @@ ko:
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅
       remove_from_history: 히스토리에서 제거
+      topic_set_agent_error: 이 토픽에 에이전트를 지정할 수 없습니다.
+      topic_create_error: 토픽을 생성할 수 없습니다.
+      topic_update_error: 토픽을 수정할 수 없습니다.
+      topic_delete_error: 토픽을 삭제할 수 없습니다.
+      topic_archive_error: 토픽을 보관할 수 없습니다.
+      topic_restore_error: 토픽을 복원할 수 없습니다.
+      inbox_reply_button: 답글
       replace_button: 바꾸기
       move_no_selection: 이동할 메시지를 선택해주세요.
       move_error: 메시지를 이동할 수 없습니다.
@@ -101,19 +127,28 @@ ko:
         one: "메시지 1개"
         other: "메시지 %{count}개"
       selection_merge: 병합
+      selection_branch: 분기
       merge_confirm: "선택한 메시지를 하나로 병합하시겠습니까? 첫 번째 메시지가 업데이트되고 나머지는 삭제됩니다."
       merge:
         started: "⏳ 메시지 병합 중..."
         minimum_required: "병합하려면 2개 이상의 메시지를 선택하세요."
         not_authorized: "메시지를 병합할 권한이 없습니다."
         own_messages_only: "자신의 메시지 또는 자신의 AI 에이전트 메시지만 병합할 수 있습니다."
+      branch:
+        no_selection: "분기할 메시지를 선택하세요."
+        not_authorized: "메시지를 분기할 권한이 없습니다."
+        comments_not_found: "일부 선택한 메시지를 찾을 수 없습니다."
       batch_delete_confirm: 선택한 메시지를 삭제하시겠습니까?
       batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.
       topic_search_placeholder: 토픽 검색...
-      topic_main: 메인
+      topic_main: 전체 메세지
+      topic_list: 토픽 목록
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
+      typo_keep_label: 유지
+      typo_custom_label: 직접 입력
+      typo_input_label: 교정
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.
       move_invalid_topic: 유효하지 않은 토픽입니다.
       move_not_allowed: 이 메시지를 이동할 권한이 없습니다.
@@ -130,6 +165,15 @@ ko:
         compress_description: "현재 토픽의 모든 메세지를 요약하고 원본을 삭제합니다."
         compress_args: "[추가 지시사항]"
         creative_description: "크리에이티브 링크를 삽입합니다. AI 채팅에서는 링크된 크리에이티브 트리가 컨텍스트로 주입됩니다."
+        calendar_date_hint: "YYYY-MM-DD@HH:MM (today, tomorrow, +3days, +mon/+월)"
+        calendar_memo_hint: "이벤트 메모 (선택사항)"
+        topic_name_hint: "토픽 이름"
+        topic_agent_hint: "@에이전트이름 (선택사항)"
+        work_agent_hint: "@에이전트이름"
+        work_context_hint: "워크플로우 컨텍스트 (선택사항)"
+        compress_instructions_hint: "추가 지시사항 (선택사항)"
+        form_submit: "확인"
+        form_cancel: "취소"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
@@ -173,8 +217,13 @@ ko:
         delete: 이 버전 삭제
         delete_confirm: 이 버전을 삭제하시겠습니까?
         select: 선택
+      stop_agent: 중지
+      stop_blocking_agent: 실행 중 작업 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
+      table_download:
+        csv: CSV
+        excel: Excel
       lightbox:
         close: 닫기
         previous: 이전
@@ -184,11 +233,15 @@ ko:
         delete: 삭제
         delete_confirm: 이 이미지를 삭제하시겠습니까?
         counter: "%{current} / %{total}"
+    channels:
+      detach: "해제"
     calendar_events:
       deleted: 캘린더 이벤트가 삭제되었습니다.
     google_calendar:
       errors:
         not_connected: 구글 캘린더가 연동되지 않았습니다. 먼저 구글 계정을 연동해주세요.
+        reconnect: 구글 캘린더 인증이 만료되었습니다. 구글 계정을 다시 연동해주세요.
+        network: 구글 캘린더에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.
     inbox:
       mark_read: 읽음
       mark_unread: 안읽음

@@ -5,27 +5,153 @@ module Collavre
   class Creative < ApplicationRecord
     self.table_name = "creatives"
 
+    # ---------------------------------------------------------------------------
+    # Reserved metadata key registry — engines register their own namespaces so
+    # `update_metadata` preserves them without core naming vendor-specific keys.
+    # "kind" must be reserved: it is the discriminator `inbox?`/`Creative.inboxes`
+    # match on, so a metadata save that omits it makes the row undiscoverable and
+    # `inbox_for` creates a duplicate inbox for that user.
+    # ---------------------------------------------------------------------------
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
+
+    SubtreeTouchTransactionRecord = Data.define(:creative_id) do
+      def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
+
+      def trigger_transactional_callbacks? = true
+
+      def before_committed! = nil
+
+      def committed!(should_run_callbacks:)
+        TouchCreativeSubtreeJob.perform_later(creative_id) if should_run_callbacks
+      end
+
+      def rolledback!(**_options) = nil
+    end
+    private_constant :SubtreeTouchTransactionRecord
+
+    class << self
+      def registered_reserved_metadata_keys
+        @registered_reserved_metadata_keys ||= []
+      end
+
+      def register_reserved_metadata_key(key)
+        registered_reserved_metadata_keys << key.to_s unless registered_reserved_metadata_keys.include?(key.to_s)
+      end
+
+      def reserved_metadata_keys
+        (BUILTIN_RESERVED_METADATA_KEYS + registered_reserved_metadata_keys).freeze
+      end
+
+      # ------------------------------------------------------------------------
+      # Read-only source registry — vendor engines register the `data.source.type`
+      # values whose content is owned by an external system (e.g. a synced GitHub
+      # repository) and therefore must not be edited in-app. Core enforces the
+      # read-only behavior via `read_only_source?` without naming any vendor.
+      # ------------------------------------------------------------------------
+      def read_only_source_types
+        @read_only_source_types ||= Set.new
+      end
+
+      def register_read_only_source(type)
+        read_only_source_types << type.to_s
+      end
+    end
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "creatives/creative"
     end
 
-    after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
-
+    after_update :register_subtree_touch_after_commit, if: :saved_change_to_parent_id?
+    after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
+    after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
+    after_create :create_main_topic
 
     include Linkable
     include Permissible
     include Describable
+    include RealtimeBroadcastable
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
     has_many :comment_snapshots, class_name: "Collavre::CommentSnapshot", dependent: :destroy
+
+    has_many_attached :files, dependent: :purge_later
 
     has_closure_tree order: :sequence, name_column: :description, hierarchy_table_name: "creative_hierarchies"
 
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }
     scope :archived, -> { where.not(archived_at: nil) }
+
+    # --- Inbox ---
+    scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
+
+    SYSTEM_TOPIC_NAME = "System"
+    MAIN_TOPIC_NAME = "Main"
+    CONTENT_TOPIC_NAME = "Content"
+
+    def inbox?
+      data&.dig("kind") == "inbox"
+    end
+
+    # Bypass the read-only-source guard for a single save (used by the vendor
+    # sync services that legitimately write the synced content into core).
+    attr_accessor :skip_read_only_source_validation
+
+    # The registered source identifier for this creative, or nil when the
+    # description is authored in-app.
+    def source_type
+      data.is_a?(Hash) ? data.dig("source", "type") : nil
+    end
+
+    # Whether this creative's description is owned by an external, registered
+    # source and therefore read-only in-app.
+    def read_only_source?
+      type = source_type
+      type.present? && self.class.read_only_source_types.include?(type)
+    end
+
+    # GitHub-sourced content still needs a vendor-specific predicate for the
+    # comment view's inline-image rendering (a GitHub-only concern, distinct
+    # from the neutral read-only behavior above).
+    def github_markdown?
+      source_type == "github_markdown"
+    end
+
+    # Find or create the "System" topic for this inbox creative.
+    # Re-creates it if the user deletes it.
+    def system_topic(fallback_user: user)
+      topics.find_or_create_by!(name: SYSTEM_TOPIC_NAME) do |topic|
+        topic.user = fallback_user
+      end
+    end
+
+    def main_topic(fallback_user: user)
+      topics.find_or_create_by!(name: MAIN_TOPIC_NAME) do |topic|
+        topic.user = fallback_user
+      end
+    end
+
+    def content_topic(fallback_user: user)
+      topics.find_or_create_by!(name: CONTENT_TOPIC_NAME) do |topic|
+        topic.user = fallback_user
+      end
+    end
+
+    # Find or create the inbox creative for a given user.
+    # Places it as a root creative (no parent) owned by the user.
+    def self.inbox_for(user)
+      existing = where(user: user).inboxes.first
+      return existing if existing
+
+      create!(
+        description: I18n.t("collavre.inbox.default_name"),
+        data: { "kind" => "inbox" },
+        user: user,
+        progress: 0.0
+      )
+    end
 
     attr_accessor :filtered_progress
 
@@ -77,12 +203,29 @@ module Collavre
 
     after_save :update_parent_progress
     after_destroy :update_parent_progress
-    after_save :update_mcp_tools
+    # Re-derive MCP tools only when the description (the tool source of truth)
+    # actually changed, and defer the HTML parsing to a background job so it
+    # never runs inline on progress/move/autosave writes. The dirty flag is
+    # captured in after_save (where saved_change_to_description? is reliable);
+    # a later same-transaction save can clobber saved_changes before the
+    # after_commit hook runs.
+    after_save :mark_mcp_tools_sync_pending, if: :saved_change_to_description?
+    after_commit :enqueue_mcp_tools_sync, if: :mcp_tools_sync_pending?
+
+    # --- Drop Trigger ---
+    def drop_trigger_enabled?
+      data&.dig("trigger", "on_child_enter") == true
+    end
 
     # --- Context IDs ---
     # Returns the directly-configured context creative IDs for this creative.
     def context_ids
       Array(data&.dig("context_ids"))
+    end
+
+    # Returns the directly-configured disabled context IDs for this creative.
+    def disabled_context_ids
+      Array(data&.dig("disabled_context_ids"))
     end
 
     # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
@@ -93,6 +236,16 @@ module Collavre
       own = context_ids
       parent_ctx = parent&.effective_context_ids(visited_ids) || []
       (own + parent_ctx).uniq
+    end
+
+    # Returns the effective disabled context IDs: own + inherited from ancestors (deduplicated).
+    def effective_disabled_context_ids(visited_ids = Set.new)
+      return [] if visited_ids.include?(id)
+
+      visited_ids.add(id)
+      own = disabled_context_ids
+      parent_disabled = parent&.effective_disabled_context_ids(visited_ids) || []
+      (own + parent_disabled).uniq
     end
 
     # Returns context creatives (excludes self to avoid duplication).
@@ -111,12 +264,6 @@ module Collavre
     def children
       # better not override this method, use children_with_permission instead or linked_children
       super
-    end
-
-    def owning_parent
-      if parent.present?
-        Creative.find_by(origin_id: parent.id, user: Collavre.current_user) || parent
-      end
     end
 
     def prompt_for(user)
@@ -222,8 +369,17 @@ module Collavre
       @progress_service ||= Collavre::Creatives::ProgressService.new(self)
     end
 
-    def update_mcp_tools
-      McpService.new.update_from_creative(self)
+    def mark_mcp_tools_sync_pending
+      @mcp_tools_sync_pending = true
+    end
+
+    def mcp_tools_sync_pending?
+      @mcp_tools_sync_pending == true
+    end
+
+    def enqueue_mcp_tools_sync
+      @mcp_tools_sync_pending = false
+      UpdateMcpToolsJob.perform_later(id)
     end
 
     def progress_cannot_change_if_has_origin
@@ -232,8 +388,41 @@ module Collavre
       end
     end
 
-    def touch_subtree_on_move
-      descendants.update_all(updated_at: Time.current)
+    # Register independently of the Creative instance because a transaction may
+    # update the same row through multiple instances, while Rails runs record
+    # callbacks on only one of them. Transaction-record equality deduplicates by
+    # creative id; Rails promotes records through committed savepoints and drops
+    # them on rollback.
+    def register_subtree_touch_after_commit
+      self.class.with_connection do |connection|
+        connection.add_transaction_record(SubtreeTouchTransactionRecord.new(id))
+      end
+    end
+
+    def fire_drop_trigger_on_move
+      # Skip on create — after_create_commit handles that case
+      return if previously_new_record?
+
+      new_parent_id = parent_id
+      return unless new_parent_id
+
+      new_parent = Creative.find_by(id: new_parent_id)
+      return unless new_parent&.drop_trigger_enabled?
+
+      DropTriggerJob.perform_later(new_parent.id, id)
+    end
+
+    def fire_drop_trigger_on_create
+      return unless parent&.drop_trigger_enabled?
+
+      DropTriggerJob.perform_later(parent_id, id)
+    end
+
+    def create_main_topic
+      effective_user = user || Collavre.current_user
+      return unless effective_user
+
+      topics.create!(name: MAIN_TOPIC_NAME, user: effective_user)
     end
   end
 end

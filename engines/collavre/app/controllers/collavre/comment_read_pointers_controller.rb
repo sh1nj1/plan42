@@ -2,7 +2,7 @@ module Collavre
   class CommentReadPointersController < ApplicationController
     def update
       creative = Creative.find(params[:creative_id]).effective_origin
-      last_id = creative.comments.where("comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?", false, Current.user.id, Current.user.id).maximum(:id)
+      last_id = creative.comments.visible_to(Current.user).maximum(:id)
       pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
 
       previous_last_read_id = pointer.last_read_comment_id
@@ -44,11 +44,11 @@ module Collavre
     end
 
     def find_nearest_public_comment_id(creative, comment_id)
-      creative.comments.where(private: false).where("id <= ?", comment_id).maximum(:id)
+      creative.comments.public_only.where("id <= ?", comment_id).maximum(:id)
     end
 
     def fetch_users_on_effective_id(creative, effective_id)
-      next_public_id = creative.comments.where(private: false).where("id > ?", effective_id).minimum(:id)
+      next_public_id = creative.comments.public_only.where("id > ?", effective_id).minimum(:id)
 
       query = CommentReadPointer.where(creative: creative)
                                 .where("last_read_comment_id >= ?", effective_id)
@@ -58,23 +58,11 @@ module Collavre
       query.includes(user: { avatar_attachment: :blob }).map(&:user)
     end
 
-    def mark_inbox_items_read(creative, last_comment_id)
-      return unless last_comment_id
-
-      base_scope = InboxItem.where(owner: Current.user, state: "new")
-                            .where(message_key: [ "inbox.comment_added", "inbox.user_mentioned" ])
-
-      with_creative = base_scope.where(creative: creative)
-                                .where("comment_id IS NULL OR comment_id <= ?", last_comment_id)
-
-      ids = with_creative.pluck(:id)
-      return if ids.empty?
-
-      InboxItem.transaction do
-        InboxItem.where(id: ids).where.not(state: "read").find_each do |item|
-          item.update!(state: "read")
-        end
-      end
+    # No-op: inbox notifications are now comments on the user's inbox creative.
+    # Reading comments on a creative updates the CommentReadPointer, which
+    # automatically handles the unread count for the inbox badge.
+    def mark_inbox_items_read(_creative, _last_comment_id)
+      # Intentionally empty — kept for backward compatibility during transition.
     end
   end
 end

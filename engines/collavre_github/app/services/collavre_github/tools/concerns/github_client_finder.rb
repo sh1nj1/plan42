@@ -30,6 +30,23 @@ module CollavreGithub
 
           CollavreGithub::Client.new(link.github_account)
         end
+
+        # Find client or return error hash. Yields the client to the block.
+        # Wraps the block with a StandardError rescue that returns { error: ... }.
+        #
+        # @param creative_id [Integer]
+        # @param repo [String]
+        # @param error_context [String] human-readable label for error messages
+        # @yield [client] the GitHub client
+        # @return [Hash] the block's result or an error hash
+        def with_github_client(creative_id:, repo:, error_context:, &block)
+          client = find_github_client(creative_id, repo)
+          return { error: "GitHub account not found for this creative and repository" } unless client
+
+          yield client
+        rescue StandardError => e
+          { error: "Failed to #{error_context}: #{e.message}" }
+        end
       end
     end
   end

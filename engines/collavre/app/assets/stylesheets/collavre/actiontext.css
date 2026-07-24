@@ -15,6 +15,96 @@
   padding: 0 0 var(--space-3) 0;
 }
 
+/* Markdown Editor */
+.markdown-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+@media (min-width: 768px) {
+  .markdown-editor-wrapper {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .markdown-editor-wrapper > .markdown-editor-textarea,
+  .markdown-editor-wrapper > .markdown-preview {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.markdown-editor-textarea {
+  width: 100%;
+  min-height: 6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  background: var(--surface-section, var(--surface-bg));
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.markdown-editor-textarea:focus {
+  border-color: var(--color-active);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-active) 15%, transparent);
+}
+
+.markdown-preview {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  background: var(--surface-btn, var(--surface-bg));
+  min-height: 2rem;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.markdown-preview:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.markdown-preview ul, .markdown-preview ol {
+  margin: 0 0 0.75rem 1.25rem;
+  padding: 0;
+}
+
+.markdown-preview blockquote {
+  border-left: 3px solid var(--border-color);
+  margin: 0 0 0.75rem 0;
+  padding-left: 0.75rem;
+  color: var(--text-muted);
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  margin: 0 0 0.75rem 0;
+}
+
+.markdown-preview th, .markdown-preview td {
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.6rem;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
 .lexical-editor-shell {
   display: flex;
   flex-direction: column;
@@ -56,14 +146,48 @@
   top: calc(100% + 0.35rem);
   left: 0;
   z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.5rem;
-  background: var(--surface-bg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface-section);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-2);
   box-shadow: var(--shadow-3);
+  min-width: 180px;
+}
+
+.lexical-toolbar-color__tokens {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+
+.lexical-toolbar-color__token-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s var(--ease-out-2);
+}
+
+.lexical-toolbar-color__token-btn:hover {
+  transform: scale(1.15);
+  border-color: var(--color-active);
+}
+
+.lexical-toolbar-color__token-btn.active {
+  box-shadow: 0 0 0 2px var(--color-active);
+}
+
+.lexical-toolbar-color__custom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-top: 1px solid var(--border-color);
+  padding-top: var(--space-2);
 }
 
 .lexical-toolbar-color__popover input[type="color"] {
@@ -74,6 +198,7 @@
   height: var(--space-7);
   padding: 0;
   background: transparent;
+  flex-shrink: 0;
 }
 
 .lexical-toolbar-btn--small {
@@ -148,30 +273,157 @@
   top: 0.6rem;
 }
 
-.lexical-paragraph {
+/* Tables: editor theme classes plus the matching display tags, mirroring the
+   pattern used for the other .lexical-* rules below. */
+.lexical-table-wrapper {
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.lexical-table,
+.creative-content table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.75rem 0;
+}
+
+.lexical-table-cell,
+.creative-content th,
+.creative-content td {
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.5rem;
+  min-width: 4.5rem;
+  vertical-align: top;
+  text-align: start;
+  position: relative;
+  word-break: break-word;
+}
+
+.lexical-table-cell-header,
+.creative-content th {
+  background-color: var(--surface-hover);
+  font-weight: var(--weight-6);
+}
+
+.lexical-table-selected {
+  outline: 2px solid var(--color-link);
+  outline-offset: -1px;
+}
+
+.lexical-table-selection *::selection {
+  background-color: transparent;
+}
+
+/* Cell-boundary add-row / add-column buttons (portaled to <body>). */
+.lexical-table-add-rows,
+.lexical-table-add-columns {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-section);
+  cursor: pointer;
+  padding: 0;
+}
+
+.lexical-table-add-rows::after,
+.lexical-table-add-columns::after {
+  content: "+";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.lexical-table-add-rows:hover,
+.lexical-table-add-columns:hover {
+  background-color: var(--surface-hover);
+}
+
+/* Cell-gutter delete-row / delete-column buttons. Shown on cell hover in the
+   hovered row's left gutter / column's top gutter (mousemove-driven, same proven
+   mechanism as the "+" buttons — no focus/selection dependency). */
+.lexical-table-delete-rows,
+.lexical-table-delete-columns {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--border-color);
+  background-color: var(--surface-section);
+  cursor: pointer;
+  padding: 0;
+}
+
+.lexical-table-delete-rows::after,
+.lexical-table-delete-columns::after {
+  content: "×";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.lexical-table-delete-rows:hover,
+.lexical-table-delete-columns:hover {
+  background-color: var(--danger-surface, var(--surface-hover));
+  color: var(--danger-text, var(--text-primary));
+}
+
+/* The .lexical-* classes are the editor theme (contenteditable). Markdown is now
+   the canonical persisted/displayed form, so .creative-content renders plain
+   semantic tags without those classes — mirror each rule onto the matching
+   element so the display view matches the editor. .lexical-* kept for the
+   editor and for legacy class-bearing HTML saved before the markdown switch.
+   .creative-title-content is the title (h1) display of the same description HTML,
+   so it needs the identical mirror — otherwise a markdown title renders a plain
+   <p> with the browser-default margin and the single-line title style breaks. */
+.lexical-paragraph,
+.creative-content p,
+.creative-title-content p {
   margin: 0 0 0 0;
 }
 
 .lexical-heading-h1,
 .lexical-heading-h2,
-.lexical-heading-h3 {
+.lexical-heading-h3,
+.creative-content h1,
+.creative-content h2,
+.creative-content h3,
+.creative-title-content h1,
+.creative-title-content h2,
+.creative-title-content h3 {
   font-weight: var(--weight-6);
   margin: 0 0 var(--space-2) 0;
 }
 
-.lexical-heading-h1 {
+.lexical-heading-h1,
+.creative-content h1,
+.creative-title-content h1 {
   font-size: 1.35rem;
 }
 
-.lexical-heading-h2 {
+.lexical-heading-h2,
+.creative-content h2,
+.creative-title-content h2 {
   font-size: 1.2rem;
 }
 
-.lexical-heading-h3 {
+.lexical-heading-h3,
+.creative-content h3,
+.creative-title-content h3 {
   font-size: 1.1rem;
 }
 
-.lexical-quote {
+.lexical-quote,
+.creative-content blockquote,
+.creative-title-content blockquote {
   border-left: var(--space-1) solid var(--border-color);
   color: var(--text-muted);
   margin: 0 0 0.75rem 0;
@@ -179,34 +431,65 @@
 }
 
 .lexical-list-ul,
-.lexical-list-ol {
+.lexical-list-ol,
+.creative-content ul,
+.creative-content ol,
+.creative-title-content ul,
+.creative-title-content ol {
   margin: 0 0 0.75rem 1.25rem;
   padding: 0;
 }
 
-.lexical-list-item {
+.lexical-list-item,
+.creative-content li,
+.creative-title-content li {
   margin: 0.35rem 0;
 }
 
-.lexical-link {
+/* The wrapper <li> Lexical emits for a nested list holds no text of its own;
+   hiding its marker prevents a stray bullet from appearing above the sub-list. */
+.lexical-nested-list-item {
+  list-style-type: none;
+}
+
+/* Content links only — the clickable creative-row anchor is an ancestor of
+   .creative-content, not a descendant, so this never restyles the row wrapper.
+   a[download] is excluded: attachment chips carry their own .lexical-attachment style. */
+.lexical-link,
+.creative-content a:not([download]),
+.creative-title-content a:not([download]) {
   color: var(--color-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
 
-.lexical-text-bold {
+.lexical-text-bold,
+.creative-content strong,
+.creative-content b,
+.creative-title-content strong,
+.creative-title-content b {
   font-weight: var(--weight-6);
 }
 
-.lexical-text-italic {
+.lexical-text-italic,
+.creative-content em,
+.creative-content i,
+.creative-title-content em,
+.creative-title-content i {
   font-style: italic;
 }
 
-.lexical-text-underline {
+.lexical-text-underline,
+.creative-content u,
+.creative-title-content u {
   text-decoration: underline;
 }
 
-.lexical-text-strike {
+.lexical-text-strike,
+.creative-content s,
+.creative-content del,
+.creative-title-content s,
+.creative-title-content del {
   text-decoration: line-through;
 }
 
@@ -218,18 +501,23 @@
   padding: 0.1em 0.3em;
 }
 
+/* Match the rendered/preview/comment code-block container in code_highlight.css
+ * (.creative-content pre et al.) exactly — same font, size, line-height, padding,
+ * border — so a code block looks identical in the editor and every rendered surface.
+ * Token colors are already shared via the global `.lexical-token-*` rules; this
+ * aligns the box so edit mode and view mode no longer diverge in font/size. */
 .lexical-code-block {
   display: block;
   background: var(--color-code-bg);
-  border: 1px solid var(--border-color);
+  border: var(--border-1) solid var(--border-color);
   border-radius: var(--radius-2);
   color: var(--color-code-text);
-  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.9em;
-  line-height: 1.5;
-  margin: 0 0 0.75rem 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-0);
+  line-height: var(--leading-3);
+  margin: var(--space-2) 0;
   overflow-x: auto;
-  padding: 0.75rem;
+  padding: var(--space-2) var(--space-3);
   white-space: pre;
 }
 
@@ -243,67 +531,100 @@
   white-space: inherit;
 }
 
-/* stylelint-disable color-no-hex -- syntax highlight theme colors are intentionally hardcoded */
+/*
+ * Code block syntax highlighting inside the Lexical editor.
+ *
+ * The editor tokenizes code with Prism (@lexical/code) and tags each token
+ * with a `.lexical-token-*` class, while the persisted/rendered creative is
+ * highlighted with highlight.js (`.hljs-*`, see code_highlight.css). To keep
+ * the editing view identical to the rendered view, both surfaces share the
+ * single GitHub-style palette defined as `--syntax-*` in code_highlight.css
+ * (loaded alongside this sheet via collavre_stylesheets). Each Prism token
+ * below maps to the same `--syntax-*` color its highlight.js equivalent uses,
+ * so light/dark/auto themes stay in sync with one source of truth — no
+ * duplicate `--lexical-token-*` variables to drift.
+ */
 .lexical-token-comment,
 .lexical-token-prolog,
 .lexical-token-doctype,
 .lexical-token-cdata {
-  color: #6a737d;
+  color: var(--syntax-comment);
+  font-style: italic;
 }
 
-.lexical-token-punctuation {
-  color: #393a34;
+.lexical-token-keyword,
+.lexical-token-atrule,
+.lexical-token-namespace {
+  color: var(--syntax-keyword);
 }
 
-.lexical-token-property,
-.lexical-token-tag,
-.lexical-token-constant,
-.lexical-token-symbol,
-.lexical-token-deleted,
-.lexical-token-boolean,
-.lexical-token-number {
-  color: #b31d28;
-}
-
-.lexical-token-selector,
-.lexical-token-attr,
 .lexical-token-string,
 .lexical-token-char,
-.lexical-token-builtin,
-.lexical-token-inserted {
-  color: #1a7f37;
+.lexical-token-url {
+  color: var(--syntax-string);
 }
 
-.lexical-token-operator,
-.lexical-token-entity,
-.lexical-token-url,
-.lexical-token-variable {
-  color: #9a6e3a;
+.lexical-token-number,
+.lexical-token-boolean,
+.lexical-token-constant,
+.lexical-token-symbol {
+  color: var(--syntax-number);
 }
 
-.lexical-token-atrule,
-.lexical-token-keyword,
-.lexical-token-class,
-.lexical-token-classname,
-.lexical-token-namespace {
-  color: #0550ae;
+.lexical-token-builtin {
+  color: var(--syntax-builtin);
 }
 
 .lexical-token-function,
-.lexical-token-important {
-  color: #bc4c00;
+.lexical-token-class,
+.lexical-token-classname {
+  color: var(--syntax-title);
+}
+
+.lexical-token-attr,
+.lexical-token-property {
+  color: var(--syntax-attr);
+}
+
+.lexical-token-variable {
+  color: var(--syntax-variable);
 }
 
 .lexical-token-regex {
-  color: #1a7f37;
+  color: var(--syntax-regexp);
 }
 
-.lexical-token-tag,
-.lexical-token-selector,
-.lexical-token-keyword {
-  font-weight: var(--weight-6);
+.lexical-token-tag {
+  color: var(--syntax-tag);
 }
-/* stylelint-enable color-no-hex */
+
+.lexical-token-selector {
+  color: var(--syntax-selector);
+}
+
+/* highlight.js renders `.hljs-meta` (CSS !important) with color only, no
+   bold — match that so the editor doesn't diverge from the rendered view. */
+.lexical-token-important {
+  color: var(--syntax-meta);
+}
+
+/* highlight.js leaves operators and punctuation at the default code color;
+   match that here instead of the old custom operator hue. */
+.lexical-token-punctuation,
+.lexical-token-operator,
+.lexical-token-entity {
+  color: var(--color-code-text);
+}
+
+.lexical-token-deleted {
+  color: var(--syntax-deletion-text);
+  background: var(--syntax-deletion-bg);
+}
+
+.lexical-token-inserted {
+  color: var(--syntax-addition-text);
+  background: var(--syntax-addition-bg);
+}
 
 .lexical-attachment {
   position: relative;
@@ -330,7 +651,7 @@
 
 .lexical-attachment.is-selected {
   border-color: var(--color-active);
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-active) 20%, transparent);
 }
 
 .lexical-attachment__remove {
@@ -428,7 +749,7 @@
 .lexical-attachment__caption-input:focus {
   outline: none;
   border-color: var(--color-active);
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-active) 15%, transparent);
 }
 
 .lexical-attachment__caption-size {
@@ -590,4 +911,63 @@
 .trix-content .attachment-gallery.attachment-gallery--4 .attachment {
   flex-basis: 50%;
   max-width: 50%;
+}
+
+/* ── Lexical Image Resizer ── */
+
+.lexical-image-container {
+  position: relative;
+  display: inline-block;
+  cursor: default;
+  user-select: none;
+  line-height: 0;
+}
+
+.lexical-image-container img {
+  display: block;
+}
+
+.lexical-image-selected {
+  outline: 2px solid var(--color-active, #3b82f6);
+  outline-offset: 2px;
+  border-radius: var(--radius-1, 2px);
+}
+
+.lexical-image-resizing {
+  cursor: nwse-resize;
+}
+
+.lexical-image-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--surface-bg, #fff);
+  border: 2px solid var(--color-active, #3b82f6);
+  border-radius: var(--radius-1, 2px);
+  z-index: 2;
+  box-sizing: border-box;
+}
+
+.lexical-image-handle--nw {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.lexical-image-handle--ne {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.lexical-image-handle--sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
+}
+
+.lexical-image-handle--se {
+  bottom: -5px;
+  right: -5px;
+  cursor: nwse-resize;
 }

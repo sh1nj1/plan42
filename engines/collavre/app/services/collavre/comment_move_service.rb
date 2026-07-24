@@ -20,8 +20,8 @@ module Collavre
 
       moved_count = perform_move(comments, target_origin, new_topic_id)
 
-      Comment.broadcast_badges(@creative)
-      Comment.broadcast_badges(target_origin) unless target_origin == @creative
+      Comment.broadcast_badges_later(@creative)
+      Comment.broadcast_badges_later(target_origin) unless target_origin == @creative
 
       { success: true, moved_count: moved_count }
     end
@@ -53,10 +53,7 @@ module Collavre
     end
 
     def fetch_visible_comments(comment_ids)
-      scope = creative.comments.where(
-        "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-        false, user.id, user.id
-      )
+      scope = creative.comments.visible_to(user)
       comments = scope.where(id: comment_ids).to_a
       raise MoveError, I18n.t("collavre.comments.move_not_allowed") if comments.length != comment_ids.length
       comments

@@ -3,6 +3,7 @@ import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext
 import { $getRoot } from "lexical"
 import { $isImageNode } from "../../lib/lexical/image_node"
 import { $isAttachmentNode } from "../../lib/lexical/attachment_node"
+import { $isVideoNode } from "../../lib/lexical/video_node"
 
 function extractSignedIdFromUrl(url) {
     if (!url) return null
@@ -26,6 +27,8 @@ function getAllAttachmentUrls(editor) {
 
         function traverse(node) {
             if ($isImageNode(node)) {
+                urls.add(node.getSrc())
+            } else if ($isVideoNode(node)) {
                 urls.add(node.getSrc())
             } else if ($isAttachmentNode(node)) {
                 urls.add(node.getSrc())

@@ -12,18 +12,24 @@ module CollavreOpenclaw
       end
     end
 
-    def chat(contents, tools: [], &block)
+    # @param messages_input [Hash, Array] Hash { messages:, first_message:, context_changed:, system_prompt: }
+    #   from SessionContextResolver, or a plain Array from standalone callers (e.g., CompressJob).
+    def chat(messages_input, tools: [], &block)
       normalized_vendor = vendor.to_s.downcase
+      messages_data = normalize_messages_input(messages_input)
 
       # Check if we have a custom adapter for this vendor
       adapter_class = self.class.adapter_registry[normalized_vendor]
 
       if adapter_class
         # Use the custom adapter (tools not supported for OpenClaw)
+        # Prefer resolved system_prompt from SessionContextResolver over instance default.
+        # key?(:system_prompt) distinguishes "not provided" (Array input) from "explicitly nil" (incremental session).
+        resolved_system_prompt = messages_data.key?(:system_prompt) ? messages_data[:system_prompt] : system_prompt
         user = context&.dig(:user)
         adapter = adapter_class.new(
           user: user,
-          system_prompt: system_prompt,
+          system_prompt: resolved_system_prompt,
           context: context
         )
 
@@ -31,30 +37,48 @@ module CollavreOpenclaw
         error_message = nil
 
         begin
-          response_content = adapter.chat(contents, &block)
+          response_content = adapter.chat(messages_data, &block)
         rescue StandardError => e
           error_message = e.message
           raise
         ensure
-          log_interaction(
-            messages: Array(contents),
-            tools: [],
-            response_content: response_content,
-            error_message: error_message,
-            input_tokens: nil,
-            output_tokens: nil
-          )
+          # Honor no-log mode (e.g. inline typo correction on *unsubmitted* drafts).
+          # Base Collavre::AiClient#chat gates logging behind @log_interactions; this
+          # prepended adapter path bypasses super, so it must gate it too — otherwise
+          # private drafts leak to ActivityLog for OpenClaw-backed agents.
+          if @log_interactions
+            log_interaction(
+              messages: messages_data[:messages],
+              tools: [],
+              response_content: response_content,
+              error_message: error_message,
+              input_tokens: nil,
+              output_tokens: nil
+            )
+          end
         end
 
         return response_content
       end
 
-      # Fall back to original implementation
-      super
+      # Fall back to original RubyLLM implementation (expects Array)
+      super(messages_data[:messages], tools: tools, &block)
     end
 
     private
 
     attr_reader :vendor, :system_prompt, :context
+
+    # Wrap plain Array input (from standalone callers like CompressJob)
+    # into the Hash format expected by the adapter.
+    def normalize_messages_input(input)
+      return input if input.is_a?(Hash)
+
+      {
+        messages: Array(input).map { |m| m.merge(kind: :trigger) },
+        first_message: true,
+        context_changed: false
+      }
+    end
   end
 end

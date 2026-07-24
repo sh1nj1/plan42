@@ -26,14 +26,18 @@ module CollavreOpenclaw
     attr_accessor :transport
 
     def initialize
-      @open_timeout = ENV.fetch("OPENCLAW_OPEN_TIMEOUT", 10).to_i
-      @read_timeout = ENV.fetch("OPENCLAW_READ_TIMEOUT", 180).to_i  # 3 minutes for AI responses
-      @max_retries = ENV.fetch("OPENCLAW_MAX_RETRIES", 2).to_i
-      @ws_idle_timeout = ENV.fetch("OPENCLAW_WS_IDLE_TIMEOUT", 1800).to_i     # 30 minutes
-      @ws_reconnect_max = ENV.fetch("OPENCLAW_WS_RECONNECT_MAX", 10).to_i
-      @ws_reconnect_base_delay = ENV.fetch("OPENCLAW_WS_RECONNECT_BASE", 1).to_f
-      @ws_connect_timeout = ENV.fetch("OPENCLAW_WS_CONNECT_TIMEOUT", 10).to_i
-      @transport = ENV.fetch("OPENCLAW_TRANSPORT", "http")
+      @open_timeout            = fetch_int(:openclaw_open_timeout, 10)
+      @read_timeout = begin
+        Collavre::SystemSetting.llm_request_timeout_seconds
+      rescue StandardError
+        1800
+      end
+      @max_retries             = fetch_int(:openclaw_max_retries, 2)
+      @ws_idle_timeout         = fetch_int(:openclaw_ws_idle_timeout, 1800)  # 30 minutes
+      @ws_reconnect_max        = fetch_int(:openclaw_ws_reconnect_max, 10)
+      @ws_reconnect_base_delay = fetch_float(:openclaw_ws_reconnect_base, 1)
+      @ws_connect_timeout      = fetch_int(:openclaw_ws_connect_timeout, 10)
+      @transport               = fetch_string(:openclaw_transport, "auto")
     end
 
     # Legacy accessor for backward compatibility
@@ -43,6 +47,31 @@ module CollavreOpenclaw
 
     def request_timeout=(value)
       @read_timeout = value
+    end
+
+    private
+
+    def fetch_raw(key)
+      if defined?(Collavre::IntegrationSettings)
+        Collavre::IntegrationSettings.fetch(key)
+      else
+        ENV[key.to_s.upcase]
+      end
+    end
+
+    def fetch_string(key, default)
+      raw = fetch_raw(key)
+      raw.presence || default
+    end
+
+    def fetch_int(key, default)
+      raw = fetch_raw(key)
+      raw.present? ? raw.to_i : default
+    end
+
+    def fetch_float(key, default)
+      raw = fetch_raw(key)
+      raw.present? ? raw.to_f : default
     end
   end
 end

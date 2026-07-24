@@ -3,6 +3,9 @@
     <input type="hidden" id="inline-method" name="_method" value="patch" />
     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
     <input type="hidden" id="inline-creative-description" name="creative[description]" />
+    <input type="hidden" id="inline-content-type" name="creative[content_type_input]" value="html" />
+    <input type="hidden" id="inline-markdown-editor" name="creative[markdown_editor]" />
+    <input type="hidden" id="inline-markdown-source" name="creative[markdown_source]" />
     <input type="hidden" id="inline-parent-id" name="creative[parent_id]" />
     <input type="hidden" id="inline-before-id" name="before_id" />
     <input type="hidden" id="inline-after-id" name="after_id" />
@@ -11,9 +14,17 @@
     <div id="lexical-inline-editor"
          data-lexical-editor-root
          class="lexical-inline-editor"
-         data-direct-upload-url="<%= main_app.rails_direct_uploads_url %>"
-         data-blob-url-template="<%= main_app.rails_service_blob_url(':signed_id', ':filename') %>"
+         data-direct-upload-url="<%= main_app.rails_direct_uploads_path %>"
+         data-blob-url-template="<%= main_app.rails_service_blob_path(':signed_id', ':filename') %>"
          data-placeholder="<%= t('collavre.creatives.inline_editor.placeholder') %>"></div>
+    <div id="markdown-editor-wrapper" class="markdown-editor-wrapper" style="display:none;">
+      <textarea id="markdown-editor-textarea"
+                class="markdown-editor-textarea"
+                rows="10"
+                placeholder="<%= t('collavre.creatives.inline_editor.markdown_placeholder') %>"></textarea>
+      <div id="markdown-preview" class="markdown-preview"
+           data-placeholder="<%= t('collavre.creatives.inline_editor.markdown_preview_placeholder') %>"></div>
+    </div>
     <div id="actions-inline-editor" style="padding: 0px 8px;">
       <div style="margin-top:0.5em;display:flex;align-items:center;gap:0.5em;">
         <input type="hidden" name="creative[progress]" value="0">
@@ -30,6 +41,24 @@
         <button type="button" id="inline-metadata-btn" class="creative-action-btn" title="<%= t('collavre.creatives.index.metadata_tooltip') %>" style="margin-left:0.5em;font-family:monospace;font-size:0.9em;">
           { }
         </button>
+        <button type="button" id="inline-toggle-markdown" class="creative-action-btn"
+                title="<%= t('collavre.creatives.index.toggle_markdown') %>"
+                data-label-markdown="<%= t('collavre.creatives.index.toggle_markdown') %>"
+                data-label-richtext="<%= t('collavre.creatives.index.toggle_richtext') %>"
+                data-confirm-to-richtext="<%= t('collavre.creatives.index.markdown_to_richtext_confirm') %>"
+                data-confirm-to-markdown="<%= t('collavre.creatives.index.richtext_to_markdown_confirm') %>"
+                style="margin-left:0.5em;font-family:monospace;font-size:0.9em;">
+          <%= t('collavre.creatives.index.toggle_markdown') %>
+        </button>
+        <span id="inline-save-status"
+              class="inline-save-status"
+              role="status"
+              aria-live="polite"
+              data-label-pending="<%= t('collavre.creatives.index.save_status_pending') %>"
+              data-label-saving="<%= t('collavre.creatives.index.save_status_saving') %>"
+              data-label-saved="<%= t('collavre.creatives.index.save_status_saved') %>"
+              data-label-error="<%= t('collavre.creatives.index.save_status_error') %>"
+              style="margin-left:auto;font-size:0.85em;color:var(--text-secondary);"></span>
       </div>
       <div style="margin-top:0.5em;">
         <button type="button" id="inline-move-up" class="creative-action-btn" title="<%= t('collavre.creatives.index.inline_move_up_tooltip') %>">

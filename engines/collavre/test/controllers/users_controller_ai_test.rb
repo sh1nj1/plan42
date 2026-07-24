@@ -86,6 +86,28 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_not_equal "Hacked Bot Name", @ai_user.name
   end
 
+  test "should save routing_expression with keyword trigger" do
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        routing_expression: 'chat.content contains "help"'
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal 'chat.content contains "help"', @ai_user.routing_expression
+  end
+
+  test "should save routing_expression with auto trigger" do
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        routing_expression: 'event_name == "comment_created"'
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
+  end
+
   test "should handle validation errors in update_ai" do
     patch update_ai_user_url(@ai_user), params: {
       user: {

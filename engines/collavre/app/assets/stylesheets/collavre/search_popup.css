@@ -1,12 +1,20 @@
-/* Search Popup — ChatGPT-inspired command palette */
+/* Search Popup — extends shared .modal-dialog pattern (modal_dialog.css)
+ *
+ * Structure:
+ *   .search-popup-wrapper
+ *     button.search-popup-trigger
+ *     .modal-dialog-overlay         (shared)
+ *     .modal-dialog                 (shared, acts as .search-popup-dropdown)
+ *       .search-popup-input-row     (search-specific)
+ *       .search-popup-filters       (search-specific)
+ *       .modal-dialog-footer        (shared)
+ */
 
 .search-popup-wrapper {
   position: static;
 }
 
 /* ── Trigger Button ── */
-/* Inherits ALL styles from `nav button {}` in application.css.
-   CRITICAL: do NOT set display, line-height, font-size, or padding here. */
 .search-popup-trigger {
   cursor: pointer;
   white-space: nowrap;
@@ -33,81 +41,13 @@
   text-overflow: ellipsis;
 }
 
-/* Badge */
-/* Active state when search filters are applied — matches .progress-filter-btn.active */
 .search-popup-trigger.active {
   background: var(--surface-hover);
   color: var(--text-primary);
   font-weight: var(--weight-5);
 }
 
-/* ── Overlay (backdrop) ── */
-.search-popup-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: var(--layer-popup, 100);
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  animation: search-popup-fade-in 0.15s var(--ease-out-3, ease-out);
-}
-
-.search-popup-overlay.open {
-  display: block;
-}
-
-@keyframes search-popup-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* ── Dropdown (modal) ── */
-.search-popup-dropdown {
-  display: none;
-  position: fixed;
-  top: 15vh;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: calc(var(--layer-popup, 100) + 1);
-  width: 520px;
-  max-width: calc(100vw - 2rem);
-  max-height: 70vh;
-  overflow-y: auto;
-  box-sizing: border-box;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-4, 16px);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  padding: 0;
-  font-size: initial;
-  line-height: normal;
-  text-align: left;
-  animation: search-popup-slide-up 0.2s var(--ease-out-3, ease-out);
-}
-
-.search-popup-dropdown.open {
-  display: block;
-}
-
-@keyframes search-popup-slide-up {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-/* ── Search Input Area ── */
-.search-popup-form {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-}
-
+/* ── Search Input Row (search-specific) ── */
 .search-popup-input-row {
   display: flex;
   align-items: center;
@@ -122,7 +62,8 @@
   line-height: 0;
 }
 
-.search-popup-dropdown input.search-popup-input {
+.search-popup-dropdown input.search-popup-input,
+.modal-dialog input.search-popup-input {
   display: block;
   flex: 1;
   width: 100% !important;
@@ -136,7 +77,8 @@
   color: var(--text-primary);
 }
 
-.search-popup-dropdown input.search-popup-input::placeholder {
+.search-popup-dropdown input.search-popup-input::placeholder,
+.modal-dialog input.search-popup-input::placeholder {
   color: var(--text-secondary);
 }
 
@@ -165,7 +107,7 @@
   line-height: 1;
 }
 
-/* ── Filter Sections ── */
+/* ── Filter Sections (search-specific) ── */
 .search-popup-filters {
   display: flex;
   flex-direction: column;
@@ -217,7 +159,52 @@
   border-color: var(--color-active);
 }
 
-/* ── Footer ── */
+/* ── Legacy selectors (backward compat with existing ERB/controller) ── */
+/* The ERB template still uses .search-popup-overlay / .search-popup-dropdown.
+   Map them to the shared .modal-dialog pattern so existing HTML keeps working. */
+.search-popup-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-modal, 1000) + 1);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: modal-dialog-fade-in 0.15s var(--ease-out-3, ease-out);
+}
+
+.search-popup-overlay.open {
+  display: block;
+}
+
+.search-popup-dropdown {
+  display: none;
+  position: fixed;
+  top: 15vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: calc(var(--layer-modal, 1000) + 2);
+  width: 520px;
+  max-width: calc(100vw - 2rem);
+  max-height: 70vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-4, 16px);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 0;
+  font-size: initial;
+  line-height: normal;
+  text-align: left;
+  animation: modal-dialog-slide-up 0.2s var(--ease-out-3, ease-out);
+}
+
+.search-popup-dropdown.open {
+  display: block;
+}
+
+/* ── Footer (uses shared pattern) ── */
 .search-popup-footer {
   display: flex;
   align-items: center;

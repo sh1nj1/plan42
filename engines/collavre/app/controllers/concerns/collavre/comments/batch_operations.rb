@@ -14,10 +14,7 @@ module Collavre
         is_admin = @creative.has_permission?(Current.user, :admin)
         is_creative_owner = @creative.user == Current.user
 
-        visible_scope = @creative.comments.where(
-          "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-          false, Current.user.id, Current.user.id
-        )
+        visible_scope = @creative.comments.visible_to(Current.user)
         comments = visible_scope.where(id: comment_ids).to_a
 
         if comments.length != comment_ids.length
@@ -47,10 +44,7 @@ module Collavre
           render json: { error: I18n.t("collavre.comments.merge.not_authorized") }, status: :forbidden and return
         end
 
-        visible_scope = @creative.comments.where(
-          "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-          false, Current.user.id, Current.user.id
-        )
+        visible_scope = @creative.comments.visible_to(Current.user)
         comments = visible_scope.where(id: comment_ids).to_a
 
         if comments.length != comment_ids.length
@@ -81,6 +75,18 @@ module Collavre
         render json: { error: e.message }, status: status
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.record.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.move_error") }, status: :unprocessable_entity
+      end
+
+      def branch
+        source_topic = params[:topic_id].present? ? @creative.topics.find(params[:topic_id]) : nil
+        new_topic = TopicBranchService.new(creative: @creative, user: Current.user, source_topic: source_topic).call(
+          comment_ids: params[:comment_ids]
+        )
+        render json: { success: true, topic: new_topic.slice(:id, :name, :source_topic_id) }, status: :created
+      rescue TopicBranchService::BranchError => e
+        render json: { error: e.message }, status: :unprocessable_entity
+      rescue ActiveRecord::RecordInvalid => e
+        render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
       end
     end
   end

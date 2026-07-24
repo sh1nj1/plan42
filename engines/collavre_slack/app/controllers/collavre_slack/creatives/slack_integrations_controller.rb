@@ -1,12 +1,14 @@
 module CollavreSlack
   module Creatives
     class SlackIntegrationsController < ApplicationController
+      include Collavre::IntegrationSetup
+      include Collavre::IntegrationPermission
+
       before_action :set_creative
+      before_action :set_origin
 
       def index
-        # Always use origin creative for Slack links (chat messages are on origin)
-        target_creative = @creative.effective_origin
-        @links = SlackChannelLink.where(creative: target_creative)
+        @links = SlackChannelLink.where(creative: @origin)
         respond_to do |format|
           format.json do
             slack_account = Current.user ? SlackAccount.find_by(user: Current.user) : nil
@@ -31,13 +33,13 @@ module CollavreSlack
 
       def create
         unless @creative.has_permission?(Current.user, :feedback)
-          render json: { success: false, error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
+          render json: { success: false, error: integration_forbidden_message }, status: :forbidden
           return
         end
 
         # Find the user's Slack account
         slack_account = if params[:slack_account_id].present?
-          SlackAccount.find(params[:slack_account_id])
+          SlackAccount.find_by!(id: params[:slack_account_id], user: Current.user)
         else
           SlackAccount.find_by(user: Current.user)
         end
@@ -47,11 +49,8 @@ module CollavreSlack
           return
         end
 
-        # Always link to origin creative (chat messages are on origin)
-        target_creative = @creative.effective_origin
-
         service = SlackIntegrationService.new(user: Current.user, slack_account: slack_account)
-        link = service.link_channel(creative: target_creative, channel_id: params[:channel_id], channel_name: params[:channel_name])
+        link = service.link_channel(creative: @origin, channel_id: params[:channel_id], channel_name: params[:channel_name])
 
         if link.persisted?
           render json: { success: true, link: { id: link.id, channel_id: link.channel_id, channel_name: link.channel_name } }, status: :created
@@ -60,10 +59,8 @@ module CollavreSlack
         end
       end
 
-      # Lightweight endpoint for badge display — returns only existing links, no Slack API calls
       def badge
-        target_creative = @creative.effective_origin
-        links = SlackChannelLink.where(creative: target_creative)
+        links = SlackChannelLink.where(creative: @origin)
         render json: {
           links: links.map { |link|
             { channel_name: link.channel_name }
@@ -73,15 +70,13 @@ module CollavreSlack
 
       def destroy
         link = SlackChannelLink.find(params[:id])
-        # Check against origin creative
-        target_creative = @creative.effective_origin
-        unless link.creative_id == target_creative.id
+        unless link.creative_id == @origin.id
           render json: { success: false, error: I18n.t("collavre_slack.errors.not_found") }, status: :not_found
           return
         end
 
         unless @creative.has_permission?(Current.user, :feedback)
-          render json: { success: false, error: I18n.t("collavre_slack.errors.forbidden") }, status: :forbidden
+          render json: { success: false, error: integration_forbidden_message }, status: :forbidden
           return
         end
 
@@ -91,8 +86,8 @@ module CollavreSlack
 
       private
 
-      def set_creative
-        @creative = Collavre::Creative.find(params[:creative_id])
+      def integration_forbidden_message
+        I18n.t("collavre_slack.errors.forbidden")
       end
 
       def fetch_channels(slack_account)

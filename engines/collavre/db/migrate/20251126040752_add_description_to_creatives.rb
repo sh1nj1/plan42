@@ -38,7 +38,7 @@ class AddDescriptionToCreatives < ActiveRecord::Migration[8.1]
       blob = nil
       begin
         blob = ActionText::Attachable.from_attachable_sgid(sgid)
-      rescue => e
+      rescue StandardError => e
         puts "Error locating blob for sgid #{sgid}: #{e.message}"
       end
 

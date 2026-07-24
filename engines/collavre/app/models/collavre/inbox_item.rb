@@ -16,17 +16,11 @@ module Collavre
     after_commit :broadcast_badge_update, on: %i[create update destroy]
     after_create_commit :enqueue_push_notification
 
-    attribute :state, :string, default: "new"
-    validates :state, inclusion: { in: %w[new read archived] }
+    enum :state, { new: "new", read: "read", archived: "archived" }, default: :new, scopes: false
     validates :message_key, presence: true
 
+    # Kept explicit (not enum's generated `.new` class-scope, which collides with the constructor).
     scope :new_items, -> { where(state: "new") }
-    scope :read_items, -> { where(state: "read") }
-
-
-    def read?
-      state == "read"
-    end
 
     def localized_message(locale: I18n.locale)
       msg =
