@@ -3,7 +3,6 @@ module Collavre
     self.table_name = "users"
 
     include HasInboxCreative
-    include HasProfileCreative
 
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
 
@@ -206,45 +205,6 @@ module Collavre
 
     def ai_user?
       llm_vendor.present?
-    end
-
-    # Mirror the agent's system prompt into its profile creative as Markdown,
-    # so the raw prompt lands losslessly in data["markdown_source"] — the
-    # canonical home for the prompt. Writing the prompt straight into
-    # `description` would run it through the HTML sanitizer (Describable), which
-    # strips <thinking>/<tool_call> tags and entity-escapes < > &, corrupting
-    # every prompt; the derived `description` is only a rendered display view.
-    # The system_prompt column is legacy, pending removal.
-    # No-op for humans and for prompt-less agents (profile keeps its name seed).
-    def sync_profile_system_prompt!
-      return unless ai_user?
-      creative = profile_creative
-      if system_prompt.present?
-        return if creative.data&.dig("markdown_source") == system_prompt
-        # Store the prompt verbatim: markdown_source is the canonical text sent
-        # to the LLM, so an inline data-URI image must NOT be rewritten into a
-        # blob path (which would mutate the prompt the agent receives).
-        creative.skip_data_uri_rewrite = true
-        creative.update!(content_type_input: "markdown", markdown_source: system_prompt)
-      elsif creative.data&.dig("markdown_source").present?
-        # The prompt was cleared. Demote out of markdown mode so the stale
-        # markdown_source is dropped and render falls back to the (now-blank)
-        # column — matching the pre-profile behavior where blanking the prompt
-        # took effect immediately. Also reseed `description` back to the name
-        # seed so the old rendered prompt doesn't stay visible/searchable on the
-        # owned profile root. Without this, the old prompt stays authoritative.
-        creative.update!(content_type_input: "html", description: name.to_s)
-      end
-    end
-
-    # The effective system prompt for all read consumers. The canonical prompt
-    # lives in the profile creative's data["markdown_source"]; the legacy
-    # `system_prompt` column is the fallback for rows not yet backfilled. Every
-    # prompt reader (orchestration matching, type classification, typo agent,
-    # admin view) must route here so that editing the profile creative directly
-    # takes effect everywhere, not just in AiAgentService.
-    def effective_system_prompt
-      profile_creative_if_present&.data&.dig("markdown_source").presence || system_prompt
     end
 
     def claude_channel_agent?

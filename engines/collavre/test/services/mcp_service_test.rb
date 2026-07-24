@@ -58,46 +58,6 @@ class McpServiceTest < ActiveSupport::TestCase
     assert_includes tool.source_code, "class Tools::LexicalTool"
   end
 
-  test "update_from_creative skips profile creatives so prompt examples never register tools" do
-    user = users(:one)
-    creative = Creative.create!(user: user, data: { "kind" => Creative::PROFILE_KIND }, description: <<~HTML)
-      <p>Example tool your prompt may mention:</p>
-      <pre class="lexical-code-block">
-        class Tools::PromptExampleTool
-          extend ToolMeta
-          tool_name "prompt_example_tool"
-          tool_description "Prompt Example"
-        end
-      </pre>
-    HTML
-
-    McpService.stub :register_tool_from_source, nil do
-      McpService.new.update_from_creative(creative)
-    end
-
-    assert_nil McpTool.find_by(name: "prompt_example_tool"),
-      "A profile creative's prompt example must not register a real MCP tool"
-  end
-
-  test "saving a profile creative description does not enqueue MCP tool extraction" do
-    user = users(:one)
-    creative = Creative.create!(user: user, data: { "kind" => Creative::PROFILE_KIND }, description: "<p>initial</p>")
-
-    enqueued = false
-    Collavre::UpdateMcpToolsJob.stub :perform_later, ->(*) { enqueued = true } do
-      creative.update!(description: <<~HTML)
-        <pre class="lexical-code-block">
-          class Tools::PromptExampleTool
-            extend ToolMeta
-            tool_name "prompt_example_tool"
-          end
-        </pre>
-      HTML
-    end
-
-    assert_not enqueued, "Saving a profile creative description must not enqueue MCP tool extraction"
-  end
-
   test "update_from_creative handles br tags in code blocks" do
     user = users(:one)
     creative = Creative.create!(user: user, description: <<~HTML)
