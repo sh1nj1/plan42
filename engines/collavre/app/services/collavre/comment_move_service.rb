@@ -20,8 +20,8 @@ module Collavre
 
       moved_count = perform_move(comments, target_origin, new_topic_id)
 
-      Comment.broadcast_badges(@creative)
-      Comment.broadcast_badges(target_origin) unless target_origin == @creative
+      Comment.broadcast_badges_later(@creative)
+      Comment.broadcast_badges_later(target_origin) unless target_origin == @creative
 
       { success: true, moved_count: moved_count }
     end

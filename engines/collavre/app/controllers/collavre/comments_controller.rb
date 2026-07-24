@@ -68,9 +68,15 @@ module Collavre
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
       end
 
-      # Default order: Newest first (created_at DESC)
+      # Default order: Newest first (id DESC)
       # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
-      scope = scope.order(created_at: :desc)
+      # We order by id, not created_at: id is a single monotonic sequence that reflects the true insertion
+      # (causal) order, whereas created_at is stamped by whichever process wrote the row. A user message is
+      # stamped by the web request while its agent reply is stamped by a background worker, and clock skew
+      # between those processes can backdate the reply below the message that triggered it. The pagination
+      # cursors below are all id-based ("Newer = higher id"), so ordering by id keeps display and cursors
+      # consistent.
+      scope = scope.order(id: :desc)
 
 
       @comments = if params[:around_comment_id].present?
@@ -81,7 +87,7 @@ module Collavre
         # Older messages have LOWER IDs.
 
         # Newer bundle (including target): ID >= target_id
-        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(created_at: :asc).limit(limit / 2 + 1)
+        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(id: :asc).limit(limit / 2 + 1)
 
         # Older bundle: ID < target_id
         older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
@@ -104,8 +110,8 @@ module Collavre
         # But standard DESC query would give us the VERY Newest.
         # We want the ones just above `after_id`.
 
-        # Use reorder(ASC) to get the ones immediately larger than after_id, then reverse back to DESC.
-        scope.where("comments.id > ?", params[:after_id].to_i).reorder(created_at: :asc).limit(limit)
+        # Use reorder(id: :asc) to get the ones immediately larger than after_id, then reverse back to DESC.
+        scope.where("comments.id > ?", params[:after_id].to_i).reorder(id: :asc).limit(limit)
       else
         # Initial Load (Latest messages)
         scope.limit(limit).to_a.reverse
@@ -113,31 +119,13 @@ module Collavre
 
       present_user_ids = CommentPresenceStore.list(@creative.id)
 
-      read_receipts = {}
-      if @comments.any?
-        # Fetch all read pointers for this creative that point to comments in the current list
-        # We only care about pointers that match the IDs of the comments we are displaying?
-        # Or rather, we want to show the 'line' on the comment that matches the pointer.
-
-        # Optimization: Fetch all pointers for participants of this creative.
-        # Scoped to the creative.
-        pointers = CommentReadPointer.where(creative: @creative)
-                                     .where.not(last_read_comment_id: nil)
-                                     .includes(user: { avatar_attachment: :blob })
-
-        # Fetch all visible IDs for correct read-receipt placement transparency
-        # Only map read receipts to PUBLIC comments.
-        # Users who read private comments will appear on the nearest preceding public comment.
-        public_ids = @creative.comments.public_only.order(id: :asc).pluck(:id)
-
-        pointers.each do |pointer|
-          effective_id = pointer.effective_comment_id(public_ids)
-          if effective_id
-            read_receipts[effective_id] ||= []
-            read_receipts[effective_id] << pointer.user
-          end
-        end
-      end
+      # Read receipts land on the nearest preceding PUBLIC comment, so a user who
+      # last read a private comment shows up above it. The index resolves that
+      # against the rendered window rather than the whole conversation.
+      # Fully qualified: a top-level ::Comments namespace exists too (see
+      # ::Comments::CommandProcessor below), so a bare Comments:: here would be
+      # resolved by lexical luck rather than intent.
+      read_receipts = Collavre::Comments::ReadReceiptIndex.new(creative: @creative, comments: @comments).receipts
 
       if params[:after_id].present? || params[:before_id].present?
         render partial: "collavre/comments/comment",

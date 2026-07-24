@@ -18,6 +18,18 @@ module Collavre
       end
 
       module ClassMethods
+        # The one enqueue seam for badge recomputation. Every write path that
+        # invalidates a badge goes through here rather than calling
+        # #broadcast_badges directly, so "badges are recounted off the request"
+        # holds for all of them and can't drift back one caller at a time.
+        # #broadcast_badges itself stays synchronous: the job — and the tests
+        # that pin the arithmetic — need a place that just computes.
+        def broadcast_badges_later(creative)
+          return unless creative
+
+          CommentBadgesBroadcastJob.perform_later(creative.id)
+        end
+
         def broadcast_badges(creative)
           origin = creative.effective_origin
           users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
@@ -30,7 +42,12 @@ module Collavre
           pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
           present_user_ids = CommentPresenceStore.list(origin.id)
 
-          public_count = origin.comments.public_only.count
+          # Only ever consumed as a boolean (show_zero below), so ask the
+          # database for existence rather than a total. An unbounded COUNT has
+          # no id predicate to anchor it, so the planner falls back to a
+          # sequential scan of the whole comments table and gets slower for
+          # every participant as the conversation grows.
+          any_public = origin.comments.public_only.exists?
           private_counts = origin.comments
             .where(private: true, user_id: user_ids)
             .group(:user_id)
@@ -59,7 +76,7 @@ module Collavre
 
           users.each do |u|
             user_private_count = private_counts[u.id] || 0
-            total_count = public_count + user_private_count
+            has_any_visible = any_public || user_private_count.positive?
 
             threshold = last_read_ids[u.id] || 0
             unread_public = unread_public_by_threshold[threshold] || 0
@@ -75,7 +92,7 @@ module Collavre
               locals: {
                 count: unread_count,
                 badge_id: "comment-badge-#{origin.id}",
-                show_zero: total_count.positive?
+                show_zero: has_any_visible
               }
             )
 
@@ -187,7 +204,7 @@ module Collavre
 
       def broadcast_badges
         return unless creative
-        self.class.broadcast_badges(creative)
+        self.class.broadcast_badges_later(creative)
       end
     end
   end
