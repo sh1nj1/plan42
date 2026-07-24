@@ -287,6 +287,33 @@ module Collavre
       ActiveJob::Base.queue_adapter = original_adapter
     end
 
+    test "false push enqueue result leaves a durable pending delivery" do
+      owner = users(:one)
+      commenter = users(:two)
+      creative = Creative.create!(user: owner, description: "False Push Enqueue")
+      inbox = Creative.inbox_for(owner)
+      original_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+      comment = creative.comments.create!(user: commenter, content: "retry false enqueue")
+      event = comment.notification_event
+      clear_enqueued_jobs
+
+      PushNotificationJob.stub(:perform_later, false) do
+        assert_raises ActiveJob::EnqueueError do
+          comment.deliver_notifications("created", event)
+        end
+      end
+
+      delivery = CommentNotificationDelivery.find_by!(delivery_key: notification_key_for(comment, owner))
+      assert_nil delivery.push_enqueued_at
+      assert_nil delivery.push_claim_token
+      assert_nil delivery.push_claimed_at
+      assert_equal 1, inbox.comments.where(quoted_comment: comment).count
+    ensure
+      clear_enqueued_jobs
+      ActiveJob::Base.queue_adapter = original_adapter
+    end
+
     test "push delivery sweep reclaims an expired enqueue claim" do
       owner = users(:one)
       inbox_comment = creatives(:tshirt).comments.create!(

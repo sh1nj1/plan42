@@ -26,9 +26,10 @@ module Collavre
       return false unless claimed == 1
 
       job = PushNotificationJob.perform_later(recipient_id, message: message, link: link)
-      if job.respond_to?(:successfully_enqueued?) && !job.successfully_enqueued?
-        enqueue_error = job.enqueue_error || ActiveJob::EnqueueError.new("Push notification enqueue failed")
-        raise enqueue_error
+      enqueue_succeeded = job && (!job.respond_to?(:successfully_enqueued?) || job.successfully_enqueued?)
+      unless enqueue_succeeded
+        enqueue_error = job.respond_to?(:enqueue_error) ? job.enqueue_error : nil
+        raise enqueue_error || ActiveJob::EnqueueError.new("Push notification enqueue failed")
       end
 
       acknowledged = self.class
