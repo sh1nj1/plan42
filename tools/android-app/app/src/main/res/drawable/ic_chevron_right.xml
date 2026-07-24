@@ -1,5 +1,5 @@
 <!--
-  Chevron (갈매기) — mirrors Collavre's web chevron-right.svg (Lucide: M9 6L15 12L9 18)
+  Chevron — mirrors Collavre's web chevron-right.svg (Lucide: M9 6L15 12L9 18)
   so the app's expand/collapse toggle matches the chat UI's iconography. Rotated 90°
   in Compose to point down when a row is expanded. Tinted via the Icon composable.
 -->
