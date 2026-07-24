@@ -82,6 +82,12 @@ export NEEDRESTART_MODE=a
 export NEEDRESTART_SUSPEND=1
 
 mkdir -p "$STATE_DIR"
+# Root-only before anything is written to it: this log is a transcript of a
+# provisioning run, and cloud-init's own copy of our stdout
+# (/var/log/cloud-init-output.log) is readable by more than root. Nothing
+# printed below may contain a credential.
+touch "$LOG_FILE"
+chmod 0600 "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log() { printf '\n=== [%s] %s\n' "$(date -Is)" "$*"; }
@@ -343,6 +349,28 @@ log "8/9 nightly backups"
 # readable only by postgres and root.
 install -d -m 0700 -o postgres -g postgres /var/backups/collavre
 
+# Ubuntu ships no `aws`, so an S3 destination is useless without installing it
+# first. Official v2 installer rather than the apt package: noble's awscli is a
+# release behind and this has to work on 24.04 for years.
+if [ -n "$BACKUP_S3_URI" ] && ! command -v aws >/dev/null 2>&1; then
+  case "$(uname -m)" in
+    aarch64 | arm64) AWS_CLI_ARCH=aarch64 ;;
+    *) AWS_CLI_ARCH=x86_64 ;;
+  esac
+  AWS_CLI_TMP="$(mktemp -d)"
+  if curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_CLI_ARCH}.zip" \
+       -o "$AWS_CLI_TMP/awscliv2.zip" &&
+     unzip -q "$AWS_CLI_TMP/awscliv2.zip" -d "$AWS_CLI_TMP" &&
+     "$AWS_CLI_TMP/aws/install" --update >/dev/null; then
+    hash -r
+    log "AWS CLI installed for S3 backup upload ($(aws --version 2>&1))"
+  else
+    log "WARNING: could not install the AWS CLI — nightly backups will stay local" \
+        "and collavre-pg-backup.service will fail until you install it by hand"
+  fi
+  rm -rf "$AWS_CLI_TMP"
+fi
+
 cat > /usr/local/bin/collavre-pg-backup <<BACKUP
 #!/usr/bin/env bash
 # Managed by script/lightsail_launch.sh
@@ -362,12 +390,25 @@ runuser -u postgres -- pg_dump --format=custom --compress=6 \\
 trap - ERR
 chmod 0600 "\$FILE"
 
-if [ -n "\$S3_URI" ] && command -v aws >/dev/null 2>&1; then
-  aws s3 cp "\$FILE" "\${S3_URI%/}/\$(basename "\$FILE")"
+# A configured S3 destination that silently does nothing is worse than no
+# off-instance backup at all, because it looks like one. Report the local dump
+# either way, then exit non-zero so the systemd unit goes red.
+S3_STATUS=0
+if [ -n "\$S3_URI" ]; then
+  if ! command -v aws >/dev/null 2>&1; then
+    echo "ERROR: S3_URI is set but the aws CLI is not installed —" \\
+         "\$FILE exists only on this instance" >&2
+    S3_STATUS=1
+  elif ! aws s3 cp "\$FILE" "\${S3_URI%/}/\$(basename "\$FILE")"; then
+    echo "ERROR: upload to \${S3_URI%/} failed —" \\
+         "\$FILE exists only on this instance" >&2
+    S3_STATUS=1
+  fi
 fi
 
 find "\$DEST" -maxdepth 1 -name '*.dump' -mtime "+\$RETENTION_DAYS" -delete
 echo "backup complete: \$FILE (\$(du -h "\$FILE" | cut -f1))"
+exit "\$S3_STATUS"
 BACKUP
 chmod 0755 /usr/local/bin/collavre-pg-backup
 
@@ -402,8 +443,16 @@ log "9/9 summary"
 PUBLIC_IP="$(curl -fsS --max-time 5 https://checkip.amazonaws.com 2>/dev/null || echo '<public-ip>')"
 PRIVATE_IP="$(hostname -I | awk '{print $1}')"
 DATABASE_URL="postgresql://$DB_USER:$DB_PASSWORD@$DB_BIND_ADDRESS:5432/$DB_NAME"
+# Angle brackets, not a $(...) that a reader might paste into .env.production
+# and watch dotenv store verbatim.
+REDACTED_URL="postgresql://$DB_USER:<see $SUMMARY>@$DB_BIND_ADDRESS:5432/$DB_NAME"
 
-cat > "$SUMMARY" <<TXT
+# Rendered twice: once with the real DATABASE_URL into the 0600 summary file,
+# once redacted for stdout — which is tee'd to the launch log and captured by
+# cloud-init. Templating instead of sed'ing the secret out keeps a password
+# containing regex or delimiter characters from slipping through unreplaced.
+render_summary() { # $1 = DATABASE_URL to display
+  cat <<TXT
 Collavre Lightsail host — provisioned $(date -Is)
 
   public IP        $PUBLIC_IP
@@ -420,14 +469,18 @@ Put these in .env.production on your workstation, then run \`bin/kamal setup\`:
   COLLAVRE_SERVER=$PUBLIC_IP
   KAMAL_SSH_USER=$APP_SSH_USER
   KAMAL_SSH_KEY_PATH=~/.ssh/<the key matching the instance>
-  DATABASE_URL=$DATABASE_URL
+  DATABASE_URL=$1
   PORT=80
 
 Open ports 80 and 443 in the Lightsail console firewall (Networking tab).
 Never open 5432 there.
 TXT
+}
+
+touch "$SUMMARY"
 chmod 0600 "$SUMMARY"
+render_summary "$DATABASE_URL" > "$SUMMARY"
 
 touch "$MARKER"
-cat "$SUMMARY"
-log "done — full log at $LOG_FILE"
+render_summary "$REDACTED_URL"
+log "done — full log at $LOG_FILE (root only; the DATABASE_URL above is redacted, the real one is in $SUMMARY)"

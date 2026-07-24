@@ -63,9 +63,14 @@ sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." bash script/lightsail_launch.sh
 sudo FORCE=1 bash script/lightsail_launch.sh   # after the first success
 ```
 
-Progress: `tail -f /var/log/collavre-launch.log` (first boot takes 3–6 minutes).
-When it finishes it writes `/root/collavre-lightsail-summary.txt` with the
-generated `DATABASE_URL` and the exact `.env.production` lines to copy.
+Progress: `sudo tail -f /var/log/collavre-launch.log` (first boot takes 3–6
+minutes). When it finishes it writes `/root/collavre-lightsail-summary.txt` with
+the generated `DATABASE_URL` and the exact `.env.production` lines to copy.
+
+The summary is also printed to the launch log, but with the database password
+redacted — the log and cloud-init's copy of it are not the place for a
+credential. Read the real `DATABASE_URL` from the `0600` summary file (or the
+password alone from `/var/lib/collavre/db_password`).
 
 **In the console firewall (Networking tab): open 80 and 443. Never open 5432.**
 
@@ -149,7 +154,12 @@ full replay — so **populate the database before the first deploy** instead:
 `collavre-pg-backup.timer` runs nightly at 03:30 (instance timezone, Asia/Seoul
 by default) and writes custom-format dumps to `/var/backups/collavre`, keeping 7
 days. With `BACKUP_S3_URI` set and AWS credentials in `/root/.aws/credentials`
-(Lightsail has no IAM instance role) each dump is also copied to S3.
+(Lightsail has no IAM instance role) each dump is also copied to S3 — the launch
+script installs the AWS CLI when that variable is set. If the upload cannot
+happen the local dump is still written and kept, but the unit exits non-zero, so
+a broken off-instance backup shows up as a failed
+`collavre-pg-backup.service` in `systemctl list-units --failed` instead of
+looking healthy.
 
 ```bash
 sudo /usr/local/bin/collavre-pg-backup          # run one now
