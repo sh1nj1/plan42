@@ -29,10 +29,9 @@ module Collavre
     # so a per-node `list` while rendering a creative tree is a SELECT per node.
     # The LocalCache middleware that fronts Rails.cache for the duration of a
     # request does not help: it memoizes per *key*, and presence is keyed by
-    # creative, so a tree of N nodes asks for N different keys. (That is what
-    # separates this from a setting like completion_mark, which is one key read
-    # N times and is therefore already deduplicated for free — do not add a
-    # memo for that.)
+    # creative, so a tree of N nodes asks for N different keys. Repeated reads of
+    # the single completion-mark setting are memoized separately by the request's
+    # view context.
     #
     # Returns an entry for every id asked for, empty when nobody is present, so
     # callers never have to distinguish "absent from the cache" from "nobody

@@ -146,7 +146,6 @@ module Collavre
 
     def render_progress_value(value)
       text = number_to_percentage(value * 100, precision: 0)
-      completion_mark = Collavre::SystemSetting.completion_mark
       if value == 1 && !completion_mark.nil?
         text = completion_mark
       end
@@ -156,6 +155,15 @@ module Collavre
         display_text,
         class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
       )
+    end
+
+    # A tree renders this helper once per node. Keep the setting lookup scoped to
+    # the request's view context rather than depending on a particular cache
+    # store's local-cache middleware to collapse repeated reads.
+    def completion_mark
+      return @completion_mark if defined?(@completion_mark)
+
+      @completion_mark = Collavre::SystemSetting.completion_mark
     end
 
     def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)

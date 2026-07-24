@@ -10,20 +10,11 @@ module Collavre
     # nearest *public* comment at or before it — so the mapping needs to know
     # about public comments the page itself does not render.
     #
-    # It does NOT need to know about all of them. The controller used to pluck
-    # every public comment id of the creative on every page and every scroll,
-    # which is O(whole conversation) work to place at most a handful of avatars
-    # inside a 20-comment window. Only three things can happen to a pointer:
-    #
-    #   * older than the window     -> its receipt belongs to an earlier page
-    #   * inside the window         -> resolvable from the ids in that id range
-    #   * newer than the window     -> its receipt belongs to a later page
-    #
-    # So two bounded queries are enough: the public ids inside the window, plus
-    # the first public id after it. That last one is what separates "read
-    # everything we are showing" (receipt on the last rendered comment) from
-    # "read past this page" (no receipt here) — without it a page of older
-    # history would show every caught-up reader at its bottom.
+    # It does NOT need to load any public-comment id list. Each read pointer can
+    # resolve its effective public comment with a correlated MAX(id) subquery,
+    # which PostgreSQL and SQLite both serve from the public-comment index. The
+    # outer query still returns only one row per participant, while the rendered
+    # id set decides whether that receipt belongs on this page.
     class ReadReceiptIndex
       def initialize(creative:, comments:)
         @creative = creative
@@ -37,7 +28,7 @@ module Collavre
         rendered = rendered_public_ids.to_set
 
         pointers.each_with_object({}) do |pointer, result|
-          effective_id = pointer.effective_comment_id(candidate_ids)
+          effective_id = pointer[:receipt_comment_id]
           next unless effective_id && rendered.include?(effective_id)
 
           (result[effective_id] ||= []) << pointer.user
@@ -52,36 +43,24 @@ module Collavre
         @rendered_public_ids ||= comments.reject(&:private?).map(&:id).sort
       end
 
-      # Ascending, as CommentReadPointer#effective_comment_id binary-searches it.
-      # Public ids interleaved into the window but not rendered (a topic filter
-      # hides them) have to be here: a pointer landing on one means the receipt
-      # belongs to a comment this page is not showing.
-      def candidate_ids
-        @candidate_ids ||= begin
-          ids = public_comments
-            .where(id: rendered_public_ids.first..rendered_public_ids.last)
-            .order(:id)
-            .pluck(:id)
-          ids << next_public_id_after_window if next_public_id_after_window
-          ids
-        end
-      end
-
-      def next_public_id_after_window
-        return @next_public_id_after_window if defined?(@next_public_id_after_window)
-
-        @next_public_id_after_window =
-          public_comments.where(Comment.arel_table[:id].gt(rendered_public_ids.last)).minimum(:id)
-      end
-
-      def public_comments
-        creative.comments.public_only
-      end
-
+      # Resolve the nearest public comment at or before each pointer in the same
+      # query that loads the pointers. This stays bounded by participant count
+      # even when a topic-filtered page spans thousands of hidden public comments.
       def pointers
+        pointer_table = CommentReadPointer.arel_table
+        public_comments = Comment.arel_table.alias("receipt_comments")
+        effective_comment_id = Comment
+          .from(public_comments)
+          .select(public_comments[:id].maximum)
+          .where(public_comments[:creative_id].eq(pointer_table[:creative_id]))
+          .where(public_comments[:private].eq(false))
+          .where(public_comments[:id].lteq(pointer_table[:last_read_comment_id]))
+          .arel
+
         CommentReadPointer
           .where(creative: creative)
           .where.not(last_read_comment_id: nil)
+          .select(pointer_table[Arel.star], effective_comment_id.as("receipt_comment_id"))
           .includes(user: { avatar_attachment: :blob })
       end
     end
