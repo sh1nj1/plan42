@@ -8,8 +8,11 @@ module Collavre
     # ---------------------------------------------------------------------------
     # Reserved metadata key registry — engines register their own namespaces so
     # `update_metadata` preserves them without core naming vendor-specific keys.
+    # "kind" must be reserved: it is the discriminator `inbox?`/`Creative.inboxes`
+    # match on, so a metadata save that omits it makes the row undiscoverable and
+    # `inbox_for` creates a duplicate inbox for that user.
     # ---------------------------------------------------------------------------
-    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor].freeze
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
 
     class << self
       def registered_reserved_metadata_keys
