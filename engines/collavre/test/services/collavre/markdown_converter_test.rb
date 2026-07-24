@@ -30,6 +30,29 @@ module Collavre
       refute_includes html, "style=\"color"
     end
 
+    test "markdown_to_html renders headings without anchor links" do
+      # commonmarker 2.9.0 enables the header_ids extension by default, which appends
+      # `<a href="#heading" class="anchor"></a>` inside every heading and sets `id` on the
+      # heading itself. This output is stored (Creative#description holds rendered, sanitized
+      # HTML) and the sanitizer drops `id` while keeping the anchor, so each heading would
+      # carry a link to a target that no longer exists; html_to_markdown then reads the empty
+      # anchor back as `[](#heading)`. We pin the extension off, so the rendering must not
+      # depend on which commonmarker version is installed.
+      html = MarkdownConverter.markdown_to_html("# Heading\n\ntext")
+      assert_includes html, "Heading</h1>"
+      refute_includes html, "class=\"anchor\""
+      refute_includes html, "href=\"#heading\""
+      refute_includes html, "id=\"heading\""
+    end
+
+    test "html_to_markdown turns an empty heading anchor into a stray link" do
+      # Pins the consequence the option above avoids: an anchored heading does not survive a
+      # round trip, it grows `[](#heading)`. If a future change adopts heading anchors as a
+      # feature, html_to_markdown has to learn to drop them and this test should fail first.
+      assert_equal "Heading[](#heading)",
+                   MarkdownConverter.html_to_markdown(%(<h1>Heading<a href="#heading" class="anchor"></a></h1>))
+    end
+
     test "markdown_to_html renders a single newline as a hard break" do
       # Mirrors the JS renderer (marked breaks:true): consecutive rich-editor
       # lines are stored one-per-line and must render as <br>, not be joined.
