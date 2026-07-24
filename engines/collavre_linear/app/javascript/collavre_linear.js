@@ -15,19 +15,38 @@
 // unconfirmed and errors would vanish. Route through the shared in-app modal
 // like the GitHub/Slack/Notion engines do.
 import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import {
+  markReopenAfterConnect,
+  consumeReopenAfterConnect,
+  safeSessionStorage,
+} from './linear_modal_reopen.js';
 
 let linearIntegrationInitialized = false;
 
 if (!linearIntegrationInitialized) {
   linearIntegrationInitialized = true;
 
-  // The OAuth popup posts `linearConnected` to the opener when it closes.
-  // Reload so the modal re-renders in the connected (link-a-project) state.
+  // The OAuth popup posts `linearConnected` to the opener once the account is
+  // connected. Reload so the modal re-renders in the connected (link-a-project)
+  // state, then reopen it (see turbo:load) so the user lands directly on the
+  // project settings step instead of a closed modal.
   // Bound to `window` once — it survives Turbo navigations, unlike the
   // per-navigation element listeners set up in turbo:load below.
   window.addEventListener('message', function (event) {
     if (event.origin !== window.location.origin) return;
     if (event.data && event.data.type === 'linearConnected') {
+      // Close the popup from here. window.close() inside the popup is unreliable
+      // after the cross-origin OAuth round trip and in the desktop WebView, so
+      // the popup's own "Close" button looked dead — closing the window we
+      // opened is the reliable path.
+      try {
+        if (event.source && !event.source.closed) event.source.close();
+      } catch (e) { /* cross-origin or already closed */ }
+      // Survive the reload: reopen the modal on the next load so the flow lands
+      // on the project-link step automatically. Scope it to the creative the
+      // popup was opened for (event.data.creativeId) so a mid-flow navigation to
+      // a different creative doesn't auto-open the wrong creative's link modal.
+      markReopenAfterConnect(safeSessionStorage(), event.data.creativeId);
       window.location.reload();
     }
   });
@@ -73,6 +92,7 @@ if (!linearIntegrationInitialized) {
     const status = form.querySelector('.linear-options-status');
     const projectSelect = form.querySelector('select[name="linear_project_id"]');
     const teamSelect = form.querySelector('select[name="team_id"]');
+    const stateSelect = form.querySelector('select[name="done_state_id"]');
     const submitBtn = form.querySelector('input[type="submit"],button[type="submit"]');
     if (!projectSelect || !teamSelect) return;
 
@@ -88,6 +108,7 @@ if (!linearIntegrationInitialized) {
       .then(function (data) {
         const teams = data.teams || [];
         const projects = data.projects || [];
+        const states = data.states || [];
         const teamName = {};
         teams.forEach(function (t) { teamName[t.id] = t.name; });
 
@@ -119,7 +140,33 @@ if (!linearIntegrationInitialized) {
           // Auto-select when the project has exactly one team.
           teamSelect.value = ids.length === 1 ? ids[0] : '';
           teamSelect.disabled = !projectSelect.value;
+          syncStates();
           refreshSubmit();
+        }
+
+        // Rebuild the done-state dropdown for the selected team and default to
+        // that team's Completed state. Optional field — no completed state (or no
+        // team chosen) leaves it blank and completion mapping stays off.
+        function syncStates() {
+          if (!stateSelect) return;
+          const teamId = teamSelect.value;
+          while (stateSelect.options.length > 1) stateSelect.remove(1);
+          const teamStates = states
+            .filter(function (s) { return s.team_id === teamId; })
+            .sort(function (a, b) { return (a.position || 0) - (b.position || 0); });
+          teamStates.forEach(function (s) {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.name;
+            opt.dataset.type = s.type || '';
+            stateSelect.appendChild(opt);
+          });
+          const completed = teamStates.filter(function (s) { return s.type === 'completed'; });
+          const named = completed.find(function (s) {
+            return (s.name || '').toLowerCase() === 'completed';
+          });
+          stateSelect.value = named ? named.id : (completed[0] ? completed[0].id : '');
+          stateSelect.disabled = !teamId;
         }
 
         function refreshSubmit() {
@@ -127,7 +174,7 @@ if (!linearIntegrationInitialized) {
         }
 
         projectSelect.addEventListener('change', syncTeams);
-        teamSelect.addEventListener('change', refreshSubmit);
+        teamSelect.addEventListener('change', function () { syncStates(); refreshSubmit(); });
 
         projectSelect.disabled = false;
         if (status) status.style.display = 'none';
@@ -162,6 +209,15 @@ if (!linearIntegrationInitialized) {
     openBtn.addEventListener('click', function () {
       showModal();
     });
+
+    // Just returned from the OAuth popup: open the modal straight to the
+    // project-link step instead of leaving the (display:none) modal closed, so
+    // the user doesn't have to reopen the Linear menu by hand. Only reopen when
+    // this page's creative matches the one the popup connected for — otherwise a
+    // mid-flow navigation would surface the wrong creative's link modal.
+    if (consumeReopenAfterConnect(safeSessionStorage(), modal.dataset.creativeId)) {
+      showModal();
+    }
 
     closeBtn?.addEventListener('click', closeModal);
 

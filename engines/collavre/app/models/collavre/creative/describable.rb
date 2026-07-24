@@ -18,7 +18,7 @@ module Collavre
 
         validates :description, presence: true, unless: -> { origin_id.present? }
         validate :description_cannot_change_if_has_origin, on: :update
-        validate :description_cannot_change_if_github_source, on: :update
+        validate :description_cannot_change_if_read_only_source, on: :update
 
         before_validation :convert_markdown_to_html
         before_save :sanitize_description_html
@@ -29,7 +29,13 @@ module Collavre
       # Linked Creative의 description을 안전하게 반환
       def effective_description(variation_id = nil, html = true)
         if variation_id.present?
-          variation_tag = tags.find_by(label_id: variation_id)
+          # `find_by` on a loaded association still round-trips; the browse tree
+          # preloads tags per level and reaches here once per node.
+          variation_tag = if tags.loaded?
+            tags.find { |tag| tag.label_id.to_s == variation_id.to_s }
+          else
+            tags.find_by(label_id: variation_id)
+          end
           return variation_tag.value if variation_tag&.value.present?
         end
         description_val = origin_id.nil? ? description : origin.description
@@ -44,11 +50,11 @@ module Collavre
         CGI.unescapeHTML(ActionController::Base.helpers.strip_tags(effective_origin.description || "")).truncate(24, omission: "...")
       end
 
-      # GitHub-synced creatives reject any description change
-      # (description_cannot_change_if_github_source), so embedding would raise
+      # Read-only-source creatives reject any description change
+      # (description_cannot_change_if_read_only_source), so embedding would raise
       # and orphan the blob. Callers MUST check this before creating the blob.
       def attachments_embeddable?
-        !effective_origin.github_markdown?
+        !effective_origin.read_only_source?
       end
 
       # Append an attachment node and save; after_save reconcile attaches the
@@ -362,12 +368,12 @@ module Collavre
         end
       end
 
-      def description_cannot_change_if_github_source
+      def description_cannot_change_if_read_only_source
         return unless will_save_change_to_description?
-        return unless github_markdown?
-        return if @skip_github_validation
+        return unless read_only_source?
+        return if skip_read_only_source_validation
 
-        errors.add(:description, "cannot be changed directly for GitHub synced content")
+        errors.add(:description, I18n.t("collavre.creatives.errors.description_read_only_source"))
       end
     end
   end

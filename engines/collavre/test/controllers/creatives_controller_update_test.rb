@@ -104,6 +104,25 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "baz", creative.data["foo"]
   end
 
+  test "update_metadata preserves the inbox kind so the inbox stays discoverable" do
+    inbox = Creative.inbox_for(@user)
+    assert inbox.inbox?
+
+    # A stale popup payload (or an API client) that omits "kind" must not make the
+    # row stop matching Creative.inboxes — inbox_for would then create a duplicate.
+    patch update_metadata_creative_url(inbox), params: {
+      data: { foo: "bar" }.to_json
+    }
+
+    assert_response :success
+    inbox.reload
+    assert inbox.inbox?, "inbox creative lost data[\"kind\"] on a metadata save"
+    assert_equal "bar", inbox.data["foo"]
+    assert_no_difference -> { Creative.where(user: @user).inboxes.count } do
+      assert_equal inbox.id, Creative.inbox_for(@user).id
+    end
+  end
+
   test "update_metadata rejects non-hash JSON arrays without clobbering markdown fields" do
     creative = Creative.create!(
       description: "<p>html</p>",

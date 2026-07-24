@@ -51,7 +51,7 @@ module Collavre
         end
     end
 
-    belongs_to :creative, class_name: "Collavre::Creative"
+    belongs_to :creative, class_name: "Collavre::Creative", counter_cache: true
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :approver, class_name: Collavre.configuration.user_class_name, optional: true
     belongs_to :action_executed_by, class_name: Collavre.configuration.user_class_name, optional: true
@@ -97,6 +97,8 @@ module Collavre
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
+    attribute :skip_link_preview, :boolean, default: false
+    attribute :skip_notification_revision, :boolean, default: false
     # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
     # part of *promoting* a waiter does not run the user-delete cancel cascade
     # (which would cancel other still-queued waiters in the same topic).
@@ -105,7 +107,7 @@ module Collavre
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     before_validation :assign_main_topic, on: :create
-    before_save :apply_link_previews, if: :should_apply_link_previews?
+    after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
 
@@ -352,14 +354,14 @@ module Collavre
       errors.add(:creative, "must be an origin creative")
     end
 
-    def should_apply_link_previews?
-      will_save_change_to_content? && content.present?
+    def enqueue_link_preview
+      return if content.blank?
+
+      CommentLinkPreviewJob.perform_later(id, content, notification_revision)
     end
 
-    def apply_link_previews
-      self.content = CommentLinkFormatter.new(content).format
-    rescue StandardError => e
-      Rails.logger.warn("Comment link preview formatting failed: #{e.class} #{e.message}")
+    def link_preview_enqueue_required?
+      saved_change_to_content? && !skip_link_preview
     end
 
     def images_must_be_images

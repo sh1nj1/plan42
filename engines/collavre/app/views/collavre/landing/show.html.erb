@@ -19,6 +19,7 @@
   <section id="problem" class="landing-section landing-problem">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.problem.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.problem.subtitle') %></p>
       <div class="landing-problem-grid">
         <div class="landing-problem-card">
           <span class="landing-problem-icon">📝</span>
@@ -53,15 +54,15 @@
         </div>
 
         <div class="landing-feature-card">
-          <div class="landing-feature-icon">🤖</div>
-          <h3><%= t('collavre.landing.features.ai.title') %></h3>
-          <p><%= t('collavre.landing.features.ai.desc') %></p>
-        </div>
-
-        <div class="landing-feature-card">
           <div class="landing-feature-icon">💡</div>
           <h3><%= t('collavre.landing.features.context.title') %></h3>
           <p><%= t('collavre.landing.features.context.desc') %></p>
+        </div>
+
+        <div class="landing-feature-card">
+          <div class="landing-feature-icon">🤖</div>
+          <h3><%= t('collavre.landing.features.ai.title') %></h3>
+          <p><%= t('collavre.landing.features.ai.desc') %></p>
         </div>
 
         <div class="landing-feature-card">
@@ -70,22 +71,59 @@
           <p><%= t('collavre.landing.features.chat.desc') %></p>
         </div>
 
-
       </div>
+    </div>
+  </section>
+
+  <%# ═════════════════════════════════════ THE INTERFACE ══════════════════════════════════════ %>
+  <%# A still before the film: the reader decides in two seconds whether this is a surface they
+      would write in, and a video they have not pressed play on cannot answer that. %>
+  <section id="interface" class="landing-section landing-interface">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.interface.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.interface.subtitle') %></p>
+
+      <div class="landing-shot-frame landing-shot-light">
+        <%= image_tag "collavre/landing/interface-#{I18n.locale == :ko ? 'ko' : 'en'}.png",
+                      class: "landing-shot-img",
+                      alt: t('collavre.landing.interface.alt'), loading: "lazy" %>
+      </div>
+      <div class="landing-shot-frame landing-shot-dark">
+        <%= image_tag "collavre/landing/interface-#{I18n.locale == :ko ? 'ko' : 'en'}-dark.png",
+                      class: "landing-shot-img",
+                      alt: t('collavre.landing.interface.alt'), loading: "lazy" %>
+      </div>
+
+      <ul class="landing-interface-points">
+        <li><%= t('collavre.landing.interface.markdown') %></li>
+        <li><%= t('collavre.landing.interface.rich') %></li>
+        <li><%= t('collavre.landing.interface.drag') %></li>
+        <li><%= t('collavre.landing.interface.presence') %></li>
+      </ul>
     </div>
   </section>
 
   <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
+  <%# Demo video/poster URLs are full absolute URLs stored per-locale in
+      config/locales/landing.*.yml. They point at the hosted assets directly, so
+      they resolve from any environment (preview included) with no DB lookup and
+      no env-bound blob ids. Render the section only when a video URL is set. %>
+  <% demo_video = t('collavre.landing.demo.video', default: nil) %>
+  <% demo_poster = t('collavre.landing.demo.poster', default: nil) %>
+  <% demo_video_dark = t('collavre.landing.demo.video_dark', default: nil) %>
+  <% demo_poster_dark = t('collavre.landing.demo.poster_dark', default: nil) %>
+  <% if demo_video.present? || demo_video_dark.present? %>
   <section id="demo" class="landing-section landing-demo">
     <div class="landing-container">
       <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
       <%# Light mode video %>
+      <% if demo_video.present? %>
       <div class="landing-demo-frame landing-demo-light" data-controller="landing-video">
         <video class="landing-demo-video"
                data-landing-video-target="video"
                autoplay muted loop playsinline
-               poster="/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDEyLCJwdXIiOiJibG9iX2lkIn19--33811afcd451cef0cf10313fa1bfecca15b41299/demo-poster.jpg">
-          <source src="/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDEwLCJwdXIiOiJibG9iX2lkIn19--c272341a19ed8e847208c52da0617ebc801e2e67/demo.mp4" type="video/mp4">
+               poster="<%= demo_poster %>">
+          <source src="<%= demo_video %>" type="video/mp4">
         </video>
         <div class="landing-demo-progress" data-landing-video-target="progressBar">
           <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
@@ -94,13 +132,15 @@
           <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
         </button>
       </div>
+      <% end %>
       <%# Dark mode video %>
+      <% if demo_video_dark.present? %>
       <div class="landing-demo-frame landing-demo-dark" data-controller="landing-video">
         <video class="landing-demo-video"
                data-landing-video-target="video"
                autoplay muted loop playsinline
-               poster="/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDEzLCJwdXIiOiJibG9iX2lkIn19--53c3c505596bca0befbbebb5958764a153ffee5e/demo-dark-poster.jpg">
-          <source src="/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDExLCJwdXIiOiJibG9iX2lkIn19--758c90c311bb68f46a2bda87553e3cdfd800420b/demo-dark.mp4" type="video/mp4">
+               poster="<%= demo_poster_dark %>">
+          <source src="<%= demo_video_dark %>" type="video/mp4">
         </video>
         <div class="landing-demo-progress" data-landing-video-target="progressBar">
           <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
@@ -109,8 +149,10 @@
           <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
         </button>
       </div>
+      <% end %>
     </div>
   </section>
+  <% end %>
 
   <%# ═══════════════════════════════════════ FINAL CTA ════════════════════════════════════════ %>
   <section class="landing-section landing-cta">

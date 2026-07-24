@@ -3,30 +3,28 @@ en:
     landing:
       meta:
         title: "Where Teams Think Together"
-        description: "The collaborative workspace where hierarchical creatives, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
+        description: "The collaborative workspace where hierarchical blocks, AI agents, and real-time chat come together. Organize, collaborate, and ship — with AI as your teammate."
       hero:
         headline_html: "A platform for both AI agents and people."
         subline: "Achieve sustainable productivity gains."
         learn_more: "Learn More"
-      demo:
-        title: "See it in action"
-        placeholder: "Product demo video goes here"
       problem:
         title: "Your tools are failing you"
+        subtitle: "Docs, trackers, chat — you write the same thing in all three, then spend the day moving between them to keep them in sync. Don't repeat yourself."
         notion:
-          title: "Notion"
+          title: "Docs"
           desc: "Docs become graveyards. Nobody edits someone else's page. Search replaces structure."
         jira:
-          title: "Jira"
+          title: "Trackers"
           desc: "Great for tasks, terrible for knowledge. Results never sync back to the wiki. Information overload."
         slack:
-          title: "Slack"
+          title: "Chat"
           desc: "Conversations vanish in the stream. Flat channel lists explode. Context is lost daily."
       features:
         title: "Everything in one living tree"
-        subtitle: "Creatives are hierarchical blocks that organize your work, track progress, and carry context — all at once."
+        subtitle: "Write it once. Every block is a doc, a task, and a discussion at the same time — one source of truth, self-hosted in your own database, that you inject straight into your AI agents."
         tree:
-          title: "Hierarchical Creatives"
+          title: "Hierarchical blocks"
           desc: "Organize work as a tree. Drag, link, and reuse blocks across projects. Progress rolls up automatically."
         ai:
           title: "AI Agents as Teammates"
@@ -36,13 +34,27 @@ en:
           desc: "Reduce cognitive load for people, and inject the knowledge and skills AI needs."
         chat:
           title: "Real-time Chat & Topics"
-          desc: "Every creative has a chat. Organize conversations with topics, move messages between creatives, and keep discussions focused."
+          desc: "Every block has a chat. Organize conversations with topics, move messages between blocks, and keep discussions focused."
         integrations:
           title: "Integrations"
           desc: "GitHub PRs auto-analyzed, Slack messages synced, Google Calendar events linked, MCP tools built-in."
         progress:
           title: "Live Progress"
           desc: "Track completion from leaf to root. Filter by tags, plans, or status. See your project's real health at a glance."
+      interface:
+        title: "The document is the tree"
+        subtitle: "A heading, a paragraph, a code block, a table — each one is a block, carrying its own progress on the right and its own thread inside. You do not fill in a tracker. You write the spec, and the plan is already there."
+        alt: "A refund spec in Collavre. Prose, a syntax-highlighted code block and a table sit as siblings next to work items, each with its own progress and its own discussion."
+        markdown: "Markdown-first. Flip any block between rich text and raw markdown."
+        rich: "Fenced code with syntax highlighting, tables, images — rendered in the tree, not hidden behind a detail page."
+        drag: "Drag a block and its whole subtree comes with it."
+        presence: "See who is in the document and who is editing which block."
+      demo:
+        title: "See it in action"
+        video: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY2LCJwdXIiOiJibG9iX2lkIn19--724536948e4fa3474e57997958427e1850775c08/launch.mp4"
+        poster: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY3LCJwdXIiOiJibG9iX2lkIn19--7713d27bd154806053991bc8e8abca60475a2ab8/launch-poster.jpg"
+        video_dark: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY4LCJwdXIiOiJibG9iX2lkIn19--63349dc7270a3e6a0503c45a413d3b176f791dc2/launch-dark.mp4"
+        poster_dark: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDY5LCJwdXIiOiJibG9iX2lkIn19--25a756ed0d6ff5b4f40ef864b8216c7aa540449c/launch-dark-poster.jpg"
       cta:
         title: "Ready to collaborate smarter?"
         subtitle: "Start organizing your work with AI-powered context."

@@ -6,29 +6,98 @@
 # (DEMO_LLM_URL). A genuine `@Vrex:` mention then drives the real Collavre
 # streaming pipeline against scripted responses — no rails-runner insert trick.
 #
+# Two scenarios, selected with DEMO_SCENARIO:
+#
+#   landing  (default, Korean)  A fully-populated workspace. Everything the video
+#                               shows already exists; the recording is a tour.
+#
+#   launch   (English)          A near-empty workspace. The video BUILDS the tree
+#                               on camera (markdown import), pins context, mentions
+#                               the agent, and checks tasks off — so the claim
+#                               "nothing was ever copied" is demonstrated rather
+#                               than asserted. Seeds only what must pre-exist: the
+#                               handbook to pin, and an empty project root that
+#                               already shares :feedback with Vrex.
+#
+#   interface (both)            A still, not a video. One spec that is ALSO the plan:
+#                               headings, prose, a syntax-highlighted code block and a
+#                               table are each their own block, each carrying its own
+#                               progress and its own thread. Used for the landing
+#                               screenshot, where the claim being made is not the
+#                               mechanism but the surface.
+#
 # Env:
-#   DEMO_LLM_URL  OpenAI-compatible base url for Vrex (default http://127.0.0.1:8730/v1)
+#   DEMO_LLM_URL   OpenAI-compatible base url for Vrex (default http://127.0.0.1:8730/v1)
+#   DEMO_SCENARIO  landing | launch  (default: landing)
+#   DEMO_THEME     light | dark      (forces the login user's theme)
+#   DEMO_LOCALE    en | ko           (forces the login user's locale AND the language
+#                                     the seeded content is written in; defaults to the
+#                                     language each scenario was originally authored in)
 
-llm_url = ENV.fetch("DEMO_LLM_URL", "http://127.0.0.1:8730/v1")
+llm_url  = ENV.fetch("DEMO_LLM_URL", "http://127.0.0.1:8730/v1")
+scenario = ENV.fetch("DEMO_SCENARIO", "landing")
+
+unless %w[landing launch interface].include?(scenario)
+  abort "seed: unknown DEMO_SCENARIO=#{scenario.inspect} (expected landing|launch|interface)"
+end
+
+# The launch video ships in both languages, and the scenario clicks rows *by their
+# text* — so this is not just chrome. Whatever language the seed writes its
+# creatives in is the language launch.yml's `strings:` table must resolve to, or
+# the recording fails on a missing row rather than shipping a mixed-language demo.
+locale = ENV.fetch("DEMO_LOCALE") { scenario == "landing" ? "ko" : "en" }
+unless %w[en ko].include?(locale)
+  abort "seed: unknown DEMO_LOCALE=#{locale.inspect} (expected en|ko)"
+end
+ko = locale == "ko"
 
 def html(text)
   "<div><p class=\"lexical-paragraph\"><span style=\"white-space:pre-wrap;\">#{text}</span></p></div>"
 end
 
+# Multi-paragraph body — used for the handbook, whose whole point is that it has
+# real content an agent can quote back at you.
+def html_lines(lines)
+  body = lines.map do |line|
+    "<p class=\"lexical-paragraph\"><span style=\"white-space:pre-wrap;\">#{line}</span></p>"
+  end.join
+  "<div>#{body}</div>"
+end
+
 pw = "demo1234"
 
-users = {
-  ceo:      { name: "김대표",   email: "ceo@collabre.dev" },
-  pm:       { name: "박기획",   email: "pm@collabre.dev" },
-  lead:     { name: "이시니어", email: "lead@collabre.dev" },
-  fe1:      { name: "정프론트", email: "fe1@collabre.dev" },
-  fe2:      { name: "한프론트", email: "fe2@collabre.dev" },
-  be1:      { name: "송백엔드", email: "be1@collabre.dev" },
-  be2:      { name: "윤백엔드", email: "be2@collabre.dev" },
-  designer: { name: "조디자인", email: "design@collabre.dev" },
-  qa:       { name: "최테스트", email: "qa@collabre.dev" },
-  devops:   { name: "강데옵스", email: "devops@collabre.dev" }
-}
+# The team reads in the language of the take, not of the scenario: a Korean
+# recording with a roster of English names looks like a translation of someone
+# else's product. Emails are shared across scenarios and locales — the cleanup
+# below scopes on them, so switching either must not strand the other's creatives.
+users =
+  if !ko
+    {
+      ceo:      { name: "Dana Reed",     email: "ceo@collabre.dev" },
+      pm:       { name: "Alex Park",     email: "pm@collabre.dev" },
+      lead:     { name: "Sam Okafor",    email: "lead@collabre.dev" },
+      fe1:      { name: "Rin Tanaka",    email: "fe1@collabre.dev" },
+      fe2:      { name: "Nora Vidal",    email: "fe2@collabre.dev" },
+      be1:      { name: "Ivan Petrov",   email: "be1@collabre.dev" },
+      be2:      { name: "Mei Lin",       email: "be2@collabre.dev" },
+      designer: { name: "Jules Moreau",  email: "design@collabre.dev" },
+      qa:       { name: "Priya Nair",    email: "qa@collabre.dev" },
+      devops:   { name: "Tomas Brandt",  email: "devops@collabre.dev" }
+    }
+  else
+    {
+      ceo:      { name: "김대표",   email: "ceo@collabre.dev" },
+      pm:       { name: "박기획",   email: "pm@collabre.dev" },
+      lead:     { name: "이시니어", email: "lead@collabre.dev" },
+      fe1:      { name: "정프론트", email: "fe1@collabre.dev" },
+      fe2:      { name: "한프론트", email: "fe2@collabre.dev" },
+      be1:      { name: "송백엔드", email: "be1@collabre.dev" },
+      be2:      { name: "윤백엔드", email: "be2@collabre.dev" },
+      designer: { name: "조디자인", email: "design@collabre.dev" },
+      qa:       { name: "최테스트", email: "qa@collabre.dev" },
+      devops:   { name: "강데옵스", email: "devops@collabre.dev" }
+    }
+  end
 
 created_users = {}
 users.each do |role, attrs|
@@ -69,6 +138,12 @@ if %w[light dark].include?(demo_theme) && pm_user.respond_to?(:theme=)
   $stdout.puts "Login user theme set to: #{demo_theme}"
 end
 
+# Collavre picks its UI locale off the user record, NOT off the browser's
+# Accept-Language — so Playwright's `locale:` alone leaves the app chrome in
+# whatever the seeded default was, and the take is unusable for its audience.
+pm_user.update!(locale: locale) if pm_user.respond_to?(:locale=)
+$stdout.puts "Login user locale set to: #{locale}"
+
 # Clean existing demo data so re-runs don't stack duplicate creative trees.
 # Scope to the exact demo users upserted above instead of a magic id threshold
 # (`user_id > 3` assumed exactly three reserved system users), and let failures
@@ -98,6 +173,176 @@ def create_creative(parent:, user:, desc:, progress: 0, data: {}, seq: nil)
     data: data,
     sequence: seq
   )
+end
+
+if scenario == "launch"
+  # ─── The handbook: the context block the video pins at the root ───
+  #
+  # This must carry REAL, quotable rules. The climax of the video is Vrex citing a
+  # rule it was never told — so if the handbook were lorem ipsum, the scripted
+  # answer in launch.yml would be a lie the viewer could not check. It is the one
+  # thing the recording asserts and the seed must make true.
+  #
+  # Both language versions therefore have to state the SAME four rules: the
+  # scripted answer in launch.yml quotes three of them back, per locale.
+  handbook_lines =
+    if ko
+      [
+        "<b>엔지니어링 핸드북</b>",
+        "모든 공개 엔드포인트에는 속도 제한을 건다. 기본값은 토큰당 분당 100회.",
+        "모든 쓰기 엔드포인트는 Idempotency-Key 헤더를 받고, 재시도해도 안전해야 한다.",
+        "API를 바꾸면 마이그레이션 가이드를 같은 PR에 함께 올린다.",
+        "CI가 초록이 아니면 머지하지 않는다. 핫픽스도 예외가 아니다."
+      ]
+    else
+      [
+        "<b>Engineering Handbook</b>",
+        "Every public endpoint is rate-limited. Default: 100 requests/minute per token.",
+        "Every write endpoint accepts an Idempotency-Key header and must be safe to retry.",
+        "Any API change ships with a migration guide in the same pull request.",
+        "No merge without a green CI run. No exceptions, including hotfixes."
+      ]
+    end
+
+  handbook = create_creative(
+    parent: nil, user: created_users[:lead], progress: 1.0, seq: 2,
+    desc: html_lines(handbook_lines)
+  )
+
+  # ─── The project root: deliberately EMPTY ───
+  #
+  # The tree is built on camera by importing markdown into this node. Seeding it
+  # empty is the point: a pre-populated tree would prove nothing about the import.
+  payments = create_creative(
+    parent: nil, user: pm_user, progress: 0.0, seq: 1,
+    desc: html(ko ? "결제 v2" : "Payments v2")
+  )
+
+  # Vrex is shared on the root BEFORE the import runs. Creative::Permissible
+  # rebuilds the permission cache on every parent_id change — including on create —
+  # so the children the import creates inherit this share without a background
+  # worker having to catch up mid-recording.
+  [ payments, handbook ].each do |root|
+    share = Collavre::CreativeShare.find_or_initialize_by(creative: root, user: ai)
+    share.permission = :feedback
+    share.shared_by = pm_user if share.respond_to?(:shared_by=)
+    share.save!
+    Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: root.id, user_id: ai.id)
+  end
+  $stdout.puts "Granted Vrex :feedback on the project root and the handbook"
+
+  # The handbook is owned by the tech lead, not by the PM who records the video —
+  # deliberately. The point being demonstrated is that context someone ELSE wrote,
+  # pinned once, reaches your agent. But owning an ancestor does not cascade, so
+  # the PM needs an explicit share or the handbook is invisible in their tree and
+  # in the link-creative picker the video drives.
+  pm_share = Collavre::CreativeShare.find_or_initialize_by(creative: handbook, user: pm_user)
+  pm_share.permission = :feedback
+  pm_share.shared_by = created_users[:lead] if pm_share.respond_to?(:shared_by=)
+  pm_share.save!
+  Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: handbook.id, user_id: pm_user.id)
+  $stdout.puts "Granted PM :feedback on the lead-owned handbook"
+
+  $stdout.puts "\n=== Demo seed complete (scenario=launch, locale=#{locale}) ==="
+  $stdout.puts "Users: #{Collavre::User.count}"
+  $stdout.puts "Creatives: #{Collavre::Creative.count} (project root is intentionally empty)"
+  exit 0
+end
+
+if scenario == "interface"
+  # A spec document whose every element is a block. The screenshot has to make one
+  # thing self-evident without a caption: the prose, the heading, the code and the
+  # table are not *attached to* tasks — they ARE the tasks, each with its own
+  # progress on the right and its own thread. So the tree must contain content that
+  # only a real editor could produce (a Prism-highlighted fence, a table), sitting
+  # as siblings next to ordinary work items.
+  #
+  # Everything here is a capability the editor actually has: headings (h1–h3),
+  # prose, fenced code with syntax highlighting, tables, images. Deliberately
+  # absent: checklists (read-only in the view, unauthorable in the editor) and any
+  # assignee/due-date chrome (no such fields exist on a block).
+  def heading(text, level = 2)
+    "<div><h#{level}><span style=\"white-space:pre-wrap;\">#{text}</span></h#{level}></div>"
+  end
+
+  def code_block(code, lang)
+    "<div><pre><code class=\"language-#{lang}\">#{ERB::Util.html_escape(code)}</code></pre></div>"
+  end
+
+  def table_block(head, rows)
+    th = head.map { |c| "<th>#{c}</th>" }.join
+    tb = rows.map { |r| "<tr>#{r.map { |c| "<td>#{c}</td>" }.join}</tr>" }.join
+    "<div><table><thead><tr>#{th}</tr></thead><tbody>#{tb}</tbody></table></div>"
+  end
+
+  refund_code = <<~RUBY.strip
+    def refund(charge_id, amount:, idempotency_key:)
+      Idempotency.guard(idempotency_key) do
+        charge = Charge.lock.find(charge_id)
+        raise OverRefund if charge.refunded + amount > charge.total
+
+        Payments.gateway.refund(charge, amount)
+      end
+    end
+  RUBY
+
+  spec = create_creative(
+    parent: nil, user: pm_user, seq: 1,
+    desc: html(ko ? "결제 v2 — 환불 스펙" : "Payments v2 — Refund spec")
+  )
+
+  refunds = create_creative(parent: spec, user: pm_user, seq: 1,
+    desc: heading(ko ? "환불" : "Refunds"))
+
+  create_creative(parent: refunds, user: pm_user, seq: 1, progress: 1.0, desc: html(
+    ko ? "결제는 전액 또는 부분 환불할 수 있다. 부분 환불은 반복될 수 있고, 그 합은 원 결제 금액을 넘지 않는다." \
+       : "A charge can be refunded in full or in part. Partial refunds may repeat, and their sum must never exceed the original charge."
+  ))
+
+  endpoint = create_creative(parent: refunds, user: created_users[:be1], seq: 2, progress: 1.0,
+    desc: html(ko ? "환불 API 추가" : "Add refund endpoint"))
+
+  create_creative(parent: refunds, user: created_users[:be1], seq: 3, progress: 1.0,
+    desc: code_block(refund_code, "ruby"))
+
+  create_creative(parent: refunds, user: created_users[:be2], seq: 4,
+    desc: html(ko ? "환불 웹훅" : "Refund webhook"))
+
+  payouts = create_creative(parent: spec, user: pm_user, seq: 2,
+    desc: heading(ko ? "정산" : "Payouts"))
+
+  create_creative(parent: payouts, user: created_users[:lead], seq: 1, progress: 1.0, desc: table_block(
+    ko ? %w[게이트웨이 마감 정산주기] : %w[Gateway Cutoff Settles],
+    ko ? [ [ "Stripe", "23:00 UTC", "T+2" ], [ "Toss", "16:00 KST", "T+1" ] ]
+       : [ [ "Stripe", "23:00 UTC", "T+2" ], [ "Adyen", "16:00 CET", "T+1" ] ]
+  ))
+
+  create_creative(parent: payouts, user: created_users[:be2], seq: 2,
+    desc: html(ko ? "정산 스케줄링" : "Payout scheduling"))
+  create_creative(parent: payouts, user: created_users[:qa], seq: 3,
+    desc: html(ko ? "정산 대사" : "Payout reconciliation"))
+
+  # The thread has to hang off the leaf it is about — that is the whole claim of
+  # the "a thread on every block" card, and the unread badge on that one row is
+  # what makes it visible in a still.
+  topic = Collavre::Topic.create!(creative: endpoint, user: created_users[:be1],
+    name: ko ? "멱등성 버그" : "Idempotency bug", position: 1)
+  Collavre::Comment.create!(creative: endpoint, user: created_users[:qa], topic: topic, content:
+    ko ? "같은 Idempotency-Key로 두 번 호출하면 환불이 두 번 나갑니다." \
+       : "Calling twice with the same Idempotency-Key refunds the charge twice.")
+  Collavre::Comment.create!(creative: endpoint, user: created_users[:be1], topic: topic, content:
+    ko ? "재현했습니다. 가드가 커밋 뒤에 걸려 있어요. 트랜잭션 안으로 옮깁니다." \
+       : "Reproduced. The guard runs after the commit. Moving it inside the transaction.")
+
+  share = Collavre::CreativeShare.find_or_initialize_by(creative: spec, user: pm_user)
+  share.permission = :feedback
+  share.shared_by = pm_user if share.respond_to?(:shared_by=)
+  share.save!
+  Collavre::PermissionCacheJob.new.perform(:rebuild_user_cache_for_subtree, creative_id: spec.id, user_id: pm_user.id)
+
+  $stdout.puts "\n=== Demo seed complete (scenario=interface, locale=#{locale}) ==="
+  $stdout.puts "Creatives: #{Collavre::Creative.count}"
+  exit 0
 end
 
 # ─── Project: Collabre v2.0 release ───

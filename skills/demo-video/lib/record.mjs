@@ -8,6 +8,7 @@
  *
  * Usage:
  *   node record.mjs --scenario <path> [--theme light|dark] [--size landing]
+ *                   [--locale en|ko]
  *                   [--base http://localhost:53000] [--llm http://127.0.0.1:8730]
  *                   [--out <dir>] [--no-post] [--speed 2]
  */
@@ -30,6 +31,7 @@ function arg(name, def) {
 const SCENARIO = arg('scenario');
 const THEME = arg('theme', 'light');
 const SIZE = arg('size', null);
+const LOCALE = arg('locale', null);
 const BASE = (arg('base', 'http://localhost:53000') || '').replace(/\/$/, '');
 const LLM = (arg('llm', 'http://127.0.0.1:8730') || '').replace(/\/$/, '');
 const OUT = arg('out', path.join(__dirname, '..', 'output'));
@@ -43,16 +45,65 @@ if (!SCENARIO) {
 
 const SIZES = {
   landing: { width: 1280, height: 720 },
+  // Stills, not film. The app column is max-width capped, so a 1920 viewport spends
+  // half the frame on empty gutter; 1280 fills it. The height is whatever it takes to
+  // fit a whole document in one frame.
+  doc: { width: 1280, height: 920 },
   wide: { width: 1920, height: 1080 },
   square: { width: 1080, height: 1080 },
   portrait: { width: 1080, height: 1920 },
 };
 
-const scenario = parseYaml(fs.readFileSync(SCENARIO, 'utf8'));
+const raw = parseYaml(fs.readFileSync(SCENARIO, 'utf8'));
+
+// ── locale ───────────────────────────────────────────────────────────────
+// A scenario is one script, not one language. The step list is a long pile of
+// selectors, waits and orderings that took real debugging to get right; forking
+// it per language would guarantee the copies drift and one of them silently
+// starts recording a lie.
+//
+// So the script stays single-source and every human-readable string in it is a
+// `{{key}}` into the `strings:` table, whose values are keyed by locale. That
+// covers the ones buried inside selectors too — `:has-text("{{project}}")` —
+// which a caption-only translation layer could not reach.
+//
+// The table has to agree with seed.rb: the video clicks rows *by their text*, so
+// a key whose Korean value does not match what the Korean seed wrote is not a
+// typo, it is a failed run.
+const LOCALES = { en: 'en-US', ko: 'ko-KR' };
+const locale = LOCALE || raw.default_locale || 'en';
+if (!LOCALES[locale]) {
+  console.error(`error: --locale ${locale} (expected one of: ${Object.keys(LOCALES).join(', ')})`);
+  process.exit(2);
+}
+
+function localize(node, strings) {
+  if (typeof node === 'string') {
+    return node.replace(/\{\{(\w+)\}\}/g, (m, key) => {
+      const entry = strings[key];
+      if (entry == null) throw new Error(`scenario: {{${key}}} is not in strings:`);
+      const val = typeof entry === 'string' ? entry : entry[locale];
+      if (val == null) throw new Error(`scenario: strings.${key} has no "${locale}" value`);
+      return val;
+    });
+  }
+  if (Array.isArray(node)) return node.map((v) => localize(v, strings));
+  if (node && typeof node === 'object') {
+    return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, localize(v, strings)]));
+  }
+  return node;
+}
+
+const scenario = localize(raw, raw.strings || {});
+
 const sizeKey = SIZE || scenario.viewport || 'landing';
 const size = SIZES[sizeKey] || SIZES.landing;
 const name = scenario.name || path.basename(SCENARIO).replace(/\.ya?ml$/, '');
-const suffix = THEME === 'dark' ? '-dark' : '';
+// Locale and theme both fan out into separate files in a shared OUT dir, so both
+// belong in the name. The base locale stays unsuffixed so existing output paths
+// (launch.mp4, launch-dark.mp4) keep pointing at the same thing.
+const localeSuffix = locale === (raw.default_locale || 'en') ? '' : `-${locale}`;
+const suffix = `${localeSuffix}${THEME === 'dark' ? '-dark' : ''}`;
 const SHOT_DIR = path.join(OUT, `${name}${suffix}-shots`);
 const VIDEO_DIR = path.join(OUT, `${name}${suffix}-raw`);
 
@@ -155,6 +206,100 @@ async function waitStream(page, timeoutMs = 40000) {
     `waitStream timed out after ${timeoutMs}ms — no settled AI response ` +
       `(check mention routing, :feedback permission, ActionCable, or fake LLM)`
   );
+}
+
+// On-screen caption. The narrative videos make a claim per scene ("nothing was
+// retyped"), and a silent screen recording cannot make a claim — so captions are
+// part of the payload, not decoration. Rendered into the page so they land in the
+// recording without a separate compositing pass.
+//
+// `hold: true` leaves the caption up across subsequent steps (cleared by the next
+// caption, by `caption: null`, or by a navigation).
+async function caption(page, val) {
+  const text = val == null ? '' : typeof val === 'string' ? val : val.text || '';
+  const hold = typeof val === 'object' && val !== null && val.hold === true;
+  const ms = (typeof val === 'object' && val !== null && val.ms) || 2600;
+
+  await page.evaluate((t) => {
+    let el = document.getElementById('__demo_caption');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__demo_caption';
+      el.style.cssText = [
+        'position:fixed',
+        'left:50%',
+        'bottom:44px',
+        'transform:translateX(-50%)',
+        'z-index:2147483647',
+        'padding:14px 30px',
+        'border-radius:999px',
+        'background:rgba(15,17,21,0.9)',
+        'color:#fff',
+        'font:600 22px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif',
+        'box-shadow:0 10px 40px rgba(0,0,0,0.35)',
+        'pointer-events:none',
+        'opacity:0',
+        'transition:opacity 240ms ease',
+        'white-space:nowrap',
+        'max-width:92vw',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    if (!t) {
+      el.style.opacity = '0';
+      return;
+    }
+    el.textContent = t;
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+    });
+  }, text);
+
+  if (!text) return;
+  await sleep(ms);
+  if (hold) return;
+  await page
+    .evaluate(() => {
+      const el = document.getElementById('__demo_caption');
+      if (el) el.style.opacity = '0';
+    })
+    .catch(() => {});
+  await sleep(260);
+}
+
+// Ring-highlight an element. Required by default (throws on a miss): the elements
+// worth highlighting are the ones the video exists to show — e.g. the inherited
+// context chip. Silently recording a scene with no highlight would ship a demo
+// that fails to demonstrate its own claim.
+async function highlight(page, val) {
+  const sel = typeof val === 'string' ? val : val.selector;
+  const ms = (typeof val === 'object' && val.ms) || 2400;
+  const optional = typeof val === 'object' && val.optional === true;
+
+  const el = page.locator(sel).first();
+  try {
+    await el.waitFor({ state: 'visible', timeout: 8000 });
+  } catch (e) {
+    if (!optional) throw new Error(`highlight ${sel}: not visible — ${e.message.split('\n')[0]}`);
+    console.log(`  ⚠️ optional highlight ${sel}: not visible`);
+    return;
+  }
+
+  await el.evaluate((node) => {
+    node.dataset.demoPrevStyle = node.getAttribute('style') || '';
+    node.style.outline = '3px solid #ff8a00';
+    node.style.outlineOffset = '3px';
+    node.style.boxShadow = '0 0 0 8px rgba(255,138,0,0.22)';
+    node.style.borderRadius = '10px';
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+  await sleep(ms);
+  await el
+    .evaluate((node) => {
+      node.setAttribute('style', node.dataset.demoPrevStyle || '');
+      delete node.dataset.demoPrevStyle;
+    })
+    .catch(() => {});
 }
 
 async function runStep(page, step) {
@@ -270,6 +415,35 @@ async function runStep(page, step) {
     case 'press':
       await page.keyboard.press(val);
       return;
+    case 'caption':
+      await caption(page, val);
+      return;
+    case 'highlight':
+      await highlight(page, val);
+      return;
+    case 'upload': {
+      // The markdown-import dropzone opens a native OS file dialog on click, which
+      // Playwright cannot drive. setInputFiles on the hidden <input type="file">
+      // fires the same `change` event the Stimulus controller listens for.
+      const sel = val.selector || '#import-markdown-input';
+      const file = path.resolve(path.dirname(SCENARIO), val.file);
+      if (!fs.existsSync(file)) throw new Error(`upload: file not found: ${file}`);
+      await page.setInputFiles(sel, file);
+      return;
+    }
+    case 'wait_for': {
+      const sel = typeof val === 'string' ? val : val.selector;
+      const timeout = (typeof val === 'object' && val.timeout) || 15000;
+      const state = (typeof val === 'object' && val.state) || 'visible';
+      let loc = page.locator(sel);
+      if (typeof val === 'object' && val.text) loc = loc.filter({ hasText: val.text });
+      try {
+        await loc.first().waitFor({ state, timeout });
+      } catch (e) {
+        throw new Error(`wait_for ${sel}: ${e.message.split('\n')[0]}`);
+      }
+      return;
+    }
     case 'js':
       await page.evaluate((code) => eval(code), val); // escape hatch
       return;
@@ -294,7 +468,19 @@ function postProcess(rawPath) {
     console.error('  ❌ ffmpeg failed:', (r.stderr || '').toString().split('\n').slice(-4).join('\n'));
     return null;
   }
-  spawnSync('ffmpeg', ['-y', '-i', mp4, '-vframes', '1', '-q:v', '2', poster], { stdio: 'pipe' });
+  // Frame 0 is the initial page load — almost always blank. Seek to a frame that
+  // actually shows the product, or the poster ships as an empty rectangle.
+  // May be a bare number or a per-locale map: the takes do not share a clock, so
+  // the same second does not land on the same beat in every language.
+  const posterRaw = scenario.poster_at ?? scenario.posterAt ?? 0;
+  const posterAt = Number(
+    posterRaw !== null && typeof posterRaw === 'object' ? posterRaw[locale] ?? 0 : posterRaw
+  );
+  spawnSync(
+    'ffmpeg',
+    ['-y', '-ss', String(posterAt), '-i', mp4, '-frames:v', '1', '-q:v', '2', poster],
+    { stdio: 'pipe' }
+  );
   const kb = (fs.statSync(mp4).size / 1024).toFixed(0);
   console.log(`  🎬 ${mp4} (${kb} KB)`);
   console.log(`  🖼  ${poster}`);
@@ -303,7 +489,7 @@ function postProcess(rawPath) {
 
 // ── main ─────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`\n▶ scenario=${name} theme=${THEME} size=${sizeKey} (${size.width}x${size.height})`);
+  console.log(`\n▶ scenario=${name} locale=${locale} theme=${THEME} size=${sizeKey} (${size.width}x${size.height})`);
   await llmReset();
   await llmInject(scenario.ai_turns || scenario.aiTurns);
 
@@ -311,7 +497,7 @@ async function main() {
   const context = await browser.newContext({
     viewport: size,
     recordVideo: { dir: VIDEO_DIR, size },
-    locale: scenario.locale || 'ko-KR',
+    locale: LOCALES[locale],
     colorScheme: THEME === 'dark' ? 'dark' : 'light',
     deviceScaleFactor: 2,
   });

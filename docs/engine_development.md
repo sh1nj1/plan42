@@ -281,3 +281,154 @@ The `initializer "my_custom_feature.assets"` block (shown above) automatically a
 
 ### JS Tests (Jest)
 *   **Run Everything**: `npm test`
+
+## 6. Database & Migrations
+
+### Indexing into a JSON column
+
+**Do NOT add a JSON-expression index** (e.g. `json_extract(config, '$.x')` or
+`config->>'x'`). Those expressions serialize differently per adapter: schema.rb
+is dumped from the SQLite dev DB and carries the `json_extract` form, which is
+not a PostgreSQL function, so `db:schema:load` crashes on the production
+PostgreSQL database. Such migrations also force per-adapter
+`connection.adapter_name == "PostgreSQL"` branches.
+
+Instead, **promote the JSON key to a real column and index that**. Real columns
+index and dump identically on both SQLite and PostgreSQL, so the adapter branch
+disappears. Keep the promoted column synced from the JSON column with the
+`Collavre::IndexedJsonColumns` concern:
+
+```ruby
+class Channel < ApplicationRecord
+  include Collavre::IndexedJsonColumns
+
+  # config stays the source of truth; these columns are re-derived on save.
+  indexed_json_columns json: :config, columns: {
+    repo_full_name: "repo_full_name",
+    pr_number:      "pr_number",
+  }
+end
+```
+
+The concern installs a `before_save` that copies each JSON key into its promoted
+column, so a plain-column (unique) index enforces the same guarantee a JSON
+expression index would. See migration
+`20260702000005_promote_channel_config_index_columns` for the reference
+promote-and-reindex pattern.
+
+## 7. Integration Engine Pattern
+
+Sections 1–6 cover extending the host UI with a **local engine**. When the engine
+integrates an **external service** (like Notion, GitHub, or Slack), follow the
+pattern of `collavre_openclaw` and `collavre_notion` below.
+
+### 7.1 Engine Structure
+
+```
+engines/collavre_myengine/
+├── app/
+│   ├── controllers/collavre_myengine/
+│   ├── models/collavre_myengine/
+│   ├── services/collavre_myengine/
+│   ├── jobs/collavre_myengine/
+│   └── views/collavre_myengine/
+├── config/
+│   ├── routes.rb
+│   └── locales/
+├── db/migrate/
+├── lib/
+│   └── collavre_myengine/
+│       ├── engine.rb
+│       └── version.rb
+├── test/
+└── collavre_myengine.gemspec
+```
+
+### 7.2 Engine Configuration
+
+```ruby
+# lib/collavre_myengine/engine.rb
+module CollavreMyengine
+  class Engine < ::Rails::Engine
+    isolate_namespace CollavreMyengine
+
+    # Mount routes
+    initializer "collavre_myengine.routes", before: :add_routing_paths do |app|
+      app.routes.append do
+        mount CollavreMyengine::Engine => "/myengine", as: :myengine_engine
+      end
+    end
+
+    # Add migrations
+    initializer "collavre_myengine.migrations" do |app|
+      config.paths["db/migrate"].expanded.each do |path|
+        app.config.paths["db/migrate"] << path
+      end
+    end
+
+    # Inject associations
+    initializer "collavre_myengine.associations", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        Collavre.user_class.has_one :myengine_account,
+          class_name: "CollavreMyengine::MyengineAccount",
+          dependent: :destroy
+      end
+    end
+
+    # Register with IntegrationRegistry (optional)
+    initializer "collavre_myengine.register", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        if defined?(Collavre::IntegrationRegistry)
+          Collavre::IntegrationRegistry.register(:myengine, {
+            label: "My Engine",
+            icon: "myengine",
+            routes: CollavreMyengine::Engine.routes.url_helpers
+          })
+        end
+      end
+    end
+  end
+end
+```
+
+### 7.3 Add to Gemfile
+
+```ruby
+# Gemfile
+gem "collavre_myengine", path: "engines/collavre_myengine"
+```
+
+### 7.4 Security Patterns
+
+Always encrypt sensitive tokens:
+```ruby
+class MyengineAccount < ApplicationRecord
+  encrypts :api_token, deterministic: false
+end
+```
+
+For callbacks from external services, use nonce authentication:
+```ruby
+class CallbacksController < ApplicationController
+  skip_before_action :verify_authenticity_token
+
+  def create
+    return head :unauthorized unless valid_nonce?(params[:nonce])
+    # Process callback
+  end
+end
+```
+
+### 7.5 Test Helpers
+
+In `test/test_helper.rb`:
+```ruby
+ENV["RAILS_ENV"] ||= "test"
+require_relative "../../../test/test_helper"  # Load host app test helper
+
+class ActionDispatch::IntegrationTest
+  def myengine
+    CollavreMyengine::Engine.routes.url_helpers
+  end
+end
+```

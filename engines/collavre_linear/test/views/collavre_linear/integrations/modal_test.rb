@@ -43,6 +43,50 @@ module CollavreLinear
         assert_includes html, %(data-creative-id="#{@creative.id}")
       end
 
+      test "does NOT show a reconnect button when the user has no Linear account" do
+        # The not-connected branch already offers the primary Connect button; a
+        # second OAuth entry point here would just be noise.
+        html = render_modal(connected: false)
+
+        refute_includes html, I18n.t("collavre_linear.integration.reconnect_button")
+      end
+
+      test "offers a reconnect (re-OAuth) button when connected but not yet linked" do
+        # The stuck state: an Account row exists but its token is dead (revoked in
+        # Linear or expired), so the options fetch 502s. Without a reconnect path
+        # here the user is stranded on the link form with no way back to OAuth.
+        html = render_modal(connected: true)
+
+        assert_includes html, I18n.t("collavre_linear.integration.reconnect_button")
+        # Substring of the hint that carries no HTML-escaped characters (the full
+        # string has an apostrophe that renders as &#39;).
+        assert_includes html, "expired or been revoked in Linear"
+        # Reuses the connect popup mechanism (hidden form posting to store_creative).
+        assert_includes html, "/linear/auth/store_creative"
+        assert_includes html, %(id="linear-connect-btn")
+      end
+
+      test "offers a reconnect button in the already-linked state too" do
+        # A dead token also strands the linked state (resync silently no-ops), so
+        # the reconnect escape hatch must be reachable there as well.
+        account = CollavreLinear::Account.create!(
+          user: @user,
+          linear_uid: "uid-reconnect-#{SecureRandom.hex(4)}",
+          access_token: "tok-reconnect"
+        )
+        CollavreLinear::ProjectLink.create!(
+          creative: @creative.effective_origin,
+          account: account,
+          linear_project_id: "proj-reconnect-1",
+          team_id: "team-reconnect-1",
+          webhook_secret: "reconnect-secret"
+        )
+
+        html = render_modal(connected: true)
+
+        assert_includes html, I18n.t("collavre_linear.integration.reconnect_button")
+      end
+
       test "shows the team/project link form for an admin who is connected but not linked" do
         html = render_modal(connected: true)
 
@@ -61,6 +105,14 @@ module CollavreLinear
         # JS fetches teams/projects from the per-creative options endpoint.
         assert_includes html, "/linear/creatives/#{@creative.id}/integration/options"
         assert_includes html, I18n.t("collavre_linear.integration.project_select_placeholder")
+      end
+
+      test "link form renders the done-state combobox for completion mapping" do
+        html = render_modal(connected: true)
+
+        assert_match %r{<select[^>]*name="done_state_id"}, html
+        assert_includes html, I18n.t("collavre_linear.integration.done_state_label")
+        assert_includes html, I18n.t("collavre_linear.integration.done_state_placeholder")
       end
 
       test "shows resync + unlink actions when a project link already exists" do

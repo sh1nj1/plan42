@@ -1,0 +1,36 @@
+# Codecov configuration.
+#
+# Coverage is uploaded from CI under two flags:
+#   - ruby       (SimpleCov lcov: host app + all engines)
+#   - javascript (Jest lcov: app/javascript + engine JS + served PWA JS)
+#
+# Status checks are informational (never block a PR) — coverage here is for
+# visibility, not a hard gate. carryforward keeps a flag's last value when its
+# job doesn't upload on a given run (e.g. a JS-only PR).
+
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        informational: true
+
+flags:
+  ruby:
+    carryforward: true
+  javascript:
+    carryforward: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

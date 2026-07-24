@@ -28,7 +28,7 @@ PROJECT_ROOT = ENV.fetch("GITHUB_MOCK_PROJECT_ROOT") {
 }
 
 # Scan only these subdirectories for .md files (fast, avoids node_modules/vendor)
-SCAN_DIRS = %w[.collavre-docs docs engines skills].freeze
+SCAN_DIRS = %w[docs engines skills].freeze
 SCAN_ROOT_FILES = %w[README.md AGENTS.md].freeze
 
 # --- Build mock file tree from real directory ---

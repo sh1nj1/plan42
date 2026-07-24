@@ -11,14 +11,17 @@ module CollavreLinear
     # Plain stub — no network; conforms to Client's public interface.
     # ---------------------------------------------------------------------------
     class FakeClient
-      attr_reader :create_calls, :update_calls
+      attr_reader :create_calls, :update_calls, :fetch_state_calls
 
       def initialize(create_response: { id: "iss-new", identifier: "ENG-1" },
-                     update_response: { id: "iss-new", identifier: "ENG-1" })
-        @create_response = create_response
-        @update_response = update_response
-        @create_calls    = []
-        @update_calls    = []
+                     update_response: { id: "iss-new", identifier: "ENG-1" },
+                     fetch_state_response: nil)
+        @create_response       = create_response
+        @update_response       = update_response
+        @fetch_state_response  = fetch_state_response
+        @create_calls          = []
+        @update_calls          = []
+        @fetch_state_calls     = []
       end
 
       def create_issue(**kwargs)
@@ -29,6 +32,11 @@ module CollavreLinear
       def update_issue(id, **kwargs)
         @update_calls << kwargs.merge(_id: id)
         @update_response
+      end
+
+      def fetch_issue_state(id)
+        @fetch_state_calls << id
+        @fetch_state_response
       end
     end
 
@@ -678,6 +686,223 @@ module CollavreLinear
           CollavreLinear::CreativeExporter.new(@child_creative).sync!
         end
       end
+    end
+
+    # ---------------------------------------------------------------------------
+    # Completion mapping (Collavre 100% → Linear done state)
+    # ---------------------------------------------------------------------------
+
+    test "sync! pushes the project's done_state_id as state_id for a leaf at 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      # Leaf (no children) at 100%. update_column: set the raw progress without
+      # tripping the parent rollup or the observer.
+      @child_creative.update_column(:progress, 1.0)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_equal "state-done", call[:state_id],
+        "a completed leaf must export with the configured done workflow state"
+    end
+
+    test "sync! does NOT set a done state_id for a leaf below 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      @child_creative.update_column(:progress, 0.5)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_nil call[:state_id],
+        "an incomplete leaf must not be forced into the done state"
+    end
+
+    test "sync! does NOT set a done state_id for a NON-leaf creative even at 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      # Give @child_creative a child so it is no longer a leaf. Its own progress
+      # would be a rollup; force it to 1.0 to prove leaf-ness (not the value) gates.
+      grandchild = Collavre::Creative.new(
+        description: "<p>Grandchild</p>", user: @user, parent: @child_creative
+      )
+      grandchild.skip_linear_sync = true
+      grandchild.save!
+      @child_creative.update_column(:progress, 1.0)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_nil call[:state_id],
+        "only leaves drive the done state; a parent's rolled-up 100% must not"
+    end
+
+    test "sync! ignores completion when the project link has no done_state_id" do
+      @child_creative.update_column(:progress, 1.0) # done_state_id nil (default)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.create_calls.first
+      assert_nil call[:state_id],
+        "completion mapping is off until a done state is configured"
+    end
+
+    test "content_hash_for folds in the completion state so completing a leaf changes the hash" do
+      @project_link.update!(done_state_id: "state-done")
+
+      @child_creative.update_column(:progress, 0.0)
+      incomplete_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative.reload)
+
+      @child_creative.update_column(:progress, 1.0)
+      complete_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative.reload)
+
+      assert_not_equal incomplete_hash, complete_hash,
+        "the content hash must change when a leaf reaches 100% so the exporter pushes"
+    end
+
+    # ---------------------------------------------------------------------------
+    # Completion mapping — outbound un-done (restore pre-done state)
+    # ---------------------------------------------------------------------------
+
+    # Give @child_creative an existing Linear issue so sync! takes the update path.
+    def link_child_issue!(content_hash: "stale-hash", linear_issue_id: "iss-child")
+      CollavreLinear::IssueLink.create!(
+        creative:        @child_creative,
+        project_link:    @project_link,
+        linear_issue_id: linear_issue_id,
+        content_hash:    content_hash,
+        sync_state:      :synced
+      )
+    end
+
+    test "sync! captures the last-known pre-done state when a leaf reaches 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      link_child_issue!
+      @child_creative.update_column(
+        :data, { "linear" => { "state" => { "id" => "state-todo", "name" => "Todo" } } }
+      )
+      @child_creative.update_column(:progress, 1.0)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.update_calls.first
+      assert_equal "state-done", call[:state_id], "a completed leaf still pushes the done state"
+      assert_equal({ "id" => "state-todo", "name" => "Todo" },
+        @child_creative.reload.data.dig("linear", "state_before_done"),
+        "the state the leaf left must be snapshotted so a later un-done can restore it")
+    end
+
+    test "sync! queries Linear ONCE for the current state when none is locally known before pushing done" do
+      @project_link.update!(done_state_id: "state-done")
+      link_child_issue!(linear_issue_id: "iss-x")
+      # No data["linear"]["state"] — the leaf reached 100% purely in Collavre.
+      @child_creative.update_column(:progress, 1.0)
+      @fake_client = FakeClient.new(fetch_state_response: { "id" => "state-backlog", "name" => "Backlog" })
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      assert_equal [ "iss-x" ], @fake_client.fetch_state_calls,
+        "with no locally-known state, the exporter queries Linear once to seed the snapshot"
+      assert_equal({ "id" => "state-backlog", "name" => "Backlog" },
+        @child_creative.reload.data.dig("linear", "state_before_done"),
+        "the queried current state is stored as the pre-done snapshot")
+      assert_equal "state-done", @fake_client.update_calls.first[:state_id]
+    end
+
+    test "sync! restores the captured pre-done state when a completed leaf drops below 100%" do
+      @project_link.update!(done_state_id: "state-done")
+      link_child_issue!
+      # Our record shows the issue sitting in done (the echo landed) with a snapshot.
+      @child_creative.update_column(:data, { "linear" => {
+        "state"             => { "id" => "state-done", "name" => "Done" },
+        "state_before_done" => { "id" => "state-todo", "name" => "Todo" }
+      } })
+      @child_creative.update_column(:progress, 0.5)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.update_calls.first
+      assert_equal "state-todo", call[:state_id],
+        "a leaf dropped below 100% while shown as done must be restored to its pre-done state"
+    end
+
+    test "sync! does NOT restore (fight a human move) when the issue is no longer in the done state" do
+      @project_link.update!(done_state_id: "state-done")
+      link_child_issue!
+      # A human moved the issue to In Progress in Linear; a stale snapshot lingers.
+      @child_creative.update_column(:data, { "linear" => {
+        "state"             => { "id" => "state-inprogress", "name" => "In Progress" },
+        "state_before_done" => { "id" => "state-todo", "name" => "Todo" }
+      } })
+      @child_creative.update_column(:progress, 0.5)
+
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      call = @fake_client.update_calls.first
+      assert_equal "state-inprogress", call[:state_id],
+        "once the issue has left the done state, the natural mapped state applies — no restore override"
+    end
+
+    test "content_hash_for reflects the restore override so inbound and outbound agree" do
+      @project_link.update!(done_state_id: "state-done")
+      @child_creative.update_column(:progress, 0.5)
+
+      @child_creative.update_column(:data, { "linear" => {
+        "state" => { "id" => "state-done" }
+      } })
+      no_snapshot_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative.reload)
+
+      @child_creative.update_column(:data, { "linear" => {
+        "state"             => { "id" => "state-done" },
+        "state_before_done" => { "id" => "state-todo" }
+      } })
+      restored_hash = CollavreLinear::CreativeExporter.content_hash_for(@child_creative.reload)
+
+      assert_not_equal no_snapshot_hash, restored_hash,
+        "the pure hash must fold in the restored pre-done state so an inbound apply advances it consistently"
+    end
+
+    # END-TO-END un-done: mirrors the REAL pure-outbound flow — a leaf completed
+    # in Collavre (no prior inbound state, our done-push echo is suppressed so
+    # data["linear"]["state"] is NEVER set to done), then dropped below 100%.
+    # The earlier restore tests fake data["linear"]["state"] == done; this one
+    # does NOT, so it exercises the actual capture→restore handoff.
+    test "sync! restores pre-done state on drop after a real Collavre-driven completion (no faked echo)" do
+      @project_link.update!(done_state_id: "state-done")
+      link_child_issue!(linear_issue_id: "iss-x")
+      # Leaf reached 100% purely in Collavre: no data["linear"]["state"] at all.
+      @child_creative.update_column(:progress, 1.0)
+      @fake_client = FakeClient.new(fetch_state_response: { "id" => "state-backlog", "name" => "Backlog" })
+
+      # Step 1: push done (captures the pre-done state via a one-time Linear query).
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+      assert_equal "state-done", @fake_client.update_calls.first[:state_id],
+        "precondition: completing the leaf pushes done"
+
+      # Step 2: drop below 100% — Linear must be restored to the captured state.
+      @child_creative.reload.update_column(:progress, 0.0)
+      CollavreLinear::Client.stub(:new, @fake_client) do
+        CollavreLinear::CreativeExporter.new(@child_creative).sync!
+      end
+
+      restore_call = @fake_client.update_calls.last
+      assert_equal "state-backlog", restore_call[:state_id],
+        "dropping a Collavre-completed leaf below 100% must restore the pre-done Linear state"
     end
 
     # ---------------------------------------------------------------------------

@@ -104,6 +104,12 @@ ko:
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅
       remove_from_history: 히스토리에서 제거
+      topic_set_agent_error: 이 토픽에 에이전트를 지정할 수 없습니다.
+      topic_create_error: 토픽을 생성할 수 없습니다.
+      topic_update_error: 토픽을 수정할 수 없습니다.
+      topic_delete_error: 토픽을 삭제할 수 없습니다.
+      topic_archive_error: 토픽을 보관할 수 없습니다.
+      topic_restore_error: 토픽을 복원할 수 없습니다.
       inbox_reply_button: 답글
       replace_button: 바꾸기
       move_no_selection: 이동할 메시지를 선택해주세요.

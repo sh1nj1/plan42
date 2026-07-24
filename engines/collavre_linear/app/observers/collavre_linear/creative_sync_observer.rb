@@ -67,8 +67,12 @@ module CollavreLinear
 
     # Columns whose change can alter the exported Linear issue (mirrors what
     # CreativeExporter hashes: description -> title/description, sequence ->
-    # priority, data -> state/labels) plus parent_id (re-parenting -> parentId).
-    LINEAR_RELEVANT_COLUMNS = %w[description sequence data parent_id].freeze
+    # priority, data -> state/labels) plus parent_id (re-parenting -> parentId)
+    # and progress (a leaf reaching 100% -> the project's "done" state, via
+    # CreativeExporter.apply_completion!). A non-leaf's rolled-up progress change
+    # enqueues a sync too, but apply_completion! no-ops for non-leaves so the
+    # content_hash is unchanged and the exporter makes no API call.
+    LINEAR_RELEVANT_COLUMNS = %w[description sequence data parent_id progress].freeze
 
     # Record — in after_save, where saved_changes is reliable — whether this
     # save touched a Linear-relevant column. A create always counts (its seeded

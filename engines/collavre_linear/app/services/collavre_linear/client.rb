@@ -191,9 +191,57 @@ module CollavreLinear
       }
     GQL
 
+    # List workflow states with their owning team id and type so the link modal
+    # can offer a "done state" combobox scoped to the chosen team. `type` is
+    # Linear's state category (triage/backlog/unstarted/started/completed/
+    # canceled) — the picker defaults to the team's "completed" state.
+    WORKFLOW_STATES = <<~GQL.freeze
+      query WorkflowStates {
+        workflowStates(first: 250) {
+          nodes {
+            id
+            name
+            type
+            position
+            team {
+              id
+            }
+          }
+        }
+      }
+    GQL
+
+    # Fetch a single issue's current workflow state (for seeding the pre-done
+    # snapshot when a leaf is completed with no locally-known Linear state).
+    ISSUE_QUERY = <<~GQL.freeze
+      query Issue($id: String!) {
+        issue(id: $id) {
+          id
+          state {
+            id
+            name
+            type
+          }
+        }
+      }
+    GQL
+
     def initialize(account)
       @account = account
       @endpoint = resolve_endpoint
+    end
+
+    # Fetch a single Linear issue's current workflow state.
+    # @param id [String] Linear issue UUID
+    # @return [Hash, nil] {"id" =>, "name" =>, "type" =>} (string keys, matching
+    #   the shape stored under data["linear"]["state"]), or nil when the issue or
+    #   its state is absent.
+    def fetch_issue_state(id)
+      data  = post!(ISSUE_QUERY, { id: id })
+      state = data.dig("issue", "state")
+      return nil if state.nil?
+
+      state.slice("id", "name", "type")
     end
 
     # Create a Linear issue.
@@ -315,6 +363,24 @@ module CollavreLinear
       end
     end
 
+    # List workflow states for the "done state" picker, each with its owning
+    # team id and category type so the UI can scope states to the selected team
+    # and default to the completed one.
+    # @return [Array<Hash>] each with :id, :name, :type, :position, :team_id
+    def list_workflow_states
+      data  = post!(WORKFLOW_STATES, {})
+      nodes = data.dig("workflowStates", "nodes") || []
+      nodes.map do |n|
+        {
+          id:       n["id"],
+          name:     n["name"],
+          type:     n["type"],
+          position: n["position"],
+          team_id:  n.dig("team", "id")
+        }
+      end
+    end
+
     # Register a webhook with Linear.
     # WebhookCreateInput fields: url, secret, teamId, resourceTypes
     # @return [Hash] with :id
@@ -332,22 +398,19 @@ module CollavreLinear
     # Execute a GraphQL operation and return the `data` hash.
     # Raises Client::Error if the response contains a top-level `errors` key.
     def post!(query, variables)
-      uri  = URI.parse(endpoint)
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = uri.scheme == "https"
-      http.open_timeout = 10
-      http.read_timeout = 30
-
-      request = Net::HTTP::Post.new(uri.path.presence || "/")
-      request["Content-Type"] = "application/json"
-      request["Authorization"] = "Bearer #{fresh_access_token}"
-      request.body = { query: query, variables: variables }.to_json
+      token = fresh_access_token
 
       response =
         begin
-          http.request(request)
-        rescue SocketError, SystemCallError, Timeout::Error, IOError,
-               OpenSSL::SSL::SSLError => e
+          http_client.post(
+            endpoint,
+            body: { query: query, variables: variables }.to_json,
+            headers: {
+              "Content-Type" => "application/json",
+              "Authorization" => "Bearer #{token}"
+            }
+          )
+        rescue Collavre::HttpClient::ConnectionError => e
           # Transport-layer failures (connection refused/reset, DNS, TLS,
           # open/read timeouts) raise before any GraphQL response exists, so they
           # bypass the parsed-`errors` path below. Wrap them in Error so the
@@ -360,7 +423,7 @@ module CollavreLinear
       parsed = begin
         JSON.parse(response.body)
       rescue JSON::ParserError
-        raise Error, "Linear returned non-JSON response (HTTP #{response.code}): #{response.body.to_s[0, 200]}"
+        raise Error, "Linear returned non-JSON response (HTTP #{response.code}) from #{endpoint}: #{response.body.to_s[0, 200]}"
       end
 
       if parsed["errors"].present?
@@ -368,11 +431,17 @@ module CollavreLinear
         raise Error, "Linear GraphQL error(s): #{messages}"
       end
 
-      unless response.is_a?(Net::HTTPSuccess)
+      unless response.success?
         raise Error, "Linear HTTP error: #{response.code} #{response.message}"
       end
 
       parsed["data"]
+    end
+
+    # Shared Net::HTTP wrapper preserving Linear's original 10s connect / 30s
+    # read timeouts.
+    def http_client
+      @http_client ||= Collavre::HttpClient.new(open_timeout: 10, read_timeout: 30)
     end
 
     # Return a non-expired access token, refreshing via the refresh_token grant
@@ -401,9 +470,32 @@ module CollavreLinear
     end
 
     def resolve_endpoint
-      if defined?(Collavre::IntegrationSettings::Resolver)
-        Collavre::IntegrationSettings::Resolver.get(:linear_api_endpoint).presence
-      end || DEFAULT_ENDPOINT
+      configured =
+        if defined?(Collavre::IntegrationSettings::Resolver)
+          Collavre::IntegrationSettings::Resolver.get(:linear_api_endpoint).presence
+        end
+
+      normalize_endpoint(configured) || DEFAULT_ENDPOINT
+    end
+
+    # Guard a misconfigured `linear_api_endpoint` override. Linear's GraphQL API
+    # lives at the `/graphql` path; an admin who pastes only a base URL
+    # (e.g. `https://host:port` or `.../`) would otherwise POST to `/`, which a
+    # non-Linear server answers with a 404 ("Cannot POST /"). When the configured
+    # value carries no meaningful path, point it at `/graphql`. A value that
+    # already specifies a non-root path is left untouched.
+    def normalize_endpoint(value)
+      return nil if value.blank?
+
+      uri = URI.parse(value.strip)
+      return value if uri.path.present? && uri.path != "/"
+
+      uri.path = "/graphql"
+      uri.to_s
+    rescue URI::InvalidURIError
+      # Not a parseable URI: return as-is and let the request surface the failure
+      # rather than silently rewriting an unrecognizable value.
+      value
     end
 
     # Convert symbol keys to camelCase strings for GraphQL variables.

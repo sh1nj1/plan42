@@ -88,6 +88,10 @@ module CollavreLinear
                 linear_project_id: linear_project_id
               )
               link.team_id = team_id
+              # The Linear workflow-state UUID the admin picked as "done" (combobox,
+              # default Completed). Blank when the team has no completed state or the
+              # picker was cleared — completion mapping then no-ops both directions.
+              link.done_state_id = params[:done_state_id].to_s.presence
               link.save!
             end
           end
@@ -224,7 +228,11 @@ module CollavreLinear
         end
 
         client = CollavreLinear::Client.new(account)
-        render json: { teams: client.list_teams, projects: client.list_projects }
+        render json: {
+          teams:    client.list_teams,
+          projects: client.list_projects,
+          states:   client.list_workflow_states
+        }
       rescue CollavreLinear::Client::Error => e
         # Surface the Linear-side failure (expired token, revoked scope) instead
         # of leaving the dropdowns silently empty.
@@ -262,6 +270,7 @@ module CollavreLinear
           id:                link.id,
           team_id:           link.team_id,
           linear_project_id: link.linear_project_id,
+          done_state_id:     link.done_state_id,
           sync_state:        link.sync_state,
           webhook_id:        link.webhook_id
         }
