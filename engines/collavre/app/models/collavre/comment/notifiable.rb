@@ -12,11 +12,11 @@ module Collavre
         after_create_commit :enqueue_create_notifications, if: :notification_eligible_on_create?
       end
 
-      def mentioned_users
+      def mentioned_users(notification_content = content)
         return Collavre.user_class.none unless user
 
-        emails = mentioned_emails - [ user.email.downcase ]
-        names = mentioned_names - [ user.name.downcase ]
+        emails = mentioned_emails(notification_content) - [ user.email.downcase ]
+        names = mentioned_names(notification_content) - [ user.name.downcase ]
         mentionable_users = Collavre.user_class.mentionable_for(creative.effective_origin)
 
         scope = Collavre.user_class.none
@@ -28,6 +28,7 @@ module Collavre
       def notification_event
         {
           "creative_id" => creative_id,
+          "content" => content,
           "regular_notification" => regular_notification_eligible?,
           "approval_notification" => approval_notification_eligible?,
           "revision" => notification_revision
@@ -50,19 +51,21 @@ module Collavre
         return unless event["creative_id"] == creative_id
         return unless event["revision"] == notification_revision
 
+        notification_content = event.fetch("content", content)
+
         case kind.to_s
         when "created"
           if event["regular_notification"]
-            notify_write_users("created")
-            notify_mentions("created")
+            notify_write_users("created", notification_content)
+            notify_mentions("created", notification_content)
           end
           notify_approver("created") if event["approval_notification"]
         when "ai_completion"
           return unless user&.ai_user?
           return if private? || suppress_inbox_notification?
 
-          notify_write_users("ai_completion")
-          notify_mentions("ai_completion")
+          notify_write_users("ai_completion", notification_content)
+          notify_mentions("ai_completion", notification_content)
         else
           raise ArgumentError, "Unknown comment notification kind: #{kind}"
         end
@@ -163,27 +166,29 @@ module Collavre
         user&.ai_user? && content == STREAMING_PLACEHOLDER_CONTENT
       end
 
-      def mentioned_emails
-        return [] unless content
+      def mentioned_emails(notification_content = content)
+        return [] unless notification_content
 
-        content.scan(/@([\w.\-+]+@[a-zA-Z0-9\-.]+\.[a-zA-Z]{2,})/)
-               .flatten
-               .map(&:downcase)
-               .uniq
+        notification_content
+          .scan(/@([\w.\-+]+@[a-zA-Z0-9\-.]+\.[a-zA-Z]{2,})/)
+          .flatten
+          .map(&:downcase)
+          .uniq
       end
 
-      def mentioned_names
-        return [] unless content
+      def mentioned_names(notification_content = content)
+        return [] unless notification_content
 
-        content.scan(/@([^:]+):/)
-               .flatten
-               .map(&:downcase)
-               .uniq
+        notification_content
+          .scan(/@([^:]+):/)
+          .flatten
+          .map(&:downcase)
+          .uniq
       end
 
       # Build the list of write-access recipients minus the comment author,
       # mentioned users, and users currently present on the creative.
-      def notification_recipients
+      def notification_recipients(notification_content = content)
         base_creative = creative.effective_origin
         present_ids = CommentPresenceStore.list(base_creative.id)
 
@@ -192,21 +197,21 @@ module Collavre
         recipients.compact!
         recipients.uniq!
         recipients.delete(user)
-        recipients -= mentioned_users.to_a
+        recipients -= mentioned_users(notification_content).to_a
         recipients.reject! { |recipient| present_ids.include?(recipient.id) }
         recipients
       end
 
-      def notify_write_users(kind)
+      def notify_write_users(kind, notification_content)
         return unless user
 
-        notification_recipients.each do |recipient|
+        notification_recipients(notification_content).each do |recipient|
           create_inbox_comment(
             recipient,
             "inbox.comment_added",
             {
               user: user.display_name,
-              comment: content,
+              comment: notification_content,
               creative: creative_markdown_link
             },
             delivery_key: notification_delivery_key(kind, "write", recipient)
@@ -214,14 +219,14 @@ module Collavre
         end
       end
 
-      def notify_mentions(kind)
-        mentioned_users.each do |mentioned|
+      def notify_mentions(kind, notification_content)
+        mentioned_users(notification_content).each do |mentioned|
           create_inbox_comment(
             mentioned,
             "inbox.user_mentioned",
             {
               user: user.display_name,
-              comment: content,
+              comment: notification_content,
               creative: creative_markdown_link
             },
             delivery_key: notification_delivery_key(kind, "mention", mentioned)
