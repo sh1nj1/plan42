@@ -286,6 +286,13 @@ class VoiceCommandService @Inject constructor(
             return
         }
         _state.value = VoiceState.THINKING
+        // Answering a message is dealing with it, even when it was still waiting its turn:
+        // the selection can move to a queued row mid-listen, so the reply target is not
+        // always the row that was just read. Leaving its entry in place would have the
+        // pump() after this reply read a notice the user has already answered and listen
+        // for a second reply to it. Read state is left to respond(), which settles it
+        // server-side once the reply lands — same split as replyTo.
+        if (eventId != null) queue.removeAll { it.eventId == eventId }
         val turn = currentTurn
         scope.launch {
             val result = runCatching {
