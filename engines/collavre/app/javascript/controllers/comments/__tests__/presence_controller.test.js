@@ -355,4 +355,47 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       expect(controller.agentTaskPollHandle).toBeNull()
     })
   })
+
+  describe('navigating the open popup to another creative', () => {
+    beforeEach(() => {
+      // onPopupOpened's other work needs a cable and a server; neither is the
+      // subject here.
+      jest.spyOn(controller, 'loadParticipants').mockImplementation(() => {})
+      jest.spyOn(controller, 'subscribe').mockImplementation(() => {})
+      jest.spyOn(controller, 'bootstrapChannelChips').mockImplementation(() => {})
+
+      controller.handlePresenceMessage({
+        agent_status: { id: 9, name: 'Agent', status: 'streaming', task_id: 55, creative_id: '123' },
+      })
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.agentTaskPollHandle).not.toBeNull()
+    })
+
+    // The popup is never closed on navigation — PopupController#_navigateToEntry
+    // reuses open()/openForCreative() — so onPopupClosed() does not run and this
+    // is the only place that can drop the previous chat's state. Left behind, the
+    // poll keeps asking about a task in another creative, active_statuses answers
+    // for it (it only checks readability), and the indicator plus a Stop button
+    // for that foreign turn stay on screen.
+    test('drops the previous chat’s agent state and stops the poll', () => {
+      controller.onPopupOpened({ creativeId: '456' })
+
+      expect(controller.activeAgentTasks).toEqual({})
+      expect(controller.typingUsers).toEqual({})
+      expect(controller.agentStates).toEqual({})
+      expect(controller.agentTaskPollHandle).toBeNull()
+      expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).toBeNull()
+    })
+
+    // Scoped to an actual change of creative: re-opening the same chat must not
+    // blank a turn that is streaming in it right now, which would leave it
+    // invisible (and uncancellable) until the next 3s heartbeat.
+    test('keeps it when the same creative is re-opened', () => {
+      controller.onPopupOpened({ creativeId: 123 })
+
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.typingUsers['9']).toBe('Agent')
+      expect(controller.agentTaskPollHandle).not.toBeNull()
+    })
+  })
 })

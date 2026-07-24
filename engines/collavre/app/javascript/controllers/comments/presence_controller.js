@@ -85,6 +85,15 @@ export default class extends Controller {
   }
 
   onPopupOpened({ creativeId }) {
+    // Navigating the OPEN popup to another creative comes through here, not through
+    // onPopupClosed() — PopupController#_navigateToEntry reuses open()/openForCreative().
+    // Every piece of agent state below belongs to the chat being left: the poll is keyed
+    // on task ids and /tasks/active_statuses answers for any task the user can read, so a
+    // carried-over id keeps a foreign task's indicator alive here, and the Stop button it
+    // renders cancels a turn in a creative that is no longer on screen.
+    if (this.creativeId !== undefined && String(creativeId) !== String(this.creativeId)) {
+      this.resetAgentActivity()
+    }
     this.creativeId = creativeId
     this.loadParticipants()
     this.subscribe()
@@ -109,17 +118,26 @@ export default class extends Controller {
     }
   }
 
-  onPopupClosed() {
-    this.unsubscribe()
+  // Everything that describes activity in ONE chat. Leaving that chat — closed, or
+  // navigated to another creative with the popup still open — has to drop all of it
+  // together: the maps the indicator renders from, the timers that write back into
+  // them, and the poll that keeps them alive. Clearing the maps alone would leave the
+  // interval and the heartbeat timeouts running for a chat nobody is looking at.
+  resetAgentActivity() {
     this.stopAgentTaskPoll()
-    this.participantsData = null
-    this.currentPresentIds = []
+    this.clearAllStreamingHeartbeats()
+    this.clearTypingTimers()
     this.typingUsers = {}
     this.activeAgentTasks = {}
     this.agentStates = {}
-    this.clearAllStreamingHeartbeats()
     this.syncGlobalAgentTasks()
-    this.clearTypingTimers()
+  }
+
+  onPopupClosed() {
+    this.unsubscribe()
+    this.participantsData = null
+    this.currentPresentIds = []
+    this.resetAgentActivity()
     this.clearManualTypingMessage()
     this.renderParticipants([])
     this.renderTypingIndicator()
