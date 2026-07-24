@@ -65,6 +65,36 @@ module Collavre
       assert_equal 0, agent_broadcasts.size
     end
 
+    # The job that set pending_approval has already returned, so nothing else will
+    # ever announce this task: no heartbeat, no later status. A viewer who reloads
+    # while a turn waits on a tool approval has only this replay to learn the task
+    # is still holding the slot — and to get its Stop button back.
+    test "broadcast_running_agents replays a task paused on approval, with its real status" do
+      task = Task.create!(
+        name: "Response to comment_created",
+        status: "pending_approval",
+        trigger_event_name: "comment_created",
+        trigger_event_payload: {
+          "comment" => { "id" => 1, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        },
+        agent: @agent
+      )
+
+      broadcasts = []
+      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
+        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
+      end
+
+      agent_broadcasts = broadcasts.select { |b| b[:payload].key?(:agent_status) }
+      assert_equal 1, agent_broadcasts.size
+
+      status = agent_broadcasts.first[:payload][:agent_status]
+      assert_equal task.id, status[:task_id]
+      assert_equal "pending_approval", status[:status],
+                   "a paused turn replayed as \"thinking\" would claim the agent is working"
+    end
+
     test "broadcast_running_agents ignores done tasks" do
       Task.create!(
         name: "Response to comment_created",

@@ -24,16 +24,26 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     )
   end
 
-  # Broadcast status for any currently running AI agent tasks for a creative.
+  # Statuses replayed to a subscriber that arrives after the activity started.
+  # "pending_approval" is the one that MUST be here: the job has already returned
+  # holding the task in that state, so unlike a mid-turn task there is no heartbeat
+  # behind it and no later broadcast. A viewer who was disconnected — or who simply
+  # reloaded — would otherwise never learn the task is still holding the topic slot,
+  # and would be left without the Stop button on the one turn that is waiting on them.
+  AGENT_REPLAY_STATUSES = %w[running pending pending_approval].freeze
+
+  # Broadcast status for any currently live AI agent tasks for a creative.
   # Called when a user subscribes to ensure they see ongoing agent activity.
   def self.broadcast_running_agents(creative_id)
-    Task.where(status: %w[running pending]).find_each do |task|
+    Task.where(status: AGENT_REPLAY_STATUSES).find_each do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
       next unless task_creative_id == creative_id
 
       broadcast_agent_status(
         creative_id,
-        status: "thinking",
+        # Replayed with its real status, not a blanket "thinking": the client keys
+        # its own handling off this string, and a paused turn is not a working one.
+        status: task.status == "pending_approval" ? "pending_approval" : "thinking",
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
         task_id: task.id,
