@@ -29,7 +29,11 @@ data class VoiceMessage(
     val title: String,
     val text: String,
     val topicId: Long?,
-    val createdAt: String
+    val createdAt: String,
+    // Approvals live in their origin creative, not the inbox, so the server's read
+    // pointer does not apply to them. The read-deferral below has to know which rows
+    // those are — see settleRead.
+    val isApproval: Boolean = false
 )
 
 /**
@@ -108,6 +112,11 @@ class VoiceCommandService @Inject constructor(
     // highest held id is kept: sending it later subsumes every smaller one.
     private var deferredRead: Long? = null
 
+    // Whether the row in _speakingEventId is an approval. Kept alongside rather than in
+    // the flow because that one is public UI state; this only exists so markSpokenRead
+    // can keep approvals out of the hold above.
+    private var speakingIsApproval = false
+
     @Volatile private var loopStarted = false
 
     fun configure(locale: String, ttsRate: Float) {
@@ -134,7 +143,8 @@ class VoiceCommandService @Inject constructor(
             title = event.title ?: "Collavre",
             text = event.summary,
             topicId = event.topicId,
-            createdAt = event.createdAt
+            createdAt = event.createdAt,
+            isApproval = event.isApproval
         )
         _messages.value = (listOf(msg) + _messages.value).take(20)
         Notifications.postEvent(context, event)
@@ -165,6 +175,7 @@ class VoiceCommandService @Inject constructor(
      *  settle its read state. */
     private fun speakNotice(msg: VoiceMessage, onDone: () -> Unit) {
         _speakingEventId.value = msg.eventId
+        speakingIsApproval = msg.isApproval
         speak(msg.text, onDone)
     }
 
@@ -180,8 +191,10 @@ class VoiceCommandService @Inject constructor(
      */
     private fun markSpokenRead() {
         val eventId = _speakingEventId.value ?: return
+        val wasApproval = speakingIsApproval
         _speakingEventId.value = null
-        settleRead(eventId)
+        speakingIsApproval = false
+        settleRead(eventId, wasApproval)
     }
 
     /**
@@ -192,9 +205,17 @@ class VoiceCommandService @Inject constructor(
      * never re-emitted. Holding the mark leaves them unread, so a death here costs a
      * repeated reading (at-least-once) instead of a lost message — the same trade the
      * rest of this loop takes.
+     *
+     * An APPROVAL is never held. `mark_inbox_read` returns early for a comment outside
+     * the inbox creative, and approvals live in the creative they were raised in, so
+     * their id moves no pointer. Folding one into the hold would let it win the max and
+     * be posted in place of a real notice's mark — the server would ignore it, and the
+     * notice it displaced would stay unread and be re-read on the next launch. The flush
+     * still runs: an approval finishing is progress through the queue, and it may be
+     * what a held mark was waiting on.
      */
-    private fun settleRead(eventId: Long) {
-        deferredRead = maxOf(deferredRead ?: eventId, eventId)
+    private fun settleRead(eventId: Long, isApproval: Boolean) {
+        if (!isApproval) deferredRead = maxOf(deferredRead ?: eventId, eventId)
         flushRead()
     }
 
@@ -339,7 +360,10 @@ class VoiceCommandService @Inject constructor(
         // pointer and is never re-emitted. Per-row reply made that ordering the user's to
         // choose, so the reply path needs the hold the play path got: ask the server to
         // skip the mark, then settle it here once nothing older is still unheard.
-        val deferRead = eventId != null && eventId > oldestUnheard()
+        // ...and not for an approval, whose id the server's read pointer ignores either
+        // way: deferring one would only hand settleRead an id it must not hold.
+        val targetIsApproval = eventId != null && _messages.value.any { it.eventId == eventId && it.isApproval }
+        val deferRead = eventId != null && !targetIsApproval && eventId > oldestUnheard()
         val turn = currentTurn
         scope.launch {
             val result = runCatching {
@@ -350,7 +374,7 @@ class VoiceCommandService @Inject constructor(
             // loop by now — a held mark is a monotone max-fold, so settling off-turn can
             // only bring it forward. A FAILED reply settles nothing and leaves the notice
             // unread, which is what replyTo already counts on.
-            if (deferRead && eventId != null) result.onSuccess { settleRead(eventId) }
+            if (deferRead && eventId != null) result.onSuccess { settleRead(eventId, isApproval = false) }
             // An interruption during THINKING hands the loop to a new play/reply session
             // while this request is still open. Everything below belongs to a turn that no
             // longer owns the state — speaking here would talk over the new session, and
