@@ -90,6 +90,10 @@ class VoiceCommandService @Inject constructor(
     private val queue = ArrayDeque<VoiceMessage>()
     private val seen = mutableSetOf<Long>()
 
+    // The notice whose OWN text is being spoken right now (null while speaking a
+    // reply). This is what an interruption marks read — see interrupt().
+    private var speakingEventId: Long? = null
+
     @Volatile private var loopStarted = false
 
     fun configure(locale: String, ttsRate: Float) {
@@ -137,12 +141,42 @@ class VoiceCommandService @Inject constructor(
     private fun readThenListen(msg: VoiceMessage) {
         recognizer.reset() // start the turn with a clean caption (drop prior utterance)
         _activeEventId.value = msg.eventId
-        speak(msg.text) {
-            // Heard it → mark read so the server stops re-emitting it. Done only
-            // after TTS completes, so a crash mid-read leaves it unread to re-read.
-            scope.launch { runCatching { repository.markRead(msg.eventId) } }
+        speakNotice(msg) {
+            markSpokenRead()
             listen()
         }
+    }
+
+    /** Speak a notice's own text, remembering which one so an interruption can still
+     *  settle its read state. */
+    private fun speakNotice(msg: VoiceMessage, onDone: () -> Unit) {
+        speakingEventId = msg.eventId
+        speak(msg.text, onDone)
+    }
+
+    /**
+     * Settle the read state of the notice that was being spoken: mark it read so the
+     * server stops re-emitting it. Called when TTS finishes it AND when the user cuts
+     * it off — stopping is a deliberate "that's enough", and leaving it unread would
+     * strand it, since ingest's `seen` set suppresses the re-emitted notice for the
+     * rest of the process (it would only be spoken again after an app restart). The
+     * row keeps its play button, so a replay is one tap. A crash is different: the
+     * callback never runs, nothing is marked read, and the next poll re-reads it —
+     * at-least-once is for the unattended failure, not for an explicit stop.
+     */
+    private fun markSpokenRead() {
+        val eventId = speakingEventId ?: return
+        speakingEventId = null
+        scope.launch { runCatching { repository.markRead(eventId) } }
+    }
+
+    /** Stop whatever is in flight so something else can start. */
+    private fun interrupt() {
+        if (_state.value == VoiceState.IDLE) return
+        tts.stop()
+        recognizer.cancel() // discard any in-flight utterance; don't post it as a reply
+        markSpokenRead()
+        _state.value = VoiceState.IDLE
     }
 
     /** Tap a list row: mark it the selection (highlight). Reading/replying are the
@@ -161,22 +195,16 @@ class VoiceCommandService @Inject constructor(
         if (eventId == INBOX_MAIN_ID) return
         // Already reading this one → stop and let the queue advance.
         if (_state.value == VoiceState.SPEAKING && _activeEventId.value == eventId) {
-            tts.stop()
-            _state.value = VoiceState.IDLE
+            interrupt()
             pump()
             return
         }
         val msg = _messages.value.firstOrNull { it.eventId == eventId } ?: return
-        if (_state.value != VoiceState.IDLE) {
-            tts.stop()
-            recognizer.cancel() // discard any in-flight utterance; don't post it as a reply
-            _state.value = VoiceState.IDLE
-        }
+        interrupt() // whatever was mid-read settles its own read state first
         recognizer.reset()
         _activeEventId.value = eventId
-        speak(msg.text) {
-            // Heard it → mark read (at-least-once): only after TTS finishes.
-            scope.launch { runCatching { repository.markRead(eventId) } }
+        speakNotice(msg) {
+            markSpokenRead()
             _state.value = VoiceState.IDLE
             pump()
         }
@@ -185,11 +213,7 @@ class VoiceCommandService @Inject constructor(
     /** Reply button (and notification tap): listen for a spoken reply to this event.
      *  With the Inbox#Main sentinel active, the reply is a cold utterance to Main. */
     fun replyTo(eventId: Long) {
-        if (_state.value != VoiceState.IDLE) {
-            tts.stop()
-            recognizer.cancel() // drop the prior listen so its tail can't post to the old thread
-            _state.value = VoiceState.IDLE
-        }
+        interrupt() // drops the prior listen so its tail can't post to the old thread
         _activeEventId.value = eventId
         listen()
     }
@@ -197,8 +221,7 @@ class VoiceCommandService @Inject constructor(
     /** Mic button: toggle off if busy, else reply to the active message or cold-start to Inbox#Main. */
     fun pushToTalk() {
         when (_state.value) {
-            VoiceState.SPEAKING -> { tts.stop(); _state.value = VoiceState.IDLE; pump() }
-            VoiceState.LISTENING -> { recognizer.cancel(); _state.value = VoiceState.IDLE; pump() }
+            VoiceState.SPEAKING, VoiceState.LISTENING -> { interrupt(); pump() }
             // Reply to the highlighted message, or cold-start to Inbox#Main when the
             // Main row (or nothing) is selected — resolved from _activeEventId in onTranscript.
             else -> listen()
