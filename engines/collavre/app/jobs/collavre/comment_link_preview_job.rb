@@ -15,22 +15,19 @@ module Collavre
       formatted_content = CommentLinkFormatter.new(expected_content).format
       return if formatted_content == expected_content
 
-      updated = Comment
-        .where(
-          id: comment_id,
-          content: expected_content,
-          notification_revision: expected_revision
-        )
-        .update_all(content: formatted_content, updated_at: Time.current)
-      return unless updated == 1
+      Comment.transaction do
+        comment = Comment.lock.find(comment_id)
+        return unless comment.content == expected_content
+        return unless comment.notification_revision == expected_revision
 
-      comment.reload
-      return if comment.private?
-
-      comment.broadcast_replace_later_to(
-        [ comment.creative, :comments ],
-        partial: "collavre/comments/comment"
-      )
+        # This is a derived representation of the same logical comment revision.
+        # Save normally so every Comment after_update_commit integration observes
+        # the formatted content, while suppressing only notification revision
+        # advancement and another preview job.
+        comment.skip_link_preview = true
+        comment.skip_notification_revision = true
+        comment.update!(content: formatted_content)
+      end
     end
   end
 end

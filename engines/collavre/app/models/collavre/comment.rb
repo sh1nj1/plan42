@@ -97,6 +97,8 @@ module Collavre
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
+    attribute :skip_link_preview, :boolean, default: false
+    attribute :skip_notification_revision, :boolean, default: false
     # Set by AgentOrchestrator.cleanup_waiting_notices! so destroying a notice as
     # part of *promoting* a waiter does not run the user-delete cancel cascade
     # (which would cancel other still-queued waiters in the same topic).
@@ -105,7 +107,7 @@ module Collavre
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     before_validation :assign_main_topic, on: :create
-    after_commit :enqueue_link_preview, on: [ :create, :update ], if: :saved_change_to_content?
+    after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
 
@@ -356,6 +358,10 @@ module Collavre
       return if content.blank?
 
       CommentLinkPreviewJob.perform_later(id, content, notification_revision)
+    end
+
+    def link_preview_enqueue_required?
+      saved_change_to_content? && !skip_link_preview
     end
 
     def images_must_be_images

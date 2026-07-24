@@ -8,6 +8,7 @@ module Collavre
       original_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
       comment = creative.comments.create!(user: owner, content: "https://example.com")
+      expected_revision = comment.notification_revision
       clear_enqueued_jobs
       formatter = Minitest::Mock.new
       formatter.expect(:format, "[Example](https://example.com)")
@@ -21,6 +22,7 @@ module Collavre
       end
 
       assert_equal "[Example](https://example.com)", comment.reload.content
+      assert_equal expected_revision, comment.notification_revision
       assert_no_enqueued_jobs only: CommentLinkPreviewJob
       formatter.verify
     ensure

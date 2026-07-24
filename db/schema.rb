@@ -101,6 +101,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_090000) do
     t.index ["type"], name: "index_channels_on_type"
   end
 
+  create_table "comment_notification_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_key", null: false
+    t.bigint "inbox_comment_id", null: false
+    t.text "link"
+    t.text "message", null: false
+    t.string "push_claim_token"
+    t.datetime "push_claimed_at"
+    t.datetime "push_enqueued_at"
+    t.bigint "recipient_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["delivery_key"], name: "index_comment_notification_deliveries_on_delivery_key", unique: true
+    t.index ["push_enqueued_at", "push_claimed_at"], name: "index_comment_notification_deliveries_pending"
+  end
+
   create_table "comment_reactions", force: :cascade do |t|
     t.integer "comment_id", null: false
     t.datetime "created_at", null: false

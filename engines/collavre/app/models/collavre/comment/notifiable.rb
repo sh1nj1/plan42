@@ -71,6 +71,8 @@ module Collavre
       private
 
       def notification_relevant_change?
+        return false if skip_notification_revision
+
         NOTIFICATION_RELEVANT_ATTRIBUTES.any? { |attribute| will_save_change_to_attribute?(attribute) }
       end
 
@@ -109,18 +111,31 @@ module Collavre
           quoted_comment: self
         }
 
-        comment = if delivery_key
-          Comment.create_or_find_by!(notification_key: delivery_key) do |candidate|
-            candidate.assign_attributes(attributes)
+        if delivery_key
+          comment = nil
+          delivery = nil
+
+          Comment.transaction do
+            comment = Comment.create_or_find_by!(notification_key: delivery_key) do |candidate|
+              candidate.assign_attributes(attributes)
+            end
+            delivery = CommentNotificationDelivery.create_or_find_by!(delivery_key: delivery_key) do |candidate|
+              candidate.assign_attributes(
+                inbox_comment_id: comment.id,
+                recipient_id: owner.id,
+                message: msg,
+                link: inbox_comment_link
+              )
+            end
           end
+
+          delivery.enqueue_push!
+          comment
         else
-          Comment.create!(attributes)
+          comment = Comment.create!(attributes)
+          PushNotificationJob.perform_later(owner.id, message: msg, link: inbox_comment_link)
+          comment
         end
-
-        return comment unless comment.previously_new_record?
-
-        PushNotificationJob.perform_later(owner.id, message: msg, link: inbox_comment_link)
-        comment
       rescue StandardError => e
         Rails.logger.error("[Notifiable] Failed to create inbox comment for user #{owner.id}: #{e.message}")
         raise
