@@ -78,13 +78,23 @@ module Collavre
       CONFLICT_CLAIMED_WITHOUT_REPLY = "claimed_without_reply"
       CONFLICT_NOT_DELEGATED = "not_delegated"
 
+      # Every winning claim passes through claimed-without-reply on its way to
+      # answered: the status flips first and the link lands one comment save
+      # later. Deciding on the first read would therefore report the ordinary
+      # sibling race as a lost reply purely on timing. Waiting does not weaken
+      # the proof — only an actually linked comment is ever called benign — it
+      # just gives finalization the moment it needs to produce one. Past the
+      # deadline the answer is the same as before: surface it.
+      FINALIZE_GRACE_SECONDS = 0.5
+      FINALIZE_GRACE_INTERVAL = 0.05
+
       def conflict_reason(agent:, topic:, requested_task_id:)
         task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
         return CONFLICT_NOT_DELEGATED unless task&.status == "done"
 
         # `reply_comment` is what #finalize links (comment.task_id = task.id), so
         # its presence is the only proof the dispatch was actually answered.
-        task.reply_comment.present? ? CONFLICT_ALREADY_COMPLETED : CONFLICT_CLAIMED_WITHOUT_REPLY
+        await_reply_link(task) ? CONFLICT_ALREADY_COMPLETED : CONFLICT_CLAIMED_WITHOUT_REPLY
       end
 
       # Post-claim side effects, run only after the reply comment is saved. Links
@@ -118,6 +128,27 @@ module Collavre
       end
 
       private
+
+      # Poll for the link #finalize creates, up to FINALIZE_GRACE_SECONDS.
+      # Monotonic clock so a wall-clock adjustment cannot stretch or collapse
+      # the deadline mid-wait.
+      def await_reply_link(task)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + FINALIZE_GRACE_SECONDS
+        loop do
+          return true if reply_linked?(task)
+          return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+          sleep FINALIZE_GRACE_INTERVAL
+        end
+      end
+
+      # uncached because the point of asking twice is to see a write another
+      # request committed after the first ask. Rails wraps each request in
+      # QueryCache, which would otherwise serve the identical SELECT from the
+      # first (empty) result for the whole wait.
+      def reply_linked?(task)
+        Comment.uncached { Comment.exists?(task_id: task.id) }
+      end
 
       # Clear the chat typing indicator via the canonical status broadcaster (the
       # same one AiAgentService uses for every other agent), so the Claude path
