@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">Collavre Voice</string>
+    <string name="event_channel_name">에이전트 알림</string>
+    <string name="event_channel_desc">Collavre 에이전트 결정에 대한 음성 알림</string>
+    <string name="service_channel_name">에이전트 알림 수신 중</string>
+
+    <string name="action_settings">설정</string>
+    <string name="state_idle">대기</string>
+    <string name="state_listening">듣는 중…</string>
+    <string name="state_thinking">생각하는 중…</string>
+    <string name="state_speaking">말하는 중…</string>
+    <string name="listening_prompt">말씀하세요…</string>
+    <string name="section_messages">메시지</string>
+    <string name="mic_talk">말하기</string>
+    <string name="mic_stop_listening">듣기 중지</string>
+    <string name="action_expand">펼치기</string>
+    <string name="action_collapse">접기</string>
+    <string name="action_play">재생</string>
+    <string name="action_stop_playback">정지</string>
+    <string name="action_reply">답장</string>
+</resources>

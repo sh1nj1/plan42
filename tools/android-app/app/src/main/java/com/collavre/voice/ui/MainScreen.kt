@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,10 +75,13 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Collavre Voice") },
+                title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.action_settings)
+                        )
                     }
                 }
             )
@@ -99,7 +103,7 @@ fun MainScreen(
             LiveCaption(state = state, partial = partial)
             Spacer(Modifier.height(16.dp))
 
-            SectionLabel("Messages")
+            SectionLabel(stringResource(R.string.section_messages))
             // Scrollable and keyed by event id: new events are prepended, so
             // positional identity would hand a row's expand state to its neighbour.
             LazyColumn(
@@ -141,12 +145,14 @@ fun MainScreen(
 
 @Composable
 private fun StatusChip(state: VoiceState) {
-    val label = when (state) {
-        VoiceState.IDLE -> "Idle"
-        VoiceState.LISTENING -> "Listening…"
-        VoiceState.THINKING -> "Thinking…"
-        VoiceState.SPEAKING -> "Speaking…"
-    }
+    val label = stringResource(
+        when (state) {
+            VoiceState.IDLE -> R.string.state_idle
+            VoiceState.LISTENING -> R.string.state_listening
+            VoiceState.THINKING -> R.string.state_thinking
+            VoiceState.SPEAKING -> R.string.state_speaking
+        }
+    )
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         shape = MaterialTheme.shapes.large
@@ -161,7 +167,7 @@ private fun LiveCaption(state: VoiceState, partial: String) {
     if (state != VoiceState.LISTENING && partial.isBlank()) return
     val text = when {
         partial.isNotBlank() -> partial
-        state == VoiceState.LISTENING -> "말씀하세요…"
+        state == VoiceState.LISTENING -> stringResource(R.string.listening_prompt)
         else -> ""
     }
     Text(
@@ -190,7 +196,9 @@ private fun MicButton(state: VoiceState, onClick: () -> Unit) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 Icons.Default.Mic,
-                contentDescription = if (active) "Stop" else "Talk",
+                contentDescription = stringResource(
+                    if (active) R.string.mic_stop_listening else R.string.mic_talk
+                ),
                 modifier = Modifier.size(72.dp)
             )
         }
@@ -250,7 +258,9 @@ private fun MessageRow(
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(
                         painter = painterResource(R.drawable.ic_chevron_right),
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        contentDescription = stringResource(
+                            if (expanded) R.string.action_collapse else R.string.action_expand
+                        ),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.rotate(if (expanded) 90f else 0f)
                     )
@@ -286,12 +296,14 @@ private fun MessageRow(
                 IconButton(onClick = onTogglePlay) {
                     Icon(
                         if (speaking) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (speaking) "Stop" else "Play"
+                        contentDescription = stringResource(
+                            if (speaking) R.string.action_stop_playback else R.string.action_play
+                        )
                     )
                 }
             }
             IconButton(onClick = onReply) {
-                Icon(Icons.Default.Mic, contentDescription = "Reply")
+                Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.action_reply))
             }
         }
     }
