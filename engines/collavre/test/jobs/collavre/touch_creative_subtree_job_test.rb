@@ -60,6 +60,43 @@ module Collavre
       assert_equal 1, enqueued_jobs.count { |job| job["job_class"] == TouchCreativeSubtreeJob.name }
     end
 
+    test "enqueues once when duplicate instances move across a committed savepoint" do
+      assert_enqueued_jobs 1, only: TouchCreativeSubtreeJob do
+        Creative.transaction do
+          @root.update!(parent: @new_parent)
+
+          Creative.transaction(requires_new: true) do
+            Creative.find(@root.id).update!(parent: nil)
+          end
+        end
+      end
+    end
+
+    test "does not enqueue when a committed savepoint is rolled back by its outer transaction" do
+      assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
+        Creative.transaction do
+          Creative.transaction(requires_new: true) do
+            Creative.find(@root.id).update!(parent: @new_parent)
+          end
+
+          raise ActiveRecord::Rollback
+        end
+      end
+    end
+
+    test "does not leak a rolled back savepoint into a later transaction" do
+      assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
+        Creative.transaction(requires_new: true) do
+          Creative.find(@root.id).update!(parent: @new_parent)
+          raise ActiveRecord::Rollback
+        end
+      end
+
+      assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
+        @root.update!(description: "Root renamed")
+      end
+    end
+
     test "does not enqueue subtree touching when the parent is unchanged" do
       assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
         @root.update!(description: "Root renamed")

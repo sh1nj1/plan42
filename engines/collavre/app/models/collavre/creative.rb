@@ -14,6 +14,21 @@ module Collavre
     # ---------------------------------------------------------------------------
     BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
 
+    SubtreeTouchTransactionRecord = Data.define(:creative_id) do
+      def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
+
+      def trigger_transactional_callbacks? = true
+
+      def before_committed! = nil
+
+      def committed!(should_run_callbacks:)
+        TouchCreativeSubtreeJob.perform_later(creative_id) if should_run_callbacks
+      end
+
+      def rolledback!(**_options) = nil
+    end
+    private_constant :SubtreeTouchTransactionRecord
+
     class << self
       def registered_reserved_metadata_keys
         @registered_reserved_metadata_keys ||= []
@@ -47,9 +62,7 @@ module Collavre
       "creatives/creative"
     end
 
-    after_update :flag_subtree_touch_on_move, if: :saved_change_to_parent_id?
-    after_commit :enqueue_subtree_touch, unless: :destroyed?
-    after_rollback :clear_pending_subtree_touch
+    after_update :register_subtree_touch_after_commit, if: :saved_change_to_parent_id?
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
@@ -375,30 +388,15 @@ module Collavre
       end
     end
 
-    # Record the move at save time rather than gating the after_commit on
-    # saved_change_to_parent_id?. after_commit sees only the *final* save's
-    # saved_changes, and #reload clears the mutation tracker outright, so a move
-    # followed in the same transaction by another save (or a reload) of the same
-    # record would drop the touch and leave descendants with stale updated_at
-    # for updated-since/cache consumers. Both are reachable through
-    # Tools::CreativeBatchService, which wraps every operation in one
-    # transaction while Tools::CreativeUpdateService saves parent_id, then saves
-    # the same (non-linked, so effective_origin == self) record again for
-    # description/progress, then reloads it. Mirrors the cross-save
-    # accumulation in Creative::Permissible.
-    def flag_subtree_touch_on_move
-      @subtree_touch_pending = true
-    end
-
-    def clear_pending_subtree_touch
-      @subtree_touch_pending = false
-    end
-
-    def enqueue_subtree_touch
-      return unless @subtree_touch_pending
-
-      clear_pending_subtree_touch
-      TouchCreativeSubtreeJob.perform_later(id)
+    # Register independently of the Creative instance because a transaction may
+    # update the same row through multiple instances, while Rails runs record
+    # callbacks on only one of them. Transaction-record equality deduplicates by
+    # creative id; Rails promotes records through committed savepoints and drops
+    # them on rollback.
+    def register_subtree_touch_after_commit
+      self.class.with_connection do |connection|
+        connection.add_transaction_record(SubtreeTouchTransactionRecord.new(id))
+      end
     end
 
     def fire_drop_trigger_on_move

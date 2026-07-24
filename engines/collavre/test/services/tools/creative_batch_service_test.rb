@@ -103,6 +103,29 @@ module Collavre
         ActiveJob::Base.queue_adapter = original_adapter if original_adapter
       end
 
+      test "rename then move of the same creative enqueues one subtree touch" do
+        moved = Creative.create!(description: "<p>Moved</p>", user: @user, progress: 0)
+        Creative.create!(description: "<p>Descendant</p>", user: @user, parent: moved, progress: 0)
+        CreativeSharesCache.find_or_create_by!(creative: moved, user: @user) { |cache| cache.permission = :admin }
+
+        service = CreativeBatchService.new
+        original_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+
+        Creative.stub :run_commit_callbacks_on_first_saved_instances_in_transaction, true do
+          assert_enqueued_jobs 1, only: TouchCreativeSubtreeJob do
+            result = service.call(operations: [
+              { "action" => "update", "id" => moved.id, "description" => "Renamed" },
+              { "action" => "update", "id" => moved.id, "parent_id" => @root.id }
+            ])
+
+            assert result[:success], result[:error]
+          end
+        end
+      ensure
+        ActiveJob::Base.queue_adapter = original_adapter if original_adapter
+      end
+
       test "rolls back all operations on failure" do
         initial_count = Creative.count
 
