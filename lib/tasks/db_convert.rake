@@ -530,16 +530,25 @@ namespace :db do
   # into their PostgreSQL equivalents. SQLite dumps JSON expression indexes using
   # json_extract(col, '$.key'); PostgreSQL needs (col ->> 'key'). Without this,
   # db:schema:load fails on Postgres with "function json_extract does not exist".
-  # Fully populate schema_migrations after a schema:load.
+  # Fully populate schema_migrations after the schema load above.
   #
-  # Why: schema:load's assume_migrated_upto_version stamps only versions from the
-  # primary db_config's migrations_paths (nil -> just "db/migrate", 7 files here),
-  # leaving the ~160 engine migrations unstamped. db:migrate, however, reads
-  # DatabaseTasks.migrations_paths (primary + every engine that appends its path),
-  # so on deploy it treats those engine migrations as pending and re-runs them
-  # against already-existing tables -> "relation already exists". Stamping the full
-  # set here makes db:migrate a no-op, which is correct: schema:load already built
-  # the exact state those migrations produce.
+  # Why, precisely: assume_migrated_upto_version stamps the versions its pool's
+  # MigrationContext can see, and that context reads ActiveRecord::Migrator
+  # .migrations_paths, which defaults to just ["db/migrate"] — 7 files here.
+  # Rails widens it to the engine paths in ONE place, `db:load_config`:
+  #
+  #   ActiveRecord::Migrator.migrations_paths =
+  #     ActiveRecord::Tasks::DatabaseTasks.migrations_paths   # 7 paths, 184 files
+  #
+  # `bin/rails db:schema:load` gets that for free (`task load: [:load_config,
+  # :check_protected_environments]`), so it stamps all 184 and the next
+  # db:migrate really is a no-op. THIS task depends on :environment only, so the
+  # same load_portable_schema call stamps 7 and leaves 177 engine migrations
+  # pending — db:migrate then replays them against tables that already exist
+  # -> "relation already exists". Hence the explicit stamp here.
+  #
+  # It is a fact about this task's prerequisites, not about schema:load. Do not
+  # generalize it to the fresh-install path in docs/deploy_to_lightsail.md.
   def stamp_all_migrations(conn)
     paths = ActiveRecord::Tasks::DatabaseTasks.migrations_paths
     all = ActiveRecord::MigrationContext.new(paths).migrations.map(&:version)

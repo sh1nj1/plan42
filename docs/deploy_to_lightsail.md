@@ -264,6 +264,14 @@ the SQLite converter needs the app image and so runs after it, app stopped.
   `schema_migrations` up to the schema version — the next boot's `db:migrate`
   is a no-op.
 
+  That covers the engine migrations too, which is worth stating because the
+  SQLite task above has to stamp them by hand. `db:schema:load` runs after
+  `db:load_config`, and that is where Rails widens
+  `ActiveRecord::Migrator.migrations_paths` from `["db/migrate"]` (7 files) to
+  every path the engines append (184). `db:sqlite_to_postgres` depends on
+  `:environment` alone, so it never gets that widening and must stamp the
+  remaining 177 itself.
+
   `DISABLE_DATABASE_ENVIRONMENT_CHECK` is not optional here. `db:schema:load`
   runs `check_protected_environments` first, which aborts with
   `ActiveRecord::ProtectedEnvironmentError` once the database records
