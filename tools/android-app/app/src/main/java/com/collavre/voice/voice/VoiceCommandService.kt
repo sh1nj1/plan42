@@ -101,6 +101,13 @@ class VoiceCommandService @Inject constructor(
     // what tells its completion that the loop has already moved on without it.
     private var currentTurn = 0L
 
+    // A read-mark held back because an OLDER notice has not been heard yet. The server
+    // keeps ONE forward-only pointer (last_read_comment_id = max(...)), so marking a
+    // notice read also claims every unread id behind it — rows can be played out of
+    // order, and doing so would burn the notices still waiting in the queue. Only the
+    // highest held id is kept: sending it later subsumes every smaller one.
+    private var deferredRead: Long? = null
+
     @Volatile private var loopStarted = false
 
     fun configure(locale: String, ttsRate: Float) {
@@ -174,8 +181,36 @@ class VoiceCommandService @Inject constructor(
     private fun markSpokenRead() {
         val eventId = _speakingEventId.value ?: return
         _speakingEventId.value = null
-        markRead(eventId)
+        settleRead(eventId)
     }
+
+    /**
+     * Record that a notice has been heard, and send the mark only once no OLDER notice
+     * is still owed a reading. The server's read state is a single forward-only pointer,
+     * so marking a notice played out of order reaches back over every older unread one:
+     * if the process dies before the queue drains, those sit behind the pointer and are
+     * never re-emitted. Holding the mark leaves them unread, so a death here costs a
+     * repeated reading (at-least-once) instead of a lost message — the same trade the
+     * rest of this loop takes.
+     */
+    private fun settleRead(eventId: Long) {
+        deferredRead = maxOf(deferredRead ?: eventId, eventId)
+        flushRead()
+    }
+
+    /** Send the held mark once nothing older than it is still unheard. */
+    private fun flushRead() {
+        val pending = deferredRead ?: return
+        if (pending >= oldestUnheard()) return
+        deferredRead = null
+        markRead(pending)
+    }
+
+    /** Lowest id still owed a reading: waiting in the queue, or being spoken right now. */
+    private fun oldestUnheard(): Long = minOf(
+        queue.minOfOrNull { it.eventId } ?: Long.MAX_VALUE,
+        _speakingEventId.value ?: Long.MAX_VALUE
+    )
 
     private fun markRead(eventId: Long) {
         scope.launch { runCatching { repository.markRead(eventId) } }
