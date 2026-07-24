@@ -152,7 +152,8 @@ first deploy**, while the database is still reachable without the app:
 
   ```bash
   ./kamal.sh setup
-  ./kamal.sh app exec 'bin/rails db:schema:load db:seed'
+  ./kamal.sh app exec 'bin/rails db:schema:load db:seed' \
+    -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1
   ./kamal.sh app boot   # restart on the schema you just loaded
   ```
 
@@ -160,6 +161,15 @@ first deploy**, while the database is still reachable without the app:
   the replayed tables instead of colliding with them, and it stamps
   `schema_migrations` up to the schema version — the next boot's `db:migrate`
   is a no-op.
+
+  `DISABLE_DATABASE_ENVIRONMENT_CHECK` is not optional here. `db:schema:load`
+  runs `check_protected_environments` first, which aborts with
+  `ActiveRecord::ProtectedEnvironmentError` once the database records
+  `production` in `ar_internal_metadata` — which is exactly what the replay in
+  the preceding `setup` just wrote. Note the flag *trails* the command: `-e`
+  takes a Thor hash and greedily consumes every following argument containing a
+  colon, so putting it first would swallow `bin/rails db:schema:load db:seed`
+  into the hash and leave kamal with no command to run.
 
   This still works when the replay *fails* and `setup` dies at `app boot`: the
   env file and the network are uploaded before the container is started, and
