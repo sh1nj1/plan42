@@ -55,9 +55,18 @@ class AgentEventRepository @Inject constructor(
         )
     }
 
-    suspend fun respond(eventId: Long, response: String): VoiceResponse {
+    /**
+     * Reply to one event. `deferRead` asks the server NOT to advance the inbox read
+     * pointer for it — used when answering out of order, since that single pointer
+     * would claim every older unread notice with it. The caller owns sending the mark
+     * (markRead) once nothing older is still owed a reading.
+     */
+    suspend fun respond(eventId: Long, response: String, deferRead: Boolean = false): VoiceResponse {
         val cfg = settings.snapshot()
-        return api.respond(eventId, RespondRequest(deviceId = cfg.deviceId, response = response))
+        return api.respond(
+            eventId,
+            RespondRequest(deviceId = cfg.deviceId, response = response, deferRead = deferRead)
+        )
     }
 
     /**

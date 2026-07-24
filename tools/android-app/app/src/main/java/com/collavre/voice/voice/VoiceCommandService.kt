@@ -332,11 +332,25 @@ class VoiceCommandService @Inject constructor(
         // for a second reply to it. Read state is left to respond(), which settles it
         // server-side once the reply lands — same split as replyTo.
         if (eventId != null) queue.removeAll { it.eventId == eventId }
+        // ...except when this reply is OUT OF ORDER. respond() advances the one
+        // forward-only inbox pointer, which reaches back over every older unread notice
+        // exactly like an out-of-order play does: answer a newer row while an older one is
+        // still queued, die before the queue drains, and the older one sits behind the
+        // pointer and is never re-emitted. Per-row reply made that ordering the user's to
+        // choose, so the reply path needs the hold the play path got: ask the server to
+        // skip the mark, then settle it here once nothing older is still unheard.
+        val deferRead = eventId != null && eventId > oldestUnheard()
         val turn = currentTurn
         scope.launch {
             val result = runCatching {
-                if (eventId != null) repository.respond(eventId, text) else repository.sendCommand(text)
+                if (eventId != null) repository.respond(eventId, text, deferRead) else repository.sendCommand(text)
             }
+            // The reply landed, so the notice is dealt with: settle its read state through
+            // the same hold/flush path the play side uses, no matter which turn owns the
+            // loop by now — a held mark is a monotone max-fold, so settling off-turn can
+            // only bring it forward. A FAILED reply settles nothing and leaves the notice
+            // unread, which is what replyTo already counts on.
+            if (deferRead && eventId != null) result.onSuccess { settleRead(eventId) }
             // An interruption during THINKING hands the loop to a new play/reply session
             // while this request is still open. Everything below belongs to a turn that no
             // longer owns the state — speaking here would talk over the new session, and

@@ -214,6 +214,44 @@ module Collavre
             assert_equal origin.id, relayed.quoted_comment_id, "reply quotes the origin comment so the agent threads it"
           end
 
+          test "responding without defer_read marks read, claiming every older unread notice with it" do
+            n1, n2 = two_pending_notices
+
+            post "/api/v1/mobile/agent_events/#{n2.id}/respond",
+              params: { device_id: DEVICE, response: "알겠어" }, headers: auth_headers, as: :json
+            assert_response :ok
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            ids = JSON.parse(response.body).map { |e| e["id"] }
+            refute_includes ids, n1.id,
+              "the pointer is a single forward-only high-water-mark: answering the newer notice buries the older one"
+            refute_includes ids, n2.id
+          end
+
+          test "defer_read holds the mark so an out-of-order reply does not bury older unread notices" do
+            n1, n2 = two_pending_notices
+
+            # The app answers the NEWER notice while the older one is still queued for
+            # reading (per-row reply makes that the user's choice). It carries the read
+            # mark itself and sends it via :id/read once nothing older is unheard.
+            post "/api/v1/mobile/agent_events/#{n2.id}/respond",
+              params: { device_id: DEVICE, response: "알겠어", defer_read: true },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            assert_equal "relayed", JSON.parse(response.body).dig("action", "type"),
+              "deferring the read mark does not change what the reply does"
+
+            inbox = Collavre::Creative.inbox_for(@user)
+            pointer = Collavre::CommentReadPointer.find_by(user: @user, creative: inbox)
+            assert_operator (pointer&.last_read_comment_id || 0), :<, n1.id,
+              "the deferred reply leaves the inbox pointer where it was"
+
+            get "/api/v1/mobile/agent_events", params: { device_id: DEVICE }, headers: auth_headers, as: :json
+            ids = JSON.parse(response.body).map { |e| e["id"] }
+            assert_includes ids, n1.id, "the older notice is still unread, so a restart re-reads it"
+            assert_includes ids, n2.id, "the answered one comes back too — at-least-once, not a lost message"
+          end
+
           test "the relayed reply is a question, not a review, so the agent posts a new reply (firing the alarm)" do
             origin = @creative.comments.create!(
               content: "어느 브랜치에 머지할까요?", user: @agent, topic: @topic,
@@ -386,6 +424,18 @@ module Collavre
               creative: inbox, topic: inbox.system_topic, content: content,
               user: nil, skip_default_user: true, quoted_comment: quoted
             )
+          end
+
+          # Two unread Inbox#System notices, older first — the setup every
+          # out-of-order (newer answered while older still queued) case needs.
+          def two_pending_notices
+            %w[먼저 나중].map do |body|
+              origin = @creative.comments.create!(
+                content: body, user: @agent, topic: @topic,
+                skip_default_user: true, skip_dispatch: true
+              )
+              create_system_inbox_notice(quoted: origin, content: "언급: #{body}")
+            end
           end
 
           def create_permission_comment(request_id:, tool_name:, description: nil, topic: @topic)

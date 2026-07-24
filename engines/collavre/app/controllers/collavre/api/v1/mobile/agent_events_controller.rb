@@ -63,8 +63,14 @@ module Collavre
             end
 
             # Acting on a notice means the user has heard it — clear it from the
-            # unread inbox set so it isn't read again on the next poll.
-            mark_inbox_read(comment)
+            # unread inbox set so it isn't read again on the next poll. The app can
+            # hold that mark back (defer_read) when it answers a notice OUT OF ORDER:
+            # the pointer is a single forward-only high-water-mark, so marking this
+            # one claims every older unread notice with it. The app then sends the
+            # mark itself (POST :id/read) once nothing older is still owed a reading.
+            # Deferring costs at most a repeated reading if the app dies before that;
+            # not deferring costs the older notices outright.
+            mark_inbox_read(comment) unless defer_read?
 
             if comment.claude_channel_permission?
               decide_on(comment)
@@ -89,6 +95,12 @@ module Collavre
           end
 
           private
+
+          # Opt-in only: a client that does not send the flag (or any older build)
+          # keeps the previous mark-on-respond behaviour.
+          def defer_read?
+            ActiveModel::Type::Boolean.new.cast(params[:defer_read]) == true
+          end
 
           # The user's Inbox → System topic is the per-user alarm stream: mentions,
           # agent replies, share notices, … land here as system-authored
