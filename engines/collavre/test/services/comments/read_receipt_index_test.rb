@@ -52,6 +52,14 @@ module Collavre
         assert_empty receipts_for(window)
       end
 
+      test "a pointer at a private comment after the window produces no receipt on this page" do
+        window = [ comment("a"), comment("b") ]
+        newer_private = comment("secret", private: true)
+        point_at(newer_private)
+
+        assert_empty receipts_for(window)
+      end
+
       test "a pointer at the newest comment of all lands on it" do
         first = comment("a")
         last = comment("b")

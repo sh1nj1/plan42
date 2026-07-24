@@ -28,6 +28,8 @@ module Collavre
         rendered = rendered_public_ids.to_set
 
         pointers.each_with_object({}) do |pointer, result|
+          next if pointer.last_read_comment_id > rendered_window_max_id
+
           effective_id = pointer[:receipt_comment_id]
           next unless effective_id && rendered.include?(effective_id)
 
@@ -38,6 +40,10 @@ module Collavre
       private
 
       attr_reader :creative, :comments
+
+      def rendered_window_max_id
+        @rendered_window_max_id ||= comments.map(&:id).max
+      end
 
       def rendered_public_ids
         @rendered_public_ids ||= comments.reject(&:private?).map(&:id).sort
