@@ -62,10 +62,11 @@ fun MainScreen(
     val speakingEventId by viewModel.speakingEventId.collectAsStateWithLifecycle()
     val partial by viewModel.partialTranscript.collectAsStateWithLifecycle()
 
-    val inboxMainMessage = remember {
+    val inboxMainTitle = stringResource(R.string.row_inbox_main)
+    val inboxMainMessage = remember(inboxMainTitle) {
         VoiceMessage(
             eventId = VoiceCommandService.INBOX_MAIN_ID,
-            title = "Inbox#Main",
+            title = inboxMainTitle,
             text = "",
             topicId = null,
             createdAt = ""

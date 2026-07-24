@@ -11,6 +11,7 @@
     <string name="state_speaking">말하는 중…</string>
     <string name="listening_prompt">말씀하세요…</string>
     <string name="section_messages">메시지</string>
+    <string name="row_inbox_main">인박스#Main</string>
     <string name="mic_talk">말하기</string>
     <string name="mic_stop_listening">듣기 중지</string>
     <string name="action_expand">펼치기</string>

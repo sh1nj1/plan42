@@ -11,6 +11,11 @@
     <string name="state_speaking">Speaking…</string>
     <string name="listening_prompt">Go ahead…</string>
     <string name="section_messages">Messages</string>
+    <!-- Mirrors the server's "<creative>#<topic>" row title. Only the creative
+         name is localized: the topic is literally named "Main" in every locale
+         (Creative::MAIN_TOPIC_NAME), so translating it would stop matching the
+         real topic. -->
+    <string name="row_inbox_main">Inbox#Main</string>
     <string name="mic_talk">Talk</string>
     <string name="mic_stop_listening">Stop listening</string>
     <string name="action_expand">Expand</string>
