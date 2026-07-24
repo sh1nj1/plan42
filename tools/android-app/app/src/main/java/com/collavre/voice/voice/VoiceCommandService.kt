@@ -249,10 +249,14 @@ class VoiceCommandService @Inject constructor(
     /** Mic button: toggle off if busy, else reply to the active message or cold-start to Inbox#Main. */
     fun pushToTalk() {
         when (_state.value) {
-            VoiceState.SPEAKING, VoiceState.LISTENING -> { interrupt(); pump() }
+            // THINKING is busy too: a reply request is still open, and only interrupt()
+            // retires its turn. Starting a listen from here would leave that completion
+            // owning the turn, free to speak its answer, clear the selection and pump the
+            // queue on top of the new recording. Its answer still reaches the log.
+            VoiceState.SPEAKING, VoiceState.LISTENING, VoiceState.THINKING -> { interrupt(); pump() }
             // Reply to the highlighted message, or cold-start to Inbox#Main when the
             // Main row (or nothing) is selected — resolved from _activeEventId in onTranscript.
-            else -> listen()
+            VoiceState.IDLE -> listen()
         }
     }
 
