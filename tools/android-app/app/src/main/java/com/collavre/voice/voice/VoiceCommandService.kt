@@ -233,10 +233,15 @@ class VoiceCommandService @Inject constructor(
      *  With the Inbox#Main sentinel active, the reply is a cold utterance to Main. */
     fun replyTo(eventId: Long) {
         interrupt() // drops the prior listen so its tail can't post to the old thread
-        // Answering a still-queued notice is dealing with it: drop the entry so it is not
-        // read aloud after the reply, and settle its read state — ingest's `seen` set now
-        // suppresses the re-emitted notice, so leaving it unread would strand it.
-        if (queue.removeAll { it.eventId == eventId }) markRead(eventId)
+        // Answering a queued notice is dealing with it: drop the entry so it is not read
+        // aloud after the reply. Read state is deliberately NOT settled here — nothing has
+        // been spoken and nothing has been delivered yet, and respond() marks the notice
+        // read server-side once a reply actually lands. Marking it here would advance the
+        // inbox pointer even when the user stays silent or the request fails, leaving the
+        // notice dequeued locally AND read remotely: never re-emitted, never spoken again,
+        // surviving only in volatile UI state. Left unread it is one tap away on its row
+        // and comes back on the next launch.
+        queue.removeAll { it.eventId == eventId }
         _activeEventId.value = eventId
         listen()
     }
