@@ -5,7 +5,7 @@ module CollavreNotion
 
     def callback
       auth = request.env["omniauth.auth"]
-      notion = CollavreNotion::NotionAccount.find_or_initialize_by(notion_uid: auth.uid)
+      notion = CollavreNotion::NotionAccount.find_or_initialize_by(notion_uid: scoped_uid(auth.uid))
 
       if notion.new_record?
         unless Current.user
@@ -27,6 +27,23 @@ module CollavreNotion
       else
         redirect_to collavre.creatives_path, notice: I18n.t("collavre_notion.notion_auth.connected")
       end
+    end
+
+    private
+
+    # Real Notion returns a per-installation bot id, so the uid identifies the
+    # connection on its own. The mock returns one fixed uid to every browser,
+    # which this row cannot carry: notion_uid is uniquely indexed and one account
+    # is allowed per user, so the second developer to connect would match the
+    # first one's row — `user` is assigned only on create — and quietly take it
+    # over, leaving their own integration reading "not connected".
+    #
+    # With no session the uid is deliberately left unmatched, so the flow falls
+    # into the new-record branch below and redirects to sign in first.
+    def scoped_uid(uid)
+      return uid unless CollavreNotion.mock_enabled?
+
+      "#{uid}-#{Current.user&.id}"
     end
   end
 end

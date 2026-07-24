@@ -194,14 +194,16 @@ module CollavreNotion
       id.to_s
     end
 
+    # An explicit endpoint always wins; otherwise follow the same mock decision
+    # the OmniAuth middleware made, so the token in hand and the host it is sent
+    # to always come from the same integration. Deciding it here separately —
+    # on ENV["NOTION_CLIENT_ID"] alone — sent developers whose credentials live
+    # in Rails credentials or in the admin UI to the mock server, and ignored
+    # NOTION_MOCK in both directions.
     def resolve_base_url
       return ENV["NOTION_API_ENDPOINT"] if ENV["NOTION_API_ENDPOINT"].present?
 
-      if Rails.env.development? && ENV["NOTION_CLIENT_ID"].blank?
-        MOCK_SERVER_DEFAULT
-      else
-        DEFAULT_BASE_URL
-      end
+      CollavreNotion.mock_enabled? ? MOCK_SERVER_DEFAULT : DEFAULT_BASE_URL
     end
 
     def handle_response(response)

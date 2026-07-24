@@ -1,4 +1,5 @@
 require_relative "../../lib/omniauth/strategies/notion"
+require_relative "../../lib/omniauth/strategies/notion_mock"
 
 # Register OAuth keys with the IntegrationSettings registry so the admin UI
 # can surface them and `Collavre::IntegrationSettings::Resolver` can serve
@@ -42,8 +43,12 @@ google_client_id     = resolve_oauth.call(:google_client_id,     %i[google clien
 google_client_secret = resolve_oauth.call(:google_client_secret, %i[google client_secret])
 github_client_id     = resolve_oauth.call(:github_client_id,     %i[github client_id])
 github_client_secret = resolve_oauth.call(:github_client_secret, %i[github client_secret])
-notion_client_id     = resolve_oauth.call(:notion_client_id,     %i[notion client_id])
-notion_client_secret = resolve_oauth.call(:notion_client_secret, %i[notion client_secret])
+# Notion resolves through CollavreNotion rather than the lambda above: the same
+# answer is needed at runtime by NotionClient and NotionAuthController, and when
+# the three read it separately they drift (see CollavreNotion for the drift this
+# closes). Same DB > ENV > credentials precedence.
+notion_client_id     = CollavreNotion.client_id
+notion_client_secret = CollavreNotion.client_secret
 
 github_mock_setting = resolve_oauth.call(:github_mock, %i[github mock])
 github_mock_enabled = if github_mock_setting.present?
@@ -52,12 +57,7 @@ else
                         Rails.env.development? && github_client_id.blank?
 end
 
-notion_mock_setting = resolve_oauth.call(:notion_mock, %i[notion mock])
-notion_mock_enabled = if notion_mock_setting.present?
-                        notion_mock_setting == "1"
-else
-                        Rails.env.development? && notion_client_id.blank?
-end
+notion_mock_enabled = CollavreNotion.mock_enabled?
 
 Rails.application.config.middleware.use OmniAuth::Builder do
   if google_client_id.present? && google_client_secret.present?
@@ -87,7 +87,12 @@ Rails.application.config.middleware.use OmniAuth::Builder do
              allow_signup: false
   end
 
-  if notion_client_id.present? && notion_client_secret.present?
+  # Mock first, unlike GitHub above: NOTION_MOCK=1 is an operator saying "use the
+  # mock", and it is only reachable with credentials present — the auto-enable
+  # branch requires a blank client id, so the two orders agree everywhere else.
+  if notion_mock_enabled
+    provider OmniAuth::Strategies::NotionMock
+  elsif notion_client_id.present? && notion_client_secret.present?
     provider :notion,
              notion_client_id,
              notion_client_secret
@@ -99,7 +104,13 @@ OmniAuth.config.allowed_request_methods = %i[get post]
 # Enable OmniAuth mock mode in development when no real credentials are configured.
 # Mock servers run by default via Procfile.dev.
 # Set GITHUB_MOCK=0 or NOTION_MOCK=0 to explicitly disable.
-if github_mock_enabled || notion_mock_enabled
+#
+# Notion is deliberately not in this condition. test_mode is global — every
+# provider goes through mock_auth once it is on — so mocking Notion used to
+# disable real GitHub and Google logins for a developer who had credentials for
+# them. Strategies::NotionMock replaces the flag for Notion: it is a strategy, so
+# it only answers for /auth/notion.
+if github_mock_enabled
   OmniAuth.config.test_mode = true
 end
 
@@ -112,11 +123,16 @@ if github_mock_enabled
   )
 end
 
+# Still seeded, even though NotionMock no longer needs it: GitHub's mock can have
+# switched test_mode on globally, and OmniAuth's mock path bypasses the strategy
+# and reads mock_auth[:notion] — falling back to mock_auth[:default], i.e. the
+# wrong provider's identity, if it is missing. Keep it identical to the strategy's
+# own hash so both routes produce the same account.
 if notion_mock_enabled
   OmniAuth.config.mock_auth[:notion] = OmniAuth::AuthHash.new(
     provider: "notion",
     uid: "notion-dev-user-001",
-    info: { name: "Dev Workspace" },
+    info: { name: "Dev Workspace", workspace_name: "Dev Workspace" },
     credentials: { token: "fake-notion-dev-token" }
   )
 end
