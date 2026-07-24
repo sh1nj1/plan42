@@ -34,10 +34,16 @@ describe('escapeHtmlAttr', () => {
   })
 
   test('escapeHtmlText is NOT sufficient in attribute position', () => {
-    // Pins why the two functions are separate rather than one shared escaper.
-    const el = document.createElement('div')
-    el.innerHTML = `<img src="${escapeHtmlText('x" onerror="window.__xss = true')}">`
-    expect(el.querySelector('img').hasAttribute('onerror')).toBe(true)
+    // Pins why the two functions are separate rather than one shared escaper:
+    // the text variant leaves the quote intact, so it would close the attribute.
+    // Asserted on the escaped strings rather than by rendering the markup —
+    // splicing a text-escaped value into an attribute is the defect itself, and
+    // writing it here would be an incomplete-attribute-sanitization finding in
+    // its own right. What breaking out actually does to the parser is covered
+    // by the safe direction above.
+    const payload = 'x" onerror="window.__xss = true'
+    expect(escapeHtmlText(payload)).toContain('"')
+    expect(escapeHtmlAttr(payload)).not.toContain('"')
   })
 
   test('renders null and undefined as empty, not as the words', () => {
