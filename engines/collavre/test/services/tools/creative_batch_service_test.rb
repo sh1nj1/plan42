@@ -79,6 +79,30 @@ module Collavre
         assert_match(/Unknown action/, result[:error])
       end
 
+      test "moving a creative in a batch enqueues the subtree touch" do
+        moved = Creative.create!(description: "<p>Moved</p>", user: @user, progress: 0)
+        Creative.create!(description: "<p>Descendant</p>", user: @user, parent: moved, progress: 0)
+        CreativeSharesCache.find_or_create_by!(creative: moved, user: @user) { |cache| cache.permission = :admin }
+
+        service = CreativeBatchService.new
+        original_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+
+        # The batch wraps every operation in one transaction, and the update
+        # service saves parent_id, saves again for the description, then
+        # reloads — all of which erase the parent change from saved_changes
+        # before after_commit runs.
+        assert_enqueued_with(job: TouchCreativeSubtreeJob, args: [ moved.id ]) do
+          result = service.call(operations: [
+            { "action" => "update", "id" => moved.id, "parent_id" => @root.id, "description" => "Moved and renamed" }
+          ])
+
+          assert result[:success], result[:error]
+        end
+      ensure
+        ActiveJob::Base.queue_adapter = original_adapter if original_adapter
+      end
+
       test "rolls back all operations on failure" do
         initial_count = Creative.count
 

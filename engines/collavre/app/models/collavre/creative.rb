@@ -47,7 +47,9 @@ module Collavre
       "creatives/creative"
     end
 
-    after_update_commit :enqueue_subtree_touch, if: :saved_change_to_parent_id?
+    after_update :flag_subtree_touch_on_move, if: :saved_change_to_parent_id?
+    after_commit :enqueue_subtree_touch, unless: :destroyed?
+    after_rollback :clear_pending_subtree_touch
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
@@ -373,7 +375,29 @@ module Collavre
       end
     end
 
+    # Record the move at save time rather than gating the after_commit on
+    # saved_change_to_parent_id?. after_commit sees only the *final* save's
+    # saved_changes, and #reload clears the mutation tracker outright, so a move
+    # followed in the same transaction by another save (or a reload) of the same
+    # record would drop the touch and leave descendants with stale updated_at
+    # for updated-since/cache consumers. Both are reachable through
+    # Tools::CreativeBatchService, which wraps every operation in one
+    # transaction while Tools::CreativeUpdateService saves parent_id, then saves
+    # the same (non-linked, so effective_origin == self) record again for
+    # description/progress, then reloads it. Mirrors the cross-save
+    # accumulation in Creative::Permissible.
+    def flag_subtree_touch_on_move
+      @subtree_touch_pending = true
+    end
+
+    def clear_pending_subtree_touch
+      @subtree_touch_pending = false
+    end
+
     def enqueue_subtree_touch
+      return unless @subtree_touch_pending
+
+      clear_pending_subtree_touch
       TouchCreativeSubtreeJob.perform_later(id)
     end
 

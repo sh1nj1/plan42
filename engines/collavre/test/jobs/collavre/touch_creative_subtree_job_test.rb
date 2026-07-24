@@ -33,6 +33,53 @@ module Collavre
       assert_equal old_timestamp, @grandchild.reload.updated_at
     end
 
+    test "enqueues subtree touching when a later same-transaction save clobbers the parent change" do
+      assert_enqueued_with(job: TouchCreativeSubtreeJob, args: [ @root.id ]) do
+        Creative.transaction do
+          @root.update!(parent: @new_parent)
+          @root.update!(description: "Root renamed")
+        end
+      end
+    end
+
+    test "enqueues subtree touching when the moved creative is reloaded before commit" do
+      assert_enqueued_with(job: TouchCreativeSubtreeJob, args: [ @root.id ]) do
+        Creative.transaction do
+          @root.update!(parent: @new_parent)
+          @root.reload
+        end
+      end
+    end
+
+    test "enqueues subtree touching once per transaction regardless of save count" do
+      Creative.transaction do
+        @root.update!(parent: @new_parent)
+        @root.update!(parent: nil)
+      end
+
+      assert_equal 1, enqueued_jobs.count { |job| job["job_class"] == TouchCreativeSubtreeJob.name }
+    end
+
+    test "does not enqueue subtree touching when the parent is unchanged" do
+      assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
+        @root.update!(description: "Root renamed")
+      end
+    end
+
+    test "does not enqueue subtree touching when the move is rolled back" do
+      assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
+        Creative.transaction do
+          @root.update!(parent: @new_parent)
+          raise ActiveRecord::Rollback
+        end
+      end
+
+      # The rolled-back move must not leak into the next transaction.
+      assert_no_enqueued_jobs(only: TouchCreativeSubtreeJob) do
+        @root.update!(description: "Root renamed")
+      end
+    end
+
     test "touches all current descendants in one update" do
       old_timestamp = 2.days.ago.change(usec: 0)
       Creative.where(id: [ @child.id, @grandchild.id ]).update_all(updated_at: old_timestamp)
