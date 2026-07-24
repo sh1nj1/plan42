@@ -269,8 +269,10 @@ the SQLite converter needs the app image and so runs after it, app stopped.
   `db:load_config`, and that is where Rails widens
   `ActiveRecord::Migrator.migrations_paths` from `["db/migrate"]` (7 files) to
   every path the engines append (184). `db:sqlite_to_postgres` depends on
-  `:environment` alone, so it never gets that widening and must stamp the
-  remaining 177 itself.
+  `:environment` alone, so it never gets that widening: its schema load stamps
+  8 versions — the 7 primary migrations plus the schema's own version, which
+  `assume_migrated_upto_version` inserts whether or not it can see the file
+  behind it — and it must stamp the remaining 176 itself.
 
   `DISABLE_DATABASE_ENVIRONMENT_CHECK` is not optional here. `db:schema:load`
   runs `check_protected_environments` first, which aborts with

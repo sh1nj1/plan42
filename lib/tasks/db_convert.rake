@@ -543,9 +543,13 @@ namespace :db do
   # `bin/rails db:schema:load` gets that for free (`task load: [:load_config,
   # :check_protected_environments]`), so it stamps all 184 and the next
   # db:migrate really is a no-op. THIS task depends on :environment only, so the
-  # same load_portable_schema call stamps 7 and leaves 177 engine migrations
+  # same load_portable_schema call stamps 8 and leaves 176 engine migrations
   # pending — db:migrate then replays them against tables that already exist
   # -> "relation already exists". Hence the explicit stamp here.
+  #
+  # 8, not 7: assume_migrated_upto_version also inserts the schema's own version
+  # even when it cannot see the migration behind it, and db/schema.rb's version
+  # is currently an engine migration (engines/collavre/db/migrate).
   #
   # It is a fact about this task's prerequisites, not about schema:load. Do not
   # generalize it to the fresh-install path in docs/deploy_to_lightsail.md.
