@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_24_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -176,6 +176,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
+    t.index ["creative_id", "private", "id"], name: "index_comments_on_creative_id_and_private_and_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
