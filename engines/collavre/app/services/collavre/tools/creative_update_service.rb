@@ -5,15 +5,14 @@ module Tools
   class CreativeUpdateService
     extend T::Sig
     extend ToolMeta
-    include DescriptionNormalizable
 
     tool_name "creative_update_service"
     tool_description "Update an existing Creative's content, progress, or parent. Use this to:\n- Modify the description/title of a Creative\n- Mark a leaf Creative as complete (progress = 1.0)\n- Move a Creative to a different parent\n\nProgress constraints:\n- Only 1.0 (100%) is allowed — partial progress updates are not supported\n- Only leaf Creatives (with no children) can have their progress updated\n- Parent Creative progress is automatically calculated from children\n\nUse creative_retrieval_service to find the correct Creative before updating."
 
     tool_param :id, description: "The ID of the Creative to update.", required: true
-    tool_param :description, description: "New content/title for the Creative. Accepts HTML format. If omitted, description remains unchanged.", required: false
+    tool_param :description, description: "New content/title for the Creative, written in Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Replaces the whole body. If omitted, the description remains unchanged.", required: false
     tool_param :progress, description: "Set to 1.0 to mark a leaf Creative as complete. Only 1.0 is allowed; partial progress and updates on parent Creatives are rejected.", required: false
-    tool_param :parent_id, description: "New parent Creative ID to move this Creative under. Use null/0 to make it a root Creative.", required: false
+    tool_param :parent_id, description: "New parent Creative ID to move this Creative under. If omitted, nil, or 0, the parent remains unchanged.", required: false
 
     sig { params(id: Integer, description: T.nilable(String), progress: T.nilable(Numeric), parent_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
     def call(id:, description: nil, progress: nil, parent_id: nil)
@@ -34,9 +33,22 @@ module Tools
       updates = {}
       parent_updates = {}
 
-      # Handle description update
-      if description.present?
-        updates[:description] = normalize_description(description)
+      # Handle description update. The description is authored as Markdown: set it
+      # as the canonical markdown_source on the base/origin and let
+      # Describable#convert_markdown_to_html render the HTML description on save.
+      #
+      # Force the "source" editing surface (like create does) rather than letting
+      # convert_markdown_to_html preserve a prior "rich" preference: this update
+      # replaces the whole body with fresh tool/MCP-authored GFM, so the old
+      # rich-authored content the preference belonged to is gone. Tool writes can
+      # contain tables/raw HTML the Lexical nodes don't fully model; reopening in
+      # the source textarea preserves that structure, whereas a rich-editor
+      # round-trip could silently rewrite it.
+      description_provided = description.present?
+      if description_provided
+        base.content_type_input = "markdown"
+        base.markdown_source = description
+        base.markdown_editor = "source"
       end
 
       # Handle progress update
@@ -57,21 +69,25 @@ module Tools
       end
 
       # Handle parent change (on the creative itself, not base)
-      if parent_id.present? || parent_id == 0
-        new_parent_id = parent_id == 0 ? nil : parent_id
+      # Skip if parent_id is nil or 0 — these mean "don't change parent"
+      if parent_id.present? && parent_id != 0
+        new_parent_id = parent_id
 
-        if new_parent_id.present?
-          new_parent = Creative.find_by(id: new_parent_id)
-          unless new_parent
-            return { error: "New parent Creative not found", parent_id: new_parent_id }
-          end
-          unless new_parent.has_permission?(Current.user, :write)
-            return { error: "No write permission on new parent Creative", parent_id: new_parent_id }
-          end
-          # Prevent circular reference
-          if new_parent.self_and_ancestors.include?(creative)
-            return { error: "Cannot move Creative under its own descendant", parent_id: new_parent_id }
-          end
+        # Prevent self-reference
+        if new_parent_id == creative.id
+          return { error: "Cannot set a Creative as its own parent", id: id }
+        end
+
+        new_parent = Creative.find_by(id: new_parent_id)
+        unless new_parent
+          return { error: "New parent Creative not found", parent_id: new_parent_id }
+        end
+        unless new_parent.has_permission?(Current.user, :write)
+          return { error: "No write permission on new parent Creative", parent_id: new_parent_id }
+        end
+        # Prevent circular reference
+        if new_parent.self_and_ancestors.include?(creative)
+          return { error: "Cannot move Creative under its own descendant", parent_id: new_parent_id }
         end
 
         parent_updates[:parent_id] = new_parent_id
@@ -85,9 +101,12 @@ module Tools
         success &&= creative.update(parent_updates)
       end
 
-      # Update content on the base/origin
-      if updates.present?
-        success &&= base.update(updates)
+      # Update content on the base/origin. markdown_source is set on `base`
+      # directly (above), so save it whenever a description was provided even if
+      # `updates` (progress) is empty.
+      if updates.present? || description_provided
+        base.assign_attributes(updates) if updates.present?
+        success &&= base.save
 
         # Note: progress updates are only allowed on leaf Creatives (validated above).
         # Parent progress is automatically calculated from children.

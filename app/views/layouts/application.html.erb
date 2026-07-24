@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="<%= I18n.locale %>">
   <head>
     <title><%= content_for(:title) || t('app.name') %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -44,7 +44,13 @@
   </head>
   <body class="<%= body_theme_class %>" data-current-user-id="<%= Current.user&.id %>" data-system-admin="<%= Current.user&.system_admin? %>" data-controller="action-text-attachment-link" data-action="click->action-text-attachment-link#download">
     <%= render 'collavre/shared/link_creative_modal' %>
-    <%= turbo_stream_from ["inbox", Current.user] if Current.user %>
+    <% if Current.user %>
+      <%= turbo_stream_from ["inbox", Current.user] %>
+      <%# Holds an InboxBadgeChannel subscription so the server re-pushes the
+          authoritative inbox badge count on every WebSocket (re)connect,
+          self-healing counts missed while the socket was down. %>
+      <span data-controller="inbox-badge" hidden></span>
+    <% end %>
     <div class="notice"><%= notice %></div>
 
     <%= render 'collavre/shared/navigation' %>

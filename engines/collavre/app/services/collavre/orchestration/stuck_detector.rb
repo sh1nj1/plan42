@@ -32,6 +32,7 @@ module Collavre
 
         stuck_items = []
         stuck_items.concat(detect_stuck_tasks(config))
+        stuck_items.concat(detect_orphaned_queued_tasks(config))
         stuck_items.concat(detect_stalled_creatives(config))
 
         auto_recover_stuck_tasks(stuck_items)
@@ -47,37 +48,124 @@ module Collavre
 
         stuck_items = []
         stuck_items.concat(detect_stuck_tasks(config))
+        stuck_items.concat(detect_orphaned_queued_tasks(config))
         stuck_items.concat(detect_stalled_creatives(config))
         stuck_items
       end
 
       private
 
-      # Auto-recover stuck tasks by marking them as failed and draining the queue.
+      # Auto-recover stuck items: fail-and-drain for live tasks, self-heal for
+      # orphaned queued waiters.
       def auto_recover_stuck_tasks(stuck_items)
         stuck_items.each do |stuck_item|
-          next unless stuck_item.type == :task
-
-          task = stuck_item.item
-          next unless task.status == "running"
-
-          task.update!(status: "failed")
-          Rails.logger.info(
-            "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
-            "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
-          )
-
-          # Release resources held by the stuck task
-          if task.agent
-            tracker = ResourceTracker.for(task.agent)
-            tracker.release!(task.id)
+          case stuck_item.type
+          when :task          then recover_stuck_task(stuck_item)
+          when :queued_orphan then recover_orphaned_queued_task(stuck_item)
           end
-
-          # Drain the queue for the topic so waiting tasks can execute
-          AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
-        rescue StandardError => e
-          Rails.logger.error("[StuckDetector] Auto-recovery failed for task #{task.id}: #{e.message}")
         end
+      end
+
+      # Self-heal an orphaned queued waiter: its blocker is gone but it was never
+      # drained (missed dequeue / enqueue-vs-terminate TOCTOU race / lost
+      # cross-process broadcast). Re-check liveness atomically, then drain.
+      def recover_orphaned_queued_task(stuck_item)
+        task = stuck_item.item.reload
+        return unless task.status == "queued"
+
+        # If the topic is back at capacity since detection, the normal terminal
+        # callback will drain the queue when a slot frees — leave it alone. This
+        # check also bounds promotions across one detection cycle: dequeue moves
+        # a waiter queued -> pending synchronously, which occupying_topic_slot
+        # counts, so consecutive orphans each fill exactly one free slot until the
+        # topic is full. With topic_max_concurrent_jobs > 1 and several free slots
+        # all are filled this cycle; a per-topic dedupe would instead leave every
+        # waiter past the first orphaned until the next run.
+        return if topic_at_capacity?(task)
+
+        Rails.logger.info(
+          "[StuckDetector] Self-healing orphaned queued task #{task.id} " \
+          "(topic=#{task.topic_id}, creative=#{task.creative_id}): no live blocker, draining queue"
+        )
+        AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+      rescue StandardError => e
+        Rails.logger.error("[StuckDetector] Self-heal failed for queued task #{stuck_item.item.id}: #{e.message}")
+      end
+
+      # Whether a topic holds no free concurrency slot for a queued waiter.
+      # Compares occupied slots against topic_max (the scheduler's admission rule)
+      # rather than treating any single live blocker as full capacity — otherwise,
+      # with topic_max_concurrent_jobs > 1, a missed dequeue would leave the waiter
+      # suppressed until the *last* blocker terminates instead of the moment a slot
+      # frees up. Occupancy counts pending as well as running/delegated: a waiter
+      # that a prior dequeue already claimed sits in "pending" until its AiAgentJob
+      # starts, and the detector fires precisely on the backed-up condition where
+      # that window is wide — counting only running/delegated would see a free slot
+      # and promote a second waiter into a slot that is already claimed (double
+      # dequeue). This is intentionally stricter than the scheduler's reactive
+      # check; being stricter can only suppress recovery, never over-admit. When no
+      # topic limit is configured the scheduler never defers, so fall back to the
+      # conservative "any occupied slot" check.
+      def topic_at_capacity?(task)
+        topic_max = scheduling_resolver_for(task).topic_max_concurrent_jobs
+        occupied_count = Task.occupying_topic_slot(task.topic_id, task.creative_id).count
+        return occupied_count.positive? unless topic_max
+
+        occupied_count >= topic_max
+      end
+
+      # Resolve scheduling policy against the queued task's own topic/creative
+      # context — the same context the scheduler used to admit it. The detector's
+      # default resolver is built with an empty context (it only needs the global
+      # stuck_detection policy), so reading topic_max_concurrent_jobs off it would
+      # see only the global default and ignore any topic-/creative-scoped override.
+      # That mismatch would violate a topic's serialization when its scoped limit
+      # is below the global value, or wrongly suppress recovery when it is above.
+      def scheduling_resolver_for(task)
+        context = {}
+        context["creative"] = { "id" => task.creative_id } if task.creative_id
+        context["topic"] = { "id" => task.topic_id } if task.topic_id
+        PolicyResolver.new(context)
+      end
+
+      # Fail a stuck running/delegated task and drain the topic queue.
+      def recover_stuck_task(stuck_item)
+        task = stuck_item.item
+        return unless %w[running delegated].include?(task.status)
+
+        task.update!(status: "failed")
+        Rails.logger.info(
+          "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
+          "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+        )
+
+        # Release resources held by the stuck task
+        if task.agent
+          tracker = ResourceTracker.for(task.agent)
+          tracker.release!(task.id)
+        end
+
+        # If this was a workflow subtask, fail the parent so the workflow
+        # advances instead of staying running with pending_creative_ids
+        # pointing at a child that's been failed underneath it.
+        if task.parent_task_id.present?
+          begin
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task,
+              error_message: "Auto-recovered: stuck for " \
+                             "#{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
+            )
+          rescue StandardError => e
+            Rails.logger.error(
+              "[StuckDetector] fail_subtask! failed for task #{task.id}: #{e.message}"
+            )
+          end
+        end
+
+        # Drain the queue for the topic so waiting tasks can execute
+        AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+      rescue StandardError => e
+        Rails.logger.error("[StuckDetector] Auto-recovery failed for task #{stuck_item.item.id}: #{e.message}")
       end
 
       def stuck_detection_config
@@ -89,7 +177,10 @@ module Collavre
         threshold_minutes = config["task_stuck_threshold_minutes"] || 30
         threshold_time = threshold_minutes.minutes.ago
 
-        stuck_tasks = Task.where(status: "running")
+        # Include delegated tasks: Claude Channel tasks sit in delegated
+        # waiting for an external MCP reply; if the client disconnects, the
+        # task can otherwise stay delegated forever and block the topic queue.
+        stuck_tasks = Task.where(status: %w[running delegated])
                           .where("updated_at < ?", threshold_time)
 
         stuck_tasks.filter_map do |task|
@@ -109,6 +200,38 @@ module Collavre
         end
       end
 
+      # Detect orphaned queued waiters: tasks left in "queued" for a topic that
+      # holds no occupied slot (no running/delegated blocker and no pending claim).
+      # A queued task's only path to
+      # execution is dequeue_next_for_topic, which fires when the blocker reaches
+      # a terminal status. If that single hand-off is missed — an
+      # enqueue-vs-terminate TOCTOU race, or a lost cross-process broadcast — the
+      # blocker is already gone and nothing will ever wake the waiter: it shows
+      # "⏳" waiting notice forever. These are invisible to detect_stuck_tasks, which only
+      # scans running/delegated. There is no stop button to press here because the
+      # blocker no longer exists; the fix is to drain the queue (see
+      # recover_orphaned_queued_task), not to escalate.
+      def detect_orphaned_queued_tasks(config)
+        threshold_minutes = config["queued_orphan_threshold_minutes"] || 5
+        threshold_time = threshold_minutes.minutes.ago
+
+        Task.where(status: "queued")
+            .where("updated_at < ?", threshold_time)
+            .filter_map do |task|
+          # Only orphaned if the topic has a free slot. A waiter is legitimately
+          # queued while the topic is at capacity.
+          next if topic_at_capacity?(task)
+
+          StuckItem.new(
+            type: :queued_orphan,
+            item: task,
+            reason: :orphaned_waiter,
+            stuck_since: task.updated_at,
+            escalation_targets: []
+          )
+        end
+      end
+
       # Detect creatives that have stalled (no activity for extended period)
       def detect_stalled_creatives(config)
         threshold_minutes = config["creative_stall_threshold_minutes"] || 120
@@ -120,12 +243,11 @@ module Collavre
 
         Creative.where("progress < 1.0")
                 .where("updated_at < ?", threshold_time)
+                .includes(creative_shares: :user)
                 .find_each do |creative|
           # Skip if no AI agents have access
-          ai_agents = creative.creative_shares.joins(:user)
-                              .where(users: { llm_vendor: [ nil, "" ].map { |v| v } })
-                              .or(creative.creative_shares.joins(:user).where.not(users: { llm_vendor: nil }))
-                              .where.not(permission: "no_access")
+          ai_agents = creative.creative_shares
+                              .reject { |s| s.permission == "no_access" }
                               .map(&:user)
                               .select(&:ai_user?)
 
@@ -162,13 +284,10 @@ module Collavre
 
       def find_creative_escalation_targets(creative)
         # Find users with admin permission on the creative or its ancestors
-        admin_users = []
-
-        ([ creative ] + creative.ancestors.to_a).each do |c|
-          c.creative_shares.where(permission: "admin").includes(:user).each do |share|
-            admin_users << share.user unless share.user.ai_user?
-          end
-        end
+        ancestor_ids = [ creative.id ] + creative.ancestor_ids
+        admin_users = CreativeShare.where(creative_id: ancestor_ids, permission: "admin")
+                                   .includes(:user)
+                                   .filter_map { |share| share.user unless share.user.ai_user? }
 
         # Also include the creative owner
         admin_users << creative.user if creative.user && !creative.user.ai_user?
@@ -200,6 +319,10 @@ module Collavre
         escalated_count = 0
 
         stuck_items.each do |stuck_item|
+          # Orphaned queued waiters are silently self-healed (queue drained),
+          # not escalated to admins — there is no human action to take.
+          next if stuck_item.type == :queued_orphan
+
           escalated = escalate_item(stuck_item, config)
           if escalated
             mark_escalated(stuck_item)
@@ -237,12 +360,19 @@ module Collavre
                      stuck_item.item
         end
 
-        InboxItem.create!(
-          owner: owner,
-          message_key: message_key,
-          message_params: message_params,
-          creative: creative,
-          link: creative ? Collavre::Engine.routes.url_helpers.creative_path(creative) : nil
+        inbox_creative = Creative.inbox_for(owner)
+        system_topic = inbox_creative.system_topic(fallback_user: owner)
+        msg = I18n.t(message_key, **message_params.symbolize_keys, locale: owner.locale || "en")
+        if creative
+          creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
+          msg += " [→](#{creative_path})"
+        end
+        Comment.create!(
+          creative: inbox_creative,
+          topic: system_topic,
+          content: msg,
+          user: nil,
+          skip_default_user: true
         )
       end
 

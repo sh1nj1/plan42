@@ -4,8 +4,17 @@ module Collavre
 
     belongs_to :creative, class_name: "Collavre::Creative"
     belongs_to :user, class_name: Collavre.configuration.user_class_name
+    belongs_to :source_topic, class_name: "Collavre::Topic", optional: true
+    belongs_to :primary_agent, class_name: Collavre.configuration.user_class_name, optional: true
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
+    has_many :channels, class_name: "Collavre::Channel", dependent: :destroy
+    # Compress/merge snapshots capture a topic's comments as a restore point. The
+    # comment_snapshots -> topics FK has no DB-level ON DELETE, so without this the
+    # row blocks topic deletion (ActiveRecord::InvalidForeignKey -> 500). Once the
+    # topic is gone the snapshot can no longer be restored into it, so :destroy.
+    has_many :comment_snapshots, class_name: "Collavre::CommentSnapshot", dependent: :destroy
+    has_many :branches, class_name: "Collavre::Topic", foreign_key: :source_topic_id, dependent: :nullify
     has_many :user_creative_preferences_as_last_topic, class_name: "Collavre::UserCreativePreference",
              foreign_key: :last_topic_id, dependent: :nullify, inverse_of: :last_topic
 
@@ -19,33 +28,9 @@ module Collavre
 
     default_scope { order(:position) }
 
-    # Returns the primary agent User for this topic (from orchestration policy)
-    def primary_agent
-      policy = OrchestratorPolicy.find_by(
-        policy_type: "arbitration",
-        scope_type: "Topic",
-        scope_id: id
-      )
-      return nil unless policy&.config&.dig("primary_agent_id")
-
-      User.find_by(id: policy.config["primary_agent_id"])
-    end
-
     # Sets or replaces the primary agent for this topic
     def set_primary_agent!(agent)
-      policy = OrchestratorPolicy.find_or_initialize_by(
-        policy_type: "arbitration",
-        scope_type: "Topic",
-        scope_id: id
-      )
-      policy.update!(
-        config: {
-          "strategy" => "primary_first",
-          "primary_agent_id" => agent.id
-        },
-        priority: 10,
-        enabled: true
-      )
+      update!(primary_agent: agent)
     end
 
     def archived?

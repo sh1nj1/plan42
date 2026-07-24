@@ -33,7 +33,7 @@
           <dd class="col-sm-9"><%= @user.llm_model %></dd>
 
           <dt class="col-sm-3"><%= t('collavre.users.new_ai.system_prompt_label') %></dt>
-          <dd class="col-sm-9"><pre><%= @user.system_prompt %></pre></dd>
+          <dd class="col-sm-9"><pre><%= @user.effective_system_prompt %></pre></dd>
         </dl>
       </div>
     <% else %>
@@ -74,14 +74,6 @@
           <%= f.text_field :avatar_url, placeholder: t('collavre.users.avatar_url'), data: { avatar_preview_target: 'urlInput', action: 'input->avatar-preview#updateFromUrl' } %>
         </div>
         <div>
-          <%= f.label :display_level, t('collavre.users.display_level') %>
-          <%= f.number_field :display_level, min: 1 %>
-        </div>
-        <div>
-          <%= f.label :completion_mark, t('collavre.users.completion_mark') %>
-          <%= f.text_field :completion_mark %>
-        </div>
-        <div>
         <div>
           <%= f.label :theme, t('collavre.users.theme') %>
           <%
@@ -109,6 +101,7 @@
           <%= f.label :timezone, t('collavre.users.timezone') %>
           <%= f.select :timezone, ActiveSupport::TimeZone.all.map { |tz| [tz.to_s, tz.tzinfo.name] } %>
         </div>
+
         <%= f.submit t('collavre.users.update_profile') %>
       <% end %>
 
@@ -116,6 +109,8 @@
         <%= link_to t('collavre.users.change_password'), collavre.edit_password_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
+        <br>
+        <%= link_to t('collavre.users.typo_correction.manage'), collavre.typo_correction_user_path(@user) %>
         <br>
         <%= link_to t('doorkeeper.my_applications'), main_app.oauth_applications_path %>
         <% if @user.system_admin? %>

@@ -1,6 +1,9 @@
 module CollavreNotion
   module Creatives
     class NotionIntegrationsController < ApplicationController
+      include Collavre::IntegrationSetup
+      include Collavre::IntegrationPermission
+
       before_action :set_creative
       before_action :ensure_read_permission
       before_action :ensure_admin_permission, only: [ :show, :update ]
@@ -37,8 +40,6 @@ module CollavreNotion
           render json: { error: "not_connected" }, status: :unprocessable_entity
           return
         end
-
-        Rails.logger.info("Notion Integration Update: Full params = #{params.to_unsafe_h}")
 
         integration_attributes = integration_params
         Rails.logger.info("Notion Integration Update: integration_params = #{integration_attributes}")
@@ -78,7 +79,7 @@ module CollavreNotion
 
       def destroy
         unless @creative.has_permission?(Current.user, :write)
-          render json: { error: "forbidden" }, status: :forbidden
+          render json: { error: integration_forbidden_message }, status: :forbidden
           return
         end
 
@@ -119,22 +120,6 @@ module CollavreNotion
       end
 
       private
-
-      def set_creative
-        @creative = Collavre::Creative.find(params[:creative_id])
-      end
-
-      def ensure_read_permission
-        return if @creative.has_permission?(Current.user, :read)
-
-        render json: { error: "forbidden" }, status: :forbidden
-      end
-
-      def ensure_admin_permission
-        return if @creative.has_permission?(Current.user, :admin)
-
-        render json: { error: "forbidden" }, status: :forbidden
-      end
 
       def linked_page_links(account)
         return CollavreNotion::NotionPageLink.none unless account

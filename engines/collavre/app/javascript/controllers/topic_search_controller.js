@@ -1,5 +1,6 @@
 import CommonPopupController from './common_popup_controller'
 import { fetchNextTopicName, createTopicWithComments } from '../lib/api/topics'
+import { alertDialog } from '../lib/utils/dialog'
 
 export default class extends CommonPopupController {
     static targets = ['input', 'list', 'close']
@@ -148,7 +149,7 @@ export default class extends CommonPopupController {
                 this.onSelectCallback({ id: result.topic.id, label: `#${result.topic.name}`, created: true })
             }
         } else {
-            alert(result.error)
+            alertDialog(result.error)
         }
     }
 

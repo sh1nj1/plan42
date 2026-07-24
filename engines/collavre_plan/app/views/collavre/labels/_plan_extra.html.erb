@@ -1,0 +1,14 @@
+<%# Plan label extra UI: date editing form or read-only date display.
+     Provided by collavre_plan engine via the label type partial convention.
+     Core renders this via render_label_extra(label) when label.type == "Plan". %>
+<% if parent_creative&.has_permission?(Current.user, :write) %>
+  <%= form_with(model: label, url: collavre_plan_engine.plan_path(label), method: :patch, local: true, class: "plan-tag-date-form") do |form| %>
+    <%= hidden_field_tag :creative_id, parent_creative.id %>
+    🗓
+    <%= form.date_field :start_date, value: label.start_date, class: "plan-tag-date-input" %>
+    <%= form.date_field :target_date, value: label.target_date, class: "plan-tag-date-input" %>
+    <%= form.submit t("collavre.plans.update", default: "Update"), class: "plan-tag-date-submit" %>
+  <% end %>
+<% else %>
+  🗓<%= label.target_date %>
+<% end %>

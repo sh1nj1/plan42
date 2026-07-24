@@ -10,17 +10,18 @@ class PermissionRequestTest < ActionDispatch::IntegrationTest
   end
 
   test "creating permission request notifies owner" do
+    inbox = Creative.inbox_for(@owner)
+    inbox_before = inbox.comments.count
+
     post request_permission_creative_path(@creative)
 
     assert_response :ok
 
-    item = InboxItem.order(:created_at).last
-    assert_equal @owner.id, item.owner.id
-    assert_equal "inbox.permission_requested", item.message_key
-    message = item.localized_message
-    assert_includes message, "Requester"
+    assert_equal inbox_before + 1, inbox.comments.reload.count
+    inbox_comment = inbox.comments.order(:id).last
+    assert_nil inbox_comment.user
+    assert_includes inbox_comment.content, "Requester"
     expected_short = ActionController::Base.helpers.strip_tags(@creative.description).truncate(10)
-    assert_includes message, expected_short
-    assert_includes item.link, "share_request=#{CGI.escape(@requester.email)}"
+    assert_includes inbox_comment.content, expected_short
   end
 end

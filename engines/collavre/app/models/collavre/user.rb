@@ -2,8 +2,10 @@ module Collavre
   class User < ApplicationRecord
     self.table_name = "users"
 
+    include HasInboxCreative
+    include HasProfileCreative
+
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
-    DEFAULT_DISPLAY_LEVEL = 6
 
     has_secure_password
     has_many :sessions, class_name: "Collavre::Session", dependent: :destroy
@@ -43,13 +45,20 @@ module Collavre
     has_many :creatives, class_name: "Collavre::Creative", dependent: nil
     before_destroy :destroy_creatives_leaf_first
 
+    # /compress and /merge summaries are durable recovery artifacts: they replace
+    # the deleted original conversation and anchor the restore control (rendered
+    # from the surviving result comment via CommentSnapshot). Detach them (nullify
+    # author) BEFORE the comments dependent: :destroy cascade — prepend ensures we
+    # run first — so deleting the authoring agent/user doesn't destroy the summary
+    # and orphan the snapshot, which would erase the only path to restore the
+    # compressed conversation.
+    before_destroy :preserve_durable_summary_comments, prepend: true
+
     belongs_to :creator, class_name: "Collavre::User", foreign_key: "created_by_id", optional: true
     has_many :created_ai_users, class_name: "Collavre::User", foreign_key: "created_by_id", dependent: :destroy
 
     has_one_attached :avatar
 
-    attribute :display_level, :integer, default: DEFAULT_DISPLAY_LEVEL
-    attribute :completion_mark, :string, default: ""
     attribute :theme, :string
     attribute :calendar_id, :string
     attribute :name, :string
@@ -58,6 +67,15 @@ module Collavre
     attribute :locale, :string
     attribute :system_admin, :boolean, default: false
     attribute :searchable, :boolean, default: false
+
+    # Typo correction (2D gating: typing-device AND input-location must both be on).
+    attribute :typo_correction_enabled, :boolean, default: true
+    attribute :typo_correction_threshold, :integer, default: 80
+    attribute :typo_correction_on_soft_keyboard, :boolean, default: true
+    attribute :typo_correction_on_voice, :boolean, default: true
+    attribute :typo_correction_on_physical_keyboard, :boolean, default: false
+    attribute :typo_correction_in_chat, :boolean, default: true
+    attribute :typo_correction_in_editor, :boolean, default: false
 
     attribute :google_uid, :string
     attribute :google_access_token, :string
@@ -78,7 +96,8 @@ module Collavre
         "chat_history" => 50,
         "chat_history_size" => 100_000,
         "creative_children_level" => nil
-      }
+      },
+      "session" => { "enabled" => nil }
     }.freeze
 
     # Default creative children level when agent_conf doesn't specify one
@@ -113,6 +132,17 @@ module Collavre
       level.nil? ? DEFAULT_CREATIVE_CHILDREN_LEVEL : level.to_i
     end
 
+    # Whether this agent uses stateful sessions (incremental messaging).
+    # nil in agent_conf = auto-detect via the AiClient adapter layer, which
+    # vendor engines register into (core never string-matches a vendor name).
+    def supports_session?
+      explicit = parsed_agent_conf.dig("session", "enabled")
+      return ActiveModel::Type::Boolean.new.cast(explicit) unless explicit.nil?
+      return false if llm_vendor.blank?
+
+      Collavre::AiClient.vendor_supports_session?(llm_vendor)
+    end
+
     encrypts :llm_api_key, deterministic: false
     encrypts :google_access_token, deterministic: false
     encrypts :google_refresh_token, deterministic: false
@@ -131,14 +161,94 @@ module Collavre
       end
     end
 
+    TYPO_CORRECTION_DEVICES = %w[voice soft_keyboard physical_keyboard].freeze
+    TYPO_CORRECTION_LOCATIONS = %w[chat editor].freeze
+
+    # 2D gating: typo correction runs only when the master switch is on AND the
+    # originating typing device AND the input location are both enabled. Unknown
+    # device/location values are treated as disabled (fail closed).
+    def typo_correction_active_for?(device:, location:)
+      return false unless typo_correction_enabled
+
+      device_on = case device.to_s
+      when "voice" then typo_correction_on_voice
+      when "soft_keyboard" then typo_correction_on_soft_keyboard
+      when "physical_keyboard" then typo_correction_on_physical_keyboard
+      else false
+      end
+
+      location_on = case location.to_s
+      when "chat" then typo_correction_in_chat
+      when "editor" then typo_correction_in_editor
+      else false
+      end
+
+      device_on && location_on
+    end
+
+    # LLM_VENDOR_OPTIONS is resolved dynamically from the AiClient vendor-option
+    # registry so core lists only its built-in providers while vendor engines
+    # (e.g. OpenClaw) contribute their own. Resolved lazily via const_missing so
+    # the value always reflects registrations made after this class first loads
+    # (they run in a to_prepare hook), and existing views keep referring to the
+    # constant unchanged.
+    def self.const_missing(name)
+      return Collavre::AiClient.vendor_options if name == :LLM_VENDOR_OPTIONS
+
+      super
+    end
+
     SUPPORTED_LLM_MODELS = [
-      "gemini-3-flash-preview",
+      "gemini-3.1-flash-lite",
       "gemini-1.5-flash",
       "gemini-1.5-pro"
     ].freeze
 
     def ai_user?
       llm_vendor.present?
+    end
+
+    # Mirror the agent's system prompt into its profile creative as Markdown,
+    # so the raw prompt lands losslessly in data["markdown_source"] — the
+    # canonical home for the prompt. Writing the prompt straight into
+    # `description` would run it through the HTML sanitizer (Describable), which
+    # strips <thinking>/<tool_call> tags and entity-escapes < > &, corrupting
+    # every prompt; the derived `description` is only a rendered display view.
+    # The system_prompt column is legacy, pending removal.
+    # No-op for humans and for prompt-less agents (profile keeps its name seed).
+    def sync_profile_system_prompt!
+      return unless ai_user?
+      creative = profile_creative
+      if system_prompt.present?
+        return if creative.data&.dig("markdown_source") == system_prompt
+        # Store the prompt verbatim: markdown_source is the canonical text sent
+        # to the LLM, so an inline data-URI image must NOT be rewritten into a
+        # blob path (which would mutate the prompt the agent receives).
+        creative.skip_data_uri_rewrite = true
+        creative.update!(content_type_input: "markdown", markdown_source: system_prompt)
+      elsif creative.data&.dig("markdown_source").present?
+        # The prompt was cleared. Demote out of markdown mode so the stale
+        # markdown_source is dropped and render falls back to the (now-blank)
+        # column — matching the pre-profile behavior where blanking the prompt
+        # took effect immediately. Also reseed `description` back to the name
+        # seed so the old rendered prompt doesn't stay visible/searchable on the
+        # owned profile root. Without this, the old prompt stays authoritative.
+        creative.update!(content_type_input: "html", description: name.to_s)
+      end
+    end
+
+    # The effective system prompt for all read consumers. The canonical prompt
+    # lives in the profile creative's data["markdown_source"]; the legacy
+    # `system_prompt` column is the fallback for rows not yet backfilled. Every
+    # prompt reader (orchestration matching, type classification, typo agent,
+    # admin view) must route here so that editing the profile creative directly
+    # takes effect everywhere, not just in AiAgentService.
+    def effective_system_prompt
+      profile_creative_if_present&.data&.dig("markdown_source").presence || system_prompt
+    end
+
+    def claude_channel_agent?
+      llm_model == "claude-code"
     end
 
     scope :ai_agents, -> { where.not(llm_vendor: [ nil, "" ]) }
@@ -169,12 +279,16 @@ module Collavre
     validates :email, presence: true, uniqueness: true,
                       format: { with: URI::MailTo::EMAIL_REGEXP }
     validates :name, presence: true
-    validates :display_level, numericality: { only_integer: true, greater_than: 0 }
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,
               inclusion: { in: ActiveSupport::TimeZone.all.map { |z| z.tzinfo.identifier } },
               allow_nil: true
+    # Column is NOT NULL; clearing the profile field (or a crafted PATCH) casts to
+    # nil and would raise a DB error on save. Validate so the form re-renders.
+    validates :typo_correction_threshold,
+              presence: true,
+              numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
 
     generates_token_for :email_verification, expires_in: 1.day do
       email
@@ -236,10 +350,35 @@ module Collavre
       end
     end
 
+    # Keep durable compress/merge summaries (snapshot result comments) alive when
+    # their author is deleted: nullify authorship instead of cascading destroy.
+    def preserve_durable_summary_comments
+      Collavre::Comment
+        .where(id: Collavre::CommentSnapshot.where(result_comment_id: comments.select(:id)).select(:result_comment_id))
+        .update_all(user_id: nil)
+    end
+
     # Destroy creatives deepest-first so closure_tree always finds its parent
     def destroy_creatives_leaf_first
       all_creatives = creatives.flat_map { |c| c.self_and_descendants.to_a }.uniq
-      all_creatives.sort_by { |c| -c.self_and_ancestors.count }.each do |c|
+
+      # Order by depth in memory. The subtree is contiguous within all_creatives
+      # (every node between an owned root and its descendant is itself a
+      # descendant), so following parent_id links yields the same leaf-first
+      # ordering as self_and_ancestors.count without firing a COUNT query per
+      # creative (the previous N+1).
+      by_id = all_creatives.index_by(&:id)
+      depth_of = lambda do |creative|
+        depth = 0
+        node = creative
+        while node&.parent_id && (parent = by_id[node.parent_id])
+          depth += 1
+          node = parent
+        end
+        depth
+      end
+
+      all_creatives.sort_by { |c| -depth_of.call(c) }.each do |c|
         c.reload.destroy! if Creative.exists?(c.id)
       end
     end

@@ -1,8 +1,10 @@
 import { Controller } from '@hotwired/stimulus'
+import chatHistory from '../../lib/chat_history'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
+const LONG_PRESS_MS = 500
 
 export default class extends Controller {
   static targets = [
@@ -15,6 +17,11 @@ export default class extends Controller {
     'fullscreenButton',
     'fullscreenIcon',
     'exitFullscreenIcon',
+    'navBack',
+    'navContainer',
+    'navDropdown',
+    'header',
+    'typingIndicator',
   ]
 
   connect() {
@@ -26,6 +33,8 @@ export default class extends Controller {
     this.openFromUrlTimeout = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
+    this.handleEditingStart = this.handleEditingStart.bind(this)
+    this.handleEditingStop = this.handleEditingStop.bind(this)
     this.handleTouchStart = this.handleTouchStart.bind(this)
     this.handleTouchEnd = this.handleTouchEnd.bind(this)
     this.handleResizeMove = this.handleResizeMove.bind(this)
@@ -37,14 +46,33 @@ export default class extends Controller {
     this.handleVisibilityChange = this.handleVisibilityChange.bind(this)
     this.handlePopState = this.handlePopState.bind(this)
     this.handlePopupWheel = this.handlePopupWheel.bind(this)
+    this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
+    this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
+    this._longPressTimer = null
+    this._longPressTriggered = false
+    this._isNavigating = false
+    this._headerSwipeStartX = null
+    this._headerSwipeStartY = null
 
     document.addEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.addEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
+    document.addEventListener('creative-editing:start', this.handleEditingStart)
+    document.addEventListener('creative-editing:stop', this.handleEditingStop)
     this.element.addEventListener('wheel', this.handlePopupWheel, { passive: false })
     window.addEventListener('online', this.handleOnline)
     window.addEventListener('focus', this.handleWindowFocus)
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('popstate', this.handlePopState)
+    document.addEventListener('keydown', this.handleChatNavKeydown)
+
+    // Long press on nav buttons
+    this._setupNavLongPress()
+
+    // Horizontal swipe on header for chat navigation
+    if (this.hasHeaderTarget) {
+      this._addSwipeListeners(this.headerTarget)
+    }
+    // typingIndicator may connect later — handled by targetConnected callback
 
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.addEventListener('click', () => this.close())
@@ -93,14 +121,26 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
+    document.removeEventListener('creative-editing:start', this.handleEditingStart)
+    document.removeEventListener('creative-editing:stop', this.handleEditingStop)
     this.element.removeEventListener('wheel', this.handlePopupWheel)
     window.removeEventListener('online', this.handleOnline)
     window.removeEventListener('focus', this.handleWindowFocus)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('popstate', this.handlePopState)
+    document.removeEventListener('keydown', this.handleChatNavKeydown)
+    document.removeEventListener('click', this.handleDropdownOutsideClick)
+    this._clearLongPressTimer()
+    if (this.hasHeaderTarget) {
+      this._removeSwipeListeners(this.headerTarget)
+    }
+    if (this.hasTypingIndicatorTarget) {
+      this._removeSwipeListeners(this.typingIndicatorTarget)
+    }
     window.removeEventListener('mousemove', this.handleResizeMove)
     window.removeEventListener('mouseup', this.handleResizeStop)
     if (this.isMobile()) {
@@ -137,6 +177,10 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--contexts')
   }
 
+  get dropTriggerController() {
+    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--drop-trigger')
+  }
+
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
@@ -153,10 +197,25 @@ export default class extends Controller {
 
   handleCreativeDestroyed(event) {
     const destroyedIds = event.detail?.creativeIds || []
+
+    // Remove destroyed creatives from navigation history
+    destroyedIds.forEach(id => chatHistory.remove(id))
+    this._updateNavButtons()
+
     if (this.element.style.display !== 'flex') return
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
       this.close()
     }
+  }
+
+  handleEditingStart() {
+    if (this.element.style.display === 'flex' && !this.isFullscreen()) {
+      this.element.classList.add('editor-behind')
+    }
+  }
+
+  handleEditingStop() {
+    this.element.classList.remove('editor-behind')
   }
 
   async open(button, { creativeId, highlightId } = {}) {
@@ -167,6 +226,7 @@ export default class extends Controller {
 
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
+    this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
     this.titleTarget.textContent = snippet
 
     this._markChatActiveRow(resolvedCreativeId)
@@ -177,6 +237,12 @@ export default class extends Controller {
     this.updatePosition()
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+
+    // Track in chat navigation history (skip if navigating via back/forward)
+    if (!this._isNavigating) {
+      chatHistory.push({ creativeId: resolvedCreativeId, snippet, canComment })
+    }
+    this._updateNavButtons()
 
     // Dispatch event for integrations (e.g., Slack badge)
     this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
@@ -196,6 +262,7 @@ export default class extends Controller {
     this.currentButton = null
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
+    this.element.dataset.autoFocusOnOpen = 'true'
     this.titleTarget.textContent = snippet
 
     this._markChatActiveRow(resolvedCreativeId)
@@ -203,6 +270,12 @@ export default class extends Controller {
     this.showPopup()
 
     await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+
+    // Track in chat navigation history
+    if (!this._isNavigating) {
+      chatHistory.push({ creativeId: resolvedCreativeId, snippet, canComment })
+    }
+    this._updateNavButtons()
 
     // Dispatch event for integrations (e.g., Slack badge)
     this.element.dispatchEvent(new CustomEvent('comments-popup:opened', {
@@ -215,6 +288,16 @@ export default class extends Controller {
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId }) {
+    this.topicsController?.clearOverrideTopicId()
+    // Drop the previous creative's topic selection from the form controller
+    // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
+    // (which repopulates these via handleTopicChange). Doing it later — e.g. in
+    // formController.onPopupOpened, which runs after the topics await — would
+    // erase the topic that restoreSelection() just restored from the server.
+    if (this.formController) {
+      this.formController.currentTopicId = ''
+      this.formController._mainTopicId = null
+    }
     // Pre-set creativeId on list controller BEFORE loading topics.
     // Topics loading triggers a change event that list controller handles.
     // Without this, list controller still holds the previous creative's ID
@@ -254,6 +337,9 @@ export default class extends Controller {
     if (this.contextsController) {
       this.contextsController.onPopupOpened({ creativeId })
     }
+    if (this.dropTriggerController) {
+      this.dropTriggerController.onPopupOpened({ creativeId })
+    }
   }
 
   close() {
@@ -274,6 +360,9 @@ export default class extends Controller {
     }
     if (this.contextsController) {
       this.contextsController.onPopupClosed()
+    }
+    if (this.dropTriggerController) {
+      this.dropTriggerController.onPopupClosed()
     }
 
     // Dispatch event for integrations
@@ -310,9 +399,11 @@ export default class extends Controller {
     }
 
     this._clearChatActiveRow()
+    this._hideNavDropdown()
+    this._releaseWakeLock()
 
     this.element.style.display = 'none'
-    this.element.classList.remove('open')
+    this.element.classList.remove('open', 'editor-behind')
     this.element.style.width = ''
     this.element.style.height = ''
     this.element.style.left = ''
@@ -344,6 +435,7 @@ export default class extends Controller {
     if (this.isMobile()) {
       this.element.classList.add('open')
     }
+    this._requestWakeLock()
   }
 
   isFullscreen() {
@@ -450,10 +542,10 @@ export default class extends Controller {
       this.touchStartY = null
       return
     }
-    if (!event.target.closest('#comments-list')) {
-      this.touchStartY = event.touches[0].clientY
-    } else {
+    if (event.target.closest('#comments-list') || event.target.closest('.chat-nav-dropdown')) {
       this.touchStartY = null
+    } else {
+      this.touchStartY = event.touches[0].clientY
     }
   }
 
@@ -490,6 +582,8 @@ export default class extends Controller {
   handleVisibilityChange() {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
+      // Re-acquire wake lock — released automatically when tab loses visibility
+      this._requestWakeLock()
     }
   }
 
@@ -554,6 +648,16 @@ export default class extends Controller {
   // Enter fullscreen immediately without animation (for auto-fullscreen on page load)
   _enterFullscreenImmediate() {
     const el = this.element
+
+    // Save current inline styles so exit-fullscreen can restore them
+    this._savedStyles = {
+      top: el.style.top,
+      right: el.style.right,
+      left: el.style.left,
+      width: el.style.width,
+      height: el.style.height,
+    }
+
     el.style.transition = 'none'
     el.dataset.fullscreen = 'true'
     document.body.classList.add('chat-fullscreen')
@@ -626,8 +730,10 @@ export default class extends Controller {
       }
 
       // Clean up inline styles after transition ends
-      const cleanup = () => {
-        el.removeEventListener('transitionend', cleanup)
+      this._enterCleanupFn = () => {
+        el.removeEventListener('transitionend', this._enterCleanupFn)
+        this._enterCleanupTimer = null
+        this._enterCleanupFn = null
         el.style.top = ''
         el.style.left = ''
         el.style.right = ''
@@ -636,11 +742,22 @@ export default class extends Controller {
         el.style.height = ''
         el.style.position = ''
       }
-      el.addEventListener('transitionend', cleanup, { once: true })
+      el.addEventListener('transitionend', this._enterCleanupFn, { once: true })
       // Fallback if transitionend doesn't fire
-      setTimeout(cleanup, 300)
+      this._enterCleanupTimer = setTimeout(this._enterCleanupFn, 300)
 
     } else {
+      // Cancel any pending enter-fullscreen cleanup to prevent it from
+      // wiping inline styles mid-exit animation (race condition fix)
+      if (this._enterCleanupTimer) {
+        clearTimeout(this._enterCleanupTimer)
+        this._enterCleanupTimer = null
+      }
+      if (this._enterCleanupFn) {
+        el.removeEventListener('transitionend', this._enterCleanupFn)
+        this._enterCleanupFn = null
+      }
+
       const savedStyles = this._savedStyles
       this._savedStyles = null
       const creativeId = el.dataset.creativeId
@@ -993,25 +1110,274 @@ export default class extends Controller {
       if (hasOverflowY || hasOverflowX) {
         const style = getComputedStyle(el)
 
-        // Check dominant axis first for better matching
         if (dominantAxis === 'x' && hasOverflowX) {
           const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
           if (scrollableX) return { element: el, axis: 'x' }
         }
 
-        if (hasOverflowY) {
+        if (dominantAxis === 'y' && hasOverflowY) {
           const scrollableY = style.overflowY === 'auto' || style.overflowY === 'scroll'
           if (scrollableY) return { element: el, axis: 'y' }
-        }
-
-        if (dominantAxis !== 'x' && hasOverflowX) {
-          const scrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll'
-          if (scrollableX) return { element: el, axis: 'x' }
         }
       }
 
       el = el.parentElement
     }
     return { element: null, axis: null }
+  }
+
+  // ── Chat Navigation ───────────────────────────────────────────────
+
+  navigateBack() {
+    if (this._longPressTriggered) {
+      this._longPressTriggered = false
+      return
+    }
+    const entry = chatHistory.prev()
+    if (!entry) return
+    this._navigateToEntry(entry, 'back')
+  }
+
+  navigateForward() {
+    const entry = chatHistory.next()
+    if (!entry) return
+    this._navigateToEntry(entry, 'forward')
+  }
+
+  showRecentChats(event) {
+    event.preventDefault()
+    const list = chatHistory.recentList().filter(entry => !entry.isCurrent)
+    if (list.length === 0) return
+
+    if (!this.hasNavDropdownTarget) return
+    const dropdown = this.navDropdownTarget
+    dropdown.innerHTML = ''
+
+    list.forEach((entry, index) => {
+      const item = document.createElement('div')
+      item.className = 'chat-nav-dropdown-item'
+
+      const label = document.createElement('button')
+      label.type = 'button'
+      label.className = 'chat-nav-dropdown-label'
+      label.textContent = entry.snippet || `Creative #${entry.creativeId}`
+      label.addEventListener('click', () => {
+        this._hideNavDropdown()
+        const target = chatHistory.goTo(entry.index)
+        if (target) this._navigateToEntry(target)
+      })
+      item.appendChild(label)
+
+      const removeBtn = document.createElement('button')
+      removeBtn.type = 'button'
+      removeBtn.className = 'chat-nav-dropdown-remove'
+      removeBtn.innerHTML = '&times;'
+      removeBtn.title = this._i18n('remove_from_history')
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        chatHistory.remove(entry.creativeId)
+        this._updateNavButtons()
+        // Re-render dropdown if still enough items
+        const remaining = chatHistory.recentList().filter(e => !e.isCurrent)
+        if (remaining.length > 0) {
+          this.showRecentChats(new Event('contextmenu', { bubbles: true }))
+        } else {
+          this._hideNavDropdown()
+        }
+      })
+      item.appendChild(removeBtn)
+
+      dropdown.appendChild(item)
+    })
+
+    dropdown.style.display = 'block'
+
+    // Close dropdown on outside click (deferred to avoid immediate trigger)
+    requestAnimationFrame(() => {
+      document.addEventListener('click', this.handleDropdownOutsideClick)
+    })
+  }
+
+  handleDropdownOutsideClick(event) {
+    if (this.hasNavContainerTarget && !this.navContainerTarget.contains(event.target)) {
+      this._hideNavDropdown()
+    }
+  }
+
+  handleChatNavKeydown(event) {
+    // Only when popup is visible
+    if (this.element.style.display !== 'flex') return
+    if (event.altKey && event.key === 'ArrowLeft') {
+      event.preventDefault()
+      this.navigateBack()
+    } else if (event.altKey && event.key === 'ArrowRight') {
+      event.preventDefault()
+      this.navigateForward()
+    } else if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+      // Ctrl+A / Cmd+A: select all messages — but only when not typing in an input
+      const tag = document.activeElement?.tagName
+      if (tag === 'TEXTAREA' || tag === 'INPUT' || document.activeElement?.isContentEditable) return
+      if (!this.element.contains(document.activeElement) && document.activeElement !== document.body) return
+      event.preventDefault()
+      this.listController?.selectAll()
+    }
+  }
+
+  async _navigateToEntry(entry, direction = 'forward') {
+    this._isNavigating = true
+    try {
+      // Try to find the button for this creative in the tree
+      const row = document.querySelector(`creative-tree-row[creative-id="${entry.creativeId}"]`)
+      const button = row?.querySelector('[name="show-comments-btn"]')
+
+      if (button) {
+        await this.open(button, { creativeId: entry.creativeId })
+      } else {
+        // Creative not in current view — open directly via openForCreative
+        this.element.dataset.creativeId = entry.creativeId
+        this.element.dataset.canComment = entry.canComment ? 'true' : 'false'
+        this.element.dataset.creativeSnippet = entry.snippet || ''
+        await this.openForCreative()
+      }
+    } catch (error) {
+      // Creative likely deleted (404) — remove from history and skip to next
+      console.warn(`[chat-nav] Failed to open creative ${entry.creativeId}, removing from history:`, error)
+      chatHistory.remove(entry.creativeId)
+      this._updateNavButtons()
+
+      if (chatHistory.canNavigate()) {
+        this._isNavigating = false
+        const next = direction === 'back' ? chatHistory.prev() : chatHistory.next()
+        if (next) return this._navigateToEntry(next, direction)
+      }
+    } finally {
+      this._isNavigating = false
+    }
+  }
+
+  _updateNavButtons() {
+    if (this.hasNavBackTarget) {
+      this.navBackTarget.disabled = !chatHistory.canNavigate()
+    }
+  }
+
+  _setupNavLongPress() {
+    const setupBtn = (btn) => {
+      if (!btn) return
+      btn.addEventListener('mousedown', () => {
+        this._longPressTriggered = false
+        this._clearLongPressTimer()
+        this._longPressTimer = setTimeout(() => {
+          this._longPressTriggered = true
+          this.showRecentChats(new MouseEvent('contextmenu', { bubbles: true }))
+        }, LONG_PRESS_MS)
+      })
+      btn.addEventListener('mouseup', () => this._clearLongPressTimer())
+      btn.addEventListener('mouseleave', () => this._clearLongPressTimer())
+      // Touch long press
+      btn.addEventListener('touchstart', () => {
+        this._longPressTriggered = false
+        this._clearLongPressTimer()
+        this._longPressTimer = setTimeout(() => {
+          this._longPressTriggered = true
+          this.showRecentChats(new Event('contextmenu', { bubbles: true }))
+        }, LONG_PRESS_MS)
+      }, { passive: true })
+      btn.addEventListener('touchend', () => this._clearLongPressTimer())
+      btn.addEventListener('touchcancel', () => this._clearLongPressTimer())
+    }
+    if (this.hasNavBackTarget) setupBtn(this.navBackTarget)
+  }
+
+  _clearLongPressTimer() {
+    if (this._longPressTimer) {
+      clearTimeout(this._longPressTimer)
+      this._longPressTimer = null
+    }
+  }
+
+  typingIndicatorTargetConnected(element) {
+    this._addSwipeListeners(element)
+  }
+
+  typingIndicatorTargetDisconnected(element) {
+    this._removeSwipeListeners(element)
+  }
+
+  _addSwipeListeners(el) {
+    el.addEventListener('touchstart', this.handleHeaderTouchStart, { passive: true })
+    el.addEventListener('touchend', this.handleHeaderTouchEnd)
+  }
+
+  _removeSwipeListeners(el) {
+    el.removeEventListener('touchstart', this.handleHeaderTouchStart)
+    el.removeEventListener('touchend', this.handleHeaderTouchEnd)
+  }
+
+  handleHeaderTouchStart = (event) => {
+    if (event.touches.length !== 1) return
+    this._headerSwipeStartX = event.touches[0].clientX
+    this._headerSwipeStartY = event.touches[0].clientY
+  }
+
+  handleHeaderTouchEnd = (event) => {
+    if (this._headerSwipeStartX === null) return
+    const dx = event.changedTouches[0].clientX - this._headerSwipeStartX
+    const dy = event.changedTouches[0].clientY - this._headerSwipeStartY
+    this._headerSwipeStartX = null
+    this._headerSwipeStartY = null
+
+    // Must be horizontal (dx > dy) and at least 40px
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return
+
+    if (dx < 0) {
+      // Swipe left → next chat
+      this.navigateForward()
+    } else {
+      // Swipe right → previous chat
+      this.navigateBack()
+    }
+  }
+
+  _i18n(key) {
+    const translations = {
+      remove_from_history: this.element.dataset.removeFromHistoryLabel || 'Remove from history'
+    }
+    return translations[key] || key
+  }
+
+  _hideNavDropdown() {
+    document.removeEventListener('click', this.handleDropdownOutsideClick)
+    if (this.hasNavDropdownTarget) {
+      this.navDropdownTarget.style.display = 'none'
+      this.navDropdownTarget.innerHTML = ''
+    }
+  }
+
+  // ── Screen Wake Lock ──────────────────────────────────────────────
+  // Prevent the device screen from dimming/locking while the chat popup
+  // is open.  The browser automatically releases the lock when the tab
+  // loses visibility, so we re-acquire it in handleVisibilityChange().
+
+  async _requestWakeLock() {
+    if (!('wakeLock' in navigator)) return
+
+    try {
+      this._wakeLock = await navigator.wakeLock.request('screen')
+      this._wakeLock.addEventListener('release', () => {
+        this._wakeLock = null
+      })
+    } catch (err) {
+      // Wake lock request can fail (e.g. low battery, browser policy).
+      // This is non-critical — just log and continue.
+      console.debug('[chat] Wake lock request failed:', err.message)
+    }
+  }
+
+  _releaseWakeLock() {
+    if (this._wakeLock) {
+      this._wakeLock.release()
+      this._wakeLock = null
+    }
   }
 }

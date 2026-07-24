@@ -130,19 +130,31 @@ class NavigationHelperTest < ActionView::TestCase
     assert_match(/creative-guide-link/, html)
   end
 
-  test "render_mobile_navigation_item wraps in div" do
+  test "navigation partial renders mobile guest help and sign in buttons" do
     Navigation::Registry.instance.register(
-      key: :test,
-      label: "Test Button",
-      type: :button,
-      path: -> { "/" }
+      key: :help,
+      label: "app.help",
+      type: :partial,
+      partial: "collavre/shared/navigation/help_button",
+      priority: 170,
+      mobile: true
     )
 
-    item = Navigation::Registry.instance.find(:test)
-    html = render_mobile_navigation_item(item)
+    Navigation::Registry.instance.register(
+      key: :sign_in,
+      label: "app.sign_in",
+      type: :button,
+      path: -> { collavre.new_session_path },
+      priority: 160,
+      visible: -> { true }
+    )
 
-    assert_match(/<div>/, html)
-    assert_match(/Test Button/, html)
+    render partial: "collavre/shared/navigation"
+
+    assert_includes rendered, 'class="mobile-only"'
+    assert_includes rendered, 'creative-guide-link'
+    assert_includes rendered, I18n.t("app.sign_in")
+    assert_includes rendered, collavre.new_session_path
   end
 
   test "render_navigation_item respects html_class option" do

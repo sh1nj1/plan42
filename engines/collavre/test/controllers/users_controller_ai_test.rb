@@ -86,6 +86,28 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_not_equal "Hacked Bot Name", @ai_user.name
   end
 
+  test "should save routing_expression with keyword trigger" do
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        routing_expression: 'chat.content contains "help"'
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal 'chat.content contains "help"', @ai_user.routing_expression
+  end
+
+  test "should save routing_expression with auto trigger" do
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        routing_expression: 'event_name == "comment_created"'
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
+  end
+
   test "should handle validation errors in update_ai" do
     patch update_ai_user_url(@ai_user), params: {
       user: {
@@ -95,5 +117,78 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_equal "Name can't be blank", flash[:alert]
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
+  end
+
+  # Regression: on a validation-error re-render, the form must preserve the
+  # user's submitted prompt edit. The failed save never synced the profile, so
+  # rendering value: @user.effective_system_prompt would read the old canonical
+  # markdown_source and silently discard the unsaved edit.
+  test "update_ai preserves the submitted prompt edit on a validation error" do
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "OLD CANONICAL PROMPT")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        name: "", # invalid -> validation error, re-render
+        system_prompt: "MY EDITED PROMPT"
+      }
+    }
+    assert_response :unprocessable_entity
+    assert_select "textarea#user_system_prompt", text: /MY EDITED PROMPT/
+    assert_select "textarea#user_system_prompt", text: /OLD CANONICAL PROMPT/, count: 0
+  end
+
+  # Regression: the edit form must pre-fill the prompt from the canonical
+  # profile creative (data["markdown_source"]), not the legacy system_prompt
+  # column. If the profile creative was edited directly, the column is stale;
+  # rendering it would post it back and update_ai's sync would clobber the
+  # profile-authored prompt on any unrelated setting change.
+  test "edit_ai pre-fills the prompt from the canonical profile creative, not the stale column" do
+    @ai_user.update_column(:system_prompt, "STALE COLUMN PROMPT")
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "CANONICAL EDITED PROMPT")
+
+    get edit_ai_user_url(@ai_user)
+    assert_response :success
+    assert_select "textarea#user_system_prompt", text: /CANONICAL EDITED PROMPT/
+    assert_select "textarea#user_system_prompt", text: /STALE COLUMN PROMPT/, count: 0
+  end
+
+  # Regression: with the form now posting the effective value, an unrelated
+  # setting change (model) re-posts the canonical prompt and must not erase a
+  # directly-edited profile prompt.
+  test "update_ai preserves a directly-edited profile prompt when re-posting the effective value" do
+    @ai_user.update_column(:system_prompt, "STALE COLUMN PROMPT")
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "CANONICAL EDITED PROMPT")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        system_prompt: @ai_user.effective_system_prompt, # what the fixed form posts
+        llm_model: "gemini-1.5-pro"
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal "gemini-1.5-pro", @ai_user.llm_model
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.effective_system_prompt
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.profile_creative.data["markdown_source"]
+  end
+
+  # Regression: a partial settings update that omits system_prompt entirely
+  # (e.g. a routing_expression-only PATCH) must not run the prompt sync at all.
+  # Otherwise the stale legacy column is copied back over the canonical
+  # profile-authored prompt, silently erasing a directly-edited prompt.
+  test "update_ai does not clobber the canonical prompt on a PATCH that omits system_prompt" do
+    @ai_user.update_column(:system_prompt, "STALE COLUMN PROMPT")
+    @ai_user.profile_creative.update!(content_type_input: "markdown", markdown_source: "CANONICAL EDITED PROMPT")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        routing_expression: 'event_name == "comment_created"'
+      }
+    }
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    @ai_user.reload
+    assert_equal 'event_name == "comment_created"', @ai_user.routing_expression
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.profile_creative.data["markdown_source"]
+    assert_equal "CANONICAL EDITED PROMPT", @ai_user.effective_system_prompt
   end
 end

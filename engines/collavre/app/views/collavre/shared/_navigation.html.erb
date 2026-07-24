@@ -1,7 +1,12 @@
 <nav>
-  <%# Search Section %>
-  <% navigation_items_for(:search).each do |item| %>
-    <%= render_navigation_item(item) %>
+  <%# Always-visible buttons (both desktop and mobile): Search, Home, Plans — matching PC order %>
+  <% if (search_item = Navigation::Registry.instance.find(:search)) && navigation_item_visible?(search_item) %>
+    <%= render_navigation_item(search_item) %>
+  <% end %>
+
+  <%# Home Button (always visible on mobile, not inside ... menu) %>
+  <% if (home_item = Navigation::Registry.instance.find(:home)) && navigation_item_visible?(home_item) %>
+    <span class="mobile-only"><%= render_navigation_item(home_item) %></span>
   <% end %>
 
   <%# Mobile Plans Button (special: outside popup) %>
@@ -9,28 +14,36 @@
     <%= render_navigation_item(mobile_plans, mobile: true) %>
   <% end %>
 
+  <%# Chat Filter Button (always visible on mobile, after Plans) %>
+  <% if (comment_item = Navigation::Registry.instance.find(:comment_filter)) && navigation_item_visible?(comment_item) %>
+    <span class="mobile-only"><%= render_navigation_item(comment_item) %></span>
+  <% end %>
+
   <%# Desktop Navigation %>
   <div class="desktop-only">
-    <% navigation_items_for(:main, desktop: true).each do |item| %>
+    <% navigation_items_for(:main, desktop: true).reject { |i| i[:key] == :search }.each do |item| %>
       <%= render_navigation_item(item) %>
     <% end %>
   </div>
 
-  <%# Mobile Popup Menu %>
-  <%= render Collavre::PopupMenuComponent.new(
-        button_content: safe_join(['...', (render(Collavre::Inbox::BadgeComponent.new(user: Current.user, badge_id: 'mobile-inbox-badge')) if Current.user)]),
-        button_classes: 'mobile-only',
-        menu_id: 'mobile-more-menu',
-        align: :right
-      ) do %>
-    <% navigation_items_for(:main, desktop: false).reject { |i| i[:key] == :mobile_plans }.each do |item| %>
-      <%= render_mobile_navigation_item(item) %>
-    <% end %>
+  <%# Mobile Sign In (guest entry point after removing the mobile ... menu) %>
+  <% if (sign_in_item = Navigation::Registry.instance.find(:sign_in)) && navigation_item_visible?(sign_in_item, desktop: false) %>
+    <span class="mobile-only"><%= render_navigation_item(sign_in_item, mobile: true) %></span>
+  <% end %>
+
+  <%# Mobile Inbox (next to profile avatar) %>
+  <% if (mobile_inbox_item = Navigation::Registry.instance.find(:mobile_inbox)) && navigation_item_visible?(mobile_inbox_item, desktop: false) %>
+    <span class="mobile-only"><%= render_navigation_item(mobile_inbox_item, mobile: true) %></span>
   <% end %>
 
   <%# User Menu %>
   <% navigation_items_for(:user).each do |item| %>
     <%= render_navigation_item_with_children(item) %>
+  <% end %>
+
+  <%# Mobile Help (guest entry point after removing the mobile ... menu) - keep at far right %>
+  <% if Current.user.nil? && (help_item = Navigation::Registry.instance.find(:help)) %>
+    <span class="mobile-only"><%= render_navigation_item(help_item, mobile: true) %></span>
   <% end %>
 </nav>
 

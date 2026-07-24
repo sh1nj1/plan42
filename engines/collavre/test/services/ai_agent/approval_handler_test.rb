@@ -44,12 +44,11 @@ module Collavre
         )
 
         summary = "Updates the description of creative #42 to 'New description'."
+        before_count = @creative.comments.count
+        handler.handle(@error, summary: summary)
 
-        assert_difference "Comment.count", 1 do
-          handler.handle(@error, summary: summary)
-        end
-
-        comment = Comment.last
+        assert_equal before_count + 1, @creative.comments.reload.count
+        comment = @creative.comments.order(:id).last
         assert_includes comment.content, I18n.t("collavre.ai_agent.approval.summary_header")
         assert_includes comment.content, "Updates the description of creative #42"
       end
@@ -62,11 +61,11 @@ module Collavre
           creative: @creative
         )
 
-        assert_difference "Comment.count", 1 do
-          handler.handle(@error, summary: nil)
-        end
+        before_count = @creative.comments.count
+        handler.handle(@error, summary: nil)
 
-        comment = Comment.last
+        assert_equal before_count + 1, @creative.comments.reload.count
+        comment = @creative.comments.order(:id).last
         refute_includes comment.content, I18n.t("collavre.ai_agent.approval.summary_header")
         assert_includes comment.content, "update_creative"
       end
@@ -79,11 +78,11 @@ module Collavre
           creative: @creative
         )
 
-        assert_difference "Comment.count", 1 do
-          handler.handle(@error)
-        end
+        before_count = @creative.comments.count
+        handler.handle(@error)
 
-        comment = Comment.last
+        assert_equal before_count + 1, @creative.comments.reload.count
+        comment = @creative.comments.order(:id).last
         refute_includes comment.content, I18n.t("collavre.ai_agent.approval.summary_header")
         assert_includes comment.content, "update_creative"
       end
@@ -98,7 +97,7 @@ module Collavre
 
         handler.handle(@error)
 
-        comment = Comment.last
+        comment = @creative.comments.order(:id).last
         action = JSON.parse(comment.action)
         assert_equal "execute_tool", action["action"]
         assert_equal "update_creative", action["tool_name"]

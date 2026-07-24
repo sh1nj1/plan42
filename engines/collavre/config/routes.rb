@@ -1,4 +1,7 @@
 Collavre::Engine.routes.draw do
+  # Landing page
+  get "landing", to: "landing#show"
+
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
@@ -20,6 +23,7 @@ Collavre::Engine.routes.draw do
       get :edit_password
       patch :update_password
       get :passkeys
+      get :typo_correction
     end
   end
   get "/email_verification/:token", to: "email_verifications#show", as: :email_verification
@@ -28,8 +32,13 @@ Collavre::Engine.routes.draw do
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
 
   delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
+  get "/public-assets/blobs/:signed_id/*filename",
+      to: "public_assets#show",
+      as: :public_asset,
+      format: false
 
   resources :calendar_events, only: [ :destroy ]
+  resources :channels, only: [ :destroy ]
   resources :contacts, only: [ :destroy ]
   resources :devices, only: [ :create ]
 
@@ -37,18 +46,22 @@ Collavre::Engine.routes.draw do
     get :count, on: :collection
   end
 
-  resources :plans, only: [ :create, :destroy, :index, :update ]
-
   resources :user_themes, only: [ :index, :create, :destroy ] do
     member do
       post :apply
     end
   end
 
-  resources :creative_imports, only: [ :create ]
-  resource :creative_plan, only: [ :create, :destroy ], controller: "creative_plans"
+  resources :typo_corrections, only: [ :create ]
 
+  resources :creative_imports, only: [ :create ]
+  resources :tasks, only: [] do
+    member do
+      post :cancel
+    end
+  end
   resources :creatives do
+    resources :attachments, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do
@@ -57,6 +70,7 @@ Collavre::Engine.routes.draw do
         get :next_name
       end
       member do
+        get :channel_chips
         patch :move
         patch :archive
         patch :unarchive
@@ -67,6 +81,7 @@ Collavre::Engine.routes.draw do
       member do
         post :convert
         post :approve
+        post :deny
         patch :update_action
         delete :reactions, to: "comments/reactions#destroy"
         get :download_images
@@ -87,7 +102,14 @@ Collavre::Engine.routes.draw do
         post :move
         delete :batch_destroy
         post :merge
+        post :branch
         get :commands
+
+        resources :snapshots, only: [ :index ], module: :comments do
+          member do
+            post :restore
+          end
+        end
       end
     end
     collection do
@@ -99,7 +121,6 @@ Collavre::Engine.routes.draw do
     end
     member do
       get :children
-      post :share, to: "creatives#share", as: :share_creative
       post :request_permission, to: "creatives#request_permission"
       post :unconvert
       patch :archive
@@ -109,6 +130,7 @@ Collavre::Engine.routes.draw do
       get :contexts
       patch :update_contexts
       patch :update_metadata
+      patch :trigger_action
     end
   end
 
@@ -119,6 +141,26 @@ Collavre::Engine.routes.draw do
   patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
 
+  # Agent API (Claude Channel MCP plugin)
+  namespace :api do
+    namespace :v1 do
+      post "agent/register", to: "agents#register"
+      post "agent/reply", to: "agents#reply"
+      post "agent/notify", to: "agents#notify"
+      delete "agent/:id", to: "agents#destroy"
+
+      # Mobile voice companion (Android): poll Inbox#System messages, read aloud,
+      # reply to the origin topic; a cold mic press starts work in Inbox#Main.
+      namespace :mobile do
+        post "voice_commands", to: "voice_commands#create"
+        get  "agent_events", to: "agent_events#index"
+        post "agent_events/:id/respond", to: "agent_events#respond"
+        post "agent_events/:id/read", to: "agent_events#read"
+        post "devices", to: "devices#create"
+      end
+    end
+  end
+
   # Admin settings & orchestration
   scope "/admin", as: :admin do
     get "/", to: "admin/settings#index", as: :settings
@@ -126,5 +168,14 @@ Collavre::Engine.routes.draw do
     get "/uiux", to: "admin/settings#uiux", as: :uiux
     patch "/uiux", to: "admin/settings#update_uiux"
     resource :orchestration, only: [ :show, :update ], controller: "admin/orchestration"
+
+    resources :integrations, only: [ :index ], param: :key, controller: "admin/integrations" do
+      collection do
+        patch :bulk_update
+      end
+      member do
+        delete :reset
+      end
+    end
   end
 end

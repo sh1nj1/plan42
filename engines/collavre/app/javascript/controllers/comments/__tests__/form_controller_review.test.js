@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 
+import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
 
@@ -11,6 +12,17 @@ describe('FormController - Review Quote Chips', () => {
   let controller
 
   beforeEach(async () => {
+    if (!global.DataTransfer) {
+      global.DataTransfer = class {
+        constructor() {
+          this.files = []
+          this.items = {
+            add: (file) => this.files.push(file),
+          }
+        }
+      }
+    }
+
     container = document.createElement('div')
     container.innerHTML = `
       <div id="comments-popup"
@@ -62,6 +74,35 @@ describe('FormController - Review Quote Chips', () => {
   // Helper accessors for the refactored store-based API
   const getQuotes = (ctrl) => ctrl._reviewStore.quotes
   const getActiveId = (ctrl) => ctrl._reviewStore.activeId
+
+  describe('auto focus on open', () => {
+    test('skips initial focus when popup opts out', () => {
+      container.querySelector('#comments-popup').dataset.autoFocusOnOpen = 'false'
+      const resetFormSpy = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+      const focusSpy = jest.spyOn(controller.textareaTarget, 'focus').mockImplementation(() => {})
+
+      controller.onPopupOpened({ creativeId: '123', canComment: true })
+
+      expect(focusSpy).not.toHaveBeenCalled()
+      focusSpy.mockRestore()
+      resetFormSpy.mockRestore()
+    })
+
+    test('skips initial focus on mobile even when autoFocusOnOpen is true', () => {
+      container.querySelector('#comments-popup').dataset.autoFocusOnOpen = 'true'
+      const resetFormSpy = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+      const focusSpy = jest.spyOn(controller.textareaTarget, 'focus').mockImplementation(() => {})
+      const originalInnerWidth = window.innerWidth
+      Object.defineProperty(window, 'innerWidth', { value: 760, configurable: true })
+
+      controller.onPopupOpened({ creativeId: '123', canComment: true })
+
+      expect(focusSpy).not.toHaveBeenCalled()
+      Object.defineProperty(window, 'innerWidth', { value: originalInnerWidth, configurable: true })
+      focusSpy.mockRestore()
+      resetFormSpy.mockRestore()
+    })
+  })
 
   describe('appendReviewQuote', () => {
     test('adds a review quote chip', () => {
@@ -300,6 +341,32 @@ describe('FormController - Review Quote Chips', () => {
 
       expect(getQuotes(controller)[0].feedback).toBe('fb1-updated')
       expect(controller.textareaTarget.value).toBe('fb2')
+    })
+  })
+
+  describe('active chip re-click - programmatic scroll', () => {
+    // Re-clicking the active chip scrolls its quoted comment into view. That is a
+    // programmatic list scroll, so it must drop the prev-message anchor the same way
+    // scrollToBottom/highlightComment do — otherwise a stale anchor inside the corridor
+    // survives and the next previous-message click skips the comment now in view.
+    test('re-clicking the active chip notifies the list of a programmatic scroll', () => {
+      const commentEl = document.createElement('div')
+      commentEl.setAttribute('data-comment-id', '1')
+      commentEl.scrollIntoView = jest.fn() // jsdom has no scrollIntoView
+      document.body.appendChild(commentEl)
+
+      const notifyProgrammaticScroll = jest.fn()
+      jest
+        .spyOn(controller, 'listController', 'get')
+        .mockReturnValue({ notifyProgrammaticScroll })
+
+      controller.appendReviewQuote(1, 'first') // freshly appended quote is active
+      container.querySelector('.review-quote-chip-text').click()
+
+      expect(commentEl.scrollIntoView).toHaveBeenCalled()
+      expect(notifyProgrammaticScroll).toHaveBeenCalled()
+
+      commentEl.remove()
     })
   })
 })

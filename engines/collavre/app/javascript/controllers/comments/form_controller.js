@@ -3,6 +3,16 @@ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
+import { alertDialog } from '../../lib/utils/dialog'
+
+// In-flight comment sends, keyed by creative id. This lives at module scope —
+// not on the controller instance — so the duplicate-submit guard survives a
+// Stimulus reconnect (Turbo morph / re-render) mid-send. The instance-only
+// `this.sending` flag is reset by connect() and cannot be relied on alone:
+// a reconnect while a slow request is in flight would re-enable sending and let
+// an impatient second Enter submit the same comment twice.
+const inFlightSends = new Set()
+const sendKeyFor = (creativeId) => `creative:${creativeId}`
 
 export default class extends Controller {
   static targets = [
@@ -21,6 +31,7 @@ export default class extends Controller {
     'quoteIndicator',
     'quoteIndicatorText',
     'reviewQuotesContainer',
+    'quoteCancelButton',
   ]
 
   connect() {
@@ -79,6 +90,10 @@ export default class extends Controller {
     this.textareaTarget.addEventListener('input', this._autoResize)
 
     this.textareaTarget.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        this.presenceController?.cancelAllAgentTasks()
+        return
+      }
       if (event.key === 'Enter' && !event.shiftKey) {
         if (this.isMentionMenuVisible()) return
         this.handleSend(event)
@@ -89,10 +104,17 @@ export default class extends Controller {
 
     this.handleTopicChange = this.handleTopicChange.bind(this)
     this.element.addEventListener('comments--topics:change', this.handleTopicChange)
+
+    this.handleListLoaded = () => this._updateInboxReplyMode()
+    this.element.addEventListener('comments--list:loaded', this.handleListLoaded)
   }
 
   handleTopicChange(event) {
     this.currentTopicId = event.detail.topicId
+    this._isInbox = event.detail.isInbox || false
+    this._systemTopicId = event.detail.systemTopicId || null
+    this._mainTopicId = event.detail.mainTopicId || null
+    this._updateInboxReplyMode()
   }
 
 
@@ -119,6 +141,7 @@ export default class extends Controller {
     this.formTarget.removeEventListener('drop', this.handleDrop)
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
+    this.element.removeEventListener('comments--list:loaded', this.handleListLoaded)
   }
 
   get listController() {
@@ -132,9 +155,13 @@ export default class extends Controller {
   onPopupOpened({ creativeId, canComment }) {
     this.creativeId = creativeId
     this.element.dataset.creativeId = creativeId || ''
+    // Stale topic ids from the previous creative are cleared by the popup
+    // controller BEFORE topics loadTopics() dispatches comments--topics:change,
+    // so by the time we get here, currentTopicId already reflects the new
+    // creative's restored topic. Do not re-clear it.
     this.formTarget.style.display = canComment ? '' : 'none'
     this.resetForm()
-    if (canComment) {
+    if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
   }
@@ -144,8 +171,27 @@ export default class extends Controller {
     this.resetForm()
   }
 
+  setCommentPermission(canComment) {
+    this.formTarget.style.display = canComment ? '' : 'none'
+
+    if (!canComment) {
+      this.stopSpeechRecognition()
+      this.resetForm()
+      return
+    }
+
+    if (this.shouldAutoFocusOnOpen()) {
+      requestAnimationFrame(() => this.textareaTarget.focus())
+    }
+  }
+
   onSelectionChanged({ size, moving }) {
     // Selection state now managed by list_controller action bar
+  }
+
+  shouldAutoFocusOnOpen() {
+    if (window.innerWidth <= 768) return false
+    return this.element.dataset.autoFocusOnOpen !== 'false'
   }
 
   focusTextarea() {
@@ -163,6 +209,7 @@ export default class extends Controller {
     this.clearImageAttachments()
     this.submitTarget.textContent = this.element.dataset.updateCommentText
     if (this.cancelTarget) this.cancelTarget.style.display = ''
+    requestAnimationFrame(() => this._autoResize())
     this.focusTextarea()
   }
 
@@ -172,6 +219,7 @@ export default class extends Controller {
     this.submitTarget.innerHTML = this.defaultSubmitHTML
     this.submitTarget.disabled = false
     this.submitTarget.classList.remove('review-submit-btn')
+    this.submitTarget.classList.remove('inbox-reply-btn')
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
@@ -217,7 +265,9 @@ export default class extends Controller {
     const hasText = this.textareaTarget.value.trim().length > 0
     const hasQuotes = !store.isEmpty
     const hasImages = this.currentImageFiles().length > 0
-    if (this.sending || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
+    const sendKey = sendKeyFor(this.creativeId)
+    if (this.sending || inFlightSends.has(sendKey) || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
+    inFlightSends.add(sendKey)
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
@@ -232,8 +282,9 @@ export default class extends Controller {
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
 
     const formData = new FormData(this.formTarget)
-    if (this.currentTopicId) {
-      formData.append('comment[topic_id]', this.currentTopicId)
+    const effectiveTopicId = this.currentTopicId || this._mainTopicId
+    if (effectiveTopicId) {
+      formData.append('comment[topic_id]', effectiveTopicId)
     }
     if (this._pendingReviewType) {
       formData.append('comment[review_type]', this._pendingReviewType)
@@ -319,9 +370,10 @@ export default class extends Controller {
           this._renderReviewQuoteChips()
           this._updateSubmitButton()
         }
-        alert(error?.message || 'Failed to submit comment')
+        alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
+        inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
       })
@@ -364,7 +416,7 @@ export default class extends Controller {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      alert(this.element.dataset.speechUnavailableText || 'Speech recognition not supported')
+      alertDialog(this.element.dataset.speechUnavailableText || 'Speech recognition not supported')
       return false
     }
 
@@ -704,7 +756,9 @@ export default class extends Controller {
 
   // Send a single question quote immediately as a standalone comment.
   _sendQuestionQuote(quote) {
-    if (this.sending || !this.creativeId) return
+    const sendKey = sendKeyFor(this.creativeId)
+    if (this.sending || inFlightSends.has(sendKey) || !this.creativeId) return
+    inFlightSends.add(sendKey)
 
     const store = this._reviewStore
     const content = store.buildQuestionContent(quote)
@@ -730,8 +784,9 @@ export default class extends Controller {
     }
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
-    if (this.currentTopicId) {
-      formData.append('comment[topic_id]', this.currentTopicId)
+    const effectiveTopicId = this.currentTopicId || this._mainTopicId
+    if (effectiveTopicId) {
+      formData.append('comment[topic_id]', effectiveTopicId)
     }
 
     const url = `/creatives/${this.creativeId}/comments`
@@ -769,9 +824,10 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
-        alert(error?.message || 'Failed to send question')
+        alertDialog(error?.message || 'Failed to send question')
       })
       .finally(() => {
+        inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.sending = false
       })
@@ -828,6 +884,9 @@ export default class extends Controller {
         if (quote.id === store.activeId) {
           const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
           if (commentEl) {
+            // Programmatic list scroll — drop the prev-message anchor so the next
+            // previous-message click resolves from the quoted comment now in view.
+            this.listController?.notifyProgrammaticScroll()
             commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
             commentEl.classList.add('comment-highlight')
             setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)
@@ -904,6 +963,73 @@ export default class extends Controller {
     return this.element.dataset[key] || fallback
   }
 
+  // --- Inbox inline reply mode ---
+
+  get _isInboxSystemTopic() {
+    return this._isInbox && this._systemTopicId &&
+      String(this.currentTopicId) === String(this._systemTopicId)
+  }
+
+  _updateInboxReplyMode() {
+    if (!this._isInboxSystemTopic) {
+      this._inboxReplyMode = false
+      // Reset submit button if not in review mode
+      if (!this._reviewStore || this._reviewStore.isEmpty) {
+        this.submitTarget.innerHTML = this.defaultSubmitHTML
+        this.submitTarget.classList.remove('inbox-reply-btn')
+      }
+      if (this._inboxReplyIndicator) {
+        this.quoteIndicatorTarget.style.display = 'none'
+        this.quoteIndicatorTextTarget.textContent = ''
+        this._inboxReplyIndicator = false
+      }
+      if (this.hasQuoteCancelButtonTarget) {
+        this.quoteCancelButtonTarget.style.display = ''
+      }
+      return
+    }
+
+    this._inboxReplyMode = true
+
+    // Hide cancel button — inbox reply mode has no cancel action
+    if (this.hasQuoteCancelButtonTarget) {
+      this.quoteCancelButtonTarget.style.display = 'none'
+    }
+
+    // Find the latest alarm (system message) in the comment list
+    const latestAlarm = this._findLatestAlarm()
+    if (latestAlarm) {
+      const alarmText = latestAlarm.textContent?.trim() || ''
+      const truncated = alarmText.length > 100 ? alarmText.substring(0, 100) + '…' : alarmText
+      this.quoteIndicatorTarget.style.display = ''
+      this.quoteIndicatorTextTarget.textContent = truncated
+      this._inboxReplyIndicator = true
+    }
+
+    // Change submit button to reply text
+    this.submitTarget.textContent = this._getI18nText('inboxReplyButton', 'Reply')
+    this.submitTarget.classList.add('inbox-reply-btn')
+  }
+
+  _findLatestAlarm() {
+    const list = document.getElementById('comments-list')
+    if (!list) return null
+
+    // System messages have data-user-id="" (no user)
+    const allComments = list.querySelectorAll('.comment-item')
+    let latest = null
+    for (const el of allComments) {
+      if (!el.dataset.userId) {
+        latest = el
+      }
+    }
+    // Get the content element from the latest system message
+    if (latest) {
+      return latest.querySelector('.comment-content')
+    }
+    return null
+  }
+
   cancelQuote() {
     this.quotedCommentIdTarget.value = ''
     this.quotedTextTarget.value = ''
@@ -913,6 +1039,10 @@ export default class extends Controller {
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
     this.textareaTarget.placeholder = ''
+    // Re-apply inbox reply mode indicator if we're in inbox System topic
+    if (this._isInboxSystemTopic) {
+      requestAnimationFrame(() => this._updateInboxReplyMode())
+    }
   }
 
   renderCommentHtml(html, { replaceExisting = false } = {}) {

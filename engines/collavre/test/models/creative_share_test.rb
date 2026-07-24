@@ -8,23 +8,17 @@ class CreativeShareTest < ActiveSupport::TestCase
 
     Current.session = OpenStruct.new(user: sharer)
 
-    assert_difference("InboxItem.count", 1) do
-      perform_enqueued_jobs do
-        CreativeShare.create!(creative: creative, user: recipient, permission: :read)
-      end
+    inbox = Collavre::Creative.inbox_for(recipient)
+    inbox_before = inbox.comments.count
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: recipient, permission: :read)
     end
 
-    item = InboxItem.last
-    assert_equal recipient.id, item.owner.id
-    assert_equal "inbox.creative_shared", item.message_key
-    msg = item.localized_message
-    assert_includes msg, sharer.name
-    assert_includes msg, "T-Shirt"
-    expected_link = Collavre::Engine.routes.url_helpers.creative_url(
-      creative,
-      host: "example.com"
-    )
-    assert_equal expected_link, item.link
+    assert_equal inbox_before + 1, inbox.comments.reload.count
+    inbox_comment = inbox.comments.order(:id).last
+    assert_nil inbox_comment.user
+    assert_includes inbox_comment.content, sharer.name
 
     Current.reset
   end
@@ -56,5 +50,64 @@ class CreativeShareTest < ActiveSupport::TestCase
     refute grandchild.has_permission?(shared_user, :read)
   ensure
     Current.reset
+  end
+
+  test "create broadcasts share change to comments presence channel" do
+    creative = creatives(:tshirt)
+    recipient = users(:two)
+
+    broadcast_args = nil
+    CommentsPresenceChannel.stub :broadcast_shares_changed, ->(*args, **kwargs) { broadcast_args = [ args, kwargs ] } do
+      CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+    end
+
+    assert_equal [ creative.effective_origin.id ], broadcast_args[0]
+    assert_equal recipient.id, broadcast_args[1][:shared_user_id]
+    assert_equal "read", broadcast_args[1][:permission]
+    assert_equal "created", broadcast_args[1][:action]
+    assert_equal true, broadcast_args[1][:has_access]
+    assert_equal false, broadcast_args[1][:can_comment]
+    assert_equal true, broadcast_args[1][:has_access_changed]
+    assert_equal false, broadcast_args[1][:can_comment_changed]
+  end
+
+  test "update broadcasts share change to comments presence channel" do
+    creative = creatives(:tshirt)
+    recipient = users(:two)
+    share = CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+
+    broadcasts = []
+    CommentsPresenceChannel.stub :broadcast_shares_changed, ->(*args, **kwargs) { broadcasts << [ args, kwargs ] } do
+      share.update!(permission: :feedback)
+    end
+
+    assert_equal [ creative.effective_origin.id ], broadcasts.last[0]
+    assert_equal recipient.id, broadcasts.last[1][:shared_user_id]
+    assert_equal "feedback", broadcasts.last[1][:permission]
+    assert_equal "updated", broadcasts.last[1][:action]
+    assert_equal true, broadcasts.last[1][:has_access]
+    assert_equal true, broadcasts.last[1][:can_comment]
+    assert_equal false, broadcasts.last[1][:has_access_changed]
+    assert_equal true, broadcasts.last[1][:can_comment_changed]
+  end
+
+  test "destroy broadcasts share removal to comments presence channel" do
+    creative = creatives(:tshirt)
+    recipient = users(:two)
+    share = CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+
+    broadcasts = []
+    CommentsPresenceChannel.stub :broadcast_shares_changed, ->(*args, **kwargs) { broadcasts << [ args, kwargs ] } do
+      share.destroy!
+    end
+
+    assert_equal [ creative.effective_origin.id ], broadcasts.last[0]
+    assert_equal recipient.id, broadcasts.last[1][:shared_user_id]
+    assert_nil broadcasts.last[1][:permission]
+    assert_equal "destroyed", broadcasts.last[1][:action]
+    assert_equal false, broadcasts.last[1][:has_access]
+    assert_equal false, broadcasts.last[1][:can_comment]
+    assert_equal true, broadcasts.last[1][:has_access_changed]
+    assert_equal false, broadcasts.last[1][:can_comment_changed]
   end
 end

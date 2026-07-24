@@ -202,4 +202,27 @@ class CreativeTest < ActiveSupport::TestCase
 
     assert_empty McpTool.where(id: tool.id)
   end
+
+  test "sanitize_description_html preserves download attribute on anchor tags" do
+    user = users(:one)
+    creative = Creative.create!(
+      user: user,
+      description: '<a href="/rails/active_storage/blobs/redirect/abc123/report.pdf" download="report.pdf" data-filesize="1024">report.pdf</a>'
+    )
+    assert_includes creative.description, 'download="report.pdf"',
+      "download attribute should be preserved by sanitizer"
+    assert_includes creative.description, 'data-filesize="1024"',
+      "data-filesize attribute should be preserved by sanitizer"
+  end
+
+  test "sanitize_description_html preserves img tags with src and alt" do
+    user = users(:one)
+    creative = Creative.create!(
+      user: user,
+      description: '<img src="/rails/active_storage/blobs/redirect/abc123/photo.png" alt="photo.png" width="800" height="600">'
+    )
+    assert_includes creative.description, '<img'
+    assert_includes creative.description, 'src="/rails/active_storage/blobs/redirect/abc123/photo.png"'
+    assert_includes creative.description, 'alt="photo.png"'
+  end
 end

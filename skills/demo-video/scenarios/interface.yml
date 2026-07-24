@@ -1,0 +1,49 @@
+# Interface scenario — a still, not a film.
+#
+# The landing page makes a structural claim (one object, not three copies) and
+# proves it with a 60s video. But the video only pays off if you press play, and
+# the thing a reader decides in the first two seconds is whether this is a surface
+# they would want to write in. That is what this frame is for.
+#
+# It makes one claim: the document IS the tree. A heading, a paragraph, a
+# syntax-highlighted code fence and a table sit as siblings next to ordinary work
+# items — every one of them a block, every one carrying its own progress on the
+# right and its own thread. No caption, no motion; if the screenshot needs a
+# sentence to explain it, the UI has not made the point.
+#
+#   skills/demo-video/run.sh interface --locale en,ko --theme light,dark --no-post
+#
+# The output that matters is shots-*/02-interface.png, not the .mp4.
+
+name: interface
+# Taller than the video: the point of the frame is that the whole spec — down to the
+# table at the bottom — is one tree. At 720px the table falls off the fold and the
+# still quietly argues the opposite.
+viewport: doc
+default_locale: en
+
+strings:
+  spec: { en: "Payments v2 — Refund spec", ko: "결제 v2 — 환불 스펙" }
+
+steps:
+  - login: { email: pm@collabre.dev, password: demo1234 }
+  # The root list is fetched after paint, so a fixed sleep races the spinner: a
+  # cold boot renders "…" and click_row then times out on a row that is merely
+  # late, not missing.
+  - wait_for: "creative-tree-row"
+  - wait: 800
+  - shot: 01-root
+
+  - click_row: "{{spec}}"
+  - wait_for: "#expand-all-btn"
+  - wait: 800
+
+  # Required, not optional: the whole frame is the expanded tree. A renamed
+  # #expand-all-btn must fail the run rather than ship a screenshot of a
+  # collapsed one-line tree that proves nothing.
+  - click: "#expand-all-btn"
+  # Prism highlights the fence on the client after the rows land, so a shot taken
+  # too early captures an unstyled grey block — the one detail the frame exists
+  # to show.
+  - wait: 2500
+  - shot: 02-interface

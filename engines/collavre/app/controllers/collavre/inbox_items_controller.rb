@@ -38,12 +38,18 @@ module Collavre
     end
 
     def update
-      if @inbox_item.owner == Current.user
-        @inbox_item.update(state: params[:state])
-        head :no_content
-      else
+      unless @inbox_item.owner == Current.user
         head :forbidden
+        return
       end
+
+      unless InboxItem.states.key?(params[:state].to_s)
+        head :unprocessable_entity
+        return
+      end
+
+      @inbox_item.update(state: params[:state])
+      head :no_content
     end
 
     def destroy
@@ -58,7 +64,7 @@ module Collavre
     private
 
     def set_inbox_item
-      @inbox_item = InboxItem.find(params[:id])
+      @inbox_item = InboxItem.where(owner: Current.user).find(params[:id])
     end
   end
 end

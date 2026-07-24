@@ -10,10 +10,25 @@ en:
       archived_topics: "Archived topics (%{count})"
       not_ai_agent: Only AI agents can be set as primary agent.
       default_name_prefix: "Topic"
+      branch_prefix: "Branch"
+      main_name: "Main"
+      cannot_delete_main: "Cannot delete the Main topic."
+      orphaned_cron_notice: "[System] The topic '%{topic_name}' was deleted, but a recurring cron job (%{cron_key}) still targets it and will silently do nothing on each run. Original message: \"%{message}\". Re-point it to another topic or cancel it with cron_cancel."
       create_and_move: 'Create "%{name}" and move'
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
+        add_members:
+          title: Add members to the new location?
+          description: These people had access where the topic used to live, but not in "%{creative}". Add them so they keep access.
+          add: Add selected
+          skip: Not now
+          adding: Adding…
+          added:
+            one: 1 member added.
+            other: "%{count} members added."
+          partial: "%{added} added, %{failed} failed."
+          failed: Could not add members. Please try again.
     github_auth:
       login_first: Please sign in first.
       connected: Github account connected successfully.
@@ -30,6 +45,7 @@ en:
       delete: Delete Comment
       delete_button: Delete
       not_owner: Only the comment owner can modify this.
+      github_synced_readonly: This content is synced from GitHub and cannot be modified.
       no_permission: You do not have permission to comment.
       archived_creative: This creative is archived. Comments are disabled.
       convert_not_allowed: Only the comment owner or a creative admin can convert
@@ -42,6 +58,7 @@ en:
       copy_link_success: Link copied to clipboard
       copy_link_error: Unable to copy link
       approve_button: Approve
+      deny_button: Deny
       approve_not_allowed: Only the assigned approver can approve this comment.
       approve_invalid_format: Invalid action format.
       approve_admin_required: System administrator approval required.
@@ -59,6 +76,7 @@ en:
       approve_invalid_progress: Comment action progress must be a number.
       approve_invalid_description: Comment action description must be text.
       approved_label: Approved
+      denied_label: Denied
       action_summary: Action JSON
       edit_action_button: Edit action
       action_update_success: Action updated.
@@ -68,6 +86,7 @@ en:
         creative.'
       convert_system_message_default_title: Untitled
       system_user: System
+      scroll_to_prev: Previous message
       search_button: Search
       image_button: Image
       search_empty_prompt: Please enter a search term in the chat message field.
@@ -84,6 +103,17 @@ en:
       review_send_question: Send question
       review_type_review: Review
       review_type_question: Question
+      navigate_back: Previous chat
+      navigate_forward: Next chat
+      recent_chats: Recent chats
+      remove_from_history: Remove from history
+      topic_set_agent_error: Unable to assign the agent to this topic.
+      topic_create_error: Unable to create the topic.
+      topic_update_error: Unable to update the topic.
+      topic_delete_error: Unable to delete the topic.
+      topic_archive_error: Unable to archive the topic.
+      topic_restore_error: Unable to restore the topic.
+      inbox_reply_button: Reply
       replace_button: Replace
       move_no_selection: Select at least one message to move.
       move_error: Unable to move messages.
@@ -95,20 +125,33 @@ en:
       selection_topic_move: Move to topic
       selection_close: Cancel
       selection_drag_hint: "You can also drag & drop to move to a topic"
+      selection_touch_drag_hint: "Long press a selected message to drag to a topic"
+      touch_drag_proxy_label:
+        one: "1 message"
+        other: "%{count} messages"
       selection_merge: Merge
+      selection_branch: Branch
       merge_confirm: "Merge the selected messages into one? The first message will be updated and the rest will be deleted."
       merge:
         started: "⏳ Merging messages..."
         minimum_required: "Select at least 2 messages to merge."
         not_authorized: "You don't have permission to merge messages."
         own_messages_only: "You can only merge your own messages or messages from your AI agents."
+      branch:
+        no_selection: "Select at least one message to branch."
+        not_authorized: "You don't have permission to branch messages."
+        comments_not_found: "Some selected messages could not be found."
       batch_delete_confirm: Are you sure you want to delete the selected messages?
       batch_delete_no_selection: Select at least one message to delete.
       batch_delete_not_found: Some selected messages could not be found.
       topic_search_placeholder: Search topics...
-      topic_main: Main
+      topic_main: All Messages
+      topic_list: Topic list
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
+      typo_keep_label: keep
+      typo_custom_label: custom
+      typo_input_label: correction
       move_invalid_target: Select a valid creative to move messages to.
       move_invalid_topic: Invalid topic selected.
       move_not_allowed: You do not have permission to move these messages.
@@ -125,6 +168,15 @@ en:
         compress_description: "Summarize all messages in the current topic and remove originals."
         compress_args: "[additional instructions]"
         creative_description: "Insert a link to a creative. In AI chats, the linked creative tree is injected as context."
+        calendar_date_hint: "YYYY-MM-DD@HH:MM (today, tomorrow, +3days, +mon)"
+        calendar_memo_hint: "Event memo (optional)"
+        topic_name_hint: "Topic name"
+        topic_agent_hint: "@agent_name (optional)"
+        work_agent_hint: "@agent_name"
+        work_context_hint: "Workflow context (optional)"
+        compress_instructions_hint: "Additional instructions (optional)"
+        form_submit: "OK"
+        form_cancel: "Cancel"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
@@ -168,8 +220,13 @@ en:
         delete: Delete this version
         delete_confirm: Are you sure you want to delete this version?
         select: Select
+      stop_agent: Stop
+      stop_blocking_agent: Stop running task
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
+      table_download:
+        csv: CSV
+        excel: Excel
       lightbox:
         close: Close
         previous: Previous
@@ -179,11 +236,15 @@ en:
         delete: Delete
         delete_confirm: Delete this image?
         counter: "%{current} / %{total}"
+    channels:
+      detach: "Detach"
     calendar_events:
       deleted: Calendar event deleted.
     google_calendar:
       errors:
         not_connected: Google Calendar is not connected. Please connect your Google account first.
+        reconnect: Google Calendar authorization has expired. Please reconnect your Google account.
+        network: Unable to reach Google Calendar. Please try again later.
     inbox:
       mark_read: Read
       mark_unread: Unread
@@ -211,6 +272,12 @@ en:
       event:
         invitation: Invitation
         inbox_summary: Inbox summary
+    comment_snapshots:
+      restored: "Original messages have been restored."
+      already_restored: "This snapshot has already been restored."
+      not_authorized: "You don't have permission to restore this snapshot."
+      restore_confirm: "Restore original messages? The summary will be removed."
+      restore_button: "Restore originals"
     inbox_mailer:
       daily_summary:
         subject: Your inbox summary

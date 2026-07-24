@@ -3,10 +3,14 @@
     <style id="user-theme-styles" data-turbo-track="reload">
       body {
         <% custom_theme.variables.each do |key, value| %>
-          <%= key %>: <%= value %> !important;
+          <% if key.match?(/\A--[a-zA-Z0-9_-]+\z/) && value.match?(/\A[^;}{<>"']+\z/) %>
+            <%= key %>: <%= value %> !important;
+          <% end %>
         <% end %>
         <% legacy_alias_declarations(custom_theme.variables).each do |key, value| %>
-          <%= key %>: <%= value %> !important;
+          <% if key.match?(/\A--[a-zA-Z0-9_-]+\z/) && value.match?(/\A[^;}{<>"']+\z/) %>
+            <%= key %>: <%= value %> !important;
+          <% end %>
         <% end %>
         <% if custom_theme.dark? %>
           --color-scheme: dark !important;

@@ -115,6 +115,8 @@ module CollavreOpenclaw
       assert_equal @user.id, dispatched.first[:user_id]
       assert_equal "proactive", dispatched.first[:payload]["type"]
       assert_equal "Proactive message", dispatched.first[:payload]["content"]
+      # runId must flow into the job so it can dedup across processes
+      assert_equal "run-2", dispatched.first[:payload]["run_id"]
 
       # Buffer should be cleaned up
       assert_nil @handler.instance_variable_get(:@buffers)["run-2"]
@@ -555,7 +557,7 @@ module CollavreOpenclaw
     def capture_job_dispatch
       dispatched = []
 
-      @handler.define_singleton_method(:dispatch_to_job) do |user, content, context|
+      @handler.define_singleton_method(:dispatch_to_job) do |user, content, context, run_id = nil|
         creative_id = context[:creative_id]
         return unless creative_id.present? # preserve original guard
 
@@ -568,9 +570,11 @@ module CollavreOpenclaw
             "type" => "proactive",
             "content" => content,
             "creative_id" => creative_id,
+            "run_id" => run_id,
             "context" => {
               "creative_id" => creative_id,
-              "thread_id" => context[:topic_id]
+              "thread_id" => context[:topic_id],
+              "run_id" => run_id
             }
           }
         }

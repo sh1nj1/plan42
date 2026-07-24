@@ -1,20 +1,27 @@
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
+<% if authenticated? %>
+  <%= turbo_stream_from Current.user, :creative_tree %>
+<% end %>
+<% if @auto_fullscreen %>
+  <% content_for :comments_popup_auto_fullscreen, "true" %>
+<% end %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--set-plan-modal share-modal"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
      data-creatives--import-failed-value="<%= t('collavre.creatives.index.import_failed') %>"
      data-creatives--import-only-markdown-value="<%= t('collavre.creatives.index.only_markdown') %>"
-     data-creatives--import-dragover-class="dragover"
-     data-creatives--set-plan-modal-select-one-value="<%= t('collavre.creatives.index.select_one_creative') %>"
-     data-creatives--set-plan-modal-select-plan-value="<%= t('collavre.creatives.index.select_plan_to_remove') %>">
+     data-creatives--import-dragover-class="dragover">
   <% current_creative = @parent_creative || @creative %>
   <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>
 
   <div class="creative-actions-row">
     <%# Left: breadcrumb ancestry %>
     <div class="creative-breadcrumb" role="navigation" aria-label="<%= t('collavre.creatives.index.breadcrumb', default: 'Breadcrumb') %>">
+      <% if @parent_creative && authenticated? %>
+        <span id="creative-presence-avatars" class="creative-presence-avatars"></span>
+      <% end %>
       <a href="<%= creatives_path %>" class="creative-breadcrumb-link"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
         <% @parent_creative.ancestors.reverse.each do |ancestor| %>
@@ -38,7 +45,7 @@
       </button>
 
       <%# Contextual (select mode — hidden until activated) %>
-      <button id="set-plan-btn" class="set-plan-btn" style="display:none;" data-creatives--select-mode-target="setPlan" data-action="click->creatives--set-plan-modal#open"><%= t('app.set_plan') %></button>
+      <%= render_extension_slot(:creative_toolbar) %>
       <input type="checkbox" id="select-all-creatives" style="display:none;vertical-align:middle;" data-action="change->creatives--select-mode#toggleSelectAll" data-creatives--select-mode-target="selectAll" />
       <% if (@parent_creative || @creative)&.has_permission?(Current.user, :admin) %>
         <button id="delete-selection-btn" class="danger-link" style="display:none;" data-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_selection') %>" data-action="click->creatives--select-mode#deleteSelected" data-creatives--select-mode-target="deleteButton"><%= t('collavre.creatives.index.delete_selection') %></button>
@@ -75,8 +82,9 @@
         <button type="button" id="export-markdown-btn" class="popup-menu-item" data-parent-creative-id="<%= @parent_creative&.id %>" data-error="<%= t('collavre.creatives.index.export_failed') %>">
           <span aria-hidden="true"><%= svg_tag 'arrow-up.svg', width: 16, height: 16 %></span> <%= t('.export_markdown') %>
         </button>
+        <%# Archive toggle hidden - UI moved to search popup, kept for tree_controller.js compatibility %>
         <% if authenticated? %>
-          <button type="button" id="toggle-archived-btn" class="popup-menu-item" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>">
+          <button type="button" id="toggle-archived-btn" class="popup-menu-item" style="display:none;" title="<%= t('collavre.creatives.index.show_archived') %>" data-show-text="<%= t('collavre.creatives.index.show_archived') %>" data-hide-text="<%= t('collavre.creatives.index.hide_archived') %>">
             <span aria-hidden="true"><%= svg_tag 'archive.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.show_archived') %>
           </button>
         <% end %>
@@ -94,6 +102,17 @@
 
   <% if (@parent_creative || @creative) && (@parent_creative || @creative).has_permission?(Current.user, :write) %>
     <div data-share-modal-target="container"></div>
+  <% end %>
+
+  <%# The "re-add dropped members" modal must be present wherever a topic can be
+      dropped onto another creative — including the top-level index, where
+      @parent_creative/@creative are nil (moving a topic between root-level
+      creatives). Gating it on the write check above hid it exactly there, so
+      getModal() returned null and the popup silently never appeared. It stays
+      hidden until populated, and share creation is permission-checked
+      server-side, so rendering it for any authenticated user is safe. %>
+  <% if authenticated? %>
+    <%= render 'topic_move_members_modal' %>
   <% end %>
 
   <%= render 'import_upload_zone' %>
@@ -115,19 +134,7 @@
            value="<%= label.id %>">
 
       <%= "##{strip_tags(label.name)}" %>
-      <% if label.type == "Plan" %>
-        <% if @parent_creative&.has_permission?(Current.user, :write) %>
-          <%= form_with(model: label, url: collavre.plan_path(label), method: :patch, local: true, class: "plan-tag-date-form") do |form| %>
-            <%= hidden_field_tag :creative_id, @parent_creative.id %>
-            🗓
-            <%= form.date_field :start_date, value: label.start_date, class: "plan-tag-date-input" %>
-            <%= form.date_field :target_date, value: label.target_date, class: "plan-tag-date-input" %>
-            <%= form.submit t("collavre.plans.update", default: "Update"), class: "plan-tag-date-submit" %>
-          <% end %>
-        <% else %>
-          🗓<%= label.target_date %>
-        <% end %>
-      <% end %>
+      <%= render_label_extra(label, parent_creative: @parent_creative) %>
 
   <% end %>
   <% if labels.present? %>
@@ -158,17 +165,27 @@
     title_row_content += content_tag(:template, data: { part: "edit-icon" }) { svg_tag("edit.svg", class: "icon-edit") }
     title_row_content += content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") }
   %>
+  <%
+    title_can_write = @parent_creative.has_permission?(Current.user, :write)
+    title_effective_origin = @parent_creative.effective_origin(Set.new)
+    title_content_type = title_effective_origin.data&.dig("content_type")
+    title_markdown_source = title_can_write ? title_effective_origin.data&.dig("markdown_source") : nil
+    title_markdown_editor = title_effective_origin.data&.dig("editor")
+  %>
   <%= content_tag(
         "creative-tree-row",
         title_row_content,
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
-        "can-write": @parent_creative.has_permission?(Current.user, :write) ? "true" : "false",
+        "can-write": title_can_write ? "true" : "false",
         "is-title": "",
         "data-description-raw-html": @parent_creative.description,
         "data-progress-value": @parent_creative.progress,
-        "data-origin-id": @parent_creative.origin_id
+        "data-origin-id": @parent_creative.origin_id,
+        "data-content-type": title_content_type,
+        "data-markdown-source": title_markdown_source,
+        "data-markdown-editor": title_markdown_editor
       ) %>
 <% else %>
   <%= content_tag(
@@ -210,7 +227,7 @@
   tree_params = params.to_unsafe_h.slice(
     "id", "tags", "min_progress", "max_progress", "search", "comment",
     "has_comments", "due_before", "due_after", "has_due_date",
-    "assignee_id", "unassigned", "show_archived"
+    "assignee_id", "unassigned", "show_archived", "search_mode"
   ).merge(format: :json)
   tree_url = creatives_path(tree_params)
 %>
@@ -219,18 +236,19 @@
       empty_html,
       id: 'creatives',
       data: {
-        controller: 'creatives--tree',
+        controller: 'creatives--tree creatives--sync',
         'creatives--tree-url-value': tree_url,
         'creatives--tree-empty-html-value': empty_html.to_s,
+        'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
+        'creatives--sync-current-user-id-value': Current.user&.id,
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),
         edit_off_icon_html: svg_tag("edit-off.svg", className: "icon-edit")
       }
     ) %>
 
-<%= render 'collavre/comments/comments_popup', auto_fullscreen: @auto_fullscreen %>
 <%= render 'inline_edit_form' %>
 
-<%= render 'set_plan_modal' %>
+<%= render_extension_slot(:creative_modals) %>
 <% if can_manage_integrations %>
   <%# Dynamically registered integration modals %>
   <%= render 'integration_modals', creative: current_creative %>

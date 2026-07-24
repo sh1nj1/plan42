@@ -1,5 +1,14 @@
 <% if Current.user %>
-  <form id="inbox_button_to">
-    <button id="inbox-menu-btn" class="inbox-menu-btn" type="button"><%= t('app.inbox') %><%= render Collavre::Inbox::BadgeComponent.new(user: Current.user, badge_id: local_assigns[:badge_id] || 'desktop-inbox-badge') %></button>
-  </form>
+  <% inbox = Collavre::Creative.inbox_for(Current.user) %>
+  <button id="inbox-menu-btn"
+          class="inbox-menu-btn"
+          type="button"
+          data-creative-id="<%= inbox.id %>"
+          data-can-comment="true"
+          data-creative-snippet="<%= inbox.creative_snippet %>"
+          name="show-comments-btn"><%= t('app.inbox') %><%= render Collavre::Inbox::BadgeComponent.new(
+            creative: inbox,
+            user: Current.user,
+            badge_id: local_assigns[:badge_id] || 'desktop-inbox-badge'
+          ) %></button>
 <% end %>

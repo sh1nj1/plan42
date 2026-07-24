@@ -142,35 +142,12 @@ html.creative-alignment-ready .page-title {
 }
 
 /* === Overflow popup menu — GNB style === */
+/* #creative-overflow-menu inherits base styles from .popup-menu in popup.css */
 #creative-overflow-menu {
     min-width: 200px;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-3);
-    box-shadow: var(--shadow-2);
-    padding: var(--space-1);
-    background: var(--surface-section);
 }
 
-#creative-overflow-menu .popup-menu-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    width: 100%;
-    text-align: left;
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-2);
-    border: none;
-    background: none;
-    color: var(--text-primary);
-    font-size: var(--text-1);
-    cursor: pointer;
-    transition: background 0.15s var(--ease-out-2);
-    white-space: nowrap;
-}
-
-#creative-overflow-menu .popup-menu-item:hover {
-    background: var(--surface-hover);
-}
+/* popup-menu-item base styles are now in popup.css */
 
 #creative-overflow-menu .popup-menu-item.active {
     background: color-mix(in srgb, var(--color-active) 15%, transparent);
@@ -280,12 +257,21 @@ creative-tree-row.show-edit .creative-row {
     word-break: break-word;
 }
 
-/* Allow attachments and images to be clickable independently of the parent link */
+/* Allow attachments, images, and videos to be interactive independently of the
+   parent link. Without pointer-events on the video, the clickable creative row
+   would swallow clicks on the native playback controls (play/pause/fullscreen). */
 .creative-content a[download],
-.creative-content img {
+.creative-content img,
+.creative-content video {
     pointer-events: auto;
     position: relative;
     z-index: var(--layer-1);
+}
+
+.creative-content video {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-2);
 }
 
 .creative-row:hover .creative-content {
@@ -387,13 +373,15 @@ creative-tree-row.show-edit .creative-row {
 
     .creative-row:hover .progress-toggle-wrap .creative-progress-complete,
     .creative-row:hover .progress-toggle-wrap .creative-progress-incomplete {
-        display: none;
+        visibility: hidden;
     }
 
     .creative-row:hover .progress-toggle-checkbox {
         visibility: visible;
         opacity: 1;
-        position: relative;
+        position: absolute;
+        inset: 0;
+        margin: auto;
         pointer-events: auto;
         accent-color: var(--color-brand);
     }
@@ -642,6 +630,11 @@ creative-tree-row.chat-active .creative-row {
 .page-title {
     margin-left: var(--creative-row-text-offset);
     font-size: 1.4em;
+}
+
+/* ── Title text: larger than default h1 ── */
+.creative-tree-title .page-title {
+    font-size: var(--text-5, 2rem);
 }
 
 
@@ -912,3 +905,150 @@ creative-tree-row[archived] .creative-row {
     border-color: var(--color-accent-border);
     background-color: var(--surface-input);
 }
+
+/* --- Creative Presence Avatars --- */
+.creative-presence-avatars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: var(--space-2, 8px);
+    vertical-align: middle;
+}
+
+.creative-presence-user {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.creative-presence-user .avatar {
+    border: 2px solid var(--color-active, #4caf50);
+    width: 20px;
+    height: 20px;
+}
+
+/* --- Editing Conflict Indicator --- */
+creative-tree-row.is-being-edited {
+    position: relative;
+}
+
+creative-tree-row.is-being-edited .creative-tree {
+    border-left: 3px solid var(--color-warning, #ff9800);
+}
+
+.creative-editing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 4px);
+    font-size: var(--text-xs, 0.75rem);
+    color: var(--color-warning, #ff9800);
+    margin-left: var(--space-2, 8px);
+    white-space: nowrap;
+    animation: editing-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes editing-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Editing presence avatars */
+.creative-editing-avatars {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1, 2px);
+    margin-left: var(--space-1, 4px);
+}
+
+.creative-editing-avatar-img {
+    border-radius: var(--radius-round, 50%);
+    border: 2px solid var(--color-accent, #4a9eff);
+    object-fit: cover;
+}
+
+.creative-editing-avatar-initials {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-round, 50%);
+    background: var(--color-accent, #4a9eff);
+    color: var(--color-on-accent, white);
+    font-size: var(--text-xs, 11px);
+    font-weight: var(--weight-semibold, 600);
+    border: 2px solid var(--color-accent, #4a9eff);
+}
+
+/* Wrapper for progressHtml so DOM can be synced back to Lit state
+   after Turbo Streams mutations (e.g. badge count updates).
+   display:contents ensures no layout impact. */
+.creative-progress-area {
+    display: contents;
+}
+
+/* ─── Bundle drag image (shared by creatives + comments) ─── */
+
+.drag-bundle-image {
+    position: fixed;
+    top: -1000px;
+    left: -1000px;
+    width: 220px;
+    pointer-events: none;
+}
+
+.drag-bundle-card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 42px;
+    border-radius: var(--radius-2);
+    border: var(--border-1) solid var(--border-muted);
+    background-color: var(--surface-base);
+    box-shadow: var(--shadow-2);
+}
+
+.drag-bundle-card--back {
+    transform: translate(6px, -6px) rotate(2deg);
+    opacity: 0.5;
+}
+
+.drag-bundle-card--mid {
+    transform: translate(3px, -3px) rotate(1deg);
+    opacity: 0.75;
+}
+
+.drag-bundle-card--front {
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-3);
+    font-size: var(--text-1);
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background-color: var(--surface-base);
+}
+
+.drag-bundle-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: var(--radius-round);
+    background-color: var(--color-active);
+    color: var(--color-badge-text);
+    font-size: var(--text-0);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-2);
+}
+

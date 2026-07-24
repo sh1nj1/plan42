@@ -1,0 +1,10 @@
+_fixture:
+  model_class: Collavre::Topic
+
+# Intentionally empty. Registering the topics table as fixture-managed makes
+# Rails DELETE FROM topics during fixture loading, before the whole-DB
+# foreign-key check runs. Non-transactional (system) tests can create a user
+# whose profile creative (Collavre::HasProfileCreative) is committed together
+# with a main topic; the raw fixture DELETE of creatives bypasses
+# dependent: :destroy and would otherwise leave that topic orphaned, tripping
+# check_all_foreign_keys_valid! for every subsequent fixture load.

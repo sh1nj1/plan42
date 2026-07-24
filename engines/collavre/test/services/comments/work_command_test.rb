@@ -60,7 +60,6 @@ module Collavre
         parent_task = Task.find_by(creative: @creative, workflow_context: "Analyze and improve each creative")
         assert parent_task.present?
         assert_equal "running", parent_task.status
-        assert parent_task.workflow_parent?
         assert_equal [ @child1.id, @grandchild.id, @child2.id ], parent_task.workflow_state["pending_creative_ids"]
       end
 

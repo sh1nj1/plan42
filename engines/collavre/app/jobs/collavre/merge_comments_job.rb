@@ -1,6 +1,7 @@
 module Collavre
   class MergeCommentsJob < ApplicationJob
     include AiAgentResolvable
+    include CommentSerializable
 
     queue_as :default
 
@@ -20,7 +21,7 @@ module Collavre
       comments = creative.comments
         .where(id: comment_ids)
         .order(created_at: :asc)
-        .includes(:user)
+        .includes(:user, images_attachments: :blob)
         .to_a
 
       return if comments.size < 2
@@ -47,6 +48,7 @@ module Collavre
         model: agent.llm_model,
         system_prompt: SYSTEM_PROMPT,
         llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
         context: {
           creative: creative,
           user: agent,
@@ -69,6 +71,16 @@ module Collavre
       # Update the first comment and delete the rest atomically
       remaining_ids = comments[1..].map(&:id)
       ActiveRecord::Base.transaction do
+        # Save snapshot for recovery before modifying/deleting originals
+        CommentSnapshot.create!(
+          creative: creative,
+          topic_id: topic_id,
+          user_id: user_id,
+          operation: "merge",
+          comments_data: serialize_comments(comments),
+          result_comment: target_comment
+        )
+
         target_comment.update!(content: merged_content)
         creative.comments.where(id: remaining_ids).destroy_all
       end

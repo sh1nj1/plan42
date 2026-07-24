@@ -1,0 +1,556 @@
+/**
+ * Generic, scenario-driven demo recorder for Collavre.
+ *
+ * Reads a declarative YAML scenario, drives one viewport + theme with
+ * Playwright, injects scripted AI turns into the local fake LLM (so a real
+ * @mention animates the real streaming UI), records a .webm, then post-processes
+ * to .mp4 + poster with ffmpeg.
+ *
+ * Usage:
+ *   node record.mjs --scenario <path> [--theme light|dark] [--size landing]
+ *                   [--locale en|ko]
+ *                   [--base http://localhost:53000] [--llm http://127.0.0.1:8730]
+ *                   [--out <dir>] [--no-post] [--speed 2]
+ */
+import { chromium } from 'playwright';
+import { spawnSync } from 'child_process';
+import { parse as parseYaml } from 'yaml';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ── arg parsing ──────────────────────────────────────────────────────────
+function arg(name, def) {
+  const i = process.argv.indexOf(`--${name}`);
+  if (i === -1) return def;
+  const v = process.argv[i + 1];
+  return v && !v.startsWith('--') ? v : true;
+}
+const SCENARIO = arg('scenario');
+const THEME = arg('theme', 'light');
+const SIZE = arg('size', null);
+const LOCALE = arg('locale', null);
+const BASE = (arg('base', 'http://localhost:53000') || '').replace(/\/$/, '');
+const LLM = (arg('llm', 'http://127.0.0.1:8730') || '').replace(/\/$/, '');
+const OUT = arg('out', path.join(__dirname, '..', 'output'));
+const NO_POST = arg('no-post', false) === true;
+const SPEED = parseFloat(arg('speed', '2')) || 2;
+
+if (!SCENARIO) {
+  console.error('error: --scenario <path> is required');
+  process.exit(2);
+}
+
+const SIZES = {
+  landing: { width: 1280, height: 720 },
+  // Stills, not film. The app column is max-width capped, so a 1920 viewport spends
+  // half the frame on empty gutter; 1280 fills it. The height is whatever it takes to
+  // fit a whole document in one frame.
+  doc: { width: 1280, height: 920 },
+  wide: { width: 1920, height: 1080 },
+  square: { width: 1080, height: 1080 },
+  portrait: { width: 1080, height: 1920 },
+};
+
+const raw = parseYaml(fs.readFileSync(SCENARIO, 'utf8'));
+
+// ── locale ───────────────────────────────────────────────────────────────
+// A scenario is one script, not one language. The step list is a long pile of
+// selectors, waits and orderings that took real debugging to get right; forking
+// it per language would guarantee the copies drift and one of them silently
+// starts recording a lie.
+//
+// So the script stays single-source and every human-readable string in it is a
+// `{{key}}` into the `strings:` table, whose values are keyed by locale. That
+// covers the ones buried inside selectors too — `:has-text("{{project}}")` —
+// which a caption-only translation layer could not reach.
+//
+// The table has to agree with seed.rb: the video clicks rows *by their text*, so
+// a key whose Korean value does not match what the Korean seed wrote is not a
+// typo, it is a failed run.
+const LOCALES = { en: 'en-US', ko: 'ko-KR' };
+const locale = LOCALE || raw.default_locale || 'en';
+if (!LOCALES[locale]) {
+  console.error(`error: --locale ${locale} (expected one of: ${Object.keys(LOCALES).join(', ')})`);
+  process.exit(2);
+}
+
+function localize(node, strings) {
+  if (typeof node === 'string') {
+    return node.replace(/\{\{(\w+)\}\}/g, (m, key) => {
+      const entry = strings[key];
+      if (entry == null) throw new Error(`scenario: {{${key}}} is not in strings:`);
+      const val = typeof entry === 'string' ? entry : entry[locale];
+      if (val == null) throw new Error(`scenario: strings.${key} has no "${locale}" value`);
+      return val;
+    });
+  }
+  if (Array.isArray(node)) return node.map((v) => localize(v, strings));
+  if (node && typeof node === 'object') {
+    return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, localize(v, strings)]));
+  }
+  return node;
+}
+
+const scenario = localize(raw, raw.strings || {});
+
+const sizeKey = SIZE || scenario.viewport || 'landing';
+const size = SIZES[sizeKey] || SIZES.landing;
+const name = scenario.name || path.basename(SCENARIO).replace(/\.ya?ml$/, '');
+// Locale and theme both fan out into separate files in a shared OUT dir, so both
+// belong in the name. The base locale stays unsuffixed so existing output paths
+// (launch.mp4, launch-dark.mp4) keep pointing at the same thing.
+const localeSuffix = locale === (raw.default_locale || 'en') ? '' : `-${locale}`;
+const suffix = `${localeSuffix}${THEME === 'dark' ? '-dark' : ''}`;
+const SHOT_DIR = path.join(OUT, `${name}${suffix}-shots`);
+const VIDEO_DIR = path.join(OUT, `${name}${suffix}-raw`);
+
+// OUT is shared across themes (run.sh records light then dark into the same
+// dir), so only reset the per-theme raw/shot dirs — wiping OUT here would
+// delete the previous theme's .mp4/poster.
+fs.mkdirSync(OUT, { recursive: true });
+for (const d of [SHOT_DIR, VIDEO_DIR]) {
+  if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+  fs.mkdirSync(d, { recursive: true });
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── fake LLM injection ───────────────────────────────────────────────────
+async function llmReset() {
+  await fetch(`${LLM}/reset`, { method: 'POST' }).catch(() => {});
+}
+async function llmInject(responses) {
+  if (!responses || !responses.length) return;
+  await fetch(`${LLM}/inject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ responses }),
+  }).catch((e) => console.warn(`  ⚠️ inject failed: ${e.message}`));
+}
+
+// ── step interpreter ─────────────────────────────────────────────────────
+function stepKind(step) {
+  if (typeof step === 'string') return [step, true];
+  const key = Object.keys(step)[0];
+  return [key, step[key]];
+}
+
+async function shot(page, label) {
+  const file = path.join(SHOT_DIR, `${label}.png`);
+  await page.screenshot({ path: file }).catch(() => {});
+  console.log(`  📸 ${label}`);
+}
+
+function rowLocator(page, text) {
+  return page.locator('creative-tree-row').filter({ hasText: text }).first();
+}
+
+async function ensureFormVisible(page) {
+  await page.evaluate(() => {
+    const f = document.getElementById('new-comment-form');
+    if (f) f.style.display = '';
+  });
+}
+
+// Wait until the latest AI comment finishes streaming.
+//
+// Completion is detected when (a) the last AI comment's body text has stopped
+// growing and (b) the typing indicator (`#typing-indicator`, which shows
+// "<agent> ..." while a reply streams) has cleared. The typing indicator is
+// the authoritative end-of-stream signal; the text-stability check guards
+// against a momentary empty indicator between chunks.
+//
+// We measure the `.comment-content` body element specifically — not the whole
+// `.comment-item`, whose innerText includes button/status chrome (~tens of
+// chars). Measuring the body lets us settle on any non-empty stable text
+// (`len > 0`) instead of an arbitrary char threshold that would wrongly time
+// out on a short scripted reply.
+async function waitStream(page, timeoutMs = 40000) {
+  const start = Date.now();
+  await page
+    .waitForSelector('#comments-list .comment-item[data-ai-user="true"]', { timeout: 15000 })
+    .catch(() => {});
+  let lastLen = -1;
+  let stable = 0;
+  while (Date.now() - start < timeoutMs) {
+    const state = await page
+      .evaluate(() => {
+        const items = document.querySelectorAll(
+          '#comments-list .comment-item[data-ai-user="true"]'
+        );
+        const last = items[items.length - 1];
+        const body = last ? last.querySelector('.comment-content') : null;
+        const typing = document.getElementById('typing-indicator');
+        return {
+          len: body ? (body.innerText || '').trim().length : 0,
+          typing: typing ? (typing.innerText || '').trim().length > 0 : false,
+        };
+      })
+      .catch(() => ({ len: 0, typing: false }));
+    if (state.len > 0 && state.len === lastLen && !state.typing) {
+      stable += 1;
+      if (stable >= 2) return; // ~1s settled with no typing indicator
+    } else {
+      stable = 0;
+    }
+    lastLen = state.len;
+    await sleep(500);
+  }
+  // The AI streamed reply is the core of the demo. If it never appears or never
+  // settles, the recording is worthless — throw so the step loop marks the run
+  // as failed (exit non-zero) instead of publishing a video missing its payload.
+  throw new Error(
+    `waitStream timed out after ${timeoutMs}ms — no settled AI response ` +
+      `(check mention routing, :feedback permission, ActionCable, or fake LLM)`
+  );
+}
+
+// On-screen caption. The narrative videos make a claim per scene ("nothing was
+// retyped"), and a silent screen recording cannot make a claim — so captions are
+// part of the payload, not decoration. Rendered into the page so they land in the
+// recording without a separate compositing pass.
+//
+// `hold: true` leaves the caption up across subsequent steps (cleared by the next
+// caption, by `caption: null`, or by a navigation).
+async function caption(page, val) {
+  const text = val == null ? '' : typeof val === 'string' ? val : val.text || '';
+  const hold = typeof val === 'object' && val !== null && val.hold === true;
+  const ms = (typeof val === 'object' && val !== null && val.ms) || 2600;
+
+  await page.evaluate((t) => {
+    let el = document.getElementById('__demo_caption');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = '__demo_caption';
+      el.style.cssText = [
+        'position:fixed',
+        'left:50%',
+        'bottom:44px',
+        'transform:translateX(-50%)',
+        'z-index:2147483647',
+        'padding:14px 30px',
+        'border-radius:999px',
+        'background:rgba(15,17,21,0.9)',
+        'color:#fff',
+        'font:600 22px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif',
+        'box-shadow:0 10px 40px rgba(0,0,0,0.35)',
+        'pointer-events:none',
+        'opacity:0',
+        'transition:opacity 240ms ease',
+        'white-space:nowrap',
+        'max-width:92vw',
+      ].join(';');
+      document.body.appendChild(el);
+    }
+    if (!t) {
+      el.style.opacity = '0';
+      return;
+    }
+    el.textContent = t;
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+    });
+  }, text);
+
+  if (!text) return;
+  await sleep(ms);
+  if (hold) return;
+  await page
+    .evaluate(() => {
+      const el = document.getElementById('__demo_caption');
+      if (el) el.style.opacity = '0';
+    })
+    .catch(() => {});
+  await sleep(260);
+}
+
+// Ring-highlight an element. Required by default (throws on a miss): the elements
+// worth highlighting are the ones the video exists to show — e.g. the inherited
+// context chip. Silently recording a scene with no highlight would ship a demo
+// that fails to demonstrate its own claim.
+async function highlight(page, val) {
+  const sel = typeof val === 'string' ? val : val.selector;
+  const ms = (typeof val === 'object' && val.ms) || 2400;
+  const optional = typeof val === 'object' && val.optional === true;
+
+  const el = page.locator(sel).first();
+  try {
+    await el.waitFor({ state: 'visible', timeout: 8000 });
+  } catch (e) {
+    if (!optional) throw new Error(`highlight ${sel}: not visible — ${e.message.split('\n')[0]}`);
+    console.log(`  ⚠️ optional highlight ${sel}: not visible`);
+    return;
+  }
+
+  await el.evaluate((node) => {
+    node.dataset.demoPrevStyle = node.getAttribute('style') || '';
+    node.style.outline = '3px solid #ff8a00';
+    node.style.outlineOffset = '3px';
+    node.style.boxShadow = '0 0 0 8px rgba(255,138,0,0.22)';
+    node.style.borderRadius = '10px';
+    node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
+  await sleep(ms);
+  await el
+    .evaluate((node) => {
+      node.setAttribute('style', node.dataset.demoPrevStyle || '');
+      delete node.dataset.demoPrevStyle;
+    })
+    .catch(() => {});
+}
+
+async function runStep(page, step) {
+  const [kind, val] = stepKind(step);
+  switch (kind) {
+    case 'login': {
+      await page.goto(`${BASE}/session/new`);
+      await page.waitForSelector('#email');
+      await page.fill('#email', val.email);
+      await page.fill('#password', val.password);
+      await page.click('#sign-in-submit');
+      await page.waitForLoadState('networkidle').catch(() => {});
+      await sleep(1500);
+      return;
+    }
+    case 'goto':
+      await page.goto(`${BASE}${val}`);
+      await sleep(800);
+      return;
+    case 'wait':
+      await sleep(Number(val) || 0);
+      return;
+    case 'shot':
+      await shot(page, val);
+      return;
+    case 'click': {
+      // Required by default: a missing/renamed selector (e.g. #expand-all-btn,
+      // which reveals the full tree) must fail the run rather than silently
+      // record the wrong scene. Use `{ selector, optional: true }` for clicks
+      // whose miss is genuinely tolerable.
+      const sel = typeof val === 'string' ? val : val.selector;
+      const optional = typeof val === 'object' && val.optional === true;
+      try {
+        await page.locator(sel).first().click({ timeout: 8000 });
+      } catch (e) {
+        if (!optional) throw new Error(`click ${sel}: ${e.message.split('\n')[0]}`);
+        console.log(`  ⚠️ optional click ${sel}: ${e.message.split('\n')[0]}`);
+      }
+      return;
+    }
+    case 'click_row': {
+      const row = rowLocator(page, val);
+      const desc = row.locator('.description, [part="description"]').first();
+      await (await desc.isVisible().catch(() => false)
+        ? desc.click().catch(() => row.click({ force: true }))
+        : row.click({ force: true }));
+      return;
+    }
+    case 'open_chat': {
+      // Required by default: the chat/context scenes are meaningless if the
+      // popup never opens. Gate on #comments-popup actually appearing (the
+      // authoritative signal), so a renamed .comments-btn or a hidden row fails
+      // the run instead of recording a scene with no chat UI. Use
+      // `{ row, optional: true }` to tolerate a miss.
+      const row = typeof val === 'string' ? val : val.row;
+      const optional = typeof val === 'object' && val.optional === true;
+      const btn = rowLocator(page, row).locator('.comments-btn').first();
+      try {
+        await btn.click({ force: true, timeout: 8000 });
+        await page.waitForSelector('#comments-popup', { timeout: 8000 });
+      } catch (e) {
+        if (!optional) throw new Error(`open_chat ${row}: ${e.message.split('\n')[0]}`);
+        console.log(`  ⚠️ optional open_chat ${row}: ${e.message.split('\n')[0]}`);
+      }
+      return;
+    }
+    case 'topic': {
+      // Required by default: a silent tab-switch miss records the wrong
+      // discussion in the topic scenes (05-code-review, 06-design). A missing
+      // tab throws; use `{ name, optional: true }` to tolerate.
+      const name = typeof val === 'string' ? val : val.name;
+      const optional = typeof val === 'object' && val.optional === true;
+      const tab = page.locator('#comment-topics').locator(`text=${name}`).first();
+      try {
+        await tab.click({ timeout: 6000 });
+      } catch (e) {
+        if (!optional) throw new Error(`topic ${name}: ${e.message.split('\n')[0]}`);
+        console.log(`  ⚠️ optional topic ${name}: ${e.message.split('\n')[0]}`);
+      }
+      await sleep(1200);
+      return;
+    }
+    case 'type': {
+      const el = page.locator(val.selector).first();
+      await el.click().catch(() => {});
+      await el.type(val.text, { delay: val.delay ?? 35 });
+      return;
+    }
+    case 'mention_ai': {
+      await ensureFormVisible(page);
+      const textarea = page
+        .locator('#new-comment-form textarea, textarea[name="comment[content]"]')
+        .first();
+      await textarea.click().catch(() => {});
+      await textarea.type(val.text, { delay: val.delay ?? 35 });
+      await sleep(600);
+      if (val.shot) await shot(page, val.shot);
+      await page.keyboard.press('Enter');
+      return;
+    }
+    case 'wait_stream':
+      await waitStream(page, (val && val.timeout) || 40000);
+      return;
+    case 'scroll_bottom': {
+      const sel = (val && val.selector) || '#comments-list';
+      await page
+        .locator(sel)
+        .first()
+        .evaluate((el) => el.scrollTo({ top: el.scrollHeight }))
+        .catch(() => {});
+      return;
+    }
+    case 'press':
+      await page.keyboard.press(val);
+      return;
+    case 'caption':
+      await caption(page, val);
+      return;
+    case 'highlight':
+      await highlight(page, val);
+      return;
+    case 'upload': {
+      // The markdown-import dropzone opens a native OS file dialog on click, which
+      // Playwright cannot drive. setInputFiles on the hidden <input type="file">
+      // fires the same `change` event the Stimulus controller listens for.
+      const sel = val.selector || '#import-markdown-input';
+      const file = path.resolve(path.dirname(SCENARIO), val.file);
+      if (!fs.existsSync(file)) throw new Error(`upload: file not found: ${file}`);
+      await page.setInputFiles(sel, file);
+      return;
+    }
+    case 'wait_for': {
+      const sel = typeof val === 'string' ? val : val.selector;
+      const timeout = (typeof val === 'object' && val.timeout) || 15000;
+      const state = (typeof val === 'object' && val.state) || 'visible';
+      let loc = page.locator(sel);
+      if (typeof val === 'object' && val.text) loc = loc.filter({ hasText: val.text });
+      try {
+        await loc.first().waitFor({ state, timeout });
+      } catch (e) {
+        throw new Error(`wait_for ${sel}: ${e.message.split('\n')[0]}`);
+      }
+      return;
+    }
+    case 'js':
+      await page.evaluate((code) => eval(code), val); // escape hatch
+      return;
+    default:
+      console.log(`  ⚠️ unknown step: ${kind}`);
+  }
+}
+
+// ── ffmpeg post ──────────────────────────────────────────────────────────
+function postProcess(rawPath) {
+  const mp4 = path.join(OUT, `${name}${suffix}.mp4`);
+  const poster = path.join(OUT, `${name}${suffix}-poster.jpg`);
+  const pts = (1 / SPEED).toFixed(4);
+  const vf = `setpts=${pts}*PTS,scale=${size.width}:${size.height}:flags=lanczos`;
+  const r = spawnSync(
+    'ffmpeg',
+    ['-y', '-i', rawPath, '-vf', vf, '-c:v', 'libx264', '-preset', 'slow',
+     '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4],
+    { stdio: 'pipe' }
+  );
+  if (r.status !== 0) {
+    console.error('  ❌ ffmpeg failed:', (r.stderr || '').toString().split('\n').slice(-4).join('\n'));
+    return null;
+  }
+  // Frame 0 is the initial page load — almost always blank. Seek to a frame that
+  // actually shows the product, or the poster ships as an empty rectangle.
+  // May be a bare number or a per-locale map: the takes do not share a clock, so
+  // the same second does not land on the same beat in every language.
+  const posterRaw = scenario.poster_at ?? scenario.posterAt ?? 0;
+  const posterAt = Number(
+    posterRaw !== null && typeof posterRaw === 'object' ? posterRaw[locale] ?? 0 : posterRaw
+  );
+  spawnSync(
+    'ffmpeg',
+    ['-y', '-ss', String(posterAt), '-i', mp4, '-frames:v', '1', '-q:v', '2', poster],
+    { stdio: 'pipe' }
+  );
+  const kb = (fs.statSync(mp4).size / 1024).toFixed(0);
+  console.log(`  🎬 ${mp4} (${kb} KB)`);
+  console.log(`  🖼  ${poster}`);
+  return mp4;
+}
+
+// ── main ─────────────────────────────────────────────────────────────────
+async function main() {
+  console.log(`\n▶ scenario=${name} locale=${locale} theme=${THEME} size=${sizeKey} (${size.width}x${size.height})`);
+  await llmReset();
+  await llmInject(scenario.ai_turns || scenario.aiTurns);
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    viewport: size,
+    recordVideo: { dir: VIDEO_DIR, size },
+    locale: LOCALES[locale],
+    colorScheme: THEME === 'dark' ? 'dark' : 'light',
+    deviceScaleFactor: 2,
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(10000);
+
+  // A thrown step (missing selector, changed login flow, …) must fail the run:
+  // run.sh keys off this process's exit status, so swallowing the error would
+  // report a broken scenario as a successful demo video. We still finalize the
+  // partial recording below for debugging, then exit non-zero.
+  let stepError = null;
+  try {
+    for (const step of scenario.steps || []) {
+      await runStep(page, step);
+    }
+  } catch (e) {
+    stepError = e;
+    console.error('  ❌ step error:', e.message);
+  }
+
+  const video = page.video();
+  await context.close();
+  await browser.close();
+
+  let rawPath = null;
+  if (video) rawPath = await video.path().catch(() => null);
+  if (!rawPath) {
+    const files = fs.readdirSync(VIDEO_DIR).filter((f) => f.endsWith('.webm'));
+    if (files.length) rawPath = path.join(VIDEO_DIR, files[0]);
+  }
+  if (!rawPath) {
+    console.error('  ❌ no video produced');
+    process.exit(1);
+  }
+  console.log(`  📼 raw: ${rawPath}`);
+  // postProcess returns null when ffmpeg is missing or exits non-zero. The
+  // documented output of this skill is the post-processed MP4, so a null result
+  // is a run failure: without this gate the process would exit 0 and run.sh
+  // would print "✅ done" with no MP4 produced.
+  let postFailed = false;
+  if (!NO_POST) postFailed = postProcess(rawPath) === null;
+
+  if (stepError) {
+    console.error('  ❌ recording failed: a scenario step threw — output is partial');
+    process.exit(1);
+  }
+  if (postFailed) {
+    console.error('  ❌ recording failed: ffmpeg post-processing produced no MP4');
+    process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  console.error('❌ fatal:', e);
+  process.exit(1);
+});

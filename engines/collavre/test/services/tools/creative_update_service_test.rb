@@ -43,6 +43,52 @@ module Collavre
         assert_equal "<p>Plain text update</p>", @creative.description
       end
 
+      test "stores the updated description as Markdown-canonical" do
+        service = CreativeUpdateService.new
+
+        result = service.call(
+          id: @creative.id,
+          description: "# Updated\n\n- a\n- b"
+        )
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        @creative.reload
+        assert_equal "markdown", @creative.data["content_type"]
+        assert_equal "# Updated\n\n- a\n- b", @creative.data["markdown_source"]
+        assert_includes @creative.description, "Updated</h1>"
+        assert_includes @creative.description, "<li>a</li>"
+      end
+
+      test "tool description update forces the source editor over a prior rich preference" do
+        @creative.update!(content_type_input: "markdown", markdown_source: "rich body", markdown_editor: "rich")
+        assert_equal "rich", @creative.reload.data["editor"]
+
+        service = CreativeUpdateService.new
+        result = service.call(
+          id: @creative.id,
+          description: "| a | b |\n| - | - |\n| 1 | 2 |"
+        )
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        @creative.reload
+        assert_equal "markdown", @creative.data["content_type"]
+        assert_equal "source", @creative.data["editor"]
+      end
+
+      test "updates progress without a description change keeps Markdown source" do
+        @creative.update!(content_type_input: "markdown", markdown_source: "# Keep me")
+        assert_equal "markdown", @creative.reload.data["content_type"]
+
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, progress: 1.0)
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        @creative.reload
+        assert_in_delta 1.0, @creative.progress, 0.01
+        assert_equal "markdown", @creative.data["content_type"]
+        assert_equal "# Keep me", @creative.data["markdown_source"]
+      end
+
       test "updates progress to 1.0 on leaf creative" do
         service = CreativeUpdateService.new
 
@@ -190,6 +236,38 @@ module Collavre
         assert result[:success]
         @creative.reload
         assert_equal "<p>Updated with newlines</p>", @creative.description
+      end
+
+      test "does not change parent_id when parent_id is nil" do
+        parent = Creative.create!(description: "<p>Parent</p>", user: @user)
+        @creative.update!(parent: parent)
+
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, description: "<p>Updated</p>", parent_id: nil)
+
+        assert result[:success]
+        @creative.reload
+        assert_equal parent.id, @creative.parent_id
+      end
+
+      test "does not change parent_id when parent_id is 0" do
+        parent = Creative.create!(description: "<p>Parent</p>", user: @user)
+        @creative.update!(parent: parent)
+
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, description: "<p>Updated</p>", parent_id: 0)
+
+        assert result[:success]
+        @creative.reload
+        assert_equal parent.id, @creative.parent_id
+      end
+
+      test "returns error when parent_id is set to self" do
+        service = CreativeUpdateService.new
+        result = service.call(id: @creative.id, parent_id: @creative.id)
+
+        assert result[:error].present?
+        assert_match(/own parent/i, result[:error])
       end
 
       test "raises error when no current user" do

@@ -192,9 +192,10 @@ module Tools
     test "raises error without Current.user" do
       Current.set(user: nil) do
         service = Tools::CreativeRetrievalService.new
-        assert_raises(RuntimeError, /Current.user is required/) do
+        error = assert_raises(RuntimeError) do
           service.call
         end
+        assert_match(/Current.user is required/, error.message)
       end
     end
   end

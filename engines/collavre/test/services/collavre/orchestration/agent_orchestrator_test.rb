@@ -122,6 +122,125 @@ module Collavre
         assert_equal topic.id, queued_task.topic_id
       end
 
+      # The "⏳" waiting notice must name the agent holding the running slot, so a
+      # waiting user sees *who* is blocking them (and can reach that task's stop
+      # button) instead of an anonymous "another task is running" dead end.
+      test "deferred topic-concurrency notice names the running blocker agent" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => {
+            "content" => "@#{@ai_agent.name}: hello",
+            "mentioned_user" => { "id" => @ai_agent.id }
+          },
+          "comment" => { "content" => "@#{@ai_agent.name}: hello" }
+        }
+
+        # A running task on the same topic forces the topic-concurrency defer.
+        Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+
+        AgentOrchestrator.dispatch("comment_created", context)
+
+        notice = @creative.comments.where(topic_id: topic.id)
+                          .find { |c| c.content.include?("⏳") }
+        assert notice, "expected a ⏳ waiting notice comment"
+        assert_includes notice.content, "@#{@ai_agent.name}",
+                        "waiting notice should name the running blocker agent"
+      end
+
+      # The waiting notice must expose a stop button for the *blocker* so a user
+      # can cancel a hung in-progress task and unstick their deferred waiter.
+      # The button targets the running blocker resolved at render time, NOT the
+      # notice's own task_id (which would collide with Task#reply_comment).
+      test "deferred topic-concurrency notice exposes the running blocker as its stop target" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => {
+            "content" => "@#{@ai_agent.name}: hello",
+            "mentioned_user" => { "id" => @ai_agent.id }
+          },
+          "comment" => { "content" => "@#{@ai_agent.name}: hello" }
+        }
+
+        blocker = Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                               agent: @ai_agent, topic_id: topic.id, creative: @creative)
+
+        AgentOrchestrator.dispatch("comment_created", context)
+
+        notice = @creative.comments.where(topic_id: topic.id)
+                          .find { |c| c.content.include?("⏳") }
+        assert notice, "expected a ⏳ waiting notice comment"
+        assert notice.waiting_notice?, "system notice should be flagged as a waiting notice"
+        assert_nil notice.task_id,
+                   "notice must not borrow task_id (would shadow the blocker's reply_comment)"
+        assert_equal blocker.id, notice.topic_blocking_task&.id,
+                     "stop button must target the running blocker task"
+      end
+
+      # A :delayed (busy / rate_limited) notice reuses the same "⏳" content but
+      # does NOT queue a topic waiter; cancelling some unrelated running task in
+      # the topic would not unblock it, so no blocker stop button must be shown.
+      test "non-concurrency waiting notice exposes no blocker stop target" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        # A running task exists in the topic, but there is NO queued waiter —
+        # this notice is a delayed (rate_limited) one, not a concurrency defer.
+        Task.create!(name: "Unrelated running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        notice = @creative.comments.create!(
+          content: "⏳ rate limited, retrying soon", topic_id: topic.id,
+          private: false, skip_default_user: true
+        )
+
+        assert notice.waiting_notice?, "system notice should be flagged as a waiting notice"
+        assert_nil notice.topic_blocking_task,
+                   "delayed notice (no queued waiter) must not surface a blocker stop button"
+      end
+
+      # A blocker paused on pending_approval still occupies the topic slot and is
+      # cancellable, so the waiting notice must keep showing its stop button.
+      test "waiting notice resolves a pending_approval blocker as its stop target" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        blocker = Task.create!(name: "Approval-paused", status: "pending_approval",
+                               trigger_event_name: "e", agent: @ai_agent,
+                               topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Queued waiter", status: "queued", trigger_event_name: "comment_created",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        notice = @creative.comments.create!(
+          content: "⏳ waiting on the topic", topic_id: topic.id,
+          private: false, skip_default_user: true, topic_concurrency_defer: true
+        )
+
+        assert_equal blocker.id, notice.topic_blocking_task&.id,
+                     "stop button must target the pending_approval slot holder"
+      end
+
+      # Codex P2: gating the button on "any queued task in the topic" leaks — a
+      # :delayed (rate_limited) notice posted in a topic that already has an
+      # unrelated concurrency waiter would expose a stop button for a blocker
+      # whose cancellation does not unblock the delayed job. topic_concurrency_defer
+      # (set only on the :deferred path) is the per-notice discriminator.
+      test "delayed notice shows no blocker button even when an unrelated queued waiter exists" do
+        topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
+        # Occupied slot + a genuine concurrency waiter for some OTHER agent.
+        Task.create!(name: "Running blocker", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Unrelated queued waiter", status: "queued",
+                     trigger_event_name: "comment_created",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        # This notice is a :delayed (busy / rate_limited) one — NOT a concurrency defer.
+        delayed_notice = @creative.comments.create!(
+          content: "⏳ rate limited, retrying soon", topic_id: topic.id,
+          private: false, skip_default_user: true, topic_concurrency_defer: false
+        )
+
+        assert_nil delayed_notice.topic_blocking_task,
+                   "a :delayed notice must not borrow another waiter's blocker button"
+      end
+
       # dequeue_next_for_topic
       test "dequeue_next_for_topic claims queued task as pending" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)

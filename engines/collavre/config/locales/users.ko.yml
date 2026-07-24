@@ -31,6 +31,16 @@ ko:
         searchable_help: 활성화하면 다른 사용자가 이름으로 이 AI를 찾고 멘션할 수 있습니다.
         submit: AI 에이전트 추가
         tools_note: 에이전트 생성 후 사용 가능한 도구를 확인하고 테스트할 수 있습니다.
+        trigger_label: 트리거
+        trigger_auto: 자동 응답
+        trigger_auto_help: 새 댓글에 자동으로 응답합니다.
+        trigger_mention: 멘션으로 호출
+        trigger_mention_help: "@멘션되었을 때만 응답합니다."
+        trigger_keyword: 특정 메시지 포함
+        trigger_keyword_help: 메시지에 특정 키워드가 포함되면 응답합니다.
+        trigger_keyword_placeholder: 키워드 입력
+        trigger_advanced: 고급 (Liquid 표현식)
+        trigger_advanced_help: "직접 Liquid 표현식을 작성합니다. 예: chat.content contains \"help\" and event_name == \"comment_created\""
       create_ai:
         success: AI 에이전트가 생성되었습니다.
       copy_ai:
@@ -87,6 +97,7 @@ ko:
       current_avatar: 현재 아바타
       new_avatar_preview: 새 아바타 미리보기
       update_profile: 프로파일 업데이트
+      update: 업데이트
       delete: 삭제
       make_system_admin: 시스템 관리자 지정
       make_normal_user: 일반 사용자로 변경
@@ -105,6 +116,20 @@ ko:
         en: 영어
         ko: 한국어
       timezone: 시간대
+      typo_correction:
+        legend: 오타 자동 수정
+        manage: 오타 자동 수정 설정
+        description: 입력하는 동안 오타를 자동으로 제안하고 수정합니다. 아래의 타이핑 장치와 입력 위치가 모두 켜져 있을 때만 동작합니다.
+        enabled: 오타 자동 수정 사용
+        threshold: 자동 적용 기준
+        threshold_hint: 이 신뢰도(0-100) 이상이면 자동으로 적용되고, 낮으면 후보로만 표시됩니다.
+        device_legend: 타이핑 장치
+        on_voice: 음성 입력
+        on_soft_keyboard: 화면(소프트) 키보드
+        on_physical_keyboard: 물리 키보드(블루투스/유선)
+        location_legend: 입력 위치
+        in_chat: 채팅 메시지 입력
+        in_editor: 크리에이티브 편집기
       profile_updated: 프로파일이 업데이트되었습니다.
       avatar_updated: 아바타가 변경되었습니다.
       password_updated: 비밀번호가 성공적으로 변경되었습니다.

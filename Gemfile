@@ -1,11 +1,12 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 8.1.2"
+gem "rails", "~> 8.1.3"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
-# Use sqlite3 as the database for Active Record
-gem "sqlite3", ">= 2.1", groups: [ :development, :test ]
+# Use sqlite3 as the database for Active Record. Also in :desktop so the bundled
+# desktop app (which always runs on SQLite, never Postgres) ships the adapter.
+gem "sqlite3", ">= 2.1", groups: [ :development, :test, :desktop ]
 # Use postgresql as the database for production
 gem "pg", group: :production
 # Use the Puma web server [https://github.com/puma/puma]
@@ -63,7 +64,10 @@ gem "octokit"
 gem "ruby_llm"
 gem "liquid"
 
-gem "dotenv", groups: [ :development, :test ]
+# :desktop too — config/boot.rb requires "dotenv" unconditionally, and the
+# vendored desktop bundle excludes the development/test groups (.env.desktop
+# itself need not exist; Dotenv.overload skips missing files).
+gem "dotenv", groups: [ :development, :test, :desktop ]
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
@@ -87,6 +91,10 @@ group :test do
   gem "selenium-webdriver"
   gem "minitest-mock"
   gem "webmock"
+
+  # Test coverage (activated only when COVERAGE env var is set; see test/support/coverage.rb)
+  gem "simplecov", require: false
+  gem "simplecov-lcov", require: false
 end
 
 gem "doorkeeper", "~> 5.9"
@@ -113,3 +121,10 @@ end
 if ENV["USE_COLLAVRE_GEM"] == "true"
   gem "collavre", "0.2.4"
 end
+
+# MockOpenclawGateway (WebSocket integration tests) 전용.
+# Ruby 3.4에서 "literal string will be frozen in the future" 경고가 나오지만
+# em-websocket 내부 이슈이며 동작에 영향 없음. https://github.com/igrigorik/em-websocket/issues
+gem "em-websocket", "~> 0.5.3", groups: [ :development, :test ]
+
+gem "commonmarker", "~> 2.8"

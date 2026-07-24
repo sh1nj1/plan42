@@ -39,6 +39,7 @@ en:
     home: "Home"
     sign_in: "Sign in"
     sign_out: "Sign out"
+    help: "?"
     cancel: "Cancel"
     previous: "Previous"
     next: "Next"
@@ -117,6 +118,8 @@ en:
     webauthn:
       deleted: "Passkey deleted."
       credential_not_found: "Passkey not found. Please register a passkey in your profile settings after logging in with password."
+      verification_failed: "Verification failed: %{message}"
+      credential_save_failed: "Credential could not be saved."
     table:
       last_login_unknown: "Never"
 
