@@ -8,19 +8,10 @@ module Collavre
 
     validates :user_id, uniqueness: { scope: :creative_id }
 
-    def effective_comment_id(sorted_visible_ids)
-      return nil unless last_read_comment_id
-
-      # Find the nearest visible comment ID <= last_read_comment_id
-      idx = sorted_visible_ids.bsearch_index { |x| x > last_read_comment_id }
-
-      if idx
-        # If idx is 0, target is smaller than all visible IDs
-        idx > 0 ? sorted_visible_ids[idx - 1] : nil
-      else
-        # target is >= all visible IDs
-        sorted_visible_ids.last
-      end
-    end
+    # Mapping a pointer onto the comment its receipt avatar renders against lives
+    # in Comments::ReadReceiptIndex, which resolves it in the same query that
+    # loads the pointers and bounds the lookup to the rendered window. Do not
+    # reintroduce a model-side variant: two implementations drift, and the
+    # in-Ruby one required loading every public comment id on the creative.
   end
 end

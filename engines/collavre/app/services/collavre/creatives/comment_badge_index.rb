@@ -5,6 +5,13 @@ module Creatives
   # scale with the size of the rendered tree.
   #
   # Keyed by *origin*: a linked shell shows its origin's comments.
+  #
+  # The counts it hands out are display-ready: presence suppression (a user
+  # looking at a chat has read it, so the badge shows 0) is applied here rather
+  # than left to the caller. Presence lives in Rails.cache, which is the
+  # database in production, so a per-node check was the same N+1 in another
+  # disguise — and a caller that re-applied suppression on top of a batched
+  # value would only be doing the work twice.
   class CommentBadgeIndex
     def initialize(user:)
       @user = user
@@ -25,6 +32,8 @@ module Creatives
 
       counts = unread_counts(watermarks)
       watermarks.each_key { |origin_id| @unread_by_origin_id[origin_id] = counts.fetch(origin_id, 0) }
+
+      suppress_for_present_user(pending.map(&:id))
     end
 
     # nil when the origin was never indexed, which tells the caller to fall back
@@ -36,6 +45,15 @@ module Creatives
     private
 
     attr_reader :user
+
+    # One read_multi for the whole level. An anonymous visitor is never present.
+    def suppress_for_present_user(origin_ids)
+      return unless user
+
+      CommentPresenceStore.list_many(origin_ids).each do |origin_id, present_user_ids|
+        @unread_by_origin_id[origin_id] = 0 if present_user_ids.include?(user.id)
+      end
+    end
 
     # `user_id: nil` for an anonymous visitor is the lookup the un-batched path
     # made too, so the two agree on which pointer (if any) applies.

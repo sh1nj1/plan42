@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_24_090000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -101,6 +101,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
     t.index ["type"], name: "index_channels_on_type"
   end
 
+  create_table "comment_notification_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_key", null: false
+    t.bigint "inbox_comment_id", null: false
+    t.text "link"
+    t.text "message", null: false
+    t.string "push_claim_token"
+    t.datetime "push_claimed_at"
+    t.datetime "push_enqueued_at"
+    t.bigint "recipient_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["delivery_key"], name: "index_comment_notification_deliveries_on_delivery_key", unique: true
+    t.index ["push_enqueued_at", "push_claimed_at"], name: "index_comment_notification_deliveries_pending"
+  end
+
   create_table "comment_reactions", force: :cascade do |t|
     t.integer "comment_id", null: false
     t.datetime "created_at", null: false
@@ -162,6 +177,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
     t.text "content", null: false
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.string "notification_key"
+    t.integer "notification_revision", default: 0, null: false
     t.boolean "private", default: false, null: false
     t.integer "quoted_comment_id"
     t.text "quoted_text"
@@ -176,7 +193,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
+    t.index ["creative_id", "private", "id"], name: "index_comments_on_creative_id_and_private_and_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
+    t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"
