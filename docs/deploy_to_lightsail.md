@@ -254,10 +254,29 @@ the SQLite converter needs the app image and so runs after it, app stopped.
 
   ```bash
   ./kamal.sh setup
+
+  ADMIN_PASSWORD="$(openssl rand -base64 18)"   # not in shell history; print it below
   ./kamal.sh app exec 'bin/rails db:schema:load:primary db:seed' \
-    -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1
+    -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1 \
+       DEFAULT_USER_EMAIL:you@example.com \
+       DEFAULT_USER_PASSWORD:"$ADMIN_PASSWORD"
+  echo "$ADMIN_PASSWORD"                        # sign in, then change it
+
   ./kamal.sh app boot   # restart on the schema you just loaded
   ```
+
+  **Supply the admin credentials.** `db/seeds.rb` falls back to
+  `admin@example.com` / `password123` and marks that user `system_admin`. That
+  is a convenience in development and a published login on a host that answers
+  on 443, so the seed *refuses* the fallback under `RAILS_ENV=production` and
+  tells you what to pass — a fresh install with no `DEFAULT_USER_PASSWORD` ends
+  with no admin rather than a known one. The engine seeds still run either way;
+  they mint their own credentials with `SecureRandom`.
+
+  These two are one-shot inputs to this command, not deployment settings.
+  Keeping them out of `.env.production` and `config/deploy.yml` is deliberate:
+  a `DEFAULT_USER_PASSWORD` that ships with every deploy would resurrect the
+  same standing credential this guard exists to remove.
 
   **`:primary` is load-bearing.** `production:` in `config/database.yml` names
   four configurations — primary, cache, queue, cable — and the plain
