@@ -8,7 +8,7 @@ module Collavre
     # Returns the agent type string ("developer", "pm", "qa", "researcher",
     # "marketer", "planner") or "agent" as the default when nothing matches.
     def classify(user)
-      prompt = user.system_prompt.to_s.downcase
+      prompt = user.effective_system_prompt.to_s.downcase
       case prompt
       when /developer|개발/ then "developer"
       when /pm|project.?manager|프로젝트/ then "pm"

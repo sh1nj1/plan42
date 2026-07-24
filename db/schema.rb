@@ -234,6 +234,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
     t.datetime "created_at", null: false
     t.json "data", default: {}, null: false
     t.text "description"
+    t.string "kind"
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
@@ -244,6 +245,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_000000) do
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
     t.index ["user_id"], name: "index_creatives_on_user_id"
+    t.index ["user_id"], name: "index_creatives_on_user_id_profile_unique", unique: true, where: "kind = 'profile'"
   end
 
   create_table "devices", force: :cascade do |t|

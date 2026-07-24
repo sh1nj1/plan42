@@ -58,7 +58,11 @@ module CollavreCompletionApi
           def build_system_prompt(messages, agent)
             parts = []
 
-            parts << agent.system_prompt if agent.system_prompt.present?
+            # Read through effective_system_prompt so a directly-edited profile
+            # Creative (canonical data["markdown_source"]) drives API completions
+            # too, not the stale legacy system_prompt column.
+            agent_prompt = agent.effective_system_prompt
+            parts << agent_prompt if agent_prompt.present?
 
             system_messages = messages.select { |m| m[:role] == "system" || m["role"] == "system" }
             system_messages.each do |msg|
