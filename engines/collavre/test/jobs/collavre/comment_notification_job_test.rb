@@ -229,6 +229,8 @@ module Collavre
         end
       }) do
         2.times { CommentNotificationJob.perform_now(comment.id, "created", event) }
+        assert_enqueued_jobs 1, only: CommentBadgesBroadcastJob
+        perform_enqueued_jobs only: CommentBadgesBroadcastJob
       end
 
       assert_equal %w[desktop-inbox-badge mobile-inbox-badge], inbox_badge_targets.sort
