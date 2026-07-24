@@ -229,4 +229,96 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
     expect(scrollLeftValue).toBe(0)
   })
+
+  describe('agent task status poll', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+    const respondWith = (tasks) => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ tasks }),
+      })
+    }
+
+    const armAgent = (agentId, taskIds) => {
+      controller.activeAgentTasks[agentId] = [...taskIds]
+      controller.typingUsers[agentId] = 'Agent'
+      controller.agentStates[agentId] = 'thinking'
+    }
+
+    test('drops a task the poll reports as finished', async () => {
+      armAgent('9', [55])
+      respondWith([{ id: 55, status: 'done' }])
+
+      controller.pollAgentTaskStatuses()
+      await flush()
+
+      expect(controller.activeAgentTasks['9']).toBeUndefined()
+      expect(controller.typingUsers['9']).toBeUndefined()
+    })
+
+    test.each(['delegated', 'pending_approval'])(
+      'keeps a %s task active — it still holds the slot and is still cancellable',
+      async (status) => {
+        armAgent('9', [55])
+        respondWith([{ id: 55, status }])
+
+        controller.pollAgentTaskStatuses()
+        await flush()
+
+        expect(controller.activeAgentTasks['9']).toEqual([55])
+        expect(controller.typingUsers['9']).toBe('Agent')
+      },
+    )
+
+    test('keeps a task that started after the poll request was sent', async () => {
+      armAgent('9', [55])
+
+      let settle
+      global.fetch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+      )
+
+      controller.pollAgentTaskStatuses()
+
+      // A second turn starts while the request is in flight. The server was
+      // never asked about 77, so its absence from the response says nothing.
+      controller.activeAgentTasks['9'].push(77)
+
+      settle({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ tasks: [{ id: 55, status: 'running' }] }),
+      })
+      await flush()
+
+      expect(controller.activeAgentTasks['9']).toEqual([55, 77])
+    })
+
+    test('still drops a requested task even when a newer one arrived mid-flight', async () => {
+      armAgent('9', [55])
+
+      let settle
+      global.fetch.mockReturnValueOnce(
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+      )
+
+      controller.pollAgentTaskStatuses()
+      controller.activeAgentTasks['9'].push(77)
+
+      settle({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({ tasks: [{ id: 55, status: 'done' }] }),
+      })
+      await flush()
+
+      expect(controller.activeAgentTasks['9']).toEqual([77])
+    })
+  })
 })

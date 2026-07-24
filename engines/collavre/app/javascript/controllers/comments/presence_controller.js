@@ -8,6 +8,14 @@ const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
 
+// A task still worth an indicator and a Stop button. Mirrors what the server
+// treats as in-flight: Task.occupying_topic_slot (running / delegated / pending /
+// pending_approval) plus queued, a waiter not yet promoted. delegated and
+// pending_approval look idle but are not — AiAgentJob returns holding the slot
+// while awaiting an MCP /reply or a tool approval, and TasksController#cancel
+// still accepts both, so dropping them hides Stop exactly when it is wanted.
+const ACTIVE_TASK_STATUSES = new Set(['running', 'pending', 'queued', 'delegated', 'pending_approval'])
+
 export default class extends Controller {
   static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow']
 
@@ -636,6 +644,7 @@ export default class extends Controller {
       this.stopAgentTaskPoll()
       return
     }
+    const requestedTaskIds = new Set(allTaskIds)
 
     csrfFetch(`/tasks/active_statuses?task_ids=${allTaskIds.join(',')}`, {
       headers: { Accept: 'application/json' },
@@ -646,13 +655,18 @@ export default class extends Controller {
       })
       .then((data) => {
         if (!data) return
-        const activeStatuses = new Set(['running', 'pending', 'queued'])
-        const activeTaskIds = new Set(data.tasks.filter((t) => activeStatuses.has(t.status)).map((t) => t.id))
+        const activeTaskIds = new Set(data.tasks.filter((t) => ACTIVE_TASK_STATUSES.has(t.status)).map((t) => t.id))
 
+        // This response only speaks for the ids it was asked about. A task that
+        // an agent_status message appended while the request was in flight was
+        // never requested, so its absence here means nothing — keep it until a
+        // poll that actually asked about it says otherwise.
         let changed = false
         Object.keys(this.activeAgentTasks).forEach((agentId) => {
           const before = this.activeAgentTasks[agentId].length
-          this.activeAgentTasks[agentId] = this.activeAgentTasks[agentId].filter((taskId) => activeTaskIds.has(taskId))
+          this.activeAgentTasks[agentId] = this.activeAgentTasks[agentId].filter(
+            (taskId) => activeTaskIds.has(taskId) || !requestedTaskIds.has(taskId),
+          )
           if (this.activeAgentTasks[agentId].length !== before) changed = true
           if (this.activeAgentTasks[agentId].length === 0) {
             delete this.activeAgentTasks[agentId]
