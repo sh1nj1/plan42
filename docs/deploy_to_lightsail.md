@@ -126,7 +126,8 @@ have to be set. Then:
 
 `bin/docker-entrypoint` runs `db:migrate` on boot. On a brand-new database that
 replays every migration from zero, and `db/schema.rb` is known to drift from a
-full replay — so **populate the database before the first deploy** instead:
+full replay — so if you are bringing existing data, **restore it before the
+first deploy**, while the database is still reachable without the app:
 
 - **Moving an existing PostgreSQL deployment (Neon, RDS):** dump and restore.
   Match `PG_MAJOR` to the source server's major version or the restore may fail.
@@ -143,11 +144,29 @@ full replay — so **populate the database before the first deploy** instead:
 - **Coming from SQLite:** `bin/rails db:sqlite_to_postgres[...]`
   (`lib/tasks/db_convert.rake`).
 
-- **Genuinely fresh install:** load the schema rather than replaying migrations.
+- **Genuinely fresh install:** there is nothing to restore, so this one runs
+  *after* `./kamal.sh setup` rather than before it — `app exec` needs the
+  `kamal` network and the uploaded env file, and both are created by the same
+  boot that runs the migration replay. Deploy first, then overwrite whatever
+  the replay produced with the canonical schema:
 
   ```bash
+  ./kamal.sh setup
   ./kamal.sh app exec 'bin/rails db:schema:load db:seed'
+  ./kamal.sh app boot   # restart on the schema you just loaded
   ```
+
+  `db/schema.rb` declares every table `force: :cascade`, so the load replaces
+  the replayed tables instead of colliding with them, and it stamps
+  `schema_migrations` up to the schema version — the next boot's `db:migrate`
+  is a no-op.
+
+  This still works when the replay *fails* and `setup` dies at `app boot`: the
+  env file and the network are uploaded before the container is started, and
+  `app exec` runs a **new** container whose command is `bin/rails db:schema:load`,
+  which the entrypoint does not migrate for (it only migrates the
+  `./bin/rails server` command line). Run the `app exec` above and then
+  `./kamal.sh deploy`.
 
 ## 6. Backups
 

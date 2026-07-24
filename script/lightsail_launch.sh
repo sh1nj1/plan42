@@ -221,6 +221,7 @@ fi
 
 # Cap container logs — an unrotated Rails log fills a Lightsail SSD fast.
 install -d -m 0755 /etc/docker
+DAEMON_JSON_WRITTEN=0
 if [ ! -f /etc/docker/daemon.json ]; then
   cat > /etc/docker/daemon.json <<'JSON'
 {
@@ -228,8 +229,19 @@ if [ ! -f /etc/docker/daemon.json ]; then
   "log-opts": { "max-size": "10m", "max-file": "3" }
 }
 JSON
+  DAEMON_JSON_WRITTEN=1
 fi
-systemctl enable --now docker
+systemctl enable docker
+if [ "$DAEMON_JSON_WRITTEN" -eq 1 ]; then
+  # The package starts the daemon during install, so it is already running with
+  # the stock config by the time we get here — `enable --now` would leave it
+  # that way and the log caps would not apply until something restarted Docker.
+  # Only on the run that wrote the file, so a re-run never bounces live
+  # containers.
+  systemctl restart docker
+else
+  systemctl start docker
+fi
 usermod -aG docker "$APP_SSH_USER"
 
 # --------------------------------------------------------------------------
