@@ -14,6 +14,21 @@ module Collavre
     # ---------------------------------------------------------------------------
     BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
 
+    SubtreeTouchTransactionRecord = Data.define(:creative_id) do
+      def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
+
+      def trigger_transactional_callbacks? = true
+
+      def before_committed! = nil
+
+      def committed!(should_run_callbacks:)
+        TouchCreativeSubtreeJob.perform_later(creative_id) if should_run_callbacks
+      end
+
+      def rolledback!(**_options) = nil
+    end
+    private_constant :SubtreeTouchTransactionRecord
+
     class << self
       def registered_reserved_metadata_keys
         @registered_reserved_metadata_keys ||= []
@@ -47,7 +62,7 @@ module Collavre
       "creatives/creative"
     end
 
-    after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
+    after_update :register_subtree_touch_after_commit, if: :saved_change_to_parent_id?
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
@@ -373,8 +388,15 @@ module Collavre
       end
     end
 
-    def touch_subtree_on_move
-      descendants.update_all(updated_at: Time.current)
+    # Register independently of the Creative instance because a transaction may
+    # update the same row through multiple instances, while Rails runs record
+    # callbacks on only one of them. Transaction-record equality deduplicates by
+    # creative id; Rails promotes records through committed savepoints and drops
+    # them on rollback.
+    def register_subtree_touch_after_commit
+      self.class.with_connection do |connection|
+        connection.add_transaction_record(SubtreeTouchTransactionRecord.new(id))
+      end
     end
 
     def fire_drop_trigger_on_move
