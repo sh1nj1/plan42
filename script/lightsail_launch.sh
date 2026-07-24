@@ -18,7 +18,7 @@
 #   6. ufw firewall, nightly pg_dump backups with retention
 #
 # The app itself is deployed afterwards from your workstation with
-# `bin/kamal setup`, which builds the image and boots the container. See
+# `./kamal.sh setup`, which builds the image and boots the container. See
 # docs/deploy_to_lightsail.md for the full runbook.
 #
 # The script is idempotent: re-running it converges the host instead of
@@ -476,7 +476,10 @@ Collavre Lightsail host — provisioned $(date -Is)
   backups          /var/backups/collavre, nightly at $BACKUP_AT, ${BACKUP_RETENTION_DAYS}d retention
   log              $LOG_FILE
 
-Put these in .env.production on your workstation, then run \`bin/kamal setup\`:
+Put these in .env.production at the root of your Collavre checkout, then run
+\`./kamal.sh setup\` from that same directory — the wrapper is what loads
+.env.production; plain \`bin/kamal\` does not read it and would deploy with no
+host and the wrong SSH user:
 
   COLLAVRE_SERVER=$PUBLIC_IP
   KAMAL_SSH_USER=$APP_SSH_USER

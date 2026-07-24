@@ -4,13 +4,13 @@ This runbook provisions a single Lightsail instance that runs both PostgreSQL
 and the Collavre container, deployed with Kamal from your workstation.
 
 [`script/lightsail_launch.sh`](../script/lightsail_launch.sh) does the host
-preparation. It never builds or starts the app — `bin/kamal setup` does that.
+preparation. It never builds or starts the app — `./kamal.sh setup` does that.
 
 | The launch script sets up | You still do |
 | --- | --- |
 | Base packages, timezone, swap, SSH hardening | Lightsail console firewall (80/443) |
 | Deploy user in the `docker` group | `.env.production` on your workstation |
-| Docker CE + buildx + compose, capped container logs | `bin/kamal setup` |
+| Docker CE + buildx + compose, capped container logs | `./kamal.sh setup` |
 | PostgreSQL, private to this host | Loading the schema / restoring data |
 | `collavre_production` + `collavre_user` | DNS and TLS |
 | ufw, nightly `pg_dump` with retention | |
@@ -120,7 +120,11 @@ have to be set. Then:
 ./kamal.sh logs
 ```
 
-`kamal.sh` wraps `bin/kamal` with `.env.production` loaded.
+`kamal.sh` wraps `bin/kamal` with `.env.production` loaded, and is the only
+thing that reads that file — `bin/kamal setup` on its own sees an empty
+`COLLAVRE_SERVER` and falls back to the default `deploy` SSH user. Run it from
+the repo root (the wrapper's paths are relative) with `RAILS_ENV` unset or
+`production`, since it loads `.env.$RAILS_ENV`.
 
 ## 5. Get data into the new database
 
