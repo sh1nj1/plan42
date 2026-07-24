@@ -17,7 +17,7 @@ module CollavreCompletionApi
             return
           end
 
-          unless authenticate_oauth(token)
+          unless find_user_by_bearer_token(token)
             render json: { error: { message: "Invalid authentication token", type: "invalid_request_error",
                                     code: "invalid_token" } },
                    status: :unauthorized
@@ -25,22 +25,28 @@ module CollavreCompletionApi
           end
         end
 
-        def authenticate_oauth(token)
-          access_token = Doorkeeper::AccessToken.by_token(token)
-          return false unless access_token&.accessible?
-
-          user = Collavre::User.find_by(id: access_token.resource_owner_id)
-          return false unless user
-
-          Collavre::Current.user = user
-          true
-        end
-
+        # Bearer-auth helpers are kept inline here (rather than shared via the
+        # core Collavre::Api::Authenticatable concern) so this engine stays
+        # loadable under USE_COLLAVRE_GEM=true, where core resolves to a
+        # published collavre gem that may predate the concern.
         def extract_bearer_token
           auth_header = request.headers["Authorization"]
           return nil unless auth_header&.start_with?("Bearer ")
 
           auth_header.sub("Bearer ", "")
+        end
+
+        def find_user_by_bearer_token(token)
+          return nil if token.blank?
+
+          access_token = Doorkeeper::AccessToken.by_token(token)
+          return nil unless access_token&.accessible?
+
+          user = Collavre::User.find_by(id: access_token.resource_owner_id)
+          return nil unless user
+
+          Collavre::Current.user = user
+          user
         end
 
         def current_user

@@ -59,6 +59,12 @@
      data-review-type-review-label="<%= t('collavre.comments.review_type_review') %>"
      data-review-type-question-label="<%= t('collavre.comments.review_type_question') %>"
      data-remove-from-history-label="<%= t('collavre.comments.remove_from_history') %>"
+     data-topic-set-agent-error="<%= t('collavre.comments.topic_set_agent_error') %>"
+     data-topic-create-error="<%= t('collavre.comments.topic_create_error') %>"
+     data-topic-update-error="<%= t('collavre.comments.topic_update_error') %>"
+     data-topic-delete-error="<%= t('collavre.comments.topic_delete_error') %>"
+     data-topic-archive-error="<%= t('collavre.comments.topic_archive_error') %>"
+     data-topic-restore-error="<%= t('collavre.comments.topic_restore_error') %>"
      data-inbox-reply-button="<%= t('collavre.comments.inbox_reply_button') %>"
      data-table-download-csv-text="<%= t('collavre.comments.table_download.csv') %>"
      data-table-download-excel-text="<%= t('collavre.comments.table_download.excel') %>"
@@ -125,9 +131,19 @@
        data-action="dragover->comments--contexts#handleExternalDragOver drop->comments--contexts#handleExternalDrop dragleave->comments--contexts#handleExternalDragLeave"></div>
   <div data-share-modal-target="container"></div>
   <div id="comment-participants" data-comments--presence-target="participants" data-comments--mention-menu-target="participants"></div>
-  <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
-       data-confirm-delete-text="<%= t('collavre.topics.delete_confirm') %>"
-       data-new-topic-placeholder="<%= t('collavre.topics.new_placeholder') %>"></div>
+  <div class="comment-topics-bar">
+    <div id="comment-topics" data-comments--topics-target="list" class="comment-topics-list"
+         data-confirm-delete-text="<%= t('collavre.topics.delete_confirm') %>"
+         data-new-topic-placeholder="<%= t('collavre.topics.new_placeholder') %>"></div>
+    <span class="topic-creation-container" data-comments--topics-target="creationContainer" hidden
+          data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop"></span>
+    <button type="button" class="topic-list-btn"
+            data-action="click->comments--topics#openTopicListPopup"
+            title="<%= t('collavre.comments.topic_list') %>"
+            aria-label="<%= t('collavre.comments.topic_list') %>">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    </button>
+  </div>
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
   <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>

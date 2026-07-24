@@ -3,30 +3,28 @@ ko:
     landing:
       meta:
         title: "팀이 함께 생각하는 곳"
-        description: "계층형 크리에이티브, AI 에이전트, 실시간 채팅이 하나로. 체계적으로 정리하고, 협업하고, AI와 함께 완성하세요."
+        description: "계층형 블록, AI 에이전트, 실시간 채팅이 하나로. 체계적으로 정리하고, 협업하고, AI와 함께 완성하세요."
       hero:
         headline_html: "AI 에이전트와 사람 모두의 플랫폼."
         subline: "지속 가능한 생산성 향상을 이루세요."
         learn_more: "알아보기"
-      demo:
-        title: "직접 확인하세요"
-        placeholder: "실제 작동 화면이 들어갈 자리입니다"
       problem:
         title: "기존 도구의 한계"
+        subtitle: "문서에, 트래커에, 대화에 — 같은 걸 세 군데에 쓰고, 하루 종일 그 사이를 오가며 셋을 맞춥니다. 반복하지 마세요."
         notion:
-          title: "Notion"
+          title: "문서"
           desc: "문서는 무덤이 됩니다. 남의 페이지를 고치기 꺼려하고, 검색이 구조를 대체합니다."
         jira:
-          title: "Jira"
+          title: "트래커"
           desc: "작업 관리는 좋지만 지식 관리는 안 됩니다. 결과물이 위키로 돌아오지 않습니다."
         slack:
-          title: "Slack"
+          title: "대화"
           desc: "대화가 흘러가 버립니다. 채널은 폭발적으로 늘어나고, 맥락은 매일 사라집니다."
       features:
         title: "하나의 살아있는 트리로"
-        subtitle: "크리에이티브는 작업을 정리하고, 진행률을 추적하며, 맥락을 전달하는 계층형 블록입니다."
+        subtitle: "한 번만 쓰세요. 모든 블록이 문서이자 일감이자 대화입니다 — 셀프호스트로 자신의 DB에 쌓이는 하나의 SSOT를, 그대로 AI 에이전트에 주입합니다."
         tree:
-          title: "계층형 크리에이티브"
+          title: "계층형 블록"
           desc: "작업을 트리로 구성하세요. 드래그, 링크, 재사용이 자유롭고 진행률은 자동 계산됩니다."
         ai:
           title: "AI 에이전트 팀원"
@@ -36,13 +34,27 @@ ko:
           desc: "사람의 인지 부하를 줄이고, AI에게 필요한 지식과 Skill을 주입합니다."
         chat:
           title: "실시간 채팅 & 토픽"
-          desc: "모든 크리에이티브에 채팅이 있습니다. 토픽으로 대화를 정리하고, 메시지를 다른 크리에이티브로 옮기세요."
+          desc: "모든 블록에 채팅이 있습니다. 토픽으로 대화를 정리하고, 메시지를 다른 블록으로 옮기세요."
         integrations:
           title: "외부 연동"
           desc: "GitHub PR 자동 분석, Slack 동기화, Google Calendar 연동, MCP 도구 내장."
         progress:
           title: "실시간 진행률"
           desc: "리프부터 루트까지 완료율 추적. 태그, 계획, 상태별 필터. 프로젝트 건강도를 한눈에."
+      interface:
+        title: "문서가 곧 트리입니다"
+        subtitle: "헤딩도, 문단도, 코드 블록도, 표도 각각 하나의 블록입니다. 저마다 오른쪽에 자기 진행률을 달고, 안에 자기 대화를 품습니다. 트래커를 채우는 게 아니라 스펙을 쓰면, 계획은 이미 거기 있습니다."
+        alt: "Collavre의 환불 스펙 화면. 산문과 문법 강조된 코드 블록과 표가 일감들과 나란히 놓여 있고, 각자 자기 진행률과 대화를 가지고 있습니다."
+        markdown: "마크다운이 먼저입니다. 어느 블록이든 리치 텍스트와 원본 마크다운을 오갈 수 있습니다."
+        rich: "코드 펜스 문법 강조, 표, 이미지 — 상세 페이지 뒤에 숨지 않고 트리에서 바로 보입니다."
+        drag: "블록을 끌면 그 아래 서브트리가 통째로 따라옵니다."
+        presence: "누가 문서에 들어와 있고 누가 어느 블록을 편집 중인지 보입니다."
+      demo:
+        title: "직접 확인하세요"
+        video: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcwLCJwdXIiOiJibG9iX2lkIn19--d2e47d9773e9179a4f6a2a69f5740f3551c69e08/launch-ko.mp4"
+        poster: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcxLCJwdXIiOiJibG9iX2lkIn19--9d63bb60ec693416eddd73ea3ff3532bc09ed71e/launch-ko-poster.jpg"
+        video_dark: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDcyLCJwdXIiOiJibG9iX2lkIn19--6d635234d2070b43f16c404a9e81e7642062c172/launch-ko-dark.mp4"
+        poster_dark: "https://collavre.com/public-assets/blobs/eyJfcmFpbHMiOnsiZGF0YSI6NDczLCJwdXIiOiJibG9iX2lkIn19--094d1e6e8691ea987effeca29195e5fc313bff33/launch-ko-dark-poster.jpg"
       cta:
         title: "더 똑똑하게 협업할 준비 되셨나요?"
         subtitle: "AI 기반 컨텍스트로 작업을 정리하세요."

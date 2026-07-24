@@ -178,7 +178,7 @@ module CollavreLinear
       return false if ts.blank?
 
       ts_ms = Integer(ts)
-      now_ms = (Time.now.to_f * 1000).to_i
+      now_ms = (Time.current.to_f * 1000).to_i
       (now_ms - ts_ms).abs <= TIMESTAMP_WINDOW_MS
     rescue ArgumentError, TypeError
       false

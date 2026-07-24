@@ -43,6 +43,25 @@ module CollavreLinear
       account = CollavreLinear::Account.find_or_initialize_by(
         user_id: Current.user.id
       )
+
+      # A reconnect that lands in a DIFFERENT Linear workspace than the one the
+      # existing project links were created under would orphan those links: their
+      # team_id / linear_project_id belong to the old workspace, so resync and
+      # outbound jobs would run them against the new token and fail or target the
+      # wrong Linear context. Refuse a linked reconnect unless we can PROVE it
+      # stays in the same workspace; the admin must unlink first. A blank stored
+      # workspace_id ("old workspace unknown") is unprovable, so it must also
+      # block rather than fall through — a blank id never equals the incoming
+      # organization, so `!=` covers both the known-different and unknown cases.
+      # Unlinked accounts skip this and refresh in place (the button's purpose).
+      if account.persisted? &&
+         account.workspace_id != viewer[:organization_id] &&
+         account.project_links.exists?
+        redirect_to collavre.creatives_path,
+                    alert: I18n.t("collavre_linear.auth.workspace_changed_relink")
+        return
+      end
+
       account.linear_uid       = viewer[:user_id]
       account.access_token     = tokens[:access_token]
       account.refresh_token    = tokens[:refresh_token]

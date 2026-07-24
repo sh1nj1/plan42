@@ -1,3 +1,9 @@
+## v0.6.5 (2026-07-16)
+
+### Changes
+- 35102cd3 test: add SimpleCov and Jest coverage measurement + baseline (#1385)
+- 5268b7d7 refactor(collavre): make core engine vendor-neutral (#1364)
+
 ## v0.6.4 (2026-06-23)
 
 ### Changes

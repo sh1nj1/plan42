@@ -1,6 +1,6 @@
 <% comment_topic = comment.topic %>
 <% current_topic_id = local_assigns[:current_topic_id] %>
-<% has_pending_action = comment.action.present? && comment.action_executed_at.blank? %>
+<% has_pending_action = comment.approval_action? && comment.action_executed_at.blank? %>
 <% approver_id = comment.approver_id %>
 <div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>" data-ai-user="<%= comment.user&.ai_user? %>" data-streaming="<%= local_assigns.fetch(:streaming, false) %>">
   <div class="comment-select">
@@ -90,8 +90,8 @@
     </div>
   <% end %>
   <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
-  <% if comment.comment_versions.any? %>
-    <% version_count = comment.comment_versions.size %>
+  <% if comment.comment_versions_count > 0 %>
+    <% version_count = comment.comment_versions_count %>
     <% selected_id = comment.selected_version_id %>
     <% version_ids = comment.comment_versions.order(:version_number).pluck(:id) %>
     <% selected_index = selected_id ? (version_ids.index(selected_id)&.+(1) || version_count) : version_count %>
@@ -173,7 +173,7 @@
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
     </div>
   <% end %>
-  <% if comment.action.present? %>
+  <% if comment.approval_action? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>

@@ -302,6 +302,46 @@ module Collavre
 
         assert result[:context_changed], "Should detect agent settings change"
       end
+
+      # An approval-action comment (approve button / approved label) is a human
+      # decision surface. Blocking it at the dispatch seams is not enough: the
+      # chat-history query would still load it as context on a later dispatch,
+      # so its content must be excluded here too (Comment#approval_action?).
+      test "excludes approval-action comments from chat history" do
+        # Ordinary prior comment — must remain in the agent's chat history.
+        @creative.comments.create!(
+          content: "prior ordinary message",
+          user: @user,
+          topic_id: @comment.topic_id
+        )
+        # Public approval-action comment authored by the agent (non-nil user_id,
+        # so it survives the existing where.not(user_id: nil) filter) — the leak
+        # vector: its content must never enter chat history.
+        @creative.comments.create!(
+          content: "TOOL APPROVAL secret-payload",
+          user: @agent,
+          topic_id: @comment.topic_id,
+          approver: @user,
+          action: %({"action":"execute_tool","tool_name":"write_file"}),
+          private: false
+        )
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        history = builder.build[:messages]
+          .select { |m| m[:kind] == :chat_history }
+          .map { |m| m[:parts].first[:text] }
+          .join("\n")
+
+        assert_includes history, "prior ordinary message",
+          "ordinary prior comments must remain in chat history"
+        assert_not_includes history, "secret-payload",
+          "approval-action comment content must never enter chat history"
+      end
     end
   end
 end

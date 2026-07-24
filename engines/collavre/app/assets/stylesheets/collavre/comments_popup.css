@@ -1452,23 +1452,6 @@ body.chat-fullscreen {
     fill-opacity: 0.2;
 }
 
-.comment-topics-list {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.5em;
-    padding: var(--space-1) 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
-    min-height: 36px; /* Prevent height collapse during scroll */
-}
-
-.comment-topics-list::-webkit-scrollbar {
-    display: none; /* Chrome/Safari */
-}
-
 .topic-tag {
     display: inline-flex;
     align-items: center;
@@ -1651,6 +1634,11 @@ body.chat-fullscreen {
     flex-shrink: 0;
 }
 
+/* Class rule above outranks the UA [hidden] rule, so restate it. */
+.topic-creation-container[hidden] {
+    display: none;
+}
+
 .add-topic-btn {
     display: inline-flex;
     align-items: center;
@@ -1713,6 +1701,46 @@ body.chat-fullscreen {
     opacity: 1;
 }
 .topic-tag.topic-archived {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+/* Topic list popup button (pinned right of the scrolling tab bar) */
+.comment-topics-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+.comment-topics-bar .comment-topics-list {
+    flex: 1;
+    min-width: 0;
+}
+.topic-list-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-3);
+    border: 1px solid var(--color-border);
+    background: transparent;
+    cursor: pointer;
+    color: var(--color-muted);
+    padding: 0;
+}
+.topic-list-btn:hover {
+    background: var(--color-section-bg);
+    color: var(--color-text);
+}
+
+/* Archived entries inside the topic list popup */
+.topic-list-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+}
+.topic-list-item--archived {
     opacity: 0.5;
     font-style: italic;
 }

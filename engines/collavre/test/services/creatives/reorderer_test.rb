@@ -47,6 +47,34 @@ module Creatives
       assert_equal [ "A", "B" ], child_order
     end
 
+    test "reorder_multiple resequences siblings with one update statement" do
+      sequence_updates = []
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _start, _finish, _id, payload|
+        sql = payload[:sql]
+        sequence_updates << sql if sql.match?(/UPDATE .*creatives.* SET .*sequence/i)
+      end
+
+      @reorderer.reorder_multiple(
+        dragged_ids: [ @child_c.id, @child_a.id ],
+        target_id: @child_b.id,
+        direction: "up"
+      )
+
+      assert_equal 1, sequence_updates.size
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
+    test "reorder_multiple raises when selection contains duplicate ids" do
+      assert_raises(Reorderer::Error) do
+        @reorderer.reorder_multiple(
+          dragged_ids: [ @child_a.id, @child_a.id ],
+          target_id: @child_b.id,
+          direction: "up"
+        )
+      end
+    end
+
     test "reorder_multiple raises when target is within selection" do
       assert_raises(Reorderer::Error) do
         @reorderer.reorder_multiple(

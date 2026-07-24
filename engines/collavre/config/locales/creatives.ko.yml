@@ -124,6 +124,10 @@ ko:
         metadata_save: 저장
         toggle_markdown: 마크다운
         toggle_richtext: 서식 편집
+        save_status_pending: 저장 대기중
+        save_status_saving: 저장중…
+        save_status_saved: 저장됨
+        save_status_error: 저장 실패
         markdown_to_richtext_confirm: 서식 편집으로 전환하면 마크다운 원본이 삭제됩니다.
           계속하시겠습니까?
         richtext_to_markdown_confirm: 마크다운으로 전환하면 현재 서식 편집 내용이 삭제됩니다. 계속하시겠습니까?
@@ -142,6 +146,7 @@ ko:
       errors:
         no_permission: 이 작업을 수행할 권한이 없습니다.
         metadata_must_be_object: 메타데이터는 객체여야 합니다.
+        description_read_only_source: 읽기 전용 소스 콘텐츠는 직접 변경할 수 없습니다
       inline_editor:
         placeholder: 크리에이티브를 설명해주세요…
         markdown_placeholder: 마크다운으로 작성…

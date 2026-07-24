@@ -41,8 +41,6 @@ module CollavreNotion
           return
         end
 
-        Rails.logger.info("Notion Integration Update: Full params = #{params.to_unsafe_h}")
-
         integration_attributes = integration_params
         Rails.logger.info("Notion Integration Update: integration_params = #{integration_attributes}")
 

@@ -8,15 +8,42 @@ import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom
 import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
+import { CreativeSaveQueue } from './creative_save_queue'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
+import {
+  treeRowElement,
+  hasDatasetValue,
+  isMarkdownEmpty,
+  readRowLevel,
+  editorPaddingForLevel,
+} from './creative_row_editor_helpers'
+import {
+  creativeTreeElement,
+  creativeIdFrom,
+  siblingTreeRow,
+  siblingOrderingForRow,
+  treeContainerElement,
+  nodeAfterTreeBlock,
+  normalizeRowNode,
+  childrenContainerForTree,
+  ensureChildrenContainer,
+  expandChildrenContainer,
+  moveTreeBlock,
+  listAllTreeNodes,
+  findPreviousTree,
+  getTreeLevel,
+  updateTreeLevels,
+  setTreeLevel,
+  removeTreeElement,
+} from './creative_tree_dom'
+import {
+  updateRowFromData,
+  inlinePayloadFromTree,
+} from './creative_inline_payload'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
-
-const BULLET_STARTING_LEVEL = 3;
-const HEADING_INDENT_STEP_EM = 0.4;
-const BULLET_INDENT_STEP_PX = 30;
 
 let initialized = false;
 let creativeEditClickHandler = null;
@@ -71,16 +98,33 @@ export function initializeCreativeRowEditor() {
         alertDialog(serverMessage || 'Failed to save changes. Please check your connection and try again.');
       }
 
-      // If the failed item matches the current creative, mark it as dirty so it can be retried
-      if (form.dataset.creativeId && item.path.includes(form.dataset.creativeId)) {
+      // If the failed item matches the current creative, mark it as dirty so it can be retried.
+      // Match the id exactly — a substring test (e.g. path.includes("23")) also matches
+      // "/creatives/123", flagging the wrong row's toolbar as failed.
+      const failedCreativeId = (item.path.match(/\/creatives\/(\d+)/) || [])[1];
+      if (form.dataset.creativeId && failedCreativeId === form.dataset.creativeId) {
         console.log('Restoring dirty state for current creative');
         isDirty = true;
         pendingSave = true;
+        setSaveStatus('error');
         updateActionButtonStates();
       }
     });
 
     // ... rest of initialization
+
+    // Reflect the inline editor's save lifecycle in the toolbar row.
+    // Plain JS controller can't call the i18n `t()` helper, so the localized
+    // strings are carried on the span's data-* attributes (set in the ERB).
+    // state: 'pending' | 'saving' | 'saved' | 'error' | '' (cleared).
+    // 'pending' = dirty, waiting out the debounce; 'saving' = request in flight.
+    function setSaveStatus(state) {
+      const el = document.getElementById('inline-save-status');
+      if (!el) return;
+      const label = state ? el.dataset[`label${state.charAt(0).toUpperCase()}${state.slice(1)}`] : '';
+      el.textContent = label || '';
+      el.dataset.state = state || '';
+    }
 
     const form = document.getElementById('inline-edit-form-element');
     const descriptionInput = document.getElementById('inline-creative-description');
@@ -157,10 +201,12 @@ export function initializeCreativeRowEditor() {
 
     let currentTree = null;
     let currentRowElement = null;
-    let saveTimer = null;
+    // Owns the autosave request lifecycle: the debounce timer and the
+    // single-flight guard around the in-flight request. `pendingSave` /
+    // `isDirty` remain the editor's dirty-tracking flags (what changed), while
+    // the queue governs when the request runs. See creative_save_queue.js.
+    const saveQueue = new CreativeSaveQueue();
     let pendingSave = false;
-    let saving = false;
-    let savePromise = Promise.resolve();
     let uploadsPending = false;
     let uploadCompletionPromise = null;
     let resolveUploadCompletion = null;
@@ -219,103 +265,10 @@ export function initializeCreativeRowEditor() {
       }
     }
 
-    function treeRowElement(node) {
-      return node && node.closest ? node.closest('creative-tree-row') : null;
-    }
-
     function currentRowHasChildren() {
       const row = currentRowElement || (currentTree ? treeRowElement(currentTree) : null);
       if (!row) return false;
       return !!(row.hasChildren || row.getAttribute?.('has-children'));
-    }
-
-    function hasDatasetValue(element, key) {
-      if (!element || !element.dataset) return false;
-      return Object.prototype.hasOwnProperty.call(element.dataset, key);
-    }
-
-    function setRowDatasetValue(row, key, value) {
-      if (!row || !row.dataset) return;
-      if (value === undefined || value === null) {
-        delete row.dataset[key];
-      } else {
-        row.dataset[key] = String(value);
-      }
-    }
-
-    function updateRowFromData(row, data) {
-      if (!row || !data) return;
-      const descriptionHtml = data.description || '';
-      const rawHtml = data.description_raw_html || descriptionHtml;
-      row.descriptionHtml = descriptionHtml;
-      setRowDatasetValue(row, 'descriptionHtml', descriptionHtml);
-      setRowDatasetValue(row, 'descriptionRawHtml', rawHtml);
-      if (data.progress_html != null) {
-        row.progressHtml = data.progress_html;
-        setRowDatasetValue(row, 'progressHtml', data.progress_html);
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'progress')) {
-        setRowDatasetValue(row, 'progressValue', data.progress ?? '');
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'origin_id')) {
-        setRowDatasetValue(row, 'originId', data.origin_id ?? '');
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'content_type')) {
-        setRowDatasetValue(row, 'contentType', data.content_type ?? '');
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'markdown_source')) {
-        setRowDatasetValue(row, 'markdownSource', data.markdown_source ?? '');
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'markdown_editor')) {
-        setRowDatasetValue(row, 'markdownEditor', data.markdown_editor ?? '');
-      }
-      if (Object.prototype.hasOwnProperty.call(data, 'has_children')) {
-        if (data.has_children) {
-          row.setAttribute('has-children', '');
-          row.hasChildren = true;
-        } else {
-          row.removeAttribute('has-children');
-          row.hasChildren = false;
-        }
-      }
-      if (typeof row.requestUpdate === 'function') {
-        row.requestUpdate();
-      }
-    }
-
-    function inlinePayloadFromTree(tree) {
-      if (!tree) return null;
-      const row = treeRowElement(tree);
-      if (!row) return null;
-
-      // Relax validation - allow loading with partial data for instant UI
-      const hasDescription = hasDatasetValue(row, 'descriptionRawHtml') || hasDatasetValue(row, 'descriptionHtml');
-      const hasProgress = hasDatasetValue(row, 'progressValue');
-
-      // Only require ID to be present
-      const id = tree.dataset?.id;
-      if (!id) return null;
-
-      const rawHtml = hasDatasetValue(row, 'descriptionRawHtml') ? row.dataset.descriptionRawHtml : row.dataset.descriptionHtml || '';
-      const description = row.dataset.descriptionHtml || rawHtml || '';
-      const progressValue = hasProgress ? Number(row.dataset.progressValue ?? 0) : 0;
-      const parentId = tree.dataset?.parentId || '';
-
-      return {
-        id: id,
-        description,
-        description_raw_html: rawHtml,
-        origin_id: row.dataset?.originId || '',
-        parent_id: parentId,
-        progress: Number.isNaN(progressValue) ? 0 : progressValue,
-        content_type: row.dataset?.contentType || null,
-        markdown_editor: row.dataset?.markdownEditor || null,
-        markdown_source: row.dataset?.markdownSource || null
-      };
-    }
-
-    function isMarkdownEmpty(md) {
-      return !md || md.trim().length === 0;
     }
 
     function activateMarkdownMode(source) {
@@ -391,11 +344,14 @@ export function initializeCreativeRowEditor() {
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;
       isDirty = false;
+      setSaveStatus('');
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       setProgressState(normalizedProgress);
       updateProgressInputAvailability(normalizedProgress);
       completionCascadePending = false;
+      // parentId convention: `data-parent-id` is always present ("" === root),
+      // so this DOM fallback is unambiguous when server data lacks parent_id.
       const fallbackParent = tree?.dataset?.parentId || '';
       parentInput.value = data.parent_id ?? fallbackParent ?? '';
       beforeInput.value = '';
@@ -432,219 +388,6 @@ export function initializeCreativeRowEditor() {
       }
     }
 
-    function siblingTreeRow(row, direction) {
-      if (!row) return null;
-      const step = direction === 'previous' ? 'previousSibling' : 'nextSibling';
-      let node = row[step];
-      while (node) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          node = node[step];
-          continue;
-        }
-        if (node.matches?.('creative-tree-row')) return node;
-        if (node.classList?.contains?.('creative-children')) {
-          node = node[step];
-          continue;
-        }
-        node = node[step];
-      }
-      return null;
-    }
-
-    function siblingOrderingForRow(row) {
-      const beforeRow = siblingTreeRow(row, 'next');
-      const afterRow = siblingTreeRow(row, 'previous');
-      return {
-        beforeId: beforeRow ? creativeIdFrom(beforeRow) : '',
-        afterId: afterRow ? creativeIdFrom(afterRow) : ''
-      };
-    }
-
-    function treeContainerElement(tree) {
-      if (!tree) return null;
-      const row = treeRowElement(tree);
-      if (row && row.parentNode) return row.parentNode;
-      return tree.parentNode;
-    }
-
-    function nodeAfterTreeBlock(tree) {
-      if (!tree) return null;
-      const row = treeRowElement(tree);
-      if (!row) return tree.nextSibling;
-      let node = row.nextSibling;
-      while (node && node.nodeType === Node.TEXT_NODE) node = node.nextSibling;
-      const treeId = tree.dataset?.id;
-      if (treeId) {
-        const childrenContainer = document.getElementById(`creative-children-${treeId}`);
-        if (childrenContainer && childrenContainer.parentNode === row.parentNode && node === childrenContainer) {
-          node = childrenContainer.nextSibling;
-          while (node && node.nodeType === Node.TEXT_NODE) node = node.nextSibling;
-        }
-      }
-      return node;
-    }
-
-    function normalizeRowNode(node) {
-      if (!node) return null;
-      if (node.matches && node.matches('creative-tree-row')) return node;
-      if (node.classList && node.classList.contains('creative-tree')) {
-        const row = treeRowElement(node);
-        return row || node;
-      }
-      return node;
-    }
-
-    function childrenContainerForTree(tree) {
-      if (!tree) return null;
-      const treeId = tree.dataset?.id;
-      if (treeId) {
-        const byId = document.getElementById(`creative-children-${treeId}`);
-        if (byId) return byId;
-      }
-      if (tree.children && tree.children.length > 0) {
-        for (const child of tree.children) {
-          if (child && child.classList && child.classList.contains('creative-children')) {
-            return child;
-          }
-        }
-      }
-      const row = treeRowElement(tree);
-      if (row) {
-        let sibling = row.nextElementSibling;
-        while (sibling) {
-          if (sibling.matches?.('creative-tree-row')) break;
-          if (sibling.classList?.contains('creative-children')) return sibling;
-          sibling = sibling.nextElementSibling;
-        }
-      }
-      return null;
-    }
-
-    function buildChildrenLoadUrl(parentId, childLevel, selectMode) {
-      const params = new URLSearchParams();
-      params.set('level', String(childLevel));
-      params.set('select_mode', selectMode ? '1' : '0');
-      return `/creatives/${parentId}/children?${params.toString()}`;
-    }
-
-    function ensureChildrenContainer(tree) {
-      if (!tree) return null;
-      let container = childrenContainerForTree(tree);
-      if (container) return container;
-      const parentId = tree.dataset?.id;
-      if (!parentId) return null;
-      container = document.createElement('div');
-      container.className = 'creative-children';
-      container.id = `creative-children-${parentId}`;
-      const parentRow = treeRowElement(tree);
-      const parentLevel = readRowLevel(parentRow) || 1;
-      const childLevel = parentLevel + 1;
-      const selectModeActive = parentRow?.hasAttribute?.('select-mode') ? 1 : 0;
-      container.dataset.loadUrl = buildChildrenLoadUrl(parentId, childLevel, selectModeActive);
-      container.dataset.expanded = 'true';
-      if (container.dataset.loaded) delete container.dataset.loaded;
-      const row = treeRowElement(tree);
-      const parentContainer = row?.parentNode || tree.parentNode;
-      if (parentContainer) {
-        const afterRow = row?.nextSibling;
-        if (afterRow) {
-          parentContainer.insertBefore(container, afterRow);
-        } else {
-          parentContainer.appendChild(container);
-        }
-      } else {
-        tree.appendChild(container);
-      }
-      return container;
-    }
-
-    function expandChildrenContainer(container) {
-      if (!container) return;
-      container.style.display = '';
-      if (container.dataset) {
-        container.dataset.expanded = 'true';
-      }
-    }
-
-    function moveTreeBlock(tree, targetContainer, referenceNode = null) {
-      if (!tree || !targetContainer) return;
-      const row = treeRowElement(tree);
-      if (!row) return;
-      const nodesToMove = [row];
-      const childContainer = childrenContainerForTree(tree);
-      if (childContainer) nodesToMove.push(childContainer);
-      nodesToMove.forEach((node) => {
-        if (!node) return;
-        if (referenceNode) {
-          targetContainer.insertBefore(node, referenceNode);
-        } else {
-          targetContainer.appendChild(node);
-        }
-      });
-    }
-
-    function listAllTreeNodes() {
-      const root = document.getElementById('creatives');
-      if (root) return Array.from(root.querySelectorAll('.creative-tree'));
-      return Array.from(document.querySelectorAll('.creative-tree'));
-    }
-
-    function findPreviousTree(tree) {
-      if (!tree) return null;
-      const nodes = listAllTreeNodes();
-      const index = nodes.indexOf(tree);
-      if (index <= 0) return null;
-      const currentLevel = getTreeLevel(tree);
-      for (let i = index - 1; i >= 0; i--) {
-        const candidate = nodes[i];
-        if (!candidate) continue;
-        const candidateLevel = getTreeLevel(candidate);
-        if (candidateLevel === currentLevel) return candidate;
-        if (candidateLevel < currentLevel) return null;
-      }
-      return null;
-    }
-
-    function getTreeLevel(tree) {
-      if (!tree) return 1;
-      const levelValue = Number(tree.dataset?.level);
-      if (!Number.isNaN(levelValue) && levelValue > 0) {
-        return levelValue;
-      }
-      const row = treeRowElement(tree);
-      return readRowLevel(row) || 1;
-    }
-
-    function updateTreeLevels(tree, delta) {
-      if (!tree || !delta) return;
-      const currentLevel = Number(tree.dataset?.level) || 1;
-      const nextLevel = Math.max(1, currentLevel + delta);
-      tree.dataset.level = String(nextLevel);
-      const row = treeRowElement(tree);
-      if (row) {
-        row.setAttribute('level', nextLevel);
-        row.level = nextLevel;
-        row.requestUpdate?.();
-      }
-      const container = childrenContainerForTree(tree);
-      if (!container) return;
-      Array.from(container.children || []).forEach((childRow) => {
-        if (!childRow.matches?.('creative-tree-row')) return;
-        const childTree = childRow.querySelector('.creative-tree');
-        if (childTree) {
-          updateTreeLevels(childTree, delta);
-        }
-      });
-    }
-
-    function setTreeLevel(tree, targetLevel) {
-      if (!tree || typeof targetLevel !== 'number') return;
-      const currentLevel = Number(tree.dataset?.level) || 1;
-      const delta = targetLevel - currentLevel;
-      if (delta === 0) return;
-      updateTreeLevels(tree, delta);
-    }
-
     function updateParentChildrenState(parentId) {
       if (!parentId) return;
       const parentTree = document.getElementById(`creative-${parentId}`);
@@ -674,31 +417,6 @@ export function initializeCreativeRowEditor() {
       scheduleSave();
     }
 
-    function readRowLevel(row) {
-      if (!row) return null;
-      if (row.isTitle) return 0;
-      if (row.getAttribute) {
-        const levelAttr = row.getAttribute('level');
-        if (levelAttr) {
-          const parsed = Number(levelAttr);
-          if (!Number.isNaN(parsed)) return parsed;
-        }
-      }
-      if (typeof row.level === 'number') {
-        return row.level;
-      }
-      if (row.level) {
-        const parsed = Number(row.level);
-        if (!Number.isNaN(parsed)) return parsed;
-      }
-      const tree = row.querySelector ? row.querySelector('.creative-tree') : null;
-      if (tree && tree.dataset?.level) {
-        const parsed = Number(tree.dataset.level);
-        if (!Number.isNaN(parsed)) return parsed;
-      }
-      return 1;
-    }
-
     function computeNewRowLevel(parentId, referenceNode, afterId) {
       if (parentId) {
         const parentRow = document.querySelector(`creative-tree-row[creative-id="${parentId}"]`);
@@ -717,18 +435,6 @@ export function initializeCreativeRowEditor() {
       return readRowLevel(normalized);
     }
 
-    function editorPaddingForLevel(level) {
-      if (typeof level !== 'number' || Number.isNaN(level) || level <= 1) {
-        return '0px';
-      }
-      if (level <= BULLET_STARTING_LEVEL) {
-        const emValue = (level - 1) * HEADING_INDENT_STEP_EM;
-        return emValue ? `${emValue}em` : '0px';
-      }
-      const pxValue = (level - BULLET_STARTING_LEVEL) * BULLET_INDENT_STEP_PX;
-      return `${pxValue}px`;
-    }
-
     function syncInlineEditorPadding(source) {
       if (!template) return;
       let level = null;
@@ -739,16 +445,6 @@ export function initializeCreativeRowEditor() {
       }
       const paddingValue = editorPaddingForLevel(level);
       template.style.paddingLeft = paddingValue;
-    }
-
-    function removeTreeElement(tree) {
-      if (!tree) return;
-      const row = treeRowElement(tree);
-      if (row) {
-        row.remove();
-      } else if (tree.remove) {
-        tree.remove();
-      }
     }
 
     function getUploadCompletion() {
@@ -997,27 +693,6 @@ export function initializeCreativeRowEditor() {
       if (row) row.style.display = '';
     }
 
-    function creativeTreeElement(node) {
-      if (!node) return null;
-      if (node.classList && node.classList.contains('creative-tree')) return node;
-      if (node.querySelector) {
-        const inner = node.querySelector('.creative-tree');
-        if (inner) return inner;
-      }
-      return null;
-    }
-
-    function creativeIdFrom(node) {
-      const treeEl = creativeTreeElement(node);
-      if (treeEl && treeEl.dataset) {
-        return treeEl.dataset.id || '';
-      }
-      if (node?.getAttribute) {
-        return node.getAttribute('creative-id') || node.getAttribute('data-id') || '';
-      }
-      return '';
-    }
-
     function insertRow(tree, data) {
       if (tree.querySelector('.creative-row')) return;
       const row = document.createElement('div');
@@ -1064,10 +739,18 @@ export function initializeCreativeRowEditor() {
     }
 
     function saveForm(tree = currentTree, parentId = parentInput.value) {
-      return waitForUploads().then(function () {
-        if (saving) return savePromise;
-        clearTimeout(saveTimer);
-
+      // Reflect the in-flight save immediately, *before* awaiting pending uploads.
+      // Direct-save callers (progress checkbox, structure moves) bypass
+      // scheduleSave(), so without this an attachment upload still in flight would
+      // let the toolbar keep a stale "saved" label for the whole upload window.
+      // Gated on the editor still being bound to this row (mirrors applySaveStatus).
+      if (tree === currentTree && (pendingSave || saveQueue.saving || isDirty)) setSaveStatus('pending');
+      // Build and run the persist request under the queue's single-flight
+      // guard: runExclusive cancels any pending debounce, invokes performSave,
+      // and (only when it returns a request for non-empty content) holds the
+      // in-flight state until that request settles. Returning null keeps the
+      // queue idle without ever flipping the in-flight flag.
+      function performSave() {
         // Sync markdown form fields before saving
         if (markdownMode) syncMarkdownToForm();
 
@@ -1076,13 +759,22 @@ export function initializeCreativeRowEditor() {
           : isHtmlEmpty(descriptionInput.value);
         if (isEmpty) {
           pendingSave = false;
-          return Promise.resolve();
+          // Nothing to persist — don't strand the "pending" label set above.
+          if (tree === currentTree) setSaveStatus('');
+          return null;
         }
 
         const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
         pendingSave = false;
-        if (!form.action) return Promise.resolve();
-        saving = true;
+        if (!form.action) return null;
+        // Only reflect this save's outcome while the editor is still bound to the
+        // creative it started on. If the user navigates to another row mid-flight
+        // (move() reattaches the shared #inline-save-status span to the new row),
+        // a late completion must not mislabel the newly opened row.
+        const applySaveStatus = function (state) {
+          if (tree === currentTree) setSaveStatus(state);
+        };
+        applySaveStatus('saving');
 
         // Capture values being saved to update dirty state on success
         // NOTE: `let` (not `const`) — when the server rewrites markdown_source
@@ -1100,8 +792,11 @@ export function initializeCreativeRowEditor() {
           if (progressHiddenInput) progressHiddenInput.disabled = true;
         }
 
-        savePromise = creativesApi.save(form.action, method, form).then(function (r) {
-          if (!r.ok) return r;
+        return creativesApi.save(form.action, method, form).then(function (r) {
+          if (!r.ok) {
+            applySaveStatus('error');
+            return r;
+          }
           return r.text().then(function (text) {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
@@ -1194,15 +889,26 @@ export function initializeCreativeRowEditor() {
               }
             }
             updateActionButtonStates();
+            // Only announce "saved" when the current buffer still matches what we
+            // just persisted. Text edits during the in-flight save keep isDirty
+            // true; a non-text change (e.g. a second progress toggle) re-arms
+            // pendingSave while this early-returns on the shared promise. Either
+            // means the latest value isn't persisted, so show "pending".
+            applySaveStatus((isDirty || pendingSave) ? 'pending' : 'saved');
           });
+        }).catch(function (err) {
+          // Preserve existing rejection propagation; only surface save status.
+          applySaveStatus('error');
+          throw err;
         }).finally(function () {
-          saving = false;
           if (!shouldPersistProgress) {
             if (progressInput) progressInput.disabled = progressInputsDisabled;
             if (progressHiddenInput) progressHiddenInput.disabled = hiddenProgressDisabled;
           }
         });
-        return savePromise;
+      }
+      return waitForUploads().then(function () {
+        return saveQueue.runExclusive(performSave);
       });
     }
 
@@ -1229,7 +935,7 @@ export function initializeCreativeRowEditor() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = (pendingSave || saving) ? saveForm(tree, parentId) : Promise.resolve();
+        const p = (pendingSave || saveQueue.saving) ? saveForm(tree, parentId) : Promise.resolve();
         return p.then(() => {
           if (wasNew && !form.dataset.creativeId) {
             removeTreeElement(tree);
@@ -1286,7 +992,7 @@ export function initializeCreativeRowEditor() {
     }
 
     function beforeNewOrMove(wasNew, prev, prevParent) {
-      const needsSave = pendingSave || wasNew || saving;
+      const needsSave = pendingSave || wasNew || saveQueue.saving;
       const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
       return p.then(() => {
         if (wasNew && !form.dataset.creativeId) {
@@ -1489,7 +1195,7 @@ export function initializeCreativeRowEditor() {
       }
       isDirty = false;
       pendingSave = false;
-      clearTimeout(saveTimer);
+      saveQueue.cancelTimer();
     }
 
     async function move(delta) {
@@ -1634,7 +1340,10 @@ export function initializeCreativeRowEditor() {
           insertBefore = normalizeRowNode(firstChild);
           beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
         } else {
-          parentId = prev.dataset.parentId;
+          // parentId convention: `data-parent-id` is always present; "" means
+          // root. Normalize to '' so an absent attribute (legacy DOM) and a
+          // real root are treated identically, and a real parent id is kept.
+          parentId = prev.dataset.parentId || '';
           container = treeContainerElement(prev);
           afterId = prev.dataset.id;
           insertBefore = nodeAfterTreeBlock(prev);
@@ -1940,6 +1649,10 @@ export function initializeCreativeRowEditor() {
           originalProgress = 0;
           if (unconvertBtn) unconvertBtn.style.display = 'none';
           pendingSave = false;
+          isDirty = false;
+          // The status span is shared across rows; clear the previous row's
+          // "saved"/"failed" label so a blank new row doesn't inherit it.
+          setSaveStatus('');
           lexicalEditor.focus();
           updateActionButtonStates();
           document.dispatchEvent(new CustomEvent('creative-editing:start', {
@@ -1971,8 +1684,15 @@ export function initializeCreativeRowEditor() {
       if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;
 
       pendingSave = true;
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveForm, 5000);
+      // A prior "saved"/"failed" label would otherwise claim the freshly edited
+      // buffer is persisted during the 5s debounce window, so reflect the pending
+      // save the moment the buffer diverges from what was last stored. The request
+      // hasn't started yet, so this is "pending" (waiting), not "saving". Gate on
+      // pendingSave (just set true), not isDirty: structure-only changes (level
+      // up/down, reorder) schedule a save without setting isDirty, and must not
+      // keep showing the previous "saved" label.
+      setSaveStatus('pending');
+      saveQueue.schedule(function () { saveForm(); });
     }
 
     function onLexicalChange(payload) {
@@ -2089,7 +1809,7 @@ export function initializeCreativeRowEditor() {
         // Save immediately on checkbox change to prevent losing the last toggle
         // when the user navigates away before the debounce timer fires.
         pendingSave = true;
-        clearTimeout(saveTimer);
+        saveQueue.cancelTimer();
         saveForm();
       });
     }

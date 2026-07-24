@@ -31,4 +31,27 @@ class InboxItemTest < ActiveSupport::TestCase
       item.localized_message(locale: :en)
     )
   end
+
+  test "state is a string-backed enum with new/read/archived" do
+    assert_equal({ "new" => "new", "read" => "read", "archived" => "archived" }, Collavre::InboxItem.states)
+  end
+
+  test "enum predicates and default" do
+    item = InboxItem.create!(message_key: "inbox.no_messages", owner: users(:one), message_params: {})
+    assert item.new?
+    assert_equal "new", item.state
+    item.read!
+    assert item.read?
+    assert_equal "read", item.reload.state
+  end
+
+  test "assigning an unknown state raises ArgumentError" do
+    item = InboxItem.new(message_key: "inbox.no_messages", owner: users(:one), message_params: {})
+    assert_raises(ArgumentError) { item.state = "bogus" }
+  end
+
+  test "new_items scope still selects only new" do
+    InboxItem.create!(message_key: "inbox.no_messages", owner: users(:one), state: "read", message_params: {})
+    assert InboxItem.new_items.all?(&:new?)
+  end
 end

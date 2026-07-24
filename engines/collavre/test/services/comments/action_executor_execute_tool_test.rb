@@ -58,7 +58,7 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
 
     ::Tools::MetaToolService.stub :new, -> { mock_service } do
       # Stub AiAgentJob to prevent actual execution
-      Collavre::AiAgentJob.stub :perform_later, ->(task) { task.update!(status: "resumed") } do
+      Collavre::AiAgentJob.stub :perform_later, ->(task) { task.update!(status: "running") } do
         Comments::ActionExecutor.new(comment: comment, executor: @user).call
       end
     end
@@ -118,7 +118,7 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     error_service.define_singleton_method(:call) { |**_args| raise StandardError, "Tool failed" }
 
     ::Tools::MetaToolService.stub :new, -> { error_service } do
-      Collavre::AiAgentJob.stub :perform_later, ->(task) { task.update!(status: "resumed") } do
+      Collavre::AiAgentJob.stub :perform_later, ->(task) { task.update!(status: "running") } do
         Comments::ActionExecutor.new(comment: comment, executor: @user).call
       end
     end

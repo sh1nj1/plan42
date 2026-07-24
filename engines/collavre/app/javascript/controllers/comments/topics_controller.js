@@ -7,7 +7,7 @@ const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
 
 export default class extends Controller {
-    static targets = ["list"]
+    static targets = ["list", "creationContainer"]
 
     connect() {
         this.topics = []
@@ -189,15 +189,37 @@ export default class extends Controller {
             }
         }
 
-        // Add create button container (write permission is sufficient for topic creation)
-        if (canCreateTopic) {
-            html += `<span class="topic-creation-container" data-comments--topics-target="creationContainer"
-                          data-action="dragover->comments--topics#handleAddButtonDragOver dragleave->comments--topics#handleDragLeave drop->comments--topics#handleAddButtonDrop">
-                  <button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>
-                 </span>`
+        this.listTarget.innerHTML = html
+
+        // The create button lives outside the scrolling strip so it stays reachable
+        // without horizontal scrolling, no matter how many topics there are.
+        this.renderCreationContainer(canCreateTopic)
+    }
+
+    // Write permission is sufficient for topic creation.
+    renderCreationContainer(canCreateTopic) {
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
+
+        container.hidden = !canCreateTopic
+        if (!canCreateTopic) {
+            container.innerHTML = ''
+            return
         }
 
-        this.listTarget.innerHTML = html
+        // renderTopics re-runs on every topic broadcast; don't wipe a name being typed.
+        // `creating` marks an already-submitted name, whose input must give way to the button.
+        // A draft only survives re-renders of the creative it was typed for: chat-nav
+        // switches creatives without blurring, and posting it there is the wrong creative.
+        const draftIsCurrent = String(this._draftCreativeId) === String(this.creativeId)
+        if (!this.creating && draftIsCurrent && container.querySelector('.topic-input')) return
+
+        this.renderAddButton()
+    }
+
+    renderAddButton() {
+        this.creationContainerTarget.innerHTML =
+            `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
     }
 
     handleDragOver(event) {
@@ -404,7 +426,7 @@ export default class extends Controller {
                 }
                 this.loadTopics()
             } else {
-                alertDialog("Failed to delete topic")
+                alertDialog(this._i18n("delete_error"))
             }
         } catch (e) {
             console.error("Error deleting topic", e)
@@ -431,7 +453,7 @@ export default class extends Controller {
                 }
                 this.loadTopics()
             } else {
-                alertDialog("Failed to archive topic")
+                alertDialog(this._i18n("archive_error"))
             }
         } catch (e) {
             console.error("Error archiving topic", e)
@@ -454,7 +476,7 @@ export default class extends Controller {
             if (response.ok) {
                 this.loadTopics()
             } else {
-                alertDialog("Failed to restore topic")
+                alertDialog(this._i18n("restore_error"))
             }
         } catch (e) {
             console.error("Error restoring topic", e)
@@ -468,11 +490,59 @@ export default class extends Controller {
         this.restoreSelection()
     }
 
+    openTopicListPopup(event) {
+        const btnRect = event.currentTarget.getBoundingClientRect()
+
+        const openWith = (popup) => {
+            popup.openForTopics(
+                {
+                    topics: this.topics || [],
+                    archivedTopics: this.archivedTopics || [],
+                    mainTopicId: this.mainTopicId,
+                    allMessagesLabel: this.element.dataset.topicMainText || 'All Messages'
+                },
+                btnRect,
+                (item) => this.selectTopic(item.id),
+                this.element
+            )
+        }
+
+        let modal = document.getElementById('topic-list-modal')
+        if (modal) {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+            if (popup) openWith(popup)
+            return
+        }
+
+        modal = document.createElement('div')
+        modal.id = 'topic-list-modal'
+        modal.className = 'common-popup'
+        modal.style.display = 'none'
+        modal.dataset.controller = 'topic-list'
+        modal.innerHTML = `
+          <button type="button" class="popup-close-btn" data-topic-list-target="close">&times;</button>
+          <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
+            placeholder="${this.element.dataset.topicSearchPlaceholderText || 'Search topics...'}"
+            data-topic-list-target="input">
+          <ul class="common-popup-list" data-popup-list data-topic-list-target="list"></ul>
+        `
+        // Append into the chat box (this.element === #comments-popup) so the popup
+        // is caged within it and shares its stacking context.
+        this.element.appendChild(modal)
+
+        requestAnimationFrame(() => {
+            const popup = this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
+            if (popup) openWith(popup)
+            else console.error('topic-list controller not found after creation')
+        })
+    }
+
     showInput(event) {
         event.preventDefault()
-        const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
-        if (!container) return
+        if (!this.hasCreationContainerTarget) return
+        const container = this.creationContainerTarget
 
+        this._draftCreativeId = this.creativeId
         const placeholder = this.listTarget.dataset.newTopicPlaceholder || "New Topic"
         container.innerHTML = `<input type="text" class="topic-input" placeholder="${placeholder}" 
                                   data-action="keydown->comments--topics#handleInputKey blur->comments--topics#resetInput"
@@ -485,9 +555,8 @@ export default class extends Controller {
     resetInput() {
         // Small delay to allow enter key to process first if that was the cause
         setTimeout(() => {
-            const container = this.element.querySelector('[data-comments--topics-target="creationContainer"]')
-            if (container && !this.creating) {
-                container.innerHTML = `<button class="add-topic-btn" data-action="click->comments--topics#showInput">+</button>`
+            if (this.hasCreationContainerTarget && !this.creating) {
+                this.renderAddButton()
             }
         }, 200)
     }
@@ -614,7 +683,7 @@ export default class extends Controller {
                 this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
                 this.restoreSelection()
             } else {
-                alertDialog("Failed to update topic")
+                alertDialog(this._i18n("update_error"))
                 this.loadTopics() // Reload to restore state
             }
         } catch (e) {
@@ -705,7 +774,7 @@ export default class extends Controller {
                 // Dispatch change event manually since we skipped the click handler
                 this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
-                alertDialog("Failed to create topic")
+                alertDialog(this._i18n("create_error"))
             }
         } catch (e) {
             console.error("Error creating topic", e)
@@ -953,6 +1022,21 @@ export default class extends Controller {
         }
     }
 
+    // Localized strings are handed down from the ERB partial as data
+    // attributes; the English literals are last-resort fallbacks for when the
+    // controller is mounted without them.
+    _i18n(key) {
+        const translations = {
+            set_agent_error: this.element.dataset.topicSetAgentError || 'Unable to assign the agent to this topic.',
+            create_error: this.element.dataset.topicCreateError || 'Unable to create the topic.',
+            update_error: this.element.dataset.topicUpdateError || 'Unable to update the topic.',
+            delete_error: this.element.dataset.topicDeleteError || 'Unable to delete the topic.',
+            archive_error: this.element.dataset.topicArchiveError || 'Unable to archive the topic.',
+            restore_error: this.element.dataset.topicRestoreError || 'Unable to restore the topic.'
+        }
+        return translations[key] || key
+    }
+
     async setTopicPrimaryAgent(topicId, agent) {
         if (!this.creativeId) return
 
@@ -966,13 +1050,23 @@ export default class extends Controller {
                 body: JSON.stringify({ agent_id: agent.id })
             })
 
+            const data = await response.json().catch(() => ({}))
+
             if (!response.ok) {
-                const data = await response.json()
-                console.error('Failed to set primary agent:', data.error)
+                alertDialog(data.error || this._i18n("set_agent_error"))
+                return
             }
-            // Topic update comes via WebSocket broadcast
+
+            // Render the avatar from the response rather than waiting for the
+            // WebSocket broadcast. A dropped broadcast (e.g. the topics channel
+            // subscription was refused) would otherwise leave the avatar
+            // invisible until the next page load. The broadcast still runs and
+            // propagates the change to other connected users; re-applying it
+            // here is a no-op merge.
+            if (data.topic) this.updateTopicInList(data.topic)
         } catch (e) {
             console.error('Error setting primary agent', e)
+            alertDialog(this._i18n("set_agent_error"))
         }
     }
 

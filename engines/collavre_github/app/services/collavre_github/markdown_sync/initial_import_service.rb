@@ -63,7 +63,7 @@ module CollavreGithub
               }
             }
           )
-          creative.skip_github_validation = true
+          creative.skip_read_only_source_validation = true
           creative.save!
           file_creatives << creative
           created << creative
@@ -114,7 +114,7 @@ module CollavreGithub
             }
           }
         )
-        creative.skip_github_validation = true
+        creative.skip_read_only_source_validation = true
         creative.save!
         creative
       end
@@ -175,7 +175,7 @@ module CollavreGithub
                 }
               }
             )
-            dir_creative.skip_github_validation = true
+            dir_creative.skip_read_only_source_validation = true
             dir_creative.save!
             dir_map[current_path] = dir_creative
             created << dir_creative

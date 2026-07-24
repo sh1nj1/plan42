@@ -11,6 +11,18 @@ module Collavre
 
     validates :name, presence: true
 
+    enum :status, {
+      pending: "pending",
+      queued: "queued",
+      running: "running",
+      delegated: "delegated",
+      pending_approval: "pending_approval",
+      done: "done",
+      failed: "failed",
+      cancelled: "cancelled",
+      escalated: "escalated"
+    }, default: :pending
+
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
 

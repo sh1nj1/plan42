@@ -1,6 +1,8 @@
 require "test_helper"
 
 class CommentTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   test "creating a comment notifies write-permission users not present" do
     creative = creatives(:tshirt)
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
@@ -40,19 +42,46 @@ class CommentTest < ActiveSupport::TestCase
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
   end
 
-  test "formats content before saving" do
+  test "saves content immediately and enqueues link preview formatting" do
     user = User.create!(email: "formatter@example.com", password: TEST_PASSWORD, name: "Formatter")
     creative = Creative.create!(user: user, description: "Root")
 
-    formatter = Minitest::Mock.new
-    formatter.expect(:format, "formatted content")
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
 
-    Collavre::CommentLinkFormatter.stub(:new, formatter) do
-      comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
-      assert_equal "formatted content", comment.content
-    end
+    comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
 
-    formatter.verify
+    assert_equal "https://example.com", comment.content
+    assert_enqueued_with(
+      job: Collavre::CommentLinkPreviewJob,
+      args: [ comment.id, "https://example.com", comment.notification_revision ]
+    )
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
+  end
+
+  test "enqueues inbox notifications instead of creating them during comment save" do
+    creative = creatives(:tshirt)
+    commenter = users(:two)
+    inbox = Creative.inbox_for(creative.user)
+    original_count = inbox.comments.count
+
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+
+    comment = Comment.create!(creative: creative, user: commenter, content: "async notification")
+
+    assert_enqueued_with(
+      job: Collavre::CommentNotificationJob,
+      args: [ comment.id, "created", comment.notification_event ]
+    )
+    assert_equal original_count, inbox.comments.count
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
   end
 
   test "creates inbox comment for mentioned users" do
@@ -165,5 +194,32 @@ class CommentTest < ActiveSupport::TestCase
     assert inbox_broadcasts.any? { |payload| payload[:target] == "desktop-inbox-badge" && payload.dig(:locals, :count) == 1 }
     assert inbox_broadcasts.any? { |payload| payload[:target] == "mobile-inbox-badge" && payload.dig(:locals, :count) == 1 }
     assert_equal 1, Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+  end
+
+  test "creating and destroying a comment maintains creatives.comments_count" do
+    user = User.create!(email: "cc-counter@example.com", password: TEST_PASSWORD, name: "CC")
+    creative = Creative.create!(user: user, description: "Root")
+    assert_equal 0, creative.comments_count
+
+    c1 = Comment.create!(creative: creative, user: user, content: "one")
+    Comment.create!(creative: creative, user: user, content: "two", private: true)
+    assert_equal 2, creative.reload.comments_count, "counts all comments incl. private"
+
+    c1.destroy!
+    assert_equal 1, creative.reload.comments_count
+  end
+
+  test "creating and destroying versions maintains comment_versions_count" do
+    user = User.create!(email: "cv-counter@example.com", password: TEST_PASSWORD, name: "CV")
+    creative = Creative.create!(user: user, description: "Root")
+    comment = Comment.create!(creative: creative, user: user, content: "hi")
+    assert_equal 0, comment.comment_versions_count
+
+    v1 = Collavre::CommentVersion.create!(comment: comment, content: "v1", version_number: 1)
+    Collavre::CommentVersion.create!(comment: comment, content: "v2", version_number: 2)
+    assert_equal 2, comment.reload.comment_versions_count
+
+    v1.destroy!
+    assert_equal 1, comment.reload.comment_versions_count
   end
 end

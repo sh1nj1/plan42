@@ -287,6 +287,71 @@ module CollavreLinear
       assert_equal %w[t2], projects.last[:team_ids]
     end
 
+    test "list_workflow_states returns id/name/type/position and owning team_id" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(body: /workflowStates/)
+        .to_return(
+          status: 200,
+          body: {
+            data: { workflowStates: { nodes: [
+              { id: "s1", name: "Todo", type: "unstarted", position: 0, team: { id: "t1" } },
+              { id: "s2", name: "Completed", type: "completed", position: 3, team: { id: "t1" } },
+              { id: "s3", name: "Done", type: "completed", position: 2, team: { id: "t2" } }
+            ] } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      states = @client.list_workflow_states
+
+      assert_equal 3, states.size
+      assert_equal "s2", states[1][:id]
+      assert_equal "Completed", states[1][:name]
+      assert_equal "completed", states[1][:type]
+      assert_equal 3, states[1][:position]
+      assert_equal "t1", states[1][:team_id]
+      assert_requested :post, LINEAR_ENDPOINT, body: /workflowStates/, times: 1
+    end
+
+    test "list_workflow_states returns [] when nodes are absent" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 200,
+          body: { data: { workflowStates: {} } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      assert_equal [], @client.list_workflow_states
+    end
+
+    test "fetch_issue_state returns the issue's current workflow state (id/name/type)" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .with(body: /issue\(id:/)
+        .to_return(
+          status: 200,
+          body: {
+            data: { issue: { id: "iss-1", state: { id: "s2", name: "Done", type: "completed" } } }
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      state = @client.fetch_issue_state("iss-1")
+
+      assert_equal({ "id" => "s2", "name" => "Done", "type" => "completed" }, state)
+      assert_requested :post, LINEAR_ENDPOINT, body: /issue\(id:/, times: 1
+    end
+
+    test "fetch_issue_state returns nil when the issue or its state is absent" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(
+          status: 200,
+          body: { data: { issue: nil } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      assert_nil @client.fetch_issue_state("iss-missing")
+    end
+
     test "list_teams returns [] when nodes are absent" do
       stub_request(:post, LINEAR_ENDPOINT)
         .to_return(
@@ -644,6 +709,48 @@ module CollavreLinear
       @client.create_issue(team_id: "t1", title: "Header check")
       assert_requested :post, LINEAR_ENDPOINT,
         headers: { "Content-Type" => "application/json" }, times: 1
+    end
+
+    # ---------------------------------------------------------------------------
+    # endpoint resolution / normalization
+    # ---------------------------------------------------------------------------
+    def resolved_endpoint_for(configured)
+      Collavre::IntegrationSettings::Resolver.stub(:get, configured) do
+        CollavreLinear::Client.new(@account).send(:resolve_endpoint)
+      end
+    end
+
+    test "resolve_endpoint falls back to DEFAULT_ENDPOINT when unset" do
+      assert_equal LINEAR_ENDPOINT, resolved_endpoint_for(nil)
+      assert_equal LINEAR_ENDPOINT, resolved_endpoint_for("")
+    end
+
+    test "resolve_endpoint passes a full GraphQL URL through unchanged" do
+      assert_equal "https://api.linear.app/graphql", resolved_endpoint_for("https://api.linear.app/graphql")
+      assert_equal "http://mock:4000/api/graphql", resolved_endpoint_for("http://mock:4000/api/graphql")
+    end
+
+    test "resolve_endpoint appends /graphql to a base URL missing the path" do
+      # This is the rowan-mis2 misconfiguration: a base URL POSTs to "/" and a
+      # non-Linear server answers "Cannot POST /" (HTTP 404).
+      assert_equal "http://mock:4000/graphql", resolved_endpoint_for("http://mock:4000")
+      assert_equal "http://mock:4000/graphql", resolved_endpoint_for("http://mock:4000/")
+      assert_equal "https://api.linear.app/graphql", resolved_endpoint_for("https://api.linear.app")
+    end
+
+    test "resolve_endpoint leaves an unparseable value untouched" do
+      assert_equal "not a uri", resolved_endpoint_for("not a uri")
+    end
+
+    test "non-JSON error surfaces the endpoint that was posted to" do
+      stub_request(:post, LINEAR_ENDPOINT)
+        .to_return(status: 404, body: "<html>Cannot POST /</html>",
+                   headers: { "Content-Type" => "text/html" })
+
+      err = assert_raises(CollavreLinear::Client::Error) do
+        @client.create_issue(team_id: "t1", title: "Boom")
+      end
+      assert_includes err.message, LINEAR_ENDPOINT
     end
   end
 end

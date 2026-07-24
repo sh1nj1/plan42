@@ -159,10 +159,61 @@
                          style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
           </div>
 
+          <%# Done-state combobox: which Linear workflow state marks an issue as
+              "완료". JS scopes the options to the chosen team and defaults to that
+              team's Completed state. Optional — a team with no completed state
+              leaves it blank and completion mapping stays off. %>
+          <div style="margin-bottom:1em;">
+            <%= f.label :done_state_id, t("collavre_linear.integration.done_state_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.select :done_state_id,
+                         [],
+                         { include_blank: t("collavre_linear.integration.done_state_placeholder") },
+                         disabled: true,
+                         style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
+            <p style="margin:0.25em 0 0;color:var(--text-muted);font-size:0.85em;">
+              <%= t("collavre_linear.integration.done_state_help") %>
+            </p>
+          </div>
+
           <%= f.submit t("collavre_linear.integration.link_button"),
                        class: "btn btn-primary", disabled: true %>
         <% end %>
       <% end %>
+
+      <%# --- Reconnect affordance (shown in BOTH connected sub-states) ---
+          An Account row existing only means "some token was stored once", not
+          "that token still works". If the admin revokes the app in Linear's
+          settings (or the token expires past refresh), the link form's options
+          fetch 502s and the modal has no way back to OAuth — the connect button
+          only lives in the not-connected branch below, so the user is stranded
+          on "Couldn't load your Linear projects and teams. Please try again."
+          Re-running OAuth updates the SAME Account row in place (auth#callback
+          find_or_initialize_by user_id), so existing project links and the
+          account id survive and only the dead token is replaced. Reuses the
+          connect form/button ids: connected and not-connected are mutually
+          exclusive, so each id still appears exactly once in the DOM and the
+          existing JS opener wiring drives this unchanged. %>
+      <div class="linear-reconnect"
+           style="margin-top:1em;padding-top:0.75em;border-top:1px solid var(--border-color);">
+        <p style="margin:0 0 0.5em;color:var(--text-muted);font-size:0.85em;">
+          <%= t("collavre_linear.integration.reconnect_hint") %>
+        </p>
+        <form id="linear-connect-form"
+              action="/linear/auth/store_creative"
+              method="post"
+              target="linear-auth-window"
+              style="display:none;">
+          <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+          <input type="hidden" name="creative_id" value="<%= creative_id %>">
+        </form>
+        <div>
+          <button type="button" id="linear-connect-btn" class="btn btn-secondary btn-sm"
+                  data-window-width="620" data-window-height="720">
+            <%= t("collavre_linear.integration.reconnect_button") %>
+          </button>
+        </div>
+      </div>
 
     <% else %>
       <%# --- Not connected — show OAuth connect button --- %>

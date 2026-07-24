@@ -1,3 +1,8 @@
+## v0.2.3 (2026-07-16)
+
+### Changes
+- 87cf9abd refactor(api): extract bearer-auth concern + core ApiError envelope (#1374)
+
 ## v0.2.2 (2026-04-17)
 
 ### Changes
