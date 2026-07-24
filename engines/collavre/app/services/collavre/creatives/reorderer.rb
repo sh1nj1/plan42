@@ -180,14 +180,14 @@ module Creatives
     def resequence!(creatives)
       return if creatives.empty?
 
-      connection = Creative.connection
-      cases = creatives.each_with_index.map do |creative, index|
-        "WHEN #{connection.quote(creative.id)} THEN #{connection.quote(index)}"
-      end.join(" ")
-      primary_key = connection.quote_column_name(Creative.primary_key)
+      table = Creative.arel_table
+      cases = Arel::Nodes::Case.new(table[Creative.primary_key])
+      creatives.each_with_index do |creative, index|
+        cases.when(creative.id).then(index)
+      end
 
       Creative.where(id: creatives.map(&:id))
-        .update_all("sequence = CASE #{primary_key} #{cases} END")
+        .update_all(sequence: cases)
 
       creatives.each_with_index do |creative, index|
         creative.write_attribute(:sequence, index)
