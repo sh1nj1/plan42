@@ -191,4 +191,43 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "CANONICAL EDITED PROMPT", @ai_user.profile_creative.data["markdown_source"]
     assert_equal "CANONICAL EDITED PROMPT", @ai_user.effective_system_prompt
   end
+
+  # The agent owns its own profile creative, so without this share the creator
+  # has no Creative-level path to it — and cannot administer the skills that
+  # will live in its subtree.
+  test "create_ai gives the creator admin on the new agent's profile creative" do
+    post create_ai_users_url, params: {
+      ai_id: "sharedbot",
+      name: "Shared Bot",
+      system_prompt: "You are helpful.",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-pro"
+    }
+
+    agent = Collavre::User.find_by(email: "sharedbot@ai.local")
+    assert agent, "expected the agent to be created"
+
+    profile = agent.profile_creative
+    assert_equal agent.id, profile.user_id
+    assert profile.has_permission?(@admin, :admin),
+           "the creator should hold admin on the agent's profile creative"
+  end
+
+  # The point of admin-on-the-profile is reach into the subtree, where the
+  # agent's skills will be created or linked.
+  test "creator reaches creatives placed under the agent profile" do
+    post create_ai_users_url, params: {
+      ai_id: "skillbot",
+      name: "Skill Bot",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-pro"
+    }
+    agent = Collavre::User.find_by(email: "skillbot@ai.local")
+    profile = agent.profile_creative
+
+    skill = Collavre::Creative.create!(description: "A skill", user: agent, parent: profile, progress: 0.0)
+
+    assert skill.has_permission?(@admin, :admin),
+           "admin on the profile should reach a creative placed in its subtree"
+  end
 end
