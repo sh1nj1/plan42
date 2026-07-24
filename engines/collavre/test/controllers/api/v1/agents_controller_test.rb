@@ -1160,6 +1160,40 @@ module Collavre
           end
         end
 
+        test "409 for a task claimed but not yet answered is NOT marked already_completed" do
+          # Codex P2 follow-up: #claim flips the task to done BEFORE the comment
+          # is saved. A reply arriving inside that window sees `done` with nothing
+          # posted behind it — and that window can end in a rollback (invalid text
+          # restores the task to `delegated`) or never end (the worker dies). The
+          # linked reply comment, not the status, is the proof of an answer.
+          reg = register_agent("conflict-reason-claimed-unanswered")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Claimed but unanswered",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          # Exactly what #claim leaves behind, without the comment #finalize links.
+          Collavre::Task.where(id: task.id).update_all(status: "done")
+          assert_nil task.reload.reply_comment, "precondition: claimed, nothing posted"
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "The only copy of this answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :conflict
+          assert_equal "claimed_without_reply", JSON.parse(response.body)["reason"],
+            "a claim with no reply behind it must not be suppressed as dedup"
+        end
+
 
         test "Claude Channel reply enqueues TriggerLoopCheckJob only AFTER the reply comment is saved" do
           # Regression for Codex P2: claim_delegated_task previously used

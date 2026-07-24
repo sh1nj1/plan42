@@ -23,6 +23,21 @@ test("a cancelled/failed/recovered task conflict is NOT benign", () => {
   );
 });
 
+test("a task claimed but not yet answered is NOT benign", () => {
+  // The server flips the task to done before the reply comment is saved. A 409
+  // from inside that window has no answer behind it — and the window can end in
+  // a rollback — so this reply is still the only copy.
+  assert.equal(
+    isBenignReplyDedup(
+      JSON.stringify({
+        error: "Task already completed or not delegated",
+        reason: "claimed_without_reply",
+      }),
+    ),
+    false,
+  );
+});
+
 test("a legacy server that sends no reason is NOT benign", () => {
   // Back-compat runs the safe way: surface the conflict, as this client did
   // before dedup existed, rather than silently dropping a possibly-valid reply.

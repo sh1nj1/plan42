@@ -57,6 +57,15 @@ module Collavre
       # by the agent's own job), so the reply being refused is a duplicate of one
       # that already landed. Dropping it is correct.
       #
+      # CLAIMED_WITHOUT_REPLY is the same `done` status with no answer behind it.
+      # #claim flips the task to done BEFORE the controller saves the comment, so
+      # between those two statements the row says "completed" while nothing has
+      # been posted — and that window can end in a rollback (blank/invalid text
+      # restores the task to `delegated`) or never end at all (the worker dies).
+      # A concurrent reply landing in it holds the only copy of the answer, so it
+      # must surface. Status alone cannot tell this from the case above; the
+      # linked reply comment can.
+      #
       # NOT_DELEGATED is everything else: a task moved out of `delegated` without
       # a reply — cancelled by an offline session, failed, or recovered by the
       # stuck-task sweeper while the agent was still composing. Nothing answered
@@ -66,11 +75,16 @@ module Collavre
       # path resolves the agent from the task first, so it should not reach here,
       # and the safe default if it ever does is "surface it".
       CONFLICT_ALREADY_COMPLETED = "already_completed"
+      CONFLICT_CLAIMED_WITHOUT_REPLY = "claimed_without_reply"
       CONFLICT_NOT_DELEGATED = "not_delegated"
 
       def conflict_reason(agent:, topic:, requested_task_id:)
         task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
-        task&.status == "done" ? CONFLICT_ALREADY_COMPLETED : CONFLICT_NOT_DELEGATED
+        return CONFLICT_NOT_DELEGATED unless task&.status == "done"
+
+        # `reply_comment` is what #finalize links (comment.task_id = task.id), so
+        # its presence is the only proof the dispatch was actually answered.
+        task.reply_comment.present? ? CONFLICT_ALREADY_COMPLETED : CONFLICT_CLAIMED_WITHOUT_REPLY
       end
 
       # Post-claim side effects, run only after the reply comment is saved. Links
