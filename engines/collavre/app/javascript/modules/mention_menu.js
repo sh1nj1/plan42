@@ -1,5 +1,6 @@
 import CommonPopup from '../lib/common_popup'
 import { getCaretClientRect } from '../utils/caret_position'
+import { escapeHtmlText, escapeHtmlAttr } from '../utils/html_escape'
 
 let mentionMenuInitialized = false
 
@@ -17,7 +18,9 @@ if (!mentionMenuInitialized) {
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
-      renderItem: (user) => `<div class="mention-item"><img src="${user.avatar_url}" width="20" height="20" class="avatar" /> ${user.name}</div>`,
+      // Both fields are user-controlled: a display name goes into element text,
+      // an avatar URL into a double-quoted attribute — hence the two escapers.
+      renderItem: (user) => `<div class="mention-item"><img src="${escapeHtmlAttr(user.avatar_url)}" width="20" height="20" class="avatar" /> ${escapeHtmlText(user.name)}</div>`,
       onSelect: (user) => {
         insert(user)
         popupMenu.hide()

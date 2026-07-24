@@ -6,6 +6,7 @@ import {
 } from "lexical"
 import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown"
 import { TABLE, setCellTransformers } from "./table_transformer"
+import { escapeHtmlText, escapeHtmlAttr } from "../../utils/html_escape"
 
 // Serializes the Lexical editor state to Markdown as the canonical storage
 // format. Standard block/inline features (headings, lists, quotes, code,
@@ -46,21 +47,6 @@ function colorBgFromStyle(styleText) {
     else if (key === "background-color") background = safeColorValue(value)
   })
   return { color, background }
-}
-
-function escapeHtmlAttr(value) {
-  return String(value == null ? "" : value)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-}
-
-function escapeHtmlText(value) {
-  return String(value == null ? "" : value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
 }
 
 // Wrap already-formatted inner Markdown text in a normalized colored <span>, or

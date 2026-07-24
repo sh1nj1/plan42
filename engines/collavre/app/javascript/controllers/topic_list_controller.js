@@ -1,4 +1,5 @@
 import CommonPopupController from './common_popup_controller'
+import { escapeHtmlText } from '../utils/html_escape'
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 
@@ -61,10 +62,7 @@ export default class extends CommonPopupController {
     }
 
     renderItem(item) {
-        const escaped = String(item.label || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
+        const escaped = escapeHtmlText(item.label || '')
         if (item.archived) {
             return `<span class="topic-list-item topic-list-item--archived">${ICON_ARCHIVE} ${escaped}</span>`
         }
