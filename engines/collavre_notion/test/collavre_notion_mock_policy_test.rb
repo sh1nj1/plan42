@@ -90,7 +90,11 @@ class CollavreNotionMockPolicyTest < ActiveSupport::TestCase
   # move afterwards, an account minted by one integration would be talking to the
   # other — a real workspace token to localhost, or a fake one to Notion.
   test "a settings change after boot does not move the API host" do
-    in_env("development", "NOTION_CLIENT_ID" => nil, "NOTION_MOCK" => nil) do
+    # This case asserts a literal mock URL but is about the latch, not the port,
+    # so the port is nulled the way the two cases above set it deliberately —
+    # leaving it ambient was how an exported NOTION_MOCK_PORT failed this test.
+    in_env("development", "NOTION_CLIENT_ID" => nil, "NOTION_MOCK" => nil,
+           "NOTION_MOCK_PORT" => nil) do
       assert_equal "http://localhost:4568/v1", base_url, "boot-time answer: no credentials, mock on"
 
       # What the admin UI does — the same write the middleware could not have seen.
