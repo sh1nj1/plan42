@@ -68,9 +68,15 @@ module Collavre
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
       end
 
-      # Default order: Newest first (created_at DESC)
+      # Default order: Newest first (id DESC)
       # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
-      scope = scope.order(created_at: :desc)
+      # We order by id, not created_at: id is a single monotonic sequence that reflects the true insertion
+      # (causal) order, whereas created_at is stamped by whichever process wrote the row. A user message is
+      # stamped by the web request while its agent reply is stamped by a background worker, and clock skew
+      # between those processes can backdate the reply below the message that triggered it. The pagination
+      # cursors below are all id-based ("Newer = higher id"), so ordering by id keeps display and cursors
+      # consistent.
+      scope = scope.order(id: :desc)
 
 
       @comments = if params[:around_comment_id].present?
@@ -81,7 +87,7 @@ module Collavre
         # Older messages have LOWER IDs.
 
         # Newer bundle (including target): ID >= target_id
-        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(created_at: :asc).limit(limit / 2 + 1)
+        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(id: :asc).limit(limit / 2 + 1)
 
         # Older bundle: ID < target_id
         older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
@@ -104,8 +110,8 @@ module Collavre
         # But standard DESC query would give us the VERY Newest.
         # We want the ones just above `after_id`.
 
-        # Use reorder(ASC) to get the ones immediately larger than after_id, then reverse back to DESC.
-        scope.where("comments.id > ?", params[:after_id].to_i).reorder(created_at: :asc).limit(limit)
+        # Use reorder(id: :asc) to get the ones immediately larger than after_id, then reverse back to DESC.
+        scope.where("comments.id > ?", params[:after_id].to_i).reorder(id: :asc).limit(limit)
       else
         # Initial Load (Latest messages)
         scope.limit(limit).to_a.reverse

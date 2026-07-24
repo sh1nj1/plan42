@@ -1,3 +1,14 @@
+## v0.2.2 (2026-07-21)
+
+### Changes
+- 705fd0d1 fix(collavre_linear): allow re-connecting Linear when the stored token is dead (#1424)
+
+## v0.2.1 (2026-07-21)
+
+### Changes
+- 35929406 fix(collavre_linear): auto-advance to project settings after OAuth callback (#1414)
+- 14b62116 fix(linear): normalize configured linear_api_endpoint to /graphql; surface endpoint in error (#1415)
+
 ## v0.2.0 (2026-07-16)
 
 ### Changes
