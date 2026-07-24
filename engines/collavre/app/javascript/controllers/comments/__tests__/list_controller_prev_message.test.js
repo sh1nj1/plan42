@@ -202,6 +202,21 @@ describe('list_controller previous-message navigation', () => {
     expect(h.controller.prevMsgNavigator.anchorId).toBeNull()
   })
 
+  test('notifyProgrammaticScroll seam drops the anchor for sibling controllers', () => {
+    // The review-quote chip in form_controller scrolls the list on its own and
+    // drops the anchor through this public seam, without reaching into the
+    // navigator's internals. Exercise the real seam, not a mock of it.
+    const h = buildController()
+    h.scrollTo(4 * ITEM_HEIGHT)
+
+    h.controller.scrollToPreviousMessage() // anchor = c3
+    expect(h.controller.prevMsgNavigator.anchorId).toBe('c3')
+
+    h.controller.notifyProgrammaticScroll()
+
+    expect(h.controller.prevMsgNavigator.anchorId).toBeNull()
+  })
+
   test('disconnect unhooks the user-input listeners', () => {
     const h = buildController()
     h.scrollTo(4 * ITEM_HEIGHT)

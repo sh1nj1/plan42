@@ -52,9 +52,12 @@ module Collavre
         elsif can_feedback
           origin = creative.effective_origin
           comments_count = origin.comments_count
-          unread_count = unread_count_for(origin, comments_count) if unread_count.nil?
-          if Current.user && CommentPresenceStore.list(origin.id).include?(Current.user.id)
-            unread_count = 0
+          # A batched count already has presence suppression applied by
+          # CommentBadgeIndex; re-checking here would be one cache read per node,
+          # which is exactly what the batch exists to avoid.
+          if unread_count.nil?
+            unread_count = unread_count_for(origin, comments_count)
+            unread_count = 0 if viewing_now?(origin)
           end
           classes = [ "comments-btn", "creative-action-btn" ]
           classes << "no-comments" if comments_count.zero?
@@ -108,6 +111,13 @@ module Collavre
       origin.comments.where("id > ? and private = ?", last_read_id, false).count
     end
 
+    # Someone with the chat open has read it, so their badge shows nothing.
+    def viewing_now?(origin)
+      return false unless Current.user
+
+      CommentPresenceStore.list(origin.id).include?(Current.user.id)
+    end
+
     def render_progress_toggle(creative, value)
       complete = value == 1
       new_value = complete ? 0 : 1
@@ -136,7 +146,6 @@ module Collavre
 
     def render_progress_value(value)
       text = number_to_percentage(value * 100, precision: 0)
-      completion_mark = Collavre::SystemSetting.completion_mark
       if value == 1 && !completion_mark.nil?
         text = completion_mark
       end
@@ -146,6 +155,15 @@ module Collavre
         display_text,
         class: "creative-progress-#{value == 1 ? 'complete' : 'incomplete'}"
       )
+    end
+
+    # A tree renders this helper once per node. Keep the setting lookup scoped to
+    # the request's view context rather than depending on a particular cache
+    # store's local-cache middleware to collapse repeated reads.
+    def completion_mark
+      return @completion_mark if defined?(@completion_mark)
+
+      @completion_mark = Collavre::SystemSetting.completion_mark
     end
 
     def render_creative_tree_markdown(creatives, level = 1, with_progress = false, max_depth: nil)
