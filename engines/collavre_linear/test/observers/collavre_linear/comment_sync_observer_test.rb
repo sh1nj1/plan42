@@ -122,6 +122,29 @@ module CollavreLinear
       assert_enqueued_with(job: CollavreLinear::OutboundCommentUpdateJob, args: [ comment.id ])
     end
 
+    test "link preview formatting enqueues an update for an existing Linear comment" do
+      comment = synced_comment(content: "https://example.com/linear-preview")
+      expected_revision = comment.notification_revision
+      clear_enqueued_jobs
+      formatter = Minitest::Mock.new
+      formatter.expect(:format, "[Preview](https://example.com/linear-preview)")
+
+      Collavre::CommentLinkFormatter.stub(:new, formatter) do
+        assert_enqueued_jobs 1, only: CollavreLinear::OutboundCommentUpdateJob do
+          Collavre::CommentLinkPreviewJob.perform_now(
+            comment.id,
+            comment.content,
+            expected_revision
+          )
+        end
+      end
+
+      assert_equal "[Preview](https://example.com/linear-preview)", comment.reload.content
+      assert_equal expected_revision, comment.notification_revision
+      assert_no_enqueued_jobs only: Collavre::CommentLinkPreviewJob
+      formatter.verify
+    end
+
     test "editing a comment with no CommentLink enqueues no outbound update" do
       unsynced = @creative.comments.new(content: "unsynced", user: @user)
       unsynced.skip_linear_sync = true

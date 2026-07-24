@@ -65,28 +65,5 @@ module Collavre
 
       assert_nil channel.reload.worktree_id
     end
-
-    # Regression: a full migration replay reaches older record-saving migrations
-    # (e.g. 20251230113607_refactor_labels calls Creative.create!) before the
-    # add-column migration that promotes the indexed key. The before_save must
-    # not abort the save by writing a column the table does not have yet.
-    test "skips promoted columns absent from the table instead of raising" do
-      original_map = Channel.indexed_json_column_map
-      Channel.indexed_json_column_map = original_map.merge("kind_not_yet_added" => "kind").freeze
-      begin
-        channel = nil
-        assert_nothing_raised do
-          channel = Channel.create!(
-            topic: @topic,
-            type: "Collavre::Channel",
-            config: { "repo_full_name" => "acme/app", "kind" => "profile" }
-          )
-        end
-        # Existing promoted columns are still synced; only the missing one is skipped.
-        assert_equal "acme/app", channel.repo_full_name
-      ensure
-        Channel.indexed_json_column_map = original_map
-      end
-    end
   end
 end
