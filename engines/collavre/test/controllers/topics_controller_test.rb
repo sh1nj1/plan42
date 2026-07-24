@@ -182,6 +182,22 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal target_creative.id, comment.creative_id, "Comment should move with topic"
   end
 
+  test "moving a topic keeps comments_count in sync on both creatives" do
+    target_creative = creatives(:root_parent)
+    Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "a")
+    Collavre::Comment.create!(creative: @creative, topic: @topic, user: @user, content: "b")
+    source_before = @creative.reload.comments_count
+    target_before = target_creative.reload.comments_count
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+    assert_response :success
+
+    assert_equal source_before - 2, @creative.reload.comments_count, "source counter must drop by moved comments"
+    assert_equal target_before + 2, target_creative.reload.comments_count, "target counter must rise by moved comments"
+    assert_equal @creative.comments.count, @creative.comments_count, "source counter matches actual"
+    assert_equal target_creative.comments.count, target_creative.comments_count, "target counter matches actual"
+  end
+
   test "should not move topic without permission on source creative" do
     other_user = users(:two)
     sign_in_as other_user, password: "password"

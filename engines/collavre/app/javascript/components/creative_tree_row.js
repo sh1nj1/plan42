@@ -1,8 +1,9 @@
 import { LitElement, html, svg, nothing } from "lit";
-import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
+import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
+import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -85,6 +86,13 @@ class CreativeTreeRow extends LitElement {
     // the marker) only when descriptionHtml actually changes.
     highlightCodeBlocks(this);
 
+    // Attach CSV/Excel download toolbars to markdown tables in the description
+    // display areas so creative tables match the chat-message table UI.
+    // Scoped to .creative-content/.creative-title-content (not the whole row)
+    // so the inline editor's own tables are never wrapped. Idempotent, safe on
+    // every Lit re-render.
+    addCreativeTableDownloadButtons(this);
+
     if (changedProperties.has('loadingChildren')) {
       if (this.loadingChildren) {
         this._startAnimation();
@@ -106,8 +114,10 @@ class CreativeTreeRow extends LitElement {
 
   set descriptionHtml(value) {
     const oldValue = this._descriptionHtml;
-    // Always sanitize when setting new HTML
-    const sanitized = DOMPurify.sanitize(value ?? "");
+    // Always sanitize when setting new HTML. Uses the shared sanitizer so the
+    // server-generated YouTube preview iframe survives (default DOMPurify config
+    // strips all iframes, which is what broke the YouTube link preview).
+    const sanitized = sanitizeDescriptionHtml(value);
     this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
     this.requestUpdate("descriptionHtml", oldValue);
@@ -198,6 +208,12 @@ class CreativeTreeRow extends LitElement {
     if (this._progressToggle) this._progressToggle.addEventListener("click", this._handleProgressToggle, { passive: false });
   }
 
+  // parentId convention (single source of truth): `data-parent-id` is ALWAYS
+  // emitted on the `.creative-tree` element. A non-empty value is the parent
+  // creative id; an empty string ("") means "root / no parent". This mirrors
+  // the dynamic-creation path (`dataset.parentId = parentId || ''`) so readers
+  // never have to disambiguate an *absent* attribute (unknown) from a real
+  // root, which previously dropped the parent for newly-added siblings.
   render() {
     if (this.isTitle) {
       return this._renderTitle();
@@ -214,7 +230,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
         data-action=${dragActions}
@@ -240,7 +256,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree creative-tree-title"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">

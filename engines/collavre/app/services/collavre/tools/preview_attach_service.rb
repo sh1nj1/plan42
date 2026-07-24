@@ -113,15 +113,13 @@ module Tools
       raise ArgumentError, "preview_url is not a valid URI: #{preview_url.inspect}"
     end
 
-    # config is JSON, so worktree_id matching is a Ruby-side scan over the
-    # topic's preview channels. With only a handful of previews per topic in
-    # practice this is fine and avoids JSON operator divergence between
-    # Postgres (config->>'worktree_id') and SQLite (json_extract).
+    # worktree_id is a real column denormalized from config (see
+    # Collavre::Channel#sync_indexed_config_columns), so the lookup is an
+    # indexed query — it also backs the (topic_id, worktree_id) unique index
+    # that makes attach idempotent.
     sig { params(topic: Collavre::Topic, worktree_id: String).returns(T.nilable(Collavre::PreviewChannel)) }
     def lookup_channel(topic, worktree_id)
-      Collavre::PreviewChannel.where(topic_id: topic.id).find do |c|
-        c.worktree_id.to_s == worktree_id.to_s
-      end
+      Collavre::PreviewChannel.find_by(topic_id: topic.id, worktree_id: worktree_id)
     end
   end
 end

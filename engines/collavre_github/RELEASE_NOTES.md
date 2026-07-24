@@ -1,3 +1,22 @@
+## v0.6.3 (2026-07-21)
+
+### Changes
+- 19f2e413 docs: consolidate agent docs into developer docs; remove .collavre-docs (#1403)
+
+## v0.6.2 (2026-07-16)
+
+### Changes
+- 2acfda29 refactor(collavre_github): replace SQLite-only json_extract with portable JSON access (#1394)
+- 5268b7d7 refactor(collavre): make core engine vendor-neutral (#1364)
+- 05c315fb fix(security): encrypt repository-link webhook secret at rest and block SSRF DNS rebinding (#1369)
+- 60f68e5f fix: gate GitHub wizard Next button on the current user's own connection (#1362)
+
+## v0.6.1 (2026-06-23)
+
+### Changes
+- 36c3f897 feat: typo correction (Phase 0 backend + Phase 1 chat composer) (#1317)
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+
 ## v0.6.0 (2026-06-04)
 
 ### Changes

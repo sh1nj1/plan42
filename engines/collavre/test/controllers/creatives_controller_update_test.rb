@@ -104,6 +104,25 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "baz", creative.data["foo"]
   end
 
+  test "update_metadata preserves the inbox kind so the inbox stays discoverable" do
+    inbox = Creative.inbox_for(@user)
+    assert inbox.inbox?
+
+    # A stale popup payload (or an API client) that omits "kind" must not make the
+    # row stop matching Creative.inboxes — inbox_for would then create a duplicate.
+    patch update_metadata_creative_url(inbox), params: {
+      data: { foo: "bar" }.to_json
+    }
+
+    assert_response :success
+    inbox.reload
+    assert inbox.inbox?, "inbox creative lost data[\"kind\"] on a metadata save"
+    assert_equal "bar", inbox.data["foo"]
+    assert_no_difference -> { Creative.where(user: @user).inboxes.count } do
+      assert_equal inbox.id, Creative.inbox_for(@user).id
+    end
+  end
+
   test "update_metadata rejects non-hash JSON arrays without clobbering markdown fields" do
     creative = Creative.create!(
       description: "<p>html</p>",
@@ -233,5 +252,28 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
+  end
+
+  test "update_metadata preserves registered reserved key when payload omits it" do
+    # Register a dummy vendor-neutral key "x" to test the registry seam.
+    Collavre::Creative.register_reserved_metadata_key("x")
+    creative = Creative.create!(
+      description: "<p>test</p>",
+      user: @user,
+      data: { "x" => "protected-value", "other" => "changeable" }
+    )
+
+    patch update_metadata_creative_url(creative), params: {
+      data: { other: "new-value" }.to_json  # omits "x"
+    }
+
+    assert_response :success
+    creative.reload
+    assert_equal "protected-value", creative.data["x"], "Reserved key 'x' should be preserved when omitted from payload"
+    assert_equal "new-value", creative.data["other"]
+  ensure
+    # Remove ONLY the dummy key we added; never wipe the registry (would drop
+    # engine keys like "linear" registered once at boot).
+    Collavre::Creative.registered_reserved_metadata_keys.delete("x")
   end
 end

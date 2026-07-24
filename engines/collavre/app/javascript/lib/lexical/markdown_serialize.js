@@ -1,4 +1,9 @@
-import { $isTextNode, $isParagraphNode } from "lexical"
+import {
+  $isTextNode,
+  $isParagraphNode,
+  $isLineBreakNode,
+  $createParagraphNode
+} from "lexical"
 import { $convertToMarkdownString, TRANSFORMERS } from "@lexical/markdown"
 import { TABLE, setCellTransformers } from "./table_transformer"
 
@@ -142,22 +147,44 @@ function decoratorMarkup(node) {
   return null
 }
 
-// A paragraph the user left blank (pressed Enter on an empty line). Decorator-
-// or text-bearing paragraphs are NOT blank, so media and whitespace-with-content
-// keep their normal export.
+// A paragraph the user left blank: it carries no real text, only empty text
+// nodes and/or line breaks. (Decorator- or text-bearing paragraphs are NOT
+// blank, so media and real content keep their normal export.) An empty
+// paragraph from pressing Enter has zero children; a run of blank lines that
+// was reopened comes back as ONE paragraph holding N LineBreakNodes (the
+// importer groups consecutive <br> markers together).
 function isBlankParagraph(node) {
   if (!$isParagraphNode(node)) return false
-  return node.getChildren().every((child) => $isTextNode(child) && !child.getTextContent().trim())
+  // A blank paragraph inside a table cell is just an empty cell — it must stay
+  // empty (`|  |`), not become a `<br>`. The cell serializer reuses this
+  // transformer set, so exclude paragraphs nested in a cell (duck-typed by type
+  // to keep this module free of the @lexical/table import).
+  const parent = node.getParent ? node.getParent() : null
+  if (parent && parent.getType && parent.getType() === "tablecell") return false
+  return node
+    .getChildren()
+    .every((child) => $isLineBreakNode(child) || ($isTextNode(child) && !child.getTextContent().trim()))
 }
 
-// Blank paragraphs -> a non-breaking-space line (U+00A0). The default export
-// collapses an empty paragraph to "" (indistinguishable from the blank line the
-// upstream join inserts between two normal paragraphs), so collapseParagraphBreaks
-// would erase a deliberately-typed empty line. A NBSP line is non-blank Markdown,
-// so the hard-break renderer keeps it as a visible empty line inside one <p>
-// instead of collapsing it — and N empty paragraphs render as N blank lines.
-const EMPTY_PARAGRAPH_TRANSFORMER = exportOnlyTransformer(
-  (node) => (isBlankParagraph(node) ? "\u00A0" : null),
+// How many blank lines a blank paragraph represents: one per LineBreakNode, but
+// at least one (a freshly-typed empty paragraph has no line breaks yet still
+// stands for a single blank line). This exact count is what keeps multiple
+// blank lines from multiplying on every save — the reopened paragraph holds N
+// line breaks and must re-emit N markers, not N+1.
+function blankParagraphBreakCount(node) {
+  const breaks = node.getChildren().filter($isLineBreakNode).length
+  return Math.max(1, breaks)
+}
+
+// Blank paragraphs -> one `<br>` per blank line. A `<br>` is a semantic empty
+// line (not a stray space or NBSP): the hard-break renderers keep it as a
+// visible blank line, and because each marker sits in its own block separated
+// by the standard `\n\n`, a blank line after a list no longer gets pulled into
+// the last <li> via lazy continuation. Round-trips: the importer regroups the
+// rendered <br> elements into a blank paragraph that re-exports identically.
+const BLANK_PARAGRAPH_TRANSFORMER = exportOnlyTransformer(
+  (node) =>
+    isBlankParagraph(node) ? Array(blankParagraphBreakCount(node)).fill("<br>").join("\n\n") : null,
   { type: "element" }
 )
 
@@ -190,7 +217,7 @@ const DECORATOR_ELEMENT_TRANSFORMER = exportOnlyTransformer((node) => decoratorM
 export const MARKDOWN_TRANSFORMERS = [
   TABLE,
   DECORATOR_ELEMENT_TRANSFORMER,
-  EMPTY_PARAGRAPH_TRANSFORMER,
+  BLANK_PARAGRAPH_TRANSFORMER,
   DECORATOR_TEXT_TRANSFORMER,
   COLOR_TRANSFORMER,
   ...TRANSFORMERS
@@ -200,47 +227,87 @@ export const MARKDOWN_TRANSFORMERS = [
 // here (rather than imported into table_transformer.js) to break the cycle.
 setCellTransformers(MARKDOWN_TRANSFORMERS)
 
-// A block that must keep a blank line before/after it (i.e. is NOT a plain
-// paragraph): heading, blockquote, list item, fenced code, table row, thematic
-// break, or a top-level media tag. Anything else is treated as paragraph text.
-const NON_PARAGRAPH_LEAD =
-  /^(?:#{1,6}\s|>|[-*+]\s|\d+[.)]\s|`{3,}|~{3,}|\||<(?:img|video|a)\b|(?:-{3,}|\*{3,}|_{3,})\s*$)/
-
-// Fenced code blocks may legitimately contain blank lines; guard them so the
-// paragraph collapse below never joins lines inside a code sample.
+// Fenced code blocks may legitimately contain consecutive blank lines; guard
+// them so the blank-line normalization below never touches a code sample.
 const FENCE_BLOCK = /(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n\1[ \t]*(?=\n|$)/g
 
-function isPlainParagraph(block) {
-  if (!block || block.includes("\x00MDFENCE")) return false
-  return !NON_PARAGRAPH_LEAD.test(block.split("\n", 1)[0])
+// Inline code spans (`...`) may legitimately contain the literal text `<br>` or
+// a lone NBSP; guard them too so the blank-line normalization never rewrites the
+// span (which would break it on save). Matched after fences are stashed, so the
+// remaining backtick runs are genuine inline code.
+const INLINE_CODE = /(`+)[^\n]*?\1/g
+
+// Normalize the canonical Markdown projection. Enter produces a real paragraph
+// break (standard `\n\n` separation); a blank line the user typed is preserved
+// as a `<br>` marker (see BLANK_PARAGRAPH_TRANSFORMER). This pass only:
+//   - returns "" for a document with no real content (only whitespace and/or
+//     `<br>` markers), keeping the empty-state placeholder/presence contract,
+//   - migrates legacy NBSP-only blank-line markers (pre-`<br>` content) to a
+//     real `<br>` marker so they stop acting as a CommonMark lazy continuation,
+//   - isolates every `<br>` marker as its own block,
+//   - collapses runs of 3+ newlines to one blank line so block separation stays
+//     canonical and the very first save is round-trip stable,
+//   - trims trailing whitespace.
+// Blank lines and literal `<br>`/NBSP inside code (fenced or inline) are
+// preserved verbatim.
+export function normalizeMarkdownBlankLines(markdown) {
+  // A document of only blank lines (each now a `<br>`) carries no real content,
+  // so strip the markers before the emptiness check.
+  if (!String(markdown).replace(/<br\s*\/?>/gi, "").trim()) return ""
+
+  const guards = []
+  const stash = (match) => `\x00MDGUARD${guards.push(match) - 1}\x00`
+  const guarded = String(markdown)
+    .replace(FENCE_BLOCK, stash)
+    .replace(INLINE_CODE, stash)
+
+  const normalized = guarded
+    // Legacy blank-line markers stored a line of only NBSP (U+00A0). CommonMark
+    // treats NBSP as content — a lazy list continuation — re-introducing the
+    // list-indent bug, so migrate such lines to a real `<br>` marker on save.
+    // (A regular whitespace-only line is already a CommonMark blank line.)
+    .replace(/^[ \t]*\u00A0[ \t\u00A0]*$/gm, "<br>")
+    // Each blank-line marker is its own block: isolate every `<br>` with a blank
+    // line on both sides. Lexical's exporter joins a freshly-typed empty
+    // paragraph to its neighbours with a single `\n`, while a reopened (grouped)
+    // blank paragraph gets `\n\n`; canonicalizing here makes the very first save
+    // byte-identical to the reopen fixpoint regardless of which path produced it.
+    // BLANK_PARAGRAPH_TRANSFORMER always emits a marker alone on its line, so we
+    // only match a `<br>` that is the WHOLE line (anchored ^…$ under /m). A
+    // `<br>` embedded in other content (an in-paragraph hard break or raw inline
+    // HTML such as `<span>foo<br>bar</span>`) is not a marker and is left
+    // untouched — isolating it would rewrite user HTML on save.
+    .replace(/\n*^[ \t]*<br>[ \t]*$\n*/gm, "\n\n<br>\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+/, "")
+    .replace(/\s+$/, "")
+
+  return normalized.replace(/\x00MDGUARD(\d+)\x00/g, (_, n) => guards[Number(n)])
 }
 
-// Collapse the blank line between two consecutive plain paragraphs so multi-line
-// rich text serializes as `a\nb` instead of `a\n\nb`. The renderers run with
-// hard breaks (a single `\n` becomes <br>), so the visual line break is
-// preserved while markdown_source stays free of the inserted blank line the user
-// never typed. Headings, lists, quotes, code fences, tables and media keep their
-// standard blank-line separation.
-export function collapseParagraphBreaks(markdown) {
-  // A document made only of blank paragraphs (each now a U+00A0 line) carries no
-  // real content — keep it empty so the empty-state contract (placeholders,
-  // description presence) is unchanged. trim() drops the nbsp too.
-  if (!String(markdown).trim()) return ""
-
-  const fences = []
-  const guarded = String(markdown).replace(FENCE_BLOCK, (match) => {
-    fences.push(match)
-    return `\x00MDFENCE${fences.length - 1}\x00`
+// On reopen, a run of blank-line markers (<br>) comes back grouped into ONE
+// paragraph holding N LineBreakNodes. Lexical renders such a paragraph as N+1
+// visual lines — each break starts a new line on top of the paragraph's own
+// line — so a single typed blank line reopens as TWO, growing by one on every
+// reopen (the "blank lines keep multiplying" bug). Freshly typed blank lines are EMPTY
+// paragraphs instead (zero children, one visual line each). Re-create that
+// structure: replace every all-LineBreakNode paragraph with N empty paragraphs
+// so reopened blank lines match typed ones. Export is unaffected — each empty
+// paragraph still emits exactly one <br> (blankParagraphBreakCount), so the
+// canonical Markdown round-trips byte-for-byte. Paragraphs that mix text with a
+// break (real soft breaks) are left untouched.
+export function splitBlankLineParagraphs(root) {
+  if (!root || !root.getChildren) return
+  root.getChildren().forEach((node) => {
+    if (!$isParagraphNode(node)) return
+    const children = node.getChildren()
+    if (children.length === 0) return
+    if (!children.every($isLineBreakNode)) return
+    for (let i = 0; i < children.length; i++) {
+      node.insertBefore($createParagraphNode())
+    }
+    node.remove()
   })
-
-  const blocks = guarded.split("\n\n")
-  let out = blocks.length ? blocks[0] : ""
-  for (let i = 1; i < blocks.length; i++) {
-    const join = isPlainParagraph(blocks[i - 1]) && isPlainParagraph(blocks[i]) ? "\n" : "\n\n"
-    out += join + blocks[i]
-  }
-
-  return out.replace(/\x00MDFENCE(\d+)\x00/g, (_, n) => fences[Number(n)])
 }
 
 // Read the editor state and return canonical Markdown.
@@ -249,5 +316,5 @@ export function lexicalToMarkdown(editor) {
   editor.getEditorState().read(() => {
     markdown = $convertToMarkdownString(MARKDOWN_TRANSFORMERS)
   })
-  return collapseParagraphBreaks(markdown)
+  return normalizeMarkdownBlankLines(markdown)
 }

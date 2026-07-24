@@ -10,7 +10,7 @@ import { LinkNode, AutoLinkNode } from "@lexical/link"
 import { CodeNode, CodeHighlightNode, registerCodeHighlighting, $isCodeNode, $createCodeNode } from "@lexical/code"
 import { $generateNodesFromDOM } from "@lexical/html"
 import { $convertToMarkdownString } from "@lexical/markdown"
-import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../../lexical/markdown_serialize"
+import { MARKDOWN_TRANSFORMERS, normalizeMarkdownBlankLines } from "../../lexical/markdown_serialize"
 import { renderMarkdown } from "../../utils/markdown"
 import {
   bridgeCodeFenceLanguages, detectCodeLanguage, normalizeFenceLang,
@@ -82,7 +82,7 @@ function codeLang(editor) {
 
 function fence(editor) {
   let md = ""
-  editor.update(() => { md = collapseParagraphBreaks($convertToMarkdownString(MARKDOWN_TRANSFORMERS)) }, { discrete: true })
+  editor.update(() => { md = normalizeMarkdownBlankLines($convertToMarkdownString(MARKDOWN_TRANSFORMERS)) }, { discrete: true })
   return md.split("\n")[0]
 }
 

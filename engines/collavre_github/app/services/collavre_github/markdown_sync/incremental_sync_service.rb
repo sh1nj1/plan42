@@ -73,7 +73,7 @@ module CollavreGithub
             "sha" => @tree_cache[path]
           )
           source.delete("rendered_html")
-          creative.skip_github_validation = true
+          creative.skip_read_only_source_validation = true
           creative.update!(data: creative.data.merge("source" => source))
 
           processed, blobs = processor.process(content, path)
@@ -107,7 +107,7 @@ module CollavreGithub
               }
             }
           )
-          creative.skip_github_validation = true
+          creative.skip_read_only_source_validation = true
           creative.save!
           @synced_creatives[path] = creative
 
@@ -130,15 +130,18 @@ module CollavreGithub
         branch == @link.markdown_sync_branch
       end
 
-      # Load all synced creatives for this repository link, indexed by path
+      # Load all synced creatives for this repository link, indexed by path.
+      #
+      # The `->`/`->>` JSON operators are portable: both PostgreSQL and modern
+      # SQLite (bundled by the `sqlite3` gem used here) support them, so a
+      # single expression works on both adapters without an
+      # `adapter_name == "PostgreSQL"` branch. Wrapping in `CAST(... AS
+      # INTEGER)` (ANSI SQL, supported by both) avoids relying on Postgres's
+      # `::integer` cast syntax, which SQLite doesn't understand.
       def load_synced_creatives
-        scope = Collavre::Creative.where(archived_at: nil)
-
-        if scope.connection.adapter_name == "PostgreSQL"
-          scope = scope.where("(data->'source'->>'repository_link_id')::integer = ?", @link.id)
-        else
-          scope = scope.where("json_extract(data, '$.source.repository_link_id') = ?", @link.id)
-        end
+        scope = Collavre::Creative
+          .where(archived_at: nil)
+          .where("CAST(data -> 'source' ->> 'repository_link_id' AS INTEGER) = ?", @link.id)
 
         scope.each_with_object({}) { |c, h| h[c.data.dig("source", "path")] = c }
       end
@@ -216,7 +219,7 @@ module CollavreGithub
                 }
               }
             )
-            dir_creative.skip_github_validation = true
+            dir_creative.skip_read_only_source_validation = true
             dir_creative.save!
             @synced_creatives[dir_path] = dir_creative
             new_dirs << dir_creative

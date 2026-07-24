@@ -1,6 +1,7 @@
 import { createSubscription } from '../services/cable'
 import { highlightCodeBlocks } from '../lib/utils/markdown'
-import DOMPurify from 'dompurify'
+import { addTableDownloadButtons } from '../lib/utils/table_download'
+import { sanitizeDescriptionHtml } from '../lib/utils/sanitize_description'
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
@@ -26,8 +27,9 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     updateUrl(index);
     // Initial slide is server-rendered (static ERB): re-tokenize its code blocks
-    // so they match the editor palette, same as the JS-loaded slides below.
+    // and attach table download buttons, same as the JS-loaded slides below.
     highlightCodeBlocks(contentEl);
+    addTableDownloadButtons(contentEl);
   }
 
   function updateUrl(idx) {
@@ -65,9 +67,10 @@ document.addEventListener('DOMContentLoaded', function() {
         contentEl.innerHTML = '';
         var el = document.createElement(tag);
         el.className = 'creative-content';
-        el.innerHTML = DOMPurify.sanitize(data.description);
+        el.innerHTML = sanitizeDescriptionHtml(data.description_embedded_html || data.description);
         contentEl.appendChild(el);
         highlightCodeBlocks(el);
+        addTableDownloadButtons(el);
         if (captionEl) {
           captionEl.textContent = data.prompt || '';
         }

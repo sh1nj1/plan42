@@ -15,7 +15,6 @@ import { HeadingNode, QuoteNode, $isHeadingNode, $isQuoteNode } from "@lexical/r
 import {
   CodeNode,
   CodeHighlightNode,
-  $createCodeNode,
   $isCodeNode,
   registerCodeHighlighting
 } from "@lexical/code"
@@ -57,9 +56,15 @@ import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
 import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
 import TypoCorrectionPlugin from "./plugins/typo_correction_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
+import { $toggleCodeBlockForSelection } from "../lib/lexical/code_block_toggle"
 import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
 import { minimizeContentHtml } from "../lib/lexical/minimize_html"
-import { MARKDOWN_TRANSFORMERS, collapseParagraphBreaks } from "../lib/lexical/markdown_serialize"
+import { ensureTrailingParagraph, registerTrailingParagraph } from "../lib/lexical/trailing_paragraph"
+import {
+  MARKDOWN_TRANSFORMERS,
+  normalizeMarkdownBlankLines,
+  splitBlankLineParagraphs
+} from "../lib/lexical/markdown_serialize"
 import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
@@ -238,9 +243,31 @@ function InitialContentPlugin({ html }) {
       if (root.getChildrenSize() === 0) {
         root.append($createParagraphNode())
       }
+
+      // A blank line the user typed is an empty paragraph, but the server renders
+      // it as a standalone <br> that re-imports as a paragraph holding a
+      // LineBreakNode — which Lexical draws as TWO lines, so blank lines grew by
+      // one on every reopen. Split those marker paragraphs back into empty
+      // paragraphs so reopened blank lines match freshly typed ones. Runs AFTER
+      // the trailing-empty cleanup above so an intentional trailing blank line
+      // (a marker paragraph the cleanup leaves alone) is preserved, not stripped.
+      splitBlankLineParagraphs(root)
+
+      // A trailing top-level image/video/attachment leaves no caret position
+      // after it, making the document uneditable. Guarantee an editable
+      // paragraph after it. (The RootNode transform below keeps this true while
+      // editing; this handles the initial load deterministically regardless of
+      // plugin effect ordering.)
+      ensureTrailingParagraph(root)
     })
   }, [editor, html])
 
+  return null
+}
+
+function TrailingParagraphPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => registerTrailingParagraph(editor), [editor])
   return null
 }
 
@@ -656,39 +683,7 @@ function Toolbar() {
 
   const toggleCodeBlock = useCallback(() => {
     editor.update(() => {
-      const selection = $getSelection()
-      if (!$isRangeSelection(selection)) return
-
-      const anchorNode = selection.anchor.getNode()
-      const topLevel = anchorNode.getTopLevelElement()
-      if (!topLevel) return
-
-      if ($isCodeNode(topLevel)) {
-        const textContent = topLevel.getTextContent()
-        const lines = textContent.split("\n")
-        const firstParagraph = $createParagraphNode()
-        firstParagraph.append($createTextNode(lines[0] || ""))
-        topLevel.replace(firstParagraph)
-        let previous = firstParagraph
-        for (let index = 1; index < lines.length; index += 1) {
-          const paragraph = $createParagraphNode()
-          paragraph.append($createTextNode(lines[index]))
-          previous.insertAfter(paragraph)
-          previous = paragraph
-        }
-        firstParagraph.selectEnd()
-        return
-      }
-
-      if (topLevel.getType?.() !== "paragraph") {
-        return
-      }
-
-      const codeNode = $createCodeNode()
-      const content = topLevel.getTextContent()
-      codeNode.append($createTextNode(content || ""))
-      topLevel.replace(codeNode)
-      codeNode.selectEnd()
+      $toggleCodeBlockForSelection()
     })
   }, [editor])
 
@@ -1011,15 +1006,16 @@ function EditorInner({
               // duplicate format wrappers, single-line <p>) before persisting.
               serialized = minimizeContentHtml(doc.body.firstElementChild)
               // Canonical Markdown projection (color/bg -> normalized <span>).
-              // collapseParagraphBreaks joins consecutive plain paragraphs with a
-              // single newline so multi-line rich text doesn't gain a blank line;
-              // the renderers run with hard breaks so the line break is preserved.
-              markdown = collapseParagraphBreaks($convertToMarkdownString(MARKDOWN_TRANSFORMERS))
+              // normalizeMarkdownBlankLines keeps the standard `\n\n` paragraph
+              // separation (Enter = real paragraph break) and only tidies blank-
+              // line runs / the empty-state — no marker characters in the source.
+              markdown = normalizeMarkdownBlankLines($convertToMarkdownString(MARKDOWN_TRANSFORMERS))
             })
             // html: client-side preview/fallback; markdown: canonical storage.
             onChange({ html: serialized, markdown })
           }}
         />
+        <TrailingParagraphPlugin />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <ReadyPlugin onReady={onReady} />

@@ -44,6 +44,15 @@ module Collavre
     has_many :creatives, class_name: "Collavre::Creative", dependent: nil
     before_destroy :destroy_creatives_leaf_first
 
+    # /compress and /merge summaries are durable recovery artifacts: they replace
+    # the deleted original conversation and anchor the restore control (rendered
+    # from the surviving result comment via CommentSnapshot). Detach them (nullify
+    # author) BEFORE the comments dependent: :destroy cascade — prepend ensures we
+    # run first — so deleting the authoring agent/user doesn't destroy the summary
+    # and orphan the snapshot, which would erase the only path to restore the
+    # compressed conversation.
+    before_destroy :preserve_durable_summary_comments, prepend: true
+
     belongs_to :creator, class_name: "Collavre::User", foreign_key: "created_by_id", optional: true
     has_many :created_ai_users, class_name: "Collavre::User", foreign_key: "created_by_id", dependent: :destroy
 
@@ -123,12 +132,14 @@ module Collavre
     end
 
     # Whether this agent uses stateful sessions (incremental messaging).
-    # nil in agent_conf = auto-detect by vendor (openclaw → true).
+    # nil in agent_conf = auto-detect via the AiClient adapter layer, which
+    # vendor engines register into (core never string-matches a vendor name).
     def supports_session?
       explicit = parsed_agent_conf.dig("session", "enabled")
       return ActiveModel::Type::Boolean.new.cast(explicit) unless explicit.nil?
+      return false if llm_vendor.blank?
 
-      llm_vendor&.downcase == "openclaw"
+      Collavre::AiClient.vendor_supports_session?(llm_vendor)
     end
 
     encrypts :llm_api_key, deterministic: false
@@ -174,12 +185,17 @@ module Collavre
       device_on && location_on
     end
 
-    LLM_VENDOR_OPTIONS = [
-      [ "Google (Gemini)", "google" ],
-      [ "OpenAI", "openai" ],
-      [ "Anthropic", "anthropic" ],
-      [ "OpenClaw", "openclaw" ]
-    ].freeze
+    # LLM_VENDOR_OPTIONS is resolved dynamically from the AiClient vendor-option
+    # registry so core lists only its built-in providers while vendor engines
+    # (e.g. OpenClaw) contribute their own. Resolved lazily via const_missing so
+    # the value always reflects registrations made after this class first loads
+    # (they run in a to_prepare hook), and existing views keep referring to the
+    # constant unchanged.
+    def self.const_missing(name)
+      return Collavre::AiClient.vendor_options if name == :LLM_VENDOR_OPTIONS
+
+      super
+    end
 
     SUPPORTED_LLM_MODELS = [
       "gemini-3.1-flash-lite",
@@ -294,10 +310,35 @@ module Collavre
       end
     end
 
+    # Keep durable compress/merge summaries (snapshot result comments) alive when
+    # their author is deleted: nullify authorship instead of cascading destroy.
+    def preserve_durable_summary_comments
+      Collavre::Comment
+        .where(id: Collavre::CommentSnapshot.where(result_comment_id: comments.select(:id)).select(:result_comment_id))
+        .update_all(user_id: nil)
+    end
+
     # Destroy creatives deepest-first so closure_tree always finds its parent
     def destroy_creatives_leaf_first
       all_creatives = creatives.flat_map { |c| c.self_and_descendants.to_a }.uniq
-      all_creatives.sort_by { |c| -c.self_and_ancestors.count }.each do |c|
+
+      # Order by depth in memory. The subtree is contiguous within all_creatives
+      # (every node between an owned root and its descendant is itself a
+      # descendant), so following parent_id links yields the same leaf-first
+      # ordering as self_and_ancestors.count without firing a COUNT query per
+      # creative (the previous N+1).
+      by_id = all_creatives.index_by(&:id)
+      depth_of = lambda do |creative|
+        depth = 0
+        node = creative
+        while node&.parent_id && (parent = by_id[node.parent_id])
+          depth += 1
+          node = parent
+        end
+        depth
+      end
+
+      all_creatives.sort_by { |c| -depth_of.call(c) }.each do |c|
         c.reload.destroy! if Creative.exists?(c.id)
       end
     end

@@ -1,5 +1,6 @@
 import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
 import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import { deriveConnectState, shouldShowConnectNext } from './github_wizard_state.js';
 
 let githubIntegrationInitialized = false;
 
@@ -51,6 +52,10 @@ if (!githubIntegrationInitialized) {
     let webhookDetails = {};
 
     let hasExistingIntegration = false;
+    // Whether the *current* user has their own connected GitHub account.
+    // hasExistingIntegration can be true from other members' linked repos while
+    // this user is still unauthenticated, so the two must be tracked separately.
+    let userConnected = false;
     let selectedReposForDeletion = new Set();
 
     const markdownSyncList = document.getElementById('github-markdown-sync-list');
@@ -64,6 +69,7 @@ if (!githubIntegrationInitialized) {
       webhookDetails = {};
 
       hasExistingIntegration = false;
+      userConnected = false;
       selectedReposForDeletion = new Set();
       statusEl.textContent = '';
       errorEl.style.display = 'none';
@@ -101,7 +107,10 @@ if (!githubIntegrationInitialized) {
 
       if (currentStep === 'connect') {
         prevBtn.style.display = 'none';
-        if (hasExistingIntegration) {
+        // Only surface "Next" when the current user is actually connected. When
+        // existing repos come solely from other members, the user must log in
+        // first — otherwise Next leads to an empty (0 org) dead end.
+        if (shouldShowConnectNext({ hasExistingIntegration, userConnected })) {
           nextBtn.style.display = 'block';
           nextBtn.disabled = false;
         } else {
@@ -198,18 +207,19 @@ if (!githubIntegrationInitialized) {
       fetch(`/github/creatives/${creativeId}/integration`, { headers: { Accept: 'application/json' } })
         .then(function (response) { return response.json(); })
         .then(function (data) {
+          var connectState = deriveConnectState(data);
+          userConnected = connectState.userConnected;
+          hasExistingIntegration = connectState.hasExistingIntegration;
+
           if (!data.connected) {
-            var allRepos = data.all_repositories || [];
-            if (allRepos.length > 0) {
+            if (hasExistingIntegration) {
               // Other users have linked repositories to this creative
               statusEl.textContent = existingMessage;
-              hasExistingIntegration = true;
-              renderExistingConnections(allRepos, true);
+              renderExistingConnections(data.all_repositories || [], true);
               if (connectMessage) connectMessage.style.display = 'none';
               if (loginBtn) loginBtn.style.display = 'inline-block';
             } else {
               statusEl.textContent = '';
-              hasExistingIntegration = false;
               renderExistingConnections([]);
               if (connectMessage) connectMessage.style.display = '';
               if (loginBtn) loginBtn.style.display = 'inline-block';
@@ -230,8 +240,7 @@ if (!githubIntegrationInitialized) {
             }
           });
 
-          hasExistingIntegration = selectedRepos.size > 0;
-          
+          // hasExistingIntegration was derived above from selected_repositories.
           if (loginBtn) loginBtn.style.display = 'none';
           renderExistingConnections(Array.from(selectedRepos));
 

@@ -79,76 +79,16 @@ module Collavre
 
       def update
         SystemSetting.transaction do
-          # Help Link
-          help_link_setting = SystemSetting.find_or_initialize_by(key: "help_menu_link")
-          help_link_setting.value = params[:help_link].to_s.strip
-          help_link_setting.save!
+          settings_from_params.each do |key, value|
+            SystemSetting.find_or_initialize_by(key: key).update!(value: value)
+          end
 
-          # MCP Tool Approval
-          mcp_setting = SystemSetting.find_or_initialize_by(key: "mcp_tool_approval_required")
-          mcp_setting.value = params[:mcp_tool_approval] == "1" ? "true" : "false"
-          mcp_setting.save!
-
-          # Creatives Login Required
-          creatives_login_setting = SystemSetting.find_or_initialize_by(key: "creatives_login_required")
-          creatives_login_setting.value = params[:creatives_login_required] == "1" ? "true" : "false"
-          creatives_login_setting.save!
-
-          # Home Page Paths (unauthenticated default + authenticated override)
+          # Home Page Paths (unauthenticated default + authenticated override).
+          # Kept separate because they validate/normalize and may raise.
           save_home_page_path("home_page_path", params[:home_page_path])
           save_home_page_path("home_page_path_authenticated", params[:home_page_path_authenticated])
 
-          # Account Lockout Settings
-          max_attempts = params[:max_login_attempts].to_i
-          max_attempts = SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS if max_attempts < 1
-          SystemSetting.find_or_initialize_by(key: "max_login_attempts").tap { |s| s.value = max_attempts.to_s; s.save! }
-
-          lockout_duration = params[:lockout_duration_minutes].to_i
-          lockout_duration = SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES if lockout_duration < 1
-          SystemSetting.find_or_initialize_by(key: "lockout_duration_minutes").tap { |s| s.value = lockout_duration.to_s; s.save! }
-
-          # Password Policy Settings
-          password_min_length = [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min
-          SystemSetting.find_or_initialize_by(key: "password_min_length").tap { |s| s.value = password_min_length.to_s; s.save! }
-
-          # Session Timeout Settings
-          session_timeout = [ params[:session_timeout_minutes].to_i, 0 ].max
-          SystemSetting.find_or_initialize_by(key: "session_timeout_minutes").tap { |s| s.value = session_timeout.to_s; s.save! }
-
-          # Rate Limiting - Password Reset
-          pw_reset_limit = params[:password_reset_rate_limit].to_i
-          pw_reset_limit = SystemSetting::DEFAULT_PASSWORD_RESET_RATE_LIMIT if pw_reset_limit < 1
-          SystemSetting.find_or_initialize_by(key: "password_reset_rate_limit").tap { |s| s.value = pw_reset_limit.to_s; s.save! }
-
-          pw_reset_period = params[:password_reset_rate_period_minutes].to_i
-          pw_reset_period = SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES if pw_reset_period < 1
-          SystemSetting.find_or_initialize_by(key: "password_reset_rate_period_minutes").tap { |s| s.value = pw_reset_period.to_s; s.save! }
-
-          # Rate Limiting - API
-          api_limit = params[:api_rate_limit].to_i
-          api_limit = SystemSetting::DEFAULT_API_RATE_LIMIT if api_limit < 1
-          SystemSetting.find_or_initialize_by(key: "api_rate_limit").tap { |s| s.value = api_limit.to_s; s.save! }
-
-          api_period = params[:api_rate_period_minutes].to_i
-          api_period = SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES if api_period < 1
-          SystemSetting.find_or_initialize_by(key: "api_rate_period_minutes").tap { |s| s.value = api_period.to_s; s.save! }
-
-          # LLM Settings
-          llm_timeout = params[:llm_request_timeout_seconds].to_i
-          llm_timeout = SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS if llm_timeout < 30
-          SystemSetting.find_or_initialize_by(key: "llm_request_timeout_seconds").tap { |s| s.value = llm_timeout.to_s; s.save! }
-
-          # Auth Providers
-          auth_providers = Array(params[:auth_providers]).reject(&:blank?)
-          if auth_providers.empty?
-            auth_setting = SystemSetting.new(key: "auth_providers_enabled")
-            auth_setting.errors.add(:base, t("admin.settings.auth_provider_required"))
-            raise ActiveRecord::RecordInvalid, auth_setting
-          end
-
-          all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
-          disabled_providers = all_provider_keys - auth_providers
-          SystemSetting.find_or_initialize_by(key: "auth_providers_disabled").tap { |s| s.value = disabled_providers.join(","); s.save! }
+          save_auth_providers!
         end
 
         redirect_to collavre.admin_settings_path, notice: t("admin.settings.updated")
@@ -173,6 +113,51 @@ module Collavre
       end
 
       private
+
+      # Maps each SystemSetting key to its normalized string value derived from
+      # the request params. Collapses the previously repetitive per-setting
+      # blocks into a single data-driven loop in #update.
+      def settings_from_params
+        {
+          "help_menu_link" => params[:help_link].to_s.strip,
+          "mcp_tool_approval_required" => boolean_setting(:mcp_tool_approval),
+          "creatives_login_required" => boolean_setting(:creatives_login_required),
+          "max_login_attempts" => int_setting(:max_login_attempts, SystemSetting::DEFAULT_MAX_LOGIN_ATTEMPTS),
+          "lockout_duration_minutes" => int_setting(:lockout_duration_minutes, SystemSetting::DEFAULT_LOCKOUT_DURATION_MINUTES),
+          "password_min_length" => [ [ params[:password_min_length].to_i, SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH ].max, 72 ].min.to_s,
+          "session_timeout_minutes" => [ params[:session_timeout_minutes].to_i, 0 ].max.to_s,
+          "password_reset_rate_limit" => int_setting(:password_reset_rate_limit, SystemSetting::DEFAULT_PASSWORD_RESET_RATE_LIMIT),
+          "password_reset_rate_period_minutes" => int_setting(:password_reset_rate_period_minutes, SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES),
+          "api_rate_limit" => int_setting(:api_rate_limit, SystemSetting::DEFAULT_API_RATE_LIMIT),
+          "api_rate_period_minutes" => int_setting(:api_rate_period_minutes, SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES),
+          "llm_request_timeout_seconds" => int_setting(:llm_request_timeout_seconds, SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS, min: 30)
+        }
+      end
+
+      # Checkbox param ("1" when checked) -> "true"/"false" string value.
+      def boolean_setting(param_key)
+        params[param_key] == "1" ? "true" : "false"
+      end
+
+      # Integer param that falls back to a default when below the minimum floor.
+      def int_setting(param_key, default, min: 1)
+        value = params[param_key].to_i
+        value = default if value < min
+        value.to_s
+      end
+
+      def save_auth_providers!
+        auth_providers = Array(params[:auth_providers]).reject(&:blank?)
+        if auth_providers.empty?
+          auth_setting = SystemSetting.new(key: "auth_providers_enabled")
+          auth_setting.errors.add(:base, t("admin.settings.auth_provider_required"))
+          raise ActiveRecord::RecordInvalid, auth_setting
+        end
+
+        all_provider_keys = Rails.application.config.auth_providers.map { |p| p[:key].to_s }
+        disabled_providers = all_provider_keys - auth_providers
+        SystemSetting.find_or_initialize_by(key: "auth_providers_disabled").update!(value: disabled_providers.join(","))
+      end
 
       def save_home_page_path(key, raw_value)
         input = raw_value.to_s.strip

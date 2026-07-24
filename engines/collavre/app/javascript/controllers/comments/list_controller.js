@@ -6,7 +6,13 @@ import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
+
+// Gestures that mean the user moved the list themselves, invalidating the
+// previous-message anchor. Only user input fires these — our own smooth scroll
+// does not.
+const PREV_MSG_USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown']
 
 export default class extends Controller {
   static targets = ['list']
@@ -20,8 +26,10 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
+    this.handlePrevMsgUserInput = this.handlePrevMsgUserInput.bind(this)
     this.handleChange = this.handleChange.bind(this)
     this.handleClick = this.handleClick.bind(this)
     this.handleSubmit = this.handleSubmit.bind(this)
@@ -33,6 +41,9 @@ export default class extends Controller {
     this.handleStreamRender = this.handleStreamRender.bind(this)
 
     this.listTarget.addEventListener('scroll', this.handleScroll)
+    PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
+      this.listTarget.addEventListener(name, this.handlePrevMsgUserInput)
+    })
     this.listTarget.addEventListener('change', this.handleChange)
     this.listTarget.addEventListener('click', this.handleClick)
     this.listTarget.addEventListener('submit', this.handleSubmit)
@@ -75,6 +86,9 @@ export default class extends Controller {
 
   disconnect() {
     this.listTarget.removeEventListener('scroll', this.handleScroll)
+    PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
+      this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
+    })
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
@@ -151,6 +165,9 @@ export default class extends Controller {
   loadInitialComments() {
     if (!this.creativeId) return
     if (this.selection.size > 0) return
+
+    // The list is about to be replaced wholesale; any anchor we hold is stale.
+    this.prevMsgNavigator.reset()
 
     const params = {}
     if (this.highlightAfterLoad) {
@@ -334,9 +351,17 @@ export default class extends Controller {
     return parseInt(last.dataset.commentId)
   }
 
+  // Public seam for sibling controllers that scroll the list on their own
+  // (e.g. the review-quote chip). Lets them drop the prev-message anchor at the
+  // choke point without reaching into the navigator's internals.
+  notifyProgrammaticScroll() {
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
+  }
+
   highlightComment(commentId) {
     const comment = document.getElementById(`comment_${commentId}`)
     if (!comment) return
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
     comment.scrollIntoView({ behavior: 'auto', block: 'center' })
     comment.classList.add('highlight-flash')
     comment.dataset.highlighted = 'true'
@@ -355,6 +380,10 @@ export default class extends Controller {
         body: JSON.stringify({ creative_id: this.creativeId }),
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
+  }
+
+  handlePrevMsgUserInput() {
+    this.prevMsgNavigator.notifyUserInput()
   }
 
   handleScroll() {
@@ -1078,28 +1107,16 @@ export default class extends Controller {
 
   scrollToPreviousMessage() {
     const list = this.listTarget
-    const items = Array.from(list.querySelectorAll('.comment-item'))
-    if (items.length === 0) return
+    const elements = Array.from(list.querySelectorAll('.comment-item'))
+    if (elements.length === 0) return
 
-    const listRect = list.getBoundingClientRect()
-    const viewportTop = listRect.top
+    const viewportTop = list.getBoundingClientRect().top
+    const measured = elements.map((el) => ({
+      id: el.dataset.commentId,
+      top: el.getBoundingClientRect().top,
+    }))
 
-    let currentIdx = -1
-    for (let i = 0; i < items.length; i++) {
-      const rect = items[i].getBoundingClientRect()
-      if (rect.top >= viewportTop - 2) {
-        currentIdx = i
-        break
-      }
-    }
-
-    if (currentIdx === -1) currentIdx = items.length - 1
-
-    const currentItem = items[currentIdx]
-    const currentRect = currentItem.getBoundingClientRect()
-    const isAtTop = Math.abs(currentRect.top - viewportTop) < 4
-
-    const targetIdx = isAtTop ? currentIdx - 1 : currentIdx
+    const targetIdx = this.prevMsgNavigator.resolveTargetIndex(measured, viewportTop)
     if (targetIdx < 0) {
       if (!this.allOlderLoaded) {
         this.loadOlderComments()
@@ -1107,8 +1124,9 @@ export default class extends Controller {
       return
     }
 
-    const target = items[targetIdx]
+    const target = elements[targetIdx]
     const targetTop = target.offsetTop - list.offsetTop
+    this.prevMsgNavigator.commit(measured[targetIdx].id, measured[targetIdx].top)
     list.scrollTo({ top: targetTop, behavior: 'smooth' })
     this.stickToBottom = false
 
@@ -1126,6 +1144,9 @@ export default class extends Controller {
   }
 
   scrollToBottom() {
+    // A jump to latest we did not initiate via the button - drop the anchor so
+    // the next previous-message click resolves from here, not a stale target.
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
     // In column reverse, bottom of scroll might be tricky.
     // Easiest is to set scrollTop to a large value.
     requestAnimationFrame(() => {

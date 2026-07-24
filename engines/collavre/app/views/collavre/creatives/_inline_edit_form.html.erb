@@ -50,6 +50,15 @@
                 style="margin-left:0.5em;font-family:monospace;font-size:0.9em;">
           <%= t('collavre.creatives.index.toggle_markdown') %>
         </button>
+        <span id="inline-save-status"
+              class="inline-save-status"
+              role="status"
+              aria-live="polite"
+              data-label-pending="<%= t('collavre.creatives.index.save_status_pending') %>"
+              data-label-saving="<%= t('collavre.creatives.index.save_status_saving') %>"
+              data-label-saved="<%= t('collavre.creatives.index.save_status_saved') %>"
+              data-label-error="<%= t('collavre.creatives.index.save_status_error') %>"
+              style="margin-left:auto;font-size:0.85em;color:var(--text-secondary);"></span>
       </div>
       <div style="margin-top:0.5em;">
         <button type="button" id="inline-move-up" class="creative-action-btn" title="<%= t('collavre.creatives.index.inline_move_up_tooltip') %>">
