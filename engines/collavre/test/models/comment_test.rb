@@ -1,6 +1,8 @@
 require "test_helper"
 
 class CommentTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   test "creating a comment notifies write-permission users not present" do
     creative = creatives(:tshirt)
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
@@ -40,19 +42,46 @@ class CommentTest < ActiveSupport::TestCase
     Rails.cache.delete(CommentPresenceStore.key(creative.id))
   end
 
-  test "formats content before saving" do
+  test "saves content immediately and enqueues link preview formatting" do
     user = User.create!(email: "formatter@example.com", password: TEST_PASSWORD, name: "Formatter")
     creative = Creative.create!(user: user, description: "Root")
 
-    formatter = Minitest::Mock.new
-    formatter.expect(:format, "formatted content")
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
 
-    Collavre::CommentLinkFormatter.stub(:new, formatter) do
-      comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
-      assert_equal "formatted content", comment.content
-    end
+    comment = Comment.create!(creative: creative, user: user, content: "https://example.com")
 
-    formatter.verify
+    assert_equal "https://example.com", comment.content
+    assert_enqueued_with(
+      job: Collavre::CommentLinkPreviewJob,
+      args: [ comment.id, "https://example.com", comment.notification_revision ]
+    )
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
+  end
+
+  test "enqueues inbox notifications instead of creating them during comment save" do
+    creative = creatives(:tshirt)
+    commenter = users(:two)
+    inbox = Creative.inbox_for(creative.user)
+    original_count = inbox.comments.count
+
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+
+    comment = Comment.create!(creative: creative, user: commenter, content: "async notification")
+
+    assert_enqueued_with(
+      job: Collavre::CommentNotificationJob,
+      args: [ comment.id, "created", comment.notification_event ]
+    )
+    assert_equal original_count, inbox.comments.count
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original_adapter
   end
 
   test "creates inbox comment for mentioned users" do

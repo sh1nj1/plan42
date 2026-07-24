@@ -152,7 +152,7 @@ module Collavre
           topic: @topic
         )
 
-        comment.stub(:create_inbox_comment, ->(*_args) { raise StandardError, "test error" }) do
+        CommentNotificationJob.stub(:perform_later, ->(*) { raise StandardError, "test error" }) do
           assert_nothing_raised do
             comment.notify_ai_completion
           end

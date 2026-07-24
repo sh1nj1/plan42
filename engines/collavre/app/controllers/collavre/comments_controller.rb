@@ -119,31 +119,13 @@ module Collavre
 
       present_user_ids = CommentPresenceStore.list(@creative.id)
 
-      read_receipts = {}
-      if @comments.any?
-        # Fetch all read pointers for this creative that point to comments in the current list
-        # We only care about pointers that match the IDs of the comments we are displaying?
-        # Or rather, we want to show the 'line' on the comment that matches the pointer.
-
-        # Optimization: Fetch all pointers for participants of this creative.
-        # Scoped to the creative.
-        pointers = CommentReadPointer.where(creative: @creative)
-                                     .where.not(last_read_comment_id: nil)
-                                     .includes(user: { avatar_attachment: :blob })
-
-        # Fetch all visible IDs for correct read-receipt placement transparency
-        # Only map read receipts to PUBLIC comments.
-        # Users who read private comments will appear on the nearest preceding public comment.
-        public_ids = @creative.comments.public_only.order(id: :asc).pluck(:id)
-
-        pointers.each do |pointer|
-          effective_id = pointer.effective_comment_id(public_ids)
-          if effective_id
-            read_receipts[effective_id] ||= []
-            read_receipts[effective_id] << pointer.user
-          end
-        end
-      end
+      # Read receipts land on the nearest preceding PUBLIC comment, so a user who
+      # last read a private comment shows up above it. The index resolves that
+      # against the rendered window rather than the whole conversation.
+      # Fully qualified: a top-level ::Comments namespace exists too (see
+      # ::Comments::CommandProcessor below), so a bare Comments:: here would be
+      # resolved by lexical luck rather than intent.
+      read_receipts = Collavre::Comments::ReadReceiptIndex.new(creative: @creative, comments: @comments).receipts
 
       if params[:after_id].present? || params[:before_id].present?
         render partial: "collavre/comments/comment",

@@ -271,15 +271,7 @@ module Collavre
                                    .exists?
         agent_changed = @agent.updated_at > last_reply_at
 
-        # The canonical system prompt now lives in the agent's profile creative's
-        # data["markdown_source"]. Editing it directly bumps only that Creative
-        # row (not the agent User row), and the profile creative sits outside the
-        # rendered topic tree — so without this a stateful re-send would keep the
-        # old session prompt and drop the freshly-edited one.
-        profile_updated_at = @agent.profile_creative_if_present&.updated_at
-        prompt_changed = profile_updated_at.present? && profile_updated_at > last_reply_at
-
-        creative_changed || agent_changed || prompt_changed
+        creative_changed || agent_changed
       end
 
       # Collects the IDs of all creatives whose content is included in the

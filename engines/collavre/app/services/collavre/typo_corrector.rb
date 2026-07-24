@@ -49,7 +49,7 @@ module Collavre
       AiClient.new(
         vendor: agent&.llm_vendor.presence || ENV.fetch("COLLAVRE_DEFAULT_LLM_VENDOR", "gemini"),
         model: agent&.llm_model.presence || ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite"),
-        system_prompt: agent&.effective_system_prompt.presence || FALLBACK_SYSTEM_PROMPT,
+        system_prompt: agent&.system_prompt.presence || FALLBACK_SYSTEM_PROMPT,
         llm_api_key: agent&.llm_api_key,
         gateway_url: agent&.gateway_url,
         # Vendor adapters (e.g. OpenClaw) resolve the gateway/key from the context

@@ -361,32 +361,6 @@ module Collavre
         assert result[:context_changed], "Should detect agent settings change"
       end
 
-      test "context_changed detects a direct profile prompt edit after last reply" do
-        # Create prior conversation
-        @creative.comments.create!(content: "Question", user: @user, topic_id: @comment.topic_id)
-        agent_reply = @creative.comments.create!(content: "Answer", user: @agent, topic_id: @comment.topic_id)
-
-        # Edit the agent's profile creative (canonical prompt home) directly
-        # AFTER the reply. This bumps only the Creative row, not the agent (User)
-        # row, and the profile creative sits outside the rendered topic tree.
-        profile = @agent.profile_creative
-        profile.skip_data_uri_rewrite = true
-        profile.update!(content_type_input: "markdown", markdown_source: "You are a helpful specialist.")
-        assert profile.updated_at > agent_reply.created_at
-        assert_not @agent.updated_at > agent_reply.created_at,
-          "a direct profile edit must not touch the agent User row"
-
-        context = {
-          "comment" => { "id" => @comment.id, "content" => "Follow-up" },
-          "creative" => { "id" => @creative.id }
-        }
-
-        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
-        result = builder.build
-
-        assert result[:context_changed], "Should detect a direct profile prompt edit"
-      end
-
       # An approval-action comment (approve button / approved label) is a human
       # decision surface. Blocking it at the dispatch seams is not enough: the
       # chat-history query would still load it as context on a later dispatch,

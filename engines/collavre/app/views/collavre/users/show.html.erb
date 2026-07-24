@@ -33,7 +33,7 @@
           <dd class="col-sm-9"><%= @user.llm_model %></dd>
 
           <dt class="col-sm-3"><%= t('collavre.users.new_ai.system_prompt_label') %></dt>
-          <dd class="col-sm-9"><pre><%= @user.effective_system_prompt %></pre></dd>
+          <dd class="col-sm-9"><pre><%= @user.system_prompt %></pre></dd>
         </dl>
       </div>
     <% else %>

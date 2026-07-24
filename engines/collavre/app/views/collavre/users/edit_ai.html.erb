@@ -9,17 +9,7 @@
 
   <div class="form-group">
     <%= form.label :system_prompt, t('collavre.users.new_ai.system_prompt_label') %>
-    <%# Pre-fill from the canonical prompt (profile creative's markdown_source),
-        not the legacy system_prompt column. If the profile creative was edited
-        directly, the column is stale; posting it back through update_ai's sync
-        would silently clobber the profile-authored prompt on any unrelated
-        setting change. Rendering the effective value makes a no-touch save a
-        no-op on the prompt.
-        On a validation-error re-render, though, show the *submitted* value
-        (@user.system_prompt) — the failed save never synced the profile, so
-        effective_system_prompt would read the old canonical prompt and silently
-        discard the user's unsaved edit. %>
-    <%= form.text_area :system_prompt, value: (@user.errors.any? ? @user.system_prompt : @user.effective_system_prompt), required: true, class: "stacked-form-control", rows: 5 %>
+    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5 %>
   </div>
 
   <%= render "collavre/users/trigger_field", form: form, routing_expression: @user.routing_expression %>
