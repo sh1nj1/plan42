@@ -32,14 +32,14 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # and would be left without the Stop button on the one turn that is waiting on them.
   AGENT_REPLAY_STATUSES = %w[running pending pending_approval].freeze
 
-  # Broadcast status for any currently live AI agent tasks for a creative.
-  # Called when a user subscribes to ensure they see ongoing agent activity.
-  def self.broadcast_running_agents(creative_id)
-    Task.where(status: AGENT_REPLAY_STATUSES).find_each do |task|
+  # One agent_status payload per currently live AI agent task on a creative, in
+  # the shape broadcast_agent_status sends.
+  def self.running_agent_payloads(creative_id)
+    Task.where(status: AGENT_REPLAY_STATUSES).filter_map do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
       next unless task_creative_id == creative_id
 
-      broadcast_agent_status(
+      agent_status_payload(
         creative_id,
         # Replayed with its real status, not a blanket "thinking": the client keys
         # its own handling off this string, and a paused turn is not a working one.
@@ -52,10 +52,31 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
+  # Broadcast status for any currently live AI agent tasks for a creative.
+  # #subscribed does NOT use this — it transmits the same payloads straight to
+  # the connection instead, because a broadcast can be dropped exactly there
+  # (see the comment on that call).
+  def self.broadcast_running_agents(creative_id)
+    running_agent_payloads(creative_id).each do |payload|
+      ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
+    end
+  end
+
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
   # source_creative_id: the actual creative where agent is working (for filtering on frontend)
   def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, source_creative_id: nil)
+    ActionCable.server.broadcast(
+      "comments_presence:#{creative_id}",
+      agent_status_payload(
+        creative_id,
+        status: status, agent_id: agent_id, agent_name: agent_name,
+        task_id: task_id, content: content, source_creative_id: source_creative_id
+      )
+    )
+  end
+
+  def self.agent_status_payload(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, source_creative_id: nil)
     payload = {
       agent_status: {
         id: agent_id,
@@ -66,7 +87,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
       }
     }
     payload[:agent_status][:content] = content if content.present?
-    ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
+    payload
   end
 
   def subscribed
@@ -79,7 +100,15 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     CommentPresenceStore.add(@creative_id, current_user.id)
     Comment.broadcast_badge(creative, current_user)
     broadcast_presence
-    CommentsPresenceChannel.broadcast_running_agents(@creative_id)
+    # Transmitted to this connection, not broadcast to the stream it just joined.
+    # `stream_from` only registers the subscription with the pubsub adapter, and
+    # the async and Redis adapters do that asynchronously — a broadcast published
+    # in the same breath can land before the subscription is attached and be
+    # dropped. Every other message here survives that (presence and badges are
+    # re-sent by later events), but this replay is one-shot: the job that set
+    # pending_approval has already returned, so a dropped copy means no Stop
+    # button for the rest of the turn.
+    self.class.running_agent_payloads(@creative_id).each { |payload| transmit(payload) }
   end
 
   def unsubscribed

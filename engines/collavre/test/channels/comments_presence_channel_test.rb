@@ -137,4 +137,72 @@ module Collavre
       assert_equal 0, agent_broadcasts.size
     end
   end
+
+  # The replay has to reach the connection that triggered it. Publishing it to the
+  # stream inside #subscribed races the subscription: `stream_from` hands the
+  # registration to the pubsub adapter, and the async and Redis adapters attach it
+  # asynchronously, so a message published in the same breath can be dropped. That
+  # is survivable for presence and badges — later events re-send them — and fatal
+  # for this one, because the job holding the task in pending_approval has already
+  # returned and nothing will announce it again.
+  class CommentsPresenceChannelSubscribeTest < ActionCable::Channel::TestCase
+    tests Collavre::CommentsPresenceChannel
+
+    setup do
+      @owner = users(:one)
+      @creative = Creative.create!(user: @owner, description: "Subscribe Replay Creative")
+      @agent = User.create!(
+        email: "presence_subscriber_agent@example.com",
+        name: "Presence Subscriber Agent",
+        password: "password",
+        llm_vendor: "google",
+        llm_model: "gemini-1.5-flash",
+        routing_expression: "true",
+        searchable: true
+      )
+    end
+
+    test "a task paused on approval is transmitted to the subscriber itself" do
+      task = create_task(status: "pending_approval")
+
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      assert subscription.confirmed?
+      status = agent_status_transmission
+      assert status, "the replay must not depend on the stream the subscription just joined"
+      assert_equal task.id, status[:task_id]
+      assert_equal "pending_approval", status[:status]
+    end
+
+    test "a subscriber with nothing live gets no agent transmission" do
+      create_task(status: "done")
+
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      assert subscription.confirmed?
+      assert_nil agent_status_transmission
+    end
+
+    private
+
+    def create_task(status:)
+      Task.create!(
+        name: "Response to comment_created",
+        status: status,
+        trigger_event_name: "comment_created",
+        trigger_event_payload: {
+          "comment" => { "id" => 1, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        },
+        agent: @agent
+      )
+    end
+
+    def agent_status_transmission
+      payload = transmissions.find { |t| t.is_a?(Hash) && (t[:agent_status] || t["agent_status"]) }
+      payload && (payload[:agent_status] || payload["agent_status"])
+    end
+  end
 end
