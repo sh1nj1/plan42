@@ -49,6 +49,30 @@ module Collavre
         claimed
       end
 
+      # Why #claim refused, so the caller can tell the one benign conflict from
+      # the ones that lose a real reply.
+      #
+      # ALREADY_COMPLETED is the sibling-session dedup this whole claim exists
+      # for: the dispatch WAS answered (by another session sharing this agent, or
+      # by the agent's own job), so the reply being refused is a duplicate of one
+      # that already landed. Dropping it is correct.
+      #
+      # NOT_DELEGATED is everything else: a task moved out of `delegated` without
+      # a reply — cancelled by an offline session, failed, or recovered by the
+      # stuck-task sweeper while the agent was still composing. Nothing answered
+      # that dispatch, so the text the caller is holding is the only copy of that
+      # answer and the conflict has to surface rather than be swallowed. A task
+      # that cannot be found under this agent+topic reads the same way; the reply
+      # path resolves the agent from the task first, so it should not reach here,
+      # and the safe default if it ever does is "surface it".
+      CONFLICT_ALREADY_COMPLETED = "already_completed"
+      CONFLICT_NOT_DELEGATED = "not_delegated"
+
+      def conflict_reason(agent:, topic:, requested_task_id:)
+        task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
+        task&.status == "done" ? CONFLICT_ALREADY_COMPLETED : CONFLICT_NOT_DELEGATED
+      end
+
       # Post-claim side effects, run only after the reply comment is saved. Links
       # the comment to the claimed task, releases the ResourceTracker slot the
       # AiAgentJob held under task.id, advances the parent workflow (if any), and

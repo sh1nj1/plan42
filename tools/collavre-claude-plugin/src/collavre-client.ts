@@ -29,6 +29,28 @@ export interface RegisterBody {
   name: string;
 }
 
+// The server's machine-readable marker for the ONE benign reply conflict: the
+// delegated task was already completed, so the dispatch this reply answers has
+// an answer. See TaskClaimService::CONFLICT_ALREADY_COMPLETED.
+const BENIGN_REPLY_CONFLICT_REASON = "already_completed";
+
+/**
+ * Whether a 409 body from /agent/reply is the sibling-session dedup and may be
+ * suppressed. Anything else — a cancelled/failed/recovered task, an id that is
+ * not ours, an unparseable body, or an older server that sends no reason at all
+ * — is NOT: the reply in hand is the only copy of that answer, and suppressing
+ * it drops it with no trace. Unmarked conflicts therefore fall back to being
+ * raised, which is what this client did before dedup existed.
+ */
+export function isBenignReplyDedup(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as { reason?: unknown };
+    return parsed?.reason === BENIGN_REPLY_CONFLICT_REASON;
+  } catch {
+    return false;
+  }
+}
+
 export function buildRegisterBody(params: RegisterParams): RegisterBody {
   const body: RegisterBody = {
     agent_name: params.agentName,
@@ -85,15 +107,24 @@ export class CollavreClient {
       body: JSON.stringify(body),
     });
 
-    // 409 Conflict is the server's benign dedup signal, not an error. Multiple
-    // Claude Code sessions in the SAME working directory share one Collavre
-    // agent; a work-topic dispatch fans out to all of them and each session's
-    // turn calls reply with the same task_id. The server's atomic task claim
-    // lets exactly one win — the others get 409 "already completed". The message
-    // was already delivered by a sibling, so this is success-with-nothing-to-do,
-    // not a failure to surface to the model.
+    // 409 Conflict has two causes and only one of them is benign.
+    //
+    // Benign: multiple Claude Code sessions in the SAME working directory share
+    // one Collavre agent; a work-topic dispatch fans out to all of them and each
+    // session's turn calls reply with the same task_id. The server's atomic task
+    // claim lets exactly one win — the others are refused. The message was
+    // already delivered by a sibling, so this is success-with-nothing-to-do.
+    //
+    // Not benign: the dispatch left `delegated` WITHOUT being answered — an
+    // offline session cancelled it, it failed, or stuck-task recovery flipped it
+    // while this turn was still composing. The claim fails the same way, but no
+    // sibling posted anything, so treating it as dedup drops the user's answer
+    // silently. Only the server's explicit already_completed marker suppresses.
     if (res.status === 409) {
       const respBody = await res.text();
+      if (!isBenignReplyDedup(respBody)) {
+        throw new Error(`Reply failed (409): ${respBody}`);
+      }
       return { handled: false, reason: respBody };
     }
 

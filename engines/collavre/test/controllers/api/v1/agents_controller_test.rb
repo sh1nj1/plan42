@@ -1096,6 +1096,71 @@ module Collavre
             "loser of the atomic claim must not save a comment"
         end
 
+        test "409 for an already-answered dispatch is marked already_completed" do
+          # The dedup case: a sibling session sharing this agent won the claim and
+          # posted. The reply being refused is a duplicate, so the client is right
+          # to suppress it — and this reason is the only thing that says so.
+          reg = register_agent("conflict-reason-dedup")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Answered dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Sibling's answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Duplicate answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :conflict
+          assert_equal "already_completed", JSON.parse(response.body)["reason"]
+        end
+
+        test "409 for a cancelled dispatch is NOT marked already_completed" do
+          # Codex P2: an offline-session cancellation or stuck-task recovery flips
+          # the task out of `delegated` while the agent is still composing. The
+          # claim fails exactly as it does for dedup, but NOTHING answered this
+          # dispatch — a client that reads every 409 as dedup drops the only copy
+          # of the reply. The reason is what lets it tell the two apart.
+          reg = register_agent("conflict-reason-cancelled")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          %w[cancelled failed pending].each do |status|
+            task = Collavre::Task.create!(
+              name: "Dispatch that went #{status}",
+              status: status,
+              trigger_event_name: "comment_created",
+              agent: ai_user,
+              topic_id: topic_id,
+              creative_id: creative.id
+            )
+
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Answer nobody else posted", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+
+            assert_response :conflict, "#{status} task must still be refused"
+            assert_equal "not_delegated", JSON.parse(response.body)["reason"],
+              "a #{status} dispatch was never answered — suppressing this 409 loses the reply"
+          end
+        end
+
+
         test "Claude Channel reply enqueues TriggerLoopCheckJob only AFTER the reply comment is saved" do
           # Regression for Codex P2: claim_delegated_task previously used
           # update! which fires after_update_commit synchronously — but the
