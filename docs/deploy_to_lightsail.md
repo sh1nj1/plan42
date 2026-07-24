@@ -152,8 +152,10 @@ the repo root (the wrapper's paths are relative) with `RAILS_ENV` unset or
 
 `bin/docker-entrypoint` runs `db:migrate` on boot. On a brand-new database that
 replays every migration from zero, and `db/schema.rb` is known to drift from a
-full replay — so if you are bringing existing data, **restore it before the
-first deploy**, while the database is still reachable without the app:
+full replay — so if you are bringing existing data, **load it before the app
+serves a request**. Which side of `./kamal.sh setup` that falls on depends on
+the source: a PostgreSQL dump goes in over SSH before the first deploy, while
+the SQLite converter needs the app image and so runs after it, app stopped.
 
 - **Moving an existing PostgreSQL deployment (Neon, RDS):** dump and restore.
   Match `PG_MAJOR` to the source server's major version or the restore may fail.
@@ -168,7 +170,58 @@ first deploy**, while the database is still reachable without the app:
   ```
 
 - **Coming from SQLite:** `bin/rails db:sqlite_to_postgres[...]`
-  (`lib/tasks/db_convert.rake`).
+  (`lib/tasks/db_convert.rake`). Like the fresh install below, this one runs
+  *after* `./kamal.sh setup`, because the app container is the only place that
+  can reach both ends. `DATABASE_URL` names `172.17.0.1`, which by design
+  answers only on the host, so running the task from your workstation dials
+  your own machine instead — and overriding the URL on the command line does
+  not help, because `config/boot.rb` uses `Dotenv.overload`: `.env.production`
+  puts `172.17.0.1` back over whatever you passed.
+
+  ```bash
+  ./kamal.sh setup
+  ./kamal.sh app stop   # no writes while the schema is dropped and reloaded
+
+  # The task reads the SQLite file from inside the container. /rails/storage is
+  # the plan42_storage volume, shared by every container of the app, and uid
+  # 1000 is the image's `rails` user.
+  scp storage/production-primary.sqlite3 collavre@<instance-ip>:/tmp/
+  ssh collavre@<instance-ip> \
+    'sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
+       "$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")/" &&
+     rm /tmp/production-primary.sqlite3'
+
+  # The copy disables referential integrity, which is superuser-only.
+  ssh collavre@<instance-ip> \
+    "sudo -u postgres psql -c 'ALTER ROLE collavre_user SUPERUSER'"
+
+  ./kamal.sh app exec \
+    'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"'
+
+  ssh collavre@<instance-ip> \
+    "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
+  ssh collavre@<instance-ip> \
+    'sudo rm "$(docker volume inspect plan42_storage \
+       --format "{{.Mountpoint}}")/production-primary.sqlite3"'
+
+  ./kamal.sh app boot   # restart on the data you just loaded
+  ```
+
+  The grant is not optional. The launch script creates the role with
+  `CREATE ROLE ... LOGIN` and nothing else, and the copy runs
+  `ALTER TABLE ... DISABLE TRIGGER ALL`, which needs a superuser — owning the
+  table is not enough. The task checks this up front and aborts with
+  instructions rather than dying halfway through with a `ForeignKeyViolation`,
+  so a forgotten grant costs you a message, not a half-loaded database. Take it
+  back afterwards: the other route the task offers,
+  `MIGRATION_RUN_USER=postgres`, would mean giving the superuser role a
+  password that every container on the host could then authenticate with.
+
+  No `DISABLE_DATABASE_ENVIRONMENT_CHECK` here, unlike the fresh install below.
+  The task calls `DatabaseTasks.load_schema` directly instead of the
+  `db:schema:load` task, so `check_protected_environments` never runs. It also
+  stamps `schema_migrations` for the engine migrations as well as the primary
+  ones, so the next boot's `db:migrate` is a no-op.
 
 - **Genuinely fresh install:** there is nothing to restore, so this one runs
   *after* `./kamal.sh setup` rather than before it — `app exec` needs the
