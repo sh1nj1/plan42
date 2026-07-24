@@ -217,7 +217,7 @@ class VoiceCommandService @Inject constructor(
             onResult = { text -> onTranscript(text) },
             onError = {
                 // No speech / cancelled: don't send a reply, just advance the queue.
-                // (spec: 사용자가 아무 발화를 하지 않으면 그 메시지는 응답이 안 감)
+                // (spec: silence means no reply is sent for that message)
                 _state.value = VoiceState.IDLE
                 pump()
             }

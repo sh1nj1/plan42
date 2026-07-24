@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
@@ -32,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -96,27 +99,38 @@ fun MainScreen(
             Spacer(Modifier.height(16.dp))
 
             SectionLabel("Messages")
-            // Always-present Inbox#Main row: selecting it (or no selection at all)
-            // routes the mic/reply to Inbox#Main as a cold utterance.
-            MessageRow(
-                message = inboxMainMessage,
-                selected = activeEventId == null || activeEventId == VoiceCommandService.INBOX_MAIN_ID,
-                speaking = false,
-                isInboxMain = true,
-                onSelect = { viewModel.selectMessage(VoiceCommandService.INBOX_MAIN_ID) },
-                onTogglePlay = {},
-                onReply = { viewModel.replyTo(VoiceCommandService.INBOX_MAIN_ID) }
-            )
-            messages.forEach { msg ->
-                MessageRow(
-                    message = msg,
-                    selected = msg.eventId == activeEventId,
-                    speaking = state == VoiceState.SPEAKING && activeEventId == msg.eventId,
-                    isInboxMain = false,
-                    onSelect = { viewModel.selectMessage(msg.eventId) },
-                    onTogglePlay = { viewModel.playMessage(msg.eventId) },
-                    onReply = { viewModel.replyTo(msg.eventId) }
-                )
+            // Scrollable and keyed by event id: new events are prepended, so
+            // positional identity would hand a row's expand state to its neighbour.
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                // Always-present Inbox#Main row: selecting it (or no selection at all)
+                // routes the mic/reply to Inbox#Main as a cold utterance.
+                item(key = VoiceCommandService.INBOX_MAIN_ID) {
+                    MessageRow(
+                        message = inboxMainMessage,
+                        selected = activeEventId == null ||
+                            activeEventId == VoiceCommandService.INBOX_MAIN_ID,
+                        speaking = false,
+                        isInboxMain = true,
+                        onSelect = { viewModel.selectMessage(VoiceCommandService.INBOX_MAIN_ID) },
+                        onTogglePlay = {},
+                        onReply = { viewModel.replyTo(VoiceCommandService.INBOX_MAIN_ID) }
+                    )
+                }
+                items(messages, key = { it.eventId }) { msg ->
+                    MessageRow(
+                        message = msg,
+                        selected = msg.eventId == activeEventId,
+                        speaking = state == VoiceState.SPEAKING && activeEventId == msg.eventId,
+                        isInboxMain = false,
+                        onSelect = { viewModel.selectMessage(msg.eventId) },
+                        onTogglePlay = { viewModel.playMessage(msg.eventId) },
+                        onReply = { viewModel.replyTo(msg.eventId) }
+                    )
+                }
             }
         }
     }
@@ -193,8 +207,8 @@ private fun SectionLabel(text: String) {
 
 /**
  * One row in the message list. Title is "Creative#Topic". The leading chevron
- * (갈매기) expands/collapses the full message body; the trailing buttons play/stop
- * the read-aloud and start a spoken reply. Tapping the row selects it (highlight).
+ * expands/collapses the full message body; the trailing buttons play/stop the
+ * read-aloud and start a spoken reply. Tapping the row selects it (highlight).
  * The Inbox#Main row carries no body, so it shows only the reply button.
  */
 @Composable
@@ -207,7 +221,9 @@ private fun MessageRow(
     onTogglePlay: () -> Unit,
     onReply: () -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    // rememberSaveable: LazyColumn disposes off-screen items, so a plain remember
+    // would silently collapse a row the user scrolled past.
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val expandable = !isInboxMain && message.text.isNotBlank()
 
     Card(
