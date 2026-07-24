@@ -41,12 +41,7 @@ module Collavre
       "permission"  => :repropagate
     }.freeze
 
-    # Set on shares the system creates on the recipient's own behalf (e.g. the
-    # admin share an agent profile grants its creator), where the notification
-    # would read as the recipient sharing something with themselves.
-    attr_accessor :skip_recipient_notification
-
-    after_create_commit :notify_recipient, unless: -> { no_access? || skip_recipient_notification }
+    after_create_commit :notify_recipient, unless: :no_access?
     after_save :touch_creative_subtree
     after_destroy :touch_creative_subtree
 
