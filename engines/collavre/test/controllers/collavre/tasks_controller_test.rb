@@ -41,7 +41,7 @@ module Collavre
 
       sign_in_as(@owner, password: "password")
 
-      assert_equal [{ "id" => task.id, "status" => "running" }], statuses_for(task.id)
+      assert_equal [ { "id" => task.id, "status" => "running" } ], statuses_for(task.id)
     end
 
     test "omits tasks on creatives the user cannot read" do
@@ -61,7 +61,7 @@ module Collavre
 
       sign_in_as(@owner, password: "password")
 
-      assert_equal [mine.id], statuses_for([mine.id, theirs.id]).map { |t| t["id"] }
+      assert_equal [ mine.id ], statuses_for([ mine.id, theirs.id ]).map { |t| t["id"] }
     end
 
     # A task can carry its creative only in the trigger payload (creative_id is
@@ -80,7 +80,7 @@ module Collavre
 
       sign_in_as(@owner, password: "password")
 
-      assert_equal [task.id], statuses_for(task.id).map { |t| t["id"] }
+      assert_equal [ task.id ], statuses_for(task.id).map { |t| t["id"] }
     end
 
     test "ignores unparseable task ids instead of querying for them" do
