@@ -18,6 +18,18 @@ module Collavre
       end
 
       module ClassMethods
+        # The one enqueue seam for badge recomputation. Every write path that
+        # invalidates a badge goes through here rather than calling
+        # #broadcast_badges directly, so "badges are recounted off the request"
+        # holds for all of them and can't drift back one caller at a time.
+        # #broadcast_badges itself stays synchronous: the job — and the tests
+        # that pin the arithmetic — need a place that just computes.
+        def broadcast_badges_later(creative)
+          return unless creative
+
+          CommentBadgesBroadcastJob.perform_later(creative.id)
+        end
+
         def broadcast_badges(creative)
           origin = creative.effective_origin
           users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
@@ -187,7 +199,7 @@ module Collavre
 
       def broadcast_badges
         return unless creative
-        self.class.broadcast_badges(creative)
+        self.class.broadcast_badges_later(creative)
       end
     end
   end
