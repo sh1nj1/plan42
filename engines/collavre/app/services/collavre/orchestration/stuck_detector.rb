@@ -184,7 +184,6 @@ module Collavre
                           .where("updated_at < ?", threshold_time)
 
         stuck_tasks.filter_map do |task|
-          # Skip if already escalated recently
           next if recently_escalated?(task)
 
           escalation_targets = find_escalation_targets(task)
@@ -381,7 +380,6 @@ module Collavre
         when :task
           task = stuck_item.item
           minutes_stuck = ((Time.current - stuck_item.stuck_since) / 60).round
-
           [
             "collavre.stuck_detection.task_stuck",
             {
