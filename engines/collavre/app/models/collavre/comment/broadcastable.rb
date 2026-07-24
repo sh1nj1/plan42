@@ -42,7 +42,12 @@ module Collavre
           pointers = CommentReadPointer.where(user_id: user_ids, creative: origin).index_by(&:user_id)
           present_user_ids = CommentPresenceStore.list(origin.id)
 
-          public_count = origin.comments.public_only.count
+          # Only ever consumed as a boolean (show_zero below), so ask the
+          # database for existence rather than a total. An unbounded COUNT has
+          # no id predicate to anchor it, so the planner falls back to a
+          # sequential scan of the whole comments table and gets slower for
+          # every participant as the conversation grows.
+          any_public = origin.comments.public_only.exists?
           private_counts = origin.comments
             .where(private: true, user_id: user_ids)
             .group(:user_id)
@@ -71,7 +76,7 @@ module Collavre
 
           users.each do |u|
             user_private_count = private_counts[u.id] || 0
-            total_count = public_count + user_private_count
+            has_any_visible = any_public || user_private_count.positive?
 
             threshold = last_read_ids[u.id] || 0
             unread_public = unread_public_by_threshold[threshold] || 0
@@ -87,7 +92,7 @@ module Collavre
               locals: {
                 count: unread_count,
                 badge_id: "comment-badge-#{origin.id}",
-                show_zero: total_count.positive?
+                show_zero: has_any_visible
               }
             )
 
