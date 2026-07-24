@@ -208,15 +208,12 @@ module Collavre
       def extract_expertise_text(agent)
         texts = []
 
-        # From agent's system_prompt (primary source for AI agents). Route
-        # through effective_system_prompt so a directly-edited profile creative
-        # is matched on, falling back to the legacy column for other agent types.
-        texts << agent.effective_system_prompt if agent.respond_to?(:effective_system_prompt) && agent.effective_system_prompt.present?
-        texts << agent.system_prompt if !agent.respond_to?(:effective_system_prompt) && agent.respond_to?(:system_prompt) && agent.system_prompt.present?
+        # From agent's system_prompt (primary source for AI agents)
+        texts << agent.system_prompt if agent.respond_to?(:system_prompt) && agent.system_prompt.present?
 
         # From AI agent profile (for nested ai_agent association)
         if agent.respond_to?(:ai_agent) && agent.ai_agent.present?
-          texts << agent.ai_agent.effective_system_prompt if agent.ai_agent.respond_to?(:effective_system_prompt)
+          texts << agent.ai_agent.system_prompt if agent.ai_agent.respond_to?(:system_prompt)
           texts << agent.ai_agent.description if agent.ai_agent.respond_to?(:description)
         end
 

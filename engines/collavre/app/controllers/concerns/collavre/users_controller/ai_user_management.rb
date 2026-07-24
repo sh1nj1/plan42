@@ -43,7 +43,6 @@ module Collavre
       @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
       if @user.save
-        @user.sync_profile_system_prompt!
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)
         share_ai_agent_to_creative(@user, params[:creative_id])
         redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("collavre.users.create_ai.success")
@@ -62,12 +61,6 @@ module Collavre
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
 
       if @user.update(ai_params)
-        # Only mirror the column into the canonical profile prompt when the form
-        # actually submitted system_prompt. A partial PATCH (e.g. routing_expression
-        # only) leaves the legacy column at its stored value, which may be stale
-        # relative to a directly-edited profile; syncing it would clobber the
-        # canonical data["markdown_source"].
-        @user.sync_profile_system_prompt! if ai_params.key?(:system_prompt)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
         @available_tools = load_available_tools

@@ -91,22 +91,6 @@ module CollavreCompletionApi
           assert_response :bad_request
         end
 
-        test "build_system_prompt uses the canonical profile prompt, not the stale column" do
-          # A directly-edited profile Creative makes data["markdown_source"] canonical
-          # while the legacy system_prompt column goes stale.
-          @ai_bot.update!(system_prompt: "CANONICAL PROFILE PROMPT")
-          @ai_bot.sync_profile_system_prompt!
-          @ai_bot.update_column(:system_prompt, "STALE COLUMN PROMPT")
-
-          controller = ::CollavreCompletionApi::Api::V1::Chat::CompletionsController.new
-          def controller.collavre_creative = nil
-
-          prompt = controller.send(:build_system_prompt, [], @ai_bot.reload)
-
-          assert_includes prompt, "CANONICAL PROFILE PROMPT"
-          refute_includes prompt, "STALE COLUMN PROMPT"
-        end
-
         private
 
         def auth_headers

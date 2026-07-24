@@ -5,21 +5,12 @@ module Collavre
   class Creative < ApplicationRecord
     self.table_name = "creatives"
 
-    # Promote the `kind` discriminator (stored in `data`) to a real column so the
-    # profile-uniqueness index is a plain-column index that dumps identically on
-    # SQLite and PostgreSQL, instead of a JSON-expression index that serializes
-    # per-adapter and crashes `db:schema:load` on Postgres (see
-    # docs/engine_development.md and 20260721000010_add_unique_index_to_profile_creatives).
-    # `data` stays the source of truth; `kind` is re-derived from it on every save.
-    include Collavre::IndexedJsonColumns
-    indexed_json_columns json: :data, columns: { kind: "kind" }
-
     # ---------------------------------------------------------------------------
     # Reserved metadata key registry — engines register their own namespaces so
     # `update_metadata` preserves them without core naming vendor-specific keys.
-    # "kind" is the discriminator (`inbox`/`profile`/`skill`) that scopes like
-    # `profiles` query on (`data->>'kind'`); it must be preserved or a metadata
-    # save that omits it makes the row undiscoverable and a duplicate is created.
+    # "kind" must be reserved: it is the discriminator `inbox?`/`Creative.inboxes`
+    # match on, so a metadata save that omits it makes the row undiscoverable and
+    # `inbox_for` creates a duplicate inbox for that user.
     # ---------------------------------------------------------------------------
     BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
 
@@ -80,17 +71,6 @@ module Collavre
 
     # --- Inbox ---
     scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
-
-    # --- Profile ---
-    PROFILE_KIND = "profile"
-    SKILL_KIND = "skill"
-
-    scope :profiles, -> { where("data->>'kind' = ?", PROFILE_KIND) }
-
-    # A profile creative is an agent's system prompt, never a tool source.
-    def profile?
-      data&.dig("kind") == PROFILE_KIND
-    end
 
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
@@ -157,63 +137,6 @@ module Collavre
         progress: 0.0
       )
     end
-
-    # Find or create the profile creative for a given user.
-    # Places it as a root creative (no parent) owned by the user.
-    #
-    # Guarantees a single profile creative per user. A partial unique index
-    # (index_creatives_on_user_id_profile_unique) prevents a duplicate at the DB,
-    # and create_or_find_by! resolves a concurrent insert to the surviving row —
-    # so there is never a second, separately-editable profile to split-brain on.
-    # The read-first fast path keeps the common (already-exists) case cheap.
-    def self.profile_for(user)
-      existing = profiles.where(user: user).order(:id).first
-      return existing if existing
-
-      created = false
-      creative = profiles.create_or_find_by!(user: user) do |c|
-        c.description = user.name.to_s
-        c.data = { "kind" => PROFILE_KIND }
-        c.progress = 0.0
-        created = true
-      end
-      grant_creator_admin_share(creative, user) if created
-      creative
-    end
-
-    # A managed AI agent's profile creative is owned by the agent itself, so its
-    # human creator has no Creative-level path to it (permissions are owner or
-    # CreativeShare only). Give the creator `admin` on creation: admin — not
-    # write — because the profile subtree is where the agent's skills live, and
-    # approving an agent's use of a feedback-level skill is an owner/admin act.
-    #
-    # Only for AI agents: `created_by_id` is also set on humans invited by
-    # another user, and a person's own profile must never be exposed to whoever
-    # created their account.
-    #
-    # Granted once, at profile creation only — never re-asserted on later
-    # profile_for calls, so a creator who deliberately removes the share (or
-    # lowers it) keeps that decision.
-    def self.grant_creator_admin_share(creative, user)
-      return unless user.respond_to?(:ai_user?) && user.ai_user?
-
-      creator_id = user.try(:created_by_id)
-      return if creator_id.blank? || creator_id == user.id
-
-      share = Collavre::CreativeShare.new(
-        creative: creative,
-        user_id: creator_id,
-        shared_by: user,
-        permission: :admin
-      )
-      # The creator is the actor here, so the "X shared a creative with you"
-      # inbox message would be addressed from them to themselves.
-      share.skip_recipient_notification = true
-      share.save!
-    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
-      Rails.logger.warn("[Creative#profile_for] creator share skipped for user #{user.id}: #{e.message}")
-    end
-    private_class_method :grant_creator_admin_share
 
     attr_accessor :filtered_progress
 
@@ -432,10 +355,6 @@ module Collavre
     end
 
     def mark_mcp_tools_sync_pending
-      # Profile creatives hold an agent's system prompt, so a fenced
-      # `extend ToolMeta` example in the prompt must not register a real tool.
-      return if profile?
-
       @mcp_tools_sync_pending = true
     end
 
