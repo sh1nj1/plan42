@@ -3,17 +3,21 @@ module Collavre
     module Notifiable
       extend ActiveSupport::Concern
 
+      NOTIFICATION_RELEVANT_ATTRIBUTES = %w[
+        action approver_id content creative_id private topic_id user_id
+      ].freeze
+
       included do
-        after_create_commit :notify_write_users, :notify_mentions, :notify_approver
+        before_update :advance_notification_revision, if: :notification_relevant_change?
+        after_create_commit :enqueue_create_notifications, if: :notification_eligible_on_create?
       end
 
       def mentioned_users
         return Collavre.user_class.none unless user
+
         emails = mentioned_emails - [ user.email.downcase ]
         names = mentioned_names - [ user.name.downcase ]
-
-        origin = creative.effective_origin
-        mentionable_users = Collavre.user_class.mentionable_for(origin)
+        mentionable_users = Collavre.user_class.mentionable_for(creative.effective_origin)
 
         scope = Collavre.user_class.none
         scope = scope.or(mentionable_users.where(email: emails)) if emails.any?
@@ -21,44 +25,105 @@ module Collavre
         scope
       end
 
-      # Notify users about a completed AI streaming message.
-      # Called from ResponseFinalizer after placeholder is updated with final content.
-      # Sends both write-user and mention notifications that were skipped at placeholder creation.
-      # Errors are rescued to avoid breaking the finalization flow.
+      def notification_event
+        {
+          "creative_id" => creative_id,
+          "regular_notification" => regular_notification_eligible?,
+          "approval_notification" => approval_notification_eligible?,
+          "revision" => notification_revision
+        }
+      end
+
+      # Notify users about a completed AI streaming message without holding up
+      # response finalization. Placeholder notifications are skipped on create.
       def notify_ai_completion
         return unless user&.ai_user?
-        return if private?
+        return if private? || suppress_inbox_notification?
 
-        notify_ai_write_users
-        notify_ai_mentions
+        CommentNotificationJob.perform_later(id, "ai_completion", notification_event)
       rescue StandardError => e
         Rails.logger.error("[notify_ai_completion] Failed for comment #{id}: #{e.message}")
       end
 
+      def deliver_notifications(kind, event)
+        event = event.stringify_keys
+        return unless event["creative_id"] == creative_id
+        return unless event["revision"] == notification_revision
+
+        case kind.to_s
+        when "created"
+          if event["regular_notification"]
+            notify_write_users("created")
+            notify_mentions("created")
+          end
+          notify_approver("created") if event["approval_notification"]
+        when "ai_completion"
+          return unless user&.ai_user?
+          return if private? || suppress_inbox_notification?
+
+          notify_write_users("ai_completion")
+          notify_mentions("ai_completion")
+        else
+          raise ArgumentError, "Unknown comment notification kind: #{kind}"
+        end
+      end
+
       private
 
-      def create_inbox_comment(owner, key, params = {})
+      def notification_relevant_change?
+        NOTIFICATION_RELEVANT_ATTRIBUTES.any? { |attribute| will_save_change_to_attribute?(attribute) }
+      end
+
+      def advance_notification_revision
+        self.notification_revision += 1
+      end
+
+      def notification_eligible_on_create?
+        regular_notification_eligible? || approval_notification_eligible?
+      end
+
+      def regular_notification_eligible?
+        !private? && !streaming_placeholder? && !suppress_inbox_notification?
+      end
+
+      def approval_notification_eligible?
+        approver.present? && approval_action? && !creative&.inbox?
+      end
+
+      def enqueue_create_notifications
+        CommentNotificationJob.perform_later(id, "created", notification_event)
+      end
+
+      def create_inbox_comment(owner, key, params = {}, delivery_key: nil)
         inbox_creative = Creative.inbox_for(owner)
         return unless inbox_creative
 
         system_topic = inbox_creative.system_topic(fallback_user: owner)
         msg = I18n.t(key, **params.symbolize_keys, locale: owner.locale || "en")
-
-        comment = Comment.create!(
+        attributes = {
           creative: inbox_creative,
           topic: system_topic,
           content: msg,
           user: nil,
           skip_default_user: true,
           quoted_comment: self
-        )
+        }
 
-        Comment.broadcast_inbox_badge(inbox_creative, owner)
+        comment = if delivery_key
+          Comment.create_or_find_by!(notification_key: delivery_key) do |candidate|
+            candidate.assign_attributes(attributes)
+          end
+        else
+          Comment.create!(attributes)
+        end
+
+        return comment unless comment.previously_new_record?
+
         PushNotificationJob.perform_later(owner.id, message: msg, link: inbox_comment_link)
         comment
       rescue StandardError => e
         Rails.logger.error("[Notifiable] Failed to create inbox comment for user #{owner.id}: #{e.message}")
-        nil
+        raise
       end
 
       # Keep legacy method for backward compatibility during transition
@@ -85,6 +150,7 @@ module Collavre
 
       def mentioned_emails
         return [] unless content
+
         content.scan(/@([\w.\-+]+@[a-zA-Z0-9\-.]+\.[a-zA-Z]{2,})/)
                .flatten
                .map(&:downcase)
@@ -93,6 +159,7 @@ module Collavre
 
       def mentioned_names
         return [] unless content
+
         content.scan(/@([^:]+):/)
                .flatten
                .map(&:downcase)
@@ -111,54 +178,40 @@ module Collavre
         recipients.uniq!
         recipients.delete(user)
         recipients -= mentioned_users.to_a
-        recipients.reject! { |u| present_ids.include?(u.id) }
+        recipients.reject! { |recipient| present_ids.include?(recipient.id) }
         recipients
       end
 
-      def notify_write_users
-        return if private? || !user
-        return if streaming_placeholder?
-        return if suppress_inbox_notification? # only the System topic is the alarm stream
+      def notify_write_users(kind)
+        return unless user
+
         notification_recipients.each do |recipient|
           create_inbox_comment(
             recipient,
             "inbox.comment_added",
-            { user: user.display_name, comment: content, creative: creative_markdown_link }
+            {
+              user: user.display_name,
+              comment: content,
+              creative: creative_markdown_link
+            },
+            delivery_key: notification_delivery_key(kind, "write", recipient)
           )
         end
       end
 
-      def notify_mentions
-        return if private?
-        return if streaming_placeholder?
-        return if suppress_inbox_notification? # only the System topic is the alarm stream
-        notify_mentioned_users
-      end
-
-      def notify_mentioned_users
+      def notify_mentions(kind)
         mentioned_users.each do |mentioned|
           create_inbox_comment(
             mentioned,
             "inbox.user_mentioned",
-            { user: user.display_name, comment: content, creative: creative_markdown_link }
+            {
+              user: user.display_name,
+              comment: content,
+              creative: creative_markdown_link
+            },
+            delivery_key: notification_delivery_key(kind, "mention", mentioned)
           )
         end
-      end
-
-      def notify_ai_write_users
-        return if suppress_inbox_notification? # only the System topic is the alarm stream
-        notification_recipients.each do |recipient|
-          create_inbox_comment(
-            recipient,
-            "inbox.comment_added",
-            { user: user.display_name, comment: content, creative: creative_markdown_link }
-          )
-        end
-      end
-
-      def notify_ai_mentions
-        return if suppress_inbox_notification? # only the System topic is the alarm stream
-        notify_mentioned_users
       end
 
       # #1301 made every inbox topic EXCEPT System dispatch like a normal topic;
@@ -171,7 +224,11 @@ module Collavre
         creative&.inbox? && inbox_system_topic?
       end
 
-      def notify_approver
+      def notification_delivery_key(kind, recipient_type, recipient)
+        "comment:#{id}:#{notification_revision}:#{kind}:#{recipient_type}:recipient:#{recipient.id}"
+      end
+
+      def notify_approver(kind)
         return unless approver.present? && approval_action?
         return if approver == user
         return if creative&.inbox? # Don't notify about inbox comments
@@ -179,7 +236,12 @@ module Collavre
         create_inbox_comment(
           approver,
           "inbox.approval_requested",
-          { user: user&.display_name, tool_name: parsed_action_tool_name, creative: creative_markdown_link }
+          {
+            user: user&.display_name,
+            tool_name: parsed_action_tool_name,
+            creative: creative_markdown_link
+          },
+          delivery_key: notification_delivery_key(kind, "approver", approver)
         )
       end
     end

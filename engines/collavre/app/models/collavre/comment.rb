@@ -105,7 +105,7 @@ module Collavre
     before_validation :use_origin_creative
     before_validation :assign_default_user, on: :create
     before_validation :assign_main_topic, on: :create
-    before_save :apply_link_previews, if: :should_apply_link_previews?
+    after_commit :enqueue_link_preview, on: [ :create, :update ], if: :saved_change_to_content?
     after_create_commit :dispatch_to_orchestration
     after_create_commit :resume_trigger_loop_if_awaiting
 
@@ -352,14 +352,10 @@ module Collavre
       errors.add(:creative, "must be an origin creative")
     end
 
-    def should_apply_link_previews?
-      will_save_change_to_content? && content.present?
-    end
+    def enqueue_link_preview
+      return if content.blank?
 
-    def apply_link_previews
-      self.content = CommentLinkFormatter.new(content).format
-    rescue StandardError => e
-      Rails.logger.warn("Comment link preview formatting failed: #{e.class} #{e.message}")
+      CommentLinkPreviewJob.perform_later(id, content, notification_revision)
     end
 
     def images_must_be_images
