@@ -5,23 +5,29 @@ module Collavre
   class Creative < ApplicationRecord
     self.table_name = "creatives"
 
-    # Promote the `kind` discriminator (stored in `data`) to a real column so the
-    # profile-uniqueness index is a plain-column index that dumps identically on
-    # SQLite and PostgreSQL, instead of a JSON-expression index that serializes
-    # per-adapter and crashes `db:schema:load` on Postgres (see
-    # docs/engine_development.md and 20260721000010_add_unique_index_to_profile_creatives).
-    # `data` stays the source of truth; `kind` is re-derived from it on every save.
-    include Collavre::IndexedJsonColumns
-    indexed_json_columns json: :data, columns: { kind: "kind" }
-
     # ---------------------------------------------------------------------------
     # Reserved metadata key registry — engines register their own namespaces so
     # `update_metadata` preserves them without core naming vendor-specific keys.
-    # "kind" is the discriminator (`inbox`/`profile`/`skill`) that scopes like
-    # `profiles` query on (`data->>'kind'`); it must be preserved or a metadata
-    # save that omits it makes the row undiscoverable and a duplicate is created.
+    # "kind" must be reserved: it is the discriminator `inbox?`/`Creative.inboxes`
+    # match on, so a metadata save that omits it makes the row undiscoverable and
+    # `inbox_for` creates a duplicate inbox for that user.
     # ---------------------------------------------------------------------------
     BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
+
+    SubtreeTouchTransactionRecord = Data.define(:creative_id) do
+      def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
+
+      def trigger_transactional_callbacks? = true
+
+      def before_committed! = nil
+
+      def committed!(should_run_callbacks:)
+        TouchCreativeSubtreeJob.perform_later(creative_id) if should_run_callbacks
+      end
+
+      def rolledback!(**_options) = nil
+    end
+    private_constant :SubtreeTouchTransactionRecord
 
     class << self
       def registered_reserved_metadata_keys
@@ -56,7 +62,7 @@ module Collavre
       "creatives/creative"
     end
 
-    after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
+    after_update :register_subtree_touch_after_commit, if: :saved_change_to_parent_id?
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
@@ -80,17 +86,6 @@ module Collavre
 
     # --- Inbox ---
     scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
-
-    # --- Profile ---
-    PROFILE_KIND = "profile"
-    SKILL_KIND = "skill"
-
-    scope :profiles, -> { where("data->>'kind' = ?", PROFILE_KIND) }
-
-    # A profile creative is an agent's system prompt, never a tool source.
-    def profile?
-      data&.dig("kind") == PROFILE_KIND
-    end
 
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
@@ -156,25 +151,6 @@ module Collavre
         user: user,
         progress: 0.0
       )
-    end
-
-    # Find or create the profile creative for a given user.
-    # Places it as a root creative (no parent) owned by the user.
-    #
-    # Guarantees a single profile creative per user. A partial unique index
-    # (index_creatives_on_user_id_profile_unique) prevents a duplicate at the DB,
-    # and create_or_find_by! resolves a concurrent insert to the surviving row —
-    # so there is never a second, separately-editable profile to split-brain on.
-    # The read-first fast path keeps the common (already-exists) case cheap.
-    def self.profile_for(user)
-      existing = profiles.where(user: user).order(:id).first
-      return existing if existing
-
-      profiles.create_or_find_by!(user: user) do |creative|
-        creative.description = user.name.to_s
-        creative.data = { "kind" => PROFILE_KIND }
-        creative.progress = 0.0
-      end
     end
 
     attr_accessor :filtered_progress
@@ -394,10 +370,6 @@ module Collavre
     end
 
     def mark_mcp_tools_sync_pending
-      # Profile creatives hold an agent's system prompt, so a fenced
-      # `extend ToolMeta` example in the prompt must not register a real tool.
-      return if profile?
-
       @mcp_tools_sync_pending = true
     end
 
@@ -416,8 +388,15 @@ module Collavre
       end
     end
 
-    def touch_subtree_on_move
-      descendants.update_all(updated_at: Time.current)
+    # Register independently of the Creative instance because a transaction may
+    # update the same row through multiple instances, while Rails runs record
+    # callbacks on only one of them. Transaction-record equality deduplicates by
+    # creative id; Rails promotes records through committed savepoints and drops
+    # them on rollback.
+    def register_subtree_touch_after_commit
+      self.class.with_connection do |connection|
+        connection.add_transaction_record(SubtreeTouchTransactionRecord.new(id))
+      end
     end
 
     def fire_drop_trigger_on_move
