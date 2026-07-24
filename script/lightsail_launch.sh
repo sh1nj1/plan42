@@ -109,6 +109,24 @@ APT_OPTS=(-o DPkg::Lock::Timeout=600
 apt_get() { apt-get "${APT_OPTS[@]}" "$@"; }
 apt_install() { apt_get install -y --no-install-recommends "$@"; }
 
+# Percent-encode everything outside the RFC 3986 unreserved set, byte by byte
+# (LC_ALL=C, so multi-byte characters encode as their UTF-8 bytes). The
+# generated password is alphanumeric and passes through untouched; an
+# operator-supplied DB_PASSWORD is not, and config/database.yml runs
+# URI.parse(ENV["DATABASE_URL"]) at boot, which rejects @ / # % ? and space in
+# userinfo outright.
+urlencode() {
+  local LC_ALL=C s="$1" i c out=''
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [A-Za-z0-9._~-]) out="$out$c" ;;
+      *) out="$out$(printf '%%%02X' "'$c")" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 # Append a managed block to a config file exactly once, keyed by a marker.
 ensure_block() {
   local file="$1" marker="$2" content="$3"
@@ -454,10 +472,21 @@ log "9/9 summary"
 # --------------------------------------------------------------------------
 PUBLIC_IP="$(curl -fsS --max-time 5 https://checkip.amazonaws.com 2>/dev/null || echo '<public-ip>')"
 PRIVATE_IP="$(hostname -I | awk '{print $1}')"
-DATABASE_URL="postgresql://$DB_USER:$DB_PASSWORD@$DB_BIND_ADDRESS:5432/$DB_NAME"
+# Rails percent-decodes userinfo when it resolves DATABASE_URL, so encoding
+# here round-trips back to the literal password the role was created with.
+URL_USER="$(urlencode "$DB_USER")"
+URL_PASSWORD="$(urlencode "$DB_PASSWORD")"
+URL_DB_NAME="$(urlencode "$DB_NAME")"
+DATABASE_URL="postgresql://$URL_USER:$URL_PASSWORD@$DB_BIND_ADDRESS:5432/$URL_DB_NAME"
 # Angle brackets, not a $(...) that a reader might paste into .env.production
 # and watch dotenv store verbatim.
-REDACTED_URL="postgresql://$DB_USER:<see $SUMMARY>@$DB_BIND_ADDRESS:5432/$DB_NAME"
+REDACTED_URL="postgresql://$URL_USER:<see $SUMMARY>@$DB_BIND_ADDRESS:5432/$URL_DB_NAME"
+# Only worth saying when the two actually differ, which they never do for the
+# generated password.
+PASSWORD_NOTE=''
+if [ "$URL_PASSWORD" != "$DB_PASSWORD" ]; then
+  PASSWORD_NOTE=', percent-encoded in the URL below'
+fi
 
 # Rendered twice: once with the real DATABASE_URL into the 0600 summary file,
 # once redacted for stdout — which is tee'd to the launch log and captured by
@@ -472,7 +501,7 @@ Collavre Lightsail host — provisioned $(date -Is)
   deploy user      $APP_SSH_USER (docker, sudo)
   PostgreSQL       $PG_MAJOR, listening on localhost + $DB_BIND_ADDRESS only
   database         $DB_NAME owned by $DB_USER
-  db password      $STATE_DIR/db_password (root only)
+  db password      $STATE_DIR/db_password (root only)$PASSWORD_NOTE
   backups          /var/backups/collavre, nightly at $BACKUP_AT, ${BACKUP_RETENTION_DAYS}d retention
   log              $LOG_FILE
 

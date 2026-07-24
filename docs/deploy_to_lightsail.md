@@ -51,7 +51,7 @@ Common overrides:
 | `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys` |
 | `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER` |
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump |
-| `DB_PASSWORD` | *(generated)* | Generated password is URL-safe |
+| `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
 | `BACKUP_S3_URI` | *(empty)* | e.g. `s3://collavre-backups/pg` — PostgreSQL only, [not uploaded files](#backup_s3_uri-does-not-cover-uploaded-files) |
 
@@ -73,6 +73,28 @@ credential. Read the real `DATABASE_URL` from the `0600` summary file (or the
 password alone from `/var/lib/collavre/db_password`).
 
 **In the console firewall (Networking tab): open 80 and 443. Never open 5432.**
+
+### A custom `DB_PASSWORD` is percent-encoded in `DATABASE_URL`
+
+The generated password is alphanumeric, so it appears in `DATABASE_URL`
+unchanged. A password you supply yourself may not be: `config/database.yml`
+runs `URI.parse(ENV["DATABASE_URL"])` on boot, and that rejects `@`, `/`, `#`,
+`%`, `?` and spaces in the user/password part outright — every Rails command in
+the container would abort with `URI::InvalidURIError` before it reached the
+database.
+
+So the script percent-encodes the role, password and database name when it
+composes the URL. Rails decodes them again when it resolves the connection, so
+the role still authenticates with the literal password it was created with. The
+practical consequence is only that the two do not look alike:
+
+```
+/var/lib/collavre/db_password   p@ss/word
+DATABASE_URL                    postgresql://collavre_user:p%40ss%2Fword@172.17.0.1:5432/collavre_production
+```
+
+Copy `DATABASE_URL` from the summary file as-is. Do not paste the raw password
+into it.
 
 ## 3. How PostgreSQL is reachable
 
@@ -258,7 +280,7 @@ both the Lightsail firewall and ufw (the script already allows 443).
 | `kamal` can't SSH | `sudo cat /home/collavre/.ssh/authorized_keys` — empty means no `SSH_PUBLIC_KEY` and no key to copy |
 | `kamal` SSH works, Docker denied | Reconnect: `docker` group membership needs a new session |
 | App: `could not connect to server` | `sudo ss -lntp \| grep 5432` should show `127.0.0.1:5432` **and** `172.17.0.1:5432` |
-| App: `password authentication failed` | `sudo cat /var/lib/collavre/db_password` vs `DATABASE_URL` |
+| App: `password authentication failed` | `sudo cat /var/lib/collavre/db_password` vs `DATABASE_URL` — the URL holds the [percent-encoded](#a-custom-db_password-is-percent-encoded-in-database_url) form |
 | PostgreSQL won't start after reboot | `sysctl net.ipv4.ip_nonlocal_bind` must be `1`; `journalctl -u postgresql@17-main` |
 | `relation "solid_queue_jobs" does not exist` | Schema never loaded — see §5 |
 | Disk filling up | `docker system prune -af`, `/var/backups/collavre`, `/var/log` |
