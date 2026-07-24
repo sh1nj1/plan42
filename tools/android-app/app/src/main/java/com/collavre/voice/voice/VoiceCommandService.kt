@@ -112,6 +112,13 @@ class VoiceCommandService @Inject constructor(
     // highest held id is kept: sending it later subsumes every smaller one.
     private var deferredRead: Long? = null
 
+    // Listed rows that have been dealt with — heard, or answered by a reply the server
+    // marked read. Everything else in _messages is still owed something, whether or not
+    // it ever reached the TTS queue: with "Speak agent events" off, ingest() lists a
+    // notice without queuing it, so the queue cannot answer "what is still unread?".
+    // Pruned to the rows _messages keeps, so it stays as bounded as that list.
+    private val settledRows = mutableSetOf<Long>()
+
     // Whether the row in _speakingEventId is an approval. Kept alongside rather than in
     // the flow because that one is public UI state; this only exists so markSpokenRead
     // can keep approvals out of the hold above.
@@ -147,6 +154,7 @@ class VoiceCommandService @Inject constructor(
             isApproval = event.isApproval
         )
         _messages.value = (listOf(msg) + _messages.value).take(20)
+        settledRows.retainAll(_messages.value.mapTo(HashSet()) { it.eventId })
         Notifications.postEvent(context, event)
         if (speakEnabled && event.speak) {
             queue.addLast(msg)
@@ -215,7 +223,18 @@ class VoiceCommandService @Inject constructor(
      * what a held mark was waiting on.
      */
     private fun settleRead(eventId: Long, isApproval: Boolean) {
+        settledRows.add(eventId)
         if (!isApproval) deferredRead = maxOf(deferredRead ?: eventId, eventId)
+        flushRead()
+    }
+
+    /**
+     * Record that a row is dealt with WITHOUT holding its id: the server has already
+     * marked it (an in-order reply), so there is nothing left to send for it — but a
+     * mark held behind it can now go out.
+     */
+    private fun markSettled(eventId: Long) {
+        settledRows.add(eventId)
         flushRead()
     }
 
@@ -227,10 +246,28 @@ class VoiceCommandService @Inject constructor(
         markRead(pending)
     }
 
-    /** Lowest id still owed a reading: waiting in the queue, or being spoken right now. */
+    /**
+     * Lowest id the server still owes a reading: waiting in the queue, being spoken right
+     * now, or listed and not yet settled.
+     *
+     * That third term is not redundant. With "Speak agent events" off, ingest() lists a
+     * notice and skips the queue entirely, so nothing local claims it while it stays
+     * unread on the server — and an out-of-order reply, seeing an empty queue, would let
+     * respond() drag the forward-only pointer straight over it. The row is only in
+     * volatile UI state, so after a restart it is neither on screen nor re-emitted.
+     *
+     * Scoped to the rows _messages keeps: once a notice is trimmed off the end it is no
+     * longer visible anywhere, and holding a mark behind it forever would cost a repeated
+     * reading on every launch rather than prevent a loss. Approvals are excluded — their
+     * ids move no pointer (see settleRead) — but a QUEUED approval still counts through
+     * the queue term, the same conservative reading the play path takes.
+     */
     private fun oldestUnheard(): Long = minOf(
         queue.minOfOrNull { it.eventId } ?: Long.MAX_VALUE,
-        _speakingEventId.value ?: Long.MAX_VALUE
+        _speakingEventId.value ?: Long.MAX_VALUE,
+        _messages.value
+            .filter { !it.isApproval && it.eventId !in settledRows }
+            .minOfOrNull { it.eventId } ?: Long.MAX_VALUE
     )
 
     private fun markRead(eventId: Long) {
@@ -362,8 +399,17 @@ class VoiceCommandService @Inject constructor(
         // skip the mark, then settle it here once nothing older is still unheard.
         // ...and not for an approval, whose id the server's read pointer ignores either
         // way: deferring one would only hand settleRead an id it must not hold.
-        val targetIsApproval = eventId != null && _messages.value.any { it.eventId == eventId && it.isApproval }
-        val deferRead = eventId != null && !targetIsApproval && eventId > oldestUnheard()
+        //
+        // The target may be a row this process never listed: the FCM path posts a
+        // notification without going through ingest(), so a tap on it reaches replyTo()
+        // with no cached metadata. Unknown is treated as "may be an approval" — the
+        // request still asks the server to hold off (a mark it would skip for an approval
+        // anyway), but nothing is folded into deferredRead on success, because folding an
+        // approval id there is exactly what poisons the hold. The cost is that a real
+        // notice answered this way stays unread and is read out once more; the row is
+        // still on the server, which is the trade the rest of this loop takes.
+        val target = eventId?.let { id -> _messages.value.firstOrNull { it.eventId == id } }
+        val deferRead = eventId != null && target?.isApproval != true && eventId > oldestUnheard()
         val turn = currentTurn
         scope.launch {
             val result = runCatching {
@@ -374,7 +420,17 @@ class VoiceCommandService @Inject constructor(
             // loop by now — a held mark is a monotone max-fold, so settling off-turn can
             // only bring it forward. A FAILED reply settles nothing and leaves the notice
             // unread, which is what replyTo already counts on.
-            if (deferRead && eventId != null) result.onSuccess { settleRead(eventId, isApproval = false) }
+            //
+            // When the mark was NOT deferred the server has already made it, so the row is
+            // settled too — recording that is what releases a hold that was waiting on
+            // this very notice (with speech off, replying is the only thing that ever
+            // deals with a row).
+            if (eventId != null) result.onSuccess {
+                when {
+                    deferRead && target != null -> settleRead(eventId, isApproval = false)
+                    !deferRead -> markSettled(eventId)
+                }
+            }
             // An interruption during THINKING hands the loop to a new play/reply session
             // while this request is still open. Everything below belongs to a turn that no
             // longer owns the state — speaking here would talk over the new session, and
