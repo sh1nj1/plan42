@@ -172,11 +172,24 @@ the SQLite converter needs the app image and so runs after it, app stopped.
 - **Coming from SQLite:** `bin/rails db:sqlite_to_postgres[...]`
   (`lib/tasks/db_convert.rake`). Like the fresh install below, this one runs
   *after* `./kamal.sh setup`, because the app container is the only place that
-  can reach both ends. `DATABASE_URL` names `172.17.0.1`, which by design
-  answers only on the host, so running the task from your workstation dials
-  your own machine instead — and overriding the URL on the command line does
-  not help, because `config/boot.rb` uses `Dotenv.overload`: `.env.production`
-  puts `172.17.0.1` back over whatever you passed.
+  can reach both ends.
+
+  Running it from your workstation cannot work, and no `DATABASE_URL` fixes
+  that. `172.17.0.1` from your machine is your own Docker bridge or nothing,
+  and pointing at the instance's public address fails too: this server sets
+  `listen_addresses = 'localhost,172.17.0.1'`, so it accepts nothing on the
+  public interface, with the ufw rule (Docker range only) as a second layer.
+
+  The only route from outside is an SSH tunnel to the instance's
+  `127.0.0.1:5432`. That works, but it streams the whole copy over the tunnel
+  and still needs the superuser grant below, so the container is both faster
+  and simpler. If you do tunnel, watch `RAILS_ENV`: `config/boot.rb` calls
+  `Dotenv.overload(".env.$RAILS_ENV")`, which clobbers only the keys the file
+  it loads defines. With `RAILS_ENV=production` exported, `.env.production`
+  puts `172.17.0.1` back over the `DATABASE_URL` you passed on the command
+  line; without it dotenv reads `.env.development` and your override survives.
+  Either way the tunnel does not get you the superuser the copy needs — that
+  is what `MIGRATION_RUN_USER` is for, and dotenv never touches it.
 
   ```bash
   ./kamal.sh setup
