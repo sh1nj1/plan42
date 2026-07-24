@@ -86,17 +86,34 @@ module Collavre
     # These are NOT valid task results — the agent never actually worked.
     MAX_INFRA_RETRIES = 3
 
-    INFRASTRUCTURE_ERROR_PATTERNS = [
-      /OpenClaw Error/i,
+    # Generic, vendor-neutral infrastructure-error signatures. Vendor engines
+    # register their own provider-specific signatures (e.g. an OpenClaw gateway
+    # error banner) via register_infrastructure_error_pattern, so core names no
+    # vendor here.
+    BUILTIN_INFRASTRUCTURE_ERROR_PATTERNS = [
       /(?:request|connection|server)\s+timed?\s*out/i,
       /connection\s*(refused|reset|closed)/i,
       /internal\s*server\s*error/i,
       /\b50[234]\b.*(?:error|gateway|unavailable)/i
     ].freeze
 
+    class << self
+      def registered_infrastructure_error_patterns
+        @registered_infrastructure_error_patterns ||= []
+      end
+
+      def register_infrastructure_error_pattern(pattern)
+        registered_infrastructure_error_patterns << pattern unless registered_infrastructure_error_patterns.include?(pattern)
+      end
+
+      def infrastructure_error_patterns
+        BUILTIN_INFRASTRUCTURE_ERROR_PATTERNS + registered_infrastructure_error_patterns
+      end
+    end
+
     def infrastructure_error?(comment)
       content = comment.content.to_s
-      INFRASTRUCTURE_ERROR_PATTERNS.any? { |pattern| content.match?(pattern) }
+      self.class.infrastructure_error_patterns.any? { |pattern| content.match?(pattern) }
     end
 
     # Retry without consuming an iteration — the agent never actually worked.
@@ -233,6 +250,7 @@ module Collavre
         model: verifier.llm_model,
         system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
         llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
+        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
         context: {}
       )
 

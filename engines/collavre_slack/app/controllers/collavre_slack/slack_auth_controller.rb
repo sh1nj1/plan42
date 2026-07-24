@@ -65,7 +65,7 @@ module CollavreSlack
 
       if account.save
         # Render HTML that closes the popup and notifies the parent window
-        render html: close_popup_html.html_safe, layout: false
+        render template: "collavre_slack/slack_auth/callback_success", layout: false
       else
         Rails.logger.error("[SlackAuth] Failed to save account: #{account.errors.full_messages.join(', ')}")
         render json: { error: I18n.t("collavre_slack.errors.save_failed", errors: account.errors.full_messages.join(", ")) }, status: :unprocessable_entity
@@ -80,26 +80,6 @@ module CollavreSlack
 
     def message_verifier
       @message_verifier ||= Rails.application.message_verifier("slack_oauth")
-    end
-
-    def close_popup_html
-      title = I18n.t("collavre_slack.views.auth.success_title")
-      message = I18n.t("collavre_slack.views.auth.success_message")
-      <<~HTML
-        <!DOCTYPE html>
-        <html>
-        <head><title>#{title}</title></head>
-        <body>
-          <p>#{message}</p>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage({ type: 'slack-auth-success' }, '*');
-            }
-            window.close();
-          </script>
-        </body>
-        </html>
-      HTML
     end
   end
 end

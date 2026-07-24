@@ -26,8 +26,7 @@ module Collavre
       private
 
       def unread_count_for_creative
-        visible_comments = @creative.comments.where(private: false)
-                                             .or(@creative.comments.where(user_id: @user.id))
+        visible_comments = @creative.comments.visible_to(@user)
         pointer = CommentReadPointer.find_by(user: @user, creative: @creative)
         last_read_id = pointer&.last_read_comment_id
 

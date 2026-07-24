@@ -32,7 +32,7 @@ Rails.application.config.to_prepare do
   set_alias(Object, :InboxSummaryJob, Collavre::InboxSummaryJob)
   set_alias(Object, :NotionExportJob, CollavreNotion::NotionExportJob)
   set_alias(Object, :NotionSyncJob, CollavreNotion::NotionSyncJob)
-  set_alias(Object, :PermissionCacheCleanupJob, Collavre::PermissionCacheCleanupJob)
+
   set_alias(Object, :PermissionCacheJob, Collavre::PermissionCacheJob)
   set_alias(Object, :PushNotificationJob, Collavre::PushNotificationJob)
 
@@ -56,7 +56,6 @@ Rails.application.config.to_prepare do
   set_alias(Object, :CreativesHelper, Collavre::CreativesHelper)
   set_alias(Object, :CommentsHelper, Collavre::CommentsHelper)
   set_alias(Object, :NavigationHelper, Collavre::NavigationHelper)
-  set_alias(Object, :UserThemesHelper, Collavre::UserThemesHelper)
 
   # Mailers
   set_alias(Object, :InboxMailer, Collavre::InboxMailer)
@@ -73,11 +72,14 @@ Rails.application.config.to_prepare do
   set_alias(Creatives, :PlanTagger, Collavre::Creatives::PlanTagger)
   set_alias(Creatives, :IndexQuery, Collavre::Creatives::IndexQuery)
   set_alias(Creatives, :FilterPipeline, Collavre::Creatives::FilterPipeline)
+  set_alias(Creatives, :PermissionFilter, Collavre::Creatives::PermissionFilter)
+  set_alias(Creatives, :BreadcrumbResolver, Collavre::Creatives::BreadcrumbResolver)
+  set_alias(Creatives, :RevealPathResolver, Collavre::Creatives::RevealPathResolver)
   set_alias(Creatives, :Reorderer, Collavre::Creatives::Reorderer)
   set_alias(Creatives, :PermissionCacheBuilder, Collavre::Creatives::PermissionCacheBuilder)
   set_alias(Creatives, :TreeBuilder, Collavre::Creatives::TreeBuilder)
   set_alias(Creatives, :Importer, Collavre::Creatives::Importer)
-  set_alias(Creatives, :PathExporter, Collavre::Creatives::PathExporter)
+
 
   # Filters module
   Creatives.const_set(:Filters, Module.new) unless Creatives.const_defined?(:Filters, false)

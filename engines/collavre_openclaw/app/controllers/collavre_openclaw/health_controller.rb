@@ -23,7 +23,7 @@ module CollavreOpenclaw
 
     def authenticated?
       respond_to?(:current_user, true) && current_user.present?
-    rescue
+    rescue StandardError
       false
     end
   end

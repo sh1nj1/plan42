@@ -14,6 +14,7 @@ module Collavre
       collavre/org_chart
       collavre/popup
       collavre/comments_popup
+      collavre/tables
       collavre/code_highlight
       collavre/comment_versions
       collavre/mention_menu
@@ -78,15 +79,33 @@ module Collavre
         styles << render_theme_media_query(dark_theme, "dark")
       end
 
-      # Safe: CSS generated from admin-configured theme settings (CSS variables only)
-      styles.join("\n").html_safe # rubocop:disable Rails/OutputSafety
+      safe_join(styles, "\n")
+    end
+
+    def user_json(user, email: false, ai_user: false)
+      data = {
+        id: user.id,
+        name: user.display_name,
+        avatar_url: user_avatar_url(user, size: 20),
+        default_avatar: !user.avatar.attached? && user.avatar_url.blank?,
+        initial: user.display_name&.at(0)&.upcase || "?"
+      }
+      data[:email] = user.email if email
+      data[:ai_user] = user.ai_user? if ai_user
+      data
     end
 
     private
 
+    CSS_VARIABLE_KEY_PATTERN = /\A--[a-zA-Z0-9_-]+\z/
+    CSS_VARIABLE_VALUE_PATTERN = /\A[^;}{<>"']+\z/
+    ALLOWED_COLOR_SCHEMES = %w[light dark].freeze
+
     def render_theme_media_query(theme, mode)
-      vars = theme.variables.map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
-      legacy = legacy_alias_declarations(theme.variables).map { |k, v| "#{k}: #{v} !important;" }.join("\n            ")
+      return "" unless ALLOWED_COLOR_SCHEMES.include?(mode)
+
+      vars = safe_css_declarations(theme.variables)
+      legacy = safe_css_declarations(legacy_alias_declarations(theme.variables))
       dark_filter = theme.dark? ? "--date-icon-filter: invert(0.8) !important;" : ""
 
       <<~CSS
@@ -100,6 +119,15 @@ module Collavre
       CSS
     end
 
+    def safe_css_declarations(variables)
+      variables.filter_map { |k, v|
+        k = k.to_s
+        v = v.to_s
+        next unless k.match?(CSS_VARIABLE_KEY_PATTERN) && v.match?(CSS_VARIABLE_VALUE_PATTERN)
+        "#{k}: #{v} !important;"
+      }.join("\n            ")
+    end
+
     public
 
     # Render all partials registered for a named extension slot.
@@ -111,7 +139,7 @@ module Collavre
     #
     def render_extension_slot(slot, **locals)
       entries = Collavre::ViewExtensions.for_slot(slot)
-      return "".html_safe if entries.empty? # rubocop:disable Rails/OutputSafety
+      return safe_join([]) if entries.empty?
 
       safe_join(entries.map { |entry| render(partial: entry[:partial], locals: locals) })
     end

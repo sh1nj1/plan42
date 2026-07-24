@@ -17,52 +17,11 @@ module Collavre
 
     def call
       Current.set(user: @agent) do
-        log_action("start", { message: "Starting agent execution" })
-
-        # Build context and messages
-        @original_comment = find_original_comment
-        messages_data = build_messages
-        log_action("prompt_generated", { messages: messages_data[:messages] })
-
-        # Prepare rendering context and prompts
-        @creative = find_creative
-        rendering_context = prepare_rendering_context
-        system_prompt = render_system_prompt(rendering_context)
-
-        # Create placeholder comment if needed
-        @reply_comment = create_reply_comment_if_needed
-
-        # Initialize lifecycle manager
-        @lifecycle_manager = AiAgent::AgentLifecycleManager.new(
-          task: @task,
-          agent: @agent,
-          creative: @creative
-        )
-
-        # Initialize response streamer
-        @streamer = AiAgent::ResponseStreamer.new(
-          reply_comment: @reply_comment,
-          creative: @creative
-        )
-
-        @lifecycle_manager.broadcast_status("thinking")
-
-        # Execute AI chat with streaming
-        @client = build_ai_client(system_prompt)
-        stream_response(@client, messages_data)
-
-        # Signal thinking state during finalize so the indicator shows ⏳
-        @lifecycle_manager.broadcast_status("thinking")
-
-        log_action("completion", { response: @streamer.content })
-
-        # Finalize and dispatch (skip A2A for review-flow updates)
-        finalized_comment = finalize_response
-        dispatch_a2a(finalized_comment) unless @finalizer&.review_flow
-
-        @lifecycle_manager.broadcast_status("idle")
-
-        @streamer.content
+        if @agent.claude_channel_agent?
+          delegate_to_claude_channel
+        else
+          execute_llm_conversation
+        end
       end
     rescue ApprovalPendingError => e
       summary = generate_approval_summary(e)
@@ -73,11 +32,74 @@ module Collavre
       raise
     rescue CancelledError
       handle_cancelled
-      abort_openclaw_if_needed
+      abort_agent_session_if_needed
       raise
     end
 
     private
+
+    def delegate_to_claude_channel
+      log_action("start", { message: "Delegating to Claude Channel via MCP" })
+
+      AiAgent::ClaudeChannelAdapter.new(
+        agent: @agent,
+        context: @context,
+        task: @task
+      ).deliver
+
+      # Drive the chat typing indicator for this async dispatch (and surface a
+      # disconnect notice if no session is live). The dispatch above returns
+      # immediately; ClaudeChannelPresenceJob keeps agent_status alive until the
+      # reply lands or the session is gone — see the job for the full lifecycle.
+      ClaudeChannelPresenceJob.perform_later(@task.id) if @task
+
+      log_action("delegated", { message: "Message delivered to Claude Channel" })
+      nil
+    end
+
+    def execute_llm_conversation
+      log_action("start", { message: "Starting agent execution" })
+
+      @original_comment = find_original_comment
+      messages_data = build_messages
+      log_action("prompt_generated", { messages: messages_data[:messages] })
+
+      @creative = find_creative
+      rendering_context = prepare_rendering_context
+      system_prompt = render_system_prompt(rendering_context)
+
+      resolved = resolve_session_context(messages_data, system_prompt)
+
+      @reply_comment = create_reply_comment_if_needed
+
+      @lifecycle_manager = AiAgent::AgentLifecycleManager.new(
+        task: @task,
+        agent: @agent,
+        creative: @creative
+      )
+
+      @streamer = AiAgent::ResponseStreamer.new(
+        reply_comment: @reply_comment,
+        creative: @creative
+      )
+
+      @lifecycle_manager.broadcast_status("thinking")
+
+      @client = build_ai_client(resolved[:system_prompt])
+      stream_response(@client, resolved)
+
+      # Signal thinking state during finalize so the indicator shows ⏳
+      @lifecycle_manager.broadcast_status("thinking")
+
+      log_action("completion", { response: @streamer.content })
+
+      finalized_comment = finalize_response
+      dispatch_a2a(finalized_comment) unless @finalizer&.review_flow
+
+      @lifecycle_manager.broadcast_status("idle")
+
+      @streamer.content
+    end
 
     def find_original_comment
       target_comment_id = @context.dig("comment", "id")
@@ -90,6 +112,14 @@ module Collavre
         context: @context,
         original_comment: @original_comment
       ).build
+    end
+
+    def resolve_session_context(messages_data, system_prompt)
+      AiAgent::SessionContextResolver.new(
+        agent: @agent,
+        messages_data: messages_data,
+        system_prompt: system_prompt
+      ).resolve
     end
 
     def find_creative
@@ -109,8 +139,13 @@ module Collavre
     end
 
     def render_system_prompt(rendering_context)
+      # The prompt lives losslessly in the profile creative's markdown_source
+      # (data["markdown_source"]); `description` is the sanitized rendered view
+      # and would corrupt tags/angle-brackets, so never read it here. Fall back
+      # to the legacy system_prompt column for rows not yet backfilled.
+      template = @agent.effective_system_prompt
       rendered = AiSystemPromptRenderer.new(
-        template: @agent.system_prompt,
+        template: template,
         context: rendering_context
       ).render
 
@@ -129,6 +164,7 @@ module Collavre
         content: Comment::STREAMING_PLACEHOLDER_CONTENT,
         user: @agent,
         topic_id: @original_comment.topic_id,
+        task: @task,
         skip_dispatch: true  # A2A routing handled by A2aDispatcher after finalization
       )
     end
@@ -238,24 +274,13 @@ module Collavre
       Orchestration::PolicyResolver.new(@context)
     end
 
-    def abort_openclaw_if_needed
-      return unless @agent.llm_vendor&.downcase == "openclaw"
-      return unless defined?(CollavreOpenclaw::ConnectionManager)
-
-      adapter = CollavreOpenclaw::OpenclawAdapter.new(
-        user: @agent,
-        system_prompt: "",
-        context: {
-          creative: @creative,
-          user: @agent,
-          task: @task,
-          comment: @reply_comment || @original_comment
-        }
+    def abort_agent_session_if_needed
+      Collavre::AgentSessionAbort.call(
+        agent: @agent,
+        task: @task,
+        creative: @creative,
+        comment: @reply_comment || @original_comment
       )
-      conn = CollavreOpenclaw::ConnectionManager.instance.connection_for(@agent)
-      conn.chat_abort(session_key: adapter.session_key)
-    rescue StandardError => e
-      Rails.logger.warn("[AiAgentService] OpenClaw abort fallback failed: #{e.message}")
     end
   end
 end

@@ -1,19 +1,46 @@
 name: Deploy
 
-# we change deploy to arm64 and github actions runner not supported native arm64 runners yet so it will take too long time
-# you can use self-hosted runner for arm64 to speed up the deploy process until then prevent this workflow from running
-#on:
-#  push:
-#    branches:
-#      - main
+on:
+  # Manual "one-click" deploy. Run this after CI is green to ship to prod.
+  #
+  # This is intentionally the ONLY trigger. Unattended auto-deploy (native
+  # `push` or a CI `workflow_run`) stays disabled until three prerequisites
+  # land, because each would otherwise let a merge ship to prod with no human
+  # in the loop:
+  #   1. Builder arch: `builder.arch` is arm64 (config/deploy.yml) but
+  #      GitHub-hosted runners are amd64, so an auto build falls back to slow
+  #      QEMU emulation. Needs `builder.remote` (an arm64 build host) or a
+  #      self-hosted / multi-arch runner.
+  #   2. Runtime secrets: the deploy step below forwards only a handful of vars
+  #      to Kamal. config/deploy.yml and .kamal/secrets also read DATABASE_URL,
+  #      SECRET_KEY_BASE, KAMAL_REGISTRY_USER, etc. from the runner env — these
+  #      must be wired and validated before any unattended run.
+  #   3. Trusted-trigger guard: a CI `workflow_run` auto-deploy must assert the
+  #      run came from a push on this repo (github.event.workflow_run.event ==
+  #      'push' && head_repository == this repo) so a fork PR branch named
+  #      `main` can't reach prod with production secrets.
+  # Manual dispatch keeps a human in the loop, so none of the above can
+  # silently break prod.
+  workflow_dispatch:
+
+# Least-privilege GITHUB_TOKEN: this workflow only checks out code and shells
+# out to Kamal over SSH; it never writes back to the repo.
+permissions:
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: prod
+    # workflow_dispatch lets the operator pick any branch/ref, and checkout
+    # takes that ref by default — so a dispatch from an unmerged/untested
+    # branch would otherwise ship to prod with production secrets. Pin deploys
+    # to main (the only branch that gets push CI). A dispatch from any other
+    # ref skips harmlessly rather than deploying untested code.
+    if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up SSH key
         run: |
@@ -37,4 +64,4 @@ jobs:
           bundler-cache: true
 
       - name: Deploy with Kamal
-        run: GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }} GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }} GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} SERVER_VRERV1=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy
+        run: GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }} GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }} GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} COLLAVRE_SERVER=${{ secrets.SERVER_VRERV1 }} ./bin/kamal deploy

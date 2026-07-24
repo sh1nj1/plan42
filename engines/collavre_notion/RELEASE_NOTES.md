@@ -1,3 +1,25 @@
+## v0.1.5 (2026-07-16)
+
+### Changes
+- a314632e refactor: mechanical code-quality cleanups (token-leak, HTTP client, method decomposition) (#1366)
+
+## v0.1.4 (2026-06-23)
+
+### Changes
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+
+## v0.1.3 (2026-04-17)
+
+### Changes
+- e2a11327 refactor: extract shared IntegrationWizard JS module from modal wizards (#1177)
+- 3902cdae refactor: extract IntegrationSetup concern from integration controllers (#1176)
+
+## v0.1.2 (2026-04-09)
+
+### Changes
+- 390cb1f9 fix: patch XSS vulnerabilities and update action_text-trix (#1145)
+- 31823b43 chore: daily code cleanup — fix N+1, extract concerns, remove dead code (#1140)
+
 ## v0.1.1 (2026-02-20)
 
 ### Changes

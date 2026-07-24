@@ -12,8 +12,8 @@ module CollavreOpenclaw
       end
     end
 
-    # @param messages_input [Hash, Array] Hash { messages:, first_message:, context_changed: }
-    #   from MessageBuilder, or a plain Array from standalone callers (e.g., CompressJob).
+    # @param messages_input [Hash, Array] Hash { messages:, first_message:, context_changed:, system_prompt: }
+    #   from SessionContextResolver, or a plain Array from standalone callers (e.g., CompressJob).
     def chat(messages_input, tools: [], &block)
       normalized_vendor = vendor.to_s.downcase
       messages_data = normalize_messages_input(messages_input)
@@ -23,10 +23,13 @@ module CollavreOpenclaw
 
       if adapter_class
         # Use the custom adapter (tools not supported for OpenClaw)
+        # Prefer resolved system_prompt from SessionContextResolver over instance default.
+        # key?(:system_prompt) distinguishes "not provided" (Array input) from "explicitly nil" (incremental session).
+        resolved_system_prompt = messages_data.key?(:system_prompt) ? messages_data[:system_prompt] : system_prompt
         user = context&.dig(:user)
         adapter = adapter_class.new(
           user: user,
-          system_prompt: system_prompt,
+          system_prompt: resolved_system_prompt,
           context: context
         )
 
@@ -39,14 +42,20 @@ module CollavreOpenclaw
           error_message = e.message
           raise
         ensure
-          log_interaction(
-            messages: messages_data[:messages],
-            tools: [],
-            response_content: response_content,
-            error_message: error_message,
-            input_tokens: nil,
-            output_tokens: nil
-          )
+          # Honor no-log mode (e.g. inline typo correction on *unsubmitted* drafts).
+          # Base Collavre::AiClient#chat gates logging behind @log_interactions; this
+          # prepended adapter path bypasses super, so it must gate it too — otherwise
+          # private drafts leak to ActivityLog for OpenClaw-backed agents.
+          if @log_interactions
+            log_interaction(
+              messages: messages_data[:messages],
+              tools: [],
+              response_content: response_content,
+              error_message: error_message,
+              input_tokens: nil,
+              output_tokens: nil
+            )
+          end
         end
 
         return response_content

@@ -13,7 +13,6 @@ module Collavre
     validates :comments_data, presence: true
 
     scope :restorable, -> { where(restored_at: nil) }
-    scope :restored, -> { where.not(restored_at: nil) }
 
     def restorable?
       restored_at.nil?

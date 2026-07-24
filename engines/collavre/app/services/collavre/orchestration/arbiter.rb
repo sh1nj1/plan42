@@ -25,6 +25,13 @@ module Collavre
       def select(candidates)
         return [] if candidates.empty?
 
+        # Review feedback is forced routing: the Matcher already restricts candidates
+        # to the quoted comment's author, the sole agent ReviewHandler will accept.
+        # Floor-control arbitration (bid scoring, round_robin) among a forced single
+        # recipient is meaningless, and a low bid score must not drop it (e.g. bid
+        # strategy with bid_fallback_enabled: false) or the Review button no-ops.
+        return candidates if review_message?
+
         strategy = @policy_resolver.arbitration_strategy
         selected = apply_strategy(strategy, candidates)
 
@@ -36,6 +43,15 @@ module Collavre
       end
 
       private
+
+      # True when the triggering comment is review feedback (mirrors Matcher's
+      # review-author routing), so arbitration can be bypassed for forced routing.
+      def review_message?
+        comment_id = @context.dig("comment", "id") || @context.dig(:comment, :id)
+        return false unless comment_id
+
+        Comment.find_by(id: comment_id)&.review_message? || false
+      end
 
       def apply_strategy(strategy, candidates)
         case strategy
@@ -192,12 +208,15 @@ module Collavre
       def extract_expertise_text(agent)
         texts = []
 
-        # From agent's system_prompt (primary source for AI agents)
-        texts << agent.system_prompt if agent.respond_to?(:system_prompt) && agent.system_prompt.present?
+        # From agent's system_prompt (primary source for AI agents). Route
+        # through effective_system_prompt so a directly-edited profile creative
+        # is matched on, falling back to the legacy column for other agent types.
+        texts << agent.effective_system_prompt if agent.respond_to?(:effective_system_prompt) && agent.effective_system_prompt.present?
+        texts << agent.system_prompt if !agent.respond_to?(:effective_system_prompt) && agent.respond_to?(:system_prompt) && agent.system_prompt.present?
 
         # From AI agent profile (for nested ai_agent association)
         if agent.respond_to?(:ai_agent) && agent.ai_agent.present?
-          texts << agent.ai_agent.system_prompt if agent.ai_agent.respond_to?(:system_prompt)
+          texts << agent.ai_agent.effective_system_prompt if agent.ai_agent.respond_to?(:effective_system_prompt)
           texts << agent.ai_agent.description if agent.ai_agent.respond_to?(:description)
         end
 

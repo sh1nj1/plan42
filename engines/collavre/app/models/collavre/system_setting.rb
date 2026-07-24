@@ -25,13 +25,22 @@ module Collavre
     # By default, public access is allowed (false)
     DEFAULT_CREATIVES_LOGIN_REQUIRED = false
 
-    # Default home page path (nil means use root_path "/")
+    # Default home page path for unauthenticated visitors (nil means use root_path "/")
     DEFAULT_HOME_PAGE_PATH = nil
+
+    # Default home page path for authenticated users.
+    # Signed-in visitors hitting "/" are redirected to this path when the
+    # admin has not configured a value. Set to "/" via the admin UI to
+    # disable the redirect and fall back to the unauthenticated rewrite.
+    DEFAULT_HOME_PAGE_PATH_AUTHENTICATED = "/creatives"
 
     # Default theme IDs (nil means use built-in light/dark)
     # These reference UserTheme IDs for admin-configured custom themes
     DEFAULT_LIGHT_THEME_ID = nil
     DEFAULT_DARK_THEME_ID = nil
+
+    # Default LLM request timeout (seconds)
+    DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 1800
 
     # Default creative display settings (system-wide)
     DEFAULT_DISPLAY_LEVEL = 6
@@ -56,8 +65,8 @@ module Collavre
         lockout_duration_minutes session_timeout_minutes password_min_length
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
-        creatives_login_required home_page_path default_light_theme_id default_dark_theme_id
-        display_level completion_mark
+        creatives_login_required home_page_path home_page_path_authenticated default_light_theme_id default_dark_theme_id
+        display_level completion_mark llm_request_timeout_seconds
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -83,6 +92,11 @@ module Collavre
     def self.home_page_path
       value = cached_value("home_page_path")
       value.presence
+    end
+
+    def self.home_page_path_authenticated
+      value = cached_value("home_page_path_authenticated")
+      value.presence || DEFAULT_HOME_PAGE_PATH_AUTHENTICATED
     end
 
     def self.mcp_tool_approval_required?
@@ -180,6 +194,12 @@ module Collavre
     def self.completion_mark
       value = cached_value("completion_mark")
       value.nil? ? DEFAULT_COMPLETION_MARK : value
+    end
+
+    # LLM request timeout (seconds)
+    def self.llm_request_timeout_seconds
+      value = cached_value("llm_request_timeout_seconds")&.to_i
+      value.nil? || value < 30 ? DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS : value
     end
   end
 end

@@ -234,6 +234,67 @@ module Collavre
         end
       end
 
+      # --- MCP request context ---
+
+      test "enqueue_broadcast passes nil current_user_id during MCP request" do
+        Collavre::Current.mcp_request = true
+
+        assert_enqueued_with(job: Collavre::CreativeBroadcastJob) do
+          @child.update!(description: "MCP update")
+        end
+
+        job = enqueued_jobs.select { |j| j["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        args = job["arguments"]
+        # Third argument is keyword args hash — current_user_id should be nil
+        kwargs = args.last
+        assert_nil kwargs["current_user_id"], "MCP requests must not exclude current user from broadcast"
+      ensure
+        Collavre::Current.mcp_request = nil
+      end
+
+      test "broadcast_creative_updated broadcasts progress-only changes during MCP request" do
+        Collavre::Current.mcp_request = true
+
+        assert_enqueued_with(job: Collavre::CreativeBroadcastJob) do
+          @child.update!(progress: 0.95)
+        end
+      ensure
+        Collavre::Current.mcp_request = nil
+      end
+
+      test "broadcast_creative_destroyed passes nil current_user_id during MCP request" do
+        Collavre::Current.mcp_request = true
+        @child.send(:capture_broadcast_state)
+
+        assert_enqueued_with(job: Collavre::CreativeBroadcastJob) do
+          @child.send(:broadcast_creative_destroyed)
+        end
+
+        job = enqueued_jobs.select { |j| j["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        kwargs = job["arguments"].last
+        assert_nil kwargs["current_user_id"], "MCP destroy must not exclude current user"
+      ensure
+        Collavre::Current.mcp_request = nil
+      end
+
+      test "broadcast_batch_created passes nil current_user_id during MCP request" do
+        Collavre::Current.mcp_request = true
+        creatives = []
+        perform_enqueued_jobs do
+          creatives << Creative.create!(user: @owner, parent: @root, description: "Batch 1", progress: 0.0)
+        end
+
+        assert_enqueued_with(job: Collavre::CreativeBroadcastJob) do
+          Creative::RealtimeBroadcastable.broadcast_batch_created(creatives)
+        end
+
+        job = enqueued_jobs.select { |j| j["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        kwargs = job["arguments"].last
+        assert_nil kwargs["current_user_id"], "MCP batch create must not exclude current user"
+      ensure
+        Collavre::Current.mcp_request = nil
+      end
+
       # --- capture_broadcast_state / broadcast_creative_destroyed ---
 
       test "capture_broadcast_state stores users and payload for shared creative" do

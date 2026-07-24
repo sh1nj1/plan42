@@ -2,7 +2,7 @@ module Collavre
   class CommentReadPointersController < ApplicationController
     def update
       creative = Creative.find(params[:creative_id]).effective_origin
-      last_id = creative.comments.where("comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?", false, Current.user.id, Current.user.id).maximum(:id)
+      last_id = creative.comments.visible_to(Current.user).maximum(:id)
       pointer = CommentReadPointer.find_or_initialize_by(user: Current.user, creative: creative)
 
       previous_last_read_id = pointer.last_read_comment_id
@@ -44,11 +44,11 @@ module Collavre
     end
 
     def find_nearest_public_comment_id(creative, comment_id)
-      creative.comments.where(private: false).where("id <= ?", comment_id).maximum(:id)
+      creative.comments.public_only.where("id <= ?", comment_id).maximum(:id)
     end
 
     def fetch_users_on_effective_id(creative, effective_id)
-      next_public_id = creative.comments.where(private: false).where("id > ?", effective_id).minimum(:id)
+      next_public_id = creative.comments.public_only.where("id > ?", effective_id).minimum(:id)
 
       query = CommentReadPointer.where(creative: creative)
                                 .where("last_read_comment_id >= ?", effective_id)

@@ -1,3 +1,4 @@
+<%= stylesheet_link_tag "collavre_plan/timeline" %>
 <div id="plans-list-area" style="display:none;" data-plans-url="<%= collavre_plan_engine.plans_path(format: :json) %>">
   <%= render Collavre::PlansTimelineComponent.new(plans: Collavre::Plan.none) %>
 </div>

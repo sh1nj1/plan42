@@ -9,8 +9,19 @@ module Creatives
       end
 
       def match
+        matched_relation&.pluck(:id) || []
+      end
+
+      # The matching rows as an ActiveRecord relation (ids not yet materialized),
+      # so callers that need to order/window in SQL can wrap it as a subquery
+      # instead of plucking the whole match set into Ruby first. Returns nil when
+      # the search has no usable terms. Keeps the left_joins(:comments).distinct
+      # shape (a creative matches when one comment row satisfies every word
+      # together with the description) — an EXISTS rewrite would change that
+      # semantics, so it stays a joined+distinct relation.
+      def matched_relation
         words = params[:search].to_s.strip.split(/\s+/).first(MAX_SEARCH_WORDS)
-        return [] if words.empty?
+        return nil if words.empty?
 
         # Build AND conditions: each word must appear in description OR comments
         conditions = []
@@ -27,7 +38,6 @@ module Creatives
           .left_joins(:comments)
           .where(conditions.join(" AND "), **binds)
           .distinct
-          .pluck(:id)
       end
 
       private

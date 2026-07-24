@@ -130,5 +130,46 @@ module Collavre
       creative_item = items.find { |i| i[:name] == "creative" }
       assert_nil creative_item[:input_schema]
     end
+
+    test "tool_defaults_for returns nil when no creative" do
+      service = CommandMenuService.new(user: users(:one))
+      assert_nil service.send(:tool_defaults_for, "run_sql_query")
+    end
+
+    test "tool_defaults_for returns nil when creative has no tool defaults" do
+      creative = creatives(:tshirt)
+      service = CommandMenuService.new(user: users(:one), creative: creative)
+      assert_nil service.send(:tool_defaults_for, "run_sql_query")
+    end
+
+    test "tool_defaults_for returns defaults from creative data" do
+      creative = creatives(:tshirt)
+      creative.update!(data: { "tools" => { "run_sql_query" => { "query" => "select * from patient", "limit" => 100 } } })
+      service = CommandMenuService.new(user: users(:one), creative: creative)
+
+      defaults = service.send(:tool_defaults_for, "run_sql_query")
+      assert_equal({ "query" => "select * from patient", "limit" => 100 }, defaults)
+    end
+
+    test "apply_defaults_to_schema merges default_value into schema params" do
+      service = CommandMenuService.new(user: users(:one))
+      schema = [
+        { name: "query", type: "string", required: true },
+        { name: "limit", type: "integer", required: false },
+        { name: "format", type: "string", required: false }
+      ]
+      defaults = { "query" => "select * from patient", "limit" => 100 }
+
+      service.send(:apply_defaults_to_schema, schema, defaults)
+
+      query_param = schema.find { |p| p[:name] == "query" }
+      assert_equal "select * from patient", query_param[:default_value]
+
+      limit_param = schema.find { |p| p[:name] == "limit" }
+      assert_equal 100, limit_param[:default_value]
+
+      format_param = schema.find { |p| p[:name] == "format" }
+      assert_nil format_param[:default_value], "Params without defaults should not have default_value"
+    end
   end
 end

@@ -59,3 +59,26 @@ production:
     url: <%= ENV['CABLE_DATABASE_URL'] || ENV['DATABASE_URL'] %>
     encoding: unicode
     <% end %>
+
+# Desktop app: same multi-database SQLite layout as production, but the four
+# SQLite files live under a relocatable data directory (COLLAVRE_DATA_DIR) so
+# the read-only .app bundle never holds mutable state. Always SQLite — the
+# desktop env never receives a DATABASE_URL. See config/environments/desktop.rb.
+<% desktop_data_dir = ENV.fetch("COLLAVRE_DATA_DIR") { Rails.root.join("storage").to_s } %>
+desktop:
+  primary:
+    <<: *default
+    adapter: sqlite3
+    database: <%= File.join(desktop_data_dir, "desktop-primary.sqlite3") %>
+  cache:
+    <<: *default
+    adapter: sqlite3
+    database: <%= File.join(desktop_data_dir, "desktop-cache.sqlite3") %>
+  queue:
+    <<: *default
+    adapter: sqlite3
+    database: <%= File.join(desktop_data_dir, "desktop-queue.sqlite3") %>
+  cable:
+    <<: *default
+    adapter: sqlite3
+    database: <%= File.join(desktop_data_dir, "desktop-cable.sqlite3") %>

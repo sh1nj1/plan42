@@ -8,6 +8,7 @@ module Collavre
       setup do
         @user = users(:one)
         @creative = creatives(:tshirt)
+        @main_topic = @creative.main_topic(fallback_user: @user)
         @topic = Collavre::Topic.create!(
           name: "Cron Test Topic",
           creative: @creative,
@@ -46,7 +47,7 @@ module Collavre
         assert_equal @topic.id, args[:topic_id]
       end
 
-      test "topic_name Main resolves to nil topic_id" do
+      test "topic_name Main resolves to Main topic_id" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,
           topic_name: "Main",
@@ -58,10 +59,10 @@ module Collavre
 
         task = SolidQueue::RecurringTask.find_by(key: result[:key])
         args = task.arguments.first
-        assert_nil args[:topic_id]
+        assert_equal @main_topic.id, args[:topic_id]
       end
 
-      test "topic_name main (lowercase) resolves to nil topic_id" do
+      test "topic_name main (lowercase) resolves to Main topic" do
         result = CronCreateService.new.call(
           creative_id: @creative.id,
           topic_name: "main",
@@ -70,10 +71,9 @@ module Collavre
         )
 
         assert result[:success]
-
         task = SolidQueue::RecurringTask.find_by(key: result[:key])
         args = task.arguments.first
-        assert_nil args[:topic_id]
+        assert_equal @main_topic.id, args[:topic_id]
       end
 
       test "stores arguments for CronActionJob" do

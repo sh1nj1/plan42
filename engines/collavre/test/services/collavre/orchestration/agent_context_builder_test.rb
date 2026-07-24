@@ -89,6 +89,29 @@ module Collavre
         assert_equal "write", collaborator["permission"]
       end
 
+      test "collaborator description follows the directly-edited profile prompt" do
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @qa_agent,
+          permission: :write
+        )
+
+        # Simulate editing the collaborator's profile Creative directly: the
+        # canonical prompt now lives in data["markdown_source"] and diverges from
+        # the stale legacy column. The collaborator description must follow the
+        # canonical prompt, not the stale column.
+        profile = @qa_agent.profile_creative
+        profile.update!(content_type_input: "markdown", markdown_source: "You are a security auditor reviewing access control.")
+
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative)
+        result = builder.build
+
+        collaborator = result["collaborators"].first
+        assert_equal @qa_agent.id, collaborator["id"]
+        assert_includes collaborator["description"], "security auditor"
+        refute_includes collaborator["description"], "QA engineer"
+      end
+
       test "maps admin permission to escalation role" do
         Collavre::CreativeShare.create!(
           creative: @creative,

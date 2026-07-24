@@ -1,11 +1,12 @@
 module Collavre
   class CommentsController < ApplicationController
+    include Collavre::Comments::CommentScoping
     include Collavre::Comments::ApprovalActions
     include Collavre::Comments::Conversion
     include Collavre::Comments::BatchOperations
 
     before_action :set_creative
-    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images, :remove_image ]
+    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
 
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
@@ -26,13 +27,8 @@ module Collavre
     def index
       limit = 20
 
-      visible_scope = @creative.comments.where(
-        "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-        false,
-        Current.user.id,
-        Current.user.id
-      )
-      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result)
+      visible_scope = @creative.comments.visible_to(Current.user)
+      scope = visible_scope.with_attached_images.includes(:task, :topic, :comment_reactions, :comment_versions, :snapshot_as_result)
 
       if params[:search].present?
         words = params[:search].to_s.strip.downcase.split(/\s+/)
@@ -72,9 +68,15 @@ module Collavre
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
       end
 
-      # Default order: Newest first (created_at DESC)
+      # Default order: Newest first (id DESC)
       # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
-      scope = scope.order(created_at: :desc)
+      # We order by id, not created_at: id is a single monotonic sequence that reflects the true insertion
+      # (causal) order, whereas created_at is stamped by whichever process wrote the row. A user message is
+      # stamped by the web request while its agent reply is stamped by a background worker, and clock skew
+      # between those processes can backdate the reply below the message that triggered it. The pagination
+      # cursors below are all id-based ("Newer = higher id"), so ordering by id keeps display and cursors
+      # consistent.
+      scope = scope.order(id: :desc)
 
 
       @comments = if params[:around_comment_id].present?
@@ -85,7 +87,7 @@ module Collavre
         # Older messages have LOWER IDs.
 
         # Newer bundle (including target): ID >= target_id
-        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(created_at: :asc).limit(limit / 2 + 1)
+        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(id: :asc).limit(limit / 2 + 1)
 
         # Older bundle: ID < target_id
         older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
@@ -108,8 +110,8 @@ module Collavre
         # But standard DESC query would give us the VERY Newest.
         # We want the ones just above `after_id`.
 
-        # Use reorder(ASC) to get the ones immediately larger than after_id, then reverse back to DESC.
-        scope.where("comments.id > ?", params[:after_id].to_i).reorder(created_at: :asc).limit(limit)
+        # Use reorder(id: :asc) to get the ones immediately larger than after_id, then reverse back to DESC.
+        scope.where("comments.id > ?", params[:after_id].to_i).reorder(id: :asc).limit(limit)
       else
         # Initial Load (Latest messages)
         scope.limit(limit).to_a.reverse
@@ -132,7 +134,7 @@ module Collavre
         # Fetch all visible IDs for correct read-receipt placement transparency
         # Only map read receipts to PUBLIC comments.
         # Users who read private comments will appear on the nearest preceding public comment.
-        public_ids = @creative.comments.where(private: false).order(id: :asc).pluck(:id)
+        public_ids = @creative.comments.public_only.order(id: :asc).pluck(:id)
 
         pointers.each do |pointer|
           effective_id = pointer.effective_comment_id(public_ids)
@@ -173,9 +175,7 @@ module Collavre
 
       @comment = @creative.comments.build(comment_attributes)
 
-      if @comment.topic_id.present? && !@creative.topics.where(id: @comment.topic_id).exists?
-        render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity and return
-      end
+      validate_topic_id!(@comment.topic_id) or return
 
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
@@ -185,6 +185,9 @@ module Collavre
         @comment.skip_dispatch = true
       end
       if @comment.save
+        # Cross-post inbox inline replies to the original creative/topic
+        InboxReplyService.call(@comment)
+
         # Dispatch is handled by Comment#after_create_commit callback
         @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
@@ -194,11 +197,13 @@ module Collavre
     end
 
     def update
+      if github_synced_content_comment?(@comment)
+        render json: { error: I18n.t("collavre.comments.github_synced_readonly") }, status: :forbidden and return
+      end
+
       if @comment.user == Current.user
         safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
-        if safe_params[:topic_id].present? && !@creative.topics.where(id: safe_params[:topic_id]).exists?
-          render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity and return
-        end
+        validate_topic_id!(safe_params[:topic_id]) or return
 
         if @comment.update(safe_params)
           @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
@@ -212,6 +217,10 @@ module Collavre
     end
 
     def destroy
+      if github_synced_content_comment?(@comment)
+        render json: { error: I18n.t("collavre.comments.github_synced_readonly") }, status: :forbidden and return
+      end
+
       # @comment is set by before_action
       is_owner = @comment.user == Current.user
       is_admin = @creative.has_permission?(Current.user, :admin)
@@ -259,17 +268,7 @@ module Collavre
     def participants
       users = [ @creative.user ].compact + @creative.all_shared_users(:feedback).map(&:user)
       users = users.uniq
-      user_data = users.map do |u|
-        {
-          id: u.id,
-          email: u.email,
-          name: u.display_name,
-          avatar_url: view_context.user_avatar_url(u, size: 20),
-          default_avatar: !u.avatar.attached? && u.avatar_url.blank?,
-          initial: u.display_name[0].upcase,
-          ai_user: u.ai_user?
-        }
-      end
+      user_data = users.map { |u| view_context.user_json(u, email: true, ai_user: true) }
       response.headers["Cache-Control"] = "no-store"
       response.headers["Pragma"] = "no-cache"
       response.headers["Expires"] = "0"
@@ -287,7 +286,7 @@ module Collavre
         head :forbidden and return
       end
 
-      render json: CommandMenuService.new(user: Current.user).items
+      render json: CommandMenuService.new(user: Current.user, creative: @creative).items
     end
 
     def download_images
@@ -346,22 +345,9 @@ module Collavre
 
     private
 
-    def set_creative
-      @creative = Creative.find(params[:creative_id]).effective_origin
-      unless @creative.has_permission?(Current.user, :read)
-        render json: { error: I18n.t("collavre.creatives.errors.no_permission") }, status: :forbidden
-      end
-    end
-
-    def set_comment
-      @comment = @creative.comments
-                             .where(
-                               "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
-                               false,
-                               Current.user.id,
-                               Current.user.id
-                             )
-                             .find(params[:id])
+    def github_synced_content_comment?(comment)
+      return false unless comment.topic&.name == Collavre::Creative::CONTENT_TOPIC_NAME
+      comment.creative&.github_markdown?
     end
 
     def comment_params
@@ -370,6 +356,12 @@ module Collavre
 
     def current_topic_context
       params[:topic_id].presence || params.dig(:comment, :topic_id).presence
+    end
+
+    def validate_topic_id!(topic_id)
+      return true if topic_id.blank? || @creative.topics.where(id: topic_id).exists?
+      render json: { error: I18n.t("collavre.comments.invalid_topic") }, status: :unprocessable_entity
+      false
     end
   end
 end

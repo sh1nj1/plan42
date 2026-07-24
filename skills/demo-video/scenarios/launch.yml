@@ -1,0 +1,251 @@
+# Launch scenario — the demo that backs the landing page and the Show HN post.
+#
+# It is not a feature tour. It makes ONE claim and proves it: a copy is never made.
+# The spec is imported, not retyped. The bug thread lives on the block it is about,
+# not in a separate tracker. The agent arrives with the team's handbook already
+# attached, because it was pinned once at the root — nothing is pasted into a chat
+# window. Progress rolls up on its own, so no status is written anywhere.
+#
+# Every scene therefore has to happen ON CAMERA against real data. The seed
+# (DEMO_SCENARIO=launch) leaves the project root deliberately EMPTY — a pre-built
+# tree would prove nothing about the import.
+#
+#   skills/demo-video/run.sh launch --locale en,ko --theme light,dark
+#
+# ONE script, two languages. Every human-readable string below is a `{{key}}` into
+# the strings: table, and --locale picks the column. The step list is a hard-won
+# pile of selectors, waits and orderings; forking it per language would guarantee
+# the copies drift until one of them quietly records something untrue.
+
+name: launch
+viewport: landing
+default_locale: en
+
+# The frame the landing page shows before anyone presses play. Scene 1 opens on an
+# empty project, so the default (t=0) would ship a blank white rectangle. This lands
+# on the climax: the inherited handbook chip on a leaf, caption still on screen.
+# Per-locale because the two takes do not run to the same clock — Korean types
+# fewer characters, so its timeline drifts earlier.
+poster_at:
+  en: 28
+  ko: 28
+
+# ── copy ──────────────────────────────────────────────────────────────────
+# The content nouns MUST match what seed.rb writes and what the imported markdown
+# contains: the scenario clicks rows *by their text*, so a mismatch here is not a
+# typo, it is a failed run. Captions are prose — translate the claim, not the words.
+strings:
+  spec_file:
+    en: payments-v2-spec.md
+    ko: payments-v2-spec.ko.md
+
+  project:   { en: "Payments v2",          ko: "결제 v2" }
+  refunds:   { en: "Refunds",              ko: "환불" }
+  leaf:      { en: "Add refund endpoint",  ko: "환불 API 추가" }
+  idem:      { en: "Idempotency keys",     ko: "멱등성 키" }
+  webhooks:  { en: "Refund webhooks",      ko: "환불 웹훅" }
+  handbook:  { en: "Engineering Handbook", ko: "엔지니어링 핸드북" }
+  topic:     { en: "Idempotency bug",      ko: "멱등성 버그" }
+
+  bug_report:
+    en: "Retrying a refund creates a second refund. Reproduced on staging."
+    ko: "환불을 재시도하면 환불이 두 번 됩니다. 스테이징에서 재현했습니다."
+  ai_question:
+    en: "@Vrex: how should I implement the refund endpoint?"
+    ko: "@Vrex: 환불 API는 어떻게 구현해야 할까요?"
+
+  cap_spec:
+    en: "You already wrote the spec. In markdown."
+    ko: "스펙은 이미 마크다운으로 썼습니다."
+  cap_tree:
+    en: "Heading depth became tree depth. Nothing retyped."
+    ko: "헤딩 깊이가 그대로 트리 깊이가 됐습니다. 다시 친 건 없습니다."
+  cap_topic:
+    en: "A bug? Add a topic to the block it is about."
+    ko: "버그가 나왔나요? 그 일감 블록에 토픽을 추가하세요."
+  cap_pin:
+    en: "Pin the team's handbook once — at the root."
+    ko: "팀 핸드북은 루트에 한 번만 붙입니다."
+  cap_inherited:
+    en: "Two levels down, the handbook is already here."
+    ko: "두 단계 아래에도 핸드북이 이미 와 있습니다."
+  cap_quoted:
+    en: "It quoted a rule nobody pasted in."
+    ko: "아무도 붙여넣지 않은 규칙을 인용했습니다."
+  cap_check:
+    en: "Check the work off…"
+    ko: "일감을 체크하면…"
+  cap_rollup:
+    en: "…and it rolls up on its own. Nothing to report."
+    ko: "…진행률은 알아서 올라갑니다. 따로 보고할 게 없습니다."
+  cap_outro:
+    en: "One tree: docs, tasks, discussions, and agent context."
+    ko: "하나의 트리에 문서, 일감, 논의, 그리고 에이전트 컨텍스트."
+
+  # The load-bearing claim of the whole video: every rule this answer cites is in
+  # the Engineering Handbook that the seed created and the video pins at the root
+  # — and NOWHERE in the thread, the task, or the mention. If you edit the handbook
+  # in lib/seed.rb, edit BOTH columns to match, or the video starts lying.
+  ai_answer:
+    en: |
+      Three handbook rules land on this endpoint:
+
+      **Idempotency.** `POST /v1/refunds` is a write endpoint, so it takes an `Idempotency-Key` header and replays the original response on retry. That is also the fix for the bug in this thread — a retry must never move money twice.
+
+      **Rate limiting.** It is public, so it gets the standard limit: 100 requests/minute per token.
+
+      **Migration guide.** The v1 refund fields are renamed rather than removed, so the mapping ships in the same PR.
+
+      I would start with the idempotency key: the webhook path can arrive out of order and depends on it.
+    ko: |
+      이 엔드포인트에 걸리는 핸드북 규칙은 세 가지입니다.
+
+      **멱등성.** `POST /v1/refunds`는 쓰기 엔드포인트라 `Idempotency-Key` 헤더를 받아야 하고, 재시도가 오면 원래 응답을 그대로 다시 돌려줘야 합니다. 이 스레드의 버그도 같은 지점입니다 — 재시도가 돈을 두 번 움직여선 안 됩니다.
+
+      **속도 제한.** 공개 API이므로 기본 정책을 그대로 따릅니다. 토큰당 분당 100회.
+
+      **마이그레이션 가이드.** v1 환불 필드는 제거가 아니라 이름만 바뀌므로, 매핑을 같은 PR에 함께 올립니다.
+
+      멱등성 키부터 잡는 걸 권합니다. 웹훅 경로는 순서가 뒤바뀌어 도착할 수 있어서 여기에 의존합니다.
+
+# One scripted turn, consumed by the single @Vrex mention below.
+ai_turns:
+  - "{{ai_answer}}"
+
+steps:
+  - login: { email: pm@collabre.dev, password: demo1234 }
+  - wait: 1800
+  - shot: 01-start
+
+  # ── Scene 1 — markdown in, task tree out ─────────────────────────────────
+  - caption: { text: "{{cap_spec}}", ms: 2400 }
+  - click_row: "{{project}}"
+  - wait: 2000
+  - shot: 02-empty-project
+
+  # The import button lives inside the ⋯ overflow menu, not on the page surface.
+  - click: ".popup-menu-wrapper:has(#creative-overflow-menu) > button.popup-menu-toggle"
+  - wait: 900
+  - click: "#import-markdown-btn"
+  - wait: 900
+  - shot: 03-import-open
+
+  # The dropzone's click handler opens a native OS file dialog, which Playwright
+  # cannot drive — so drive the hidden <input type=file> the controller listens on.
+  - upload: { selector: "#import-markdown-input", file: "{{spec_file}}" }
+  # The import controller hard-reloads the page ~700ms after the server responds.
+  # Wait on a node that only exists if the tree was really built, not on a timer —
+  # but wait on a DIRECT CHILD: grandchildren are collapsed until expand-all runs.
+  - wait_for: { selector: "creative-tree-row", text: "{{refunds}}", timeout: 30000 }
+  - wait: 1200
+  - click: { selector: "#expand-all-btn", optional: true }
+  - wait_for: { selector: "creative-tree-row", text: "{{idem}}", timeout: 15000 }
+  - wait: 2200
+  - shot: 04-tree
+  - caption: { text: "{{cap_tree}}", ms: 3200 }
+
+  # ── Scene 2 — the discussion lives on the work ───────────────────────────
+  - open_chat: "{{leaf}}"
+  - wait: 1800
+  # The creation control sits beside the topic strip, not inside it.
+  - click: ".topic-creation-container .add-topic-btn"
+  - wait: 700
+  # blur resets the input back to a "+" button, so type and press Enter with no
+  # intervening click.
+  - type: { selector: ".topic-creation-container input.topic-input", text: "{{topic}}", delay: 60 }
+  - press: Enter
+  - wait_for: { selector: "#comment-topics .topic-tag", text: "{{topic}}", timeout: 12000 }
+  - wait: 1000
+  - mention_ai:
+      text: "{{bug_report}}"
+      shot: 05-bug-reported
+  - wait: 2200
+  - caption: { text: "{{cap_topic}}", ms: 2800 }
+
+  # ── Scene 3 — the climax: pin once at the root, inherit everywhere ───────
+  - press: Escape
+  - wait: 900
+  - goto: /creatives
+  - wait: 1800
+  - open_chat: "{{project}}"
+  - wait: 1600
+  # The context bar auto-opens when the block already has contexts, so an
+  # unconditional toggle click would CLOSE it. Open it only when it is collapsed.
+  - js: "const l=document.getElementById('comment-contexts'); if (l && getComputedStyle(l).display === 'none') document.querySelector('#comments-popup .context-toggle-btn')?.click();"
+  - wait: 800
+  - wait_for: { selector: "#comment-contexts .add-context-btn", timeout: 12000 }
+  - caption: { text: "{{cap_pin}}", ms: 2600 }
+  - click: "#comment-contexts .add-context-btn"
+  - wait_for: { selector: "#link-creative-modal", timeout: 12000 }
+  - type: { selector: "#link-creative-search", text: "{{handbook}}", delay: 45 }
+  # Search is debounced 300ms, and results render as [data-pick-row] rows — NOT as
+  # .link-tree-item, which the picker uses only for its browsable mini-tree mode.
+  - wait_for: { selector: "#link-creative-results [data-pick-row]", timeout: 12000 }
+  - wait: 900
+  - click: "#link-creative-results [data-pick-row]"
+  - wait: 2200
+  - shot: 06-context-pinned
+
+  # Now walk back DOWN to the leaf and show the same context already there.
+  # `.context-inherited` is rendered only for creatives the block did not pin
+  # itself — it is Creative#effective_context_ids made visible, and it is the one
+  # frame this entire video exists to capture. `highlight` throws if it is missing,
+  # so a broken inheritance chain fails the run instead of shipping a silent lie.
+  - press: Escape
+  - wait: 900
+  - click_row: "{{project}}"
+  - wait: 2000
+  - click: { selector: "#expand-all-btn", optional: true }
+  - wait: 1600
+  - open_chat: "{{leaf}}"
+  - wait: 1800
+  - js: "const l=document.getElementById('comment-contexts'); if (l && getComputedStyle(l).display === 'none') document.querySelector('#comments-popup .context-toggle-btn')?.click();"
+  - wait: 900
+  - wait_for: { selector: "#comment-contexts .context-chip.context-inherited", timeout: 12000 }
+  - caption: { text: "{{cap_inherited}}", hold: true, ms: 1400 }
+  - highlight: { selector: "#comment-contexts .context-chip.context-inherited", ms: 3200 }
+  - shot: 07-inherited-context
+  - caption: null
+
+  # ── Scene 4 — the agent arrives already knowing ──────────────────────────
+  - topic: "{{topic}}"
+  - wait: 1200
+  - mention_ai:
+      text: "{{ai_question}}"
+      shot: 08-mention
+  - wait_stream: { timeout: 60000 }
+  - scroll_bottom: {}
+  - wait: 2000
+  - shot: 09-ai-answer
+  - caption: { text: "{{cap_quoted}}", ms: 3400 }
+  - wait: 1500
+  - shot: 10-ai-answer-settled
+
+  # ── Scene 5 — progress rolls up, so no status gets written ───────────────
+# Escape does not close the chat popup, and the progress toggles sit at the RIGHT
+  # edge of each row — underneath it. Close the popup for real, or every toggle
+  # click below fails actionability because the popup is covering the target.
+  # (Do NOT re-click #expand-all-btn here: it is a toggle, so a third click would
+  # collapse the tree back.)
+  - click: "#close-comments-btn"
+  - wait_for: { selector: "#comments-popup", state: "hidden", timeout: 8000 }
+  - wait: 800
+  - caption: { text: "{{cap_check}}", ms: 1800 }
+  - click: 'creative-tree-row:has-text("{{idem}}") [data-progress-toggle]'
+  - wait: 1300
+  - click: 'creative-tree-row:has-text("{{leaf}}") [data-progress-toggle]'
+  - wait: 1300
+  - click: 'creative-tree-row:has-text("{{webhooks}}") [data-progress-toggle]'
+  - wait: 1600
+# Highlight the ROOT's number, not the intermediate parent's: three leaves went
+  # to done and the project total moved on its own. That number is the claim.
+  - highlight: { selector: 'creative-tree-row:has-text("{{project}}") .creative-progress-area', ms: 3200 }
+  - shot: 11-rollup
+  - caption: { text: "{{cap_rollup}}", ms: 3200 }
+
+  # ── Outro ────────────────────────────────────────────────────────────────
+  - goto: /creatives
+  - wait: 2400
+  - shot: 12-final
+  - caption: { text: "{{cap_outro}}", ms: 3400 }
+  - wait: 1200

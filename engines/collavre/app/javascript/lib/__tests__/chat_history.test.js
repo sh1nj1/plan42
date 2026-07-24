@@ -36,6 +36,37 @@ describe('ChatNavigationHistory', () => {
     expect(history.current().snippet).toBe('A updated')
   })
 
+  test('revisit reorders entry to reflect visit order', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
+    history.push({ creativeId: '4', snippet: 'D' })
+    // entries: [A, B, C, D], cursor at D (index 3)
+
+    history.push({ creativeId: '2', snippet: 'B' })
+    // B should move after D: [A, C, D, B], cursor at B (index 3)
+    expect(history.entries.map(e => e.creativeId)).toEqual(['1', '3', '4', '2'])
+    expect(history.current().creativeId).toBe('2')
+
+    // prev should go back to D (where we came from)
+    expect(history.prev().creativeId).toBe('4')
+    expect(history.prev().creativeId).toBe('3')
+    expect(history.prev().creativeId).toBe('1')
+    // wraps around
+    expect(history.prev().creativeId).toBe('2')
+  })
+
+  test('revisit current entry does not reorder', () => {
+    history.push({ creativeId: '1', snippet: 'A' })
+    history.push({ creativeId: '2', snippet: 'B' })
+    history.push({ creativeId: '3', snippet: 'C' })
+
+    history.push({ creativeId: '3', snippet: 'C updated' })
+    expect(history.entries.map(e => e.creativeId)).toEqual(['1', '2', '3'])
+    expect(history.current().creativeId).toBe('3')
+    expect(history.current().snippet).toBe('C updated')
+  })
+
   test('prev cycles backward', () => {
     history.push({ creativeId: '1', snippet: 'A' })
     history.push({ creativeId: '2', snippet: 'B' })

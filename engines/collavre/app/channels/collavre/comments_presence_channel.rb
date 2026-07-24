@@ -1,5 +1,12 @@
 module Collavre
 class CommentsPresenceChannel < ApplicationCable::Channel
+  def self.broadcast_channel_chips_changed(creative_id, topic_id:)
+    ActionCable.server.broadcast(
+      "comments_presence:#{creative_id}",
+      { channel_chips: { topic_id: topic_id } }
+    )
+  end
+
   def self.broadcast_shares_changed(creative_id, shared_user_id:, permission: nil, action: "updated", has_access: nil, can_comment: nil, has_access_changed: nil, can_comment_changed: nil)
     ActionCable.server.broadcast(
       "comments_presence:#{creative_id}",

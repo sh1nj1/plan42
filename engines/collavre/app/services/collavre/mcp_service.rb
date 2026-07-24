@@ -39,7 +39,7 @@ module Collavre
             result: result
           }
         )
-      rescue => e
+      rescue StandardError => e
         Rails.logger.error("Failed to log tool activity: #{e.message}")
       end
 
@@ -48,14 +48,14 @@ module Collavre
         before_call: before_call,
         after_call: after_call
       )
-      puts("Registered tool: #{result}")
+      Rails.logger.info("Registered tool: #{result}")
 
       if result[:error]
         error_msg = "Failed to register tool: #{result[:error]}"
         Rails.logger.error(error_msg)
         raise error_msg
       end
-    rescue => e
+    rescue StandardError => e
       Rails.logger.error("Failed to register tool from source: #{e.message}")
       raise e
     end
@@ -131,7 +131,7 @@ module Collavre
       if result[:error]
         Rails.logger.error("Failed to delete tool #{tool_name}: #{result[:error]}")
       end
-    rescue => e
+    rescue StandardError => e
       Rails.logger.error("Failed to delete tool #{tool_name}: #{e.message}")
     end
 
@@ -139,6 +139,9 @@ module Collavre
 
     def update_from_creative(input_creative)
       creative = input_creative.effective_origin
+      # Profile creatives are agent system prompts, not tool sources: a fenced
+      # `extend ToolMeta` example in a prompt must never register a real tool.
+      return if creative.profile?
       return unless creative.description.present?
 
       # Parse HTML to find code blocks

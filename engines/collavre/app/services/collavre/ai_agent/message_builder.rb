@@ -43,14 +43,15 @@ module Collavre
         topic = current_topic
         topic_info = topic ? "\nTopic: #{topic.name} (id: #{topic.id})" : ""
 
+        ancestry = build_ancestry_chain(creative)
+
         if effective.data&.dig("disabled_self_context") == true
           # Self-context disabled: inject only the ancestry chain so the AI
           # knows where in the hierarchy the conversation is happening
-          ancestry = build_ancestry_chain(creative)
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Current Creative (id: #{creative.id}):#{topic_info}\nPath: #{ancestry}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}" } ] }
         else
-          # Full self-context: inject the creative subtree
+          # Full self-context: inject the creative subtree with ancestry breadcrumb
           children_level = @agent.creative_children_level
           max_depth = 1 + children_level
           markdown = ApplicationController.helpers.render_creative_tree_markdown(
@@ -58,12 +59,12 @@ module Collavre
           )
 
           @injected_creative_ids << creative.id
-          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative (id: #{creative.id}):#{topic_info}\n#{markdown}" } ] }
+          messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}\n#{markdown}" } ] }
         end
       end
 
       def build_ancestry_chain(creative)
-        creative.self_and_ancestors.reverse.map(&:creative_snippet).join(" > ")
+        creative.self_and_ancestors.reverse.map { |c| "#{c.creative_snippet} (id: #{c.id})" }.join(" > ")
       end
 
       def append_context_creatives(messages)
@@ -75,17 +76,20 @@ module Collavre
 
         effective_origin = creative.effective_origin(Set.new)
         context_ids = effective_origin.effective_context_ids
-        disabled_ids = Array(effective_origin.data&.dig("disabled_context_ids"))
+        disabled_ids = effective_origin.effective_disabled_context_ids
         active_ids = context_ids - disabled_ids - [ creative_id, effective_origin.id ]
         return if active_ids.empty?
 
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
+        ids_to_load = active_ids.reject { |ctx_id| @injected_creative_ids.include?(ctx_id) }
+        creatives_by_id = Creative.where(id: ids_to_load).index_by(&:id)
+
         active_ids.each do |ctx_id|
           next if @injected_creative_ids.include?(ctx_id)
 
-          ctx = Creative.find_by(id: ctx_id)
+          ctx = creatives_by_id[ctx_id]
           next unless ctx
 
           @injected_creative_ids << ctx_id
@@ -109,11 +113,12 @@ module Collavre
         max_depth = 1 + children_level
 
         # Extract creative IDs from markdown links like [title](/creatives/123)
-        content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.uniq.each do |id_str|
-          creative_id = id_str.to_i
-          next if @injected_creative_ids.include?(creative_id)
+        referenced_ids = content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.map(&:to_i).uniq
+        referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
+        creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
 
-          creative = Creative.find_by(id: creative_id)
+        referenced_ids.each do |creative_id|
+          creative = creatives_by_id[creative_id]
           next unless creative
 
           @injected_creative_ids << creative_id
@@ -141,7 +146,7 @@ module Collavre
         history_chars = 0
         count = 0
 
-        Comment.where(creative_id: creative_id, private: false)
+        Comment.public_only.without_approval_action.where(creative_id: creative_id)
                .where(topic_id: topic_id)
                .where.not(user_id: nil)
                .includes(:user)
@@ -239,7 +244,15 @@ module Collavre
                                    .exists?
         agent_changed = @agent.updated_at > last_reply_at
 
-        creative_changed || agent_changed
+        # The canonical system prompt now lives in the agent's profile creative's
+        # data["markdown_source"]. Editing it directly bumps only that Creative
+        # row (not the agent User row), and the profile creative sits outside the
+        # rendered topic tree — so without this a stateful re-send would keep the
+        # old session prompt and drop the freshly-edited one.
+        profile_updated_at = @agent.profile_creative_if_present&.updated_at
+        prompt_changed = profile_updated_at.present? && profile_updated_at > last_reply_at
+
+        creative_changed || agent_changed || prompt_changed
       end
 
       # Collects the IDs of all creatives whose content is included in the
@@ -247,9 +260,21 @@ module Collavre
       # This is slightly broader than what's actually rendered (which is
       # limited by children_level), but ensures no descendant change is missed.
       def collect_rendered_creative_ids
-        @injected_creative_ids.flat_map do |root_id|
-          Creative.find_by(id: root_id)&.subtree_ids || [ root_id ]
-        end.uniq
+        roots = Creative.where(id: @injected_creative_ids.to_a).to_a
+        found_ids = roots.map(&:id).to_set
+
+        ids = roots.flat_map(&:subtree_ids)
+                   .concat(@injected_creative_ids.reject { |rid| found_ids.include?(rid) })
+
+        # Include ancestor IDs used in the breadcrumb so that changes to
+        # ancestor titles are detected by context_changed?
+        creative_id = @context.dig("creative", "id")
+        if creative_id
+          ancestor_ids = Creative.find_by(id: creative_id)&.ancestor_ids || []
+          ids.concat(ancestor_ids)
+        end
+
+        ids.uniq
       end
     end
   end

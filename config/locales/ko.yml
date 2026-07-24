@@ -13,6 +13,8 @@ ko:
     webauthn:
       deleted: "패스키가 삭제되었습니다."
       credential_not_found: "패스키를 찾을 수 없습니다. 비밀번호로 로그인 후 프로필 설정에서 패스키를 등록해주세요."
+      verification_failed: "인증 실패: %{message}"
+      credential_save_failed: "자격 증명을 저장할 수 없습니다."
     table:
       last_login_unknown: "기록 없음"
 

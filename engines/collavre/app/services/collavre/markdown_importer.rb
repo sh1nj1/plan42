@@ -6,15 +6,26 @@ module Collavre
     def self.import(content, parent:, user:, create_root: false)
       lines = content.to_s.lines
       image_refs = {}
+      # CommonMark allows both the angle-bracket form `[alt]: <data:...>` and
+      # the bare form `[alt]: data:image/...`, optionally followed by a title
+      # (`"..."`, `'...'`, or `(...)`). Match both so reference-style data-URI
+      # images survive the import path and resolve to attachments downstream
+      # (mirrors MarkdownConverter#markdown_to_html).
       lines.reject! do |ln|
-        if ln =~ /^\s*\[([^\]]+)\]:\s*<\s*(data:image\/[^>]+)\s*>\s*$/
-          image_refs[$1] = $2.strip
+        if ln =~ /^\s*\[([^\]]+)\]:\s*(?:<\s*(data:image\/[^>]+?)\s*>|(data:image\/\S+))\s*(?:"[^"]*"|'[^']*'|\([^)]*\))?\s*$/
+          image_refs[$1] = ($2 || $3).strip
           true
         else
           false
         end
       end
       created = []
+      # Per-parent sequence counters. closure_tree orders siblings by the
+      # `sequence` column (default 0), but plain Creative.create never assigns
+      # it — so without this every imported sibling would share sequence 0 and
+      # fall back to a DB-defined tie-break (stable on SQLite, arbitrary on
+      # Postgres), corrupting document order. Assign contiguous values here.
+      seq = {}
       root = parent
       i = 0
       if create_root
@@ -23,7 +34,7 @@ module Collavre
         end
         if i < lines.size && lines[i] !~ /^\s*#/ && lines[i] !~ /^\s*[-*+]/
           page_title = lines[i].strip
-          root = Creative.create(user: user, parent: parent, description: page_title)
+          root = create_child(user: user, parent: parent, description: page_title, seq: seq)
           created << root
           i += 1
         end
@@ -68,7 +79,7 @@ module Collavre
           code_html = build_code_block_html(code_content, fence_info)
 
           new_parent = stack.any? ? stack.last[1] : root
-          c = Creative.create(user: user, parent: new_parent, description: code_html)
+          c = create_child(user: user, parent: new_parent, description: code_html, seq: seq)
           created << c
           next
         end
@@ -76,7 +87,7 @@ module Collavre
         if (table_data = parse_markdown_table(lines, i))
           table_html = build_table_html(table_data, image_refs)
           new_parent = stack.any? ? stack.last[1] : root
-          c = Creative.create(user: user, parent: new_parent, description: table_html)
+          c = create_child(user: user, parent: new_parent, description: table_html, seq: seq)
           created << c
           i = table_data[:next_index]
         elsif line =~ /^(#+)\s+(.*)$/
@@ -84,7 +95,7 @@ module Collavre
           desc = ApplicationController.helpers.markdown_links_to_html($2.strip, image_refs)
           stack.pop while stack.any? && stack.last[0] >= level
           new_parent = stack.any? ? stack.last[1] : root
-          c = Creative.create(user: user, parent: new_parent, description: desc)
+          c = create_child(user: user, parent: new_parent, description: desc, seq: seq)
           created << c
           stack << [ level, c ]
           i += 1
@@ -94,14 +105,14 @@ module Collavre
           bullet_level = 10 + indent / 2
           stack.pop while stack.any? && stack.last[0] >= bullet_level
           new_parent = stack.any? ? stack.last[1] : root
-          c = Creative.create(user: user, parent: new_parent, description: desc)
+          c = create_child(user: user, parent: new_parent, description: desc, seq: seq)
           created << c
           stack << [ bullet_level, c ]
           i += 1
         elsif !line.strip.empty?
           desc = ApplicationController.helpers.markdown_links_to_html(line.strip, image_refs)
           new_parent = stack.any? ? stack.last[1] : root
-          c = Creative.create(user: user, parent: new_parent, description: desc)
+          c = create_child(user: user, parent: new_parent, description: desc, seq: seq)
           created << c
           i += 1
         else
@@ -114,6 +125,24 @@ module Collavre
       Creative::RealtimeBroadcastable.broadcast_batch_created(created)
 
       created
+    end
+
+    # Creates a child under `parent` with an explicit `sequence`, tracking the
+    # next value per parent in `seq`. The first time a parent is seen the
+    # counter is seeded past any pre-existing children so an import into an
+    # already-populated parent appends after them instead of colliding at 0.
+    # A nil parent means a root-level import (top-level page with no parent_id);
+    # closure_tree orders roots by `sequence` too, so seed from Creative.roots.
+    def self.create_child(user:, parent:, description:, seq:)
+      key = parent&.id
+      unless seq.key?(key)
+        siblings = parent ? parent.children : Creative.roots
+        max = siblings.maximum(:sequence)
+        seq[key] = max ? max + 1 : 0
+      end
+      creative = Creative.create(user: user, parent: parent, description: description, sequence: seq[key])
+      seq[key] += 1
+      creative
     end
 
     def self.build_code_block_html(code_content, language = nil)

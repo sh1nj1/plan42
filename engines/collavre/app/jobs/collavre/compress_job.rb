@@ -49,6 +49,7 @@ module Collavre
         model: agent.llm_model,
         system_prompt: system_prompt,
         llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
         context: {
           creative: creative,
           user: agent,
@@ -76,9 +77,13 @@ module Collavre
       # Store comment IDs to delete before creating the new one (all originals including /compress command)
       comment_ids_to_delete = all_comments.pluck(:id)
 
-      # Create the summary comment in the same topic
+      # Create the summary comment in the same topic.
+      # Author it as the AI agent (not the human who ran /compress) so the
+      # comment is recognized as AI-generated content: this makes ai_user? true,
+      # which is what gates the "Review" button in the comment view. The summary
+      # body is AI output, so the agent is the correct author.
       summary_comment = creative.comments.create!(
-        user: user,
+        user: agent,
         topic_id: topic_id,
         content: summary_content,
         skip_dispatch: true  # system-generated summary, not user input

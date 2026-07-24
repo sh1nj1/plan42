@@ -29,8 +29,36 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Collavre uploaded files storage: S3 if AWS_S3_ACCESS_KEY_ID is set, otherwise local disk.
-  config.active_storage.service = ENV["AWS_S3_ACCESS_KEY_ID"].present? ? :amazon : :local
+  # Pre-warm encryption fallback keys so `AwsCredentials.s3` (and any other
+  # boot-time `IntegrationSettings.fetch(..., boot_safe: true)` call below)
+  # can decrypt admin-saved DB rows even though
+  # `config/initializers/active_record_encryption.rb` runs later. Without
+  # this, the `boot_safe:` rescue would swallow the encryption error, return
+  # blank credentials, and downgrade S3 storage to `:local` for the whole
+  # boot — ignoring legitimate admin-saved DB credentials.
+  EncryptionBootstrap.ensure_keys!(Rails.application)
+
+  # Collavre uploaded files storage: S3 only when a source-coherent pair of
+  # S3 credentials is available (`AwsCredentials.s3` enforces same-source
+  # access key id + secret). When `Collavre::AwsCredentials` is unavailable
+  # (`USE_COLLAVRE_GEM=true` with an older gem), fall back to plain ENV so
+  # legacy env-based S3 deploys keep S3 selected. `CollavreCompat.call`
+  # (loaded by `config/application.rb`) drops kwargs older gem versions
+  # don't accept, avoiding ArgumentError under `USE_COLLAVRE_GEM=true`.
+  s3_credentials =
+    if defined?(Collavre::AwsCredentials)
+      CollavreCompat.call(Collavre::AwsCredentials, :s3, boot_safe: true)
+    elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
+      { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
+    else
+      {}
+    end
+  config.active_storage.service =
+    if s3_credentials[:access_key_id].present? && s3_credentials[:secret_access_key].present?
+      :amazon
+    else
+      :local
+    end
 
   # Assume all access to the app is happening through a SSL-terminating reverse proxy.
   config.assume_ssl = true
@@ -79,17 +107,46 @@ Rails.application.configure do
   #   authentication: :plain
   # }
 
-  # AWS SES SMTP
-  ses_region = ENV["AWS_REGION"] || Rails.application.credentials.dig(:aws, :region)
-  ses_smtp_username = ENV["AWS_SES_SMTP_USERNAME"] || Rails.application.credentials.dig(:aws, :smtp_username)
-  ses_smtp_password = ENV["AWS_SES_SMTP_PASSWORD"] || Rails.application.credentials.dig(:aws, :smtp_password)
+  # AWS SES SMTP. `AwsCredentials.ses_smtp` returns a source-coherent pair so
+  # the baseline never mixes ENV with credentials. When `Collavre::AwsCredentials`
+  # is unavailable (`USE_COLLAVRE_GEM=true` with an older gem), fall back to
+  # plain ENV / Rails.credentials so legacy env-based deploys keep sending
+  # mail. When the interceptor IS loaded, it overrides address/user_name/
+  # password with DB > ENV > credentials at each send so admins can rotate
+  # SES creds via /admin/integrations without redeploying.
+  # Resolve ses_region from DB > ENV > Rails.credentials so an admin-only SES
+  # setup (region + creds all stored in `integration_settings`) still emits an
+  # SES-shaped baseline address at boot. Without DB lookup here the scaffold
+  # leaves `:address` nil → compact removes it → `Mail::SMTP` falls back to
+  # `"localhost"`, which the interceptor's `ses_target?` now rejects, leaving
+  # production trying to authenticate to localhost with DB SES creds.
+  ses_region =
+    if defined?(Collavre::IntegrationSettings)
+      CollavreCompat.call(
+        Collavre::IntegrationSettings,
+        :fetch,
+        :aws_region,
+        default: ENV["AWS_REGION"],
+        boot_safe: true
+      ).presence || Rails.application.credentials.dig(:aws, :region)
+    else
+      ENV["AWS_REGION"].presence || Rails.application.credentials.dig(:aws, :region)
+    end
+  ses_smtp_credentials =
+    if defined?(Collavre::AwsCredentials)
+      CollavreCompat.call(Collavre::AwsCredentials, :ses_smtp, boot_safe: true)
+    else
+      legacy_user = ENV["AWS_SES_SMTP_USERNAME"].presence || Rails.application.credentials.dig(:aws, :smtp_username).presence
+      legacy_pass = ENV["AWS_SES_SMTP_PASSWORD"].presence || Rails.application.credentials.dig(:aws, :smtp_password).presence
+      legacy_user && legacy_pass ? { user_name: legacy_user, password: legacy_pass } : {}
+    end
 
   config.action_mailer.delivery_method = :smtp
   config.action_mailer.smtp_settings = {
     address:              ("email-smtp.#{ses_region}.amazonaws.com" if ses_region.present?),
     port:                 587,
-    user_name:            ses_smtp_username,
-    password:             ses_smtp_password,
+    user_name:            ses_smtp_credentials[:user_name],
+    password:             ses_smtp_credentials[:password],
     authentication:       :plain,
     enable_starttls_auto: true
   }.compact

@@ -5,6 +5,9 @@ module Collavre
 
     def create
       creative = Creative.find(params[:creative_id]).effective_origin
+      unless creative.has_permission?(Current.user, :admin)
+        return head :forbidden
+      end
       permission = params[:permission] || :read
       invitation = Invitation.create!(inviter: Current.user,
                                       creative: creative,

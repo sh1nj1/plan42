@@ -3,7 +3,6 @@
 module Collavre
   class CreativeInvitationsController < ApplicationController
     before_action :set_invitation
-    before_action :authorize_admin!
 
     def update
       if @invitation.update(permission: params[:permission])
@@ -29,18 +28,16 @@ module Collavre
 
     private
 
+    # Scoped lookup: only returns the invitation if Current.user has admin
+    # permission on its creative. Raises ActiveRecord::RecordNotFound otherwise
+    # so that record existence is not leaked to unauthorized users.
     def set_invitation
-      @invitation = Invitation.find(params[:id])
-      @creative = @invitation.creative
-    end
+      invitation = Invitation.find_by(id: params[:id])
+      creative = invitation&.creative
+      raise ActiveRecord::RecordNotFound unless creative&.has_permission?(Current.user, :admin)
 
-    def authorize_admin!
-      return if @creative.has_permission?(Current.user, :admin)
-
-      respond_to do |format|
-        format.html { redirect_back fallback_location: main_app.root_path, alert: t("collavre.creatives.errors.no_permission") }
-        format.json { render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden }
-      end
+      @invitation = invitation
+      @creative = creative
     end
   end
 end

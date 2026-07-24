@@ -113,6 +113,49 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     assert_includes context_ids, @development.id, "Other contexts should still be present"
   end
 
+  test "GET contexts inherits disabled state from parent" do
+    @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    json = JSON.parse(response.body)
+    ctx = json["contexts"].find { |c| c["id"] == @development.id }
+    assert ctx, "Development context should appear in child"
+    assert ctx["disabled"], "Disabled state from parent should be inherited by child"
+  end
+
+  test "PATCH update_contexts filters out parent-inherited disabled IDs to prevent sticky disablement" do
+    @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+
+    # Client sends ALL disabled IDs (including inherited ones) from the child
+    patch update_contexts_creative_path(@feature_a), params: {
+      disabled_context_ids: [ @development.id ]
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @feature_a.reload
+    # Inherited disabled ID should NOT be stored on the child
+    refute @feature_a.data&.key?("disabled_context_ids"),
+      "Inherited disabled IDs should be filtered out, not copied to child"
+  end
+
+  test "PATCH update_contexts preserves child-local disables when parent also disables the same context" do
+    # Child disables X first
+    @feature_a.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+    # Parent also disables X
+    @features.update!(data: { "context_ids" => [ @development.id ], "disabled_context_ids" => [ @development.id ] })
+
+    # Child saves again (client sends all disabled IDs including X)
+    patch update_contexts_creative_path(@feature_a), params: {
+      disabled_context_ids: [ @development.id ]
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @feature_a.reload
+    assert_equal [ @development.id ], @feature_a.data["disabled_context_ids"],
+      "Child's own disable should be preserved even when parent also disables the same context"
+  end
+
   test "PATCH update_contexts requires admin permission" do
     regular_user = users(:two)
     sign_in_as(regular_user, password: "password")

@@ -205,7 +205,7 @@ module CollavreOpenclaw
           next unless @idle_check_counter >= 60 # Run check every ~60 seconds
           @idle_check_counter = 0
           check_idle_connections!
-        rescue => e
+        rescue StandardError => e
           Rails.logger.error("[CollavreOpenclaw::ConnectionManager] Idle checker error: #{e.message}")
         end
       end

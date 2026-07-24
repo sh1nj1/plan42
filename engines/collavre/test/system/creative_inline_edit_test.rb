@@ -113,7 +113,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     sleep 0.5
 
     fill_inline_editor("First child")
-    inline_editor_field.send_keys(:enter)
+    inline_editor_field.send_keys([ :shift, :enter ])
     sleep 0.5
 
     fill_inline_editor("Second child")

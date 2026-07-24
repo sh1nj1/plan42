@@ -37,7 +37,7 @@ module CollavreCompletionApi
               system_prompt: system_prompt,
               llm_api_key: api_key,
               gateway_url: agent.respond_to?(:gateway_url) ? agent.gateway_url : nil,
-              context: { creative: collavre_creative, user: current_user }
+              context: { creative: collavre_creative, user: current_user, topic_id: collavre_topic&.id }
             )
 
             model_name = params[:model] || agent_model_id(agent)
@@ -58,7 +58,11 @@ module CollavreCompletionApi
           def build_system_prompt(messages, agent)
             parts = []
 
-            parts << agent.system_prompt if agent.system_prompt.present?
+            # Read through effective_system_prompt so a directly-edited profile
+            # Creative (canonical data["markdown_source"]) drives API completions
+            # too, not the stale legacy system_prompt column.
+            agent_prompt = agent.effective_system_prompt
+            parts << agent_prompt if agent_prompt.present?
 
             system_messages = messages.select { |m| m[:role] == "system" || m["role"] == "system" }
             system_messages.each do |msg|
@@ -80,7 +84,7 @@ module CollavreCompletionApi
             end
 
             scope = collavre_creative.comments
-                                     .where(private: false)
+                                     .public_only
                                      .order(created_at: :desc)
             scope = scope.where(topic_id: collavre_topic.id) if collavre_topic
             recent_comments = scope.limit(CREATIVE_CONTEXT_COMMENT_LIMIT)

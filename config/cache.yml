@@ -11,6 +11,9 @@ development:
 test:
   <<: *default
 
-production:
+production: &production
   database: cache
   <<: *default
+
+# Desktop app reuses the production Solid Cache setup (cache database).
+desktop: *production

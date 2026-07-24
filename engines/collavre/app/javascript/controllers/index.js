@@ -1,5 +1,6 @@
 // Collavre Engine Controllers
 // Import all controllers
+import AgentTriggerController from "./agent_trigger_controller"
 import PopupMenuController from "./popup_menu_controller"
 import ProgressFilterController from "./progress_filter_controller"
 import CreativesImportController from "./creatives/import_controller"
@@ -21,6 +22,7 @@ import ClickTargetController from "./click_target_controller"
 import TabsController from "./tabs_controller"
 import LinkCreativeController from "./link_creative_controller"
 import TopicSearchController from "./topic_search_controller"
+import TopicListController from "./topic_list_controller"
 import CommonPopupController from "./common_popup_controller"
 import CommentController from "./comment_controller"
 import ReactionPickerController from "./reaction_picker_controller"
@@ -32,9 +34,12 @@ import CommentBadgeController from "./comment_badge_controller"
 import ShareModalController from "./share_modal_controller"
 import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
+import LandingVideoController from "./landing_video_controller"
+import InboxBadgeController from "./inbox_badge_controller"
 
 // Export all controllers
 export {
+  AgentTriggerController,
   PopupMenuController,
   ProgressFilterController,
   CreativesImportController,
@@ -55,6 +60,7 @@ export {
   TabsController,
   LinkCreativeController,
   TopicSearchController,
+  TopicListController,
   CommonPopupController,
   CommentController,
   ReactionPickerController,
@@ -65,11 +71,14 @@ export {
   ShareModalController,
   ImageLightboxController,
   SearchPopupController,
-  CommentBadgeController
+  CommentBadgeController,
+  LandingVideoController,
+  InboxBadgeController
 }
 
 // Registration function for use with a Stimulus application
 export function registerControllers(application) {
+  application.register("agent-trigger", AgentTriggerController)
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)
   application.register("creatives--import", CreativesImportController)
@@ -91,6 +100,7 @@ export function registerControllers(application) {
   application.register("tabs", TabsController)
   application.register("link-creative", LinkCreativeController)
   application.register("topic-search", TopicSearchController)
+  application.register("topic-list", TopicListController)
   application.register("common-popup", CommonPopupController)
   application.register("comment", CommentController)
   application.register("reaction-picker", ReactionPickerController)
@@ -102,4 +112,6 @@ export function registerControllers(application) {
   application.register("image-lightbox", ImageLightboxController)
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
+  application.register("landing-video", LandingVideoController)
+  application.register("inbox-badge", InboxBadgeController)
 }

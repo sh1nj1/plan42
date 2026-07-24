@@ -4,12 +4,21 @@ module Collavre
     include Collavre::Concerns::Exportable
     include Collavre::Concerns::TreeManageable
     include Collavre::Concerns::Shareable
+    include Collavre::CreativePermissionGuard
 
-    # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
-    # Removed unauthenticated access to index and show actions
+    # Authorization for these read actions is not open-to-public: each action
+    # enforces per-Creative read access via has_permission?(Current.user, :read)
+    # (index/children go through Creatives::IndexQuery, which permission-filters;
+    # show/slide_view/export_markdown check has_permission? directly). Anonymous
+    # requests only ever see Creatives whose share grants public read. Requiring
+    # a login for all reads is gated by SystemSetting.creatives_login_required?
+    # via enforce_creatives_login_policy below. A broader per-Creative role model
+    # (beyond the read/feedback/write/admin share levels) is a product decision
+    # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
+    before_action :require_creative_write!, only: %i[archive unarchive]
 
     def index
       respond_to do |format|
@@ -37,7 +46,7 @@ module Collavre
           else
             {}
           end
-          index_result = ::Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
+          index_result = ::Creatives::IndexQuery.new(user: Current.user, params: index_query_params).call
           @creatives = index_result.creatives || []
           @parent_creative = index_result.parent_creative
           @shared_creative = index_result.shared_creative
@@ -65,7 +74,9 @@ module Collavre
               allowed_creative_ids: @allowed_creative_ids,
               progress_map: @progress_map
             )
-            render json: { creatives: @creatives_tree_json }
+            payload = { creatives: @creatives_tree_json }
+            payload[:pagination] = index_result.pagination if index_result.pagination
+            render json: payload
           end
         end
       end
@@ -116,6 +127,7 @@ module Collavre
 
           trigger_loop_data = @creative.data&.dig("trigger", "loop")
           parent_trigger_enabled = @creative.parent&.drop_trigger_enabled? || false
+          can_edit = @creative.has_permission?(Current.user, :write)
 
           etag = [
             "creative",
@@ -130,7 +142,9 @@ module Collavre
             "trigger_v3",
             trigger_loop_data&.dig("state"),
             trigger_loop_data&.dig("current_iteration"),
-            parent_trigger_enabled
+            parent_trigger_enabled,
+            "can_edit",
+            can_edit
           ].join(":")
 
           if stale?(etag: etag, last_modified: last_modified, public: false)
@@ -140,9 +154,20 @@ module Collavre
             else
                       @creative.ancestors.count + 1
             end
+            sanitized_data = @creative.effective_origin(Set.new).data
+            # markdown_source is exposed via the top-level `markdown_source:` field for writers;
+            # exclude it from the editable `data` payload so the metadata YAML editor can't
+            # round-trip a stale copy back into data["markdown_source"] on update_metadata.
+            if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
+              sanitized_data = sanitized_data.except("markdown_source")
+            end
             render json: {
               id: @creative.id,
               description: @creative.effective_description,
+              # Embedded variant for read-only display (e.g. slide view): turns
+              # bare YouTube links into preview iframes. `description` stays the
+              # raw editable form the inline editor round-trips.
+              description_embedded_html: view_context.embed_youtube_iframe(@creative.effective_description),
               description_raw_html: @creative.description,
               origin_id: @creative.origin_id,
               parent_id: @creative.parent_id,
@@ -151,10 +176,13 @@ module Collavre
               depth: depth,
               prompt: @creative.prompt_for(Current.user),
               has_children: children_count > 0,
-              data: @creative.effective_origin(Set.new).data,
+              data: sanitized_data,
+              content_type: effective.data&.dig("content_type"),
+              markdown_editor: effective.data&.dig("editor"),
+              markdown_source: can_edit ? effective.data&.dig("markdown_source") : nil,
               trigger_loop: trigger_loop_data,
               is_trigger_task: parent_trigger_enabled,
-              can_edit: @creative.has_permission?(Current.user, :write)
+              can_edit: can_edit
             }
           end
         end
@@ -188,13 +216,27 @@ module Collavre
       @creative = result.creative
 
       if result.success?
-        render json: { id: @creative.id }
+        # Expose the post-rewrite markdown source so the client can sync its
+        # textarea after the server replaces inline data: URIs with blob paths,
+        # matching the update endpoint contract. Without this, a freshly created
+        # markdown creative with a pasted data: URI would re-import the blob on
+        # the next keystroke save.
+        render json: {
+          id: @creative.id,
+          content_type: @creative.data&.dig("content_type"),
+          markdown_editor: @creative.data&.dig("editor"),
+          markdown_source: @creative.data&.dig("markdown_source")
+        }
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
       end
     end
 
     def parent_suggestions
+      unless @creative.has_permission?(Current.user, :read)
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
+      end
+
       suggestions = ::GeminiParentRecommender.new.recommend(@creative)
       render json: suggestions
     end
@@ -253,8 +295,18 @@ module Collavre
               id: base.id,
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
-              has_children: base.children.exists?
+              has_children: base.children.exists?,
+              content_type: base.data&.dig("content_type"),
+              markdown_editor: base.data&.dig("editor")
             }
+            # Expose the post-rewrite markdown source so the client can sync its
+            # textarea after the server replaces inline data: URIs with blob paths.
+            # Gated on write permission so a read-only share recipient moving a
+            # linked creative (parent_id-only PATCH bypasses the origin_changes
+            # write check) cannot read the origin's raw Markdown source.
+            if @creative.has_permission?(Current.user, :write)
+              response_data[:markdown_source] = base.data&.dig("markdown_source")
+            end
             # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
             ancestor_records = base.ancestors.order(:id)
             if ancestor_records.any?
@@ -276,13 +328,17 @@ module Collavre
     end
 
     def contexts
+      unless @creative.has_permission?(Current.user, :read)
+        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
+      end
+
       creative = @creative.effective_origin(Set.new)
       own_ids = creative.context_ids - [ creative.id ]
       inherited_ids = (creative.effective_context_ids - own_ids - [ creative.id ]).uniq
       own_creatives = Creative.where(id: own_ids).index_by(&:id)
       inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
 
-      disabled_ids = Array(creative.data&.dig("disabled_context_ids"))
+      disabled_ids = creative.effective_disabled_context_ids
 
       own = own_ids.filter_map do |cid|
         c = own_creatives[cid]
@@ -314,8 +370,13 @@ module Collavre
 
       current_data = (creative.data || {}).dup
       current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
-      current_data["disabled_context_ids"] = Array(params[:disabled_context_ids]).map(&:to_i) if params.key?(:disabled_context_ids)
-      current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"]&.empty?
+      if params.key?(:disabled_context_ids)
+        requested_disabled = Array(params[:disabled_context_ids]).map(&:to_i)
+        parent_disabled = creative.parent&.effective_disabled_context_ids || []
+        inherited_only = parent_disabled - creative.disabled_context_ids
+        current_data["disabled_context_ids"] = requested_disabled - inherited_only
+        current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"].empty?
+      end
       if params.key?(:disabled_self_context)
         if ActiveModel::Type::Boolean.new.cast(params[:disabled_self_context])
           current_data["disabled_self_context"] = true
@@ -343,6 +404,22 @@ module Collavre
       rescue JSON::ParserError => e
         render json: { error: "Invalid JSON: #{e.message}" }, status: :unprocessable_entity
         return
+      end
+      unless new_data.is_a?(Hash)
+        render json: { error: t("collavre.creatives.errors.metadata_must_be_object") }, status: :unprocessable_entity
+        return
+      end
+      # Reserved markdown fields are not editable via metadata; preserve current values so a stale
+      # YAML payload from the metadata popup (or an API client that omits them) can't overwrite a
+      # concurrent markdown edit. "editor" must be reserved too: dropping it would erase the "rich"
+      # authoring flag and make a Lexical-authored creative reopen in the advanced textarea.
+      current_data = creative.data || {}
+      Collavre::Creative.reserved_metadata_keys.each do |key|
+        if current_data.key?(key)
+          new_data[key] = current_data[key]
+        else
+          new_data.delete(key)
+        end
       end
       previous_enabled = creative.drop_trigger_enabled?
 
@@ -440,19 +517,11 @@ module Collavre
     end
 
     def archive
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
       @creative.archive!
       head :ok
     end
 
     def unarchive
-      unless @creative.has_permission?(Current.user, :write) || @creative.user == Current.user
-        render json: { error: t("collavre.creatives.errors.no_permission") }, status: :forbidden and return
-      end
-
       @creative.unarchive!
       head :ok
     end
@@ -487,8 +556,25 @@ module Collavre
         @creative = Creative.find(params[:id])
       end
 
+      def creative_permission_denied_message
+        t("collavre.creatives.errors.no_permission")
+      end
+
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
+      end
+
+      # Whitelist of query parameters consumed by Creatives::IndexQuery and its
+      # FilterPipeline. Passing an explicitly permitted hash (rather than
+      # params.to_unsafe_h) keeps arbitrary client-supplied keys out of the
+      # query layer while preserving every filter the index endpoint supports.
+      def index_query_params
+        params.permit(
+          :id, :simple, :search, :search_mode, :comment, :has_comments,
+          :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
+          :assignee_id, :unassigned, :show_archived, :page, :per_page,
+          tags: []
+        ).to_h
       end
 
       def any_filter_active?
@@ -506,12 +592,15 @@ module Collavre
           params[:show_archived].present?
       end
 
+      # Thin delegator to Creatives::CreativeTreeSerializer. Kept as a controller
+      # method (rather than inlining the service call at the index call site) so
+      # the picker test that drives serialization via controller.send(:serialize_creatives, ...)
+      # keeps exercising the same seam.
       def serialize_creatives(collection)
-        if params[:simple].present?
-          collection.map { |c| { id: c.id, description: c.effective_description(nil, false), progress: c.progress } }
-        else
-          collection.map { |c| { id: c.id, description: c.effective_description, progress: c.progress } }
-        end
+        # Fully-qualified name: this newly extracted service is not registered in
+        # config/initializers/collavre_model_aliases.rb, so the top-level
+        # ::Creatives::* alias used by the older sibling services is unavailable.
+        Collavre::Creatives::CreativeTreeSerializer.new(user: Current.user, params: params).serialize(collection)
       end
 
       def reorderer
@@ -528,7 +617,7 @@ module Collavre
         end
 
         topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+        agent = parent.find_ai_agent(:write)
         unless topic && agent
           Rails.logger.warn("[TriggerAction] resume: missing topic=#{topic&.id} or agent for creative #{creative.id}")
           return
@@ -565,7 +654,7 @@ module Collavre
         end
 
         topic = creative.topics.find_by(name: "Drop Trigger")
-        agent = parent.all_shared_users(:write).map(&:user).find(&:ai_user?)
+        agent = parent.find_ai_agent(:write)
         unless topic && agent
           Rails.logger.warn("[TriggerAction] restart: missing topic=#{topic&.id} or agent for creative #{creative.id}")
           return
@@ -593,7 +682,7 @@ module Collavre
       end
 
       def notify_drop_trigger_missing_agent!(creative)
-        return if creative.all_shared_users(:write).map(&:user).any?(&:ai_user?)
+        return if creative.find_ai_agent(:write)
 
         topic = creative.topics.find_or_create_by!(name: "Drop Trigger") do |t|
           t.user = creative.user

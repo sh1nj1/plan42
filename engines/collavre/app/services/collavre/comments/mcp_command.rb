@@ -3,10 +3,11 @@ module Collavre
 
   module Comments
     class McpCommand
-      def initialize(comment:, user:, tool:, meta_tool_service: default_meta_tool_service)
+      def initialize(comment:, user:, tool:, creative: nil, meta_tool_service: default_meta_tool_service)
         @comment = comment
         @user = user
         @tool = tool
+        @creative = creative
         @meta_tool_service = meta_tool_service
       end
 
@@ -25,7 +26,7 @@ module Collavre
 
       private
 
-      attr_reader :comment, :user, :tool, :meta_tool_service
+      attr_reader :comment, :user, :tool, :creative, :meta_tool_service
 
       def command_match?
         comment.content.to_s.strip.match?(command_pattern)
@@ -41,11 +42,17 @@ module Collavre
 
       def parsed_arguments
         body = command_body
-        return {} if body.blank?
+        explicit_args = if body.blank?
+          {}
+        else
+          begin
+            JSON.parse(body)
+          rescue JSON::ParserError
+            key_value_arguments(body)
+          end
+        end
 
-        JSON.parse(body)
-      rescue JSON::ParserError
-        key_value_arguments(body)
+        merge_with_defaults(explicit_args)
       end
 
       def key_value_arguments(body)
@@ -59,6 +66,15 @@ module Collavre
         return args if args.present?
 
         nil
+      end
+
+      def merge_with_defaults(explicit_args)
+        return explicit_args unless explicit_args.is_a?(Hash)
+
+        defaults = creative&.data&.dig("tools", tool_name)
+        return explicit_args unless defaults.is_a?(Hash)
+
+        defaults.merge(explicit_args)
       end
 
       def cast_value(value)
@@ -82,6 +98,18 @@ module Collavre
         return I18n.t("collavre.comments.mcp_command.error_running", tool_name: tool_name, error: response[:error]) if response[:error].present?
 
         result = response[:result]
+        escaped_tool = ERB::Util.html_escape(tool_name)
+
+        markdown_body = extract_markdown(result)
+        if markdown_body
+          return <<~HTML
+          <details open><summary>#{escaped_tool} response</summary>
+
+          #{markdown_body}
+          </details>
+          HTML
+        end
+
         content = case result
         when Hash, Array
           JSON.pretty_generate(result)
@@ -89,11 +117,32 @@ module Collavre
           result.to_s
         end
 
+        escaped_content = ERB::Util.html_escape(content)
+
         <<~HTML
-        <details><summary>#{tool_name} response</summary>
-        <pre><code>#{content}</code></pre>
+        <details><summary>#{escaped_tool} response</summary>
+        <pre><code>#{escaped_content}</code></pre>
         </details>
         HTML
+      end
+
+      def extract_markdown(result)
+        candidate = nil
+
+        if result.is_a?(Hash)
+          candidate = result["markdown"] || result[:markdown]
+        elsif result.is_a?(String)
+          parsed = begin
+            JSON.parse(result)
+          rescue JSON::ParserError
+            nil
+          end
+          candidate = parsed["markdown"] if parsed.is_a?(Hash)
+        end
+
+        return nil unless candidate.is_a?(String) && candidate.strip.length.positive?
+
+        candidate
       end
 
       def tool_name

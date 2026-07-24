@@ -233,8 +233,11 @@ module Collavre
 
       svg = raw.dup
       if options[:class]
-        svg.sub!(/<svg\b/, %(<svg class="#{options[:class]}"))
+        escaped_class = ERB::Util.html_escape(options[:class])
+        svg.sub!(/<svg\b/, %(<svg class="#{escaped_class}"))
       end
+      # Safe: SVG source is a static asset file bundled with the app;
+      # user-supplied class attribute is escaped above via html_escape.
       svg.html_safe # rubocop:disable Rails/OutputSafety
     end
 

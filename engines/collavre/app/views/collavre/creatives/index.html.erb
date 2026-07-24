@@ -104,6 +104,17 @@
     <div data-share-modal-target="container"></div>
   <% end %>
 
+  <%# The "re-add dropped members" modal must be present wherever a topic can be
+      dropped onto another creative — including the top-level index, where
+      @parent_creative/@creative are nil (moving a topic between root-level
+      creatives). Gating it on the write check above hid it exactly there, so
+      getModal() returned null and the popup silently never appeared. It stays
+      hidden until populated, and share creation is permission-checked
+      server-side, so rendering it for any authenticated user is safe. %>
+  <% if authenticated? %>
+    <%= render 'topic_move_members_modal' %>
+  <% end %>
+
   <%= render 'import_upload_zone' %>
 
 <% if can_manage_integrations %>
@@ -154,17 +165,27 @@
     title_row_content += content_tag(:template, data: { part: "edit-icon" }) { svg_tag("edit.svg", class: "icon-edit") }
     title_row_content += content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") }
   %>
+  <%
+    title_can_write = @parent_creative.has_permission?(Current.user, :write)
+    title_effective_origin = @parent_creative.effective_origin(Set.new)
+    title_content_type = title_effective_origin.data&.dig("content_type")
+    title_markdown_source = title_can_write ? title_effective_origin.data&.dig("markdown_source") : nil
+    title_markdown_editor = title_effective_origin.data&.dig("editor")
+  %>
   <%= content_tag(
         "creative-tree-row",
         title_row_content,
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
-        "can-write": @parent_creative.has_permission?(Current.user, :write) ? "true" : "false",
+        "can-write": title_can_write ? "true" : "false",
         "is-title": "",
         "data-description-raw-html": @parent_creative.description,
         "data-progress-value": @parent_creative.progress,
-        "data-origin-id": @parent_creative.origin_id
+        "data-origin-id": @parent_creative.origin_id,
+        "data-content-type": title_content_type,
+        "data-markdown-source": title_markdown_source,
+        "data-markdown-editor": title_markdown_editor
       ) %>
 <% else %>
   <%= content_tag(

@@ -1,0 +1,172 @@
+<%# Landing Page — Collavre %>
+
+<div class="landing">
+  <%# ═══════════════════════════════════════════ HERO ══════════════════════════════════════════ %>
+  <section class="landing-hero">
+    <div class="landing-hero-glow"></div>
+    <div class="landing-container">
+      <h1 class="landing-hero-title"><%= t('collavre.landing.hero.headline_html') %></h1>
+      <p class="landing-hero-sub"><%= t('collavre.landing.hero.subline') %></p>
+      <p class="landing-hero-brand"><%= t('app.name') %></p>
+      <div class="landing-hero-actions">
+        <a href="#problem" class="landing-btn landing-btn-lg"><%= t('collavre.landing.hero.learn_more') %></a>
+        <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost landing-btn-lg" %>
+      </div>
+    </div>
+  </section>
+
+  <%# ══════════════════════════════════════ PROBLEM STATEMENT ══════════════════════════════════ %>
+  <section id="problem" class="landing-section landing-problem">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.problem.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.problem.subtitle') %></p>
+      <div class="landing-problem-grid">
+        <div class="landing-problem-card">
+          <span class="landing-problem-icon">📝</span>
+          <h3><%= t('collavre.landing.problem.notion.title') %></h3>
+          <p><%= t('collavre.landing.problem.notion.desc') %></p>
+        </div>
+        <div class="landing-problem-card">
+          <span class="landing-problem-icon">📋</span>
+          <h3><%= t('collavre.landing.problem.jira.title') %></h3>
+          <p><%= t('collavre.landing.problem.jira.desc') %></p>
+        </div>
+        <div class="landing-problem-card">
+          <span class="landing-problem-icon">💬</span>
+          <h3><%= t('collavre.landing.problem.slack.title') %></h3>
+          <p><%= t('collavre.landing.problem.slack.desc') %></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <%# ═══════════════════════════════════════ FEATURES ═════════════════════════════════════════ %>
+  <section id="features" class="landing-section landing-features">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.features.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.features.subtitle') %></p>
+
+      <div class="landing-features-grid">
+        <div class="landing-feature-card">
+          <div class="landing-feature-icon">🌳</div>
+          <h3><%= t('collavre.landing.features.tree.title') %></h3>
+          <p><%= t('collavre.landing.features.tree.desc') %></p>
+        </div>
+
+        <div class="landing-feature-card">
+          <div class="landing-feature-icon">💡</div>
+          <h3><%= t('collavre.landing.features.context.title') %></h3>
+          <p><%= t('collavre.landing.features.context.desc') %></p>
+        </div>
+
+        <div class="landing-feature-card">
+          <div class="landing-feature-icon">🤖</div>
+          <h3><%= t('collavre.landing.features.ai.title') %></h3>
+          <p><%= t('collavre.landing.features.ai.desc') %></p>
+        </div>
+
+        <div class="landing-feature-card">
+          <div class="landing-feature-icon">💬</div>
+          <h3><%= t('collavre.landing.features.chat.title') %></h3>
+          <p><%= t('collavre.landing.features.chat.desc') %></p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <%# ═════════════════════════════════════ THE INTERFACE ══════════════════════════════════════ %>
+  <%# A still before the film: the reader decides in two seconds whether this is a surface they
+      would write in, and a video they have not pressed play on cannot answer that. %>
+  <section id="interface" class="landing-section landing-interface">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.interface.title') %></h2>
+      <p class="landing-section-sub"><%= t('collavre.landing.interface.subtitle') %></p>
+
+      <div class="landing-shot-frame landing-shot-light">
+        <%= image_tag "collavre/landing/interface-#{I18n.locale == :ko ? 'ko' : 'en'}.png",
+                      class: "landing-shot-img",
+                      alt: t('collavre.landing.interface.alt'), loading: "lazy" %>
+      </div>
+      <div class="landing-shot-frame landing-shot-dark">
+        <%= image_tag "collavre/landing/interface-#{I18n.locale == :ko ? 'ko' : 'en'}-dark.png",
+                      class: "landing-shot-img",
+                      alt: t('collavre.landing.interface.alt'), loading: "lazy" %>
+      </div>
+
+      <ul class="landing-interface-points">
+        <li><%= t('collavre.landing.interface.markdown') %></li>
+        <li><%= t('collavre.landing.interface.rich') %></li>
+        <li><%= t('collavre.landing.interface.drag') %></li>
+        <li><%= t('collavre.landing.interface.presence') %></li>
+      </ul>
+    </div>
+  </section>
+
+  <%# ══════════════════════════════════════════ DEMO ══════════════════════════════════════════ %>
+  <%# Demo video/poster URLs are full absolute URLs stored per-locale in
+      config/locales/landing.*.yml. They point at the hosted assets directly, so
+      they resolve from any environment (preview included) with no DB lookup and
+      no env-bound blob ids. Render the section only when a video URL is set. %>
+  <% demo_video = t('collavre.landing.demo.video', default: nil) %>
+  <% demo_poster = t('collavre.landing.demo.poster', default: nil) %>
+  <% demo_video_dark = t('collavre.landing.demo.video_dark', default: nil) %>
+  <% demo_poster_dark = t('collavre.landing.demo.poster_dark', default: nil) %>
+  <% if demo_video.present? || demo_video_dark.present? %>
+  <section id="demo" class="landing-section landing-demo">
+    <div class="landing-container">
+      <h2 class="landing-section-title"><%= t('collavre.landing.demo.title') %></h2>
+      <%# Light mode video %>
+      <% if demo_video.present? %>
+      <div class="landing-demo-frame landing-demo-light" data-controller="landing-video">
+        <video class="landing-demo-video"
+               data-landing-video-target="video"
+               autoplay muted loop playsinline
+               poster="<%= demo_poster %>">
+          <source src="<%= demo_video %>" type="video/mp4">
+        </video>
+        <div class="landing-demo-progress" data-landing-video-target="progressBar">
+          <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
+        </div>
+        <button class="landing-demo-toggle" data-landing-video-target="toggle" data-action="click->landing-video#togglePlay">
+          <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
+        </button>
+      </div>
+      <% end %>
+      <%# Dark mode video %>
+      <% if demo_video_dark.present? %>
+      <div class="landing-demo-frame landing-demo-dark" data-controller="landing-video">
+        <video class="landing-demo-video"
+               data-landing-video-target="video"
+               autoplay muted loop playsinline
+               poster="<%= demo_poster_dark %>">
+          <source src="<%= demo_video_dark %>" type="video/mp4">
+        </video>
+        <div class="landing-demo-progress" data-landing-video-target="progressBar">
+          <div class="landing-demo-progress-fill" data-landing-video-target="progressFill"></div>
+        </div>
+        <button class="landing-demo-toggle" data-landing-video-target="toggle" data-action="click->landing-video#togglePlay">
+          <span class="landing-demo-toggle-icon" data-landing-video-target="icon">❚❚</span>
+        </button>
+      </div>
+      <% end %>
+    </div>
+  </section>
+  <% end %>
+
+  <%# ═══════════════════════════════════════ FINAL CTA ════════════════════════════════════════ %>
+  <section class="landing-section landing-cta">
+    <div class="landing-container">
+      <h2 class="landing-cta-title"><%= t('collavre.landing.cta.title') %></h2>
+      <p class="landing-cta-sub"><%= t('collavre.landing.cta.subtitle') %></p>
+      <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
+    </div>
+  </section>
+
+  <%# ═══════════════════════════════════════ FOOTER ═══════════════════════════════════════════ %>
+  <footer class="landing-footer">
+    <div class="landing-container landing-footer-inner">
+      <p class="landing-footer-copy">© <%= Date.today.year %> <%= t('app.name') %>. <%= t('collavre.landing.footer.rights') %></p>
+    </div>
+  </footer>
+</div>

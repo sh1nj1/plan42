@@ -3,9 +3,11 @@ require "json"
 
 module CollavreOpenclaw
   class OpenclawAdapter
-    # Adapter for OpenClaw AI Gateway
+    # Pure transport adapter for OpenClaw AI Gateway.
+    # Session context filtering (full vs incremental) is handled upstream
+    # by SessionContextResolver — this adapter sends exactly what it receives.
     #
-    # Supports two transport modes:
+    # Transport modes:
     # 1. WebSocket (primary) - via faye-websocket + EventMachine
     # 2. HTTP (fallback) - via Faraday POST /v1/chat/completions
     #
@@ -72,25 +74,10 @@ module CollavreOpenclaw
 
     private
 
-    CONTEXT_KINDS = %i[creative_context context_creative referenced_creative].freeze
-
     def parse_messages_data!(data)
       @all_messages    = data[:messages] || []
       @first_message   = data[:first_message]
       @context_changed = data[:context_changed]
-    end
-
-    def context_messages
-      @all_messages.select { |m| CONTEXT_KINDS.include?(m[:kind]) }
-    end
-
-    def trigger_message
-      @all_messages.find { |m| m[:kind] == :trigger }
-    end
-
-    # Send system prompt and context on first message or when they changed.
-    def include_full_context?
-      @first_message || @context_changed
     end
 
     # ─────────────────────────────────────────────
@@ -119,7 +106,8 @@ module CollavreOpenclaw
         client.chat_send(
           session_key: session_key,
           message: payload[:message],
-          attachments: payload[:attachments]
+          attachments: payload[:attachments],
+          on_run_id: method(:persist_run_id_on_comment)
         ) do |event|
           case event[:state]
           when "delta"
@@ -159,41 +147,37 @@ module CollavreOpenclaw
       end
     end
 
-    # Build WebSocket chat.send payload.
-    #
-    # Token optimization: only includes system prompt and creative context on
-    # the first message or when context has changed. The Gateway maintains its
-    # own session history, so chat history is never sent — only the trigger.
+    # Claim the run for the solicited reply so the same run's final, re-delivered
+    # as "proactive" to other processes, is suppressed. This reply is canonical
+    # (it carries the activity log), so it reclaims on a lost race.
+    def persist_run_id_on_comment(run_id)
+      return if run_id.blank?
+
+      comment = @context[:comment]
+      return unless comment.respond_to?(:id) && comment.id.present?
+
+      CollavreOpenclaw::ProcessedAiRun.claim_canonical(run_id, comment)
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to persist run_id on comment: #{e.message}")
+    end
+
     def build_ws_chat_payload
-      trigger = trigger_message
       {
         message: format_message_for_ws,
-        attachments: trigger ? extract_ws_attachments([ trigger ]).presence : nil
+        attachments: extract_ws_attachments(@all_messages).presence
       }
     end
 
-    # Format messages for WebSocket chat.send text payload.
-    #
-    # On first message (or context change):
-    #   [system prompt] + [creative context] + [trigger]
-    # On subsequent messages:
-    #   [trigger only]
-    #
-    # Chat history is NOT included — the Gateway's SessionManager tracks
-    # conversation turns automatically.
+    # SessionContextResolver already decided what to include.
+    # We just format and send everything we received.
     def format_message_for_ws
       parts = []
+      parts << @system_prompt if @system_prompt.present?
 
-      if include_full_context?
-        parts << @system_prompt if @system_prompt.present?
-        context_messages.each do |m|
-          text = extract_message_text(m)
-          parts << text if text.present?
-        end
+      @all_messages.each do |m|
+        text = extract_message_text(m)
+        parts << text if text.present?
       end
-
-      trigger = trigger_message
-      parts << extract_message_text(trigger) if trigger
 
       parts.join("\n\n")
     end
@@ -347,28 +331,14 @@ module CollavreOpenclaw
     # HTTP payload building
     # ─────────────────────────────────────────────
 
-    # Build HTTP payload with token optimization.
-    #
-    # On first message (or context change):
-    #   system prompt + creative context + trigger
-    # On subsequent messages:
-    #   trigger only
-    #
-    # Chat history is NOT included — the Gateway's SessionManager tracks
-    # conversation turns via the stable session key.
+    # SessionContextResolver already decided what to include.
     def build_payload
       agent_id = extract_agent_id_from_email
       model_value = agent_id.present? ? "openclaw:#{agent_id}" : "openclaw"
 
       formatted = []
-
-      if include_full_context?
-        formatted << { role: "system", content: @system_prompt } if @system_prompt.present?
-        context_messages.each { |m| formatted << format_single_message(m) }
-      end
-
-      trigger = trigger_message
-      formatted << format_single_message(trigger) if trigger
+      formatted << { role: "system", content: @system_prompt } if @system_prompt.present?
+      @all_messages.each { |m| formatted << format_single_message(m) }
 
       {
         model: model_value,
@@ -616,8 +586,16 @@ module CollavreOpenclaw
 
       host = options[:host]
       host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
-      host ||= ENV["APP_HOST"]
-      host ||= ENV["RAILS_HOST"]
+      # When the engine is mounted without core Collavre (gemspec has no `collavre`
+      # dependency), `IntegrationSettings` is undefined — fall back to the ENV
+      # path the previous code used so standalone deployments still resolve a host.
+      if defined?(Collavre::IntegrationSettings)
+        host ||= Collavre::IntegrationSettings.fetch(:app_host)
+        host ||= Collavre::IntegrationSettings.fetch(:rails_host)
+      else
+        host ||= ENV["APP_HOST"]
+        host ||= ENV["RAILS_HOST"]
+      end
 
       result = { host: host }
       result[:protocol] = options[:protocol] || "https"
