@@ -196,7 +196,8 @@ the SQLite converter needs the app image and so runs after it, app stopped.
     "sudo -u postgres psql -c 'ALTER ROLE collavre_user SUPERUSER'"
 
   ./kamal.sh app exec \
-    'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"'
+    'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
+    -e MIGRATION_RUN_RESET:true
 
   ssh collavre@<instance-ip> \
     "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
@@ -216,6 +217,15 @@ the SQLite converter needs the app image and so runs after it, app stopped.
   back afterwards: the other route the task offers,
   `MIGRATION_RUN_USER=postgres`, would mean giving the superuser role a
   password that every container on the host could then authenticate with.
+
+  `MIGRATION_RUN_RESET=true` matters because `setup` has already run the
+  migration replay this section opened by distrusting. The task's schema load
+  uses `force: :cascade`, which drops only the tables `db/schema.rb` still
+  knows about, so anything the replay left behind that the schema has since
+  dropped would survive into the migrated database. `MIGRATION_RUN_RESET`
+  does `DROP SCHEMA public CASCADE` first — a real clean slate, superuser-only,
+  which the grant above already covers. It trails the command for the same
+  Thor-hash reason as the fresh-install recipe below.
 
   No `DISABLE_DATABASE_ENVIRONMENT_CHECK` here, unlike the fresh install below.
   The task calls `DatabaseTasks.load_schema` directly instead of the
