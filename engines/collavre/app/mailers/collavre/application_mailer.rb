@@ -1,6 +1,6 @@
 module Collavre
   class ApplicationMailer < ActionMailer::Base
-    default from: ENV.fetch("DEFAULT_MAILER_FROM", "no-reply@example.com")
+    default from: -> { Collavre::IntegrationSettings.fetch(:default_mailer_from, default: "no-reply@example.com") }
     layout "mailer"
 
     private

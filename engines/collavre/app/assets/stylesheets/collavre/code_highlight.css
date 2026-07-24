@@ -2,8 +2,18 @@
  * Code Syntax Highlighting Theme
  *
  * Uses Collavre design tokens (--color-code-bg, --color-code-text, --font-mono).
- * Syntax color tokens defined as CSS variables — overridden per theme context.
- * Based on GitHub-style highlighting.
+ * Defines the GitHub-style `--syntax-*` color variables (overridden per theme
+ * context) plus the code-block container and inline-code styling. The per-token
+ * color rules live in actiontext.css keyed on the `.lexical-token-*` classes that
+ * every surface now emits (editor + rendered creative + preview + comments all
+ * tokenize with the same Prism), and consume these `--syntax-*` variables.
+ *
+ * Scoped to the markdown rendering surfaces so they share container and
+ * inline-code styles:
+ *   .comment-content        — chat / comments
+ *   .markdown-preview       — creative inline editor live preview
+ *   .creative-content       — persisted creative description in the tree view
+ *   .creative-title-content — persisted creative description in the title (h1) area
  */
 
 /* ============================================================================
@@ -77,20 +87,29 @@ body.dark-mode {
 /* ============================================================================
  * MERMAID DIAGRAM CONTAINER
  * ============================================================================ */
-.comment-content .mermaid-chart {
+.comment-content .mermaid-chart,
+.markdown-preview .mermaid-chart,
+.creative-content .mermaid-chart,
+.creative-title-content .mermaid-chart {
   margin: var(--space-2) 0;
   overflow-x: auto;
   text-align: center;
 }
 
-.comment-content .mermaid-chart svg {
+.comment-content .mermaid-chart svg,
+.markdown-preview .mermaid-chart svg,
+.creative-content .mermaid-chart svg,
+.creative-title-content .mermaid-chart svg {
   max-width: 100%;
 }
 
 /* ============================================================================
  * CODE BLOCK CONTAINER
  * ============================================================================ */
-.comment-content pre {
+.comment-content pre,
+.markdown-preview pre,
+.creative-content pre,
+.creative-title-content pre {
   background: var(--color-code-bg);
   color: var(--color-code-text);
   border: var(--border-1) solid var(--border-color);
@@ -103,7 +122,10 @@ body.dark-mode {
   line-height: var(--leading-3);
 }
 
-.comment-content pre code {
+.comment-content pre code,
+.markdown-preview pre code,
+.creative-content pre code,
+.creative-title-content pre code {
   background: none;
   border: none;
   padding: 0;
@@ -114,112 +136,14 @@ body.dark-mode {
 }
 
 /* Inline code */
-.comment-content code {
+.comment-content code,
+.markdown-preview code,
+.creative-content code,
+.creative-title-content code {
   background: var(--color-code-bg);
   color: var(--color-code-text);
   border-radius: var(--radius-1);
   padding: 0.15em 0.35em;
   font-family: var(--font-mono);
   font-size: 0.9em;
-}
-
-/* ============================================================================
- * SYNTAX HIGHLIGHTING RULES (token-based, theme-agnostic)
- * ============================================================================ */
-.comment-content .hljs-comment,
-.comment-content .hljs-quote {
-  color: var(--syntax-comment);
-  font-style: italic;
-}
-
-.comment-content .hljs-keyword,
-.comment-content .hljs-selector-tag,
-.comment-content .hljs-type {
-  color: var(--syntax-keyword);
-}
-
-.comment-content .hljs-string {
-  color: var(--syntax-string);
-}
-
-.comment-content .hljs-number,
-.comment-content .hljs-literal {
-  color: var(--syntax-number);
-}
-
-.comment-content .hljs-built_in,
-.comment-content .hljs-builtin-name {
-  color: var(--syntax-builtin);
-}
-
-.comment-content .hljs-title,
-.comment-content .hljs-title.function_ {
-  color: var(--syntax-title);
-}
-
-.comment-content .hljs-attr,
-.comment-content .hljs-attribute {
-  color: var(--syntax-attr);
-}
-
-.comment-content .hljs-variable,
-.comment-content .hljs-template-variable {
-  color: var(--syntax-variable);
-}
-
-.comment-content .hljs-params {
-  color: var(--color-code-text);
-}
-
-.comment-content .hljs-regexp {
-  color: var(--syntax-regexp);
-}
-
-.comment-content .hljs-tag {
-  color: var(--syntax-tag);
-}
-
-.comment-content .hljs-name {
-  color: var(--syntax-name);
-}
-
-.comment-content .hljs-selector-class,
-.comment-content .hljs-selector-id {
-  color: var(--syntax-selector);
-}
-
-.comment-content .hljs-selector-attr,
-.comment-content .hljs-selector-pseudo {
-  color: var(--syntax-attr);
-}
-
-.comment-content .hljs-symbol,
-.comment-content .hljs-bullet {
-  color: var(--syntax-number);
-}
-
-.comment-content .hljs-meta {
-  color: var(--syntax-meta);
-}
-
-.comment-content .hljs-punctuation {
-  color: var(--color-code-text);
-}
-
-.comment-content .hljs-deletion {
-  color: var(--syntax-deletion-text);
-  background: var(--syntax-deletion-bg);
-}
-
-.comment-content .hljs-addition {
-  color: var(--syntax-addition-text);
-  background: var(--syntax-addition-bg);
-}
-
-.comment-content .hljs-emphasis {
-  font-style: italic;
-}
-
-.comment-content .hljs-strong {
-  font-weight: var(--weight-7);
 }

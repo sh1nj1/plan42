@@ -22,31 +22,28 @@ module CollavreGithub
 
       sig { params(creative_id: Integer, repo: String, pr_number: Integer).returns(T::Hash[Symbol, T.untyped]) }
       def call(creative_id:, repo:, pr_number:)
-        client = find_github_client(creative_id, repo)
-        return { error: "GitHub account not found for this creative and repository" } unless client
+        with_github_client(creative_id: creative_id, repo: repo, error_context: "fetch PR details") do |client|
+          pr = client.pull_request_details(repo, pr_number)
+          return { error: "Pull request not found" } unless pr
 
-        pr = client.pull_request_details(repo, pr_number)
-        return { error: "Pull request not found" } unless pr
-
-        {
-          number: pr.number,
-          title: pr.title,
-          body: pr.body.to_s.truncate(2000),
-          state: pr.state,
-          merged: pr.merged,
-          author: pr.user&.login,
-          created_at: pr.created_at&.iso8601,
-          updated_at: pr.updated_at&.iso8601,
-          merged_at: pr.merged_at&.iso8601,
-          additions: pr.additions,
-          deletions: pr.deletions,
-          changed_files: pr.changed_files,
-          html_url: pr.html_url,
-          base_branch: pr.base&.ref,
-          head_branch: pr.head&.ref
-        }
-      rescue StandardError => e
-        { error: "Failed to fetch PR details: #{e.message}" }
+          {
+            number: pr.number,
+            title: pr.title,
+            body: pr.body.to_s.truncate(2000),
+            state: pr.state,
+            merged: pr.merged,
+            author: pr.user&.login,
+            created_at: pr.created_at&.iso8601,
+            updated_at: pr.updated_at&.iso8601,
+            merged_at: pr.merged_at&.iso8601,
+            additions: pr.additions,
+            deletions: pr.deletions,
+            changed_files: pr.changed_files,
+            html_url: pr.html_url,
+            base_branch: pr.base&.ref,
+            head_branch: pr.head&.ref
+          }
+        end
       end
     end
   end

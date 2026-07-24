@@ -15,18 +15,21 @@ import { HeadingNode, QuoteNode, $isHeadingNode, $isQuoteNode } from "@lexical/r
 import {
   CodeNode,
   CodeHighlightNode,
-  $createCodeNode,
   $isCodeNode,
   registerCodeHighlighting
 } from "@lexical/code"
 import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
 import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
+import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
+import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
 import {
   $createParagraphNode,
   $createTextNode,
   $getRoot,
   $getSelection,
   $isElementNode,
+  $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
   CAN_REDO_COMMAND,
@@ -47,10 +50,24 @@ import FileUploadPlugin, {
 } from "./plugins/image_upload_plugin"
 import { ImageNode } from "../lib/lexical/image_node"
 import { AttachmentNode } from "../lib/lexical/attachment_node"
+import { VideoNode } from "../lib/lexical/video_node"
 import AttachmentCleanupPlugin from "./plugins/attachment_cleanup_plugin"
 import MarkdownShortcutsPlugin from "./plugins/markdown_shortcuts_plugin"
+import ListTabIndentPlugin from "./plugins/list_tab_indent_plugin"
 import { syncLexicalStyleAttributes } from "../lib/lexical/style_attributes"
+import { $toggleCodeBlockForSelection } from "../lib/lexical/code_block_toggle"
+import { lexicalHtmlConfig, normalizeColoredContainers } from "../lib/lexical/color_import"
+import { minimizeContentHtml } from "../lib/lexical/minimize_html"
+import { ensureTrailingParagraph, registerTrailingParagraph } from "../lib/lexical/trailing_paragraph"
+import {
+  MARKDOWN_TRANSFORMERS,
+  normalizeMarkdownBlankLines,
+  splitBlankLineParagraphs
+} from "../lib/lexical/markdown_serialize"
+import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
+import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
+import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -67,40 +84,14 @@ const theme = {
   list: {
     ul: "lexical-list-ul",
     ol: "lexical-list-ol",
-    listitem: "lexical-list-item"
+    listitem: "lexical-list-item",
+    // Tag the wrapper <li> that only holds a nested list so its bullet marker
+    // can be hidden — without this Lexical reuses the plain item class and the
+    // empty wrapper renders a stray bullet above the indented sub-list.
+    nested: { listitem: "lexical-nested-list-item" }
   },
   code: "lexical-code-block",
-  codeHighlight: {
-    atrule: "lexical-token-atrule",
-    attr: "lexical-token-attr",
-    boolean: "lexical-token-boolean",
-    builtin: "lexical-token-builtin",
-    cdata: "lexical-token-cdata",
-    char: "lexical-token-char",
-    class: "lexical-token-class",
-    comment: "lexical-token-comment",
-    constant: "lexical-token-constant",
-    deleted: "lexical-token-deleted",
-    doctype: "lexical-token-doctype",
-    entity: "lexical-token-entity",
-    function: "lexical-token-function",
-    important: "lexical-token-important",
-    inserted: "lexical-token-inserted",
-    keyword: "lexical-token-keyword",
-    namespace: "lexical-token-namespace",
-    number: "lexical-token-number",
-    operator: "lexical-token-operator",
-    prolog: "lexical-token-prolog",
-    property: "lexical-token-property",
-    punctuation: "lexical-token-punctuation",
-    regex: "lexical-token-regex",
-    selector: "lexical-token-selector",
-    string: "lexical-token-string",
-    symbol: "lexical-token-symbol",
-    tag: "lexical-token-tag",
-    url: "lexical-token-url",
-    variable: "lexical-token-variable"
-  },
+  codeHighlight: CODE_TOKEN_THEME,
   link: "lexical-link",
   text: {
     bold: "lexical-text-bold",
@@ -108,7 +99,18 @@ const theme = {
     underline: "lexical-text-underline",
     strikethrough: "lexical-text-strike",
     code: "lexical-text-code"
-  }
+  },
+  table: "lexical-table",
+  tableScrollableWrapper: "lexical-table-wrapper",
+  tableRow: "lexical-table-row",
+  tableCell: "lexical-table-cell",
+  tableCellHeader: "lexical-table-cell-header",
+  tableSelected: "lexical-table-selected",
+  tableSelection: "lexical-table-selection",
+  tableAddRows: "lexical-table-add-rows",
+  tableAddColumns: "lexical-table-add-columns",
+  tableDeleteRows: "lexical-table-delete-rows",
+  tableDeleteColumns: "lexical-table-delete-columns"
 }
 
 function Placeholder({ text }) {
@@ -120,48 +122,14 @@ function InitialContentPlugin({ html }) {
   const [editor] = useLexicalComposerContext()
   const lastApplied = useRef(null)
 
-  const collectDomTextStyles = useCallback((container) => {
-    const styles = []
-    if (!container) return styles
-    const ownerDocument = container.ownerDocument || document
-    const walker = ownerDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-    let current = walker.nextNode()
-    while (current) {
-      const parent = current.parentElement
-      let styleText = parent?.getAttribute?.("style") || ""
-      const colorAttr = parent?.dataset?.lexicalColor
-      const bgAttr = parent?.dataset?.lexicalBackgroundColor
-
-      if ((!styleText || !styleText.trim()) && (colorAttr || bgAttr)) {
-        const declarations = []
-        if (colorAttr) declarations.push(`color: ${colorAttr}`)
-        if (bgAttr) declarations.push(`background-color: ${bgAttr}`)
-        styleText = declarations.join("; ")
-      } else {
-        const lower = styleText.toLowerCase()
-        const fragments = []
-        if (colorAttr && !lower.includes("color:")) {
-          fragments.push(`color: ${colorAttr}`)
-        }
-        if (bgAttr && !lower.includes("background-color:")) {
-          fragments.push(`background-color: ${bgAttr}`)
-        }
-        if (fragments.length > 0) {
-          styleText = `${styleText}${styleText.trim().endsWith(";") || !styleText.trim() ? "" : ";"} ${fragments.join("; ")}`.trim()
-        }
-      }
-
-      styles.push(styleText || "")
-      current = walker.nextNode()
-    }
-    return styles
-  }, [])
-
   useEffect(() => {
     if (lastApplied.current === html) return
     lastApplied.current = html
     editor.update(() => {
       const root = $getRoot()
+      // Re-importing replaces the tree; drop stale resolved-language keys so the
+      // registry only tracks nodes from this import.
+      clearLanguageResolved(editor)
       // Explicitly remove all children to ensure it's empty
       root.getChildren().forEach((child) => child.remove())
 
@@ -170,9 +138,42 @@ function InitialContentPlugin({ html }) {
       // No more .trix-content wrapper
       const container = doc.body
 
+      // @lexical/code's importer only reads `data-language`, but the language is
+      // encoded differently depending on which renderer produced this HTML:
+      // commonmarker (server reopen) uses `<pre lang>`, while renderMarkdown (the
+      // markdown→rich toggle) puts it on `<pre><code class="language-X">`. Bridge
+      // both onto `data-language` so an explicit fence language survives reopen
+      // instead of being dropped (and then defaulted to javascript). Detection
+      // still corrects unlabeled blocks.
+      bridgeCodeFenceLanguages(container)
+
+      // Color / background-color are bound to text nodes during import by the
+      // colorAwareSpanImport html config (see lib/lexical/color_import). We no
+      // longer re-apply styles positionally after import, which used to drift
+      // onto the wrong text node whenever Lexical split or dropped text nodes.
       syncLexicalStyleAttributes(container)
-      const collectedStyles = collectDomTextStyles(container)
+      // Push color/background-color from non-span elements onto spans so the
+      // colorAwareSpanImport config binds it (the span importer can't see it
+      // otherwise). Must run after the sync above materializes data-lexical-*.
+      normalizeColoredContainers(container)
       const nodes = $generateNodesFromDOM(editor, container)
+
+      // Mark code blocks whose language came from an explicit source label as
+      // resolved BEFORE registerCodeHighlighting bakes the "javascript" default
+      // onto unlabeled ones. At this point a non-empty language can only be one
+      // the bridge set from a real fence/attribute, so the detection transform
+      // will honor it verbatim (incl. an explicit "javascript") and only
+      // re-detect the still-unlabeled blocks.
+      const markExplicitCodeLanguages = (list) => {
+        list.forEach((node) => {
+          if ($isCodeNode(node)) {
+            if (node.getLanguage()) markLanguageResolved(editor, node.getKey())
+          } else if ($isElementNode(node) && typeof node.getChildren === "function") {
+            markExplicitCodeLanguages(node.getChildren())
+          }
+        })
+      }
+      markExplicitCodeLanguages(nodes)
 
       // Filter out duplicate image nodes if any
       const uniqueNodes = []
@@ -192,36 +193,41 @@ function InitialContentPlugin({ html }) {
       })
 
       const appendedNodes = []
+      // Text nodes and inline elements (links, etc.) cannot live directly under
+      // the root. Minimized HTML stores a single line without its <p> wrapper, so
+      // a line like "Hello <strong>World</strong>" re-imports as several
+      // top-level inline nodes — group consecutive ones back into one paragraph
+      // so the line is not split apart.
+      let pendingParagraph = null
+      const flushPending = () => {
+        if (pendingParagraph) {
+          root.append(pendingParagraph)
+          appendedNodes.push(pendingParagraph)
+          pendingParagraph = null
+        }
+      }
       uniqueNodes.forEach((node) => {
-        if ($isTextNode(node)) {
-          const paragraph = $createParagraphNode()
-          paragraph.append(node)
-          root.append(paragraph)
-          appendedNodes.push(paragraph)
+        const isInlineLeaf =
+          $isTextNode(node) ||
+          $isLineBreakNode(node) ||
+          ($isElementNode(node) && node.isInline())
+        if (isInlineLeaf) {
+          if (!pendingParagraph) pendingParagraph = $createParagraphNode()
+          pendingParagraph.append(node)
           return
         }
 
-        if ($isElementNode(node) && node.getType?.() === "paragraph") {
-          root.append(node)
-          appendedNodes.push(node)
-          return
-        }
-
+        flushPending()
         root.append(node)
         appendedNodes.push(node)
       })
+      flushPending()
 
       if (root.getChildrenSize() === 0) {
         const paragraph = $createParagraphNode()
         root.append(paragraph)
         appendedNodes.push(paragraph)
       }
-
-      const textNodes = root.getAllTextNodes()
-      textNodes.forEach((textNode, index) => {
-        const style = collectedStyles[index]
-        textNode.setStyle(style || "")
-      })
 
       let lastChild = root.getLastChild()
       while (
@@ -236,9 +242,31 @@ function InitialContentPlugin({ html }) {
       if (root.getChildrenSize() === 0) {
         root.append($createParagraphNode())
       }
-    })
-  }, [collectDomTextStyles, editor, html])
 
+      // A blank line the user typed is an empty paragraph, but the server renders
+      // it as a standalone <br> that re-imports as a paragraph holding a
+      // LineBreakNode — which Lexical draws as TWO lines, so blank lines grew by
+      // one on every reopen. Split those marker paragraphs back into empty
+      // paragraphs so reopened blank lines match freshly typed ones. Runs AFTER
+      // the trailing-empty cleanup above so an intentional trailing blank line
+      // (a marker paragraph the cleanup leaves alone) is preserved, not stripped.
+      splitBlankLineParagraphs(root)
+
+      // A trailing top-level image/video/attachment leaves no caret position
+      // after it, making the document uneditable. Guarantee an editable
+      // paragraph after it. (The RootNode transform below keeps this true while
+      // editing; this handles the initial load deterministically regardless of
+      // plugin effect ordering.)
+      ensureTrailingParagraph(root)
+    })
+  }, [editor, html])
+
+  return null
+}
+
+function TrailingParagraphPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => registerTrailingParagraph(editor), [editor])
   return null
 }
 
@@ -268,7 +296,34 @@ function CodeHighlightingPlugin() {
   const [editor] = useLexicalComposerContext()
 
   useEffect(() => {
-    return registerCodeHighlighting(editor)
+    const unregisterHighlight = registerCodeHighlighting(editor)
+
+    // registerCodeHighlighting bakes "javascript" onto any code block without a
+    // language (its tokenizer default), which then serializes into the canonical
+    // markdown as ```javascript — so Ruby/Python/etc. blocks get permanently
+    // mislabeled on the first edit. This transform re-detects the real language
+    // from the block's content whenever it's unconfirmed (missing or stuck on
+    // the javascript default) and corrects the node, so the editor shows — and
+    // saves — the right language. An explicit non-default language is left alone.
+    const unregisterDetect = editor.registerNodeTransform(CodeNode, (node) => {
+      // A language that came from an explicit source label on import is honored
+      // verbatim — including "javascript" — so auto-detection never overrides a
+      // deliberate choice. Only unlabeled/new blocks (baked to the javascript
+      // default) are re-detected from their content.
+      if (isLanguageResolved(editor, node.getKey())) return
+      const current = node.getLanguage()
+      const norm = normalizeFenceLang(current)
+      if (norm && norm !== "javascript") return
+      const detected = detectCodeLanguage(node.getTextContent(), current)
+      if (detected && detected !== "javascript" && detected !== current) {
+        node.setLanguage(detected)
+      }
+    })
+
+    return () => {
+      unregisterHighlight()
+      unregisterDetect()
+    }
   }, [editor])
 
   return null
@@ -495,6 +550,14 @@ function Toolbar() {
     [editor]
   )
 
+  const insertTable = useCallback(() => {
+    editor.dispatchCommand(INSERT_TABLE_COMMAND, {
+      columns: "3",
+      rows: "3",
+      includeHeaders: true
+    })
+  }, [editor])
+
   const toggleLink = useCallback(() => {
     let hasLink = false
     let selectionText = ""
@@ -619,39 +682,7 @@ function Toolbar() {
 
   const toggleCodeBlock = useCallback(() => {
     editor.update(() => {
-      const selection = $getSelection()
-      if (!$isRangeSelection(selection)) return
-
-      const anchorNode = selection.anchor.getNode()
-      const topLevel = anchorNode.getTopLevelElement()
-      if (!topLevel) return
-
-      if ($isCodeNode(topLevel)) {
-        const textContent = topLevel.getTextContent()
-        const lines = textContent.split("\n")
-        const firstParagraph = $createParagraphNode()
-        firstParagraph.append($createTextNode(lines[0] || ""))
-        topLevel.replace(firstParagraph)
-        let previous = firstParagraph
-        for (let index = 1; index < lines.length; index += 1) {
-          const paragraph = $createParagraphNode()
-          paragraph.append($createTextNode(lines[index]))
-          previous.insertAfter(paragraph)
-          previous = paragraph
-        }
-        firstParagraph.selectEnd()
-        return
-      }
-
-      if (topLevel.getType?.() !== "paragraph") {
-        return
-      }
-
-      const codeNode = $createCodeNode()
-      const content = topLevel.getTextContent()
-      codeNode.append($createTextNode(content || ""))
-      topLevel.replace(codeNode)
-      codeNode.selectEnd()
+      $toggleCodeBlockForSelection()
     })
   }, [editor])
 
@@ -732,6 +763,14 @@ function Toolbar() {
         onClick={() => toggleList("number")}
         title="Numbered list">
         1.
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={insertTable}
+        title="Insert table"
+        aria-label="Insert table">
+        ▦
       </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
@@ -893,6 +932,16 @@ function EditorInner({
 }) {
   const [editor] = useLexicalComposerContext()
 
+  // Anchor for the floating table plugins (hover "+" and the cell action menu).
+  // Portaling into the editor's own subtree (not document.body) ties the floating
+  // UI's lifetime to the editor DOM: when the editor is torn down — including
+  // Turbo/host teardown that removes the container without a React unmount — the
+  // chevron button is removed with it instead of being orphaned in document.body.
+  const [floatingAnchorElem, setFloatingAnchorElem] = useState(null)
+  const onAnchorRef = useCallback((el) => {
+    if (el !== null) setFloatingAnchorElem(el)
+  }, [])
+
   // File drop is handled by FileUploadPlugin's DROP_COMMAND handler.
   // We only need dragOver to allow the browser to accept file drops.
   const handleDragOver = useCallback((event) => {
@@ -904,7 +953,7 @@ function EditorInner({
   return (
     <div className="lexical-editor-shell">
       <Toolbar />
-      <div className="lexical-editor-inner">
+      <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
@@ -922,12 +971,18 @@ function EditorInner({
         <HistoryPlugin />
         <CodeHighlightingPlugin />
         <ListPlugin />
+        <TablePlugin hasCellMerge={false} hasCellBackgroundColor={false} />
+        {floatingAnchorElem && (
+          <TableHoverActionsPlugin anchorElem={floatingAnchorElem} />
+        )}
+        <ListTabIndentPlugin />
         <LinkPlugin />
         <AutoLinkPlugin matchers={URL_MATCHERS} />
         <OnChangePlugin
           onChange={(editorState, editorInstance) => {
             if (!onChange) return
             let serialized = ""
+            let markdown = ""
             editorState.read(() => {
               const innerHtml = $generateHtmlFromNodes(editorInstance)
               const parser = new DOMParser()
@@ -942,12 +997,20 @@ function EditorInner({
                 anchor.setAttribute("target", "_blank")
                 anchor.setAttribute("rel", "noopener")
               })
-              serialized = doc.body.innerHTML
+              // Strip Lexical's verbose markup (extra <div>, white-space spans,
+              // duplicate format wrappers, single-line <p>) before persisting.
+              serialized = minimizeContentHtml(doc.body.firstElementChild)
+              // Canonical Markdown projection (color/bg -> normalized <span>).
+              // normalizeMarkdownBlankLines keeps the standard `\n\n` paragraph
+              // separation (Enter = real paragraph break) and only tidies blank-
+              // line runs / the empty-state — no marker characters in the source.
+              markdown = normalizeMarkdownBlankLines($convertToMarkdownString(MARKDOWN_TRANSFORMERS))
             })
-            // No Trix wrapper
-            onChange(serialized)
+            // html: client-side preview/fallback; markdown: canonical storage.
+            onChange({ html: serialized, markdown })
           }}
         />
+        <TrailingParagraphPlugin />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <ReadyPlugin onReady={onReady} />
@@ -1019,12 +1082,17 @@ export default function InlineLexicalEditor({
         LinkNode,
         AutoLinkNode,
         ImageNode,
-        AttachmentNode
+        AttachmentNode,
+        VideoNode,
+        TableNode,
+        TableRowNode,
+        TableCellNode
       ],
       onError(error) {
         throw error
       },
-      theme
+      theme,
+      html: lexicalHtmlConfig
     }),
     []
   )

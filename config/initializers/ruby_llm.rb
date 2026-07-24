@@ -2,17 +2,26 @@
 
 return unless defined?(RubyLLM)
 
+# LLM API keys are registered by `Collavre::Engine` so the registry is
+# populated even when the engine is mounted as a gem without this app-level
+# initializer. Resolver here serves values via DB > ENV > default.
+
 RubyLLM.configure do |config|
-  config.gemini_api_key = ENV["GEMINI_API_KEY"]
-  if ENV["GEMINI_API_BASE"].present?
-    config.gemini_api_base = ENV["GEMINI_API_BASE"]
-  end
+  config.gemini_api_key = CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :gemini_api_key, boot_safe: true)
+  gemini_api_base = CollavreCompat.call(Collavre::IntegrationSettings, :fetch, :gemini_api_base, boot_safe: true)
+  config.gemini_api_base = gemini_api_base if gemini_api_base.present?
   config.request_timeout = begin
     Collavre::SystemSetting.llm_request_timeout_seconds
   rescue StandardError
     1800
   end
   config.log_file = Rails.root.join("log", "ruby_llm.log").to_s
-  config.log_level = Logger::DEBUG
-  config.log_stream_debug = true
+  # Mirror the app's log level instead of hardcoding DEBUG. At DEBUG the Faraday
+  # :logger middleware writes full request/response bodies to ruby_llm.log
+  # (connection.rb: `bodies: RubyLLM.logger.debug?`). Provider error bodies arrive
+  # tagged ASCII-8BIT, so non-ASCII text (e.g. Korean) fails to transcode into the
+  # UTF-8 log and floods stderr with "log writing failed" lines. Production runs at
+  # INFO, which silences body logging; development stays at DEBUG for full tracing.
+  config.log_level = Rails.logger&.level || Logger::INFO
+  config.log_stream_debug = Rails.logger&.debug? || false
 end

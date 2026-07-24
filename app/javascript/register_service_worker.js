@@ -1,5 +1,6 @@
 import {initializeApp} from "firebase/app"
 import {getMessaging, getToken, isSupported} from "firebase/messaging"
+import { confirmDialog } from "collavre/lib/utils/dialog"
 
 function safeLocalStorage() {
   if (typeof window === 'undefined') {
@@ -138,9 +139,9 @@ function showPermissionPrompt(registration) {
     })
   }
 
-  denyBtn.onclick = () => {
+  denyBtn.onclick = async () => {
     const confirmText = denyBtn.dataset.confirmMessage
-    if (confirm(confirmText)) {
+    if (await confirmDialog(confirmText)) {
       modal.style.display = 'none'
       document.body.classList.remove('no-scroll')
       updatePreference(false)

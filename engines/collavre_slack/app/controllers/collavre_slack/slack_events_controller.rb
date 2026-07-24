@@ -49,7 +49,7 @@ module CollavreSlack
       signature = request.headers["X-Slack-Signature"].to_s
       return false if timestamp.blank? || signature.blank?
 
-      return false if (Time.now.to_i - timestamp.to_i).abs > 300
+      return false if (Time.current.to_i - timestamp.to_i).abs > 300
 
       base = "v0:#{timestamp}:#{body}"
       expected = "v0=" + OpenSSL::HMAC.hexdigest("SHA256", signing_secret, base)

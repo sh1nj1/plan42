@@ -2,6 +2,8 @@ import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown, renderMermaidDiagrams } from '../lib/utils/markdown'
 import { addTableDownloadButtons } from '../lib/utils/table_download'
 import CommonPopup from '../lib/common_popup'
+import csrfFetch from '../lib/api/csrf_fetch'
+import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 
 // Global tracker: persists streaming state across Turbo replacements
 // (each replacement creates a new controller instance, losing instance state)
@@ -9,7 +11,7 @@ if (!window._streamingCommentIds) window._streamingCommentIds = new Set()
 
 // Connects to data-controller="comment"
 export default class extends Controller {
-  static targets = ["ownerButton", "deleteButton", "approveButton", "actionApproveControls"]
+  static targets = ["ownerButton", "deleteButton", "approveButton", "denyButton", "actionApproveControls"]
 
   get _commentId() {
     return this.element.dataset.commentId
@@ -122,6 +124,15 @@ export default class extends Controller {
       }
     }
 
+    const actionMarkdownElement = this.element.querySelector('.comment-action-markdown')
+    if (actionMarkdownElement && actionMarkdownElement.dataset.rendered !== 'true') {
+      const text = actionMarkdownElement.textContent || ''
+      actionMarkdownElement.innerHTML = renderCommentMarkdown(text)
+      addTableDownloadButtons(actionMarkdownElement)
+      renderMermaidDiagrams(actionMarkdownElement)
+      actionMarkdownElement.dataset.rendered = 'true'
+    }
+
     // Text selection quote support
     this.handleMouseUp = this.handleMouseUp.bind(this)
     document.addEventListener('mouseup', this.handleMouseUp)
@@ -156,11 +167,32 @@ export default class extends Controller {
       this.approveButtonTargets.forEach((button) => {
         button.classList.remove('comment-approve-hidden')
       })
+      // Deny button (Claude Channel permission prompts only) is gated the same
+      // way as approve.
+      this.denyButtonTargets.forEach((button) => {
+        button.classList.remove('comment-approve-hidden')
+      })
       // Also show action block approve controls (edit action button, form)
       this.actionApproveControlsTargets.forEach((el) => {
         el.classList.remove('comment-approve-hidden')
       })
     }
+  }
+
+  cancelTask(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    const taskId = event.currentTarget.dataset.taskId
+    if (!taskId) return
+    event.currentTarget.disabled = true
+    csrfFetch(`/tasks/${taskId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+      .then((response) => {
+        if (!response.ok) event.currentTarget.disabled = false
+      })
+      .catch(() => { event.currentTarget.disabled = false })
   }
 
   triggerReactionPicker(event) {
@@ -217,7 +249,7 @@ export default class extends Controller {
       const data = await response.json()
       this.updateReactionsUI(data)
     } catch (error) {
-      alert(error?.message || 'Failed to update reaction')
+      alertDialog(error?.message || 'Failed to update reaction')
     }
   }
 
@@ -464,7 +496,7 @@ export default class extends Controller {
     const creativeId = button.dataset.creativeId
     const confirmText = button.dataset.confirmText || 'Restore original messages?'
 
-    if (!confirm(confirmText)) return
+    if (!(await confirmDialog(confirmText, { danger: true }))) return
 
     button.disabled = true
     try {
@@ -480,12 +512,12 @@ export default class extends Controller {
         // the summary comment (this one) will be destroyed via broadcast too
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to restore')
+        alertDialog(data.error || 'Failed to restore')
         button.disabled = false
       }
     } catch (error) {
       console.error('Error restoring snapshot:', error)
-      alert('Failed to restore')
+      alertDialog('Failed to restore')
       button.disabled = false
     }
   }

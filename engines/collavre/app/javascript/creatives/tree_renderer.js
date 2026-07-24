@@ -85,6 +85,7 @@ function applyRowProperties(row, node) {
   updateBooleanAttr('expanded', 'expanded', node.expanded)
   updateBooleanAttr('isRoot', 'is-root', node.is_root)
   updateBooleanAttr('archived', 'archived', node.archived)
+  updateBooleanAttr('githubSource', 'github-source', node.github_source)
 
   if (node.link_url) {
     if (row.linkUrl !== node.link_url) {
@@ -161,6 +162,15 @@ function applyRowProperties(row, node) {
   }
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'origin_id')) {
     setDatasetValue(row, 'originId', inlinePayload.origin_id ?? '')
+  }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'content_type')) {
+    setDatasetValue(row, 'contentType', inlinePayload.content_type ?? '')
+  }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_source')) {
+    setDatasetValue(row, 'markdownSource', inlinePayload.markdown_source ?? '')
+  }
+  if (Object.prototype.hasOwnProperty.call(inlinePayload, 'markdown_editor')) {
+    setDatasetValue(row, 'markdownEditor', inlinePayload.markdown_editor ?? '')
   }
 
   if (dirty && typeof row.requestUpdate === 'function') {
@@ -299,6 +309,14 @@ export function renderCreativeTree(container, nodes, { replace = true } = {}) {
     return
   }
   reconcileNodes(container, nodes)
+}
+
+// Append a page of flat nodes to an already-rendered list without clearing the
+// existing rows. Used by the "Chats" feed's load-more, where each page is added
+// below the previous one rather than replacing it.
+export function appendCreativeNodes(container, nodes) {
+  if (!container) return
+  appendNodes(container, nodes)
 }
 
 export function dispatchCreativeTreeUpdated(container) {

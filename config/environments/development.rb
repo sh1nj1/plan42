@@ -28,8 +28,30 @@ Rails.application.configure do
   # Change to :null_store to avoid any caching.
   config.cache_store = :memory_store
 
-  # Collavre uploaded files storage: S3 if AWS_S3_ACCESS_KEY_ID is set, otherwise local disk.
-  config.active_storage.service = ENV["AWS_S3_ACCESS_KEY_ID"].present? ? :amazon : :local
+  # Pre-warm encryption fallback keys so `AwsCredentials.s3` can decrypt
+  # admin-saved DB rows even though `config/initializers/active_record_encryption.rb`
+  # runs later (see production.rb for the rationale).
+  EncryptionBootstrap.ensure_keys!(Rails.application)
+
+  # Collavre uploaded files storage: S3 only when a source-coherent pair of
+  # S3 credentials is available (`AwsCredentials.s3` enforces same-source
+  # access key id + secret). When `Collavre::AwsCredentials` is unavailable
+  # (`USE_COLLAVRE_GEM=true` with an older gem), fall back to plain ENV.
+  # `CollavreCompat` is loaded by `config/application.rb`.
+  s3_credentials =
+    if defined?(Collavre::AwsCredentials)
+      CollavreCompat.call(Collavre::AwsCredentials, :s3, boot_safe: true)
+    elsif ENV["AWS_S3_ACCESS_KEY_ID"].present? && ENV["AWS_S3_SECRET_ACCESS_KEY"].present?
+      { access_key_id: ENV["AWS_S3_ACCESS_KEY_ID"], secret_access_key: ENV["AWS_S3_SECRET_ACCESS_KEY"] }
+    else
+      {}
+    end
+  config.active_storage.service =
+    if s3_credentials[:access_key_id].present? && s3_credentials[:secret_access_key].present?
+      :amazon
+    else
+      :local
+    end
 
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = false
@@ -77,4 +99,7 @@ Rails.application.configure do
 
   # Allow Tailscale hosts for remote development access
   config.hosts << /.*\.tailadceed\.ts\.net/
+
+  # Allow Collavre preview hosts ({port}.collavre.com) for inbound webhook testing (e.g. Linear)
+  config.hosts << /\A\d+\.collavre\.com\z/
 end

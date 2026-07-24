@@ -1,0 +1,251 @@
+<%#
+  Linear integration modal partial.
+
+  Locals (optional – callers may pass creative):
+    creative:  the Collavre::Creative being configured
+    connected: boolean – whether Current.user has a CollavreLinear::Account
+
+  Rendered by callers with:
+    render "collavre_linear/integrations/modal", creative: @creative
+  (an example with literal ERB tags is omitted here: a nested "%"+">" would
+   terminate this comment early and leak the trailing marker into the page).
+%>
+
+<% connected    = local_assigns.fetch(:connected, Current.user&.linear_account.present?) %>
+<% creative     = local_assigns[:creative] %>
+<% creative_id  = creative&.id %>
+<% project_link = connected && creative &&
+                  creative.effective_origin&.linear_project_links
+                    &.find_by(account: Current.user&.linear_account) %>
+
+<div id="linear-integration-modal"
+     data-creative-id="<%= creative_id %>"
+     data-error-generic="<%= t('collavre_linear.integration.request_failed') %>"
+     style="display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:10000;
+            align-items:center;justify-content:center;background:rgba(0,0,0,0.4);">
+  <div class="popup-box" style="min-width:340px;max-width:90vw;">
+    <button type="button" id="close-linear-modal" class="popup-close-btn"
+            onclick="document.getElementById('linear-integration-modal').style.display='none'">&times;</button>
+
+    <h2><%= t("collavre_linear.integration.label") %></h2>
+    <p style="margin-bottom:1em;color:var(--text-muted);">
+      <%= t("collavre_linear.integration.description") %>
+    </p>
+
+    <% if connected %>
+      <% if project_link %>
+        <%# --- Already linked --- %>
+        <p style="color:var(--color-success,#16a34a);margin-bottom:0.75em;">
+          <%= t("collavre_linear.integration.linked",
+                project: project_link.linear_project_id,
+                team:    project_link.team_id) %>
+        </p>
+
+        <%# --- Manual webhook setup guide ---
+            Linear GENERATES the signing secret when the webhook is created and
+            won't let us force it to a value we pick, and app actors can't request
+            the `admin` scope to auto-provision — so the admin creates the webhook
+            by hand, then pastes Linear's generated secret back into the form below.
+            Shown until that secret is stored (blank => inbound not yet wired). %>
+        <% secret_set = project_link.webhook_secret.present? %>
+        <%# Use defined semantic tokens (not phantom --color-*-secondary names,
+            whose light hex fallbacks forced a near-white box + invisible text
+            in dark mode). Explicit --text-primary guards inherited contrast. %>
+        <details class="linear-webhook-guide" <%= "open" unless secret_set %>
+                 style="margin-bottom:1em;padding:0.75em;border:1px solid var(--border-color);border-radius:6px;background:var(--surface-secondary);color:var(--text-primary);">
+          <summary style="font-weight:600;cursor:pointer;"><%= t("collavre_linear.integration.webhook_guide_title") %></summary>
+          <p style="margin:0.5em 0;color:var(--text-muted);font-size:0.9em;">
+            <%= t("collavre_linear.integration.webhook_guide_intro") %>
+          </p>
+          <ol style="margin:0 0 0 1.2em;font-size:0.9em;line-height:1.6;">
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_open_settings_html",
+                    link: link_to("linear.app/settings/api", "https://linear.app/settings/api",
+                                  target: "_blank", rel: "noopener")) %>
+            </li>
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_url_label") %>
+              <br>
+              <code style="user-select:all;word-break:break-all;background:var(--color-code-bg);color:var(--color-code-text);padding:0.1em 0.3em;border-radius:3px;"><%= "#{request.base_url}/linear/webhook" %></code>
+            </li>
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_events_label") %>
+              <strong>Issue, Project, Comment</strong>
+            </li>
+            <li>
+              <%= t("collavre_linear.integration.webhook_guide_secret_label") %>
+              <%# Paste Linear's generated secret; the controller stores it and
+                  propagates it to every sibling link of the team. We never render
+                  the stored secret back — it's Linear's to show, not ours. %>
+              <%= form_with url: main_app.respond_to?(:linear_creative_integration_secret_path) ?
+                                 main_app.linear_creative_integration_secret_path(creative_id: creative_id) :
+                                 "/linear/creatives/#{creative_id}/integration/secret",
+                            method: :post, local: false,
+                            html: { style: "margin-top:0.4em;display:flex;gap:0.4em;align-items:center;flex-wrap:wrap;" } do |f| %>
+                <%= f.password_field :webhook_secret, autocomplete: "off",
+                                     placeholder: t("collavre_linear.integration.webhook_secret_placeholder"),
+                                     "aria-label": t("collavre_linear.integration.webhook_secret_input_label"),
+                                     style: "flex:1;min-width:180px;padding:0.35em 0.5em;border:1px solid var(--color-border);border-radius:4px;" %>
+                <%= f.submit t("collavre_linear.integration.webhook_secret_save_button"),
+                             class: "btn btn-primary btn-sm" %>
+              <% end %>
+              <p style="margin:0.4em 0 0;font-size:0.85em;color:<%= secret_set ? "var(--color-success,#16a34a)" : "var(--text-muted)" %>;">
+                <%= secret_set ? t("collavre_linear.integration.webhook_secret_saved") :
+                                 t("collavre_linear.integration.webhook_secret_unset") %>
+              </p>
+            </li>
+          </ol>
+        </details>
+
+        <%# Resync form %>
+        <%= form_with url: main_app.respond_to?(:linear_creative_integration_resync_path) ?
+                           main_app.linear_creative_integration_resync_path(creative_id: creative_id) :
+                           "/linear/creatives/#{creative_id}/integration/resync",
+                      method: :post, local: false,
+                      html: { style: "display:inline;margin-right:0.5em;" } do |f| %>
+          <%= f.submit t("collavre_linear.integration.resync_button"),
+                       class: "btn btn-secondary btn-sm" %>
+        <% end %>
+
+        <%# Unlink form %>
+        <%= form_with url: main_app.respond_to?(:linear_creative_integration_path) ?
+                           main_app.linear_creative_integration_path(creative_id: creative_id) :
+                           "/linear/creatives/#{creative_id}/integration",
+                      method: :delete, local: false,
+                      data: { confirm: t("collavre_linear.integration.unlink_confirm") } do |f| %>
+          <%= f.submit t("collavre_linear.integration.unlink_button"),
+                       class: "btn btn-danger btn-sm" %>
+        <% end %>
+
+      <% else %>
+        <%# --- Connected but not yet linked to a project ---
+            Dropdowns are populated by JS from data-options-url so users pick a
+            project/team by name instead of typing raw Linear IDs. Selecting a
+            project scopes the team dropdown to that project's owning team(s). %>
+        <p style="margin-bottom:0.75em;">
+          <%= t("collavre_linear.integration.link_prompt") %>
+        </p>
+
+        <%= form_with url: main_app.respond_to?(:linear_creative_integration_path) ?
+                           main_app.linear_creative_integration_path(creative_id: creative_id) :
+                           "/linear/creatives/#{creative_id}/integration",
+                      method: :post, local: false,
+                      html: { id: "linear-link-form",
+                              data: { options_url: "/linear/creatives/#{creative_id}/integration/options",
+                                      options_failed: t("collavre_linear.integration.options_failed"),
+                                      no_projects: t("collavre_linear.integration.no_projects") } } do |f| %>
+          <p class="linear-options-status"
+             style="margin-bottom:0.75em;color:var(--text-muted);font-size:0.9em;">
+            <%= t("collavre_linear.integration.options_loading") %>
+          </p>
+
+          <div style="margin-bottom:0.75em;">
+            <%= f.label :linear_project_id, t("collavre_linear.integration.project_id_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.select :linear_project_id,
+                         [],
+                         { include_blank: t("collavre_linear.integration.project_select_placeholder") },
+                         required: true, disabled: true,
+                         style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
+          </div>
+
+          <div style="margin-bottom:1em;">
+            <%= f.label :team_id, t("collavre_linear.integration.team_id_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.select :team_id,
+                         [],
+                         { include_blank: t("collavre_linear.integration.team_select_placeholder") },
+                         required: true, disabled: true,
+                         style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
+          </div>
+
+          <%# Done-state combobox: which Linear workflow state marks an issue as
+              "완료". JS scopes the options to the chosen team and defaults to that
+              team's Completed state. Optional — a team with no completed state
+              leaves it blank and completion mapping stays off. %>
+          <div style="margin-bottom:1em;">
+            <%= f.label :done_state_id, t("collavre_linear.integration.done_state_label"),
+                        style: "display:block;margin-bottom:0.25em;font-weight:600;" %>
+            <%= f.select :done_state_id,
+                         [],
+                         { include_blank: t("collavre_linear.integration.done_state_placeholder") },
+                         disabled: true,
+                         style: "width:100%;padding:0.4em 0.6em;border:1px solid var(--color-border);border-radius:4px;" %>
+            <p style="margin:0.25em 0 0;color:var(--text-muted);font-size:0.85em;">
+              <%= t("collavre_linear.integration.done_state_help") %>
+            </p>
+          </div>
+
+          <%= f.submit t("collavre_linear.integration.link_button"),
+                       class: "btn btn-primary", disabled: true %>
+        <% end %>
+      <% end %>
+
+      <%# --- Reconnect affordance (shown in BOTH connected sub-states) ---
+          An Account row existing only means "some token was stored once", not
+          "that token still works". If the admin revokes the app in Linear's
+          settings (or the token expires past refresh), the link form's options
+          fetch 502s and the modal has no way back to OAuth — the connect button
+          only lives in the not-connected branch below, so the user is stranded
+          on "Couldn't load your Linear projects and teams. Please try again."
+          Re-running OAuth updates the SAME Account row in place (auth#callback
+          find_or_initialize_by user_id), so existing project links and the
+          account id survive and only the dead token is replaced. Reuses the
+          connect form/button ids: connected and not-connected are mutually
+          exclusive, so each id still appears exactly once in the DOM and the
+          existing JS opener wiring drives this unchanged. %>
+      <div class="linear-reconnect"
+           style="margin-top:1em;padding-top:0.75em;border-top:1px solid var(--border-color);">
+        <p style="margin:0 0 0.5em;color:var(--text-muted);font-size:0.85em;">
+          <%= t("collavre_linear.integration.reconnect_hint") %>
+        </p>
+        <form id="linear-connect-form"
+              action="/linear/auth/store_creative"
+              method="post"
+              target="linear-auth-window"
+              style="display:none;">
+          <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+          <input type="hidden" name="creative_id" value="<%= creative_id %>">
+        </form>
+        <div>
+          <button type="button" id="linear-connect-btn" class="btn btn-secondary btn-sm"
+                  data-window-width="620" data-window-height="720">
+            <%= t("collavre_linear.integration.reconnect_button") %>
+          </button>
+        </div>
+      </div>
+
+    <% else %>
+      <%# --- Not connected — show OAuth connect button --- %>
+      <p style="margin-bottom:0.75em;">
+        <%= t("collavre_linear.integration.connect_prompt") %>
+      </p>
+
+      <%#
+        Hidden form + separate button, mirroring collavre_github. The JS opener
+        calls the native form.submit() (not a submit-button click), which Turbo
+        does NOT intercept — so the popup does a real top-level navigation and
+        follows the 302 to Linear's authorize URL. A submit-button click lets
+        Turbo turn it into a fetch(), which auto-follows the cross-origin
+        redirect and is blocked by CORS.
+      %>
+      <form id="linear-connect-form"
+            action="/linear/auth/store_creative"
+            method="post"
+            target="linear-auth-window"
+            style="display:none;">
+        <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+        <input type="hidden" name="creative_id" value="<%= creative_id %>">
+      </form>
+      <%# Wrap in a block element: .popup-box is flex-column, so a bare button
+          child stretches to full width. The block wrapper lets the button keep
+          its natural (auto) width, matching the other modal buttons. %>
+      <div>
+        <button type="button" id="linear-connect-btn" class="btn btn-primary"
+                data-window-width="620" data-window-height="720">
+          <%= t("collavre_linear.integration.connect_button") %>
+        </button>
+      </div>
+    <% end %>
+  </div>
+</div>

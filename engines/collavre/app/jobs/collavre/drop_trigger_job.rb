@@ -8,6 +8,8 @@ module Collavre
     # This triggers retry_on instead of silently succeeding.
     class DispatchFailedError < StandardError; end
 
+    DROP_TRIGGER_TOPIC_NAME = "Drop Trigger"
+
     retry_on DispatchFailedError, wait: 5.seconds, attempts: 3
 
     # End-to-end idempotent: safe to retry at any point.
@@ -57,9 +59,8 @@ module Collavre
     private
 
     def post_trigger_failure_notice(child, parent)
-      topic = child.topics.find_or_create_by!(name: "Drop Trigger") do |t|
-        t.user = child.user
-      end
+      topic = child.topics.find_by(name: DROP_TRIGGER_TOPIC_NAME) ||
+              create_drop_trigger_topic(child)
       post_system_notice(child, topic, I18n.t(
         "collavre.drop_trigger.no_agent",
         parent_description: parent.creative_snippet
@@ -82,15 +83,43 @@ module Collavre
     end
 
     def find_or_create_trigger_topic(creative, agent)
-      topic = creative.topics.find_by(name: "Drop Trigger")
+      topic = creative.topics.find_by(name: DROP_TRIGGER_TOPIC_NAME)
       return topic if topic
 
-      topic = creative.topics.create!(
-        name: "Drop Trigger",
-        user: creative.user
-      )
+      topic = create_drop_trigger_topic(creative)
       topic.set_primary_agent!(agent)
       topic
+    end
+
+    # Creates the Drop Trigger topic, branching from the creative's Main topic
+    # when Main has messages. Equivalent to the user manually selecting every
+    # Main message and pressing "branch" — only the resulting topic name is
+    # fixed to "Drop Trigger".
+    def create_drop_trigger_topic(creative)
+      main = creative.main_topic(fallback_user: creative.user)
+      # Mirror the manual "select all → branch" flow: only comments the owner
+      # can see are copied. enforce_limit: false bypasses the UI's 100-comment
+      # selection cap so full Main history transfers regardless of length.
+      main_comment_ids = main.comments
+                             .visible_to(creative.user)
+                             .order(:created_at)
+                             .pluck(:id)
+
+      if main_comment_ids.any?
+        # auto_select: false prevents the broadcast from hijacking the owner's
+        # current topic selection while this background job runs.
+        TopicBranchService.new(
+          creative: creative,
+          user: creative.user,
+          source_topic: main,
+          name: DROP_TRIGGER_TOPIC_NAME
+        ).call(comment_ids: main_comment_ids, enforce_limit: false, auto_select: false)
+      else
+        creative.topics.create!(
+          name: DROP_TRIGGER_TOPIC_NAME,
+          user: creative.user
+        )
+      end
     end
 
     def trigger_content_key(child, parent)

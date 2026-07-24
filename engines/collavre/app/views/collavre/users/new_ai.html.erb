@@ -23,7 +23,7 @@
 
   <div class="form-group">
     <%= form.label :system_prompt, t('collavre.users.new_ai.system_prompt_label') %>
-    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: @copy_source&.system_prompt || AiClient::SYSTEM_INSTRUCTIONS %>
+    <%= form.text_area :system_prompt, required: true, class: "stacked-form-control", rows: 5, value: @copy_source&.effective_system_prompt || AiClient::SYSTEM_INSTRUCTIONS %>
   </div>
 
   <%= render "collavre/users/trigger_field", form: form, routing_expression: @copy_source&.routing_expression %>

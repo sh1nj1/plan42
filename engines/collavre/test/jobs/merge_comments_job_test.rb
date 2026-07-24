@@ -134,14 +134,7 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
       permission: :feedback
     )
 
-    Collavre::OrchestratorPolicy.create!(
-      policy_type: "arbitration",
-      scope_type: "Topic",
-      scope_id: @topic.id,
-      priority: 10,
-      config: { "strategy" => "primary_first", "primary_agent_id" => ai_agent.id },
-      enabled: true
-    )
+    @topic.update!(primary_agent_id: ai_agent.id)
 
     captured_vendor = nil
 

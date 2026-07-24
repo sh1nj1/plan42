@@ -5,7 +5,14 @@ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
+import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import PrevMessageNavigator from './prev_message_navigator'
 // CommonPopup is now used via TopicSearchController (Stimulus)
+
+// Gestures that mean the user moved the list themselves, invalidating the
+// previous-message anchor. Only user input fires these — our own smooth scroll
+// does not.
+const PREV_MSG_USER_INPUT_EVENTS = ['wheel', 'touchstart', 'keydown', 'pointerdown']
 
 export default class extends Controller {
   static targets = ['list']
@@ -19,8 +26,10 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
+    this.handlePrevMsgUserInput = this.handlePrevMsgUserInput.bind(this)
     this.handleChange = this.handleChange.bind(this)
     this.handleClick = this.handleClick.bind(this)
     this.handleSubmit = this.handleSubmit.bind(this)
@@ -32,6 +41,9 @@ export default class extends Controller {
     this.handleStreamRender = this.handleStreamRender.bind(this)
 
     this.listTarget.addEventListener('scroll', this.handleScroll)
+    PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
+      this.listTarget.addEventListener(name, this.handlePrevMsgUserInput)
+    })
     this.listTarget.addEventListener('change', this.handleChange)
     this.listTarget.addEventListener('click', this.handleClick)
     this.listTarget.addEventListener('submit', this.handleSubmit)
@@ -74,6 +86,9 @@ export default class extends Controller {
 
   disconnect() {
     this.listTarget.removeEventListener('scroll', this.handleScroll)
+    PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
+      this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
+    })
     this.listTarget.removeEventListener('change', this.handleChange)
     this.listTarget.removeEventListener('click', this.handleClick)
     this.listTarget.removeEventListener('submit', this.handleSubmit)
@@ -150,6 +165,9 @@ export default class extends Controller {
   loadInitialComments() {
     if (!this.creativeId) return
     if (this.selection.size > 0) return
+
+    // The list is about to be replaced wholesale; any anchor we hold is stale.
+    this.prevMsgNavigator.reset()
 
     const params = {}
     if (this.highlightAfterLoad) {
@@ -333,9 +351,17 @@ export default class extends Controller {
     return parseInt(last.dataset.commentId)
   }
 
+  // Public seam for sibling controllers that scroll the list on their own
+  // (e.g. the review-quote chip). Lets them drop the prev-message anchor at the
+  // choke point without reaching into the navigator's internals.
+  notifyProgrammaticScroll() {
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
+  }
+
   highlightComment(commentId) {
     const comment = document.getElementById(`comment_${commentId}`)
     if (!comment) return
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
     comment.scrollIntoView({ behavior: 'auto', block: 'center' })
     comment.classList.add('highlight-flash')
     comment.dataset.highlighted = 'true'
@@ -354,6 +380,10 @@ export default class extends Controller {
         body: JSON.stringify({ creative_id: this.creativeId }),
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
+  }
+
+  handlePrevMsgUserInput() {
+    this.prevMsgNavigator.notifyUserInput()
   }
 
   handleScroll() {
@@ -430,6 +460,11 @@ export default class extends Controller {
     if (target.classList.contains('approve-comment-btn')) {
       event.preventDefault()
       this.approveComment(target)
+      return
+    }
+    if (target.classList.contains('deny-comment-btn')) {
+      event.preventDefault()
+      this.denyComment(target)
       return
     }
     if (target.classList.contains('edit-comment-btn')) {
@@ -590,7 +625,7 @@ export default class extends Controller {
   async deleteSelectedComments() {
     if (this.selection.size === 0) return
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
-    if (!confirm(confirmText)) return
+    if (!(await confirmDialog(confirmText, { danger: true }))) return
 
     const commentIds = Array.from(this.selection)
     try {
@@ -610,18 +645,18 @@ export default class extends Controller {
         this.clearSelection()
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to delete comments')
+        alertDialog(data.error || 'Failed to delete comments')
       }
     } catch (error) {
       console.error('Error deleting comments:', error)
-      alert('Failed to delete comments')
+      alertDialog('Failed to delete comments')
     }
   }
 
   async mergeSelectedComments() {
     if (this.selection.size < 2) return
     const confirmText = this.element.dataset.mergeConfirmText || 'Merge the selected messages into one?'
-    if (!confirm(confirmText)) return
+    if (!(await confirmDialog(confirmText, { danger: true }))) return
 
     const commentIds = Array.from(this.selection)
     try {
@@ -638,11 +673,11 @@ export default class extends Controller {
         // Job is async — the merged comment will update via broadcast
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to merge comments')
+        alertDialog(data.error || 'Failed to merge comments')
       }
     } catch (error) {
       console.error('Error merging comments:', error)
-      alert('Failed to merge comments')
+      alertDialog('Failed to merge comments')
     }
   }
 
@@ -671,11 +706,11 @@ export default class extends Controller {
         }
       } else {
         const data = await response.json().catch(() => ({}))
-        alert(data.error || 'Failed to branch comments')
+        alertDialog(data.error || 'Failed to branch comments')
       }
     } catch (error) {
       console.error('Error branching comments:', error)
-      alert('Failed to branch comments')
+      alertDialog('Failed to branch comments')
     }
   }
 
@@ -803,11 +838,11 @@ export default class extends Controller {
         this.loadInitialComments()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to move comments')
+        alertDialog(data.error || 'Failed to move comments')
       }
     } catch (error) {
       console.error('Error moving comments to topic:', error)
-      alert('Failed to move comments')
+      alertDialog('Failed to move comments')
     }
   }
 
@@ -897,8 +932,8 @@ export default class extends Controller {
 
   // API Methods
 
-  deleteComment(button) {
-    if (!confirm(this.element.dataset.deleteConfirmText)) return
+  async deleteComment(button) {
+    if (!(await confirmDialog(this.element.dataset.deleteConfirmText, { danger: true }))) return
     const commentId = button.getAttribute('data-comment-id')
     fetch(`/creatives/${this.creativeId}/comments/${commentId}`, {
       method: 'DELETE',
@@ -914,9 +949,9 @@ export default class extends Controller {
     })
   }
 
-  convertComment(button) {
+  async convertComment(button) {
     // ... (Existing logic) ...
-    if (!confirm(this.element.dataset.convertConfirmText)) return
+    if (!(await confirmDialog(this.element.dataset.convertConfirmText))) return
     const commentId = button.getAttribute('data-comment-id')
     fetch(`/creatives/${this.creativeId}/comments/${commentId}/convert`, {
       method: 'POST',
@@ -956,19 +991,29 @@ export default class extends Controller {
   }
 
   approveComment(button) {
-    // ... (Existing logic) ...
+    this.decideComment(button, 'approve')
+  }
+
+  // Deny a Claude Channel tool-permission prompt. Mirrors approveComment but
+  // hits the /deny endpoint, which relays a "deny" decision to the suspended
+  // session.
+  denyComment(button) {
+    this.decideComment(button, 'deny')
+  }
+
+  decideComment(button, action) {
     if (button.disabled) return
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
     const topicQuery = this.topicQueryString()
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/approve${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+    fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
       .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.error) }))
       .then(html => {
         if (!html) { button.disabled = false; return; }
         const existing = document.getElementById(`comment_${commentId}`)
         if (existing) existing.outerHTML = html
       })
-      .catch(e => { alert(e.message); button.disabled = false; })
+      .catch(e => { alertDialog(e.message); button.disabled = false; })
   }
 
   editComment(button) {
@@ -998,7 +1043,7 @@ export default class extends Controller {
       })
       .catch((error) => {
         console.error(error)
-        alert(this.element.dataset.updateErrorText || 'Failed to update action')
+        alertDialog(this.element.dataset.updateErrorText || 'Failed to update action')
       })
       .finally(() => { if (submitButton) submitButton.disabled = false })
   }
@@ -1007,7 +1052,7 @@ export default class extends Controller {
   openMoveModal(event) {
     if (this.movingComments) return
     if (this.selection.size === 0) {
-      alert(this.element.dataset.moveNoSelectionText || "No Selection")
+      alertDialog(this.element.dataset.moveNoSelectionText || "No Selection")
       return
     }
     this.movingComments = true
@@ -1062,28 +1107,16 @@ export default class extends Controller {
 
   scrollToPreviousMessage() {
     const list = this.listTarget
-    const items = Array.from(list.querySelectorAll('.comment-item'))
-    if (items.length === 0) return
+    const elements = Array.from(list.querySelectorAll('.comment-item'))
+    if (elements.length === 0) return
 
-    const listRect = list.getBoundingClientRect()
-    const viewportTop = listRect.top
+    const viewportTop = list.getBoundingClientRect().top
+    const measured = elements.map((el) => ({
+      id: el.dataset.commentId,
+      top: el.getBoundingClientRect().top,
+    }))
 
-    let currentIdx = -1
-    for (let i = 0; i < items.length; i++) {
-      const rect = items[i].getBoundingClientRect()
-      if (rect.top >= viewportTop - 2) {
-        currentIdx = i
-        break
-      }
-    }
-
-    if (currentIdx === -1) currentIdx = items.length - 1
-
-    const currentItem = items[currentIdx]
-    const currentRect = currentItem.getBoundingClientRect()
-    const isAtTop = Math.abs(currentRect.top - viewportTop) < 4
-
-    const targetIdx = isAtTop ? currentIdx - 1 : currentIdx
+    const targetIdx = this.prevMsgNavigator.resolveTargetIndex(measured, viewportTop)
     if (targetIdx < 0) {
       if (!this.allOlderLoaded) {
         this.loadOlderComments()
@@ -1091,8 +1124,9 @@ export default class extends Controller {
       return
     }
 
-    const target = items[targetIdx]
+    const target = elements[targetIdx]
     const targetTop = target.offsetTop - list.offsetTop
+    this.prevMsgNavigator.commit(measured[targetIdx].id, measured[targetIdx].top)
     list.scrollTo({ top: targetTop, behavior: 'smooth' })
     this.stickToBottom = false
 
@@ -1110,6 +1144,9 @@ export default class extends Controller {
   }
 
   scrollToBottom() {
+    // A jump to latest we did not initiate via the button - drop the anchor so
+    // the next previous-message click resolves from here, not a stale target.
+    this.prevMsgNavigator?.notifyProgrammaticScroll()
     // In column reverse, bottom of scroll might be tricky.
     // Easiest is to set scrollTop to a large value.
     requestAnimationFrame(() => {
@@ -1123,25 +1160,28 @@ export default class extends Controller {
   openActionEditor(container) {
     if (!container) return
     const json = container.querySelector('.comment-action-json')
+    const md = container.querySelector('.comment-action-markdown')
     const form = container.querySelector('.comment-action-edit-form')
     const btn = container.querySelector('.edit-comment-action-btn')
     const txt = form?.querySelector('.comment-action-edit-textarea')
-    if (json && form && txt) {
-      txt.value = json.textContent || ''
-      form.style.display = 'block'
-      if (btn) btn.style.display = 'none'
-      json.style.display = 'none'
-      txt.focus()
-    }
+    if (!form || !txt) return
+    if (json) txt.value = json.textContent || ''
+    form.style.display = 'block'
+    if (btn) btn.style.display = 'none'
+    if (json) json.style.display = 'none'
+    if (md) md.style.display = 'none'
+    txt.focus()
   }
 
   closeActionEditor(container) {
     if (!container) return
     const json = container.querySelector('.comment-action-json')
+    const md = container.querySelector('.comment-action-markdown')
     const form = container.querySelector('.comment-action-edit-form')
     const btn = container.querySelector('.edit-comment-action-btn')
     if (form) form.style.display = 'none'
     if (json) json.style.display = ''
+    if (md) md.style.display = ''
     if (btn) btn.style.display = ''
   }
 

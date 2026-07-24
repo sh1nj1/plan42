@@ -76,7 +76,11 @@ class PlansSystemTest < CollavrePlanSystemTestCase
       page.execute_script("arguments[0].click()", delete_btn)
     end
 
-    accept_alert
+    # Native confirm() was replaced by an in-app modal dialog (dialog.js):
+    # the Tauri desktop webview can't present native dialogs, so accept_alert
+    # no longer applies. Click the dialog's (danger) confirm button instead.
+    assert_selector ".modal-dialog", wait: 5
+    find(".modal-dialog-btn-danger").click
 
     within "#plans-list-area" do
       assert_no_selector ".plan-label", text: /Plan to be deleted/, wait: 5

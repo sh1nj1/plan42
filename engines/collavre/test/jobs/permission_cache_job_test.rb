@@ -188,6 +188,44 @@ class PermissionCacheJobTest < ActiveJob::TestCase
     end
   end
 
+  test "propagate_share with purge_stale deletes stale rows then re-propagates in one job" do
+    share = nil
+    perform_enqueued_jobs do
+      share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+    end
+    # Plant a stale row at a location the share no longer covers, keyed to it.
+    orphan = Creative.create!(user: @owner, description: "Orphan", progress: 0.0)
+    CreativeSharesCache.create!(creative: orphan, user: @shared_user,
+      permission: "read", source_share_id: share.id)
+
+    clear_enqueued_jobs
+    perform_enqueued_jobs do
+      PermissionCacheJob.perform_later(:propagate_share, creative_share_id: share.id, purge_stale: true)
+    end
+
+    # The purge removed the stale orphan row, and the re-propagate repopulated
+    # the share's real subtree — both in the single job (no racing purge).
+    refute CreativeSharesCache.exists?(source_share_id: share.id, creative_id: orphan.id)
+    assert CreativeSharesCache.exists?(source_share_id: share.id, creative_id: @root.id)
+    assert CreativeSharesCache.exists?(source_share_id: share.id, creative_id: @grandchild.id)
+  end
+
+  test "propagate_share without purge_stale leaves existing rows in place" do
+    share = nil
+    perform_enqueued_jobs do
+      share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+    end
+    assert CreativeSharesCache.exists?(source_share_id: share.id, creative_id: @root.id)
+
+    clear_enqueued_jobs
+    assert_nothing_raised do
+      perform_enqueued_jobs do
+        PermissionCacheJob.perform_later(:propagate_share, creative_share_id: share.id)
+      end
+    end
+    assert CreativeSharesCache.exists?(source_share_id: share.id, creative_id: @root.id)
+  end
+
   test "rebuild_user_cache_for_subtree rebuilds cache for specific user" do
     perform_enqueued_jobs do
       CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")

@@ -127,17 +127,20 @@ class CommentTest < ActiveSupport::TestCase
     assert_equal initial_inbox_comment_count, inbox.comments.count
   end
 
-  test "inbox comments do not dispatch to orchestration" do
+  # Only the inbox System topic (alarms/notifications) is silenced; every other
+  # inbox topic dispatches like a normal topic (see comment_inbox_dispatch_test).
+  test "inbox System-topic comments do not dispatch to orchestration" do
     owner = User.create!(email: "inbox-orch-owner@example.com", password: TEST_PASSWORD, name: "InboxOrchOwner")
     commenter = User.create!(email: "inbox-orch-commenter@example.com", password: TEST_PASSWORD, name: "InboxOrchCommenter")
     inbox = Creative.inbox_for(owner)
+    system_topic = inbox.system_topic(fallback_user: owner)
 
     dispatched = false
     SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { dispatched = true }) do
-      inbox.comments.create!(user: commenter, content: "reply in inbox")
+      inbox.comments.create!(user: commenter, content: "alarm note", topic: system_topic)
     end
 
-    refute dispatched, "Expected no orchestration dispatch for inbox comments"
+    refute dispatched, "Expected no orchestration dispatch for inbox System-topic comments"
   end
 
   test "creating an inbox notification broadcasts inbox badge immediately" do
@@ -162,5 +165,32 @@ class CommentTest < ActiveSupport::TestCase
     assert inbox_broadcasts.any? { |payload| payload[:target] == "desktop-inbox-badge" && payload.dig(:locals, :count) == 1 }
     assert inbox_broadcasts.any? { |payload| payload[:target] == "mobile-inbox-badge" && payload.dig(:locals, :count) == 1 }
     assert_equal 1, Collavre::Inbox::BadgeComponent.new(user: owner, creative: inbox_creative).count
+  end
+
+  test "creating and destroying a comment maintains creatives.comments_count" do
+    user = User.create!(email: "cc-counter@example.com", password: TEST_PASSWORD, name: "CC")
+    creative = Creative.create!(user: user, description: "Root")
+    assert_equal 0, creative.comments_count
+
+    c1 = Comment.create!(creative: creative, user: user, content: "one")
+    Comment.create!(creative: creative, user: user, content: "two", private: true)
+    assert_equal 2, creative.reload.comments_count, "counts all comments incl. private"
+
+    c1.destroy!
+    assert_equal 1, creative.reload.comments_count
+  end
+
+  test "creating and destroying versions maintains comment_versions_count" do
+    user = User.create!(email: "cv-counter@example.com", password: TEST_PASSWORD, name: "CV")
+    creative = Creative.create!(user: user, description: "Root")
+    comment = Comment.create!(creative: creative, user: user, content: "hi")
+    assert_equal 0, comment.comment_versions_count
+
+    v1 = Collavre::CommentVersion.create!(comment: comment, content: "v1", version_number: 1)
+    Collavre::CommentVersion.create!(comment: comment, content: "v2", version_number: 2)
+    assert_equal 2, comment.reload.comment_versions_count
+
+    v1.destroy!
+    assert_equal 1, comment.reload.comment_versions_count
   end
 end

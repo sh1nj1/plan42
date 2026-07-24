@@ -10,13 +10,61 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {})
+    # Vendor <select> options for AI-agent config. Core ships only its built-in
+    # (stateless) providers; vendor engines append their own through
+    # register_vendor_option, so core never names a vendor engine.
+    BASE_VENDOR_OPTIONS = [
+      [ "Google (Gemini)", "google" ],
+      [ "OpenAI", "openai" ],
+      [ "Anthropic", "anthropic" ]
+    ].freeze
+
+    class << self
+      def registered_vendor_options
+        @registered_vendor_options ||= []
+      end
+
+      # Append a vendor <select> option ([label, value]). Idempotent by value.
+      def register_vendor_option(label, value)
+        value = value.to_s
+        return if BASE_VENDOR_OPTIONS.any? { |_l, v| v == value }
+        return if registered_vendor_options.any? { |_l, v| v == value }
+
+        registered_vendor_options << [ label, value ]
+      end
+
+      def vendor_options
+        BASE_VENDOR_OPTIONS + registered_vendor_options
+      end
+
+      # Vendors that use stateful/incremental sessions. Base providers are
+      # stateless; vendor engines that add session support register here so core
+      # never string-matches a vendor name to decide session behavior.
+      def session_vendors
+        @session_vendors ||= Set.new
+      end
+
+      def register_session_vendor(vendor)
+        session_vendors << vendor.to_s.downcase
+      end
+
+      def vendor_supports_session?(vendor)
+        session_vendors.include?(vendor.to_s.downcase)
+      end
+    end
+
+    # log_interactions: persist each call to ActivityLog. Default true. Pass false
+    # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
+    # inline typo correction on debounced typing) so private drafts are never
+    # written to server-side activity logs.
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true)
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
       @llm_api_key = llm_api_key
       @gateway_url = gateway_url
       @context = context
+      @log_interactions = log_interactions
       @last_input_tokens = 0
       @last_output_tokens = 0
     end
@@ -36,8 +84,16 @@ module Collavre
       add_messages(@conversation, contents)
 
       response = @conversation.complete do |chunk|
-        delta = extract_chunk_content(chunk)
-        next if delta.blank?
+        delta = extract_chunk_content(chunk).to_s
+        # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
+        # break, which providers routinely emit as a token of its own — is
+        # blank? == true, so skipping blanks deletes it. And the deleted delta is
+        # never yielded, so it is gone from the caller's stream too: AiAgentService
+        # persists ResponseStreamer#content, which is built only from the yielded
+        # deltas, and the reply lands in the database with its paragraphs glued
+        # together. Only truly empty deltas (role-only / tool-call chunks carry no
+        # content) are skippable.
+        next if delta.empty?
 
         response_content << delta
         yield delta if block_given?
@@ -64,7 +120,14 @@ module Collavre
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
       error_message = "[#{e.class.name}] #{e.message}"
-      Rails.logger.error "AI Client error: #{error_message}"
+      # When log_interactions is false (inline typo correction runs on the user's
+      # *unsubmitted* draft), the LLM error message can echo the request text. Log
+      # only the error class to app logs so private drafts never leak — matching the
+      # no-log guarantee already enforced on the parse path (TypoCorrector) and the
+      # ActivityLog gate below. error_message stays intact for the gated ensure log
+      # and the streamed yield (which goes back to the same user).
+      Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
+      log_error_response(e) if @log_interactions
       Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?
       Rails.logger.debug e.backtrace.join("\n")
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
@@ -72,14 +135,16 @@ module Collavre
     ensure
       @last_input_tokens = input_tokens || 0
       @last_output_tokens = output_tokens || 0
-      log_interaction(
-        messages: @conversation&.messages&.to_a || Array(contents),
-        tools: @conversation&.tools&.to_a || [],
-        response_content: response_content.presence,
-        error_message: error_message,
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      )
+      if @log_interactions
+        log_interaction(
+          messages: @conversation&.messages&.to_a || Array(contents),
+          tools: @conversation&.tools&.to_a || [],
+          response_content: response_content.presence,
+          error_message: error_message,
+          input_tokens: input_tokens,
+          output_tokens: output_tokens
+        )
+      end
     end
 
     # Ask a follow-up question using the existing conversation context.
@@ -101,6 +166,44 @@ module Collavre
 
     attr_reader :vendor, :model, :system_prompt, :llm_api_key, :gateway_url, :context
 
+    # RubyLLM masks provider 400s behind a generic "Invalid request - please check
+    # your input" fallback whenever the provider's error body is not in OpenAI's
+    # {error:{message}} shape — common for OpenAI-compatible gateways (Cerebras,
+    # local Ollama, etc.), whose real reason then lives only in the raw HTTP
+    # response. RubyLLM::Error carries that response (status + body); surface it so
+    # the actual cause is one grep away instead of buried in ruby_llm.log.
+    #
+    # A provider 400 body can echo the offending request (prompt or tool arguments),
+    # so the raw body is written to the app log only under debug logging — the same
+    # level that already gates RubyLLM's own request/response body log (see the
+    # ruby_llm initializer). At INFO (production) we record status + body size only,
+    # keeping user content out of centralized app logs while still capturing that the
+    # provider rejected the request and how large its reason was; raise the log level
+    # to recover the full body on demand. The whole path is additionally gated by
+    # @log_interactions at the call site, like the error-message log above.
+    def log_error_response(error)
+      return unless error.respond_to?(:response) && (response = error.response)
+
+      status = response.respond_to?(:status) ? response.status : nil
+      body = response.respond_to?(:body) ? response.body : nil
+      return if status.nil? && body.blank?
+
+      unless Rails.logger.debug?
+        size = body.is_a?(String) ? "#{body.bytesize}B" : (body.nil? ? "none" : "non-string")
+        Rails.logger.error "AI Client error response: status=#{status} body_size=#{size} " \
+                           "(body suppressed at INFO; raise log level to capture it)"
+        return
+      end
+
+      # Provider error bodies are frequently tagged ASCII-8BIT even though the bytes
+      # are valid UTF-8; reinterpret and scrub so non-ASCII text (e.g. Korean) is
+      # readable and never re-triggers the transcode failure we are eliminating.
+      body_text = body.is_a?(String) ? body.dup.force_encoding("UTF-8").scrub : body.inspect
+      Rails.logger.error "AI Client error response: status=#{status} body=#{body_text.to_s.truncate(2000)}"
+    rescue StandardError => e
+      Rails.logger.debug "AiClient#log_error_response failed: #{e.class}"
+    end
+
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
       "anthropic" => :anthropic,
@@ -113,17 +216,22 @@ module Collavre
 
       context_block = case normalized_vendor
       when "openai"
-        api_key = @llm_api_key.presence || ENV["OPENAI_API_KEY"]
+        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
         base_url = @gateway_url.presence
+        # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
+        # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
+        # if openai_api_key is blank. Supply a placeholder so keyless local gateways
+        # work; hosted OpenAI (no gateway) still requires a real key.
+        api_key = "local-gateway" if api_key.blank? && base_url
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
         end
       when "anthropic"
-        api_key = @llm_api_key.presence || ENV["ANTHROPIC_API_KEY"]
+        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)
         proc { |config| config.anthropic_api_key = api_key }
       else
-        api_key = @llm_api_key.presence || ENV["GEMINI_API_KEY"]
+        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:gemini_api_key)
         proc { |config| config.gemini_api_key = api_key }
       end
 

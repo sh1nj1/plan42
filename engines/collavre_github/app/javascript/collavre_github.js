@@ -1,0 +1,716 @@
+import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import { deriveConnectState, shouldShowConnectNext } from './github_wizard_state.js';
+
+let githubIntegrationInitialized = false;
+
+if (!githubIntegrationInitialized) {
+  githubIntegrationInitialized = true;
+
+  document.addEventListener('turbo:load', function () {
+    const openBtn = document.getElementById('github-integration-btn');
+    const modal = document.getElementById('github-integration-modal');
+    if (!openBtn || !modal) return;
+
+    const statusEl = document.getElementById('github-integration-status');
+    const loginBtn = document.getElementById('github-login-btn');
+    const loginForm = document.getElementById('github-login-form');
+    const closeBtn = document.getElementById('close-github-modal');
+    const prevBtn = document.getElementById('github-prev-btn');
+    const nextBtn = document.getElementById('github-next-btn');
+    const finishBtn = document.getElementById('github-finish-btn');
+    const orgList = document.getElementById('github-organization-list');
+    const repoList = document.getElementById('github-repository-list');
+    const summaryList = document.getElementById('github-selected-repos');
+    const summaryEmpty = document.getElementById('github-summary-empty');
+    const summaryInstructions = document.getElementById('github-webhook-instructions');
+    
+    const errorEl = document.getElementById('github-wizard-error');
+    const webhookUrlLabel = modal.dataset.webhookUrlLabel || 'Webhook URL';
+    const webhookSecretLabel = modal.dataset.webhookSecretLabel || 'Webhook secret';
+    const existingContainer = document.getElementById('github-existing-connections');
+    const existingList = document.getElementById('github-existing-repo-list');
+    const deleteBtn = document.getElementById('github-delete-btn');
+    const connectMessage = document.getElementById('github-connect-message');
+    const existingMessage = modal.dataset.existingMessage || '이미 연동된 Repository가 있습니다.';
+    const deleteConfirm = modal.dataset.deleteConfirm || 'Github 연동을 삭제하시겠습니까?';
+    const deleteSuccess = modal.dataset.deleteSuccess || 'Github 연동이 삭제되었습니다.';
+    const deleteError = modal.dataset.deleteError || 'Github 연동을 삭제하지 못했습니다.';
+    const deleteSelectWarning = modal.dataset.deleteSelectWarning || '삭제할 Repository를 선택하세요.';
+    const resyncBtn = document.getElementById('github-resync-btn');
+    const resyncConfirm = modal.dataset.resyncConfirm || '선택한 저장소의 마크다운을 전체 다시 가져오시겠습니까?';
+    const resyncSuccess = modal.dataset.resyncSuccess || '재동기화가 시작되었습니다.';
+    const resyncError = modal.dataset.resyncError || '재동기화를 시작하지 못했습니다.';
+    const resyncSelectWarning = modal.dataset.resyncSelectWarning || '재동기화할 저장소를 선택하세요.';
+
+    let creativeId = null;
+    let currentStep = 'connect';
+    let organizations = [];
+    let selectedOrg = null;
+    let selectedRepos = new Set();
+    let markdownSyncRepos = new Set();
+    let webhookDetails = {};
+
+    let hasExistingIntegration = false;
+    // Whether the *current* user has their own connected GitHub account.
+    // hasExistingIntegration can be true from other members' linked repos while
+    // this user is still unauthenticated, so the two must be tracked separately.
+    let userConnected = false;
+    let selectedReposForDeletion = new Set();
+
+    const markdownSyncList = document.getElementById('github-markdown-sync-list');
+
+    function resetWizard() {
+      currentStep = 'connect';
+      organizations = [];
+      selectedOrg = null;
+      selectedRepos = new Set();
+      markdownSyncRepos = new Set();
+      webhookDetails = {};
+
+      hasExistingIntegration = false;
+      userConnected = false;
+      selectedReposForDeletion = new Set();
+      statusEl.textContent = '';
+      errorEl.style.display = 'none';
+      errorEl.textContent = '';
+      if (summaryInstructions) summaryInstructions.style.display = 'none';
+      
+      if (existingContainer) {
+        existingContainer.style.display = 'none';
+      }
+      if (existingList) {
+        existingList.innerHTML = '';
+      }
+      if (connectMessage) {
+        connectMessage.style.display = '';
+      }
+      if (deleteBtn) deleteBtn.style.display = 'none';
+      if (resyncBtn) resyncBtn.style.display = 'none';
+      updateDeleteButtonState();
+      if (loginBtn) loginBtn.style.display = 'inline-block';
+      updateStep();
+    }
+
+    function updateDeleteButtonState() {
+      if (deleteBtn) deleteBtn.disabled = selectedReposForDeletion.size === 0;
+      if (resyncBtn) resyncBtn.disabled = selectedReposForDeletion.size === 0;
+    }
+
+    function updateStep() {
+      ['connect', 'organization', 'repositories', 'markdown-sync', 'summary']
+        .forEach(function (step) {
+          const el = document.getElementById(`github-step-${step}`);
+          if (!el) return;
+          el.style.display = (step === currentStep) ? 'block' : 'none';
+        });
+
+      if (currentStep === 'connect') {
+        prevBtn.style.display = 'none';
+        // Only surface "Next" when the current user is actually connected. When
+        // existing repos come solely from other members, the user must log in
+        // first — otherwise Next leads to an empty (0 org) dead end.
+        if (shouldShowConnectNext({ hasExistingIntegration, userConnected })) {
+          nextBtn.style.display = 'block';
+          nextBtn.disabled = false;
+        } else {
+          nextBtn.style.display = 'none';
+        }
+        finishBtn.style.display = 'none';
+      } else if (currentStep === 'organization') {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        nextBtn.disabled = !selectedOrg;
+        finishBtn.style.display = 'none';
+      } else if (currentStep === 'repositories') {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        nextBtn.disabled = false;
+        finishBtn.style.display = 'none';
+      } else if (currentStep === 'markdown-sync') {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        nextBtn.disabled = false;
+        finishBtn.style.display = 'none';
+      } else if (currentStep === 'summary') {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'none';
+        finishBtn.style.display = 'block';
+        updateSummary();
+      }
+    }
+
+    function populateMarkdownSync() {
+      if (!markdownSyncList) return;
+      markdownSyncList.innerHTML = '';
+      const repos = Array.from(selectedRepos);
+      if (!repos.length) {
+        markdownSyncList.innerHTML = '<p style="padding:0.5em;color:#999;">No repositories selected.</p>';
+        return;
+      }
+      repos.forEach(function (fullName) {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = fullName;
+        input.checked = markdownSyncRepos.has(fullName);
+        input.addEventListener('change', function () {
+          if (input.checked) {
+            markdownSyncRepos.add(fullName);
+          } else {
+            markdownSyncRepos.delete(fullName);
+          }
+        });
+
+        const span = document.createElement('span');
+        span.textContent = fullName + ' — Markdown Sync';
+
+        label.appendChild(input);
+        label.appendChild(span);
+        markdownSyncList.appendChild(label);
+      });
+    }
+
+    function showModal() {
+      modal.style.display = 'flex';
+      document.body.classList.add('no-scroll');
+    }
+
+    function closeModal() {
+      modal.style.display = 'none';
+      document.body.classList.remove('no-scroll');
+    }
+
+    function showError(message) {
+      if (!message) return;
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+
+    function clearError() {
+      errorEl.textContent = '';
+      errorEl.style.display = 'none';
+    }
+
+    function fetchStatus() {
+      if (!creativeId) {
+        showError(modal.dataset.noCreative);
+        return;
+      }
+      clearError();
+      fetch(`/github/creatives/${creativeId}/integration`, { headers: { Accept: 'application/json' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          var connectState = deriveConnectState(data);
+          userConnected = connectState.userConnected;
+          hasExistingIntegration = connectState.hasExistingIntegration;
+
+          if (!data.connected) {
+            if (hasExistingIntegration) {
+              // Other users have linked repositories to this creative
+              statusEl.textContent = existingMessage;
+              renderExistingConnections(data.all_repositories || [], true);
+              if (connectMessage) connectMessage.style.display = 'none';
+              if (loginBtn) loginBtn.style.display = 'inline-block';
+            } else {
+              statusEl.textContent = '';
+              renderExistingConnections([]);
+              if (connectMessage) connectMessage.style.display = '';
+              if (loginBtn) loginBtn.style.display = 'inline-block';
+            }
+            currentStep = 'connect';
+            updateStep();
+            return;
+          }
+          selectedRepos = new Set(data.selected_repositories || []);
+          webhookDetails = data.webhooks || {};
+
+          // Rehydrate markdownSyncRepos from existing server state
+          markdownSyncRepos = new Set();
+          var syncData = data.markdown_sync || {};
+          Object.keys(syncData).forEach(function (repo) {
+            if (syncData[repo] && syncData[repo].enabled) {
+              markdownSyncRepos.add(repo);
+            }
+          });
+
+          // hasExistingIntegration was derived above from selected_repositories.
+          if (loginBtn) loginBtn.style.display = 'none';
+          renderExistingConnections(Array.from(selectedRepos));
+
+          if (hasExistingIntegration) {
+            statusEl.textContent = existingMessage;
+            if (connectMessage) connectMessage.style.display = 'none';
+            currentStep = 'connect';
+            updateStep();
+          } else {
+            statusEl.textContent = data.account && data.account.login ?
+              `${data.account.login} 님의 Github 계정과 연동됩니다.` : '';
+            if (connectMessage) connectMessage.style.display = 'none';
+            selectedOrg = null;
+            organizations = [];
+            currentStep = 'organization';
+            updateStep();
+            loadOrganizations();
+          }
+        })
+        .catch(function () {
+          showError('Github 연동 정보를 불러오지 못했습니다.');
+        });
+    }
+
+    function renderExistingConnections(repos, readOnly) {
+      if (!existingContainer || !existingList) return;
+      existingList.innerHTML = '';
+      selectedReposForDeletion = new Set();
+      if (!repos || !repos.length) {
+        existingContainer.style.display = 'none';
+        if (deleteBtn) {
+          deleteBtn.style.display = 'none';
+          updateDeleteButtonState();
+        }
+        return;
+      }
+
+      repos.forEach(function (fullName) {
+        const li = document.createElement('li');
+        li.style.display = 'flex';
+        li.style.alignItems = 'center';
+        li.style.gap = '0.5em';
+        li.style.marginBottom = '0.4em';
+        li.style.listStyle = 'none';
+
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.cursor = readOnly ? 'default' : 'pointer';
+        label.style.flex = '1';
+
+        if (!readOnly) {
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.value = fullName;
+          checkbox.className = 'github-existing-repo-checkbox';
+          checkbox.addEventListener('change', function () {
+            if (checkbox.checked) {
+              selectedReposForDeletion.add(fullName);
+            } else {
+              selectedReposForDeletion.delete(fullName);
+            }
+            updateDeleteButtonState();
+          });
+          label.appendChild(checkbox);
+        }
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = fullName;
+        nameSpan.style.flex = '1';
+
+        label.appendChild(nameSpan);
+        li.appendChild(label);
+        existingList.appendChild(li);
+      });
+
+      existingContainer.style.display = 'block';
+      if (deleteBtn) {
+        deleteBtn.style.display = readOnly ? 'none' : 'inline-flex';
+        updateDeleteButtonState();
+      }
+      if (resyncBtn) {
+        resyncBtn.style.display = readOnly ? 'none' : 'inline-flex';
+        resyncBtn.disabled = true;
+      }
+      if (loginBtn) loginBtn.style.display = 'none';
+    }
+
+    function loadOrganizations() {
+      fetch('/github/account/organizations', { headers: { Accept: 'application/json' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          organizations = data.organizations || [];
+          renderOrganizations();
+        })
+        .catch(function () {
+          showError('Organization 목록을 불러오지 못했습니다.');
+        });
+    }
+
+    function renderOrganizations() {
+      if (!orgList) return;
+      orgList.innerHTML = '';
+      if (!organizations.length) {
+        const p = document.createElement('p');
+        p.textContent = '조회할 수 있는 Organization이 없습니다.';
+        orgList.appendChild(p);
+        return;
+      }
+      organizations.forEach(function (org) {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
+
+        const input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'github-organization';
+        input.value = org.login;
+        input.checked = selectedOrg === org.login;
+        input.style.flexShrink = '0';
+        input.style.margin = '0';
+        input.addEventListener('change', function () {
+          selectedOrg = org.login;
+          nextBtn.disabled = false;
+        });
+
+        const span = document.createElement('span');
+        span.textContent = org.name || org.login;
+
+        label.appendChild(input);
+        label.appendChild(span);
+        orgList.appendChild(label);
+      });
+      nextBtn.disabled = !selectedOrg;
+    }
+
+    function loadRepositories() {
+      if (!selectedOrg) return;
+      clearError();
+      if (repoList) {
+        repoList.textContent = '...';
+      }
+      const params = new URLSearchParams({ organization: selectedOrg });
+      if (creativeId) params.append('creative_id', creativeId);
+      fetch(`/github/account/repositories?${params.toString()}`, { headers: { Accept: 'application/json' } })
+        .then(function (response) { return response.json(); })
+        .then(function (data) {
+          renderRepositories(data.repositories || []);
+        })
+        .catch(function () {
+          if (repoList) repoList.textContent = '';
+          showError('Repository 목록을 불러오지 못했습니다.');
+        });
+    }
+
+    function renderRepositories(repositories) {
+      if (!repoList) return;
+      repoList.innerHTML = '';
+      if (!repositories.length) {
+        const p = document.createElement('p');
+        p.textContent = '선택 가능한 Repository가 없습니다.';
+        repoList.appendChild(p);
+        return;
+      }
+      repositories.forEach(function (repo) {
+        const label = document.createElement('label');
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '0.5em';
+        label.style.marginBottom = '0.5em';
+        label.style.cursor = 'pointer';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = repo.full_name;
+        input.checked = selectedRepos.has(repo.full_name) || repo.selected;
+        input.addEventListener('change', function () {
+          if (input.checked) {
+            selectedRepos.add(repo.full_name);
+          } else {
+            selectedRepos.delete(repo.full_name);
+          }
+        });
+
+        const span = document.createElement('span');
+        span.textContent = repo.full_name;
+
+        label.appendChild(input);
+        label.appendChild(span);
+        repoList.appendChild(label);
+      });
+    }
+
+    function updateSummary() {
+      if (!summaryList) return;
+      summaryList.innerHTML = '';
+      const repos = Array.from(selectedRepos);
+      if (!repos.length) {
+        summaryEmpty.style.display = 'block';
+        if (summaryInstructions) summaryInstructions.style.display = 'none';
+        return;
+      }
+      summaryEmpty.style.display = 'none';
+      if (summaryInstructions) summaryInstructions.style.display = 'block';
+      repos.forEach(function (fullName) {
+        const li = document.createElement('li');
+        const title = document.createElement('strong');
+        title.textContent = fullName;
+        li.appendChild(title);
+
+        const details = webhookDetails[fullName] || {};
+        const urlValue = details.url;
+        const secretValue = details.secret;
+
+        if (urlValue || secretValue) {
+          const detailsContainer = document.createElement('div');
+          detailsContainer.className = 'github-webhook-details';
+          detailsContainer.style.marginTop = '0.3em';
+
+          if (urlValue) {
+            detailsContainer.appendChild(createWebhookDetail(webhookUrlLabel, urlValue));
+          }
+
+          if (secretValue) {
+            detailsContainer.appendChild(createWebhookDetail(webhookSecretLabel, secretValue));
+          }
+
+          li.appendChild(detailsContainer);
+        }
+
+        summaryList.appendChild(li);
+      });
+    }
+
+    function createWebhookDetail(label, value) {
+      const row = document.createElement('div');
+      row.className = 'github-webhook-detail-row';
+
+      const labelEl = document.createElement('span');
+      labelEl.textContent = `${label}: `;
+      labelEl.style.fontWeight = '600';
+
+      const codeEl = document.createElement('code');
+      codeEl.textContent = value;
+
+      row.appendChild(labelEl);
+      row.appendChild(codeEl);
+
+      return row;
+    }
+
+    function saveSelection() {
+      clearError();
+      const markdownSync = {};
+      Array.from(selectedRepos).forEach(function (repo) {
+        markdownSync[repo] = markdownSyncRepos.has(repo);
+      });
+      const payload = { repositories: Array.from(selectedRepos), markdown_sync: markdownSync };
+      
+      fetch(`/github/creatives/${creativeId}/integration`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken()
+        },
+        body: JSON.stringify(payload)
+      })
+        .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+        .then(function (result) {
+          if (!result.ok) {
+            showError(result.body.error || '연동 저장 중 오류가 발생했습니다.');
+            return;
+          }
+          selectedRepos = new Set(result.body.selected_repositories || []);
+          webhookDetails = result.body.webhooks || {};
+          
+          
+          updateSummary();
+          alertDialog(modal.dataset.successMessage);
+        })
+        .catch(function () {
+          showError('연동 정보를 저장하지 못했습니다.');
+        });
+    }
+
+    openBtn.addEventListener('click', function () {
+      creativeId = openBtn.dataset.creativeId;
+      if (!creativeId) {
+        alertDialog(modal.dataset.noCreative);
+        return;
+      }
+      resetWizard();
+      showModal();
+      fetchStatus();
+    });
+
+    closeBtn?.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (event) {
+      if (event.target === modal) closeModal();
+    });
+
+    prevBtn.addEventListener('click', function () {
+      clearError();
+      if (currentStep === 'organization') {
+        currentStep = 'connect';
+      } else if (currentStep === 'repositories') {
+        currentStep = 'organization';
+      } else if (currentStep === 'markdown-sync') {
+        currentStep = 'repositories';
+      } else if (currentStep === 'summary') {
+        currentStep = 'markdown-sync';
+      }
+      updateStep();
+      if (currentStep === 'organization' && organizations.length === 0) loadOrganizations();
+      if (currentStep === 'repositories') loadRepositories();
+    });
+
+    nextBtn.addEventListener('click', function () {
+      clearError();
+      if (currentStep === 'connect') {
+        currentStep = 'organization';
+        updateStep();
+        loadOrganizations();
+      } else if (currentStep === 'organization') {
+        currentStep = 'repositories';
+        updateStep();
+        loadRepositories();
+      } else if (currentStep === 'repositories') {
+        currentStep = 'markdown-sync';
+        updateStep();
+        populateMarkdownSync();
+      } else if (currentStep === 'markdown-sync') {
+        currentStep = 'summary';
+        updateStep();
+      }
+    });
+
+    finishBtn.addEventListener('click', function () {
+      saveSelection();
+    });
+
+    loginBtn.addEventListener('click', function () {
+      const width = Number(loginBtn.dataset.windowWidth) || 600;
+      const height = Number(loginBtn.dataset.windowHeight) || 700;
+      const left = window.screenX + Math.max(0, (window.outerWidth - width) / 2);
+      const top = window.screenY + Math.max(0, (window.outerHeight - height) / 2);
+
+      // Open popup synchronously to avoid browser popup blocking
+      window.open('', 'github-auth-window', `width=${width},height=${height},left=${left},top=${top}`);
+
+      // Store creative_id in session, then submit OAuth form into the already-open popup
+      fetch('/github/auth/store_creative', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken()
+        },
+        body: JSON.stringify({ creative_id: creativeId })
+      }).finally(function () {
+        loginForm.submit();
+      });
+    });
+
+    deleteBtn?.addEventListener('click', async function () {
+      if (!creativeId) {
+        alertDialog(modal.dataset.noCreative);
+        return;
+      }
+      clearError();
+      const selectedToDelete = Array.from(selectedReposForDeletion);
+      if (!selectedToDelete.length) {
+        showError(deleteSelectWarning);
+        return;
+      }
+      if (!(await confirmDialog(deleteConfirm, { danger: true }))) return;
+
+      fetch(`/github/creatives/${creativeId}/integration`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken()
+        },
+        body: JSON.stringify({ repositories: selectedToDelete })
+      })
+        .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+        .then(function (result) {
+          if (!result.ok) {
+            showError(result.body.error || deleteError);
+            return;
+          }
+
+          selectedRepos = new Set(result.body.selected_repositories || []);
+          webhookDetails = result.body.webhooks || {};
+          
+          hasExistingIntegration = selectedRepos.size > 0;
+          
+          renderExistingConnections(Array.from(selectedRepos));
+          updateSummary();
+          statusEl.textContent = deleteSuccess;
+
+          if (!hasExistingIntegration) {
+            selectedOrg = null;
+            organizations = [];
+            currentStep = 'organization';
+            updateStep();
+            loadOrganizations();
+          }
+        })
+        .catch(function () {
+          showError(deleteError);
+        });
+    });
+
+    resyncBtn?.addEventListener('click', async function () {
+      if (!creativeId) return;
+      clearError();
+      const checkboxes = existingList ? existingList.querySelectorAll('.github-existing-repo-checkbox:checked') : [];
+      const selectedToResync = Array.from(checkboxes).map(cb => cb.value);
+      if (!selectedToResync.length) {
+        showError(resyncSelectWarning);
+        return;
+      }
+      if (!(await confirmDialog(resyncConfirm))) return;
+
+      resyncBtn.disabled = true;
+      let completed = 0;
+      let failed = 0;
+
+      selectedToResync.forEach(function (repo) {
+        fetch(`/github/creatives/${creativeId}/integration/resync`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken()
+          },
+          body: JSON.stringify({ repository: repo })
+        })
+          .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+          .then(function (result) {
+            completed++;
+            if (!result.ok) failed++;
+            if (completed === selectedToResync.length) {
+              if (failed > 0) {
+                showError(resyncError);
+              } else {
+                statusEl.textContent = resyncSuccess;
+              }
+              resyncBtn.disabled = false;
+            }
+          })
+          .catch(function () {
+            completed++;
+            failed++;
+            if (completed === selectedToResync.length) {
+              showError(resyncError);
+              resyncBtn.disabled = false;
+            }
+          });
+      });
+    });
+
+    window.addEventListener('message', function (event) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.type === 'githubConnected') {
+        fetchStatus();
+      }
+    });
+  });
+}

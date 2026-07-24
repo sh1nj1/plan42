@@ -174,6 +174,58 @@ class McpClient {
   }
 }
 
+// --- Multipart upload (bearer) to the Collavre web app ---
+// Bytes travel as raw multipart, not base64-over-JSON-RPC, so binary files
+// (png, mp4, pdf, svg) upload without bloat. The endpoint embeds the node into
+// the creative's description and attaches it to creative.files.
+function postMultipartFile(baseUrl, token, creativeId, filePath) {
+  return new Promise((resolve, reject) => {
+    const fileName = path.basename(filePath);
+    const fileBuf = fs.readFileSync(filePath);
+    const boundary =
+      "----collavre" +
+      Buffer.from(fileName + fileBuf.length).toString("hex").slice(0, 16);
+    const head = Buffer.from(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([head, fileBuf, tail]);
+
+    const url = new URL(
+      `${baseUrl.replace(/\/+$/, "")}/creatives/${creativeId}/attachments`
+    );
+    const mod = url.protocol === "https:" ? https : http;
+    const req = mod.request(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
+      },
+    });
+    req.on("response", (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve({ raw: data });
+          }
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 // --- Commands ---
 async function withClient(fn) {
   const config = loadConfig();
@@ -424,6 +476,29 @@ const commands = {
     });
   },
 
+  async attach(argv) {
+    const { args } = parseArgs(argv);
+    const creativeId = parseInt(args.creative);
+    const file = args.file && args.file !== true ? args.file : null;
+    if (!creativeId || !file) {
+      console.error("Usage: collavre attach --creative <id> --file <path>");
+      process.exit(1);
+    }
+    if (!fs.existsSync(file)) {
+      console.error(`File not found: ${file}`);
+      process.exit(1);
+    }
+    const config = loadConfig();
+    if (!config.url || !config.token) {
+      console.error("Not configured. Run: collavre auth --url <url> --token <token>");
+      process.exit(1);
+    }
+    // config.url is the MCP base URL; the web app shares the same origin.
+    const webBase = new URL(config.url).origin;
+    const result = await postMultipartFile(webBase, config.token, creativeId, file);
+    console.log(JSON.stringify(result, null, 2));
+  },
+
   async tool(argv) {
     const { args, positional } = parseArgs(argv);
     const sub = positional[0];
@@ -532,6 +607,7 @@ Commands:
   create   --parent <id> --desc <text>     Create creative
   update   <id> [--desc] [--progress 1.0]  Update creative
   import   --parent <id> --file <path>     Import markdown
+  attach   --creative <id> --file <path>   Upload & embed a file (bearer multipart)
   batch    --file <ops.json>               Batch operations
   tool     <list|search|info|run>          Discover & run any tool
   help                                     Show this help`);

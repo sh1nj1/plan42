@@ -139,6 +139,9 @@ module Collavre
 
     def update_from_creative(input_creative)
       creative = input_creative.effective_origin
+      # Profile creatives are agent system prompts, not tool sources: a fenced
+      # `extend ToolMeta` example in a prompt must never register a real tool.
+      return if creative.profile?
       return unless creative.description.present?
 
       # Parse HTML to find code blocks

@@ -1,7 +1,9 @@
 import { LitElement, html, svg, nothing } from "lit";
-import DOMPurify from "dompurify";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { parseEmojis } from "../utils/emoji_parser";
+import { highlightCodeBlocks } from "../lib/utils/markdown";
+import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
+import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -25,6 +27,7 @@ class CreativeTreeRow extends LitElement {
     originLinkHtml: { state: true },
     isTitle: { type: Boolean, attribute: "is-title", reflect: true },
     archived: { type: Boolean, attribute: "archived", reflect: true },
+    githubSource: { type: Boolean, attribute: "github-source", reflect: true },
     loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
     _loadingDotsState: { state: true },
     editingUsers: { state: true }
@@ -48,6 +51,7 @@ class CreativeTreeRow extends LitElement {
     this.editOffIconHtml = "";
     this.originLinkHtml = "";
     this.isTitle = false;
+    this.githubSource = false;
     this.editingUsers = []; // [{ user_id, user_name, avatar_url }]
     this._templatesExtracted = false;
     this.loadingChildren = false;
@@ -76,6 +80,19 @@ class CreativeTreeRow extends LitElement {
   updated(changedProperties) {
     this._attachHandlers();
 
+    // Re-tokenize the server-rendered description code blocks with hljs so they
+    // match the editor's palette and follow light/dark theme. Idempotent: only
+    // unmarked blocks are processed, and lit re-renders description DOM (dropping
+    // the marker) only when descriptionHtml actually changes.
+    highlightCodeBlocks(this);
+
+    // Attach CSV/Excel download toolbars to markdown tables in the description
+    // display areas so creative tables match the chat-message table UI.
+    // Scoped to .creative-content/.creative-title-content (not the whole row)
+    // so the inline editor's own tables are never wrapped. Idempotent, safe on
+    // every Lit re-render.
+    addCreativeTableDownloadButtons(this);
+
     if (changedProperties.has('loadingChildren')) {
       if (this.loadingChildren) {
         this._startAnimation();
@@ -97,8 +114,10 @@ class CreativeTreeRow extends LitElement {
 
   set descriptionHtml(value) {
     const oldValue = this._descriptionHtml;
-    // Always sanitize when setting new HTML
-    const sanitized = DOMPurify.sanitize(value ?? "");
+    // Always sanitize when setting new HTML. Uses the shared sanitizer so the
+    // server-generated YouTube preview iframe survives (default DOMPurify config
+    // strips all iframes, which is what broke the YouTube link preview).
+    const sanitized = sanitizeDescriptionHtml(value);
     this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
     this.requestUpdate("descriptionHtml", oldValue);
@@ -189,6 +208,12 @@ class CreativeTreeRow extends LitElement {
     if (this._progressToggle) this._progressToggle.addEventListener("click", this._handleProgressToggle, { passive: false });
   }
 
+  // parentId convention (single source of truth): `data-parent-id` is ALWAYS
+  // emitted on the `.creative-tree` element. A non-empty value is the parent
+  // creative id; an empty string ("") means "root / no parent". This mirrors
+  // the dynamic-creation path (`dataset.parentId = parentId || ''`) so readers
+  // never have to disambiguate an *absent* attribute (unknown) from a real
+  // root, which previously dropped the parent for newly-added siblings.
   render() {
     if (this.isTitle) {
       return this._renderTitle();
@@ -205,7 +230,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
         draggable=${draggableAttr}
         data-action=${dragActions}
@@ -231,7 +256,7 @@ class CreativeTreeRow extends LitElement {
         class="creative-tree creative-tree-title"
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? nothing}
+        data-parent-id=${this.parentId ?? ""}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">
@@ -315,12 +340,22 @@ class CreativeTreeRow extends LitElement {
     `;
   }
 
+  _renderGithubBadge() {
+    if (!this.githubSource) return nothing;
+    return html`<span class="github-source-badge" title="Synced from GitHub (read-only)">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: -2px; opacity: 0.5;">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+      </svg>
+    </span>`;
+  }
+
   _renderContent() {
     const level = Number(this.level) || 1;
     // Toggle is now rendered outside
+    const githubBadge = this._renderGithubBadge();
     const content = html`
       <div class="creative-content" @click=${this._handleContentClick}>
-        ${unsafeHTML(this.descriptionHtml || "")}
+        ${githubBadge}${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;

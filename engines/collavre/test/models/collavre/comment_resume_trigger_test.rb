@@ -59,6 +59,29 @@ module Collavre
       assert_includes resume_comment.content, "🔄"
     end
 
+    # An approval surface (approve button / approved label = action payload) is a
+    # human decision surface, not a "user resumed" signal. Even authored by a
+    # human, it must not resume the loop — otherwise the auto-posted @agent
+    # resume turn would carry the approval message into the agent's history,
+    # routing around the dispatch-seam filter.
+    test "human-authored approval-action comment does not resume awaiting_user loop" do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          # only the comment itself; NO auto-posted resume instruction
+          @child.comments.create!(
+            content: "Approve tool?",
+            topic_id: @topic.id,
+            user: @human,
+            approver: @human,
+            action: JSON.generate("action" => "execute_tool", "tool_name" => "write_file")
+          )
+        end
+      end
+
+      @child.reload
+      assert_equal "awaiting_user", @child.data.dig("trigger", "loop", "state")
+    end
+
     test "AI comment does not resume awaiting_user loop" do
       SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
         assert_difference -> { @child.comments.count }, 1 do

@@ -42,14 +42,20 @@ module CollavreOpenclaw
           error_message = e.message
           raise
         ensure
-          log_interaction(
-            messages: messages_data[:messages],
-            tools: [],
-            response_content: response_content,
-            error_message: error_message,
-            input_tokens: nil,
-            output_tokens: nil
-          )
+          # Honor no-log mode (e.g. inline typo correction on *unsubmitted* drafts).
+          # Base Collavre::AiClient#chat gates logging behind @log_interactions; this
+          # prepended adapter path bypasses super, so it must gate it too — otherwise
+          # private drafts leak to ActivityLog for OpenClaw-backed agents.
+          if @log_interactions
+            log_interaction(
+              messages: messages_data[:messages],
+              tools: [],
+              response_content: response_content,
+              error_message: error_message,
+              input_tokens: nil,
+              output_tokens: nil
+            )
+          end
         end
 
         return response_content

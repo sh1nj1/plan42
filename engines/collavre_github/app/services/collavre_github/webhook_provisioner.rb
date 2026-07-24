@@ -1,6 +1,13 @@
 module CollavreGithub
   class WebhookProvisioner
-    EVENTS = %w[pull_request].freeze
+    # PR channel webhooks need every event GithubPrChannel handles. Without
+    # `issue_comment` / `pull_request_review` / `pull_request_review_comment`
+    # GitHub never delivers the relevant deliveries, so pr_monitor would attach
+    # a channel that silently misses comments. `pull_request` is required by
+    # the auto-attach + close detection paths.
+    CHANNEL_EVENTS = %w[issue_comment pull_request_review pull_request_review_comment].freeze
+    EVENTS = (%w[pull_request] + CHANNEL_EVENTS).freeze
+    EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS).freeze
     CONTENT_TYPE = "json".freeze
 
     def self.ensure_for_links(account:, links:, webhook_url:)
@@ -16,10 +23,15 @@ module CollavreGithub
       @webhook_url = webhook_url
     end
 
+    # Returns [[link, status], ...] so callers can detect silent GitHub
+    # rejections. status is one of:
+    #   :created         - new hook created
+    #   :updated         - existing hook patched (events/url/secret)
+    #   :secret_aligned  - non-primary link with existing hook; only the local
+    #                      RepositoryLink secret was aligned. No GitHub call.
+    #   :failed          - Octokit/Faraday error OR Client returned nil
     def ensure_for_links(links)
-      links.each do |link|
-        ensure_webhook(link)
-      end
+      links.map { |link| [ link, ensure_webhook(link) ] }
     end
 
     def remove_for_repositories(repositories)
@@ -49,8 +61,9 @@ module CollavreGithub
       if hook
         if primary_link && primary_link != link
           align_link_secret(link, primary_link.webhook_secret)
+          :secret_aligned
         else
-          update_webhook(repository_full_name, hook.id, link.webhook_secret)
+          update_webhook(repository_full_name, hook.id, link.webhook_secret) ? :updated : :failed
         end
       else
         secret = link.webhook_secret
@@ -60,12 +73,13 @@ module CollavreGithub
           align_link_secret(link, secret)
         end
 
-        create_webhook(repository_full_name, secret)
+        create_webhook(repository_full_name, secret) ? :created : :failed
       end
     rescue Octokit::Error => e
       Rails.logger.warn(
         "GitHub webhook provisioning failed for #{repository_full_name}: #{e.message}"
       )
+      :failed
     end
 
     def remove_webhook(repository_full_name)
@@ -91,7 +105,7 @@ module CollavreGithub
         repository_full_name,
         url: webhook_url,
         secret: secret,
-        events: EVENTS,
+        events: events_for(repository_full_name),
         content_type: CONTENT_TYPE
       )
     end
@@ -102,9 +116,16 @@ module CollavreGithub
         hook_id,
         url: webhook_url,
         secret: secret,
-        events: EVENTS,
+        events: events_for(repository_full_name),
         content_type: CONTENT_TYPE
       )
+    end
+
+    def events_for(repository_full_name)
+      has_markdown_sync = CollavreGithub::RepositoryLink
+        .where(repository_full_name: repository_full_name, markdown_sync_enabled: true)
+        .exists?
+      has_markdown_sync ? EVENTS_WITH_PUSH : EVENTS
     end
 
     def primary_link_for(repository_full_name)

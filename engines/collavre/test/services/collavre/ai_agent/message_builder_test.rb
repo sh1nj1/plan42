@@ -107,6 +107,22 @@ module Collavre
         assert_nil context_msg, "Should not include disabled context creative"
       end
 
+      test "includes ancestry breadcrumb in full subtree context" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Hello" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+        messages = result[:messages]
+
+        creative_msg = messages.find { |m| m[:kind] == :creative_context }
+        assert_not_nil creative_msg
+        assert_includes creative_msg[:parts].first[:text], "Creative Path:"
+        assert_match(/\(id: #{@creative.id}\)/, creative_msg[:parts].first[:text])
+      end
+
       test "injects only ancestry chain when disabled_self_context is true" do
         @creative.update!(data: { "disabled_self_context" => true })
 
@@ -119,14 +135,10 @@ module Collavre
         result = builder.build
         messages = result[:messages]
 
-        # Should NOT include full subtree
-        full_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative (id:") }
-        assert_nil full_msg, "Should not include full creative subtree when disabled"
-
-        # Should include ancestry path
-        ancestry_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Current Creative (id:") }
+        # Both modes now use "Creative Path:" format
+        ancestry_msg = messages.find { |m| m[:parts]&.first&.dig(:text)&.start_with?("Creative Path:") }
         assert_not_nil ancestry_msg, "Should include ancestry chain when self-context disabled"
-        assert_includes ancestry_msg[:parts].first[:text], "Path:"
+        assert_match(/\(id: #{@creative.id}\)/, ancestry_msg[:parts].first[:text])
       end
 
       test "deduplicates context and referenced creatives" do
@@ -289,6 +301,72 @@ module Collavre
         result = builder.build
 
         assert result[:context_changed], "Should detect agent settings change"
+      end
+
+      test "context_changed detects a direct profile prompt edit after last reply" do
+        # Create prior conversation
+        @creative.comments.create!(content: "Question", user: @user, topic_id: @comment.topic_id)
+        agent_reply = @creative.comments.create!(content: "Answer", user: @agent, topic_id: @comment.topic_id)
+
+        # Edit the agent's profile creative (canonical prompt home) directly
+        # AFTER the reply. This bumps only the Creative row, not the agent (User)
+        # row, and the profile creative sits outside the rendered topic tree.
+        profile = @agent.profile_creative
+        profile.skip_data_uri_rewrite = true
+        profile.update!(content_type_input: "markdown", markdown_source: "You are a helpful specialist.")
+        assert profile.updated_at > agent_reply.created_at
+        assert_not @agent.updated_at > agent_reply.created_at,
+          "a direct profile edit must not touch the agent User row"
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Follow-up" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        result = builder.build
+
+        assert result[:context_changed], "Should detect a direct profile prompt edit"
+      end
+
+      # An approval-action comment (approve button / approved label) is a human
+      # decision surface. Blocking it at the dispatch seams is not enough: the
+      # chat-history query would still load it as context on a later dispatch,
+      # so its content must be excluded here too (Comment#approval_action?).
+      test "excludes approval-action comments from chat history" do
+        # Ordinary prior comment — must remain in the agent's chat history.
+        @creative.comments.create!(
+          content: "prior ordinary message",
+          user: @user,
+          topic_id: @comment.topic_id
+        )
+        # Public approval-action comment authored by the agent (non-nil user_id,
+        # so it survives the existing where.not(user_id: nil) filter) — the leak
+        # vector: its content must never enter chat history.
+        @creative.comments.create!(
+          content: "TOOL APPROVAL secret-payload",
+          user: @agent,
+          topic_id: @comment.topic_id,
+          approver: @user,
+          action: %({"action":"execute_tool","tool_name":"write_file"}),
+          private: false
+        )
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        history = builder.build[:messages]
+          .select { |m| m[:kind] == :chat_history }
+          .map { |m| m[:parts].first[:text] }
+          .join("\n")
+
+        assert_includes history, "prior ordinary message",
+          "ordinary prior comments must remain in chat history"
+        assert_not_includes history, "secret-payload",
+          "approval-action comment content must never enter chat history"
       end
     end
   end

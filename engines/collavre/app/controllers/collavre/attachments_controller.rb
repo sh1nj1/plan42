@@ -8,7 +8,7 @@ module Collavre
         return head :forbidden
       end
 
-      blob.purge
+      purge_unless_referenced(blob)
       head :no_content
     rescue ActiveRecord::RecordNotFound
       head :not_found
@@ -19,10 +19,38 @@ module Collavre
 
     private
 
+    # A blob can be shared across creatives (description HTML copied between
+    # them). The editor fires this DELETE for removed nodes after its PATCH, so
+    # purging unconditionally could delete a blob another creative still
+    # references, 404-ing its description. Only purge a true orphan.
+    def purge_unless_referenced(blob)
+      signed_id = blob.signed_id
+      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
+
+      return if Creative.where("description LIKE ?", pattern).exists?
+      return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+
+      blob.purge
+    end
+
     def authorized_to_purge?(blob)
       return false unless Current.user
 
-      attachment_owned_by_current_user?(blob) || editable_creative_reference?(blob)
+      attachment_owned_by_current_user?(blob) ||
+        editable_creative_reference?(blob) ||
+        orphan_blob?(blob)
+    end
+
+    # Authorize purging a true orphan (attached to nothing, in no description).
+    # Covers a node removed before its blob was ever attached (removed-then-save,
+    # so reconcile never sees it), which can prove neither ownership nor a
+    # writable reference and would otherwise 403, stranding the blob. Safe: any
+    # in-use blob still fails this check. Mirrors purge_unless_referenced.
+    def orphan_blob?(blob)
+      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(blob.signed_id)}%"
+
+      !ActiveStorage::Attachment.where(blob_id: blob.id).exists? &&
+        !Creative.where("description LIKE ?", pattern).exists?
     end
 
     def attachment_owned_by_current_user?(blob)
@@ -36,9 +64,19 @@ module Collavre
       signed_id = blob.signed_id
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
 
-      Creative.where("description LIKE ?", pattern).any? do |creative|
-        creative.has_permission?(Current.user, :write)
-      end
+      creatives = Creative.where("description LIKE ?", pattern).includes(:origin)
+      return false if creatives.empty?
+
+      # Permission is evaluated on the origin for linked creatives. Resolve every
+      # referencing creative to its permission base, then delegate the write-rank
+      # deny-invariant to the canonical PermissionFilter (owner wins; a
+      # user-specific entry — including an explicit no_access deny — takes
+      # precedence over the public share). readable_ids batch-loads the cache
+      # entries once, preserving the prior N+1 avoidance.
+      bases = creatives.map { |c| c.origin_id.nil? ? c : c.origin }.compact.uniq
+      Collavre::Creatives::PermissionFilter.new(user: Current.user)
+        .readable_ids(bases.map(&:id), min_permission: :write)
+        .any?
     end
   end
 end

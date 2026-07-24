@@ -118,7 +118,7 @@ module Collavre
       def notify_write_users
         return if private? || !user
         return if streaming_placeholder?
-        return if creative&.inbox? # Don't notify about inbox comments
+        return if suppress_inbox_notification? # only the System topic is the alarm stream
         notification_recipients.each do |recipient|
           create_inbox_comment(
             recipient,
@@ -131,7 +131,7 @@ module Collavre
       def notify_mentions
         return if private?
         return if streaming_placeholder?
-        return if creative&.inbox? # Don't notify about inbox comments
+        return if suppress_inbox_notification? # only the System topic is the alarm stream
         notify_mentioned_users
       end
 
@@ -146,7 +146,7 @@ module Collavre
       end
 
       def notify_ai_write_users
-        return if creative&.inbox? # Don't notify about inbox comments
+        return if suppress_inbox_notification? # only the System topic is the alarm stream
         notification_recipients.each do |recipient|
           create_inbox_comment(
             recipient,
@@ -157,12 +157,22 @@ module Collavre
       end
 
       def notify_ai_mentions
-        return if creative&.inbox? # Don't notify about inbox comments
+        return if suppress_inbox_notification? # only the System topic is the alarm stream
         notify_mentioned_users
       end
 
+      # #1301 made every inbox topic EXCEPT System dispatch like a normal topic;
+      # the alarm stream follows suit. Suppress notifications ONLY for the System
+      # topic itself (its system-authored notices must not cascade into more
+      # notices — a loop). Inbox#Main and other inbox topics notify normally, so
+      # an agent reply there reaches the absent owner. Mirrors the dispatch gate
+      # in Comment#dispatch_to_orchestration.
+      def suppress_inbox_notification?
+        creative&.inbox? && inbox_system_topic?
+      end
+
       def notify_approver
-        return unless approver.present? && action.present?
+        return unless approver.present? && approval_action?
         return if approver == user
         return if creative&.inbox? # Don't notify about inbox comments
 

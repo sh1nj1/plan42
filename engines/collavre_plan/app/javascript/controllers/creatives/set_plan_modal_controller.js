@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import { alertDialog } from 'collavre/lib/utils/dialog'
 
 // Self-contained controller: attaches to the modal wrapper element
 // and listens for 'plan:open-modal' on document for cross-element communication.
@@ -119,6 +120,6 @@ export default class extends Controller {
 
   alert(message) {
     if (!message) return
-    window.alert(message)
+    alertDialog(message)
   }
 }

@@ -12,10 +12,23 @@ ko:
       default_name_prefix: "토픽"
       branch_prefix: "분기"
       main_name: "메인"
+      cannot_delete_main: "메인 토픽은 삭제할 수 없습니다."
+      orphaned_cron_notice: "[시스템] '%{topic_name}' 토픽이 삭제되었지만, 이 토픽을 대상으로 하는 반복 크론 작업(%{cron_key})이 아직 남아 있어 실행될 때마다 아무 동작도 하지 않고 조용히 종료됩니다. 원래 메시지: \"%{message}\". 다른 토픽으로 다시 지정하거나 cron_cancel로 취소하세요."
       create_and_move: '"%{name}" 생성후 이동'
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
+        add_members:
+          title: 새 위치에 멤버를 추가할까요?
+          description: 이 사람들은 토픽이 있던 곳에는 접근할 수 있었지만 "%{creative}"에는 없습니다. 계속 접근할 수 있도록 추가하세요.
+          add: 선택 추가
+          skip: 나중에
+          adding: 추가 중…
+          added:
+            one: 멤버 1명을 추가했습니다.
+            other: 멤버 %{count}명을 추가했습니다.
+          partial: "%{added}명 추가, %{failed}명 실패."
+          failed: 멤버를 추가하지 못했습니다. 다시 시도해 주세요.
     github_auth:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
@@ -32,6 +45,7 @@ ko:
       delete: 댓글 삭제
       delete_button: 삭제
       not_owner: 댓글 소유자만 수정할 수 있습니다.
+      github_synced_readonly: GitHub에서 동기화된 콘텐츠로 수정할 수 없습니다.
       no_permission: 댓글을 추가할 권한이 없습니다.
       archived_creative: 아카이브된 크리에이티브입니다. 채팅이 비활성화되었습니다.
       convert_not_allowed: 댓글 소유자 또는 크리에이티브 관리자만 이 메시지를 전환할 수 있습니다.
@@ -42,6 +56,7 @@ ko:
       copy_link_success: 링크가 복사되었습니다
       copy_link_error: 링크를 복사할 수 없습니다
       approve_button: 승인
+      deny_button: 거부
       approve_not_allowed: 지정된 승인자만 이 댓글을 승인할 수 있습니다.
       approve_invalid_format: 유효하지 않은 액션 형식입니다.
       approve_admin_required: 시스템 관리자 승인이 필요합니다.
@@ -59,6 +74,7 @@ ko:
       approve_invalid_progress: 댓글 작업 진행률은 숫자여야 합니다.
       approve_invalid_description: 댓글 작업 설명은 텍스트여야 합니다.
       approved_label: 승인됨
+      denied_label: 거부됨
       action_summary: Action JSON
       edit_action_button: Action 수정
       action_update_success: Action 이 업데이트되었습니다.
@@ -88,6 +104,12 @@ ko:
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅
       remove_from_history: 히스토리에서 제거
+      topic_set_agent_error: 이 토픽에 에이전트를 지정할 수 없습니다.
+      topic_create_error: 토픽을 생성할 수 없습니다.
+      topic_update_error: 토픽을 수정할 수 없습니다.
+      topic_delete_error: 토픽을 삭제할 수 없습니다.
+      topic_archive_error: 토픽을 보관할 수 없습니다.
+      topic_restore_error: 토픽을 복원할 수 없습니다.
       inbox_reply_button: 답글
       replace_button: 바꾸기
       move_no_selection: 이동할 메시지를 선택해주세요.
@@ -120,9 +142,13 @@ ko:
       batch_delete_no_selection: 삭제할 메시지를 선택해주세요.
       batch_delete_not_found: 일부 선택한 메시지를 찾을 수 없습니다.
       topic_search_placeholder: 토픽 검색...
-      topic_main: 메인
+      topic_main: 전체 메세지
+      topic_list: 토픽 목록
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
+      typo_keep_label: 유지
+      typo_custom_label: 직접 입력
+      typo_input_label: 교정
       move_invalid_target: 이동할 크리에이티브를 선택해주세요.
       move_invalid_topic: 유효하지 않은 토픽입니다.
       move_not_allowed: 이 메시지를 이동할 권한이 없습니다.
@@ -192,6 +218,7 @@ ko:
         delete_confirm: 이 버전을 삭제하시겠습니까?
         select: 선택
       stop_agent: 중지
+      stop_blocking_agent: 실행 중 작업 중지
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
       table_download:
@@ -206,6 +233,8 @@ ko:
         delete: 삭제
         delete_confirm: 이 이미지를 삭제하시겠습니까?
         counter: "%{current} / %{total}"
+    channels:
+      detach: "해제"
     calendar_events:
       deleted: 캘린더 이벤트가 삭제되었습니다.
     google_calendar:

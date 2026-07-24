@@ -269,6 +269,38 @@ module Collavre
         assert_equal [ @agent1 ], selected
       end
 
+      # Review feedback is forced routing: the Matcher restricts candidates to the
+      # quoted comment's author (the sole agent ReviewHandler accepts), so a low bid
+      # score must never drop it — otherwise the Review button no-ops under bid +
+      # bid_fallback_enabled: false.
+      test "review messages bypass bid arbitration so the forced author is never dropped" do
+        OrchestratorPolicy.create!(
+          policy_type: "arbitration",
+          config: {
+            "strategy" => "bid",
+            "confidence_threshold" => 0.99,
+            "bid_fallback_enabled" => false
+          }
+        )
+
+        quoted = Comment.create!(creative: @creative, content: "summary", user: @agent1)
+        review = Comment.create!(
+          creative: @creative,
+          content: "looks wrong, fix it",
+          user: @user,
+          quoted_comment_id: quoted.id
+        )
+
+        review_context = @context.merge(
+          "comment" => { "id" => review.id, "content" => review.content }
+        )
+
+        arbiter = Arbiter.new(review_context)
+        selected = arbiter.select([ @agent1 ])
+
+        assert_equal [ @agent1 ], selected
+      end
+
       test "bid strategy considers recent participation" do
         agent_active = User.create!(
           name: "Active Agent",

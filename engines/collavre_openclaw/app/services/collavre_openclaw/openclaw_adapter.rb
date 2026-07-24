@@ -106,7 +106,8 @@ module CollavreOpenclaw
         client.chat_send(
           session_key: session_key,
           message: payload[:message],
-          attachments: payload[:attachments]
+          attachments: payload[:attachments],
+          on_run_id: method(:persist_run_id_on_comment)
         ) do |event|
           case event[:state]
           when "delta"
@@ -144,6 +145,20 @@ module CollavreOpenclaw
         Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
         chat_via_http(&block)
       end
+    end
+
+    # Claim the run for the solicited reply so the same run's final, re-delivered
+    # as "proactive" to other processes, is suppressed. This reply is canonical
+    # (it carries the activity log), so it reclaims on a lost race.
+    def persist_run_id_on_comment(run_id)
+      return if run_id.blank?
+
+      comment = @context[:comment]
+      return unless comment.respond_to?(:id) && comment.id.present?
+
+      CollavreOpenclaw::ProcessedAiRun.claim_canonical(run_id, comment)
+    rescue StandardError => e
+      Rails.logger.warn("[CollavreOpenclaw] Failed to persist run_id on comment: #{e.message}")
     end
 
     def build_ws_chat_payload
@@ -571,8 +586,16 @@ module CollavreOpenclaw
 
       host = options[:host]
       host ||= Rails.application.config.action_controller.default_url_options&.dig(:host)
-      host ||= ENV["APP_HOST"]
-      host ||= ENV["RAILS_HOST"]
+      # When the engine is mounted without core Collavre (gemspec has no `collavre`
+      # dependency), `IntegrationSettings` is undefined — fall back to the ENV
+      # path the previous code used so standalone deployments still resolve a host.
+      if defined?(Collavre::IntegrationSettings)
+        host ||= Collavre::IntegrationSettings.fetch(:app_host)
+        host ||= Collavre::IntegrationSettings.fetch(:rails_host)
+      else
+        host ||= ENV["APP_HOST"]
+        host ||= ENV["RAILS_HOST"]
+      end
 
       result = { host: host }
       result[:protocol] = options[:protocol] || "https"

@@ -6,7 +6,7 @@ module Collavre
     include Collavre::Comments::BatchOperations
 
     before_action :set_creative
-    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :update_action, :download_images, :remove_image ]
+    before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
 
     def fullscreen
       # Render the creative index page with comments popup auto-opened in fullscreen.
@@ -28,7 +28,7 @@ module Collavre
       limit = 20
 
       visible_scope = @creative.comments.visible_to(Current.user)
-      scope = visible_scope.with_attached_images.includes(:topic, :comment_reactions, :comment_versions, :snapshot_as_result)
+      scope = visible_scope.with_attached_images.includes(:task, :topic, :comment_reactions, :comment_versions, :snapshot_as_result)
 
       if params[:search].present?
         words = params[:search].to_s.strip.downcase.split(/\s+/)
@@ -68,9 +68,15 @@ module Collavre
         scope = scope.where.not(topic_id: archived_topic_ids) if archived_topic_ids.any?
       end
 
-      # Default order: Newest first (created_at DESC)
+      # Default order: Newest first (id DESC)
       # This matches the column-reverse layout where the first item in the list is the visual bottom (Newest).
-      scope = scope.order(created_at: :desc)
+      # We order by id, not created_at: id is a single monotonic sequence that reflects the true insertion
+      # (causal) order, whereas created_at is stamped by whichever process wrote the row. A user message is
+      # stamped by the web request while its agent reply is stamped by a background worker, and clock skew
+      # between those processes can backdate the reply below the message that triggered it. The pagination
+      # cursors below are all id-based ("Newer = higher id"), so ordering by id keeps display and cursors
+      # consistent.
+      scope = scope.order(id: :desc)
 
 
       @comments = if params[:around_comment_id].present?
@@ -81,7 +87,7 @@ module Collavre
         # Older messages have LOWER IDs.
 
         # Newer bundle (including target): ID >= target_id
-        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(created_at: :asc).limit(limit / 2 + 1)
+        newer_bundle = scope.where("comments.id >= ?", target_id).reorder(id: :asc).limit(limit / 2 + 1)
 
         # Older bundle: ID < target_id
         older_bundle = scope.where("comments.id < ?", target_id).limit(limit / 2)
@@ -104,8 +110,8 @@ module Collavre
         # But standard DESC query would give us the VERY Newest.
         # We want the ones just above `after_id`.
 
-        # Use reorder(ASC) to get the ones immediately larger than after_id, then reverse back to DESC.
-        scope.where("comments.id > ?", params[:after_id].to_i).reorder(created_at: :asc).limit(limit)
+        # Use reorder(id: :asc) to get the ones immediately larger than after_id, then reverse back to DESC.
+        scope.where("comments.id > ?", params[:after_id].to_i).reorder(id: :asc).limit(limit)
       else
         # Initial Load (Latest messages)
         scope.limit(limit).to_a.reverse
@@ -191,6 +197,10 @@ module Collavre
     end
 
     def update
+      if github_synced_content_comment?(@comment)
+        render json: { error: I18n.t("collavre.comments.github_synced_readonly") }, status: :forbidden and return
+      end
+
       if @comment.user == Current.user
         safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
         validate_topic_id!(safe_params[:topic_id]) or return
@@ -207,6 +217,10 @@ module Collavre
     end
 
     def destroy
+      if github_synced_content_comment?(@comment)
+        render json: { error: I18n.t("collavre.comments.github_synced_readonly") }, status: :forbidden and return
+      end
+
       # @comment is set by before_action
       is_owner = @comment.user == Current.user
       is_admin = @creative.has_permission?(Current.user, :admin)
@@ -330,6 +344,11 @@ module Collavre
     end
 
     private
+
+    def github_synced_content_comment?(comment)
+      return false unless comment.topic&.name == Collavre::Creative::CONTENT_TOPIC_NAME
+      comment.creative&.github_markdown?
+    end
 
     def comment_params
       params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, :review_type, images: [])

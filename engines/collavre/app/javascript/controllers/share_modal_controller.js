@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { confirmDialog, alertDialog } from "../lib/utils/dialog"
 
 export default class extends Controller {
   static targets = ["container"]
@@ -277,13 +278,13 @@ export default class extends Controller {
       const methodInput = form.querySelector("input[name='_method'][value='delete']")
       if (!methodInput) return
 
-      form.addEventListener("submit", (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault()
 
         const confirmMessage = form.dataset.turboConfirm
           || form.querySelector("button[type='submit']")?.dataset?.turboConfirm
           || form.querySelector("button")?.dataset?.confirm
-        if (confirmMessage && !window.confirm(confirmMessage)) return
+        if (confirmMessage && !(await confirmDialog(confirmMessage, { danger: true }))) return
 
         const listItem = form.closest("li")
         if (listItem) {
@@ -379,7 +380,7 @@ export default class extends Controller {
       const copiedTemplate = inviteLinkBtn.dataset.copiedTemplate
 
       if (permission === "no_access") {
-        alert(noAccessMessage)
+        alertDialog(noAccessMessage)
         return
       }
 

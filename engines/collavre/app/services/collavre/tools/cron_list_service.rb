@@ -5,6 +5,7 @@ module Tools
   class CronListService
     extend T::Sig
     extend ToolMeta
+    include Collavre::Crons::RecurringTaskArguments
 
     tool_name "cron_list"
     tool_description "List recurring scheduled jobs. Returns all cron jobs for creatives the current user has access to. Filter by creative_id to see jobs for a specific creative."
@@ -45,20 +46,6 @@ module Tools
       end
 
       { success: true, cron_jobs: results, count: results.size }
-    end
-
-    private
-
-    def parse_arguments(task)
-      args = task.arguments
-      return {} unless args.is_a?(Array) && args.first.is_a?(Hash)
-
-      args.first.stringify_keys
-    end
-
-    def parse_creative_id_from_key(key)
-      match = key.match(/\Acron_(\d+)_/)
-      match[1].to_i if match
     end
   end
 end

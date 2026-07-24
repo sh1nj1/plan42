@@ -31,6 +31,7 @@ module Collavre
         say "Add to your application.css if needed:"
         say "  @import 'collavre/creatives';"
         say "  @import 'collavre/comments_popup';"
+        say "  @import 'collavre/tables';"
         say "  @import 'collavre/dark_mode';"
         say ""
         say "Run 'npm run build' to build assets."

@@ -1,6 +1,6 @@
 <% comment_topic = comment.topic %>
 <% current_topic_id = local_assigns[:current_topic_id] %>
-<% has_pending_action = comment.action.present? && comment.action_executed_at.blank? %>
+<% has_pending_action = comment.approval_action? && comment.action_executed_at.blank? %>
 <% approver_id = comment.approver_id %>
 <div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approver-id="<%= approver_id %>" data-ai-user="<%= comment.user&.ai_user? %>" data-streaming="<%= local_assigns.fetch(:streaming, false) %>">
   <div class="comment-select">
@@ -36,11 +36,25 @@
       <span class="comment-status-label private-label">🔒 <%= t('collavre.comments.private') %></span>
     <% end %>
     <% if comment.action_executed_at.present? %>
-      <span class="comment-status-label approved-label">✅ <%= t('collavre.comments.approved_label') %></span>
+      <% if comment.claude_channel_permission_denied? %>
+        <span class="comment-status-label denied-label">🚫 <%= t('collavre.comments.denied_label') %></span>
+      <% else %>
+        <span class="comment-status-label approved-label">✅ <%= t('collavre.comments.approved_label') %></span>
+      <% end %>
     <% end %>
     <% can_convert_comment = comment.user == Current.user || comment.creative.has_permission?(Current.user, :admin) %>
   </div>
     <div class="comment-action-container">
+      <% if comment.task_id && comment.task&.status&.in?(%w[running pending queued pending_approval]) %>
+        <button class="comment-stop-btn" type="button" data-action="click->comment#cancelTask" data-task-id="<%= comment.task_id %>" title="<%= t('collavre.comments.stop_agent') %>">
+          <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_agent') %>
+        </button>
+      <% elsif comment.waiting_notice? && (blocking_task = comment.topic_blocking_task) %>
+        <%# Stop the in-progress blocker so the deferred waiter can proceed (stuck recovery). %>
+        <button class="comment-stop-btn" type="button" data-action="click->comment#cancelTask" data-task-id="<%= blocking_task.id %>" title="<%= t('collavre.comments.stop_blocking_agent') %>">
+          <span class="agent-stop-icon">&#x25A0;</span> <%= t('collavre.comments.stop_blocking_agent') %>
+        </button>
+      <% end %>
       <button class="add-reaction-btn" type="button" data-action="click->comment#triggerReactionPicker" title="<%= t('collavre.comments.add_reaction') %>">
         <span class="grayscale-emoji">☺</span>
       </button>
@@ -52,6 +66,11 @@
         <button class="approve-comment-btn comment-approve-hidden" data-comment-target="approveButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.approve_button') %>">
           <%= t('collavre.comments.approve_button') %>
         </button>
+        <% if comment.claude_channel_permission? %>
+          <button class="deny-comment-btn comment-approve-hidden" data-comment-target="denyButton" data-comment-id="<%= comment.id %>" title="<%= t('collavre.comments.deny_button') %>">
+            <%= t('collavre.comments.deny_button') %>
+          </button>
+        <% end %>
       <% end %>
       <button class="edit-comment-btn comment-owner-only" data-comment-target="ownerButton" data-comment-id="<%= comment.id %>" data-comment-content="<%= comment.content %>" data-comment-private="<%= comment.private? %>" title="<%= t('collavre.comments.update_comment') %>">
         <%= t('collavre.comments.edit_button') %>
@@ -71,8 +90,8 @@
     </div>
   <% end %>
   <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
-  <% if comment.comment_versions.any? %>
-    <% version_count = comment.comment_versions.size %>
+  <% if comment.comment_versions_count > 0 %>
+    <% version_count = comment.comment_versions_count %>
     <% selected_id = comment.selected_version_id %>
     <% version_ids = comment.comment_versions.order(:version_number).pluck(:id) %>
     <% selected_index = selected_id ? (version_ids.index(selected_id)&.+(1) || version_count) : version_count %>
@@ -96,7 +115,8 @@
   <% end %>
 
 
-  <% if comment.images.attached? %>
+  <% github_inline_images = comment.creative&.github_markdown? && comment.topic&.name == Collavre::Creative::CONTENT_TOPIC_NAME %>
+  <% if comment.images.attached? && !github_inline_images %>
     <% images_list = comment.images.to_a %>
     <div class="comment-attachments"
          data-controller="image-lightbox"
@@ -153,12 +173,17 @@
       <a href="#" class="comment-topic-switch" data-topic-id="<%= comment_topic.id %>">#<%= comment_topic.name %></a>
     </div>
   <% end %>
-  <% if comment.action.present? %>
+  <% if comment.approval_action? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>
         <div class="comment-action-body">
-          <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
+          <% action_md = comment_action_markdown(comment) %>
+          <% if action_md && !has_pending_action %>
+            <div class="comment-content comment-action-markdown"><%= action_md %></div>
+          <% else %>
+            <pre class="comment-action-json" data-comment-action-json><%= formatted_comment_action(comment) %></pre>
+          <% end %>
           <% if has_pending_action %>
             <div class="comment-action-approve-controls comment-approve-hidden" data-comment-target="actionApproveControls">
               <button class="edit-comment-action-btn" type="button" data-comment-id="<%= comment.id %>"><%= t("collavre.comments.edit_action_button") %></button>

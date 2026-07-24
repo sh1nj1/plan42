@@ -1,0 +1,80 @@
+# Landing-page demo scenario.
+#
+# Declarative steps interpreted by lib/record.mjs. `ai_turns` are scripted
+# responses injected (FIFO) into the local fake LLM before recording — each
+# `@Vrex:` mention drives the REAL Collavre streaming pipeline against the next
+# queued turn, so the recording shows the genuine typing-indicator + token
+# stream UI (not a static post-hoc insert).
+
+name: landing
+viewport: landing          # default size preset (overridable with --size)
+default_locale: ko         # this tour is scripted in Korean; --locale en has no column here
+
+ai_turns:
+  - |
+    이번 스프린트 우선순위를 분석해보겠습니다.
+
+    **1순위: API v2 개발** (75% 완료)
+    - 인증 미들웨어가 핵심 블로커입니다
+    - 프론트엔드 리팩토링이 이 작업에 의존합니다
+
+    **2순위: 디자인 시스템 리뉴얼** (95% 완료)
+    - 다크모드 토큰 조정만 남았습니다
+
+    **3순위: 런칭 준비** (30% 완료)
+    - QA 체크리스트와 인프라 스케일링이 병목입니다
+
+    전체 스프린트 진행률은 약 64%입니다. API v2의 인증 미들웨어부터 마무리하는 것을 추천합니다.
+
+steps:
+  - login: { email: pm@collabre.dev, password: demo1234 }
+  - wait: 2000
+  - shot: 01-root
+
+  # Scene 1 — hierarchical creative tree
+  - click_row: 콜라브 v2.0 릴리즈
+  - wait: 2500
+  - shot: 02-project
+  - click: "#expand-all-btn"
+  - wait: 2500
+  - shot: 03-tree-expanded
+
+  # Scene 2 — chat & topics
+  - open_chat: 콜라브 v2.0 릴리즈
+  - wait: 2000
+  - shot: 04-chat
+  - topic: 코드 리뷰
+  - scroll_bottom: {}
+  - wait: 1500
+  - shot: 05-code-review
+  - topic: 디자인 논의
+  - wait: 1500
+  - shot: 06-design
+
+  # Scene 3 — real AI agent streaming (the core of this skill)
+  - mention_ai:
+      text: "@Vrex: 이번 스프린트에서 가장 우선순위 높은 작업이 뭐야?"
+      shot: 07-ai-typing
+  - wait: 1500
+  - shot: 08-ai-submitted
+  - wait_stream: { timeout: 45000 }
+  - scroll_bottom: {}
+  - wait: 1500
+  - shot: 09-ai-response
+  - wait: 2500
+  - shot: 10-ai-final
+
+  # Scene 4 — context system
+  - press: Escape
+  - wait: 800
+  - click_row: API v2 개발
+  - wait: 2000
+  - shot: 11-api-v2
+  - open_chat: API v2 개발
+  - wait: 2000
+  - shot: 12-context
+
+  # Outro
+  - goto: /
+  - wait: 2500
+  - shot: 13-final

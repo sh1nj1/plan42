@@ -799,5 +799,39 @@ module CollavreOpenclaw
 
       assert_includes adapter.session_key, @user.id.to_s
     end
+
+    # --- run_id backfill / reclaim (cross-process duplicate suppression) ---
+
+    test "persist_run_id_on_comment records the run for the solicited reply" do
+      creative = Collavre::Creative.create!(description: "Reclaim creative", user: @user)
+      reply = creative.comments.create!(user: @user, content: "Solicited reply")
+      adapter = OpenclawAdapter.new(user: @user, system_prompt: "Test", context: { comment: reply })
+
+      adapter.send(:persist_run_id_on_comment, "run-backfill")
+
+      assert_equal reply.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-backfill")&.id
+    ensure
+      CollavreOpenclaw::ProcessedAiRun.where(run_id: "run-backfill").delete_all
+      creative&.destroy
+    end
+
+    test "persist_run_id_on_comment reclaims the run and removes a proactive duplicate when it lost the race" do
+      creative = Collavre::Creative.create!(description: "Reclaim creative", user: @user)
+      # A proactive duplicate from another process already claimed the run_id.
+      duplicate = creative.comments.create!(user: @user, content: "Proactive duplicate (no activity log)")
+      CollavreOpenclaw::ProcessedAiRun.claim_proactive("run-race", duplicate)
+      # The canonical solicited reply (carries the activity log) tries to record.
+      reply = creative.comments.create!(user: @user, content: "Solicited reply with activity log")
+      adapter = OpenclawAdapter.new(user: @user, system_prompt: "Test", context: { comment: reply })
+
+      adapter.send(:persist_run_id_on_comment, "run-race")
+
+      assert_equal reply.id, CollavreOpenclaw::ProcessedAiRun.comment_for("run-race")&.id,
+                   "solicited reply should own the run"
+      assert_not Collavre::Comment.exists?(duplicate.id), "proactive duplicate should be removed"
+    ensure
+      CollavreOpenclaw::ProcessedAiRun.where(run_id: "run-race").delete_all
+      creative&.destroy
+    end
   end
 end

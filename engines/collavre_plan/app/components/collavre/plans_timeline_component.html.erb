@@ -1,6 +1,12 @@
 <div class="plans-timeline-wrapper">
-  <button id="timeline-today-btn" class="btn btn-xs" type="button"><%= t('collavre.plans.today', default: '오늘') %></button>
-  <div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>" data-delete-confirm="<%= t('collavre.plans.delete_confirm', default: 'Are you sure?') %>"></div>
+  <div class="timeline-controls">
+    <button id="timeline-today-btn" class="btn btn-xs" type="button"><%= t('collavre.plans.today', default: '오늘') %></button>
+    <div class="timeline-chips">
+      <button type="button" id="chip-registrations" class="timeline-chip<%= ' timeline-chip--active' if show_registrations %>" data-chip="registrations" aria-pressed="<%= show_registrations %>"><%= t('collavre.plans.chip_registrations', default: 'Registered') %></button>
+      <button type="button" id="chip-modifications" class="timeline-chip<%= ' timeline-chip--active' if show_modifications %>" data-chip="modifications" aria-pressed="<%= show_modifications %>"><%= t('collavre.plans.chip_modifications', default: 'Modified') %></button>
+    </div>
+  </div>
+  <div id="plans-timeline" class="horizontal-timeline" data-plans='<%= raw plan_data.to_json %>' data-start-date="<%= @start_date %>" data-end-date="<%= @end_date %>" data-registrations="<%= show_registrations %>" data-modifications="<%= show_modifications %>" data-delete-confirm="<%= t('collavre.plans.delete_confirm', default: 'Are you sure?') %>"></div>
 </div>
 <hr>
 <div class="plan-form-container">

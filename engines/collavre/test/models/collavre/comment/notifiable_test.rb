@@ -15,6 +15,41 @@ module Collavre
         @topic = Topic.create!(creative: @creative, name: "test", user: @owner)
       end
 
+      test "notify_ai_completion notifies for an AI reply in a non-System inbox topic (Inbox#Main)" do
+        # #1301 made every inbox topic EXCEPT System dispatch like a normal topic.
+        # The System alarm must follow suit: an agent reply in Inbox#Main has to
+        # notify the absent owner, otherwise Inbox#Main conversations are silent.
+        inbox = Creative.inbox_for(@owner)
+        main_topic = inbox.main_topic(fallback_user: @owner)
+        system_topic = inbox.system_topic
+
+        reply = inbox.comments.create!(
+          content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: main_topic
+        )
+        reply.update!(content: "여기 결과입니다")
+
+        assert_difference -> { inbox.comments.where(topic: system_topic).count }, 1 do
+          reply.notify_ai_completion
+        end
+        notice = inbox.comments.where(topic: system_topic).order(:id).last
+        assert_nil notice.user
+        assert_equal reply.id, notice.quoted_comment_id
+      end
+
+      test "a system-authored Inbox#System notice does not cascade into another notification (loop guard)" do
+        inbox = Creative.inbox_for(@owner)
+        system_topic = inbox.system_topic
+
+        # Creating the notice adds exactly itself (+1); its own callbacks must not
+        # spawn a second notification, or the System topic would loop forever.
+        assert_difference -> { inbox.comments.where(topic: system_topic).count }, 1 do
+          Comment.create!(
+            creative: inbox, topic: system_topic, content: "알림",
+            user: nil, skip_default_user: true
+          )
+        end
+      end
+
       test "notify_ai_completion creates inbox comment for absent users" do
         comment = @creative.comments.create!(
           content: Comment::STREAMING_PLACEHOLDER_CONTENT,

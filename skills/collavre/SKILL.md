@@ -43,7 +43,7 @@ collavre search "urgent" --tags "v2"
 ### Create
 ```bash
 collavre create --parent 123 --desc "New task"
-collavre create --parent 123 --desc "<h1>Rich content</h1>"
+collavre create --parent 123 --desc "# Rich content\n\n- point one\n- point two"
 ```
 
 ### Update
@@ -59,6 +59,16 @@ collavre import --parent 123 --file plan.md
 collavre import --parent 123 --stdin < plan.md
 echo "# Quick\n## Plan" | collavre import --parent 123 --stdin
 ```
+
+### Attach a file
+```bash
+collavre attach --creative 123 --file ./hero.png    # png/mp4/pdf/svg
+```
+Uploads the raw bytes over a bearer multipart endpoint, embeds the matching
+node (`<img>`/`<video>`/`<a>`) into the creative's description, and attaches the
+blob to `creative.files`. Use this for binary files on disk. For inline
+agent-generated text (markdown/html/svg source), use the
+`creative_attach_files_service` tool with `files: [{ filename, content }]`.
 
 ### Batch operations
 ```bash
@@ -90,6 +100,6 @@ collavre tool run <tool_name> --key value         # run with flag args
 - **Progress**: Leaf = manual (0.0 or 1.0). Parent = auto-calculated from children.
 - **Import**: Markdown headings/bullets become nested Creatives.
 - **Batch**: All-or-nothing transaction. Requires approval.
-- **Description format**: Accepts HTML. Plain text auto-wraps in `<p>` tags.
+- **Description format**: Written as Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Plain text is stored as-is.
 
 For detailed MCP tool parameters, see [references/tool-reference.md](references/tool-reference.md).
