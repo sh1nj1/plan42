@@ -1,7 +1,6 @@
 module CollavreNotion
   class NotionClient
     DEFAULT_BASE_URL = "https://api.notion.com/v1"
-    MOCK_SERVER_DEFAULT = "http://localhost:4568/v1"
     API_VERSION = "2022-06-28"
 
     def initialize(account)
@@ -203,7 +202,7 @@ module CollavreNotion
     def resolve_base_url
       return ENV["NOTION_API_ENDPOINT"] if ENV["NOTION_API_ENDPOINT"].present?
 
-      CollavreNotion.mock_enabled? ? MOCK_SERVER_DEFAULT : DEFAULT_BASE_URL
+      CollavreNotion.mock_enabled? ? CollavreNotion.mock_server_base_url : DEFAULT_BASE_URL
     end
 
     def handle_response(response)

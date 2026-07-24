@@ -16,8 +16,12 @@ require "socket"
 require "json"
 require "uri"
 require "securerandom"
+# Rails-free on purpose, so this stays runnable as a plain script; it is also
+# what NotionClient builds its default endpoint from, so the two cannot disagree
+# about which port the mock is on.
+require_relative "../lib/collavre_notion/mock_endpoint"
 
-PORT = Integer(ENV.fetch("NOTION_MOCK_PORT", 4568))
+PORT = CollavreNotion.mock_server_port
 
 # --- Mock Data ---
 
