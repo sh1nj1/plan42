@@ -26,7 +26,7 @@ module Creatives
     def reorder_multiple(dragged_ids:, target_id:, direction:)
       ids = Array(dragged_ids).map(&:presence).compact
       validate_direction!(direction)
-      raise Error, "Invalid creatives" if ids.empty?
+      raise Error, "Invalid creatives" if ids.empty? || ids.map(&:to_s).uniq.size != ids.size
 
       target = Creative.find_by(id: target_id)
       raise Error, "Invalid creatives" unless target
@@ -178,8 +178,20 @@ module Creatives
     end
 
     def resequence!(creatives)
-      creatives.each_with_index do |creative, idx|
-        creative.update_column(:sequence, idx)
+      return if creatives.empty?
+
+      connection = Creative.connection
+      cases = creatives.each_with_index.map do |creative, index|
+        "WHEN #{connection.quote(creative.id)} THEN #{connection.quote(index)}"
+      end.join(" ")
+      primary_key = connection.quote_column_name(Creative.primary_key)
+
+      Creative.where(id: creatives.map(&:id))
+        .update_all("sequence = CASE #{primary_key} #{cases} END")
+
+      creatives.each_with_index do |creative, index|
+        creative.write_attribute(:sequence, index)
+        creative.send(:clear_attribute_change, :sequence)
       end
     end
   end
