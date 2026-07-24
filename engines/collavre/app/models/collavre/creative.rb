@@ -47,7 +47,7 @@ module Collavre
       "creatives/creative"
     end
 
-    after_save :touch_subtree_on_move, if: :saved_change_to_parent_id?
+    after_update_commit :enqueue_subtree_touch, if: :saved_change_to_parent_id?
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
@@ -373,8 +373,8 @@ module Collavre
       end
     end
 
-    def touch_subtree_on_move
-      descendants.update_all(updated_at: Time.current)
+    def enqueue_subtree_touch
+      TouchCreativeSubtreeJob.perform_later(id)
     end
 
     def fire_drop_trigger_on_move
