@@ -81,14 +81,16 @@
 }
 
 #link-creative-modal,
-#topic-search-modal {
+#topic-search-modal,
+#topic-list-modal {
   min-width: 320px;
   z-index: calc(var(--layer-modal) + 10);
 }
 
 /* When chat is fullscreen, these modals must sit above it */
 body.chat-fullscreen #link-creative-modal,
-body.chat-fullscreen #topic-search-modal {
+body.chat-fullscreen #topic-search-modal,
+body.chat-fullscreen #topic-list-modal {
   z-index: calc(var(--layer-fullscreen) + 1);
 }
 

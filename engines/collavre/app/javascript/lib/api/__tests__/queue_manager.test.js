@@ -5,9 +5,11 @@ import { jest } from '@jest/globals';
 
 // Mock csrfFetch using unstable_mockModule for ESM support
 const mockCsrfFetch = jest.fn();
+const mockRefreshCsrfToken = jest.fn().mockResolvedValue('fresh-token');
 jest.unstable_mockModule('../csrf_fetch', () => ({
     __esModule: true,
-    default: mockCsrfFetch
+    default: mockCsrfFetch,
+    refreshCsrfToken: mockRefreshCsrfToken,
 }));
 
 // Dynamic imports are required when using unstable_mockModule
@@ -19,6 +21,7 @@ describe('ApiQueueManager', () => {
         apiQueue.clear();
         localStorage.clear();
         mockCsrfFetch.mockClear();
+        mockRefreshCsrfToken.mockClear();
         // Reset processing state
         apiQueue.processing = false;
         // Mock processQueue to prevent auto-execution during enqueue tests
@@ -176,5 +179,89 @@ describe('ApiQueueManager', () => {
         expect(failedItems).toHaveLength(1);
         expect(failedItems[0].path).toBe('/fail');
         expect(failedItems[0].failedAt).toBeDefined();
+    });
+
+    test('executeRequest throws an ApiError carrying the server error payload', async () => {
+        mockCsrfFetch.mockResolvedValue({
+            ok: false,
+            status: 422,
+            statusText: 'Unprocessable Entity',
+            text: async () => JSON.stringify({
+                errors: ['Description cannot be changed directly for GitHub synced content'],
+            }),
+        });
+
+        await expect(apiQueue.executeRequest({ path: '/creatives/42', method: 'PATCH' }))
+            .rejects.toMatchObject({
+                status: 422,
+                errors: ['Description cannot be changed directly for GitHub synced content'],
+                message: 'Description cannot be changed directly for GitHub synced content',
+            });
+    });
+
+    test('does not retry non-retryable client errors (422)', async () => {
+        apiQueue.processQueue.mockRestore();
+
+        const eventSpy = jest.spyOn(window, 'dispatchEvent');
+
+        // A 422 validation error will never succeed on retry — it must fail fast.
+        mockCsrfFetch.mockResolvedValue({
+            ok: false,
+            status: 422,
+            statusText: 'Unprocessable Entity',
+            text: async () => JSON.stringify({ errors: ['Cannot do that'] }),
+        });
+
+        const item = { path: '/creatives/42', method: 'PATCH', retries: 0 };
+        apiQueue.queue = [item];
+
+        await apiQueue.processQueue();
+
+        // Exactly one attempt — no retries.
+        expect(mockCsrfFetch).toHaveBeenCalledTimes(1);
+
+        const failureEvent = eventSpy.mock.calls
+            .map(([event]) => event)
+            .find((event) => event.type === 'api-queue-request-failed');
+        expect(failureEvent).toBeDefined();
+        expect(failureEvent.detail.error.errors).toEqual(['Cannot do that']);
+
+        const failedItems = JSON.parse(localStorage.getItem('api_queue_test_user_failed'));
+        expect(failedItems).toHaveLength(1);
+    });
+
+    test('refreshes the CSRF token and retries a payload-less 422 (stale token)', async () => {
+        apiQueue.processQueue.mockRestore();
+
+        // A stale CSRF token (e.g. after the tab was backgrounded) returns 422
+        // with no error payload — unlike a validation 422, it is recoverable by
+        // refreshing the token and retrying.
+        mockCsrfFetch
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 422,
+                statusText: 'Unprocessable Entity',
+                text: async () => '',
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({ id: 42 }),
+            });
+
+        const onSuccess = jest.fn();
+        const item = { path: '/creatives/42', method: 'PATCH', retries: 0, onSuccess };
+        apiQueue.queue = [item];
+
+        await apiQueue.processQueue();
+
+        // Token refreshed once, then the request retried and succeeded.
+        expect(mockRefreshCsrfToken).toHaveBeenCalledTimes(1);
+        expect(mockCsrfFetch).toHaveBeenCalledTimes(2);
+        expect(onSuccess).toHaveBeenCalled();
+        expect(apiQueue.queue).toHaveLength(0);
+
+        const stored = localStorage.getItem('api_queue_test_user_failed');
+        expect(stored ? JSON.parse(stored) : []).toHaveLength(0);
     });
 });

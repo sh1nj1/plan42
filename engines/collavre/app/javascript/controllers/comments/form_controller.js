@@ -5,6 +5,15 @@ import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
 import { alertDialog } from '../../lib/utils/dialog'
 
+// In-flight comment sends, keyed by creative id. This lives at module scope —
+// not on the controller instance — so the duplicate-submit guard survives a
+// Stimulus reconnect (Turbo morph / re-render) mid-send. The instance-only
+// `this.sending` flag is reset by connect() and cannot be relied on alone:
+// a reconnect while a slow request is in flight would re-enable sending and let
+// an impatient second Enter submit the same comment twice.
+const inFlightSends = new Set()
+const sendKeyFor = (creativeId) => `creative:${creativeId}`
+
 export default class extends Controller {
   static targets = [
     'form',
@@ -256,7 +265,9 @@ export default class extends Controller {
     const hasText = this.textareaTarget.value.trim().length > 0
     const hasQuotes = !store.isEmpty
     const hasImages = this.currentImageFiles().length > 0
-    if (this.sending || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
+    const sendKey = sendKeyFor(this.creativeId)
+    if (this.sending || inFlightSends.has(sendKey) || (!hasText && !hasQuotes && !hasImages) || !this.creativeId) return
+    inFlightSends.add(sendKey)
     this.sending = true
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
@@ -362,6 +373,7 @@ export default class extends Controller {
         alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
+        inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
       })
@@ -744,7 +756,9 @@ export default class extends Controller {
 
   // Send a single question quote immediately as a standalone comment.
   _sendQuestionQuote(quote) {
-    if (this.sending || !this.creativeId) return
+    const sendKey = sendKeyFor(this.creativeId)
+    if (this.sending || inFlightSends.has(sendKey) || !this.creativeId) return
+    inFlightSends.add(sendKey)
 
     const store = this._reviewStore
     const content = store.buildQuestionContent(quote)
@@ -813,6 +827,7 @@ export default class extends Controller {
         alertDialog(error?.message || 'Failed to send question')
       })
       .finally(() => {
+        inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.sending = false
       })
@@ -869,6 +884,9 @@ export default class extends Controller {
         if (quote.id === store.activeId) {
           const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
           if (commentEl) {
+            // Programmatic list scroll — drop the prev-message anchor so the next
+            // previous-message click resolves from the quoted comment now in view.
+            this.listController?.notifyProgrammaticScroll()
             commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
             commentEl.classList.add('comment-highlight')
             setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)

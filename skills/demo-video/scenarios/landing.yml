@@ -8,7 +8,7 @@
 
 name: landing
 viewport: landing          # default size preset (overridable with --size)
-locale: ko-KR
+default_locale: ko         # this tour is scripted in Korean; --locale en has no column here
 
 ai_turns:
   - |

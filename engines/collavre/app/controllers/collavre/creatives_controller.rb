@@ -6,8 +6,15 @@ module Collavre
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
 
-    # TODO: for not for security reasons for this Collavre app, we don't expose to public, later it should be controlled by roles for each Creatives
-    # Removed unauthenticated access to index and show actions
+    # Authorization for these read actions is not open-to-public: each action
+    # enforces per-Creative read access via has_permission?(Current.user, :read)
+    # (index/children go through Creatives::IndexQuery, which permission-filters;
+    # show/slide_view/export_markdown check has_permission? directly). Anonymous
+    # requests only ever see Creatives whose share grants public read. Requiring
+    # a login for all reads is gated by SystemSetting.creatives_login_required?
+    # via enforce_creatives_login_policy below. A broader per-Creative role model
+    # (beyond the read/feedback/write/admin share levels) is a product decision
+    # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
     before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
@@ -39,7 +46,7 @@ module Collavre
           else
             {}
           end
-          index_result = ::Creatives::IndexQuery.new(user: Current.user, params: params.to_unsafe_h).call
+          index_result = ::Creatives::IndexQuery.new(user: Current.user, params: index_query_params).call
           @creatives = index_result.creatives || []
           @parent_creative = index_result.parent_creative
           @shared_creative = index_result.shared_creative
@@ -157,6 +164,10 @@ module Collavre
             render json: {
               id: @creative.id,
               description: @creative.effective_description,
+              # Embedded variant for read-only display (e.g. slide view): turns
+              # bare YouTube links into preview iframes. `description` stays the
+              # raw editable form the inline editor round-trips.
+              description_embedded_html: view_context.embed_youtube_iframe(@creative.effective_description),
               description_raw_html: @creative.description,
               origin_id: @creative.origin_id,
               parent_id: @creative.parent_id,
@@ -167,6 +178,7 @@ module Collavre
               has_children: children_count > 0,
               data: sanitized_data,
               content_type: effective.data&.dig("content_type"),
+              markdown_editor: effective.data&.dig("editor"),
               markdown_source: can_edit ? effective.data&.dig("markdown_source") : nil,
               trigger_loop: trigger_loop_data,
               is_trigger_task: parent_trigger_enabled,
@@ -212,6 +224,7 @@ module Collavre
         render json: {
           id: @creative.id,
           content_type: @creative.data&.dig("content_type"),
+          markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
         }
       else
@@ -283,7 +296,8 @@ module Collavre
               progress: base.progress,
               progress_html: view_context.render_creative_progress(base),
               has_children: base.children.exists?,
-              content_type: base.data&.dig("content_type")
+              content_type: base.data&.dig("content_type"),
+              markdown_editor: base.data&.dig("editor")
             }
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
@@ -396,9 +410,11 @@ module Collavre
         return
       end
       # Reserved markdown fields are not editable via metadata; preserve current values so a stale
-      # YAML payload from the metadata popup can't overwrite a concurrent markdown edit.
+      # YAML payload from the metadata popup (or an API client that omits them) can't overwrite a
+      # concurrent markdown edit. "editor" must be reserved too: dropping it would erase the "rich"
+      # authoring flag and make a Lexical-authored creative reopen in the advanced textarea.
       current_data = creative.data || {}
-      %w[markdown_source content_type].each do |key|
+      Collavre::Creative.reserved_metadata_keys.each do |key|
         if current_data.key?(key)
           new_data[key] = current_data[key]
         else
@@ -545,7 +561,20 @@ module Collavre
       end
 
       def creative_params
-        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input)
+        params.require(:creative).permit(:description, :progress, :parent_id, :sequence, :origin_id, :markdown_source, :content_type_input, :markdown_editor)
+      end
+
+      # Whitelist of query parameters consumed by Creatives::IndexQuery and its
+      # FilterPipeline. Passing an explicitly permitted hash (rather than
+      # params.to_unsafe_h) keeps arbitrary client-supplied keys out of the
+      # query layer while preserving every filter the index endpoint supports.
+      def index_query_params
+        params.permit(
+          :id, :simple, :search, :search_mode, :comment, :has_comments,
+          :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
+          :assignee_id, :unassigned, :show_archived, :page, :per_page,
+          tags: []
+        ).to_h
       end
 
       def any_filter_active?
@@ -563,102 +592,15 @@ module Collavre
           params[:show_archived].present?
       end
 
+      # Thin delegator to Creatives::CreativeTreeSerializer. Kept as a controller
+      # method (rather than inlining the service call at the index call site) so
+      # the picker test that drives serialization via controller.send(:serialize_creatives, ...)
+      # keeps exercising the same seam.
       def serialize_creatives(collection)
-        if params[:simple].present?
-          # Preload origins so effective_origin (used per linked-shell row in both
-          # children_presence_set and the origin_id mapping below) resolves from
-          # memory instead of firing a query per shell. Only browse can hold shells;
-          # search is scoped to origin_id: nil, so this is a no-op there.
-          ActiveRecord::Associations::Preloader.new(records: collection.to_a, associations: :origin).call
-          children_ids = children_presence_set(collection)
-          searching = params[:search].present?
-          breadcrumbs = searching ? ::Creatives::BreadcrumbResolver.new(collection.map(&:id), user: Current.user, include_archived: params[:show_archived].present?).call : {}
-          # For hits routed through a linked shell, the path to expand in the
-          # user's own tree (local folders -> shell) so a breadcrumb jump can
-          # reach a shell nested under a collapsed folder.
-          reveal_paths = searching ? ::Creatives::RevealPathResolver.new(collection.map(&:id), user: Current.user, include_archived: params[:show_archived].present?).call : {}
-          collection.map do |c|
-            item = {
-              id: c.id,
-              description: c.effective_description(nil, false),
-              progress: c.progress,
-              has_children: children_ids.include?(c.id)
-            }
-            reveal = reveal_paths[c.id]
-            path = breadcrumbs[c.id]
-            if path.present?
-              item[:path] = mask_unreachable_crumbs(path, reveal)
-            end
-            item[:reveal_path] = reveal if reveal.present?
-            # For linked shells, expose the effective origin id so the picker can
-            # map a search breadcrumb (origin ids) back to the rendered shell node.
-            item[:origin_id] = c.effective_origin.id if c.origin_id
-            item
-          end
-        else
-          collection.map { |c| { id: c.id, description: c.effective_description, progress: c.progress } }
-        end
-      end
-
-      # A breadcrumb jump expands the tree from a rendered root (or, for a shared
-      # subtree, a linked shell) down to the clicked crumb. If an ancestor above a
-      # crumb is itself unrenderable (unreadable, or archived while archived rows
-      # aren't shown) and no linked shell re-roots the path at/below it, the
-      # descendant can't be expanded either — so mask it too. BreadcrumbResolver
-      # masks the unrenderable ancestor itself; this masks everything downstream of
-      # it on the plain origin chain, matching exactly what the tree can render.
-      #
-      # `reveal` is RevealPathResolver's per-origin map: a crumb whose origin id is
-      # a key re-roots navigation through its own shell (the client anchors at the
-      # nearest reveal entry at/above the clicked crumb), so it clears the block for
-      # itself and its descendants regardless of an archived/unreadable origin
-      # above it.
-      def mask_unreachable_crumbs(path, reveal)
-        blocked = false
-        path.map do |crumb|
-          if reveal&.key?(crumb[:id])
-            blocked = false
-            crumb
-          elsif crumb[:restricted]
-            blocked = true
-            crumb
-          elsif blocked
-            crumb.merge(restricted: true, description: nil)
-          else
-            crumb
-          end
-        end
-      end
-
-      # Batched "does this node have a child the user can actually browse to?"
-      # lookup so the picker tree renders expand toggles without an N+1.
-      #
-      # Must match exactly what expanding the node shows (IndexQuery#handle_id_query
-      # -> children_with_permission, minus archived unless show_archived), or the
-      # toggle either hides a reachable subtree or opens to an empty branch (and
-      # leaks that hidden children exist). Two alignments are needed:
-      #   1. Linked shells (origin_id set) store children under the effective
-      #      origin (redirect_parent_to_origin + children->origin migration), so
-      #      resolve each row to its effective origin before the lookup.
-      #   2. Apply the same archived + read-permission filters as the browse path.
-      def children_presence_set(collection)
-        return Set.new if collection.empty?
-
-        origin_id_by_id = collection.to_h { |c| [ c.id, c.effective_origin.id ] }
-
-        candidates = Creative.where(parent_id: origin_id_by_id.values.uniq)
-        candidates = candidates.where(archived_at: nil) unless params[:show_archived]
-        child_rows = candidates.pluck(:id, :parent_id) # [child_id, origin_id]
-        return Set.new if child_rows.empty?
-
-        readable = ::Creatives::PermissionFilter
-          .new(user: Current.user).readable_ids(child_rows.map(&:first)).to_set
-        origins_with_visible_children = child_rows
-          .each_with_object(Set.new) { |(child_id, origin_id), set| set << origin_id if readable.include?(child_id) }
-
-        collection.each_with_object(Set.new) do |c, set|
-          set << c.id if origins_with_visible_children.include?(origin_id_by_id[c.id])
-        end
+        # Fully-qualified name: this newly extracted service is not registered in
+        # config/initializers/collavre_model_aliases.rb, so the top-level
+        # ::Creatives::* alias used by the older sibling services is unavailable.
+        Collavre::Creatives::CreativeTreeSerializer.new(user: Current.user, params: params).serialize(collection)
       end
 
       def reorderer

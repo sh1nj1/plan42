@@ -22,8 +22,7 @@ data class AppSettings(
     val ttsRate: Float,
     val locale: String,
     val eventVoiceEnabled: Boolean,
-    val deviceId: String,
-    val sinceCursor: String?
+    val deviceId: String
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "collavre_voice")
@@ -39,7 +38,6 @@ class SettingsRepository @Inject constructor(
         val LOCALE = stringPreferencesKey("locale")
         val EVENT_VOICE = booleanPreferencesKey("event_voice_enabled")
         val DEVICE_ID = stringPreferencesKey("device_id")
-        val SINCE = stringPreferencesKey("since_cursor")
     }
 
     companion object {
@@ -57,8 +55,7 @@ class SettingsRepository @Inject constructor(
         ttsRate = this[Keys.TTS_RATE] ?: 1.0f,
         locale = this[Keys.LOCALE] ?: DEFAULT_LOCALE,
         eventVoiceEnabled = this[Keys.EVENT_VOICE] ?: true,
-        deviceId = this[Keys.DEVICE_ID] ?: "",
-        sinceCursor = this[Keys.SINCE]
+        deviceId = this[Keys.DEVICE_ID] ?: ""
     )
 
     /** Generates and persists a stable device id on first use. */
@@ -84,9 +81,5 @@ class SettingsRepository @Inject constructor(
             locale?.let { prefs[Keys.LOCALE] = it }
             eventVoiceEnabled?.let { prefs[Keys.EVENT_VOICE] = it }
         }
-    }
-
-    suspend fun setSinceCursor(cursor: String) {
-        context.dataStore.edit { it[Keys.SINCE] = cursor }
     }
 }

@@ -5,6 +5,7 @@
 import "./modules/creatives"
 import "./modules/creative_row_swipe"
 import "./modules/mention_menu"
+import "./modules/typo_corrector"
 import "./modules/command_menu"
 import "./modules/modal_dialog"
 import "./modules/export_to_markdown"
@@ -19,6 +20,7 @@ import "./components/creative_tree_row"
 // Import and re-export lib utilities
 import "./lib/apply_lexical_styles"
 import "./lib/turbo_stream_actions"
+import "./lib/turbo_confirm"
 
 // Export controller registration
 export { registerControllers } from "./controllers"

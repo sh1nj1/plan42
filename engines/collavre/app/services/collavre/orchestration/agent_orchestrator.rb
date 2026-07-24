@@ -45,7 +45,12 @@ module Collavre
 
         Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil)
                .where("content LIKE ?", "⏳%")
-               .destroy_all
+               .find_each do |notice|
+          # System promotion, not user abandonment: do not let the destroy
+          # callback cancel other still-queued waiters in this topic.
+          notice.suppress_waiter_cancellation = true
+          notice.destroy
+        end
       end
       private_class_method :cleanup_waiting_notices!
 
@@ -59,7 +64,7 @@ module Collavre
         return unless creative_id && context&.key?("topic")
 
         topic_id = context.dig("topic", "id")
-        scope = Comment.public_only
+        scope = Comment.public_only.without_approval_action
           .where(creative_id: creative_id, topic_id: topic_id)
           .where.not(user_id: [ task.agent_id, nil ])
           .order(created_at: :desc)
@@ -184,17 +189,38 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
-        reason_key = decision[:reason] || :unknown
-        reason_text = I18n.t(
-          "collavre.orchestration.waiting_reasons.#{reason_key}",
-          default: reason_key.to_s.humanize
-        )
+        reason_text = waiting_reason_text(decision[:reason] || :unknown, topic_id, creative_id)
 
         creative.comments.create!(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
           private: false,
-          skip_default_user: true
+          skip_default_user: true,
+          # Only :deferred queues a topic waiter; mark it so its stop button can
+          # target the blocker. :delayed (busy / rate_limited) notices stay false.
+          topic_concurrency_defer: decision[:timing] == :deferred
+        )
+      end
+
+      # Human-readable reason for the "⏳" waiting notice. For topic-concurrency
+      # deferrals, name the agent(s) actually holding the topic's running slot so
+      # a waiting user can see *who* is blocking them (and reach that task's stop
+      # button) rather than an anonymous "another task is running" dead end.
+      def waiting_reason_text(reason_key, topic_id, creative_id)
+        if reason_key == :topic_concurrency && topic_id
+          names = Task.running_for_topic(topic_id, creative_id)
+                      .includes(:agent).filter_map { |t| t.agent&.name }.uniq
+          if names.any?
+            return I18n.t(
+              "collavre.orchestration.waiting_reasons.topic_concurrency_with_agent",
+              agent: names.join(", ")
+            )
+          end
+        end
+
+        I18n.t(
+          "collavre.orchestration.waiting_reasons.#{reason_key}",
+          default: reason_key.to_s.humanize
         )
       end
     end

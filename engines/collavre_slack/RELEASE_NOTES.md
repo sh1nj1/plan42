@@ -1,3 +1,15 @@
+## v0.2.9 (2026-07-16)
+
+### Changes
+- c2fa37e1 fix(slack): claim after idempotent grant/invite so transient failures stay recoverable (#1371)
+- 83a3485f fix(slack): claim inbound message before side effects for exactly-once delivery (#1370)
+- 7d2bb4f6 refactor(webhooks): harden inbound jobs (retry/discard/idempotency) (#1368)
+
+## v0.2.8 (2026-06-23)
+
+### Changes
+- a541c92a feat(desktop): route native alert/confirm to in-app dialogs (#1302)
+
 ## v0.2.7 (2026-06-04)
 
 ### Changes

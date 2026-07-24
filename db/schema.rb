@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_24_090000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -87,15 +87,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.datetime "last_event_at"
     t.string "latest_label"
     t.string "latest_link"
+    t.integer "pr_number"
+    t.string "repo_full_name"
     t.integer "state", default: 0, null: false
     t.integer "topic_id", null: false
     t.string "type", null: false
     t.datetime "updated_at", null: false
-    t.index "topic_id, json_extract(config, '$.worktree_id')", name: "index_channels_on_topic_preview_worktree", unique: true, where: "type = 'Collavre::PreviewChannel'"
-    t.index "type, topic_id, json_extract(config, '$.repo_full_name'), json_extract(config, '$.pr_number')", name: "index_channels_on_type_topic_repo_pr", unique: true
+    t.string "worktree_id"
     t.index ["dismissed_at"], name: "index_channels_on_dismissed_at"
+    t.index ["topic_id", "worktree_id"], name: "index_channels_on_topic_preview_worktree", unique: true, where: "type = 'Collavre::PreviewChannel'"
     t.index ["topic_id"], name: "index_channels_on_topic_id"
+    t.index ["type", "topic_id", "repo_full_name", "pr_number"], name: "index_channels_on_type_topic_repo_pr", unique: true
     t.index ["type"], name: "index_channels_on_type"
+  end
+
+  create_table "comment_notification_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_key", null: false
+    t.bigint "inbox_comment_id", null: false
+    t.text "link"
+    t.text "message", null: false
+    t.string "push_claim_token"
+    t.datetime "push_claimed_at"
+    t.datetime "push_enqueued_at"
+    t.bigint "recipient_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["delivery_key"], name: "index_comment_notification_deliveries_on_delivery_key", unique: true
+    t.index ["push_enqueued_at", "push_claimed_at"], name: "index_comment_notification_deliveries_pending"
   end
 
   create_table "comment_reactions", force: :cascade do |t|
@@ -155,21 +173,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.datetime "action_executed_at"
     t.integer "action_executed_by_id"
     t.integer "approver_id"
+    t.integer "comment_versions_count", default: 0, null: false
     t.text "content", null: false
     t.datetime "created_at", null: false
     t.integer "creative_id", null: false
+    t.string "notification_key"
+    t.integer "notification_revision", default: 0, null: false
     t.boolean "private", default: false, null: false
     t.integer "quoted_comment_id"
     t.text "quoted_text"
     t.integer "review_type", limit: 1
     t.integer "selected_version_id"
     t.integer "task_id"
+    t.boolean "topic_concurrency_defer", default: false, null: false
     t.integer "topic_id"
     t.datetime "updated_at", null: false
     t.integer "user_id"
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
+    t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
+    t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
+    t.index ["creative_id", "private", "id"], name: "index_comments_on_creative_id_and_private_and_id"
     t.index ["creative_id"], name: "index_comments_on_creative_id"
+    t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"
@@ -223,9 +249,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
 
   create_table "creatives", force: :cascade do |t|
     t.datetime "archived_at"
+    t.integer "comments_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.json "data", default: {}, null: false
-    t.text "description", limit: 4294967295
+    t.text "description"
     t.integer "origin_id"
     t.integer "parent_id"
     t.float "progress", default: 0.0
@@ -347,8 +374,72 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.string "type"
     t.datetime "updated_at", null: false
     t.string "value"
+    t.index ["creative_id", "type"], name: "index_labels_on_creative_id_and_type"
     t.index ["creative_id"], name: "index_labels_on_creative_id"
     t.index ["owner_id"], name: "index_labels_on_owner_id"
+  end
+
+  create_table "linear_accounts", force: :cascade do |t|
+    t.text "access_token", null: false
+    t.string "app_actor_id"
+    t.datetime "created_at", null: false
+    t.string "linear_uid", null: false
+    t.text "refresh_token"
+    t.datetime "token_expires_at"
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.string "workspace_id"
+    t.string "workspace_name"
+    t.index ["linear_uid"], name: "index_linear_accounts_on_linear_uid", unique: true
+    t.index ["user_id"], name: "index_linear_accounts_on_user_id", unique: true
+  end
+
+  create_table "linear_comment_links", force: :cascade do |t|
+    t.integer "comment_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "issue_link_id", null: false
+    t.string "linear_comment_id", null: false
+    t.datetime "remote_updated_at"
+    t.datetime "updated_at", null: false
+    t.index ["comment_id"], name: "index_linear_comment_links_on_comment_id", unique: true
+    t.index ["issue_link_id"], name: "index_linear_comment_links_on_issue_link_id"
+    t.index ["linear_comment_id"], name: "index_linear_comment_links_on_linear_comment_id", unique: true
+  end
+
+  create_table "linear_issue_links", force: :cascade do |t|
+    t.string "content_hash"
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.datetime "last_outbound_at"
+    t.string "linear_issue_id", null: false
+    t.integer "local_version", default: 0, null: false
+    t.string "parent_issue_id"
+    t.integer "project_link_id", null: false
+    t.datetime "remote_updated_at"
+    t.integer "sync_state", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["creative_id"], name: "index_linear_issue_links_on_creative_id", unique: true
+    t.index ["linear_issue_id"], name: "index_linear_issue_links_on_linear_issue_id", unique: true
+    t.index ["project_link_id"], name: "index_linear_issue_links_on_project_link_id"
+  end
+
+  create_table "linear_project_links", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.datetime "created_at", null: false
+    t.integer "creative_id", null: false
+    t.string "done_state_id"
+    t.datetime "last_outbound_at"
+    t.datetime "last_synced_at"
+    t.string "linear_project_id", null: false
+    t.integer "sync_state", default: 0, null: false
+    t.string "team_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "webhook_id"
+    t.text "webhook_secret"
+    t.index ["account_id"], name: "index_linear_project_links_on_account_id"
+    t.index ["creative_id"], name: "index_linear_project_links_on_creative_id", unique: true
+    t.index ["linear_project_id"], name: "index_linear_project_links_on_linear_project_id", unique: true
+    t.index ["team_id"], name: "index_linear_project_links_on_team_id"
   end
 
   create_table "mcp_tools", force: :cascade do |t|
@@ -543,6 +634,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.index ["slack_channel_link_id"], name: "index_slack_comment_links_on_slack_channel_link_id"
   end
 
+  create_table "slack_inbound_reservations", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "message_ts", null: false
+    t.integer "slack_channel_link_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slack_channel_link_id", "message_ts"], name: "idx_slack_inbound_reservations_on_channel_and_ts", unique: true
+    t.index ["slack_channel_link_id"], name: "index_slack_inbound_reservations_on_slack_channel_link_id"
+  end
+
   create_table "slack_message_logs", force: :cascade do |t|
     t.integer "comment_id"
     t.datetime "created_at", null: false
@@ -715,7 +815,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
 
   create_table "system_settings", force: :cascade do |t|
     t.datetime "created_at", null: false
-    t.string "key"
+    t.string "key", null: false
     t.datetime "updated_at", null: false
     t.text "value"
     t.index ["key"], name: "index_system_settings_on_key", unique: true
@@ -727,6 +827,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.integer "label_id"
     t.datetime "updated_at", null: false
     t.string "value"
+    t.index ["creative_id"], name: "index_tags_on_creative_id"
     t.index ["label_id"], name: "index_tags_on_label_id"
   end
 
@@ -835,6 +936,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
     t.string "theme"
     t.string "timezone"
     t.json "tools"
+    t.boolean "typo_correction_enabled", default: true, null: false
+    t.boolean "typo_correction_in_chat", default: true, null: false
+    t.boolean "typo_correction_in_editor", default: false, null: false
+    t.boolean "typo_correction_on_physical_keyboard", default: false, null: false
+    t.boolean "typo_correction_on_soft_keyboard", default: true, null: false
+    t.boolean "typo_correction_on_voice", default: true, null: false
+    t.integer "typo_correction_threshold", default: 80, null: false
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.index ["email"], name: "index_users_on_email", unique: true
@@ -898,6 +1006,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "creatives"
   add_foreign_key "labels", "users", column: "owner_id"
+  add_foreign_key "linear_accounts", "users"
+  add_foreign_key "linear_comment_links", "linear_issue_links", column: "issue_link_id"
+  add_foreign_key "linear_issue_links", "creatives"
+  add_foreign_key "linear_issue_links", "linear_project_links", column: "project_link_id"
+  add_foreign_key "linear_project_links", "creatives"
+  add_foreign_key "linear_project_links", "linear_accounts", column: "account_id"
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"
@@ -915,6 +1029,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
   add_foreign_key "slack_channel_links", "users", column: "created_by_id"
   add_foreign_key "slack_comment_links", "comments", on_delete: :cascade
   add_foreign_key "slack_comment_links", "slack_channel_links"
+  add_foreign_key "slack_inbound_reservations", "slack_channel_links", on_delete: :cascade
   add_foreign_key "slack_message_logs", "comments", on_delete: :cascade
   add_foreign_key "slack_message_logs", "slack_channel_links"
   add_foreign_key "slack_message_logs", "users", column: "sender_id"
@@ -926,6 +1041,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_190659) do
   add_foreign_key "solid_queue_ready_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_recurring_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_scheduled_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
+  add_foreign_key "tags", "creatives"
   add_foreign_key "tags", "labels"
   add_foreign_key "task_actions", "tasks"
   add_foreign_key "tasks", "creatives", on_delete: :nullify

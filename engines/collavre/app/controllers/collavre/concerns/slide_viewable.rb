@@ -134,45 +134,21 @@ module Collavre
         result
       end
 
-      # Mirrors the access check in Creative#children_with_permission, but
-      # operates on a pre-fetched set of candidate children so the work
-      # collapses to a fixed number of queries instead of one per parent.
+      # Mirrors the access check in Creative#children_with_permission via the
+      # single PermissionFilter read path: the deny-invariant (owner wins, user
+      # entry incl. no_access beats public) is served by #readable_ids, and the
+      # "a user always sees their own children" listing policy is preserved as an
+      # explicit union — identical to children_with_permission's shape, including
+      # the owned-shell-with-unreadable-origin case readable_ids gates out.
       def accessible_child_ids(candidate_ids, candidate_children, user)
         return Set.new if candidate_ids.empty?
 
-        min_rank = CreativeShare.permissions["read"]
-        accessible = Set.new
+        filter = Collavre::Creatives::PermissionFilter.new(user: user)
+        accessible = filter.readable_ids(candidate_ids, min_permission: :read).to_set
 
         if user
-          user_entries = CreativeSharesCache
-            .where(creative_id: candidate_ids, user_id: user.id)
-            .pluck(:creative_id, :permission)
-
-          user_has_entry = Set.new
-          user_entries.each do |cid, perm|
-            user_has_entry << cid
-            perm_rank = CreativeSharesCache.permissions[perm]
-            if perm_rank && perm_rank >= min_rank && perm_rank != CreativeSharesCache.permissions[:no_access]
-              accessible << cid
-            end
-          end
-
-          public_accessible = CreativeSharesCache
-            .where(creative_id: candidate_ids, user_id: nil)
-            .where("permission >= ?", min_rank)
-            .where.not(permission: :no_access)
-            .pluck(:creative_id)
-          accessible.merge(public_accessible.reject { |cid| user_has_entry.include?(cid) })
-
           owned_ids = candidate_children.select { |c| c.user_id == user.id }.map(&:id)
           accessible.merge(owned_ids)
-        else
-          public_accessible = CreativeSharesCache
-            .where(creative_id: candidate_ids, user_id: nil)
-            .where("permission >= ?", min_rank)
-            .where.not(permission: :no_access)
-            .pluck(:creative_id)
-          accessible.merge(public_accessible)
         end
 
         accessible

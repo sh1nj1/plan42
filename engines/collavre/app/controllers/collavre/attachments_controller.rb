@@ -64,9 +64,19 @@ module Collavre
       signed_id = blob.signed_id
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
 
-      Creative.where("description LIKE ?", pattern).any? do |creative|
-        creative.has_permission?(Current.user, :write)
-      end
+      creatives = Creative.where("description LIKE ?", pattern).includes(:origin)
+      return false if creatives.empty?
+
+      # Permission is evaluated on the origin for linked creatives. Resolve every
+      # referencing creative to its permission base, then delegate the write-rank
+      # deny-invariant to the canonical PermissionFilter (owner wins; a
+      # user-specific entry — including an explicit no_access deny — takes
+      # precedence over the public share). readable_ids batch-loads the cache
+      # entries once, preserving the prior N+1 avoidance.
+      bases = creatives.map { |c| c.origin_id.nil? ? c : c.origin }.compact.uniq
+      Collavre::Creatives::PermissionFilter.new(user: Current.user)
+        .readable_ids(bases.map(&:id), min_permission: :write)
+        .any?
     end
   end
 end
