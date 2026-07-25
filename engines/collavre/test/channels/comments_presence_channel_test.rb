@@ -52,20 +52,30 @@ module Collavre
                    "a paused turn replayed as \"thinking\" would claim the agent is working"
     end
 
-    # The popup subscribes with the effective origin — Comment#use_origin_creative
-    # stores every comment there — but a turn dispatched on a linked creative keeps
-    # that link's id in its payload. The live broadcast already routes by
-    # effective_origin (AgentLifecycleManager#broadcast_status); an equality check
-    # here would drop exactly the paused turns that have no later broadcast.
-    test "running_agent_payloads replays a task dispatched on a linked creative" do
+    # Comments always live on the origin, so the channel streams from there — but the
+    # replay is scoped to the creative the popup is actually open on, which is what
+    # the client keeps as this.creativeId and compares every payload against.
+    test "running_agent_payloads replays a task dispatched on the creative in view" do
       linked = Creative.create!(user: users(:two), origin: @creative)
       task = create_task(status: "pending_approval", creative: linked)
 
-      payloads = agent_statuses_for(@creative)
+      payloads = agent_statuses_for(linked)
       assert_equal 1, payloads.size
       assert_equal task.id, payloads.first[:task_id]
       assert_equal linked.id, payloads.first[:creative_id],
                    "the client filters by the creative the agent is actually working in"
+    end
+
+    # A link is a placement, and PermissionFilter#readable_ids deliberately hides
+    # foreign placements even when their origin is readable. Replaying every task
+    # under the origin would put another user's shell id, task id and agent name on
+    # the wire — and the client discards them anyway, since they name a creative it
+    # does not have open.
+    test "running_agent_payloads does not replay turns from someone else's placement" do
+      linked = Creative.create!(user: users(:two), origin: @creative)
+      create_task(status: "pending_approval", creative: linked)
+
+      assert_empty agent_statuses_for(@creative)
     end
 
     # The client appends replayed ids into a per-agent array and treats the last one
@@ -204,6 +214,19 @@ module Collavre
       status = agent_status_transmission
       assert status, "the viewer would reload into a paused turn with no Stop button"
       assert_equal task.id, status[:task_id]
+    end
+
+    # Readable origin, unreadable placement: the shell sits in another user's private
+    # tree, so nothing about the turn running there belongs on this connection.
+    test "a turn on someone else's placement is not transmitted to an origin subscriber" do
+      foreign_shell = Creative.create!(user: users(:two), origin: @creative)
+      create_task(status: "pending_approval", creative: foreign_shell)
+
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      assert subscription.confirmed?
+      assert_nil agent_status_transmission
     end
 
     test "an unknown creative id is rejected instead of raising" do

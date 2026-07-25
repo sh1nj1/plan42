@@ -200,6 +200,41 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     assert_includes Collavre::Task::HELD_SLOT_WITHOUT_WORKER, @task.reload.status
   end
 
+  # An action payload may carry an `actions` array, and nothing stops an agent from
+  # emitting the same execute_tool entry twice. The row lock does not help here —
+  # both entries run under the same lock — so the approval marker is what makes the
+  # second one a no-op instead of a second side effect and a second resume.
+  test "a tool call already approved is not executed a second time" do
+    entry = {
+      "action" => "execute_tool",
+      "tool_name" => "test_tool",
+      "arguments" => { "param" => "value" },
+      "resume" => { "task_id" => @task.id, "tool_call_id" => "call_123" }
+    }
+    comment = @creative.comments.create!(
+      user: @agent,
+      content: "Tool approval request",
+      approver: @user,
+      action: JSON.pretty_generate("actions" => [ entry, entry ])
+    )
+
+    invocations = 0
+    service = Object.new
+    service.define_singleton_method(:call) { |**_args| invocations += 1; { result: "success" } }
+    resumes = 0
+
+    ::Tools::MetaToolService.stub :new, -> { service } do
+      Collavre::AiAgentJob.stub :perform_later, ->(_task) { resumes += 1 } do
+        Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      end
+    end
+
+    assert_equal 1, invocations, "the tool ran once per duplicate entry"
+    assert_equal 1, resumes, "each execution queued its own resume"
+    assert_equal true, @task.reload.pending_tool_call["approved"]
+    assert comment.reload.action_executed_at.present?
+  end
+
   private
 
   def approval_comment

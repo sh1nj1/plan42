@@ -36,13 +36,14 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     Task.where(status: AGENT_REPLAY_STATUSES).order(:id)
   end
 
+  # Scoped to the creative the popup is open on, not to its origin: the client keeps
+  # that id as this.creativeId and drops any payload naming a different one, and a
+  # link is a placement — replaying every task under the origin would put another
+  # user's shell id on the wire, which PermissionFilter#readable_ids exists to hide.
   def self.running_agent_payloads(creative_id)
-    tasks = replayable_tasks.to_a
-    origin_of = origin_ids_for(tasks)
-
-    tasks.filter_map do |task|
+    replayable_tasks.filter_map do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
-      next unless origin_of[task_creative_id] == creative_id
+      next unless task_creative_id == creative_id
 
       agent_status_payload(
         creative_id,
@@ -51,22 +52,10 @@ class CommentsPresenceChannel < ApplicationCable::Channel
         status: task.status == "pending_approval" ? "pending_approval" : "thinking",
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
-        task_id: task.id,
-        source_creative_id: task_creative_id
+        task_id: task.id
       )
     end
   end
-
-  # Subscribers arrive with an effective origin (comments only ever live there), but
-  # a turn dispatched on a linked creative keeps that link's id in its payload — so
-  # match the way the live broadcast routes, via AgentLifecycleManager#broadcast_status.
-  def self.origin_ids_for(tasks)
-    ids = tasks.filter_map { |task| task.trigger_event_payload&.dig("creative", "id") }.uniq
-    Creative.where(id: ids).each_with_object({}) do |creative, map|
-      map[creative.id] = creative.effective_origin.id
-    end
-  end
-  private_class_method :origin_ids_for
 
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
@@ -100,7 +89,8 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     Rails.logger.info "User #{current_user&.email} subscribed to comments presence for creative #{params[:creative_id]}"
     return reject unless params[:creative_id].present? && current_user
 
-    creative = Creative.find_by(id: params[:creative_id].to_i)&.effective_origin
+    requested = Creative.find_by(id: params[:creative_id].to_i)
+    creative = requested&.effective_origin
     # The only gate on this channel — nothing below is re-checked per message, and
     # active_statuses already filters the same task data by :read.
     return reject unless creative&.has_permission?(current_user, :read)
@@ -112,8 +102,9 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     broadcast_presence
     # Transmitted, not broadcast: stream_from attaches asynchronously, so a broadcast
     # published in the same breath can be dropped. Presence and badges survive that
-    # (later events re-send them); this replay is one-shot.
-    self.class.running_agent_payloads(@creative_id).each { |payload| transmit(payload) }
+    # (later events re-send them); this replay is one-shot. Streaming is per origin,
+    # but the replay is per open creative — the id the client will match against.
+    self.class.running_agent_payloads(requested.id).each { |payload| transmit(payload) }
   end
 
   def unsubscribed

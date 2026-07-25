@@ -185,6 +185,13 @@ module Collavre
           # is already gone, since the resumed job just exits on a cancelled task.
           task = task_id.present? ? claim_pending_task!(task_id, tool_call_id) : nil
 
+          # Already claimed — hand back what that run recorded. A duplicate entry in
+          # one actions array shares the row lock, so the approval marker is the only
+          # thing standing between it and a second side effect plus a second resume.
+          if task&.pending_tool_call&.dig("approved")
+            return task.pending_tool_call["result"]
+          end
+
           result = begin
             ::Tools::MetaToolService.new.call(
               action: "call",
