@@ -68,6 +68,23 @@ module Collavre
                    "the client filters by the creative the agent is actually working in"
     end
 
+    # The client appends replayed ids into a per-agent array and treats the last one
+    # as the newest turn — Stop cancels that one. Without an ORDER BY, Postgres is
+    # free to hand back rows in any order, so Stop could kill an older turn.
+    test "the replay query orders tasks by id" do
+      assert_match(/ORDER BY\s+"?tasks"?\.?"?id"?/i, CommentsPresenceChannel.replayable_tasks.to_sql,
+                   "the client's \"last id is the newest turn\" assumption needs an explicit order")
+    end
+
+    test "running_agent_payloads replays concurrent turns oldest first" do
+      first = create_task(status: "running")
+      second = create_task(status: "pending_approval")
+
+      task_ids = agent_statuses_for(@creative).map { |status| status[:task_id] }
+      assert_equal [ first.id, second.id ], task_ids,
+                   "Stop takes the last id, so the newest turn has to arrive last"
+    end
+
     test "running_agent_payloads ignores done tasks" do
       create_task(status: "done")
 

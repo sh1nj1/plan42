@@ -29,8 +29,15 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # reloading viewer would lose the Stop button on the turn that is waiting on them.
   AGENT_REPLAY_STATUSES = %w[running pending pending_approval].freeze
 
+  # Ordered by id because the client appends these into a per-agent array and stops
+  # the last one. Not created_at: turns are stamped by whichever process dispatched
+  # them, so a web/worker clock skew can invert two of them (see PR #1431).
+  def self.replayable_tasks
+    Task.where(status: AGENT_REPLAY_STATUSES).order(:id)
+  end
+
   def self.running_agent_payloads(creative_id)
-    tasks = Task.where(status: AGENT_REPLAY_STATUSES).to_a
+    tasks = replayable_tasks.to_a
     origin_of = origin_ids_for(tasks)
 
     tasks.filter_map do |task|
