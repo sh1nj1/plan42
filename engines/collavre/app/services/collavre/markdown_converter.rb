@@ -59,10 +59,22 @@ module Collavre
         # styles override our theme-aware code_highlight.css palette and are blind to light/dark mode.
         # Disabling it emits a plain `<pre lang="ruby"><code>…</code></pre>`; the client re-tokenizes
         # with highlight.js so the rendered creative matches the editor (and respects the theme).
+        #
+        # header_ids: nil is pinned rather than left to the default. commonmarker 2.9.0 turned this
+        # extension on out of the box, which appends an anchor to every heading:
+        # `<h1 id="heading">Heading<a href="#heading" class="anchor"></a></h1>`. That output is stored
+        # (Creative#description is a rendered, sanitized field), and the sanitizer's allow-list drops
+        # `id` while keeping the `<a>` — so the anchor would link to a target that no longer exists,
+        # on every heading of every creative. `html_to_markdown` would also read it back as an empty
+        # link and write `[](#heading)` into the markdown. Pinning it keeps the rendered output a
+        # function of our options rather than of the gem's defaults; the key is accepted by 2.8 too.
         html = Commonmarker.to_html(input, options: {
           parse: { smart: true },
           render: { unsafe: true, hardbreaks: true },
-          extension: { table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true }
+          extension: {
+            table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true,
+            header_ids: nil
+          }
         }, plugins: { syntax_highlighter: nil })
 
         html.strip!
