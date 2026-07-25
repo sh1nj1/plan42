@@ -298,6 +298,29 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       expect(controller.activeAgentTasks['9']).toEqual([55, 77])
     })
 
+    // A blip must not do what the old 10s timeout did: take the indicator, and
+    // with it the only Stop button, off screen while the turn is still running.
+    test('a failed poll leaves the turn alone', async () => {
+      jest.spyOn(console, 'warn').mockImplementation(() => {})
+      armAgent('9', [55])
+      global.fetch.mockRejectedValueOnce(new Error('offline'))
+
+      controller.pollAgentTaskStatuses()
+      await flush()
+
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.typingUsers['9']).toBe('Agent')
+    })
+
+    test('a poll with nothing left to ask about stops itself', () => {
+      controller.startAgentTaskPoll()
+
+      controller.pollAgentTaskStatuses()
+
+      expect(controller.agentTaskPollHandle).toBeNull()
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
     test('still drops a requested task even when a newer one arrived mid-flight', async () => {
       armAgent('9', [55])
 
@@ -353,6 +376,20 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       expect(controller.activeAgentTasks['9']).toBeUndefined()
       expect(controller.typingUsers['9']).toBeUndefined()
       expect(controller.agentTaskPollHandle).toBeNull()
+    })
+
+    // idle is broadcast more than once per turn (finalize, then teardown), and a
+    // reconnecting client can also replay one for a turn it never registered. The
+    // second one has no task list to walk and must still be a clean no-op.
+    test('a repeat idle for an agent with no task left is harmless', () => {
+      controller.handlePresenceMessage(agentStatus('idle'))
+      controller.typingUsers['9'] = 'Agent'
+      controller.agentStates['9'] = 'thinking'
+
+      controller.handlePresenceMessage(agentStatus('idle'))
+
+      expect(controller.typingUsers['9']).toBeUndefined()
+      expect(controller.agentStates['9']).toBeUndefined()
     })
   })
 
@@ -456,6 +493,126 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       expect(controller.activeAgentTasks['9']).toEqual([55])
       expect(controller.typingUsers['9']).toBe('Agent')
       expect(controller.agentTaskPollHandle).not.toBeNull()
+    })
+  })
+
+  describe('stopping a turn', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+    const cancelOk = () => global.fetch.mockResolvedValueOnce({ ok: true, headers: new Headers() })
+    const cancelledUrls = () => global.fetch.mock.calls.map(([url]) => url)
+
+    const arrive = (status, { agentId = 9, taskId = 55, name = 'Agent' } = {}) =>
+      controller.handlePresenceMessage({
+        agent_status: { id: agentId, name, status, task_id: taskId, creative_id: '123' },
+      })
+
+    test('the Stop button cancels the turn and takes the indicator down with it', async () => {
+      arrive('streaming')
+      cancelOk()
+
+      controller.typingIndicatorTarget.querySelector('.agent-stop-btn').click()
+      await flush()
+
+      expect(cancelledUrls()).toEqual(['/tasks/55/cancel'])
+      expect(controller.activeAgentTasks['9']).toBeUndefined()
+      expect(controller.typingUsers['9']).toBeUndefined()
+      expect(controller.agentStates['9']).toBeUndefined()
+      expect(controller.agentTaskPollHandle).toBeNull()
+      expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).toBeNull()
+    })
+
+    // One Stop button stands for one agent, so it has to mean the turn the user
+    // is watching — the newest — not whichever turn happened to start first.
+    test('Stop ends the newest turn when an agent has two in flight', async () => {
+      arrive('streaming', { taskId: 55 })
+      arrive('streaming', { taskId: 77 })
+      cancelOk()
+
+      controller.typingIndicatorTarget.querySelector('.agent-stop-btn').click()
+      await flush()
+
+      expect(cancelledUrls()).toEqual(['/tasks/77/cancel'])
+      // The other turn is still running, so the agent — and its Stop button — stay.
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.typingUsers['9']).toBe('Agent')
+      expect(controller.agentTaskPollHandle).not.toBeNull()
+      expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).not.toBeNull()
+    })
+
+    // A cancel that lands after the same task was already dropped (an idle
+    // broadcast, or a poll that saw it finish) must still clear the name.
+    test('cancelling a turn already dropped elsewhere still clears the agent', async () => {
+      arrive('streaming')
+      delete controller.activeAgentTasks['9']
+      cancelOk()
+
+      controller.cancelAgentTask(55, '9')
+      await flush()
+
+      expect(controller.typingUsers['9']).toBeUndefined()
+      expect(controller.agentStates['9']).toBeUndefined()
+      expect(controller.streamingHeartbeatTimers['9']).toBeUndefined()
+    })
+
+    test('a rejected cancel leaves the turn on screen', async () => {
+      arrive('streaming')
+      global.fetch.mockResolvedValueOnce({ ok: false, headers: new Headers() })
+
+      controller.cancelAgentTask(55, '9')
+      await flush()
+
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).not.toBeNull()
+    })
+
+    // Escape in the composer routes here (form_controller keydown). Returning
+    // false is what lets that handler fall through to its other behaviour.
+    test('Escape reports false when there is nothing to stop', () => {
+      expect(controller.cancelAllAgentTasks()).toBe(false)
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('Escape stops the newest turn of every agent', async () => {
+      arrive('streaming', { agentId: 9, taskId: 55 })
+      arrive('streaming', { agentId: 9, taskId: 77 })
+      arrive('streaming', { agentId: 10, taskId: 88, name: 'Other' })
+      cancelOk()
+      cancelOk()
+
+      expect(controller.cancelAllAgentTasks()).toBe(true)
+      await flush()
+
+      expect(cancelledUrls()).toEqual(['/tasks/77/cancel', '/tasks/88/cancel'])
+    })
+  })
+
+  // The poll interval and the heartbeat timeouts write back into state the
+  // indicator renders from. Leaving them armed for a chat nobody is looking at
+  // keeps fetching /tasks/active_statuses forever and can repaint a torn-down row.
+  describe('leaving the chat', () => {
+    beforeEach(() => {
+      jest.spyOn(controller, 'unsubscribe').mockImplementation(() => {})
+      controller.handlePresenceMessage({
+        agent_status: { id: 9, name: 'Agent', status: 'streaming', task_id: 55, creative_id: '123' },
+      })
+      expect(controller.agentTaskPollHandle).not.toBeNull()
+      expect(controller.streamingHeartbeatTimers['9']).toBeDefined()
+    })
+
+    test('closing the popup disarms the poll and the heartbeats', () => {
+      controller.onPopupClosed()
+
+      expect(controller.agentTaskPollHandle).toBeNull()
+      expect(controller.streamingHeartbeatTimers).toEqual({})
+      expect(controller.activeAgentTasks).toEqual({})
+      expect(controller.typingUsers).toEqual({})
+    })
+
+    test('disconnecting the controller disarms the poll and the heartbeats', () => {
+      controller.disconnect()
+
+      expect(controller.agentTaskPollHandle).toBeNull()
+      expect(controller.streamingHeartbeatTimers).toEqual({})
     })
   })
 })
