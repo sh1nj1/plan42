@@ -92,10 +92,17 @@ class CommentsPresenceChannel < ApplicationCable::Channel
 
   def subscribed
     Rails.logger.info "User #{current_user&.email} subscribed to comments presence for creative #{params[:creative_id]}"
-    return unless params[:creative_id].present? && current_user
+    return reject unless params[:creative_id].present? && current_user
 
-    @creative_id = Creative.find(params[:creative_id].to_i).effective_origin.id
-    creative = Creative.find(@creative_id)
+    creative = Creative.find_by(id: params[:creative_id].to_i)&.effective_origin
+    # The only gate on this channel. Everything below hands the subscriber content
+    # of the creative — the reader list, the unread badge, and the live task ids,
+    # statuses and agent names replayed at the end — and none of it is re-checked
+    # per message. active_statuses filters by :read for the same data; a channel
+    # that streams it to any signed-in id would just be the unfiltered way in.
+    return reject unless creative&.has_permission?(current_user, :read)
+
+    @creative_id = creative.id
     stream_from stream_name
     CommentPresenceStore.add(@creative_id, current_user.id)
     Comment.broadcast_badge(creative, current_user)

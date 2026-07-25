@@ -185,6 +185,38 @@ module Collavre
       assert_nil agent_status_transmission
     end
 
+    # Being signed in is not being allowed in. The replay below hands over live
+    # task ids and agent names for the creative, which is exactly what
+    # TasksController#active_statuses filters by :read — so an unfiltered channel
+    # would hand back what the endpoint refuses.
+    test "a signed-in user without read permission is rejected and gets nothing" do
+      create_task(status: "pending_approval")
+
+      stub_connection current_user: users(:two)
+      subscribe creative_id: @creative.id
+
+      assert subscription.rejected?
+      assert_nil agent_status_transmission
+    end
+
+    test "a shared reader is admitted" do
+      task = create_task(status: "pending_approval")
+      CreativeShare.create!(creative: @creative, user: users(:two), permission: :read)
+
+      stub_connection current_user: users(:two)
+      subscribe creative_id: @creative.id
+
+      assert subscription.confirmed?
+      assert_equal task.id, agent_status_transmission[:task_id]
+    end
+
+    test "an unknown creative id is rejected instead of raising" do
+      stub_connection current_user: @owner
+      subscribe creative_id: Creative.maximum(:id).to_i + 1_000
+
+      assert subscription.rejected?
+    end
+
     private
 
     def create_task(status:)
