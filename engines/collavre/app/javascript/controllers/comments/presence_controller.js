@@ -133,6 +133,30 @@ export default class extends Controller {
     this.syncGlobalAgentTasks()
   }
 
+  // An agent's turns, label, state and heartbeat come down together or not at all.
+  // The heartbeat is keyed by agent, so it may only go when the agent itself does —
+  // a surviving turn still needs it to degrade to thinking. Three paths remove an
+  // agent (idle, Stop, poll); routing them all through here is what keeps them from
+  // drifting apart, which is how that heartbeat got dropped early once already.
+  dropAgent(agentId) {
+    delete this.activeAgentTasks[agentId]
+    delete this.typingUsers[agentId]
+    delete this.agentStates[agentId]
+    this.clearStreamingHeartbeat(agentId)
+  }
+
+  // Ends one turn, and the agent with it once nothing is left. A missing taskId means
+  // the caller can't say which turn ended, so the agent goes entirely.
+  dropAgentTask(agentId, taskId) {
+    const tasks = this.activeAgentTasks[agentId]
+    if (!tasks) return this.dropAgent(agentId)
+    if (taskId) {
+      const idx = tasks.indexOf(taskId)
+      if (idx !== -1) tasks.splice(idx, 1)
+    }
+    if (!taskId || tasks.length === 0) this.dropAgent(agentId)
+  }
+
   onPopupClosed() {
     this.unsubscribe()
     this.participantsData = null
@@ -307,25 +331,7 @@ export default class extends Controller {
         }
         this.startAgentTaskPoll()
       } else {
-        // idle/done - remove specific task or all tasks for this agent. The
-        // heartbeat is keyed by agent, not by task, so it only goes away with
-        // the agent: a surviving turn still needs it to degrade to thinking.
-        if (this.activeAgentTasks[id]) {
-          if (task_id) {
-            const idx = this.activeAgentTasks[id].indexOf(task_id)
-            if (idx !== -1) this.activeAgentTasks[id].splice(idx, 1)
-          }
-          if (!task_id || this.activeAgentTasks[id].length === 0) {
-            delete this.activeAgentTasks[id]
-            delete this.typingUsers[id]
-            delete this.agentStates[id]
-            this.clearStreamingHeartbeat(id)
-          }
-        } else {
-          delete this.typingUsers[id]
-          delete this.agentStates[id]
-          this.clearStreamingHeartbeat(id)
-        }
+        this.dropAgentTask(id, task_id)
         this.maybeStopAgentTaskPoll()
       }
       this.syncGlobalAgentTasks()
@@ -547,20 +553,7 @@ export default class extends Controller {
     })
       .then((response) => {
         if (response.ok) {
-          if (this.activeAgentTasks[agentId]) {
-            const idx = this.activeAgentTasks[agentId].indexOf(taskId)
-            if (idx !== -1) this.activeAgentTasks[agentId].splice(idx, 1)
-            if (this.activeAgentTasks[agentId].length === 0) {
-              delete this.activeAgentTasks[agentId]
-              delete this.typingUsers[agentId]
-              delete this.agentStates[agentId]
-              this.clearStreamingHeartbeat(agentId)
-            }
-          } else {
-            delete this.typingUsers[agentId]
-            delete this.agentStates[agentId]
-            this.clearStreamingHeartbeat(agentId)
-          }
+          this.dropAgentTask(agentId, taskId)
           this.maybeStopAgentTaskPoll()
           this.syncGlobalAgentTasks()
           this.renderTypingIndicator()
@@ -695,12 +688,7 @@ export default class extends Controller {
             (taskId) => activeTaskIds.has(taskId) || !requestedTaskIds.has(taskId),
           )
           if (this.activeAgentTasks[agentId].length !== before) changed = true
-          if (this.activeAgentTasks[agentId].length === 0) {
-            delete this.activeAgentTasks[agentId]
-            delete this.typingUsers[agentId]
-            delete this.agentStates[agentId]
-            this.clearStreamingHeartbeat(agentId)
-          }
+          if (this.activeAgentTasks[agentId].length === 0) this.dropAgent(agentId)
         })
 
         if (changed) this.renderTypingIndicator()

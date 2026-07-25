@@ -47,13 +47,6 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
-  # #subscribed deliberately does not use this — see the transmit call there.
-  def self.broadcast_running_agents(creative_id)
-    running_agent_payloads(creative_id).each do |payload|
-      ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
-    end
-  end
-
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
   # source_creative_id: the actual creative where agent is working (for filtering on frontend)

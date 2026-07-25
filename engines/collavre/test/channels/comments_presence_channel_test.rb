@@ -16,125 +16,71 @@ module Collavre
       )
     end
 
-    test "broadcast_running_agents sends agent status for running tasks" do
-      task = Task.create!(
-        name: "Response to comment_created",
-        status: "running",
-        trigger_event_name: "comment_created",
-        trigger_event_payload: {
-          "comment" => { "id" => 1, "content" => "Hello" },
-          "creative" => { "id" => @creative.id }
-        },
-        agent: @agent
-      )
+    test "running_agent_payloads describes a running task" do
+      task = create_task(status: "running")
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
-      end
+      payloads = agent_statuses_for(@creative)
+      assert_equal 1, payloads.size
 
-      agent_broadcasts = broadcasts.select { |b| b[:payload].key?(:agent_status) }
-      assert_equal 1, agent_broadcasts.size
-
-      status = agent_broadcasts.first[:payload][:agent_status]
+      status = payloads.first
       assert_equal @agent.id, status[:id]
       assert_equal @agent.display_name, status[:name]
       assert_equal "thinking", status[:status]
       assert_equal task.id, status[:task_id]
     end
 
-    test "broadcast_running_agents ignores tasks for other creatives" do
+    test "running_agent_payloads ignores tasks for other creatives" do
       other_creative = Creative.create!(user: @owner, description: "Other")
-      Task.create!(
-        name: "Response to comment_created",
-        status: "running",
-        trigger_event_name: "comment_created",
-        trigger_event_payload: {
-          "comment" => { "id" => 1, "content" => "Hello" },
-          "creative" => { "id" => other_creative.id }
-        },
-        agent: @agent
-      )
+      create_task(status: "running", creative: other_creative)
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
-      end
-
-      agent_broadcasts = broadcasts.select { |b| b[:payload].key?(:agent_status) }
-      assert_equal 0, agent_broadcasts.size
+      assert_empty agent_statuses_for(@creative)
     end
 
     # The job that set pending_approval has already returned, so nothing else will
     # ever announce this task: no heartbeat, no later status. A viewer who reloads
     # while a turn waits on a tool approval has only this replay to learn the task
     # is still holding the slot — and to get its Stop button back.
-    test "broadcast_running_agents replays a task paused on approval, with its real status" do
-      task = Task.create!(
-        name: "Response to comment_created",
-        status: "pending_approval",
-        trigger_event_name: "comment_created",
-        trigger_event_payload: {
-          "comment" => { "id" => 1, "content" => "Hello" },
-          "creative" => { "id" => @creative.id }
-        },
-        agent: @agent
-      )
+    test "running_agent_payloads replays a task paused on approval, with its real status" do
+      task = create_task(status: "pending_approval")
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
-      end
+      payloads = agent_statuses_for(@creative)
+      assert_equal 1, payloads.size
 
-      agent_broadcasts = broadcasts.select { |b| b[:payload].key?(:agent_status) }
-      assert_equal 1, agent_broadcasts.size
-
-      status = agent_broadcasts.first[:payload][:agent_status]
+      status = payloads.first
       assert_equal task.id, status[:task_id]
       assert_equal "pending_approval", status[:status],
                    "a paused turn replayed as \"thinking\" would claim the agent is working"
     end
 
-    test "broadcast_running_agents ignores done tasks" do
-      Task.create!(
-        name: "Response to comment_created",
-        status: "done",
-        trigger_event_name: "comment_created",
-        trigger_event_payload: {
-          "comment" => { "id" => 1, "content" => "Hello" },
-          "creative" => { "id" => @creative.id }
-        },
-        agent: @agent
-      )
+    test "running_agent_payloads ignores done tasks" do
+      create_task(status: "done")
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
-      end
-
-      agent_broadcasts = broadcasts.select { |b| b[:payload].key?(:agent_status) }
-      assert_equal 0, agent_broadcasts.size
+      assert_empty agent_statuses_for(@creative)
     end
 
-    test "broadcast_running_agents ignores cancelled tasks" do
+    test "running_agent_payloads ignores cancelled tasks" do
+      create_task(status: "cancelled")
+
+      assert_empty agent_statuses_for(@creative)
+    end
+
+    private
+
+    def create_task(status:, creative: @creative)
       Task.create!(
         name: "Response to comment_created",
-        status: "cancelled",
+        status: status,
         trigger_event_name: "comment_created",
         trigger_event_payload: {
           "comment" => { "id" => 1, "content" => "Hello" },
-          "creative" => { "id" => @creative.id }
+          "creative" => { "id" => creative.id }
         },
         agent: @agent
       )
+    end
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
-      end
-
-      agent_broadcasts = broadcasts.select { |b| b[:payload].key?(:agent_status) }
-      assert_equal 0, agent_broadcasts.size
+    def agent_statuses_for(creative)
+      CommentsPresenceChannel.running_agent_payloads(creative.id).filter_map { |payload| payload[:agent_status] }
     end
   end
 
