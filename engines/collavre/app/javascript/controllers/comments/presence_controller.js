@@ -307,8 +307,9 @@ export default class extends Controller {
         }
         this.startAgentTaskPoll()
       } else {
-        // idle/done - remove specific task or all tasks for this agent
-        this.clearStreamingHeartbeat(id)
+        // idle/done - remove specific task or all tasks for this agent. The
+        // heartbeat is keyed by agent, not by task, so it only goes away with
+        // the agent: a surviving turn still needs it to degrade to thinking.
         if (this.activeAgentTasks[id]) {
           if (task_id) {
             const idx = this.activeAgentTasks[id].indexOf(task_id)
@@ -318,10 +319,12 @@ export default class extends Controller {
             delete this.activeAgentTasks[id]
             delete this.typingUsers[id]
             delete this.agentStates[id]
+            this.clearStreamingHeartbeat(id)
           }
         } else {
           delete this.typingUsers[id]
           delete this.agentStates[id]
+          this.clearStreamingHeartbeat(id)
         }
         this.maybeStopAgentTaskPoll()
       }

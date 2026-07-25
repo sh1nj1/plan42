@@ -445,6 +445,33 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       }
     })
 
+    // The scheduler runs more than one turn per agent (topic concurrency > 1),
+    // and the heartbeat timer is per agent, not per turn. One turn going idle
+    // must not disarm the timer the surviving turn still depends on, or that
+    // turn stays labelled as typing forever once its stream goes quiet.
+    test('one turn ending leaves the other turn able to degrade to waiting', () => {
+      const statusFor = (status, taskId) => ({
+        agent_status: { id: 9, name: 'Agent', status, task_id: taskId, creative_id: '123' },
+      })
+      jest.useFakeTimers()
+      try {
+        controller.handlePresenceMessage(statusFor('streaming', 55))
+        controller.handlePresenceMessage(statusFor('streaming', 66))
+
+        controller.handlePresenceMessage(statusFor('idle', 55))
+        expect(controller.activeAgentTasks['9']).toEqual([66])
+        expect(label()).toBe('Agent ...')
+
+        jest.advanceTimersByTime(5000)
+
+        expect(label()).toBe('Agent ⏳')
+        expect(controller.activeAgentTasks['9']).toEqual([66])
+        expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).not.toBeNull()
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
     test('a human typer is never labelled as waiting', () => {
       controller.typingUsers['7'] = 'Human'
       controller.renderTypingIndicator()
