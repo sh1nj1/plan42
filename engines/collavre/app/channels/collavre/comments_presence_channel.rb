@@ -30,9 +30,12 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   AGENT_REPLAY_STATUSES = %w[running pending pending_approval].freeze
 
   def self.running_agent_payloads(creative_id)
-    Task.where(status: AGENT_REPLAY_STATUSES).filter_map do |task|
+    tasks = Task.where(status: AGENT_REPLAY_STATUSES).to_a
+    origin_of = origin_ids_for(tasks)
+
+    tasks.filter_map do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
-      next unless task_creative_id == creative_id
+      next unless origin_of[task_creative_id] == creative_id
 
       agent_status_payload(
         creative_id,
@@ -46,6 +49,17 @@ class CommentsPresenceChannel < ApplicationCable::Channel
       )
     end
   end
+
+  # Subscribers arrive with an effective origin (comments only ever live there), but
+  # a turn dispatched on a linked creative keeps that link's id in its payload — so
+  # match the way the live broadcast routes, via AgentLifecycleManager#broadcast_status.
+  def self.origin_ids_for(tasks)
+    ids = tasks.filter_map { |task| task.trigger_event_payload&.dig("creative", "id") }.uniq
+    Creative.where(id: ids).each_with_object({}) do |creative, map|
+      map[creative.id] = creative.effective_origin.id
+    end
+  end
+  private_class_method :origin_ids_for
 
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.

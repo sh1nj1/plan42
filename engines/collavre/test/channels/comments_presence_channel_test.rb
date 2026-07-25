@@ -52,6 +52,22 @@ module Collavre
                    "a paused turn replayed as \"thinking\" would claim the agent is working"
     end
 
+    # The popup subscribes with the effective origin — Comment#use_origin_creative
+    # stores every comment there — but a turn dispatched on a linked creative keeps
+    # that link's id in its payload. The live broadcast already routes by
+    # effective_origin (AgentLifecycleManager#broadcast_status); an equality check
+    # here would drop exactly the paused turns that have no later broadcast.
+    test "running_agent_payloads replays a task dispatched on a linked creative" do
+      linked = Creative.create!(user: users(:two), origin: @creative)
+      task = create_task(status: "pending_approval", creative: linked)
+
+      payloads = agent_statuses_for(@creative)
+      assert_equal 1, payloads.size
+      assert_equal task.id, payloads.first[:task_id]
+      assert_equal linked.id, payloads.first[:creative_id],
+                   "the client filters by the creative the agent is actually working in"
+    end
+
     test "running_agent_payloads ignores done tasks" do
       create_task(status: "done")
 
@@ -156,6 +172,23 @@ module Collavre
       assert_equal task.id, agent_status_transmission[:task_id]
     end
 
+    # A shared viewer opens the popup on their own link, not on the origin, so the
+    # subscription and the task payload name two different creatives for one turn.
+    test "a shared viewer opening their link gets the turn running on it" do
+      reader = users(:two)
+      linked = Creative.create!(user: reader, origin: @creative)
+      CreativeShare.create!(creative: @creative, user: reader, permission: :read)
+      task = create_task(status: "pending_approval", creative: linked)
+
+      stub_connection current_user: reader
+      subscribe creative_id: linked.id
+
+      assert subscription.confirmed?
+      status = agent_status_transmission
+      assert status, "the viewer would reload into a paused turn with no Stop button"
+      assert_equal task.id, status[:task_id]
+    end
+
     test "an unknown creative id is rejected instead of raising" do
       stub_connection current_user: @owner
       subscribe creative_id: Creative.maximum(:id).to_i + 1_000
@@ -165,14 +198,14 @@ module Collavre
 
     private
 
-    def create_task(status:)
+    def create_task(status:, creative: @creative)
       Task.create!(
         name: "Response to comment_created",
         status: status,
         trigger_event_name: "comment_created",
         trigger_event_payload: {
           "comment" => { "id" => 1, "content" => "Hello" },
-          "creative" => { "id" => @creative.id }
+          "creative" => { "id" => creative.id }
         },
         agent: @agent
       )
