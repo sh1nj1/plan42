@@ -38,7 +38,7 @@ module Collavre
           "token_spike_window_minutes" => 10
         },
         "stuck_detection" => {
-          "enabled" => false,
+          "enabled" => true,
           "task_stuck_threshold_minutes" => 30,            # Task running for > N minutes
           "creative_stall_threshold_minutes" => 120,       # Creative no progress for > N minutes
           "queued_orphan_threshold_minutes" => 5,          # Queued waiter with no live blocker for > N minutes

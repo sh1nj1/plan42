@@ -79,6 +79,49 @@ module Creatives
       assert_nil @index.unread_count_for(creative)
     end
 
+    # Presence suppression is applied here, not by the caller: it is a cache read
+    # per origin, so it has to ride along with the batch. The count handed out is
+    # the one the badge renders.
+    test "a user with the chat open sees nothing unread" do
+      creative = Creative.create!(user: @user, description: "Watching", sequence: 907)
+      comment_on(creative, "one")
+      comment_on(creative, "two")
+
+      Collavre::CommentPresenceStore.add(creative.id, @user.id)
+
+      @index.index([ creative.reload ])
+
+      assert_equal 0, @index.unread_count_for(creative)
+    ensure
+      Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
+    end
+
+    test "presence of another user does not suppress our badge" do
+      creative = Creative.create!(user: @user, description: "Someone else watching", sequence: 908)
+      comment_on(creative, "one")
+
+      Collavre::CommentPresenceStore.add(creative.id, @author.id)
+
+      @index.index([ creative.reload ])
+
+      assert_equal 1, @index.unread_count_for(creative)
+    ensure
+      Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
+    end
+
+    test "an anonymous visitor is never suppressed" do
+      creative = Creative.create!(user: @user, description: "Anonymous", sequence: 909)
+      comment_on(creative, "one")
+      Collavre::CommentPresenceStore.add(creative.id, @user.id)
+
+      anonymous = Collavre::Creatives::CommentBadgeIndex.new(user: nil)
+      anonymous.index([ creative.reload ])
+
+      assert_equal 1, anonymous.unread_count_for(creative)
+    ensure
+      Rails.cache.delete(Collavre::CommentPresenceStore.key(creative.id))
+    end
+
     private
 
     def comment_on(creative, content, private: false)

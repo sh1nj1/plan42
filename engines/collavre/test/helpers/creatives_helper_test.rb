@@ -184,6 +184,18 @@ class CreativesHelperTest < ActionView::TestCase
   end
 
 
+  test "render_progress_value reads the completion mark once per view context" do
+    calls = 0
+
+    Collavre::SystemSetting.stub(:completion_mark, -> { calls += 1; "✓" }) do
+      render_progress_value(1)
+      render_progress_value(0.5)
+      render_progress_value(1)
+    end
+
+    assert_equal 1, calls
+  end
+
   test "render_creative_tree_markdown includes children of origin for linked creatives" do
     user = users(:one)
 
