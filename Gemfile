@@ -45,6 +45,18 @@ gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
 gem "image_processing", "~> 1.14"
+# The variant processor is Rails 8's default, :vips, so ImageProcessing::Vips needs ruby-vips.
+# image_processing 1.x pulls it in transitively; 2.0 makes it a soft dependency instead, and
+# ImageProcessing::Vips is only resolved when a variant is actually processed — a missing
+# ruby-vips boots fine and raises on the first avatar or comment image instead. Depending on it
+# here keeps that bump from turning into a runtime failure. (Dockerfile installs libvips, the
+# C library this binds to.)
+#
+# require: false because naming the gem is only meant to pin the bundle, not to change when it
+# loads: an auto-required ruby-vips dlopens libvips during boot, so every environment that merely
+# boots the app -- the postgres_schema_load CI job, say -- would suddenly need the C library
+# installed. image_processing requires it on its own when a variant is actually processed.
+gem "ruby-vips", "~> 2.0", require: false
 
 # Use AWS S3 for Active Storage
 gem "aws-sdk-s3", require: false
