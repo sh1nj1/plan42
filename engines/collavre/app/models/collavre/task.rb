@@ -52,6 +52,11 @@ module Collavre
       rel
     }
 
+    # Of the slot-occupying statuses, these have no live worker to run
+    # AiAgentJob's ensure-block drain, so whoever cancels one must release the
+    # slot itself.
+    HELD_SLOT_WITHOUT_WORKER = %w[pending delegated pending_approval].freeze
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same

@@ -217,6 +217,9 @@ module Collavre
         # The row lock is held until the outer transaction commits, so a Stop racing
         # this approval either blocks and lands after it or wins and makes the claim
         # fail. A missing task keeps the pre-existing "run, nothing to resume" path.
+        # The status stays pending_approval on purpose: only AiAgentJob may promote
+        # it to running, since a Stop before the job starts relies on a
+        # HELD_SLOT_WITHOUT_WORKER status to release the slot it still holds.
         def claim_pending_task!(task_id, tool_call_id)
           task = Task.lock.find_by(id: task_id)
           return nil unless task
@@ -230,9 +233,6 @@ module Collavre
             raise InvalidActionError, I18n.t("collavre.comments.approve_task_superseded")
           end
 
-          # AiAgentJob's resume branch assigns the same status, so claiming here
-          # closes the window without introducing a state.
-          task.update!(status: "running")
           task
         end
 

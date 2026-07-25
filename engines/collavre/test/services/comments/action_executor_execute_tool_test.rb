@@ -183,6 +183,23 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     refute invoked, "the tool ran for a superseded approval"
   end
 
+  # Approving only enqueues the resume; AiAgentJob assigns "running" when it
+  # actually starts. Claiming it as running here would make a Stop landing in
+  # that window skip the release TasksController#cancel reserves for states with
+  # no live worker, stranding the agent slot until stuck recovery.
+  test "an approved turn is still releasable by Stop until its job starts" do
+    service = Object.new
+    service.define_singleton_method(:call) { |**_args| { result: "success" } }
+
+    ::Tools::MetaToolService.stub :new, -> { service } do
+      Collavre::AiAgentJob.stub :perform_later, ->(_task) { nil } do
+        Comments::ActionExecutor.new(comment: approval_comment, executor: @user).call
+      end
+    end
+
+    assert_includes Collavre::Task::HELD_SLOT_WITHOUT_WORKER, @task.reload.status
+  end
+
   private
 
   def approval_comment

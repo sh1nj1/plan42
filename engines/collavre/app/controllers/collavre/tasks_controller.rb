@@ -40,7 +40,7 @@ module Collavre
       # cancelling the blocker leaves agent capacity and the next waiter stuck
       # until stuck recovery. release!/dequeue are idempotent (dequeue is bounded
       # by topic_at_capacity?), so a racing live worker that also drains is harmless.
-      held_slot_without_worker = %w[pending delegated pending_approval].include?(task.status)
+      held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(task.status)
       task.update!(status: "cancelled")
 
       if held_slot_without_worker && task.agent
