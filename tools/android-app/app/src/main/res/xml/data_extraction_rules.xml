@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The companion stores a Doorkeeper bearer token (full mobile-API access to the
+  user's Collavre account) in the `collavre_voice` Preferences DataStore. That
+  file is app-private but plaintext, so it must never leave the device via a
+  backup channel. allowBackup="false" already blocks Auto Backup and adb backup;
+  on Android 12+ dataExtractionRules governs cloud-backup and device-transfer
+  SEPARATELY, so we exclude the file domain (where the datastore lives) from
+  BOTH — otherwise a device-to-device migration would copy the token in cleartext.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" />
+        <exclude domain="sharedpref" />
+        <exclude domain="database" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" />
+        <exclude domain="sharedpref" />
+        <exclude domain="database" />
+    </device-transfer>
+</data-extraction-rules>
