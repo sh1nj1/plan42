@@ -356,6 +356,66 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     })
   })
 
+  describe('indicator label per agent state', () => {
+    const agentStatus = (status) => ({
+      agent_status: { id: 9, name: 'Agent', status, task_id: 55, creative_id: '123' },
+    })
+    const label = () => controller.typingIndicatorTarget.lastChild.textContent
+
+    test('streaming reads as typing', () => {
+      controller.handlePresenceMessage(agentStatus('streaming'))
+
+      expect(label()).toBe('Agent ...')
+    })
+
+    test('thinking reads as waiting', () => {
+      controller.handlePresenceMessage(agentStatus('thinking'))
+
+      expect(label()).toBe('Agent ⏳')
+    })
+
+    // The reported bug: a long turn used to make the whole indicator (and with
+    // it the only Stop button) disappear. It must degrade to waiting instead.
+    test('a stalled stream degrades to waiting and keeps Stop reachable', () => {
+      jest.useFakeTimers()
+      try {
+        controller.handlePresenceMessage(agentStatus('streaming'))
+        expect(label()).toBe('Agent ...')
+
+        jest.advanceTimersByTime(5000)
+
+        expect(label()).toBe('Agent ⏳')
+        expect(controller.activeAgentTasks['9']).toEqual([55])
+        expect(controller.typingIndicatorTarget.querySelector('.agent-stop-btn')).not.toBeNull()
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    // Each heartbeat re-arms the timer, so a stream that keeps reporting never
+    // flips to waiting.
+    test('a live heartbeat keeps it typing', () => {
+      jest.useFakeTimers()
+      try {
+        controller.handlePresenceMessage(agentStatus('streaming'))
+        jest.advanceTimersByTime(3000)
+        controller.handlePresenceMessage(agentStatus('streaming'))
+        jest.advanceTimersByTime(3000)
+
+        expect(label()).toBe('Agent ...')
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a human typer is never labelled as waiting', () => {
+      controller.typingUsers['7'] = 'Human'
+      controller.renderTypingIndicator()
+
+      expect(label()).toBe('Human ...')
+    })
+  })
+
   describe('navigating the open popup to another creative', () => {
     beforeEach(() => {
       // onPopupOpened's other work needs a cable and a server; neither is the
