@@ -24,16 +24,11 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     )
   end
 
-  # Statuses replayed to a subscriber that arrives after the activity started.
-  # "pending_approval" is the one that MUST be here: the job has already returned
-  # holding the task in that state, so unlike a mid-turn task there is no heartbeat
-  # behind it and no later broadcast. A viewer who was disconnected — or who simply
-  # reloaded — would otherwise never learn the task is still holding the topic slot,
-  # and would be left without the Stop button on the one turn that is waiting on them.
+  # Replayed to late subscribers. "pending_approval" must be here: its job already
+  # returned, so no heartbeat or later broadcast will ever re-announce it, and a
+  # reloading viewer would lose the Stop button on the turn that is waiting on them.
   AGENT_REPLAY_STATUSES = %w[running pending pending_approval].freeze
 
-  # One agent_status payload per currently live AI agent task on a creative, in
-  # the shape broadcast_agent_status sends.
   def self.running_agent_payloads(creative_id)
     Task.where(status: AGENT_REPLAY_STATUSES).filter_map do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
@@ -52,10 +47,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
-  # Broadcast status for any currently live AI agent tasks for a creative.
-  # #subscribed does NOT use this — it transmits the same payloads straight to
-  # the connection instead, because a broadcast can be dropped exactly there
-  # (see the comment on that call).
+  # #subscribed deliberately does not use this — see the transmit call there.
   def self.broadcast_running_agents(creative_id)
     running_agent_payloads(creative_id).each do |payload|
       ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
@@ -95,11 +87,8 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     return reject unless params[:creative_id].present? && current_user
 
     creative = Creative.find_by(id: params[:creative_id].to_i)&.effective_origin
-    # The only gate on this channel. Everything below hands the subscriber content
-    # of the creative — the reader list, the unread badge, and the live task ids,
-    # statuses and agent names replayed at the end — and none of it is re-checked
-    # per message. active_statuses filters by :read for the same data; a channel
-    # that streams it to any signed-in id would just be the unfiltered way in.
+    # The only gate on this channel — nothing below is re-checked per message, and
+    # active_statuses already filters the same task data by :read.
     return reject unless creative&.has_permission?(current_user, :read)
 
     @creative_id = creative.id
@@ -107,14 +96,9 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     CommentPresenceStore.add(@creative_id, current_user.id)
     Comment.broadcast_badge(creative, current_user)
     broadcast_presence
-    # Transmitted to this connection, not broadcast to the stream it just joined.
-    # `stream_from` only registers the subscription with the pubsub adapter, and
-    # the async and Redis adapters do that asynchronously — a broadcast published
-    # in the same breath can land before the subscription is attached and be
-    # dropped. Every other message here survives that (presence and badges are
-    # re-sent by later events), but this replay is one-shot: the job that set
-    # pending_approval has already returned, so a dropped copy means no Stop
-    # button for the rest of the turn.
+    # Transmitted, not broadcast: stream_from attaches asynchronously, so a broadcast
+    # published in the same breath can be dropped. Presence and badges survive that
+    # (later events re-send them); this replay is one-shot.
     self.class.running_agent_payloads(@creative_id).each { |payload| transmit(payload) }
   end
 
