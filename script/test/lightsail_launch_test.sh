@@ -530,7 +530,12 @@ esac
 # FAIL_REVOKE choose which step reports failure.
 run_cutover() {
   local work; work="$(mktemp -d)"
-  printf '%s' "$recipe" | sed 's/<instance-ip>/203.0.113.10/g' > "$work/recipe.sh"
+  # Both placeholders have to go: `<` is a shell metacharacter even mid-word, so
+  # a recipe still carrying `<deploy-user>@<instance-ip>` is a redirection, not a
+  # destination, and bash would create files named after the placeholders.
+  printf '%s' "$recipe" |
+    sed -e 's/<instance-ip>/203.0.113.10/g' -e 's/<deploy-user>/collavre/g' \
+    > "$work/recipe.sh"
   mkdir -p "$work/bin"
   cat > "$work/bin/ssh" <<'STUB'
 #!/usr/bin/env bash
@@ -1600,7 +1605,9 @@ run_move() {
   # be able to restore it.
   export REMOTE="${REUSE_REMOTE:-$work/remote}"
   mkdir -p "$REMOTE" "$work/bin" "$work/rbin"
-  printf '%s' "$move" | sed 's/<instance-ip>/203.0.113.10/g' > "$work/recipe.sh"
+  printf '%s' "$move" |
+    sed -e 's/<instance-ip>/203.0.113.10/g' -e 's/<deploy-user>/collavre/g' \
+    > "$work/recipe.sh"
 
   cat > "$work/bin/psql" <<'STUB'
 #!/usr/bin/env bash
@@ -1750,7 +1757,10 @@ case "$sql" in
   *"CONNECTION LIMIT 0"*)      echo "limit:0"        >>"$TRACE"
                                [ -n "$FAIL_SHUT" ] || echo 0 > "$CONNLIMIT"
                                [ -z "$FAIL_SHUT" ] || { echo 'ERROR:  database "x" does not exist' >&2; exit 1; } ;;
-  *"CONNECTION LIMIT -1"*)     echo "limit:reopened" >>"$TRACE"; echo -1 > "$CONNLIMIT" ;;
+  *"CONNECTION LIMIT -1"*)     echo "limit:reopened" >>"$TRACE"
+                               [ -z "$FAIL_REOPEN" ] ||
+                                 { echo 'ERROR:  could not connect' >&2; exit 1; }
+                               echo -1 > "$CONNLIMIT" ;;
   *rolsuper*)                  echo "rolsuper"       >>"$TRACE"; printf '%s' "$APP_SUPER" ;;
   *datconnlimit*)              echo "readback"       >>"$TRACE"; cat "$CONNLIMIT" ;;
   *pg_terminate_backend*)      echo "terminate"      >>"$TRACE"; echo "${KILLED:-0}" ;;
@@ -1773,7 +1783,8 @@ STUB
   # role that does not exist, or a cluster that cannot be reached, comes back
   # as, and it must not be rewritten into the one value that lets the gate open.
   export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}" \
-         FAIL_SHUT="${FAIL_SHUT:-}" CONNLIMIT="$work/connlimit" \
+         FAIL_SHUT="${FAIL_SHUT:-}" FAIL_REOPEN="${FAIL_REOPEN:-}" \
+         CONNLIMIT="$work/connlimit" \
          APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}"
   R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   R_TRACE="$(paste -sd'|' "$TRACE")"
@@ -1878,7 +1889,46 @@ for shape in "no state file:::" "no such role:ghost::" "cluster unreachable:coll
   chk "refused: $what" 1 "$(grep -c 'cannot shut this database to the app' <<<"$R_OUT")"
   chk "  nothing dropped: $what" 0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
 done
-unset APP_ROLE
+# APP_SUPER as well as APP_ROLE: an assignment placed before a *function* call
+# persists in the calling shell in bash, so `APP_SUPER=''` above outlives the
+# loop. run_restore reads it with ${APP_SUPER-f}, which cannot restore a default
+# for a variable that is set-but-empty — so every later run_restore would refuse
+# at the role check and each case after this one would pass for the wrong reason.
+unset APP_ROLE APP_SUPER
+
+echo "86d. a re-open that failed is not reported as 'restored, boot the app'"
+# The restore worked and the door did not come back up. Nothing in
+# $restore_status can see that: the re-open is a separate connection to the
+# cluster and fails on its own terms. Unchecked, the block prints the boot
+# instruction over a database still at CONNECTION LIMIT 0, and the operator
+# meets it as "too many connections" at boot — the misdirected error the whole
+# block is built to avoid, produced by the step meant to undo it.
+LIVE=0 KILLED=0 FAIL_RESTORE='' FAIL_REOPEN=1 run_restore
+chk "the restore did run"        1 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "the re-open was attempted"  1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "NOT told to boot"           0 "$(grep -c 'app boot' <<<"$R_OUT")"
+chk "told the door is still shut" 1 "$(grep -c 'RE-OPEN FAILED' <<<"$R_OUT")"
+# And told which half is intact, because the two failures want opposite
+# responses: a half-loaded database wants the restore re-run, a shut one does
+# not — re-running --clean would drop a good restore to fix a connection limit.
+chk "and that the data is not the problem" 1 \
+  "$(grep -c 'not what failed' <<<"$R_OUT")"
+chk "prints the command that lifts it"     1 \
+  "$(grep -c 'CONNECTION LIMIT -1' <<<"$R_OUT")"
+# The half-replaced-database message must NOT appear: it tells the operator to
+# re-run the restore, which is the one thing that would turn this into data loss.
+chk "does not send them back through pg_restore" 0 \
+  "$(grep -c 'RESTORE FAILED' <<<"$R_OUT")"
+unset FAIL_REOPEN
+
+echo "86e. a failing re-open on the refusal path is reported too"
+# restore_status=2 shut the door and dropped nothing. The door still has to come
+# back up, and a re-open that failed there leaves a database the app cannot
+# reach with no restore in the story at all to explain it.
+LIVE=1 KILLED=0 FAIL_RESTORE='' FAIL_REOPEN=1 run_restore
+chk "nothing dropped"             0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "told the door is still shut" 1 "$(grep -c 'RE-OPEN FAILED' <<<"$R_OUT")"
+unset FAIL_REOPEN
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #
@@ -2361,6 +2411,102 @@ chk "not an ownership transfer that cannot be done" 0 "$(grep -c 'Move the objec
 chk "nor an object count it could not obtain"       0 "$(grep -c 'An unknown number of' <<<"$OUT")"
 chk "and nothing was written"       OLD-PASSWORD "$(cat "$s6b/db_password")"
 rm -rf "$s6b"
+
+# --- docs/deploy_to_lightsail.md, the DB_NAME rename -------------------------
+#
+# /var/lib/collavre/db_name is what a later launch-script run trusts to tell a
+# deliberate rename from a typo. A rename that failed with a marker that
+# advanced anyway is the one combination that makes that run create an empty
+# database under the new name and move DATABASE_URL and the backup job onto it
+# — the outcome refuse_db_name_change exists to prevent, reached from the
+# operator's side instead of the script's. The block is pasted into an
+# interactive shell with no `set -e`, so a failed ALTER scrolls past.
+
+rename_recipe="$(extract_recipe 'RENAME TO')"
+case "$rename_recipe" in
+  *"ALTER DATABASE"*"RENAME TO"*db_name*) : ;;
+  *) echo "could not extract the DB_NAME rename recipe from $DOC — has it moved?" >&2
+     exit 1 ;;
+esac
+
+# FAIL_RENAME makes the ALTER fail the way a surviving session makes it fail.
+# FAIL_LOOKUP fails the confirmation itself, which must also not advance the
+# marker: "could not be checked" is not "checked and true".
+run_rename() {
+  local work; work="$(mktemp -d)"
+  mkdir -p "$work/bin" "$work/state"
+  printf 'collavre_production\n' > "$work/state/db_name"
+  printf '%s' "$rename_recipe" > "$work/recipe.sh"
+
+  cat > "$work/bin/sudo" <<'STUB'
+#!/usr/bin/env bash
+while [ "${1:-}" = -u ] || [ "${1:-}" = postgres ]; do shift; done
+exec "$@"
+STUB
+  # The cluster is modelled as state ($RENAMED), so the confirmation reads what
+  # the rename actually did rather than re-reading its exit status — otherwise
+  # the check asserts nothing the `&&` did not already assert.
+  cat > "$work/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+sql="${*: -1}"
+case "$sql" in
+  *"RENAME TO"*)  echo rename >>"$TRACE"
+                  [ -z "$FAIL_RENAME" ] || {
+                    echo 'ERROR:  database "collavre_production" is being accessed by other users' >&2
+                    exit 1; }
+                  : > "$RENAMED" ;;
+  *pg_database*)  echo lookup >>"$TRACE"
+                  [ -z "$FAIL_LOOKUP" ] || exit 1
+                  [ ! -f "$RENAMED" ] || echo 1 ;;
+esac
+STUB
+  cat > "$work/bin/tee" <<'STUB'
+#!/usr/bin/env bash
+echo tee >>"$TRACE"
+exec /usr/bin/tee "${1/\/var\/lib\/collavre/$STATE}"
+STUB
+  chmod +x "$work/bin"/*
+
+  TRACE="$work/trace"; : > "$TRACE"
+  export TRACE STATE="$work/state" RENAMED="$work/renamed" \
+         FAIL_RENAME="${FAIL_RENAME:-}" FAIL_LOOKUP="${FAIL_LOOKUP:-}"
+  REN_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  REN_TRACE="$(paste -sd'|' "$TRACE")"
+  REN_MARKER="$(cat "$work/state/db_name")"
+  rm -rf "$work"
+}
+
+echo "102. a rename that succeeded advances the marker"
+FAIL_RENAME='' FAIL_LOOKUP='' run_rename
+chk "the new name is recorded" "collavre_prod" "$REN_MARKER"
+chk "and it was confirmed against the cluster first" "rename|lookup|tee" "$REN_TRACE"
+
+echo "103. a rename that FAILED leaves the marker naming the real database"
+# The negative control: against the two-statement form this fails with
+# `expected [collavre_production] got [collavre_prod]`, which is the finding.
+FAIL_RENAME=1 FAIL_LOOKUP='' run_rename
+chk "the marker still names the data"  "collavre_production" "$REN_MARKER"
+chk "and nothing was written to it"    0 "$(grep -c '^tee$' <<<"${REN_TRACE//|/$'\n'}")"
+
+echo "104. a rename that cannot be confirmed does not advance the marker either"
+# psql exiting non-zero on the lookup, or a cluster that went away between the
+# two statements. `grep -qx 1` on empty output is what makes this fail closed;
+# gating on psql's own status would not, since the pipeline's status is grep's.
+FAIL_RENAME='' FAIL_LOOKUP=1 run_rename
+chk "the marker was not advanced"      "collavre_production" "$REN_MARKER"
+chk "nothing was written to it"        0 "$(grep -c '^tee$' <<<"${REN_TRACE//|/$'\n'}")"
+
+echo "105. no recipe on the page hard-codes the deploy user"
+# Only APP_SSH_USER is guaranteed to hold the key, the sudo grant and docker
+# membership. Spelling it `collavre` sends every recipe to an account that may
+# not exist on a host provisioned with the documented override, and the failure
+# lands at the first scp — before the operator has any reason to suspect the
+# runbook rather than their own setup.
+chk "no 'collavre@' anywhere in the runbook" 0 "$(grep -c 'collavre@' "$DOC")"
+# And the placeholder has to be the one the harnesses above substitute, or these
+# recipes go untested while looking tested.
+chk "the SSH recipes use <deploy-user>" 1 \
+  "$(grep -cq '<deploy-user>@<instance-ip>' "$DOC" && echo 1 || echo 0)"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

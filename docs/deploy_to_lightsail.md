@@ -31,7 +31,7 @@ is the practical floor**; 2 GB works only for a light pilot. The script adds a
 > ```yaml
 > builder:
 >   arch: amd64
->   remote: ssh://collavre@<instance-ip>
+>   remote: ssh://<deploy-user>@<instance-ip>
 > ```
 >
 > The launch script installs buildx, so the remote builder works out of the box.
@@ -327,18 +327,53 @@ To actually move to a new name, do it deliberately and then tell the script:
 ```bash
 # on the instance, with the app stopped from your workstation:
 #   ./kamal.sh app stop
+#
+# One chain, so the marker cannot move past a rename that did not happen. As
+# two statements a failed ALTER — a session that survived `app stop` is the
+# usual cause, and its error scrolls past in an interactive shell with no
+# `set -e` — still records the new name, and the next launch-script run then
+# trusts that marker and creates an empty database under it. That is the
+# outcome this whole section exists to prevent, reached from the other side.
+#
+# The existence check is not redundant with the ALTER's status: it is what makes
+# the marker describe the cluster rather than describe a command that reported
+# success. `grep -qx` is the gate rather than psql's own status, so an empty
+# answer — a query that failed, a cluster that went away — fails closed.
 sudo -u postgres psql -qd postgres -c \
-  "ALTER DATABASE collavre_production RENAME TO collavre_prod"
-echo collavre_prod | sudo tee /var/lib/collavre/db_name
+  "ALTER DATABASE collavre_production RENAME TO collavre_prod" &&
+  sudo -u postgres psql -qtAd postgres -c \
+    "SELECT 1 FROM pg_database WHERE datname = 'collavre_prod'" | grep -qx 1 &&
+  echo collavre_prod | sudo tee /var/lib/collavre/db_name
 ```
 
 `RENAME TO` needs no other session connected — which is why the app has to be
 stopped first — and it keeps the same data, owner and grants, so nothing else
 has to be reissued. Update `DATABASE_URL` in `.env.production` to the new name
-and redeploy; re-running the launch script afterwards is optional and will now
-agree with the marker. Copying instead of renaming (a `pg_dump` into a new
-database) is the other option, and then the old one is yours to drop once you
-have checked the copy.
+and redeploy.
+
+**Then re-run the launch script with `DB_NAME=collavre_prod`.** That re-run is
+not optional. `/usr/local/bin/collavre-pg-backup` had the old name written into
+it when the script generated it, and redeploying the *application* does not
+regenerate a *host* script — so the nightly timer keeps calling `pg_dump` on a
+database that no longer exists. It fails, `collavre-pg-backup.service` goes red,
+and nothing new lands in `/var/backups/collavre`: the one failure on this page
+you discover by needing a dump and not having one. Pass the name explicitly,
+because `DB_NAME` still defaults to `collavre_production` and a plain re-run is
+now refused by the marker you just wrote. If you would rather not re-run
+provisioning, edit the `DB_NAME=` line in `/usr/local/bin/collavre-pg-backup`
+and prove it rather than assume it:
+
+```bash
+# The unit is Type=oneshot, so `start` blocks until it finishes and its own
+# status is the answer — `is-active` is not, because a oneshot that succeeded
+# reports "inactive" once it exits.
+sudo systemctl start collavre-pg-backup.service ||
+  systemctl status --no-pager collavre-pg-backup.service
+ls -l /var/backups/collavre
+```
+
+Copying instead of renaming (a `pg_dump` into a new database) is the other
+option, and then the old one is yours to drop once you have checked the copy.
 
 ### Changing `SWAP_SIZE_MB` on a re-run
 
@@ -422,6 +457,15 @@ the SQLite converter and the fresh-install schema load both need the app image
 and so run after it — with `./kamal.sh app stop` first, since `setup` leaves a
 container polling the database they are about to replace.
 
+`<deploy-user>` in the recipes below is `APP_SSH_USER` — `collavre` unless you
+overrode it, in which case it is the value you set and also what
+`KAMAL_SSH_USER` in `.env.production` has to say. It is written as a placeholder
+rather than spelled `collavre` because only that account is guaranteed to hold
+the key, the passwordless sudo grant and the `docker` membership these commands
+need; the instance also has its own `ubuntu` cloud user, and `collavre` may not
+exist at all. `sudo cat /var/lib/collavre/deploy_user` on the instance is the
+host's own answer if you are unsure.
+
 - **Moving an existing PostgreSQL deployment (Neon, RDS):** dump and restore.
   Match `PG_MAJOR` to the source server's major version or the restore may fail.
 
@@ -454,8 +498,8 @@ container polling the database they are about to replace.
 
   # one chain, so a failed dump or transfer cannot reach pg_restore --clean
   pg_dump --format=custom "$SOURCE_DATABASE_URL" -f collavre.dump &&
-    scp collavre.dump collavre@<instance-ip>:/tmp/collavre.dump.incoming &&
-    ssh collavre@<instance-ip> \
+    scp collavre.dump <deploy-user>@<instance-ip>:/tmp/collavre.dump.incoming &&
+    ssh <deploy-user>@<instance-ip> \
       'mv /tmp/collavre.dump.incoming /tmp/collavre.dump &&
        pg_restore --no-owner --role=collavre_user --clean --if-exists \
          -d "postgresql://collavre_user:<password>@127.0.0.1:5432/collavre_production" \
@@ -517,8 +561,8 @@ container polling the database they are about to replace.
   # ever see a complete file. stage_status covers the whole staging step.
   stage_status=1
   if [ "$stop_status" -eq 0 ]; then
-    scp storage/production-primary.sqlite3 collavre@<instance-ip>:/tmp/ &&
-      ssh collavre@<instance-ip> \
+    scp storage/production-primary.sqlite3 <deploy-user>@<instance-ip>:/tmp/ &&
+      ssh <deploy-user>@<instance-ip> \
         'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
          sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
            "$vol/production-primary.sqlite3.incoming" &&
@@ -539,7 +583,7 @@ container polling the database they are about to replace.
     echo "app left stopped on purpose; re-stage before converting"
   else
     # The copy disables referential integrity, which is superuser-only.
-    ssh collavre@<instance-ip> \
+    ssh <deploy-user>@<instance-ip> \
       "sudo -u postgres psql -c 'ALTER ROLE collavre_user SUPERUSER'"
 
     ./kamal.sh app exec \
@@ -549,13 +593,13 @@ container polling the database they are about to replace.
 
     # Take the grant back whether or not the copy worked — a failed cutover is
     # precisely when it would otherwise sit there.
-    ssh collavre@<instance-ip> \
+    ssh <deploy-user>@<instance-ip> \
       "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
     revoke_status=$?
 
     # Clean up and boot only if both worked. Either failure leaves the app down.
     if [ "$copy_status" -eq 0 ] && [ "$revoke_status" -eq 0 ]; then
-      ssh collavre@<instance-ip> \
+      ssh <deploy-user>@<instance-ip> \
         'sudo rm "$(docker volume inspect plan42_storage \
            --format "{{.Mountpoint}}")/production-primary.sqlite3"'
 
@@ -885,12 +929,40 @@ fi
 # connections", which reads like a pool problem and not like a step this block
 # forgot to undo, so it must not be left shut by accident. On the failure path
 # it is left shut on purpose; on status 3 it was never shut to begin with.
+reopen_status=0
 if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
   sudo -u postgres psql -qd postgres -c \
     "ALTER DATABASE collavre_production CONNECTION LIMIT -1"
+  reopen_status=$?
 fi
 
-if [ "$restore_status" -eq 0 ]; then
+# The re-open is checked, not assumed. It is its own connection to the cluster
+# and fails on its own terms — the cluster restarted, the role lost superuser,
+# the database name is wrong — and `restore_status` says nothing about it. Left
+# unchecked, the success path prints "boot the app" over a database still at
+# CONNECTION LIMIT 0, and what the operator then meets is "too many
+# connections" at boot: the same misdirected error the block shuts the door to
+# avoid, arrived at from the step that was supposed to undo it. Reported before
+# the restore's own outcome, because it is the one thing here that stands
+# between a good restore and an app that cannot reach it.
+if [ "$reopen_status" -ne 0 ]; then
+  echo "RE-OPEN FAILED: collavre_production is still at 'CONNECTION LIMIT 0'."
+  if [ "$restore_status" -eq 0 ]; then
+    echo "  The restore finished — the data is not what failed. Do not re-run"
+    echo "  this block to clear it: pg_restore --clean would drop a good restore"
+    echo "  to repair a connection limit."
+  else
+    echo "  Nothing was dropped — this block refused above — but the limit it"
+    echo "  applied to shut the door is still in force."
+  fi
+  echo "  The app will be refused at boot with 'too many connections', which"
+  echo "  will read like a pool problem. Do not boot it until this succeeds:"
+  echo "  sudo -u postgres psql -qd postgres -c \\"
+  echo "    \"ALTER DATABASE collavre_production CONNECTION LIMIT -1\""
+  echo "  Confirm with:"
+  echo "  sudo -u postgres psql -qtAd postgres -c \\"
+  echo "    \"SELECT datconnlimit FROM pg_database WHERE datname = 'collavre_production'\""
+elif [ "$restore_status" -eq 0 ]; then
   echo "restored; boot the app from your workstation: ./kamal.sh app boot"
 elif [ "$restore_status" -eq 2 ] || [ "$restore_status" -eq 3 ]; then
   : # refused before touching anything — see the message above
