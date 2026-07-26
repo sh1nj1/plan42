@@ -4541,13 +4541,19 @@ chk "and the previous backup script is still the live one" \
 chk "and no staging file is left behind" \
   0 "$(find "$bd" -name 'collavre-pg-backup.*' | wc -l | tr -d ' ')"
 seed_backup
-# A value that closes the quote the template opens, so the generated file is
-# genuinely unparseable rather than merely odd-looking. My first attempt used
-# `collavre ) unbalanced`, which lands inside the quotes and parses fine — the
-# case passed nothing and said so. refuse_unusable_db_identifier rejects such a
-# DB_NAME long before this point in a real run; this check is what stands behind
-# it, and behind every future value interpolated into a generated program.
-out=$(run_backup_section 'DB_NAME='"'"'x"; ) ; #'"'"'')
+# The invalidity is injected into the generated text rather than smuggled in
+# through a configured value. It used to be the latter — a DB_NAME closing the
+# quote the template opened — and case 133 took that route away: the three
+# configured values are serialized with %q now, so no value can make the file
+# unparseable. That is the fix working, not this assertion becoming true; but a
+# fixture whose premise its own codebase has made unreachable asserts nothing,
+# which is what it did here (`expected [1] got [0]`) before this rewrite.
+#
+# What the check is still for: truncation, which reaches this from the other
+# side, and the next value interpolated into a generated program by someone who
+# does not know about %q. Both produce exactly this — a staged file that is not
+# a whole script — so that is what the fixture produces directly.
+out=$(run_backup_section 'printf() { command printf "$@"; command printf "if [\n"; }')
 chk "a generated script that is not valid shell refuses" \
   1 "$(printf '%s' "$out" | grep -c '^DIE:')"
 chk "and the previous backup script survives that too" \
@@ -4781,6 +4787,55 @@ case "$LOGGED" in
 esac
 unset -f ufw
 rm -rf "$sd"
+
+echo "133. configured values reach the backup script as data, not as source"
+# The generated file is a *program*, so a value spliced into it verbatim is not
+# a string in that program — it is source text the nightly unit evaluates as
+# root. A legitimate S3 key prefix can carry either shape, and `bash -n` accepts
+# both: they are perfectly good shell, which is exactly the problem. The
+# validation below asks whether the file is a program, not whether it is the
+# intended one, so it cannot be what closes this.
+gen_backup() {
+  # The generation step as shipped, reduced to the three configured values and
+  # one line that uses one of them.
+  { printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+      && printf 'DB_NAME=%q\nRETENTION_DAYS=%q\nS3_URI=%q\n' \
+           collavre_production 7 "$1" \
+      && printf 'echo "UPLOAD-TO=${S3_URI%%/}"\n'; } > "$2"
+}
+bk=$(mktemp -d)
+# Command substitution in a configured prefix must survive as characters.
+gen_backup 's3://b/$(touch '"$bk"'/RAN; echo pwned)/db' "$bk/gen"
+out="$(bash "$bk/gen" 2>&1)"
+chk "a substitution in the S3 prefix is not executed" 0 \
+  "$([ -f "$bk/RAN" ] && echo 1 || echo 0)"
+chk "and reaches the upload as characters" \
+  'UPLOAD-TO=s3://b/$(touch '"$bk"'/RAN; echo pwned)/db' "$out"
+# A literal $name is the quieter half: under the generated script's own `set -u`
+# the spliced form dies with `unbound variable`, so the nightly backup stops
+# and the failure is nowhere near the value that caused it.
+gen_backup 's3://b/$archive/db' "$bk/gen2"
+out2="$(bash "$bk/gen2" 2>&1)"; rc2=$?
+chk "a literal \$name does not kill the nightly run" 0 "$rc2"
+chk "and is uploaded to the prefix as configured" \
+  'UPLOAD-TO=s3://b/$archive/db' "$out2"
+# The controls in the other direction, and the ones that constrain the fix:
+# every real host has one of these two, so a change in either is a change to
+# where every existing backup goes.
+gen_backup 's3://collavre-backups/prod' "$bk/gen3"
+chk "an ordinary prefix is unchanged" 'UPLOAD-TO=s3://collavre-backups/prod' \
+  "$(bash "$bk/gen3" 2>&1)"
+gen_backup '' "$bk/gen4"
+chk "and the unset default stays empty" 'UPLOAD-TO=' "$(bash "$bk/gen4" 2>&1)"
+rm -rf "$bk"
+# Source-level control. The assertions above are about the shape of the
+# generation step, so this is what fails against a revert: the heredoc spliced
+# all three in, and %q is what replaced it.
+chk "no configured value is spliced into the generated script" 0 \
+  "$(grep -cE '^(DB_NAME="\$DB_NAME"|RETENTION_DAYS=\$BACKUP_RETENTION_DAYS|S3_URI="\$BACKUP_S3_URI")$' "$SRC")"
+chk "they are serialized with %q instead" 1 \
+  "$(grep -c "printf 'DB_NAME=%q" "$SRC")"
+
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

@@ -2832,15 +2832,27 @@ BACKUP_TMP="$(mktemp /usr/local/bin/collavre-pg-backup.XXXXXX)"
 # on a setting 2500 lines away that a future `|| something` would suppress. The
 # staging file is removed on the way out, so a retry starts from the same state
 # a kill would leave: the live path untouched.
-if ! cat > "$BACKUP_TMP" <<BACKUP
-#!/usr/bin/env bash
-# Managed by script/lightsail_launch.sh
-set -euo pipefail
-DEST=/var/backups/collavre
-DB_NAME="$DB_NAME"
-RETENTION_DAYS=$BACKUP_RETENTION_DAYS
-S3_URI="$BACKUP_S3_URI"
-
+# The three configured values are serialized as shell *data* rather than spliced
+# in as source. Interpolated into the heredoc, a value is written into the
+# generated file verbatim and inside double quotes, so anything shell-significant
+# in it is expanded later — by the nightly unit, running as root:
+#
+#   BACKUP_S3_URI='s3://b/$(...)/db'   the substitution runs at 03:00, as root
+#   BACKUP_S3_URI='s3://b/$archive/db' `unbound variable` under the generated
+#                                      script's own `set -u` — the backup dies
+#
+# A legitimate S3 key prefix may contain either. `bash -n` catches neither: both
+# forms are perfectly good shell, which is the problem — the validation below
+# asks whether the file is a program, not whether it is the intended one.
+# %q is the answer to the question the heredoc was answering wrongly.
+if ! { printf '%s\n' \
+         '#!/usr/bin/env bash' \
+         '# Managed by script/lightsail_launch.sh' \
+         'set -euo pipefail' \
+         'DEST=/var/backups/collavre' &&
+       printf 'DB_NAME=%q\nRETENTION_DAYS=%q\nS3_URI=%q\n' \
+         "$DB_NAME" "$BACKUP_RETENTION_DAYS" "$BACKUP_S3_URI" &&
+       cat <<BACKUP
 install -d -m 0700 -o postgres -g postgres "\$DEST"
 STAMP="\$(date +%Y%m%d-%H%M%S)"
 FILE="\$DEST/\${DB_NAME}-\${STAMP}.dump"
@@ -2871,6 +2883,7 @@ find "\$DEST" -maxdepth 1 -name '*.dump' -mtime "+\$RETENTION_DAYS" -delete
 echo "backup complete: \$FILE (\$(du -h "\$FILE" | cut -f1))"
 exit "\$S3_STATUS"
 BACKUP
+     } > "$BACKUP_TMP"
 then
   rm -f "$BACKUP_TMP"
   die "could not write the staged backup script — is /usr/local/bin full?" \
