@@ -708,8 +708,20 @@ dest="${sql#*\'}"; dest="${dest%\'*}"
 STUB
   # Sending half of the blob copy: its own status is the thing case 32h is about,
   # so it is a separate stub from the receiver rather than one knob for both.
-  printf '#!/usr/bin/env bash\necho TAR_SEND >>"$TRACE"\n[ -z "$FAIL_TAR" ] || exit 2\n' \
-    > "$work/bin/tar"
+  # It has to produce the archive at the path `-cf` names, because the transfer
+  # that follows redirects from it — a stub that only reported its status would
+  # leave the next line failing on a missing file instead of on FAIL_TAR.
+  cat > "$work/bin/tar" <<'STUB'
+#!/usr/bin/env bash
+echo TAR_SEND >>"$TRACE"
+[ -z "$FAIL_TAR" ] || exit 2
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -cf) : > "$2"; break ;;
+  esac
+  shift
+done
+STUB
   cat > "$work/bin/kamal.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "kamal:$1${2:+ $2}" >>"$TRACE"
@@ -914,22 +926,73 @@ case "$RECIPE_OUT" in
 esac
 unset FAIL_BLOB
 
-echo "32h. a sending tar that fails is caught, though the receiver is happy"
-# The status of a pipeline is its last element's. Read as \$?, a tar that cannot
-# read the source sends an empty stream to a receiver that unpacks it and exits
-# 0 — a blob copy that copied nothing, reported as success, on the one path
-# where the source is already stopped and the evidence is behind you.
+echo "32h. a sending tar that fails is caught, and never reaches the receiver"
+# Why this is not `tar | ssh` with \$?: the status of a pipeline is its last
+# element's, a receiver handed an empty stream unpacks it and exits 0, so a blob
+# copy that copied nothing would report success — on the one path where the
+# source is already stopped and the evidence is behind you. Staging the archive
+# first makes the sender a gate rather than something to inspect afterwards.
 FAIL_TAR=1 FAIL_BLOB='' FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' \
   FAIL_STOP='' run_cutover
-chk "the receiver did succeed" 1 "$(grep -cx BLOBS <<<"${RECIPE_TRACE//|/$'\n'}")"
-chk "no conversion ran"        0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
-chk "app NOT booted"           0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "the transfer never ran" 0 "$(grep -cx BLOBS <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no conversion ran"      0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"         0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 case "$RECIPE_OUT" in
   *"BLOB COPY FAILED"*) echo "  ok   the sending half is not trusted to ssh" ;;
   *) echo "  FAIL the empty stream passed for a copy: ${RECIPE_OUT:-(no output)}"
      fail=1 ;;
 esac
 unset FAIL_TAR
+
+echo "32i. the blob copy's status is readable in the shell the operator has"
+# This harness runs the recipe under "$BASH" — a shell the page never names. It
+# says five times over that these blocks get pasted into an interactive shell,
+# and the operator's is whatever it is; on macOS that is zsh. So a bash-only
+# construct here is not a style question: `${PIPESTATUS[0]}` is unset in zsh
+# (spelled `$pipestatus` there, and 1-indexed), the arithmetic around it fails,
+# and the pre-set 1 survives to report a copy that succeeded as failed —
+# fail-closed, but a dead end that cannot be cleared, naming the one step that
+# worked. Asserted against the text as well as by running it, because the run
+# below is skipped where zsh is absent.
+#
+# Against the previous revision the discriminating assertions are "it converts"
+# and "it boots" (`expected [1] got [0]`), not the message one: non-interactively
+# zsh aborts the recipe at the failed arithmetic rather than continuing to print
+# BLOB COPY FAILED, so that check passes there for the wrong reason. The dead-end
+# message is what an interactive paste produces; what is asserted here is the
+# thing both forms of the failure share — the cutover does not complete.
+# Code lines only: the comment above the fix names PIPESTATUS to say why it is
+# not used, and an assertion that forbade the word outright would forbid the
+# explanation along with the construct.
+chk "no PIPESTATUS in the cutover recipe" 0 \
+  "$(grep -v '^[[:space:]]*#' <<<"$recipe" | grep -c PIPESTATUS)"
+if command -v zsh >/dev/null; then
+  BASH_SAVED="$BASH"; BASH="$(command -v zsh)"
+  FAIL_TAR='' FAIL_BLOB='' FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' \
+    FAIL_STOP='' run_cutover
+  chk "under zsh: blobs unpacked" 1 "$(grep -cx BLOBS <<<"${RECIPE_TRACE//|/$'\n'}")"
+  chk "under zsh: it converts"    1 \
+    "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+  chk "under zsh: it boots"       1 \
+    "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+  case "$RECIPE_OUT" in
+    *"BLOB COPY FAILED"*)
+      echo "  FAIL zsh reported the successful copy as failed: $RECIPE_OUT"; fail=1 ;;
+    *) echo "  ok   no spurious failure under zsh" ;;
+  esac
+  # A control for the assertions above, so they cannot pass for the wrong
+  # reason — that this zsh is one where PIPESTATUS happens to work. The
+  # mechanism is measured rather than the outcome: reproducing the outcome needs
+  # an interactive zsh, because non-interactively the failed arithmetic aborts
+  # the script instead of leaving the stale 1 behind.
+  chk "this zsh has no PIPESTATUS to read" UNSET \
+    "$(zsh -c 'true | true; print -r -- "${PIPESTATUS[0]-UNSET}"' 2>/dev/null)"
+  chk "and bash does"                      0 \
+    "$("$BASH_SAVED" -c 'true | true; printf %s "${PIPESTATUS[0]-UNSET}"')"
+  BASH="$BASH_SAVED"
+else
+  echo "  SKIP no zsh on this machine — the text assertion above is all that ran"
+fi
 
 echo "33. staging renames into place rather than writing the live path directly"
 # An interrupted copy must leave the previous file intact, not a truncated

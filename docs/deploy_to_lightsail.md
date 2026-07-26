@@ -746,16 +746,31 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
   # Harmless when the source used S3: blob keys fan out into two-character
   # directories, the exclude drops the SQLite files and their -wal/-shm
   # companions, and what is left to send is then nothing.
+  # Staged to a file rather than piped, so that `tar |ssh` is not what decides
+  # whether this worked. A sender that fails part-way through reading still
+  # leaves a receiver that succeeds — measured: sender 1, receiver 0, so `$?`
+  # is 0 — and a receiver handed a truly empty stream also exits 0. `$?` on the
+  # pipeline would therefore report a blob copy that sent nothing as done.
+  # `PIPESTATUS` would answer that, but it is bash-only: these blocks get
+  # pasted into whatever shell the operator has, and on zsh — macOS's default —
+  # `${PIPESTATUS[0]}` is unset (zsh spells it `$pipestatus` and 1-indexes it),
+  # the arithmetic fails, and the pre-set 1 below survives to report a copy that
+  # in fact succeeded as failed. An `&&`-style chain says the same thing in
+  # every shell, and is what the PostgreSQL move above already does with its
+  # dump. The cost is a workstation-side file the size of the blob tree, in the
+  # directory the snapshot is already using.
   blob_status=1
   if [ "$stage_status" -eq 0 ]; then
-    tar -cf - -C storage --exclude='*.sqlite3*' . |
+    if tar -cf "$snap_dir/blobs.tar" -C storage --exclude='*.sqlite3*' . ; then
       ssh <deploy-user>@<instance-ip> \
         'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
          sudo tar -xf - -C "$vol" --no-same-owner &&
-         sudo chown -R 1000:1000 "$vol"'
-    # Not $?, which is only ssh's: a tar that fails to read the source would
-    # otherwise send an empty stream to a receiver that unpacks it happily.
-    blob_status=$(( ${PIPESTATUS[0]} | ${PIPESTATUS[1]} ))
+         sudo chown -R 1000:1000 "$vol"' < "$snap_dir/blobs.tar"
+      blob_status=$?
+    else
+      # tar's own status, and the transfer never ran.
+      blob_status=$?
+    fi
   fi
 
   if [ "$stop_status" -ne 0 ]; then
