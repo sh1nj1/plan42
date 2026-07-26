@@ -1476,8 +1476,17 @@ ROLE_IS_SUPER=f
 OWNS=1
 # shellcheck disable=SC2034  # read by reassign_prior_db_role, eval'd from the script
 DB_NAME=collavre_production
+# A statement whose text contains $FAIL_SQL fails the way psql does under
+# ON_ERROR_STOP: non-zero, nothing on stdout. Injected rather than provoked,
+# because the defect is what the caller does with the status — a REASSIGN that
+# really fails needs a permission or lock condition this harness has no database
+# to create, and the shape of the failure is the same either way.
+FAIL_SQL=""
 # shellcheck disable=SC2329  # called by reassign_prior_db_role
 psql_as_postgres() {
+  if [ -n "$FAIL_SQL" ]; then
+    case "$2" in *"$FAIL_SQL"*) return 1 ;; esac
+  fi
   case "$2" in
     # Must precede the count(*) branch: the ownership query is a count too, and
     # matching it as the role-existence probe would make every case below read
@@ -1537,6 +1546,56 @@ chk "moved from the role that actually owns them" \
     '|REASSIGN OWNED BY "collavre_app" TO "collavre_third"|ALTER ROLE "collavre_app" NOLOGIN' \
     "$SQL"
 chk "and the queue is down to the current role" "collavre_third" "$(cat "$d3/db_users")"
+
+echo "48b. a statement that fails leaves the role queued, not retired"
+# reassign_one_db_role is called as `... || kept="$kept$prior"`, and a function
+# invoked on the left of `||` runs with errexit suppressed for its whole body.
+# So `set -e` did not stop it at a failed REASSIGN: it fell through to
+# ALTER ROLE ... NOLOGIN and returned the status of the last log, which is zero.
+# Measured on the previous revision with the REASSIGN made to fail:
+#
+#   rc=0   objects still owned by A   NOLOGIN applied to A   queue [B]
+#
+# — the predecessor owns every table, can no longer log in, and has just been
+# dropped from the only record that named it. Asserted on three failure points
+# rather than one: the two statements, and the probe whose empty output reads as
+# "no such role" and retires the entry just as quietly.
+d3c=$(mktemp -d); printf 'collavre_user\n' > "$d3c/db_user"
+ROLE_EXISTS=1 ROLE_IS_SUPER=f
+FAIL_SQL="REASSIGN OWNED"
+rotate collavre_app "$d3c/db_user"
+chk "the run stops rather than continuing to the summary" 1 "$?"
+chk "LOGIN is not revoked from the role that still owns the tables" \
+    "" "$(printf '%s' "$SQL" | grep -o 'NOLOGIN' || true)"
+chk "and the predecessor stays queued" \
+    "collavre_user collavre_app" "$(tr '\n' ' ' < "$d3c/db_users" | sed 's/ *$//')"
+case "$LOGGED" in
+  *"could not move ownership"*"stays queued"*) echo "  ok   says what did not happen" ;;
+  *) echo "  FAIL claimed the move it did not make: $LOGGED"; fail=1 ;;
+esac
+# Ownership moved, LOGIN did not. Retrying is a no-op for the first statement
+# and a retry of the second, so the entry has to survive this too.
+FAIL_SQL="NOLOGIN"
+rotate collavre_app "$d3c/db_user"
+chk "a failed NOLOGIN also stops the run" 1 "$?"
+chk "and keeps the role queued" \
+    "collavre_user collavre_app" "$(tr '\n' ' ' < "$d3c/db_users" | sed 's/ *$//')"
+# A probe that cannot be answered is not an answer: empty output compares equal
+# to neither 1 nor t, which is "no such role" and "not a superuser" — both of
+# which retire the entry.
+FAIL_SQL="pg_roles WHERE rolname"
+rotate collavre_app "$d3c/db_user"
+chk "an unanswerable probe stops the run too" 1 "$?"
+chk "and keeps the role queued" \
+    "collavre_user collavre_app" "$(tr '\n' ' ' < "$d3c/db_users" | sed 's/ *$//')"
+chk "with no SQL attempted" "" "$SQL"
+FAIL_SQL=""
+# The control in the other direction, and the one that matters most here: a
+# guard that reports failure on a clean rotation would stop every run.
+rotate collavre_app "$d3c/db_user"
+chk "a rotation with nothing failing still reports success" 0 "$?"
+chk "and the queue is down to the current role" "collavre_app" "$(cat "$d3c/db_users")"
+rm -rf "$d3c"
 
 echo "49. a superuser predecessor stops the run rather than half-rotating it"
 # DB_USER=postgres on a first run is legal, and the rotation away from it cannot

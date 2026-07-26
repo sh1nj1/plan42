@@ -1249,11 +1249,33 @@ record_db_role_grant() {
 # caller decides what is still outstanding, rather than this deciding it by
 # where it writes a marker.
 reassign_one_db_role() {
-  local prior="$1" current="$2"
+  local prior="$1" current="$2" exists super owns
+
+  # Every psql status below is checked explicitly rather than left to `set -e`.
+  # This function is called from `... || kept="$kept$prior"`, and a function
+  # invoked on the left of `||` runs with errexit suppressed for its whole
+  # body — so under `set -e` alone a failed REASSIGN fell through to
+  # ALTER ROLE ... NOLOGIN and returned the status of the last log: zero.
+  # Measured on the previous revision with the REASSIGN made to fail:
+  #
+  #   log: moved ownership of everything in 'db' from 'A' to 'B'
+  #   log: revoked LOGIN from the replaced database role 'A'
+  #   rc=0   objects still owned by A   NOLOGIN applied to A   queue: [B]
+  #
+  # which is the state the queue exists to prevent, reached by the one path
+  # that reports success: A still owns every table and can no longer log in,
+  # B is published in DATABASE_URL owning nothing, and A has just been dropped
+  # from the only record that named it.
+  #
+  # The probes are checked for the same reason as the statements: an empty
+  # result from a connection that died reads as "no such role" or "not a
+  # superuser", and both of those retire the role from the queue.
+
   # A role that no longer exists owns nothing and cannot be reassigned: there
   # is nothing outstanding, so it leaves the queue.
-  [ "$(psql_as_postgres postgres \
-        "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
+  exists="$(psql_as_postgres postgres \
+    "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" || return 1
+  [ "$exists" = 1 ] || return 0
 
   # A superuser predecessor reaches here only on the path refuse_superuser_db_
   # rotation() lets through: the by-hand transfer is done and there is nothing
@@ -1270,9 +1292,11 @@ reassign_one_db_role() {
   # 'FATAL: role "postgres" is not permitted to log in', and peer authentication
   # needs LOGIN too — so the account you would use to undo it is the account it
   # locks out. Verified on 17 rather than assumed from the docs.
-  if [ "$(psql_as_postgres postgres \
-            "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ]; then
-    if [ "$(role_owns_app_objects "$DB_NAME" "$prior")" = 0 ]; then
+  super="$(psql_as_postgres postgres \
+    "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" || return 1
+  if [ "$super" = t ]; then
+    owns="$(role_owns_app_objects "$DB_NAME" "$prior")" || return 1
+    if [ "$owns" = 0 ]; then
       log "left the superuser role '$prior' alone: it owns nothing in '$DB_NAME'," \
           "and taking LOGIN from the cluster superuser locks the host's operators" \
           "out of administering it"
@@ -1284,15 +1308,30 @@ reassign_one_db_role() {
         "See 'Changing DB_USER on a re-run' in docs/deploy_to_lightsail.md."
   fi
 
-  psql_as_postgres "$DB_NAME" "REASSIGN OWNED BY \"$prior\" TO \"$current\""
+  psql_as_postgres "$DB_NAME" "REASSIGN OWNED BY \"$prior\" TO \"$current\"" || {
+    log "WARNING: could not move ownership in '$DB_NAME' from '$prior' to" \
+        "'$current'. '$prior' still owns those objects and keeps LOGIN, and it" \
+        "stays queued for a later run. REASSIGN OWNED is one transaction, so" \
+        "nothing was moved by half."
+    return 1
+  }
   log "moved ownership of everything in '$DB_NAME' from '$prior' to '$current'"
-  psql_as_postgres postgres "ALTER ROLE \"$prior\" NOLOGIN"
+
+  # Checked separately from the REASSIGN, because by here ownership has already
+  # moved: staying queued retries a REASSIGN that is now a no-op and this
+  # statement, which is the one that did not take.
+  psql_as_postgres postgres "ALTER ROLE \"$prior\" NOLOGIN" || {
+    log "WARNING: ownership in '$DB_NAME' moved to '$current', but LOGIN could" \
+        "not be revoked from '$prior', which can still connect with the" \
+        "password it was given. It stays queued for a later run."
+    return 1
+  }
   log "revoked LOGIN from the replaced database role '$prior'"
 }
 
 reassign_prior_db_role() {
   local current="$1" prior_file="${2:-$STATE_DIR/db_user}"
-  local set_file="${3:-${prior_file%/*}/db_users}" prior kept=''
+  local set_file="${3:-${prior_file%/*}/db_users}" prior kept='' outstanding=0
 
   # Not a no-op on the ordinary path: this seeds the set on a host the earlier
   # revision provisioned, and puts $current in it on a first run, so that a
@@ -1314,17 +1353,33 @@ reassign_prior_db_role() {
       kept="$kept$prior"$'\n'
       continue
     fi
-    reassign_one_db_role "$prior" "$current" || kept="$kept$prior"$'\n'
+    reassign_one_db_role "$prior" "$current" || {
+      kept="$kept$prior"$'\n'
+      outstanding=1
+    }
   done < "$set_file"
 
-  # Rewritten only after the loop, so a REASSIGN that fails under `set -e` takes
-  # the run down with the queue intact and every member retried — the failure
-  # cannot quietly consume the entry it failed on.
+  # Rewritten only after the loop, from $kept — every role this run did not
+  # finish retiring. What stood here before was wrong, and wrong in the
+  # direction that mattered: it said a failed REASSIGN "takes the run down
+  # under `set -e`". It does not. The call above is on the left of `||`, which
+  # suppresses errexit inside the function for its whole body, so nothing takes
+  # the run down and the entry was consumed anyway. The propagation is explicit
+  # in reassign_one_db_role now, and it is what puts $prior back in $kept.
   write_state_file "$set_file" "$kept" ||
     log "WARNING: could not rewrite '$set_file'. Ownership was moved, but this" \
         "host still lists roles a later run will try to reassign again;" \
         "REASSIGN OWNED BY on a role that owns nothing is a no-op, so the retry" \
         "is harmless. Check that $STATE_DIR has space."
+
+  # Non-zero when a role is still outstanding, and reported after the queue has
+  # been written so the retry has something to read. The call site runs this
+  # bare under `set -e`, which is where the propagation has to end up: the run
+  # stops here rather than at the summary, so $STATE_DIR/db_user is not advanced
+  # and no DATABASE_URL is printed for a role that may own none of the tables.
+  # A WARNING would not do — what continues past it is a deployment against a
+  # role that gets "permission denied" on its own data.
+  [ "$outstanding" = 0 ]
 }
 
 # refuse_db_name_change <name> [state dir]
