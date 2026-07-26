@@ -303,6 +303,59 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_empty json["missing_members"]
   end
 
+  # The pin travels with the topic, and it is exclusive: if the agent has no
+  # feedback access at the destination, Matcher#match_by_primary_agent returns []
+  # and the moved topic can route to nobody at all. Release it instead so the
+  # topic falls back to ordinary expression routing there.
+  test "move releases a primary agent that cannot respond on the target" do
+    target_creative = creatives(:root_parent)
+    agent = move_test_agent("moveagent@test.local", "MoveAgent")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_nil @topic.reload.primary_agent_id, "an unanswerable pin must not survive the move"
+    json = JSON.parse(response.body)
+    assert_equal agent.id, json.dig("released_primary_agent", "id")
+    assert json.dig("released_primary_agent", "message").present?,
+           "the release must be reported so it is not silent"
+  end
+
+  test "move keeps a primary agent that still has feedback access on the target" do
+    target_creative = creatives(:root_parent)
+    agent = move_test_agent("stayagent@test.local", "StayAgent")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    Collavre::CreativeShare.create!(creative: target_creative, user: agent, shared_by: @user, permission: :feedback)
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal agent.id, @topic.reload.primary_agent_id, "a valid assignment must survive the move"
+    assert_nil JSON.parse(response.body)["released_primary_agent"]
+  end
+
+  # A session topic's pin is identity, not routing: SessionProvisioner reuses it
+  # via inbox.topics.find_by(primary_agent_id:, session_id:). Moving it out of
+  # the inbox would fork a second topic on the next registration, so the whole
+  # move is refused rather than releasing the pin.
+  test "should not move a Claude Channel session topic" do
+    target_creative = creatives(:root_parent)
+    agent = move_test_agent("sessionagent@test.local", "SessionAgent")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    @topic.update!(session_id: "sess-move-1")
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    @topic.reload
+    assert_equal @creative.id, @topic.creative_id, "the session topic must stay put"
+    assert_equal agent.id, @topic.primary_agent_id
+  end
+
   test "should set primary agent on topic" do
     ai_agent = User.create!(
       email: "agent@test.local", password: "password123", name: "TestAgent",
@@ -559,5 +612,14 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     # Verify new topic is at the end
     assert_equal [ topic3.id, @topic.id, topic2.id, new_topic.id ], @creative.topics.reload.pluck(:id)
     assert_equal 3, new_topic.position
+  end
+
+  private
+
+  def move_test_agent(email, name)
+    User.create!(
+      email: email, password: "password123", name: name,
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
   end
 end

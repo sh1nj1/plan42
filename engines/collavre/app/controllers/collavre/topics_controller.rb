@@ -152,9 +152,32 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.move.duplicate_name", name: topic.name) }, status: :unprocessable_entity and return
       end
 
+      # A Claude Channel session topic is looked up as
+      # inbox.topics.find_by(primary_agent_id:, session_id:) — re-parenting it
+      # takes it out of that scope, so the next registration would fork a second
+      # topic and Matcher#eligible_in_inbox? would stop routing the session
+      # agent. Same identity that #set_primary_agent refuses to rewrite.
+      if topic.session_id.present?
+        render json: { error: I18n.t("collavre.topics.move.session_topic_locked") }, status: :unprocessable_entity and return
+      end
+
+      released_agent = nil
+
       Topic.transaction do
         topic.comments.update_all(creative_id: target_creative.id)
         topic.update!(creative: target_creative)
+
+        # The assignment is exclusive: Matcher#match_by_primary_agent returns []
+        # — silence, not a fallback — when the pinned agent lacks :feedback. The
+        # pin travels with the topic, so a move into a creative the agent is not
+        # shared on would leave the topic unable to route to anyone. Release it
+        # instead, which restores ordinary expression routing at the new
+        # location, and tell the caller so the change is not silent.
+        pinned_agent = topic.primary_agent
+        if pinned_agent && !Topic.primary_agent_assignable?(target_creative, pinned_agent)
+          released_agent = pinned_agent
+          topic.set_primary_agent!(nil)
+        end
       end
 
       # update_all above skips counter-cache callbacks, so recompute
@@ -163,14 +186,24 @@ module Collavre
       Creative.reset_counters(target_creative.id, :comments)
 
       broadcast_topic_event("deleted", topic_id: topic.id)
-      broadcast_topic_event("created", creative: target_creative, topic: topic.slice(:id, :name))
+      # topic_json rather than a bare id/name slice: the pin decides who may
+      # speak, so the target's topic list has to show whether it survived the
+      # move (and, when it did not, show no avatar rather than a stale one).
+      broadcast_topic_event("created", creative: target_creative, topic: topic_json(topic))
 
       render json: {
         success: true,
         topic: topic.slice(:id, :name),
         target_creative_id: target_creative.id,
         target_creative_name: target_creative.creative_snippet,
-        missing_members: missing_members_for_move(source_creative, target_creative)
+        missing_members: missing_members_for_move(source_creative, target_creative),
+        released_primary_agent: released_agent && {
+          id: released_agent.id,
+          name: released_agent.display_name,
+          message: I18n.t("collavre.topics.move.primary_agent_released",
+                          agent: released_agent.display_name,
+                          creative: target_creative.creative_snippet)
+        }
       }
     end
 

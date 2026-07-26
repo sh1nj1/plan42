@@ -646,6 +646,14 @@ export function handleDrop(event) {
             detail: { topicId, sourceCreativeId, targetCreativeId }
           }));
 
+          // The server releases a primary agent that has no feedback access at
+          // the new location, because an exclusive pin the agent cannot honor
+          // would silence the topic. Say so — otherwise the avatar just
+          // disappears mid-drag with no explanation.
+          if (data && data.released_primary_agent && data.released_primary_agent.message) {
+            alertDialog(data.released_primary_agent.message);
+          }
+
           // Offer to re-add members who lose access at the new location.
           if (data && Array.isArray(data.missing_members) && data.missing_members.length > 0) {
             showMissingMembersPopup({

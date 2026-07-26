@@ -186,6 +186,50 @@ module Collavre
         assert_nil @topic.reload.primary_agent_id
       end
 
+      # Creating the topic in the same breath does not make the assignment any
+      # less of a routing decision: the new topic opens with an exclusive pin,
+      # so every other agent is silenced there from the first message. REST
+      # topic creation with an agent_id sits behind :write for the same reason.
+      test "refuses to create a topic with an agent for a commenter without write access" do
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Pinned New Topic" @TestAgent: ', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/write permission/i, result)
+        assert_not Topic.exists?(creative: @creative, name: "Pinned New Topic"),
+                   "a refused command must not leave the topic behind"
+      end
+
+      test "lets a write collaborator create a topic with an agent" do
+        collaborator = users(:two)
+        CreativeShare.create!(creative: @creative, user: collaborator, shared_by: @user, permission: :write)
+        comment = create_comment('/topic "Collaborator Topic" @TestAgent: ', user: collaborator)
+
+        TopicCommand.new(comment: comment, user: collaborator).call
+
+        topic = Topic.find_by(creative: @creative, name: "Collaborator Topic")
+        assert topic, "write collaborator must still be able to create the topic"
+        assert_equal @ai_agent.id, topic.primary_agent_id
+      end
+
+      # Only the assignment is gated. Creating a plain topic from chat has always
+      # been available at :feedback and writes no pin, so ambient routing at the
+      # new topic is unchanged — that stays open.
+      test "still creates an unassigned topic for a commenter without write access" do
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Plain New Topic"', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/Plain New Topic/, result)
+        topic = Topic.find_by(creative: @creative, name: "Plain New Topic")
+        assert topic, "a commenter may still open a topic with no assignment"
+        assert_nil topic.primary_agent_id
+      end
+
       # The gate must cover only the assignment write — naming an unassigned
       # topic still just reports that it exists, which commenters may do.
       test "still reports an unassigned existing topic to a commenter without write access" do

@@ -20,6 +20,8 @@ ko:
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
+        session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 이동할 수 없습니다.
+        primary_agent_released: '@%{agent}은(는) "%{creative}"에 피드백 권한이 없어 Primary Agent 지정이 해제되었습니다. 계속 담당하게 하려면 해당 크리에이티브를 에이전트와 공유한 뒤 다시 지정하세요.'
         add_members:
           title: 새 위치에 멤버를 추가할까요?
           description: 이 사람들은 토픽이 있던 곳에는 접근할 수 있었지만 "%{creative}"에는 없습니다. 계속 접근할 수 있도록 추가하세요.
