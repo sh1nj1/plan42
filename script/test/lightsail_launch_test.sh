@@ -1395,6 +1395,112 @@ chk "returns non-zero" 1 "$?"
 chk "no group echoed"  "" "$out"
 unset -f id install
 
+# --- docs/deploy_to_lightsail.md, the PostgreSQL move ------------------------
+#
+# pg_restore --clean drops every object before it reloads one, so this recipe is
+# an incident if it runs on a transfer that did not arrive. Run rather than read,
+# for the same reason as the cutover above.
+
+move="$(extract_recipe 'move_status=')"
+case "$move" in
+  *pg_dump*scp*pg_restore*) : ;;
+  *) echo "could not extract the PostgreSQL-move recipe from $DOC — has it moved?" >&2
+     exit 1 ;;
+esac
+
+# The ssh stub runs the remote command for real against a sandbox stand-in for
+# /tmp, so the `&&` chain, the rename and the `rm` are exercised rather than
+# pattern-matched. FAIL_DUMP / FAIL_XFER / FAIL_RESTORE choose the failing step.
+run_move() {
+  local work; work="$(mktemp -d)"
+  # REUSE_REMOTE keeps the instance's /tmp across two calls, which is what the
+  # stale-snapshot case needs: one run leaves a dump behind, the next must not
+  # be able to restore it.
+  export REMOTE="${REUSE_REMOTE:-$work/remote}"
+  mkdir -p "$REMOTE" "$work/bin" "$work/rbin"
+  printf '%s' "$move" | sed 's/<instance-ip>/203.0.113.10/g' > "$work/recipe.sh"
+
+  cat > "$work/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+echo psql >>"$TRACE"
+STUB
+  cat > "$work/bin/pg_dump" <<'STUB'
+#!/usr/bin/env bash
+echo pg_dump >>"$TRACE"
+[ -z "$FAIL_DUMP" ] || exit 1
+out=""; while [ $# -gt 0 ]; do [ "$1" = -f ] && out="$2"; shift; done
+printf 'DUMP-%s\n' "${DUMP_TAG:-fresh}" > "$out"
+STUB
+  cat > "$work/bin/scp" <<'STUB'
+#!/usr/bin/env bash
+dest="${2#*:}"
+echo "scp:$dest" >>"$TRACE"
+[ -z "$FAIL_XFER" ] || exit 1
+cp "$1" "${dest/\/tmp\//$REMOTE/}"
+STUB
+  cat > "$work/bin/ssh" <<'STUB'
+#!/usr/bin/env bash
+shift                                   # drop user@host; the rest is the command
+cmd="$*"; cmd="${cmd//\/tmp\//$REMOTE/}"
+echo ssh >>"$TRACE"
+PATH="$RBIN:$PATH" bash -c "$cmd"
+STUB
+  cat > "$work/rbin/pg_restore" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do case "$a" in *collavre.dump) echo "PG_RESTORE:$(cat "$a" 2>&1)" >>"$TRACE" ;; esac; done
+[ -z "$FAIL_RESTORE" ] || exit 1
+STUB
+  chmod +x "$work/bin"/* "$work/rbin"/*
+
+  TRACE="$work/trace"; : > "$TRACE"
+  export TRACE RBIN="$work/rbin"
+  export FAIL_DUMP="${FAIL_DUMP:-}" FAIL_XFER="${FAIL_XFER:-}" FAIL_RESTORE="${FAIL_RESTORE:-}"
+  MOVE_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  MOVE_TRACE="$(paste -sd'|' "$TRACE")"
+  MOVE_LEFT="$(find "$REMOTE" -maxdepth 1 -type f -exec basename {} \; | sort | paste -sd, -)"
+  rm -rf "$work"
+}
+
+echo "78. a clean move transfers, restores, and cleans up"
+FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE='' DUMP_TAG=fresh run_move
+chk "staged under .incoming"  1 "$(grep -c 'scp:/tmp/collavre.dump.incoming' <<<"${MOVE_TRACE//|/$'\n'}")"
+chk "restored the new dump"   1 "$(grep -c 'PG_RESTORE:DUMP-fresh' <<<"${MOVE_TRACE//|/$'\n'}")"
+chk "nothing left behind"     ""  "$MOVE_LEFT"
+
+echo "79. a failed pg_dump never reaches the transfer or the restore"
+FAIL_DUMP=1 FAIL_XFER='' FAIL_RESTORE='' run_move
+chk "no transfer"             0 "$(grep -c '^scp:' <<<"${MOVE_TRACE//|/$'\n'}")"
+chk "no restore"              0 "$(grep -c '^PG_RESTORE' <<<"${MOVE_TRACE//|/$'\n'}")"
+chk "operator told"           1 "$(grep -c 'MOVE FAILED' <<<"$MOVE_OUT")"
+
+echo "80. a failed transfer cannot restore the snapshot a previous attempt kept"
+# The retained /tmp/collavre.dump is deliberate — it makes a retry cheap. As
+# separate statements the next failed scp would restore *it*, report success and
+# delete it: a silent rollback to older data, with the evidence removed.
+stale_remote="$(mktemp -d)"
+REUSE_REMOTE="$stale_remote" FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE=1 DUMP_TAG=stale run_move
+chk "the first attempt leaves a dump" "collavre.dump" "$MOVE_LEFT"
+REUSE_REMOTE="$stale_remote" FAIL_DUMP='' FAIL_XFER=1 FAIL_RESTORE='' DUMP_TAG=fresh run_move
+chk "no restore ran at all"    0 "$(grep -c '^PG_RESTORE' <<<"${MOVE_TRACE//|/$'\n'}")"
+chk "the stale snapshot was not restored" 0 \
+  "$(grep -c 'PG_RESTORE:DUMP-stale' <<<"${MOVE_TRACE//|/$'\n'}")"
+chk "nor deleted, so it is still evidence" "collavre.dump" "$MOVE_LEFT"
+chk "operator told"            1 "$(grep -c 'MOVE FAILED' <<<"$MOVE_OUT")"
+rm -rf "$stale_remote"; unset REUSE_REMOTE
+
+echo "81. a failed restore keeps the dump and refuses to call the move done"
+FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE=1 DUMP_TAG=fresh run_move
+chk "the dump is kept for the retry" "collavre.dump" "$MOVE_LEFT"
+chk "operator told it is unusable"   1 "$(grep -c 'not usable yet' <<<"$MOVE_OUT")"
+chk "and told not to switch DNS"     1 "$(grep -c 'Do not point DNS' <<<"$MOVE_OUT")"
+
+echo "82. the transfer never lands directly on the path the restore reads"
+FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE='' run_move
+# Asserted as "no transfer went anywhere else", not as "one went to .incoming":
+# the pre-fix form sent to the directory /tmp/, which a check for the live
+# filename alone would pass without ever staging anything.
+chk "every transfer staged under .incoming" 0 \
+  "$(grep '^scp:' <<<"${MOVE_TRACE//|/$'\n'}" | grep -cv '\.incoming$')"
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
 exit "$fail"

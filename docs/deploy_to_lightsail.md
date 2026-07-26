@@ -380,20 +380,46 @@ container polling the database they are about to replace.
   is the source being quiet.
 
   ```bash
-  # on the source, first — stop the app or enable maintenance mode, then confirm
-  # nothing is still writing:
-  psql "$SOURCE_DATABASE_URL" -qtA -c \
-    "SELECT count(*) FROM pg_stat_activity
-      WHERE datname = current_database() AND pid <> pg_backend_pid()
-        AND state <> 'idle'"
+  # on the source, first — stop the app or enable maintenance mode, then look at
+  # what is still attached. This lists connections rather than counting active
+  # queries on purpose: a Rails pool sits in state 'idle' between requests, so a
+  # fully-running app reports zero active and can commit a write a millisecond
+  # later. Judge the rows — on a managed provider some are the provider's own.
+  psql "$SOURCE_DATABASE_URL" -c \
+    "SELECT usename, client_addr, state, backend_start, query
+       FROM pg_stat_activity
+      WHERE datname = current_database() AND pid <> pg_backend_pid()"
 
-  pg_dump --format=custom "$SOURCE_DATABASE_URL" -f collavre.dump
-  scp collavre.dump collavre@<instance-ip>:/tmp/
-  ssh collavre@<instance-ip> \
-    'pg_restore --no-owner --role=collavre_user --clean --if-exists \
-       -d "postgresql://collavre_user:<password>@127.0.0.1:5432/collavre_production" \
-       /tmp/collavre.dump && rm /tmp/collavre.dump'
+  # one chain, so a failed dump or transfer cannot reach pg_restore --clean
+  pg_dump --format=custom "$SOURCE_DATABASE_URL" -f collavre.dump &&
+    scp collavre.dump collavre@<instance-ip>:/tmp/collavre.dump.incoming &&
+    ssh collavre@<instance-ip> \
+      'mv /tmp/collavre.dump.incoming /tmp/collavre.dump &&
+       pg_restore --no-owner --role=collavre_user --clean --if-exists \
+         -d "postgresql://collavre_user:<password>@127.0.0.1:5432/collavre_production" \
+         /tmp/collavre.dump &&
+       rm /tmp/collavre.dump'
+  move_status=$?
+
+  if [ "$move_status" -ne 0 ]; then
+    echo "MOVE FAILED — the target may be partly dropped and is not usable yet."
+    echo "pg_restore --clean --if-exists is re-runnable: fix the cause and run"
+    echo "the whole chain again. Do not point DNS at this instance until it"
+    echo "succeeds, and keep the source in maintenance mode until then."
+  fi
   ```
+
+  **Why the whole thing is one `&&` chain.** As three separate statements a
+  failed `pg_dump` still ran the `scp`, and a failed `scp` still ran the
+  `pg_restore --clean` — which drops every object before it discovers it has
+  nothing to reload. The `rm` is chained to the restore's success, so a failed
+  restore deliberately keeps `/tmp/collavre.dump` to make a retry cheap; three
+  statements turn that retained file into the hazard, because the next attempt's
+  failed `scp` would restore *it* — an older snapshot — report success, and
+  delete the evidence. That is not a failed migration, it is a successful-looking
+  one on stale data. The transfer also lands on `.incoming` and is renamed, so an
+  interrupted `scp` cannot leave a truncated archive at the path the restore
+  reads.
 
 - **Coming from SQLite:** `bin/rails db:sqlite_to_postgres[...]`
   (`lib/tasks/db_convert.rake`). Like the fresh install below, this one runs
