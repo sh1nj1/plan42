@@ -21,12 +21,13 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
-for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
+for fn in die ensure_block ensure_sudoers in_group write_state_file \
+          revoke_prior_deploy_user \
           record_deploy_user_grant revoke_deploy_user_access \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
@@ -35,6 +36,7 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_docker_log_caps dedupe_authorized_keys \
           install_staged_authorized_keys postgresql_conf_includes_confd \
           refuse_db_name_change refuse_defaulted_config_change \
+          refuse_unusable_db_identifier refuse_unparsable_ssh_key \
           passwd_home ssh_key_holder \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
@@ -463,6 +465,68 @@ revoke_prior_deploy_user deploybot "$d8/deploy_user"
 chk "the legacy predecessor was found and stripped" 0 "$(holds collavre docker)"
 chk "and the queue now holds only the account in use" "ci_absent deploybot" \
   "ci_absent $(tr '\n' ' ' < "$d8/deploy_users" | sed 's/ *$//')"
+
+echo "18d. a queue rewrite that cannot complete leaves the previous queue intact"
+# `> "$set_file"` truncates when the redirection opens and only then writes, so
+# a write that fails in between leaves the file existing and EMPTY — which is
+# indistinguishable from a host with nothing left to revoke. `ulimit -f 0`
+# stands in for a full disk: creating the file is allowed, writing to it is not.
+d9=$(mktemp -d)
+printf 'deploybot\nci\n' > "$d9/deploy_users"
+# The redirect is on the GROUP, not on the subshell. SIGXFSZ kills the child,
+# and "Filesize limit exceeded" is printed by the parent that reaps it, to the
+# parent's stderr — so `( ... ) 2>/dev/null` silences the child and leaves the
+# report in the suite's output.
+{ ( ulimit -f 0; write_state_file "$d9/deploy_users" 'ci
+' ); } 2>/dev/null
+chk "the queue still names the unrevoked account" "deploybot ci" \
+  "$(tr '\n' ' ' < "$d9/deploy_users" | sed 's/ *$//')"
+
+# The control: the same failure against the previous form. Only the write is
+# swapped — the surrounding function is unchanged and is what both forms run.
+d10=$(mktemp -d)
+printf 'deploybot\nci\n' > "$d10/deploy_users"
+printf 'ci\n' > "$d10/deploy_user"
+{ ( ulimit -f 0; printf '%s' 'ci
+' > "$d10/deploy_users" ); } 2>/dev/null
+chk "the previous form emptied it" "" \
+  "$(tr '\n' ' ' < "$d10/deploy_users" | sed 's/ *$//')"
+# And nothing brings it back. Seeding is guarded on the file being ABSENT, and
+# this one exists; the single-name marker names the account in use, so it could
+# not have named deploybot even if the seeding did run. The queue was the only
+# record of it, which is the whole reason the queue exists.
+record_deploy_user_grant ci "$d10/deploy_users" "$d10/deploy_user"
+chk "and the next run cannot bring it back" "ci" \
+  "$(tr '\n' ' ' < "$d10/deploy_users" | sed 's/ *$//')"
+
+echo "18e. a seeding that cannot complete is retried, not retired"
+# The upgrade path runs once per host — its guard is `! -f`, so whatever state
+# the file is left in is the state it keeps. The append at the end of the
+# function would create the file, so a run that could not write the seed has to
+# stop before reaching it, or it retires the upgrade on the one host that still
+# needs it.
+d11=$(mktemp -d)
+printf 'legacy\n' > "$d11/deploy_user"          # provisioned before the queue
+mktemp() { return 1; }                          # no staging file can be made
+record_deploy_user_grant deploybot "$d11/deploy_users" "$d11/deploy_user"; rc=$?
+unset -f mktemp
+chk "it reports that it could not record" 1 "$rc"
+chk "and leaves no file behind to retire the upgrade" absent \
+  "$([ -e "$d11/deploy_users" ] && echo present || echo absent)"
+record_deploy_user_grant deploybot "$d11/deploy_users" "$d11/deploy_user"
+chk "so a later run still finds the predecessor" "legacy deploybot" \
+  "$(tr '\n' ' ' < "$d11/deploy_users" | sed 's/ *$//')"
+
+# The control: the previous form created the file on its way to failing, and
+# `|| true` meant nothing anywhere said so.
+d12=$(mktemp -d); printf 'legacy\n' > "$d12/deploy_user"
+{ ( ulimit -f 0; grep -v '^[[:space:]]*$' "$d12/deploy_user" > "$d12/deploy_users" || true ); } 2>/dev/null
+chk "the previous form left the file existing" present \
+  "$([ -e "$d12/deploy_users" ] && echo present || echo absent)"
+grep -qxF deploybot "$d12/deploy_users" 2>/dev/null ||
+  printf '%s\n' deploybot >> "$d12/deploy_users"
+chk "and the legacy predecessor is absent for good" "deploybot" \
+  "$(tr '\n' ' ' < "$d12/deploy_users" | sed 's/ *$//')"
 
 unset -f id gpasswd usermod groupadd log grant holds revoke_single_marker
 
@@ -2154,7 +2218,14 @@ STUB
   # the ALTER did not take. FAIL_SHUT makes the ALTER a no-op — psql prints its
   # error and exits non-zero, which an interactive paste with no `set -e` walks
   # straight past, which is the case under test.
-  echo -1 > "$work/connlimit"
+  # The cluster's own datconnlimit, which is not always -1: an operator may have
+  # capped this database, and the recipe now has to put back what it found
+  # rather than the default. PRIOR_LIMIT is that starting state.
+  echo "${PRIOR_LIMIT--1}" > "$work/connlimit"
+  # The prior read and the post-ALTER read-back are the same statement, so the
+  # stub tells them apart by order rather than by text — which is also the only
+  # way to model a prior read that failed while the ALTER still took.
+  echo 0 > "$work/datconn_n"
   cat > "$work/bin/psql" <<'STUB'
 #!/usr/bin/env bash
 sql="${*: -1}"
@@ -2175,12 +2246,26 @@ case "$sql" in
   *"CONNECTION LIMIT 0"*)      echo "limit:0"        >>"$TRACE"
                                [ -n "$FAIL_SHUT" ] || echo 0 > "$CONNLIMIT"
                                [ -z "$FAIL_SHUT" ] || { echo 'ERROR:  database "x" does not exist' >&2; exit 1; } ;;
-  *"CONNECTION LIMIT -1"*)     echo "limit:reopened" >>"$TRACE"
+  # Any limit, not the literal -1: the re-open restores whatever the database
+  # was at, so a stub that only knows -1 would pass a recipe that had gone back
+  # to hard-coding it. What it wrote is what the case reads afterwards.
+  *"CONNECTION LIMIT "*)       echo "limit:reopened" >>"$TRACE"
                                [ -z "$FAIL_REOPEN" ] ||
                                  { echo 'ERROR:  could not connect' >&2; exit 1; }
-                               echo -1 > "$CONNLIMIT" ;;
+                               printf '%s\n' "${sql##*CONNECTION LIMIT }" > "$CONNLIMIT" ;;
   *rolsuper*)                  echo "rolsuper"       >>"$TRACE"; printf '%s' "$APP_SUPER" ;;
-  *datconnlimit*)              echo "readback"       >>"$TRACE"; cat "$CONNLIMIT" ;;
+  *datconnlimit*)              n=$(cat "$DATCONN_N"); n=$((n + 1))
+                               printf '%s' "$n" > "$DATCONN_N"
+                               if [ "$n" = 1 ]; then
+                                 echo "priorlimit" >>"$TRACE"
+                                 # An empty answer with a non-zero status: what
+                                 # a read that could not be answered looks like
+                                 # through the recipe's own 2>/dev/null.
+                                 [ -z "$FAIL_PRIOR_READ" ] || exit 1
+                               else
+                                 echo "readback" >>"$TRACE"
+                               fi
+                               cat "$CONNLIMIT" ;;
   *pg_terminate_backend*)      echo "terminate"      >>"$TRACE"; echo "${KILLED:-0}" ;;
   *"count(*)"*)                echo "count"          >>"$TRACE"; printf '%s' "$LIVE" ;;
   *usename*)                   echo "listing"        >>"$TRACE" ;;
@@ -2202,11 +2287,15 @@ STUB
   # as, and it must not be rewritten into the one value that lets the gate open.
   export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}" \
          FAIL_SHUT="${FAIL_SHUT:-}" FAIL_REOPEN="${FAIL_REOPEN:-}" \
-         CONNLIMIT="$work/connlimit" \
+         FAIL_PRIOR_READ="${FAIL_PRIOR_READ:-}" \
+         CONNLIMIT="$work/connlimit" DATCONN_N="$work/datconn_n" \
          APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}" \
          APP_DB="${APP_DB-collavre_production}"
   R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   R_TRACE="$(paste -sd'|' "$TRACE")"
+  # What the database is left at, which is the thing the operator meets at boot
+  # — asserted directly rather than inferred from the statements that ran.
+  R_LIMIT="$(cat "$work/connlimit")"
   rm -rf "$work"
 }
 
@@ -2217,8 +2306,10 @@ LIVE=0 KILLED=2 FAIL_RESTORE='' run_restore
 # so a step inserted between them fails here instead of silently reordering the
 # gate. Nothing may precede the role check: it decides whether shutting the
 # door means anything at all, and a refusal must leave the limit as it found it.
-chk "role checked, then shut, before all else" "rolsuper|limit:0" \
-  "$(cut -d'|' -f1,2 <<<"$R_TRACE")"
+# The prior limit is read between them, and its position is not incidental: it
+# has to be taken before the ALTER, because after it the previous value is gone.
+chk "role checked, prior limit read, then shut, before all else" \
+  "rolsuper|priorlimit|limit:0" "$(cut -d'|' -f1,2,3 <<<"$R_TRACE")"
 chk "survivors terminated"   1 "$(grep -c '^terminate$' <<<"${R_TRACE//|/$'\n'}")"
 # The order is the whole point: counting before the limit is applied only says
 # the app happened to be between connections at that instant.
@@ -2370,7 +2461,66 @@ APP_DB='collavre-prod' LIVE=0 KILLED=0 FAIL_RESTORE='' FAIL_REOPEN=1 run_restore
 chk "told the door is still shut" 1 "$(grep -c 'RE-OPEN FAILED' <<<"$R_OUT")"
 chk "the printed ALTER quotes the name" 1 \
   "$(grep -cF "'ALTER DATABASE \"collavre-prod\" CONNECTION LIMIT -1'" <<<"$R_OUT")"
-unset FAIL_REOPEN
+# The same trap recorded at 86c, one variable over: `APP_DB=x run_restore` is a
+# prefix assignment on a *function*, so it persists in the calling shell and
+# every later case runs against `collavre-prod` instead of the default. It was
+# invisible until a case after these two needed the default name back.
+unset FAIL_REOPEN APP_DB
+
+echo "86h. a connection limit the operator set is put back, not replaced by -1"
+# -1 is only the default. A database deliberately capped has that cap in
+# datconnlimit and nowhere else, so re-opening to the literal -1 does not
+# restore the database to what it was — it lifts the cap, on every successful
+# restore, and the operator finds out when the cap stops holding.
+PRIOR_LIMIT=50 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "restore ran"                 1 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened"                   1 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|/$'\n'}")"
+chk "left at the operator's cap"  50 "$R_LIMIT"
+chk "operator told to boot"       1 "$(grep -c 'app boot' <<<"$R_OUT")"
+chk "no note about a lost value"  0 "$(grep -c 'NOTE:' <<<"$R_OUT")"
+unset PRIOR_LIMIT
+
+echo "86i. a prior limit that could not be read re-opens to -1 and says so"
+# The one case the fix cannot honour: the read failed while the ALTER still
+# took. Leaving the door shut for want of a number would produce exactly the
+# misdirected "too many connections" the re-open exists to avoid, so -1 is the
+# answer — but the operator is the only one who knows what the cap was, so it
+# is said rather than assumed.
+PRIOR_LIMIT=50 FAIL_PRIOR_READ=1 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "restore ran"                 1 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened to the default"    -1 "$R_LIMIT"
+chk "and did not stay silent"     1 "$(grep -c 'could not read' <<<"$R_OUT")"
+chk "operator told to boot"       1 "$(grep -c 'app boot' <<<"$R_OUT")"
+unset PRIOR_LIMIT FAIL_PRIOR_READ
+
+echo "86j. a database the operator had already shut is not advertised as bootable"
+# The consequence of putting the limit back faithfully: if it was already 0, the
+# re-open restores a closed door. That is the operator's configuration rather
+# than a step this block forgot, but "boot the app" would still send them into
+# "too many connections" — the error this whole block is arranged to avoid.
+PRIOR_LIMIT=0 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "restore ran"                  1 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
+chk "left as the operator had it"  0 "$R_LIMIT"
+chk "NOT told to boot"             0 "$(grep -c 'app boot' <<<"$R_OUT")"
+chk "told the limit predates this" 1 \
+  "$(grep -c 'not something left behind here' <<<"$R_OUT")"
+chk "and how to lift it"           1 \
+  "$(grep -cF "'ALTER DATABASE \"collavre_production\" CONNECTION LIMIT -1'" <<<"$R_OUT")"
+# Not a failure report: nothing failed, and RESTORE FAILED here would send the
+# operator to repair a restore that worked.
+chk "not reported as a failure"    0 "$(grep -c 'FAILED' <<<"$R_OUT")"
+unset PRIOR_LIMIT
+
+echo "86k. the note is not printed on a path that never shut the door"
+# restore_status=3 refuses before the ALTER, so the previous limit is still in
+# force and could-not-be-read changes nothing. A warning here would be a warning
+# about nothing, on the one path where the operator is already reading a refusal.
+APP_DB='' FAIL_PRIOR_READ=1 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "refused"                    1 "$(grep -c 'REFUSING' <<<"$R_OUT")"
+chk "nothing dropped"            0 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
+chk "not re-opened"              0 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|/$'\n'}")"
+chk "and no note about a limit"  0 "$(grep -c 'NOTE:' <<<"$R_OUT")"
+unset FAIL_PRIOR_READ APP_DB
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #
@@ -3309,13 +3459,226 @@ echo "117. the grant is recorded before it is made, not after"
 # case 114: the function being correct is not what closes the interruption
 # window — its position is. A record written after the grants describes only
 # runs that reached the end, and the run that matters is the one that did not.
-rec_line="$(grep -n '^record_deploy_user_grant "\$APP_SSH_USER"$' "$SRC" | head -1 | cut -d: -f1)"
+# Not anchored at the end: the call carries a `|| log ...` continuation, and an
+# end-anchored pattern matches nothing while still looking like an assertion
+# about position. It cannot match the definition, which ends in `() {`.
+rec_line="$(grep -n '^record_deploy_user_grant "\$APP_SSH_USER"' "$SRC" | head -1 | cut -d: -f1)"
 chk "it is called at all"                 1 "$([ -n "$rec_line" ] && echo 1 || echo 0)"
 for after in 'usermod -aG sudo "\$APP_SSH_USER"' 'usermod -aG docker "\$APP_SSH_USER"' \
              'revoke_prior_deploy_user "\$APP_SSH_USER"'; do
   line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
   chk "before ${after%% \"*}" 1 \
     "$([ -n "$line" ] && [ "$rec_line" -lt "$line" ] && echo 1 || echo 0)"
+done
+
+echo "118. a name PostgreSQL takes but this script cannot use is refused"
+# format('%I') quotes whatever it is given, so the cluster accepts names that
+# then break outside SQL. Measured on a live cluster: DB_NAME='tenant/prod' is
+# created, pg_dump connects to it, and the nightly dump's --file lands under a
+# directory that does not exist — so the host runs and every backup fails.
+idg_out=''
+idg() {
+  idg_out="$( ( refuse_unusable_db_identifier "$1" "$2" ) 2>&1 )"
+  idg_status=$?
+}
+for good in collavre_production collavre_prod collavre-prod collavre_user \
+            postgres CollavreProd db1; do
+  idg DB_NAME "$good"
+  chk "accepted: $good"                   0 "$idg_status"
+done
+# A '/' is the measured one; the rest are the same class one character over —
+# a quote breaks the CREATE statements, which take both settings as string
+# literals, and a leading '-' is an option to every command that later handles
+# the dump file.
+for bad in 'tenant/prod' "a'b" 'a b' '-prod' 'a;b' 'a$b' ''; do
+  idg DB_NAME "$bad"
+  chk "refused: ${bad:-(empty)}"          1 "$idg_status"
+done
+idg DB_NAME 'tenant/prod'
+chk "says nothing was changed"            1 "$(grep -c 'Nothing has been changed' <<<"$idg_out")"
+# Without a way out this is a dead end rather than a guard: refuse_db_name_change
+# refuses any *other* name on a host already provisioned under the bad one, so
+# the refusal has to name the procedure that moves the host off it.
+chk "and names the way off such a host"   1 "$(grep -c 'Changing DB_NAME on a re-run' <<<"$idg_out")"
+
+echo "118a. the ranges are byte ranges, not whatever the host collates"
+# `[A-Za-z]` is a collation range, not a byte range, and under some collations
+# it matches accented letters — which is exactly the class of name this exists
+# to keep out of a filesystem path.
+lc_probe() { local LC_ALL="$1"
+  case "$2" in ''|-*|*[!A-Za-z0-9_-]*) echo REFUSE ;; *) echo ACCEPT ;; esac; }
+chk "the guard pins LC_ALL=C"             1 \
+  "$(sed -n '/^refuse_unusable_db_identifier() {/,/^}/p' "$SRC" | grep -c 'local LC_ALL=C')"
+chk "and under C the bytes are out"       REFUSE "$(lc_probe C 'café')"
+# Whether the pin can be *demonstrated* depends on a disagreeing collation being
+# installed, which macOS has and a minimal CI container may not — measured on
+# macOS/bash 3.2 under en_US.UTF-8: ACCEPT. Reported as undemonstrated rather
+# than asserted into a pass, so this does not become a check that is green
+# because the host had nothing to check with.
+drifting=''
+for cand in en_US.UTF-8 en_US.utf8 C.UTF-8; do
+  [ "$(lc_probe "$cand" 'café')" = ACCEPT ] && { drifting="$cand"; break; }
+done
+if [ -n "$drifting" ]; then
+  echo "  ok   $drifting accepts what C refuses — the pin is load-bearing here"
+else
+  echo "  --   no installed collation disagrees here; pin asserted, not demonstrated"
+fi
+
+echo "118b. no example on the page is refused by it"
+# The failure this shape has: a new fail-closed guard that turns out to refuse
+# the runbook's own instructions.
+while read -r ex; do
+  [ -n "$ex" ] || continue
+  idg DB_NAME "$ex"
+  chk "the page's own $ex is accepted"    0 "$idg_status"
+done <<<"$(grep -ohE '\b(DB_NAME|DB_USER)=[A-Za-z0-9_.-]+' "$DOC" | cut -d= -f2 | sort -u)"
+
+echo "118c. it is called before anything it protects, and reads no state"
+# Same reason as case 114. A value this script cannot use is not usable whatever
+# the host was given earlier, so it is answered before the guard that reads
+# $STATE_DIR — and long before anything is installed.
+idn_line="$(grep -n '^refuse_unusable_db_identifier DB_NAME' "$SRC" | head -1 | cut -d: -f1)"
+chk "DB_NAME is checked"                  1 "$([ -n "$idn_line" ] && echo 1 || echo 0)"
+chk "so is DB_USER"                       1 \
+  "$(grep -c '^refuse_unusable_db_identifier DB_USER' "$SRC")"
+# Anchored at both ends: the pattern without it matches the function's own
+# definition line, which is above the call and would make this pass for the
+# wrong reason.
+cfg_call="$(grep -n '^refuse_defaulted_config_change$' "$SRC" | head -1 | cut -d: -f1)"
+chk "before refuse_defaulted_config_change" 1 \
+  "$([ -n "$cfg_call" ] && [ "$idn_line" -lt "$cfg_call" ] && echo 1 || echo 0)"
+for after in 'apt_get update' \
+             'ensure_sudoers "\$APP_SSH_USER"' 'usermod -aG docker'; do
+  line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
+  chk "before ${after%% *}" 1 \
+    "$([ -n "$line" ] && [ "$idn_line" -lt "$line" ] && echo 1 || echo 0)"
+done
+
+echo "119. an SSH key sshd cannot read is refused before it is appended"
+# Real keys here, not the synthetic 'ssh-ed25519 AAAAKEYA x' fixtures the rest of
+# this suite uses: what is under test is whether sshd's own parser accepts the
+# line, and no fixture can stand in for that. The truncation is 24 characters out
+# of the base64 body, which is what a paste that lost its tail looks like — and
+# the one form a length or prefix check cannot catch.
+if ! command -v ssh-keygen >/dev/null 2>&1; then
+  echo "  SKIP no ssh-keygen here — the guard's own dependency is missing"
+else
+  kd="$(mktemp -d)"
+  ssh-keygen -q -t ed25519 -N '' -C 'operator@laptop' -f "$kd/old" >/dev/null
+  ssh-keygen -q -t ed25519 -N '' -C 'operator@newlaptop' -f "$kd/new" >/dev/null
+  GOOD_OLD="$(cat "$kd/old.pub")"; GOOD_NEW="$(cat "$kd/new.pub")"
+  nbody="${GOOD_NEW#* }"; nbody="${nbody%% *}"
+  TBODY="${nbody:0:${#nbody} - 24}"
+  TRUNC="${GOOD_NEW%% *} $TBODY operator@newlaptop"
+
+  g_out=''; g_rc=0
+  guard() {
+    g_out="$( ( log() { echo "[log] $*"; }
+                SSH_PUBLIC_KEY="$1" APP_SSH_USER=collavre
+                refuse_unparsable_ssh_key ) 2>&1 )" && g_rc=0 || g_rc=1
+  }
+
+  guard "$GOOD_NEW"
+  chk "a real key goes through"                 0 "$g_rc"
+  guard ""
+  chk "and so does none at all"                 0 "$g_rc"
+  guard "${GOOD_NEW% *}"
+  chk "and one with no comment"                 0 "$g_rc"
+  # authorized_keys lines may carry restrictions, and a shape check strict enough
+  # to catch truncation would refuse these — which is why the guard parses.
+  guard "command=\"x\",no-pty $GOOD_NEW"
+  chk "and one behind a command= restriction"   0 "$g_rc"
+  guard "from=\"10.0.0.0/8\" $GOOD_NEW"
+  chk "and one behind a from= restriction"      0 "$g_rc"
+  guard "   $GOOD_NEW"
+  chk "and one with leading whitespace"         0 "$g_rc"
+
+  guard "hello world"
+  chk "text that is not a key is refused"       1 "$g_rc"
+  # `grep -qxF` treats each line of its pattern as a pattern of its own, so a
+  # two-line value is "in place" as soon as either half of it is and the
+  # withdrawal proceeds on half a key.
+  guard "$GOOD_NEW"$'\n'"$GOOD_OLD"
+  chk "and a value holding a newline"           1 "$g_rc"
+
+  guard "$TRUNC"
+  chk "and a truncated paste"                   1 "$g_rc"
+  chk "it says nothing has been changed"        1 \
+    "$(grep -c 'Nothing has been changed' <<<"$g_out")"
+  # An operator who pastes a private key by mistake is exactly what this refuses,
+  # and the provisioning log is not private.
+  chk "and does not echo the value"             0 "$(grep -cF "$TBODY" <<<"$g_out")"
+
+  # The control is the failure itself, not an earlier form of the guard: the guard
+  # is new, so there is nothing to run against. What has to be established is that
+  # the functions behind it really do end at zero usable keys — otherwise this is
+  # machinery against nothing.
+  usable_keys() {
+    local n=0 line probe; probe="$(mktemp)"
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      printf '%s\n' "$line" > "$probe"
+      ssh-keygen -l -f "$probe" >/dev/null 2>&1 && n=$((n + 1))
+    done < "$1"
+    rm -f "$probe"; printf '%s\n' "$n"
+  }
+  kh="$(mktemp -d)"; mkdir -p "$kh/collavre/.ssh"
+  kauth="$kh/collavre/.ssh/authorized_keys"
+  printf '%s\n' "$GOOD_OLD" > "$kauth"
+  ksd="$(mktemp -d)"; printf '%s\n' "$GOOD_OLD" > "$ksd/ssh_public_key.collavre"
+  chk "the predecessor is usable to begin with" 1 "$(usable_keys "$kauth")"
+  ( STATE_DIR="$ksd" APP_SSH_USER=collavre SSH_PUBLIC_KEY="$TRUNC"
+    log() { :; }
+    install_authorized_keys "$kauth" "$kh"
+    revoke_prior_ssh_key "$kauth"
+    dedupe_authorized_keys "$kauth" "$SSH_PUBLIC_KEY" ) >/dev/null 2>&1
+  chk "unguarded, no key sshd can read is left" 0 "$(usable_keys "$kauth")"
+  chk "the predecessor was withdrawn"           0 "$(grep -cxF "$GOOD_OLD" "$kauth")"
+  # The two checks that would otherwise have caught it, and do not.
+  chk "while the file is not empty"             1 \
+    "$([ -s "$kauth" ] && echo 1 || echo 0)"
+  chk "and the marker names the unusable key"   1 \
+    "$(grep -cxF "$TRUNC" "$ksd/ssh_public_key.collavre")"
+fi
+
+echo "119a. where ssh-keygen is absent it warns and lets the run continue"
+# Absence cannot be modelled by hiding the binary from this shell, since
+# everything the case needs would go with it. A PATH holding only what the
+# extracted function uses is the seam — and the first assertion is what makes the
+# rest worth anything: without it the case passes on a PATH where ssh-keygen is
+# still in reach, which is the shape of vacuous pass this suite has hit before.
+kbin="$(mktemp -d)"
+for kc in bash mktemp rm; do ln -s "$(command -v "$kc")" "$kbin/$kc"; done
+kfns="$(mktemp)"; declare -f die refuse_unparsable_ssh_key > "$kfns"
+krun="$(mktemp)"
+cat > "$krun" <<'RUN'
+set -uo pipefail
+log() { echo "[log] $*"; }
+. "$FNS"
+APP_SSH_USER=collavre
+command -v ssh-keygen >/dev/null 2>&1 && echo visible=yes || echo visible=no
+refuse_unparsable_ssh_key && echo rc=0 || echo rc=1
+RUN
+kout="$(PATH="$kbin" FNS="$kfns" SSH_PUBLIC_KEY='ssh-ed25519 CUT-SHORT op@laptop' \
+        bash "$krun" 2>&1)"
+chk "ssh-keygen really is out of reach"    1 "$(grep -c 'visible=no' <<<"$kout")"
+chk "it does not refuse the run"           1 "$(grep -cx 'rc=0' <<<"$kout")"
+chk "it says the key was not checked"      1 "$(grep -c 'could not be' <<<"$kout")"
+chk "and names the account at risk"        1 "$(grep -c 'log in as collavre' <<<"$kout")"
+
+echo "119b. it is called before anything that could leave the account keyless"
+# Anchored at both ends so the pattern does not match the function's own
+# definition line, which is above the call.
+grd_line="$(grep -n '^refuse_unparsable_ssh_key$' "$SRC" | head -1 | cut -d: -f1)"
+chk "the guard is called at all"           1 "$([ -n "$grd_line" ] && echo 1 || echo 0)"
+for after in 'install_authorized_keys "\$AUTH_KEYS"' \
+             'revoke_prior_ssh_key "\$AUTH_KEYS"' \
+             'dedupe_authorized_keys "\$AUTH_KEYS"' \
+             'apt_get update' 'usermod -aG docker'; do
+  line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
+  chk "before ${after%% *}" 1 \
+    "$([ -n "$line" ] && [ "$grd_line" -lt "$line" ] && echo 1 || echo 0)"
 done
 
 echo

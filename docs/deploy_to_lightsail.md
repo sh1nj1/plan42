@@ -56,6 +56,14 @@ Common overrides:
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
 | `BACKUP_S3_URI` | *(empty)* | e.g. `s3://collavre-backups/pg` — PostgreSQL only, [not uploaded files](#backup_s3_uri-does-not-cover-uploaded-files) |
 
+`DB_NAME` and `DB_USER` must be letters, digits, `_` and `-`, not starting with
+`-`; anything else is refused before the run starts. PostgreSQL itself is more
+permissive — the script creates both through `format('%I')`, which quotes
+whatever it is given — but `DB_NAME` is also a *filename*: the nightly dump is
+written to `/var/backups/collavre/$DB_NAME-<stamp>.dump`, so a `/` in the name
+puts it under a directory that does not exist and every backup fails on a host
+that otherwise runs perfectly well.
+
 It also runs fine by hand on an existing instance, and re-running converges the
 host instead of duplicating config:
 
@@ -1134,6 +1142,15 @@ app_role=$(sudo cat /var/lib/collavre/db_user 2>/dev/null)
 # it, so a refusal leaves the connection limit exactly as the operator had it.
 app_super=$(sudo -u postgres psql -qtAd postgres -c \
   "SELECT rolsuper FROM pg_roles WHERE rolname = '$app_role'" 2>/dev/null)
+
+# And what the limit was before this block touched it, read here because after
+# the ALTER below it is 0 and the previous value is gone. `-1` is only the
+# default; an operator who capped this database has that cap in `datconnlimit`
+# and nowhere else, so re-opening to a literal `-1` would not restore the
+# database to what it was, it would silently lift a limit — on every successful
+# restore, and on the idle refusal too, which touches nothing else at all.
+prior_limit=$(sudo -u postgres psql -qtAd postgres -c \
+  "SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'" 2>/dev/null)
 if [ -z "$app_db" ]; then
   echo "REFUSING: cannot tell which database to restore."
   echo "  /var/lib/collavre/db_name is missing or unreadable. That file is"
@@ -1230,10 +1247,29 @@ fi
 # connections", which reads like a pool problem and not like a step this block
 # forgot to undo, so it must not be left shut by accident. On the failure path
 # it is left shut on purpose; on status 3 it was never shut to begin with.
+#
+# Back to what it was, not to -1. The one case where that cannot be honoured is
+# a $prior_limit that is not a number — the read above failed while the ALTER
+# still took — and there -1 is the lesser wrong: leaving the door shut for want
+# of a value produces exactly the misdirected "too many connections" this
+# undoes. It is said out loud rather than assumed, because the operator is the
+# only one who knows what the cap was.
+reopen_limit=$prior_limit
+if ! printf '%s' "$prior_limit" | grep -qE '^-?[0-9]+$'; then
+  reopen_limit=-1
+  # Only where it changes what happens next. On status 3 this block never shut
+  # the door and never opens it, so the previous limit is still in force and
+  # saying it could not be read would be a warning about nothing.
+  if [ "$restore_status" -ne 3 ]; then
+    echo "NOTE: could not read $app_db's previous connection limit ('$prior_limit')."
+    echo "  Re-opening to -1, the default. If you had capped this database, set"
+    echo "  the cap again by hand once this block finishes."
+  fi
+fi
 reopen_status=0
 if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
   sudo -u postgres psql -qd postgres -c \
-    "ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1"
+    "ALTER DATABASE \"$app_db\" CONNECTION LIMIT $reopen_limit"
   reopen_status=$?
 fi
 
@@ -1261,12 +1297,25 @@ if [ "$reopen_status" -ne 0 ]; then
   echo "  sudo -u postgres psql -qd postgres -c \\"
   # Single-quoted for the shell so the identifier's own double quotes survive
   # being pasted — the recovery this prints has to be runnable as printed.
-  echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1'"
+  echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT $reopen_limit'"
   echo "  Confirm with:"
   echo "  sudo -u postgres psql -qtAd postgres -c \\"
   echo "    \"SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'\""
 elif [ "$restore_status" -eq 0 ]; then
-  echo "restored; boot the app from your workstation: ./kamal.sh app boot"
+  # Putting the limit back faithfully has one consequence worth naming: if it
+  # was already 0, the door this block opens is the one the operator closed, and
+  # "boot the app" would be an instruction to meet "too many connections". That
+  # is their configuration rather than this block's leftover, so it is reported
+  # rather than overridden.
+  if [ "$reopen_limit" = 0 ]; then
+    echo "restored, and $app_db is back at 'CONNECTION LIMIT 0' — which is where"
+    echo "  it was before this block ran, not something left behind here. The app"
+    echo "  will be refused at boot until you lift it:"
+    echo "  sudo -u postgres psql -qd postgres -c \\"
+    echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1'"
+  else
+    echo "restored; boot the app from your workstation: ./kamal.sh app boot"
+  fi
 elif [ "$restore_status" -eq 2 ] || [ "$restore_status" -eq 3 ]; then
   : # refused before touching anything — see the message above
 else
@@ -1277,7 +1326,7 @@ else
   echo "  so fix the cause and run this block again — it needs no other step."
   echo "If instead you are abandoning the restore, re-open it by hand with:"
   echo "  sudo -u postgres psql -qd postgres -c \\"
-  echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1'"
+  echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT $reopen_limit'"
 fi
 ```
 

@@ -254,6 +254,139 @@ whose .env.production still names the old ones."$'\n\n'\
 "$record"
 }
 
+# refuse_unusable_db_identifier <setting name> <value>
+#
+# DB_NAME and DB_USER reach PostgreSQL through format('%I'), which quotes
+# whatever it is given — so the cluster accepts names this script then cannot
+# work with, and accepts them silently. Measured on a live cluster:
+#
+#   CREATE via format('%I'), DB_NAME='tenant/prod'   -> created
+#   pg_dump --dbname='tenant/prod'                   -> rc=0, connects
+#   --file=/var/backups/collavre/tenant/prod-<stamp>.dump
+#                                                    -> rc=1, no such directory
+#
+# The database is real, the app runs against it, and every nightly dump fails
+# from the moment the host is provisioned — the one failure on this host that
+# is only discovered by needing a backup. The same two values are also spliced
+# into the SQL below as *string literals* ('$DB_NAME'), where a name containing
+# a quote ends the run at step 6 with a syntax error naming a file in /tmp.
+#
+# Refused here rather than sanitised into a safe filename, because a sanitised
+# name is a second spelling: the runbook restores from
+# "/var/backups/collavre/$app_db-<stamp>.dump" using the name in
+# $STATE_DIR/db_name, and a transform in between would have to exist in two
+# places and stay equal. One spelling everywhere is the property worth keeping.
+#
+# Hyphens are allowed: `collavre-prod` needs identifier quoting, which the
+# runbook and the SQL below both do, and it is a perfectly good filename. A
+# leading hyphen is not, because that is an option to every command that later
+# handles the dump.
+#
+# LC_ALL=C so the ranges below are byte ranges. Under a UTF-8 collation
+# [A-Za-z] matches accented letters, which is exactly the class of name this
+# is here to keep out of a path.
+refuse_unusable_db_identifier() {
+  local LC_ALL=C setting="$1" value="$2"
+  case "$value" in
+    ''|-*|*[!A-Za-z0-9_-]*) ;;
+    *) return 0 ;;
+  esac
+  die "REFUSING: $setting='$value' is a name PostgreSQL would accept and this" \
+      "script cannot use. Use letters, digits, '_' and '-', not starting with" \
+      "'-'. DB_NAME is spelled outside SQL as well as in it — the nightly dump" \
+      "is written to /var/backups/collavre/\$DB_NAME-<stamp>.dump, so a '/'" \
+      "puts it in a directory that does not exist and every backup fails — and" \
+      "both settings go into the CREATE statements as string literals, where a" \
+      "quote of your own ends the run before the database is made." \
+      "Nothing has been changed. If this host was already provisioned under" \
+      "that name its backups have never run, and setting a different DB_NAME" \
+      "is refused by refuse_db_name_change: rename the database and update" \
+      "$STATE_DIR/db_name first — 'Changing DB_NAME on a re-run' in" \
+      "docs/deploy_to_lightsail.md — then re-run with the new name."
+}
+
+# refuse_unparsable_ssh_key
+#
+# SSH_PUBLIC_KEY is appended to authorized_keys verbatim, and its own presence
+# in that file is then taken as proof the successor works: revoke_prior_ssh_key
+# withdraws the previously installed key once `grep -qxF` finds this one there.
+# Whole-line presence is not parsability, and the [ -s ] check at the end of the
+# run is satisfied by any text at all, so a truncated paste ends with the deploy
+# account holding one line sshd cannot read and nothing else. Measured through
+# the shipped functions with a real key missing 24 characters of its body:
+#
+#   before   lines=1 usable=1
+#   after    lines=1 usable=0    "withdrew the SSH key this script installed"
+#
+# and against a scratch sshd, which is the only authority on "usable":
+#
+#   truncated line   -> Permission denied (publickey)
+#   same key intact  -> LOGGED-IN-OK
+#
+# The marker is advanced to the truncated key as well, so the host's own record
+# of the key that worked is overwritten and there is nothing for a later run to
+# retry toward. Hence a refusal here, before anything is appended or withdrawn,
+# rather than a check at the install: at this point nothing has been changed and
+# the operator can still fix the paste.
+#
+# ssh-keygen is the check because it is sshd's own parser. It accepts the forms
+# an operator legitimately supplies — no comment, a command=/from= restriction,
+# leading whitespace — and refuses truncation, which no shape check short of
+# parsing the blob can catch. A regex strict enough for the second would refuse
+# the first.
+#
+# A newline is refused for its own reason: `grep -qxF` treats each line of its
+# pattern as a separate pattern, so a two-line value counts as "in place" as
+# soon as either half of it is, and the withdrawal proceeds on half a key.
+#
+# Where ssh-keygen is absent this cannot be answered, and it warns rather than
+# refusing: openssh-server depends on openssh-client, so a host without
+# ssh-keygen is a host without sshd, and stopping there would cost provisioning
+# for a check with no login to protect.
+#
+# The value is not echoed. An operator who pastes a private key by mistake is
+# exactly the case this refuses, and the provisioning log is not private.
+refuse_unparsable_ssh_key() {
+  local tmp head rc=0
+  [ -n "$SSH_PUBLIC_KEY" ] || return 0
+  case "$SSH_PUBLIC_KEY" in
+    *$'\n'*) rc=1 ;;
+    *)
+      if ! command -v ssh-keygen >/dev/null 2>&1; then
+        log "WARNING: ssh-keygen is not installed, so SSH_PUBLIC_KEY could not be" \
+            "checked. If sshd cannot read it, this run will still withdraw the key" \
+            "it replaces — confirm you can log in as $APP_SSH_USER before you rely" \
+            "on this host."
+        return 0
+      fi
+      tmp="$(mktemp)"
+      printf '%s\n' "$SSH_PUBLIC_KEY" > "$tmp"
+      ssh-keygen -l -f "$tmp" >/dev/null 2>&1 || rc=1
+      rm -f "$tmp"
+      ;;
+  esac
+  if [ "$rc" != 0 ]; then
+    head="${SSH_PUBLIC_KEY%%[ $'\n']*}"
+    die "REFUSING: SSH_PUBLIC_KEY is not a key sshd can read — ssh-keygen" \
+        "cannot parse it, and a line cut short by a copy-paste is the usual" \
+        "reason. What was given is ${#SSH_PUBLIC_KEY} characters beginning" \
+        "'${head:0:20}'. Nothing has been changed. Left to run, this would" \
+        "append it to $APP_SSH_USER's authorized_keys, then withdraw the key" \
+        "it replaces on the strength of finding this one in the file, and the" \
+        "account would be left with no key sshd accepts — a rotation that" \
+        "reports success and locks you out. Paste the whole single line from" \
+        "your .pub file, and check it first if you like:" \
+        "ssh-keygen -l -f your_key.pub."
+  fi
+}
+
+# Before refuse_defaulted_config_change, and long before anything is installed:
+# a value this script cannot use is not usable whatever the host was given
+# earlier, so it is answered without reading any state at all.
+refuse_unusable_db_identifier DB_NAME "$DB_NAME"
+refuse_unusable_db_identifier DB_USER "$DB_USER"
+refuse_unparsable_ssh_key
+
 refuse_defaulted_config_change
 
 # cloud-init and unattended-upgrades hold the dpkg lock during early boot;
@@ -391,6 +524,38 @@ in_group() {
   id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -qxF "$2"
 }
 
+# write_state_file <path> <content>
+#
+# Replace a marker under $STATE_DIR in one step, because `> file` truncates when
+# the redirection opens and only then writes. A write that fails in between —
+# a full disk, an interrupted run — leaves the file existing and empty, and for
+# the queue below that is not a state anything recovers from: the seeding in
+# record_deploy_user_grant runs only when the queue file is *absent*, so an
+# empty one reads as "nothing left to revoke" and the account still holding
+# docker and sudo is never named again. Measured on the shipped functions, with
+# `ulimit -f 0` standing in for ENOSPC:
+#
+#   queue [B,D] -> write fails after truncating -> queue []
+#   next run                                    -> queue [E]     B unrevokable
+#
+# The staging file is created in the target's own directory so the rename is
+# within one filesystem, where it is atomic. Anywhere else `mv` degrades to a
+# copy-then-unlink and the window this exists to close is back.
+#
+# 0644 is not a widening: it is what a bare redirection already produced under
+# the default umask, and the chmod is here only because mktemp creates 0600.
+# db_password is the one marker that must not go through this — it is written
+# under `umask 077` precisely so it is never 0644, even briefly.
+write_state_file() {
+  local target="$1" content="$2" tmp
+  tmp="$(mktemp "$target.XXXXXX")" || return 1
+  if ! printf '%s' "$content" > "$tmp" || ! chmod 0644 "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$target"
+}
+
 # record_deploy_user_grant <user> [set file] [single-name marker]
 #
 # The set of accounts this script has granted root-equivalent access to and has
@@ -420,7 +585,18 @@ record_deploy_user_grant() {
   # account most likely to be unrevoked — seeding from it means the fix for
   # forgetting accounts does not begin by forgetting one.
   if [ ! -f "$set_file" ] && [ -s "$prior_file" ]; then
-    grep -v '^[[:space:]]*$' "$prior_file" > "$set_file" || true
+    local seed
+    seed="$(grep -v '^[[:space:]]*$' "$prior_file")" || seed=''
+    # The guard above is `! -f`, so this path runs once per host and never
+    # again — whatever state the file is left in is the state it keeps. The
+    # previous form's redirection created it on the way to failing and `|| true`
+    # swallowed that, so an empty file answered for the predecessor from then
+    # on. Returned rather than warned past, because the append below would
+    # create the file too: a run that could not perform the upgrade would
+    # retire it. Left absent instead, which is what a retry starts from.
+    if [ -n "$seed" ]; then
+      write_state_file "$set_file" "$seed"$'\n' || return 1
+    fi
   fi
   grep -qxF "$user" "$set_file" 2>/dev/null ||
     printf '%s\n' "$user" >> "$set_file"
@@ -488,7 +664,14 @@ revoke_prior_deploy_user() {
   # Not a no-op on the ordinary path: this is what seeds the set on a host the
   # earlier revision provisioned, and what puts $current in it on a first run,
   # so that a *later* rotation has something to revoke.
-  record_deploy_user_grant "$current" "$set_file" "$prior_file"
+  record_deploy_user_grant "$current" "$set_file" "$prior_file" || {
+    # Returning rather than carrying on: the loop below reads $set_file, and on
+    # this path it may not exist. Nothing has been revoked, and the file is
+    # left in the state a later run retries from.
+    log "WARNING: could not record '$current' in '$set_file'; no account was" \
+        "revoked on this run, and the queue is unchanged"
+    return 1
+  }
 
   while read -r prior; do
     if [ -z "$prior" ] || [ "$prior" = "$current" ]; then
@@ -510,8 +693,22 @@ revoke_prior_deploy_user() {
   # $current whether or not its predecessor could be stripped — the earlier
   # revision pinned it to the predecessor on that path, so a failed revocation
   # also made the host misreport who it belongs to.
-  printf '%s' "$kept" > "$set_file"
-  printf '%s\n' "$current" > "$prior_file"
+  #
+  # Both go through write_state_file rather than a redirection. Neither failure
+  # is fatal, and they fail in opposite but safe directions, which is why this
+  # warns rather than dies at a point the grants have already happened: the
+  # queue keeps its previous contents, so it still names everyone unrevoked and
+  # a later run re-reads two group lists for accounts already stripped; the
+  # single-name marker keeps naming the predecessor, so the next run's
+  # refuse_defaulted_config_change sees a disagreement it was not given and
+  # stops. Stale-and-conservative in both cases — where a truncated file is
+  # neither.
+  write_state_file "$set_file" "$kept" ||
+    log "WARNING: could not rewrite the deploy-user queue at '$set_file'; it still" \
+        "lists accounts this run revoked, which costs the next run a re-check"
+  write_state_file "$prior_file" "$current"$'\n' ||
+    log "WARNING: could not record '$current' as the deploy user in '$prior_file';" \
+        "the host will go on reporting its predecessor until a later run rewrites it"
 }
 
 # psql_as_postgres <database> <sql>
@@ -1292,7 +1489,11 @@ fi
 # end of step 4 — the whole Docker install — is a window in which an interrupted
 # run would otherwise leave this account holding sudo and docker with nothing on
 # the host recording that it does, and no later run able to find it.
-record_deploy_user_grant "$APP_SSH_USER"
+record_deploy_user_grant "$APP_SSH_USER" ||
+  die "could not record '$APP_SSH_USER' in $STATE_DIR/deploy_users, so this run" \
+      "cannot promise that a later one could find the account again. Nothing" \
+      "has been granted. Check that $STATE_DIR is writable and has space, then" \
+      "re-run."
 usermod -aG sudo "$APP_SSH_USER"
 install -d -m 0755 /etc/sudoers.d
 ensure_sudoers "$APP_SSH_USER"
