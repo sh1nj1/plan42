@@ -250,6 +250,66 @@ revoke_prior_deploy_user() {
       "deluser --remove-home $prior"
 }
 
+# ensure_ufw_rule <name> <rule> [state file]
+#
+# Converge one ufw rule the way ensure_block converges one config stanza:
+# withdraw what a previous run authorized, then authorize the current value.
+# ufw already skips re-adding an identical rule, so this exists for the rule
+# whose *value* moves between runs — change DOCKER_SUBNETS or DB_BIND_ADDRESS
+# and without it the host would simply accumulate both, leaving the old subnet
+# reaching 5432 forever. Recorded rather than parsed back out of `ufw status`,
+# whose display form ("172.17.0.1 5432/tcp ALLOW IN 172.17.0.0/16") is not the
+# syntax `ufw delete` takes.
+ensure_ufw_rule() {
+  local name="$1" rule="$2" state="${3:-$STATE_DIR/ufw_$1}" prior
+  if [ -f "$state" ]; then
+    prior="$(cat "$state")"
+    if [ -n "$prior" ] && [ "$prior" != "$rule" ]; then
+      # Unquoted on purpose: a rule is a word list, not one argument.
+      # shellcheck disable=SC2086
+      ufw delete $prior >/dev/null 2>&1 &&
+        log "withdrew the previous $name rule: $prior"
+    fi
+  fi
+  # shellcheck disable=SC2086
+  ufw $rule >/dev/null
+  printf '%s\n' "$rule" > "$state"
+}
+
+# True when some rule already authorizes SSH, however narrowly. `ufw allow
+# OpenSSH` renders as either "22/tcp" or "OpenSSH" depending on whether the app
+# profile is installed, and IPv6 duplicates append " (v6)".
+#
+# Deliberately positive: it answers "is 22 open?", never "is 22 closed?". An
+# empty or unparseable `ufw status` therefore means we add the rule, because
+# guessing wrong in that direction only re-opens SSH, while guessing wrong in
+# the other enables a deny-by-default firewall on a host with no way in.
+ssh_already_allowed() {
+  ufw status 2>/dev/null | grep -qE '^(22|OpenSSH)([/[:space:]]).*ALLOW'
+}
+
+# Authorize SSH, but only if nothing else already does. An operator who
+# narrowed 22 to one source address is exactly who this protects: re-adding the
+# blanket rule on a re-run would quietly undo that and look like a no-op.
+ensure_ssh_rule() {
+  if ssh_already_allowed; then
+    log "port 22 is already allowed; leaving the existing SSH rule alone"
+    return 0
+  fi
+  # The named form needs the app profile openssh-server installs. Lightsail's
+  # Ubuntu images have it, but a minimal one does not, and there `ufw allow
+  # OpenSSH` exits 1 — leaving the `ufw --force enable` that follows to close 22
+  # on a host whose only way in is 22. The port form needs nothing installed.
+  #
+  # ufw's own "Could not find a profile" goes to /dev/null and is replaced by
+  # the line below: it is a handled condition, and a provisioning log operators
+  # scan for real errors should not carry one that was recovered from.
+  ufw allow OpenSSH 2>/dev/null || {
+    log "no OpenSSH ufw profile on this host; allowing 22/tcp directly"
+    ufw allow 22/tcp
+  }
+}
+
 # --------------------------------------------------------------------------
 log "1/9 base packages"
 # --------------------------------------------------------------------------
@@ -476,15 +536,19 @@ trap - EXIT
 # --------------------------------------------------------------------------
 log "7/9 firewall"
 # --------------------------------------------------------------------------
-ufw --force reset >/dev/null
+# No `ufw reset`: this script is re-runnable, and a reset months later would
+# take a VPN, monitoring or IP-allowlist rule with it. Only the rules below are
+# ours to converge.
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow OpenSSH
+
+ensure_ssh_rule
 ufw allow 80/tcp
 ufw allow 443/tcp
 # PostgreSQL is only listening on localhost and the docker bridge, so this rule
 # is defence in depth rather than the only thing keeping it private.
-ufw allow from "$DOCKER_SUBNETS" to "$DB_BIND_ADDRESS" port 5432 proto tcp
+ensure_ufw_rule postgres \
+  "allow from $DOCKER_SUBNETS to $DB_BIND_ADDRESS port 5432 proto tcp"
 ufw --force enable
 ufw status verbose
 

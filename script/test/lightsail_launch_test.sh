@@ -17,12 +17,13 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
-for fn in die ensure_block ensure_sudoers revoke_prior_deploy_user; do
+for fn in die ensure_block ensure_sudoers revoke_prior_deploy_user \
+          ensure_ufw_rule ssh_already_allowed ensure_ssh_rule; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -210,6 +211,110 @@ revoke deploybot "$d2/deploy_user"
 chk "account is gone"  "" "$REVOKED$LOGGED"
 
 unset -f id gpasswd log revoke
+
+# --------------------------------------------------------------------------
+# The firewall helpers shell out to ufw, so it is stubbed: every invocation is
+# recorded, and STATUS stands in for what `ufw status` would print.
+# --------------------------------------------------------------------------
+UFW_CALLS=""
+STATUS=""
+LOGGED=""
+ufw() {
+  if [ "$1" = status ]; then printf '%s\n' "$STATUS"; return 0; fi
+  UFW_CALLS="$UFW_CALLS|$*"
+}
+log() { LOGGED="$LOGGED $*"; }
+
+echo "15. the postgres rule is added once and recorded"
+d=$(mktemp -d)
+UFW_CALLS=""
+ensure_ufw_rule postgres "allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" \
+  "$d/ufw_postgres"
+chk "rule added" "|allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" "$UFW_CALLS"
+chk "recorded"   "allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" \
+  "$(cat "$d/ufw_postgres")"
+
+echo "16. an unchanged rule deletes nothing"
+# The common re-run. ufw skips re-adding an identical rule itself, so the only
+# thing that must not happen here is a delete.
+UFW_CALLS=""; LOGGED=""
+ensure_ufw_rule postgres "allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" \
+  "$d/ufw_postgres"
+chk "no delete" 0 "$(printf '%s' "$UFW_CALLS" | grep -c delete)"
+
+echo "17. a changed rule withdraws the old one instead of accumulating"
+# Without this, moving DB_BIND_ADDRESS or DOCKER_SUBNETS would leave the
+# previous subnet reaching 5432 for the life of the host.
+UFW_CALLS=""; LOGGED=""
+ensure_ufw_rule postgres "allow from 10.200.0.0/16 to 172.18.0.1 port 5432 proto tcp" \
+  "$d/ufw_postgres"
+chk "old rule deleted" \
+  "|delete allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" \
+  "$(printf '%s' "$UFW_CALLS" | grep -o '|delete[^|]*')"
+chk "new rule added" 1 "$(printf '%s' "$UFW_CALLS" | grep -c '|allow from 10.200.0.0/16')"
+chk "state advanced" "allow from 10.200.0.0/16 to 172.18.0.1 port 5432 proto tcp" \
+  "$(cat "$d/ufw_postgres")"
+
+echo "18. unrelated operator rules are never touched"
+# The whole reason `ufw reset` is gone: a re-run must not disturb a VPN,
+# monitoring or allowlist rule this script knows nothing about.
+chk "only our own rule deleted" 1 "$(printf '%s' "$UFW_CALLS" | grep -c delete)"
+chk "no reset"                  0 "$(printf '%s' "$UFW_CALLS" | grep -c reset)"
+
+echo "19. SSH already allowed is detected in every form ufw prints it"
+for s in "22/tcp                     ALLOW       Anywhere" \
+         "22                         ALLOW IN    Anywhere" \
+         "OpenSSH                    ALLOW       Anywhere" \
+         "22/tcp (v6)                ALLOW       Anywhere (v6)" \
+         "22/tcp                     ALLOW IN    203.0.113.4"; do
+  STATUS="$s"
+  ssh_already_allowed
+  chk "detected: ${s%% *}${s##*ALLOW}" 0 "$?"
+done
+
+echo "20. a narrowed SSH rule survives the re-run that finds it"
+# The rule an operator most plausibly tightens by hand. Re-adding the blanket
+# `allow OpenSSH` on top would reopen 22 to the internet and look like a no-op.
+STATUS="22/tcp                     ALLOW IN    203.0.113.4"
+UFW_CALLS=""
+ensure_ssh_rule
+chk "blanket rule not added" "" "$UFW_CALLS"
+
+echo "21. no SSH rule at all means one is added, never assumed"
+# Failing the other way enables a deny-by-default firewall on a host with no
+# way back in, so every uncertain status must land here.
+for s in "Status: inactive" \
+         "80/tcp                     ALLOW       Anywhere" \
+         "2222/tcp                   ALLOW       Anywhere" \
+         "22/tcp                     DENY        Anywhere" \
+         ""; do
+  STATUS="$s"
+  UFW_CALLS=""
+  ensure_ssh_rule
+  chk "rule added for [${s:-empty status}]" "|allow OpenSSH" "$UFW_CALLS"
+done
+
+echo "22. a missing OpenSSH profile falls back to the port, it does not give up"
+# `ufw allow OpenSSH` exits 1 where openssh-server is not installed, and the
+# `ufw --force enable` that follows would then close 22 on a host reachable
+# only over 22.
+ufw() {
+  if [ "$1" = status ]; then printf '%s\n' "$STATUS"; return 0; fi
+  UFW_CALLS="$UFW_CALLS|$*"
+  [ "$2" != OpenSSH ]   # stands in for "Could not find a profile matching"
+}
+STATUS="Status: inactive"; UFW_CALLS=""; LOGGED=""
+ensure_ssh_rule
+chk "port form used"  "|allow OpenSSH|allow 22/tcp" "$UFW_CALLS"
+chk "reports success" 0 "$?"
+# ufw's own "Could not find a profile" is suppressed, so the recovery has to
+# say so itself or the log reads as if nothing happened.
+case "$LOGGED" in
+  *"allowing 22/tcp directly"*) echo "  ok   the fallback is on the record" ;;
+  *) echo "  FAIL silent fallback: $LOGGED"; fail=1 ;;
+esac
+
+unset -f ufw log
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
