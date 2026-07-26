@@ -1321,8 +1321,34 @@ if [ "$live" != 0 ]; then
   echo "nothing was dropped; re-run this block once the app is down"
   restore_status=2
 else
-  sudo -u postgres pg_restore --clean --if-exists -d "$app_db" \
-    "/var/backups/collavre/$app_db-YYYYmmdd-HHMMSS.dump"
+  # `--no-owner --role=$app_role`, the same pair the import recipe above uses,
+  # and for the reason a recovery restore makes sharper: the archive carries the
+  # ownership the database had when it was dumped. A dump taken before a
+  # supported DB_USER rotation names the previous role, so replaying it hands
+  # every table back to that role while DATABASE_URL still names $app_role.
+  # Measured on a real cluster: the restore exits 0, and the app's own role then
+  # gets "permission denied for table creatives" on SELECT and INSERT. A
+  # recovery that reports success and leaves the app locked out of its own data
+  # is the worst shape this block can produce.
+  #
+  # $app_role is safe to name here because the two refusals above have already
+  # answered for it: an empty one, or one that is a superuser, never reaches
+  # this line.
+  #
+  # One case this makes louder rather than quieter, and it is the right
+  # direction. `--role` drops the superuser privileges the connection had, so if
+  # the objects *currently* in the database belong to some third role, the
+  # `--clean` DROPs fail with "must be owner of table" and pg_restore exits
+  # non-zero — measured, and the database is left exactly as it was rather than
+  # half-replaced. Without `--role` that host restores "successfully" into the
+  # same locked-out app. If you see that error, the objects are owned by a role
+  # nothing names; move them first and run this block again:
+  #   sudo -u postgres psql -qtAd "$app_db" -c \
+  #     "SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = 'public'"
+  #   sudo -u postgres psql -qd "$app_db" -c \
+  #     'REASSIGN OWNED BY "<that role>" TO "'"$app_role"'"'
+  sudo -u postgres pg_restore --clean --if-exists --no-owner --role="$app_role" \
+    -d "$app_db" "/var/backups/collavre/$app_db-YYYYmmdd-HHMMSS.dump"
   restore_status=$?
 fi
 

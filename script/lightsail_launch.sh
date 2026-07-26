@@ -460,7 +460,7 @@ refuse_root_deploy_user() {
 # "might be nologin" would refuse every fresh host — the same reasoning the UID
 # check above records.
 refuse_nologin_deploy_user() {
-  local user="$1" shell
+  local user="$1" shell run_as probe
   id -u "$user" >/dev/null 2>&1 || return 0
   shell="$(getent passwd "$user" | cut -d: -f7)"
   # An account `id -u` resolves but `getent passwd` will not describe is not a
@@ -495,6 +495,43 @@ refuse_nologin_deploy_user() {
         "changed. Fix the account with 'usermod -s /bin/bash $user', or set" \
         "APP_SSH_USER to an ordinary account; leave it unset for the default" \
         "'collavre', which this script creates."
+  # And again as the account, because everything above ran as root and root can
+  # execute files the deploy user cannot. A custom login shell installed
+  # mode-0700 root:root is the case: measured on a real host, `[ -x ]` answers
+  # yes, `"$shell" -c true` passes, and what sshd actually does after switching
+  # to the deploy UID answers "Permission denied". So the root-run probe reports
+  # a shell this account can never start.
+  #
+  # `runuser` first, `su` only if it is absent: both were measured to give the
+  # same answer on every row, but `runuser` is the conservative one — it is the
+  # tool for root switching without authentication, so a host with PAM rules
+  # that would question an interactive `su` cannot turn this probe into a
+  # refusal. If neither exists the root probe above is all this host allows, and
+  # that is not a reason to refuse: a missing util-linux would fail every run.
+  #
+  # The controls this had to keep, all measured: an ordinary account whose
+  # password is locked — which is what `adduser --disabled-password` leaves, so
+  # it is every key-only deploy account including the one this script creates —
+  # passes, as does one with no home directory or a home it cannot read. An
+  # account that is *expired* refuses here, and that is the right answer: sshd
+  # would refuse it too.
+  run_as=''
+  for probe in runuser su; do
+    command -v "$probe" >/dev/null 2>&1 && { run_as="$probe"; break; }
+  done
+  case "$run_as" in
+    runuser) runuser -u "$user" -- "$shell" -c true >/dev/null 2>&1 ;;
+    su)      su -s "$shell" -c true "$user" >/dev/null 2>&1 ;;
+    *)       true ;;
+  esac ||
+    die "APP_SSH_USER='$user' has login shell '$shell', which this script can" \
+        "run as root but '$user' cannot — a shell the account is not permitted" \
+        "to execute, or an expired account. sshd starts that shell after" \
+        "switching to the deploy UID, so every 'kamal deploy' would fail with" \
+        "the account already holding docker and passwordless sudo and the" \
+        "summary printing KAMAL_SSH_USER=$user. Nothing has been changed." \
+        "Check with 'runuser -u $user -- $shell -c true' and" \
+        "'ls -l $shell', or set APP_SSH_USER to an ordinary account."
 }
 
 # Before refuse_defaulted_config_change, and long before anything is installed:
@@ -1307,8 +1344,33 @@ JSON
 # decide when the app stops, so this aborts and says so rather than guessing.
 ensure_cluster_on_default_port() {
   local lsclusters="${1:-pg_lsclusters}" ver cluster port owner_of_default=""
-  local name_of_default=""
+  local name_of_default="" layout=""
   command -v "$lsclusters" >/dev/null 2>&1 || return 0
+
+  # Read into a variable first, so the status is answerable. It used to be
+  # expanded straight into the here-document below, where the command
+  # substitution's status is discarded: a `pg_lsclusters` that exits non-zero
+  # with nothing on stdout gave an empty loop, and a `while` whose body never
+  # runs completes with status 0. The guard then read the host as having no
+  # clusters at all — its one PROCEED answer — which is the reverse of what an
+  # unreadable layout means. Measured: a stub that exits 1 silently PROCEEDs,
+  # and so does one that exits 1 after printing only some of the clusters, on a
+  # host where another major version owns 5432.
+  #
+  # Assigned on its own line rather than in the `local` above, because `local
+  # x="$(...)"` returns the status of `local` and would discard it a second way.
+  #
+  # Empty output with status 0 still proceeds, and must: postgresql-common is
+  # installed here before any cluster exists, and `pg_lsclusters -h` on that
+  # host is legitimately silent. Emptiness is not the signal — the status is.
+  layout="$("$lsclusters" -h 2>/dev/null)" ||
+    die "'$lsclusters -h' failed on this host, so this run cannot tell which" \
+        "PostgreSQL clusters exist or which one serves $DB_PORT. Carrying on" \
+        "would read that failure as 'no clusters', install $PG_MAJOR, and write" \
+        "listen_addresses, the tuning and the pg_hba rule into" \
+        "/etc/postgresql/$PG_MAJOR/main while an existing cluster kept serving" \
+        "$DB_PORT — the layout this check exists to refuse. Nothing has been" \
+        "changed. Run 'pg_lsclusters' by hand to see why it failed."
 
   while read -r ver cluster port _rest; do
     [ -n "$ver" ] || continue
@@ -1324,7 +1386,7 @@ ensure_cluster_on_default_port() {
           "already serving $DB_PORT."
     fi
   done <<EOF
-$("$lsclusters" -h 2>/dev/null)
+$layout
 EOF
 
   if [ -n "$owner_of_default" ] && [ "$owner_of_default" != "$PG_MAJOR" ]; then

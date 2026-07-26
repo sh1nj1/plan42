@@ -2607,6 +2607,10 @@ STUB
   cat > "$work/bin/pg_restore" <<'STUB'
 #!/usr/bin/env bash
 echo "PG_RESTORE_RAN" >>"$TRACE"
+# Kept out of $TRACE, which is matched as a whole-sequence glob by a dozen
+# cases above: an argument list spliced into it would be matched by their
+# wildcards for the wrong reason. Its own file, read by case 139.
+printf '%s\n' "$*" >"$RESTORE_ARGS"
 [ -z "$FAIL_RESTORE" ] || exit 1
 STUB
   chmod +x "$work/bin"/*
@@ -2623,6 +2627,7 @@ STUB
          FAIL_PRIOR_READ="${FAIL_PRIOR_READ:-}" \
          FAIL_READBACK="${FAIL_READBACK:-}" \
          CONNLIMIT="$work/connlimit" DATCONN_N="$work/datconn_n" \
+         RESTORE_ARGS="$work/restore_args" \
          APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}" \
          APP_DB="${APP_DB-collavre_production}"
   R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
@@ -2630,6 +2635,7 @@ STUB
   # What the database is left at, which is the thing the operator meets at boot
   # — asserted directly rather than inferred from the statements that ran.
   R_LIMIT="$(cat "$work/connlimit")"
+  R_RESTORE_ARGS="$(cat "$work/restore_args" 2>/dev/null || true)"
   rm -rf "$work"
 }
 
@@ -4483,6 +4489,14 @@ shell_of() {
 getent() { printf '%s:x:1000:1000::/home/%s:%s\n' "$2" "$2" "$(shell_of "$2")"; }
 # shellcheck disable=SC2329
 id() { [ "$2" = brandnew ] && return 1; echo 1000; }
+# The guard's second probe runs the shell *as the account*, and none of these
+# accounts exist on the machine running the suite. Stubbed rather than skipped,
+# because the accounts that do exist here would answer for the wrong reason: a
+# real `su` to a name with no passwd entry fails, which would read as the
+# refusal this case is testing for. 'rootonly' is the account whose shell root
+# can execute and the account cannot — case 137.
+# shellcheck disable=SC2329
+runuser() { [ "$2" = rootonly ] && return 1; shift 3; "$@"; }
 for u in nobody svc gone ghost; do
   out="$( (refuse_nologin_deploy_user "$u") 2>&1 )"
   chk "'$u' is refused" 1 "$?"
@@ -4503,10 +4517,43 @@ refuse_nologin_deploy_user collavre
 chk "an ordinary account proceeds"              0 "$?"
 refuse_nologin_deploy_user brandnew
 chk "an account that does not exist yet proceeds" 0 "$?"
-unset -f getent id shell_of
-rm -rf "$fakebin"
 chk "the guard runs beside the UID 0 one, before anything is installed" \
   1 "$(grep -c '^refuse_nologin_deploy_user "\$APP_SSH_USER"' "$SRC")"
+
+echo "137. a shell only root can execute is refused too"
+# The probe above runs as root, and root can execute files the deploy account
+# cannot — a custom login shell installed mode-0700 root:root is the case.
+# Measured on a real Linux host against b3506940:
+#
+#   shell            /usr/local/bin/rootonly-sh  (700 root:root)
+#   [ -x ] as root   yes          probe as root     PASSES
+#   probe as account REFUSES      what sshd does    "Permission denied"
+#
+# So provisioning gave that account docker and passwordless sudo, published
+# KAMAL_SSH_USER, and every remote command failed.
+out="$( (refuse_nologin_deploy_user rootonly) 2>&1 )"
+chk "an account that cannot execute its own login shell is refused" 1 "$?"
+case "$out" in
+  *"as root but 'rootonly' cannot"*"Nothing has been changed"*)
+    echo "  ok   and says which side of the switch failed" ;;
+  *) echo "  FAIL does not distinguish root from the account: $out"; fail=1 ;;
+esac
+# The control in the other direction, and it is the one that decides whether
+# this fix can ship: the ordinary account above still proceeds through the same
+# probe. Measured on the real host as well — an account whose password is locked
+# (`adduser --disabled-password`, which is every key-only deploy account and the
+# one this script creates), one with no home directory, and one whose home it
+# cannot read all pass. Only the shell it may not execute refuses.
+refuse_nologin_deploy_user collavre
+chk "and an ordinary account still proceeds through the same probe" 0 "$?"
+# Source-level, because the harness stubs `runuser` and would go on passing if
+# the call were removed: the probe has to be the account's, not root's.
+chk "the second probe switches to the account" \
+  1 "$(grep -c 'runuser -u "\$user" -- "\$shell" -c true' "$SRC")"
+chk "and falls back to su rather than refusing a host without runuser" \
+  1 "$(grep -c 'su -s "\$shell" -c true "\$user"' "$SRC")"
+unset -f getent id shell_of runuser
+rm -rf "$fakebin"
 
 echo "127. the backup executable is staged and validated, never truncated live"
 # The generated file is *executable*, which makes truncation quieter than it is
@@ -5002,6 +5049,99 @@ rm -rf "$td"
 chk "the plugins are not gated on the docker binary" 0 \
   "$(grep -cE 'apt_install docker-ce docker-ce-cli containerd.io' "$SRC")"
 
+echo "138. a cluster layout that cannot be read is refused, not read as empty"
+# `pg_lsclusters -h` used to be expanded straight into the here-document feeding
+# the loop, where a command substitution's status is discarded — and a `while`
+# whose body never runs completes with status 0. So a layout query that failed
+# gave the guard its one PROCEED answer. Measured against b3506940:
+#
+#   stub                                     reviewed   fixed
+#   14/main on 5432, exit 0                  refuses    refuses
+#   exits 1, nothing on stdout               PROCEEDS   refuses
+#   exits 1 after printing only 12/main      PROCEEDS   refuses
+#   exits 0, nothing on stdout (fresh host)  proceeds   proceeds
+mk_failing_lsclusters() {   # <name> <stdout> <status>
+  local bin="$CLUSTER_BIN_DIR/$1"
+  { echo '#!/bin/sh'; [ -z "$2" ] || echo "echo '$2'"; echo "exit $3"; } > "$bin"
+  chmod +x "$bin"
+}
+PG_MAJOR=17
+DB_PORT=5432
+mk_failing_lsclusters pg_ls_unreadable '' 1
+out="$( (ensure_cluster_on_default_port pg_ls_unreadable) 2>&1 )"
+chk "a layout query that fails silently is refused" 1 "$?"
+case "$out" in
+  *"cannot tell which PostgreSQL clusters exist"*"Nothing has been changed"*)
+    echo "  ok   and says why, rather than naming a version it never read" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+# The sharper row: the guard did see clusters, just not the one holding the
+# port. A count of rows cannot tell this from a host that really has only that
+# cluster — the status can.
+mk_failing_lsclusters pg_ls_cut '12  main    5434 online postgres /var/lib/postgresql/12/main /var/log/x' 1
+out="$( (ensure_cluster_on_default_port pg_ls_cut) 2>&1 )"
+chk "and so is one that fails after printing some of the clusters" 1 "$?"
+# The control, and it is the reason the fix is on the status and not on the
+# output: postgresql-common is installed here before any cluster exists, so
+# `pg_lsclusters -h` on a fresh host is legitimately silent and successful.
+# Refusing emptiness would refuse every first run.
+mk_failing_lsclusters pg_ls_nocluster '' 0
+out="$( (ensure_cluster_on_default_port pg_ls_nocluster) 2>&1 )"
+chk "a fresh host with no cluster yet proceeds" 0 "$?"
+chk "and says nothing"                          "" "$out"
+chk "the layout is no longer expanded inside the here-document" 0 \
+  "$(grep -c '^\$("\$lsclusters" -h 2>/dev/null)$' "$SRC")"
+
+echo "139. the recovery restore hands the objects to the role DATABASE_URL names"
+# Without --no-owner the archive's ownership is replayed, and a dump taken
+# before a supported DB_USER rotation names the previous role. Measured on a
+# real cluster, restoring such a dump into a rotated database:
+#
+#                                   owner after    the app role's own SELECT
+#   --clean --if-exists             collavre_old   ERROR: permission denied
+#   + --no-owner --role=<app role>  collavre_new   1 row
+#
+# pg_restore exited 0 in both, so the block reports a completed recovery over a
+# database the app cannot read. The import recipe earlier in this document
+# already pairs the two flags; this block is the one that had only half of it.
+LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+case "$R_RESTORE_ARGS" in
+  *--no-owner*--role=collavre_user*)
+    echo "  ok   the restore runs with --no-owner and --role" ;;
+  *) echo "  FAIL restore ran as: $R_RESTORE_ARGS"; fail=1 ;;
+esac
+# The role it hands them to is the one read from the host, not a literal: a
+# recovery block that named the default would restore a rotated host into a
+# role it stopped using.
+APP_ROLE=collavre_rotated LIVE=0 KILLED=0 run_restore
+case "$R_RESTORE_ARGS" in
+  *--role=collavre_rotated*) echo "  ok   and names the role this host records" ;;
+  *) echo "  FAIL did not follow \$app_role: $R_RESTORE_ARGS"; fail=1 ;;
+esac
+# The control that makes --role safe to use at all: both refusals above answer
+# before this line, so an empty or superuser role never reaches the restore.
+# Asserted through the block rather than by reading it, since that is the
+# guarantee --role is leaning on.
+# APP_SUPER='' alongside it, which is what the harness above documents an
+# absent role as coming back with. Leaving it at the default 'f' would have the
+# stub answer "not a superuser" about a role that is not there — a cluster
+# behaviour no cluster has, and the assertion then fails for the fixture's
+# reason rather than the block's.
+APP_ROLE='' APP_SUPER='' LIVE=0 KILLED=0 run_restore
+case "$R_TRACE" in
+  *PG_RESTORE_RAN*) echo "  FAIL an empty app_role still reached the restore"; fail=1 ;;
+  *) echo "  ok   an empty app_role is refused before the restore" ;;
+esac
+APP_SUPER=t APP_ROLE=postgres LIVE=0 KILLED=0 run_restore
+case "$R_TRACE" in
+  *PG_RESTORE_RAN*) echo "  FAIL a superuser app_role still reached the restore"; fail=1 ;;
+  *) echo "  ok   and so is a superuser one" ;;
+esac
+# The recovery for the case --role makes louder: objects owned by a third role
+# make the --clean DROPs fail with "must be owner", measured, and the database
+# is left untouched rather than half-replaced. The operator needs the way out.
+chk "the block says what to do when the drops are refused" 1 \
+  "$(grep -c 'must be owner of table' "$DOC")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
