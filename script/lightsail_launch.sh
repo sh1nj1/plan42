@@ -381,6 +381,12 @@ ensure_swapfile() {
   fi
 
   if [ "$active" = yes ] && ! swapoff "$swap" 2>/dev/null; then
+    # Keeping the old swap is the point of this branch, so it has to be kept
+    # across a reboot too. Skipping ensure_block here left the resize failing
+    # *twice*: the size did not change, and the swap that was retained instead
+    # was retained only until the next restart. The fstab line names the path
+    # and not the size, so it is the same line whichever size survives.
+    ensure_block "$fstab" swap "$swap none swap sw 0 0"
     log "WARNING: could not swapoff $swap (${have}MiB), so it is unchanged;" \
         "SWAP_SIZE_MB=$want did NOT take effect. Free some memory and re-run," \
         "or resize it by hand."
@@ -409,6 +415,9 @@ ensure_swapfile() {
     rm -f "$swap"
     if [ "$have" -gt 0 ] && allocate_swapfile "$swap" "$have"; then
       swapon "$swap"
+      # Same reasoning as the swapoff branch above: what is put back has to
+      # survive a reboot, or the restore lasts until the next restart.
+      ensure_block "$fstab" swap "$swap none swap sw 0 0"
       log "WARNING: could not allocate ${want}MiB for $swap — not enough free disk." \
           "SWAP_SIZE_MB=$want did NOT take effect; the previous ${have}MiB swap is back." \
           "Grow the disk, or lower SWAP_SIZE_MB, and re-run."
@@ -584,8 +593,36 @@ EOF
 # permission error, later and on one table rather than all of them. So the run
 # stops with nothing changed, the marker still naming the old role, and the
 # runbook carries the transfer to do by hand.
+# role_owns_app_objects <db> <role>
+#
+# How many application objects in <db> that role still owns: tables, partitioned
+# tables, sequences, views and materialized views, outside the system schemas.
+# Exactly the set the runbook's by-hand transfer moves, and exactly the set whose
+# ownership decides whether the app can read its own data.
+#
+# Indexes and TOAST tables are excluded deliberately rather than by accident.
+# They cannot be reassigned on their own — they follow the table they belong to
+# — and pg_toast is not one of the two schemas the obvious exclusion list names,
+# so a query written without the relkind filter reports dozens of catalog TOAST
+# tables owned by postgres on every host and can never come back empty. That is
+# not a hypothetical: it is what the runbook's own verification query did, which
+# is why the operator could not confirm a transfer either.
+#
+# Prints the count, or nothing if the query could not run — the caller must
+# treat that as "still owns objects" rather than as zero. A rotation is refused
+# on the strength of this number, so an unanswerable question has to read as the
+# unsafe answer.
+role_owns_app_objects() {
+  psql_as_postgres "$1" \
+    "SELECT count(*) FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+        AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+        AND pg_get_userbyid(c.relowner) = '$2'"
+}
+
 refuse_superuser_db_rotation() {
-  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior
+  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior owns
   [ -f "$prior_file" ] || return 0
   prior="$(cat "$prior_file")"
   [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
@@ -594,13 +631,33 @@ refuse_superuser_db_rotation() {
   [ "$(psql_as_postgres postgres \
         "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ] || return 0
 
+  # A superuser predecessor that owns nothing has already been transferred by
+  # hand, and the rotation it was blocking is now the thing that finishes the
+  # job. Blocking on rolsuper alone made the runbook's recovery unreachable:
+  # the recipe leaves 'postgres' a superuser on purpose — NOLOGIN on the
+  # bootstrap role is a lockout, not a revocation — so the guard fired again on
+  # the very re-run it had asked for, with a message claiming objects are owned
+  # by a role that no longer owns any. There was no way out of that state except
+  # abandoning the rotation.
+  owns="$(role_owns_app_objects "$DB_NAME" "$prior")"
+  if [ "$owns" = 0 ]; then
+    log "previous DB_USER '$prior' is a superuser but owns nothing in '$DB_NAME'," \
+        "so the transfer to '$current' has already been done by hand; continuing." \
+        "NOTE: '$prior' keeps LOGIN and its password — unlike an ordinary" \
+        "rotation, this one does not retire the old credential, and only you can" \
+        "decide what should happen to a superuser login."
+    return 0
+  fi
+
+  # Anything other than a plain 0 — a count, or an empty string from a database
+  # that does not exist yet or a query that failed — refuses.
   die "this host was provisioned with DB_USER='$prior', which is a superuser, and" \
-      "DB_USER is now '$current'. Every table and sequence the app created is owned" \
-      "by '$prior', and PostgreSQL refuses to reassign a superuser's objects, so" \
-      "'$current' would own the database and be unable to read a row of it." \
-      "Nothing has been changed. Move the objects by hand — see 'Changing DB_USER" \
-      "on a re-run' in docs/deploy_to_lightsail.md — then re-run, or set" \
-      "DB_USER='$prior' to leave the rotation undone."
+      "DB_USER is now '$current'. ${owns:-An unknown number of} object(s) in" \
+      "'$DB_NAME' are still owned by '$prior', and PostgreSQL refuses to reassign a" \
+      "superuser's objects, so '$current' would own the database and be unable to" \
+      "read a row of it. Nothing has been changed. Move the objects by hand — see" \
+      "'Changing DB_USER on a re-run' in docs/deploy_to_lightsail.md — then re-run," \
+      "or set DB_USER='$prior' to leave the rotation undone."
 }
 
 reassign_prior_db_role() {
@@ -611,12 +668,31 @@ reassign_prior_db_role() {
   [ "$(psql_as_postgres postgres \
         "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
 
-  # A backstop. refuse_superuser_db_rotation() runs before the database SQL and
-  # should have ended the run already; getting here means it was bypassed, and
-  # REASSIGN OWNED BY a superuser is rejected by PostgreSQL itself, so failing
-  # with the reason beats failing with a raw SQL error.
+  # A superuser predecessor reaches here only on the path refuse_superuser_db_
+  # rotation() lets through: the by-hand transfer is done and there is nothing
+  # left to move. Both statements below have to be skipped rather than merely
+  # allowed to no-op.
+  #
+  # REASSIGN OWNED BY the bootstrap superuser is rejected outright — "required
+  # by the database system" — whether or not it owns anything in this database,
+  # so it is not a no-op, it is an error that would end the run at the last step
+  # of a rotation that had otherwise succeeded.
+  #
+  # And ALTER ROLE postgres NOLOGIN succeeds. That is the dangerous one: nothing
+  # in PostgreSQL stops it, the next connection is refused with
+  # 'FATAL: role "postgres" is not permitted to log in', and peer authentication
+  # needs LOGIN too — so the account you would use to undo it is the account it
+  # locks out. Verified on 17 rather than assumed from the docs.
   if [ "$(psql_as_postgres postgres \
             "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ]; then
+    if [ "$(role_owns_app_objects "$DB_NAME" "$prior")" = 0 ]; then
+      log "left the superuser role '$prior' alone: it owns nothing in '$DB_NAME'," \
+          "and taking LOGIN from the cluster superuser locks the host's operators" \
+          "out of administering it"
+      return 0
+    fi
+    # Only reachable if the guard was bypassed; failing with the reason beats
+    # failing with a raw SQL error.
     die "previous DB_USER '$prior' is a superuser; its objects cannot be reassigned." \
         "See 'Changing DB_USER on a re-run' in docs/deploy_to_lightsail.md."
   fi

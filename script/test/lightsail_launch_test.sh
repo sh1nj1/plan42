@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -29,7 +29,7 @@ eval "$(awk '
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
-          refuse_superuser_db_rotation revoke_prior_ssh_key \
+          refuse_superuser_db_rotation role_owns_app_objects revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
           ensure_docker_log_caps dedupe_authorized_keys \
           install_staged_authorized_keys postgresql_conf_includes_confd; do
@@ -892,11 +892,19 @@ SQL=""
 LOGGED=""
 ROLE_EXISTS=1
 ROLE_IS_SUPER=f
+# How many application objects the predecessor still owns. 1 is the untransferred
+# state, which is what every case written before the by-hand transfer existed
+# assumes.
+OWNS=1
 # shellcheck disable=SC2034  # read by reassign_prior_db_role, eval'd from the script
 DB_NAME=collavre_production
 # shellcheck disable=SC2329  # called by reassign_prior_db_role
 psql_as_postgres() {
   case "$2" in
+    # Must precede the count(*) branch: the ownership query is a count too, and
+    # matching it as the role-existence probe would make every case below read
+    # a rotation as already transferred.
+    *pg_get_userbyid*) printf '%s\n' "$OWNS"; return 0 ;;
     *"count(*)"*) printf '%s\n' "$ROLE_EXISTS"; return 0 ;;
     *rolsuper*)   printf '%s\n' "$ROLE_IS_SUPER"; return 0 ;;
   esac
@@ -966,6 +974,61 @@ ROLE_EXISTS=0 ROLE_IS_SUPER=t
 refuse collavre_app "$d3/db_user"
 chk "a dropped predecessor proceeds" 0 "$?"
 ROLE_EXISTS=1 ROLE_IS_SUPER=f
+
+echo "50a. a superuser predecessor that owns nothing has already been transferred"
+# The runbook's answer to case 50 is "move the objects by hand, then re-run",
+# and that recipe deliberately leaves postgres a superuser — NOLOGIN on the
+# bootstrap role is a lockout, not a revocation. So a guard that fires on
+# rolsuper alone fires again on the very re-run it asked for, and the rotation
+# can never be completed by any route the runbook describes.
+printf 'postgres\n' > "$d3/db_user"
+ROLE_EXISTS=1 ROLE_IS_SUPER=t OWNS=0
+# Not in a subshell: the let-through path is asserted on what it logged, and
+# $LOGGED would not survive one.
+refuse collavre_app "$d3/db_user"
+chk "the re-run is let through" 0 "$?"
+case "$LOGGED" in
+  *"owns nothing"*"keeps LOGIN"*)
+    echo "  ok   says the old superuser credential is NOT retired" ;;
+  *) echo "  FAIL silent or unclear: $LOGGED"; fail=1 ;;
+esac
+# Still refuses while anything is left, so the let-through is the transfer and
+# not the superuser check going away.
+OWNS=3
+out="$( (refuse collavre_app "$d3/db_user") 2>&1 )"
+chk "a partial transfer still refuses" 1 "$?"
+case "$out" in
+  *"3 object(s)"*) echo "  ok   says how many are left" ;;
+  *) echo "  FAIL does not say what is outstanding: $out"; fail=1 ;;
+esac
+# An unanswerable question reads as the unsafe answer: a database that does not
+# exist yet, or a query that failed, returns nothing and must not pass for zero.
+OWNS=""
+out="$( (refuse collavre_app "$d3/db_user") 2>&1 )"
+chk "an unreadable count refuses" 1 "$?"
+OWNS=1
+
+echo "50b. the completed transfer neither reassigns nor touches the superuser login"
+# Both statements must be skipped rather than left to no-op. REASSIGN OWNED BY
+# postgres is rejected whether or not it owns anything ("required by the database
+# system"), so it would end the run at the last step of a rotation that had
+# otherwise succeeded — and ALTER ROLE postgres NOLOGIN is accepted by
+# PostgreSQL, after which nothing can log in to undo it.
+printf 'postgres\n' > "$d3/db_user"
+ROLE_EXISTS=1 ROLE_IS_SUPER=t OWNS=0
+rotate collavre_app "$d3/db_user"
+chk "proceeds" 0 "$?"
+chk "no SQL at all" "" "$SQL"
+case "$LOGGED" in
+  *"owns nothing"*) echo "  ok   says the role was left alone, and why" ;;
+  *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
+esac
+# The backstop still stands for a genuinely untransferred superuser.
+OWNS=2
+out="$( (rotate collavre_app "$d3/db_user") 2>&1 )"
+chk "an untransferred superuser still dies" 1 "$?"
+chk "and still runs no SQL" "" "$SQL"
+ROLE_EXISTS=1 ROLE_IS_SUPER=f OWNS=1
 
 echo "51. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
@@ -1168,6 +1231,23 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
+echo "61a. the swap it keeps is also made to survive a reboot"
+# Codex's shape: an active swapfile with no fstab entry — an operator who ran
+# `swapon` by hand, or a run interrupted between swapon and ensure_block. The
+# matching-size path was fixed for this; the failure paths that *retain* swap
+# were not, so a failed resize failed twice over — the size did not change, and
+# what was kept instead was kept only until the next restart. On a low-memory
+# instance a reboot is when the headroom is most needed.
+new_swap_env 4
+printf 'UUID=xxx / ext4 defaults 0 1\n' > "$FSTAB"   # active, but not persisted
+SWAPOFF_FAILS=1
+SWAP_SIZE_MB=12 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "returns success"       0 "$?"
+chk "old swap still on"     "$SWAPFILE" "$SWAPPED_ON"
+chk "and now in fstab"      1 "$(grep -c "^$SWAPFILE none swap" "$FSTAB")"
+chk "one managed block"     1 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
+chk "operator's own mount untouched" 1 "$(grep -c '^UUID=xxx' "$FSTAB")"
+
 echo "62. a resize that does not fit puts the previous swap back"
 # Growing means freeing the old file first, so an allocation that fails would
 # otherwise end the run with no swap at all — worse than it started, on the
@@ -1184,6 +1264,17 @@ case "$LOGGED" in
     echo "  ok   operator told the raise did not take, and what is running" ;;
   *) echo "  FAIL silent or claims success: $LOGGED"; fail=1 ;;
 esac
+
+echo "62a. the swap it restores is also made to survive a reboot"
+# The other branch that retains swap and returned without converging fstab.
+new_swap_env 8
+printf 'UUID=xxx / ext4 defaults 0 1\n' > "$FSTAB"   # active, but not persisted
+DISK_FREE_MIB=20
+SWAP_SIZE_MB=64 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "run continues"      0 "$?"
+chk "previous size back" 8 "$(swap_mib "$SWAPFILE")"
+chk "and now in fstab"   1 "$(grep -c "^$SWAPFILE none swap" "$FSTAB")"
+chk "one managed block"  1 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
 
 echo "63. a first run that cannot allocate dies rather than reporting success"
 # have=0, so there is nothing to restore; the run must stop loudly instead of

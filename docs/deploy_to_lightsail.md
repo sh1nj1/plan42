@@ -279,12 +279,29 @@ script. Check before re-running that nothing is left behind:
 sudo -u postgres psql -qtA -d collavre_production -c \
   "SELECT relkind, relname FROM pg_class c
      JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+    WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast')
+      AND c.relkind IN ('r','p','S','v','m')
       AND pg_get_userbyid(c.relowner) = 'postgres'"
 ```
 
-Empty output means the transfer is complete. Setting `DB_USER` back to the old
-value is the other way out, and leaves the rotation undone.
+Empty output means the transfer is complete: re-run the script and the rotation
+goes through. The `relkind` filter and `pg_toast` are not tidiness — without
+them the query returns several dozen catalog TOAST tables that `postgres` owns
+on every cluster and can never come back empty, so it would report a completed
+transfer as unfinished. Indexes and TOAST tables have no ownership of their own;
+they follow the table they belong to.
+
+`postgres` keeps `LOGIN`, its password in `/var/lib/collavre/db_password` and
+its superuser rights after the rotation, and the script says so when it lets one
+through. That is the part this procedure cannot do for you: an ordinary rotation
+ends with `ALTER ROLE <old> NOLOGIN`, and the same statement aimed at the
+cluster superuser is a lockout rather than a revocation — PostgreSQL accepts it,
+after which every connection as `postgres` is refused with `FATAL: role
+"postgres" is not permitted to log in`, peer authentication included. Decide
+separately what should happen to that login; the script will not touch it.
+
+Setting `DB_USER` back to the old value is the other way out, and leaves the
+rotation undone.
 
 Rotating the *password* rather than the role needs none of this — set
 `DB_PASSWORD`, re-run, and update `DATABASE_URL`.
