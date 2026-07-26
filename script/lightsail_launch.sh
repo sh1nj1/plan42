@@ -1611,6 +1611,21 @@ ensure_ufw_rule() {
   local name="$1" rule="$2" state="${3:-$STATE_DIR/ufw_$1}" prior=""
   [ -f "$state" ] && prior="$(cat "$state")"
 
+  # An empty marker is not an absent one, and the difference is not recoverable
+  # here. write_state_file never produces one, so a marker that exists and holds
+  # nothing means a revision that wrote it by redirection was interrupted — and
+  # the rule that was in force at that moment is still in force, with nothing
+  # naming it. Unlike db_name there is no second record to fall back to: `ufw
+  # status` renders rules in a display form that `ufw delete` does not accept,
+  # which is why this marker exists at all. So it is said out loud rather than
+  # passed over, which is the whole of what this run can do about it.
+  if [ -f "$state" ] && [ -z "$prior" ]; then
+    log "WARNING: the $name rule marker '$state' exists but is empty, which an" \
+        "interrupted write by an earlier revision leaves behind. A rule this" \
+        "script added may still be in force with no record of it — check" \
+        "'ufw status numbered' for a $name rule you did not ask for on this run."
+  fi
+
   # The replacement goes in first, so an interrupted run never leaves the host
   # with neither rule. Same ordering as the deploy-user and SSH-key revocations.
   # Unquoted on purpose: a rule is a word list, not one argument.
@@ -1639,7 +1654,33 @@ ensure_ufw_rule() {
     log "withdrew the previous $name rule: $prior"
   fi
 
-  printf '%s\n' "$rule" > "$state"
+  # Through write_state_file, not a redirection. `>` truncates when it opens, so
+  # an interrupted write leaves the marker present and empty — and the read at
+  # the top of this function branches on `[ -n "$prior" ]`, so an empty marker
+  # is not a degraded record, it is *no* record: the withdrawal block is skipped
+  # entirely and the rule installed on that run stays in force with nothing on
+  # the host naming it. Measured on the extracted function, marker emptied after
+  # the first converge and the subnet then changed twice:
+  #
+  #   rule: allow from 172.17.0.0/16 to any port 5432 proto tcp   <- stranded
+  #   rule: allow from 10.0.9.0/24   to any port 5432 proto tcp
+  #   marker: allow from 10.0.9.0/24 to any port 5432 proto tcp
+  #
+  # Exactly one rule is stranded — the one in force when the write was cut — and
+  # it is permanent: every later run withdraws what the marker names, which has
+  # moved past it. For the postgres rule that is an obsolete Docker subnet still
+  # reaching 5432 for the life of the instance.
+  #
+  # A failed write is warned about rather than fatal, and names the rule: the
+  # grant has already happened, so dying here would leave the same untracked
+  # rule with less said about it. The previous marker survives, which strands
+  # this one at the *next* change rather than immediately — worth saying out
+  # loud, because it is the one case this function cannot make self-healing.
+  write_state_file "$state" "$rule"$'\n' ||
+    log "WARNING: the $name rule is in force but could NOT be recorded in" \
+        "'$state': $rule — a later run that changes it will withdraw the rule" \
+        "this file still names and leave this one authorized. Re-run to record" \
+        "it, or remove it by hand with: ufw delete $rule"
 }
 
 # True when some rule already authorizes SSH, however narrowly. `ufw allow
@@ -1947,15 +1988,75 @@ APP_SSH_GROUP="$(install_deploy_ssh_dir "$APP_SSH_USER" "$APP_HOME")"
 AUTH_KEYS="$APP_HOME/.ssh/authorized_keys"
 touch "$AUTH_KEYS"
 
+# stage_authorized_keys <authorized_keys> — echo the path of a staging file
+# holding the current contents of <authorized_keys>, newline-terminated.
+#
+# The counterpart of append_state_line for the one file that is not a queue but
+# the way into the host. `>> authorized_keys` leaves an unterminated fragment
+# when the write is cut short, and the *retry* is what does the damage: the
+# `grep -qxF` guarding the append does not match a fragment, so the whole key
+# lands on the end of it and authorized_keys holds one line that is neither key.
+#
+# That is worse here than in a queue, because revoke_prior_ssh_key opens with
+# `grep -qxF "$SSH_PUBLIC_KEY" "$auth_keys" || return 0` — never withdraw before
+# the successor is in place. With the successor glued to a fragment that check
+# fails, so the run withdraws nothing, reports a completed rotation, and leaves
+# the predecessor authorized on an account holding docker and passwordless sudo.
+# Measured on the extracted pair, the append torn on the rotation to B:
+#
+#   run 3 (retry)      line 2: <fragment of B><whole of B>
+#                      exact line for B: no    A still authorized: YES
+#   run 4 (converge)   exact line for B: YES   A still authorized: no
+#
+# So the exposure is bounded — the next convergence appends B cleanly and the
+# withdrawal catches up — but it is a full run long, and the run that opens it
+# is the one that prints the success summary. A rotation performed *because* the
+# predecessor is compromised is exactly the case where one more run matters.
+#
+# Terminating rather than dropping the fragment, for the same reason as
+# append_state_line: nothing distinguishes half a key from a different key, and
+# a key an operator added by hand must survive this untouched. A fragment
+# authorizes nobody, and dedupe_authorized_keys is what eventually clears it.
+stage_authorized_keys() {
+  local auth_keys="$1" tmp
+  tmp="$(mktemp "$auth_keys.stage.XXXXXX")" || return 1
+  if [ -s "$auth_keys" ]; then
+    cat "$auth_keys" > "$tmp" || { rm -f "$tmp"; return 1; }
+    # Command substitution strips trailing newlines, so this is empty exactly
+    # when the file already ends in one.
+    [ -z "$(tail -c 1 "$tmp")" ] || printf '\n' >> "$tmp"
+  fi
+  printf '%s\n' "$tmp"
+}
+
 # install_authorized_keys <authorized_keys> [home root]
 #
 # Give the deploy user a way in: the explicit SSH_PUBLIC_KEY when there is one,
 # otherwise whatever key Lightsail installed for the default cloud user.
+#
+# Non-zero when the key could not be installed, which aborts the run at the call
+# site: the steps after it put this account in docker and sudoers, and an
+# account granted root-equivalent access with no working key is a host nobody
+# can reach with a summary that says otherwise.
 install_authorized_keys() {
-  local auth_keys="$1" home_root="${2:-/home}" candidate src
+  local auth_keys="$1" home_root="${2:-/home}" candidate src tmp
   if [ -n "$SSH_PUBLIC_KEY" ]; then
-    grep -qxF "$SSH_PUBLIC_KEY" "$auth_keys" ||
-      printf '%s\n' "$SSH_PUBLIC_KEY" >> "$auth_keys"
+    grep -qxF "$SSH_PUBLIC_KEY" "$auth_keys" 2>/dev/null && return 0
+    tmp="$(stage_authorized_keys "$auth_keys")" || return 1
+    printf '%s\n' "$SSH_PUBLIC_KEY" >> "$tmp" || { rm -f "$tmp"; return 1; }
+    # Never install a file that does not contain the key it was staged to add,
+    # and never one shorter than what it replaces. The staging write can fail
+    # for space just as the live one could; the difference is that here the
+    # failure is discardable.
+    local was=0
+    [ -f "$auth_keys" ] && was="$(wc -l < "$auth_keys")"
+    if ! grep -qxF "$SSH_PUBLIC_KEY" "$tmp" || [ "$(wc -l < "$tmp")" -le "$was" ]; then
+      rm -f "$tmp"
+      log "WARNING: a staged $auth_keys did not come out whole, so it was NOT" \
+          "installed and the live file is untouched"
+      return 1
+    fi
+    install_staged_authorized_keys "$tmp" "$auth_keys" || return 1
     return 0
   fi
   for candidate in ubuntu admin ec2-user; do
@@ -1971,7 +2072,12 @@ install_authorized_keys() {
       log "APP_SSH_USER is the cloud user '$candidate' — its keys are already in place"
     else
       log "no SSH_PUBLIC_KEY given — copying keys from $candidate"
-      cat "$src" >> "$auth_keys"
+      # Same staging as the explicit-key path. This copy is larger — a cloud
+      # user's authorized_keys, not one line — so it is the one more likely to
+      # be cut short, and it lands on the file the operator is logged in with.
+      tmp="$(stage_authorized_keys "$auth_keys")" || return 1
+      cat "$src" >> "$tmp" || { rm -f "$tmp"; return 1; }
+      install_staged_authorized_keys "$tmp" "$auth_keys" || return 1
     fi
     return 0
   done

@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|stage_authorized_keys)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -40,6 +40,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           passwd_home ssh_key_holder \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
+          stage_authorized_keys \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -4554,6 +4555,109 @@ chk "and the previous backup script survives that too" \
 rm -rf "$bd"
 chk "the live backup path is not written by redirection" \
   0 "$(grep -c '^cat > /usr/local/bin/collavre-pg-backup' "$SRC")"
+
+echo "131. a torn append to authorized_keys does not glue the successor to it"
+# The last `>>` in this script that was not a queue, and the one where a
+# fragment costs more than a forgotten record. install_authorized_keys guards
+# its append with `grep -qxF`, which does not match a fragment, so a retry lands
+# the whole key on the end of one — and revoke_prior_ssh_key opens with
+# "never withdraw before the successor is in place", tested by that same exact
+# match. The successor is not an exact line, so the rotation withdraws nothing
+# and reports success, leaving the predecessor authorized on an account with
+# docker and passwordless sudo.
+#
+# The fragment is injected, as in case 4a and 125: ENOSPC and RLIMIT_FSIZE both
+# produce one and neither is reachable here, and the partial write is not the
+# claim — what the retry does with it is.
+sd=$(mktemp -d); ak="$sd/authorized_keys"
+KA="ssh-rsa AAAAB3NzaC1yc2EAAAA_KEY_A_AAAAAAAAAAAAAAAAAAAAAAAA deploy@a"
+KB="ssh-rsa AAAAB3NzaC1yc2EAAAA_KEY_B_BBBBBBBBBBBBBBBBBBBBBBBB deploy@b"
+SSH_PUBLIC_KEY="$KA"
+record_ssh_key_grant "$KA" "$sd/keys" "$sd/key" >/dev/null
+install_authorized_keys "$ak"
+printf '%s\n' "$KA" > "$sd/key"
+chk "the predecessor is authorized to begin with" 1 "$(grep -cxF "$KA" "$ak")"
+
+SSH_PUBLIC_KEY="$KB"
+record_ssh_key_grant "$KB" "$sd/keys" "$sd/key" >/dev/null
+printf '%s' "${KB:0:34}" >> "$ak"          # <- the torn append; the run dies here
+# the retry
+install_authorized_keys "$ak"
+chk "the retry gives the successor a whole line of its own" 1 "$(grep -cxF "$KB" "$ak")"
+chk "and does not extend the fragment" 0 "$(grep -c "^${KB:0:34}${KB:0:6}" "$ak")"
+revoke_prior_ssh_key "$ak" "$sd/key" "$sd/keys" >/dev/null 2>&1
+chk "so the rotation completes on that retry, not a run later" 0 "$(grep -cxF "$KA" "$ak")"
+# The control in the other direction, and the reason this is a rewrite rather
+# than a delete-and-rewrite: a key the operator put there by hand is not one of
+# ours to move, and a fragment authorizes nobody so it is left to
+# dedupe_authorized_keys rather than guessed at.
+chk "a key added by hand is untouched" 1 \
+  "$(printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5_HANDKEY operator\n' >> "$ak"
+     install_authorized_keys "$ak"; grep -c _HANDKEY "$ak")"
+# A staged file that cannot be completed must not be installed: the live
+# authorized_keys is the only way into the host.
+before="$(cat "$ak")"
+# shellcheck disable=SC2329  # shadows the staging write for this case only
+mktemp() { return 1; }
+SSH_PUBLIC_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAA_KEY_C_CCCCCCCCCCCCCCCCCCCC deploy@c"
+install_authorized_keys "$ak" >/dev/null 2>&1
+chk "a staging failure reports it" 1 "$?"
+unset -f mktemp
+chk "and the live authorized_keys is untouched" "$before" "$(cat "$ak")"
+chk "the key is not written by redirection" \
+  0 "$(grep -cE '^[[:space:]]*printf .%s.n. "\$SSH_PUBLIC_KEY" >> "\$auth_keys"' "$SRC")"
+rm -rf "$sd"
+
+echo "132. the ufw rule marker is replaced, and an empty one is not passed over"
+# `> "$state"` truncates at open, and the read at the top of ensure_ufw_rule
+# branches on `[ -n "$prior" ]` — so an empty marker is not a degraded record
+# but no record, the withdrawal block is skipped, and the rule in force when the
+# write was cut stays in force with nothing naming it. Measured on the extracted
+# function with the marker emptied after the first converge and the subnet then
+# changed twice: the 172.17.0.0/16 rule survives both, permanently, because
+# every later run withdraws what the marker names and the marker has moved past
+# it.
+sd=$(mktemp -d); RULES="$sd/rules"; : > "$RULES"
+# shellcheck disable=SC2329  # called by ensure_ufw_rule
+ufw() { case "$1" in
+  delete) shift; grep -vxF "$*" "$RULES" > "$RULES.n"; mv "$RULES.n" "$RULES" ;;
+  *) grep -qxF "$*" "$RULES" || printf '%s\n' "$*" >> "$RULES" ;; esac; }
+R1="allow from 172.17.0.0/16 to any port 5432 proto tcp"
+R2="allow from 10.0.8.0/24 to any port 5432 proto tcp"
+ensure_ufw_rule postgres "$R1" "$sd/m" >/dev/null
+chk "the marker records the rule" "$R1" "$(cat "$sd/m")"
+chk "and is written whole, not by redirection" \
+  0 "$(grep -cE "^[[:space:]]*printf '%s..n' \"\\\$rule\" > \"\\\$state\"" "$SRC")"
+# The read side, which the write side cannot reach: a host provisioned by an
+# earlier revision may already carry an emptied marker, and there is no second
+# record to fall back to — `ufw status` prints a display form `ufw delete` does
+# not accept, which is why this marker exists. So it is said rather than passed.
+: > "$sd/m"
+# Through LOGGED rather than a captured subshell, because ensure_ufw_rule has
+# to run in *this* shell for the assertions below to see what it did — and
+# cleared explicitly rather than assumed empty, since it accumulates across
+# cases and the last one to set it is whichever ran before this. Same leak as
+# the one recorded at 49.
+log() { LOGGED="$LOGGED $*"; }
+LOGGED=""
+ensure_ufw_rule postgres "$R2" "$sd/m"
+case "$LOGGED" in
+  *"exists but is empty"*"ufw status numbered"*)
+    echo "  ok   an empty marker is reported, with what to look at" ;;
+  *) echo "  FAIL an empty marker passed silently: $LOGGED"; fail=1 ;;
+esac
+chk "the stranded rule really is still in force" 1 "$(grep -cxF "$R1" "$RULES")"
+# The control in the other direction: an *absent* marker is a first converge and
+# must say nothing, since this runs on every convergence of every rule.
+rm -f "$sd/m"
+LOGGED=""
+ensure_ufw_rule postgres "$R2" "$sd/m"
+case "$LOGGED" in
+  *"exists but is empty"*) echo "  FAIL a first converge was warned about"; fail=1 ;;
+  *) echo "  ok   a first converge says nothing" ;;
+esac
+unset -f ufw
+rm -rf "$sd"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
