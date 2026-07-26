@@ -4418,6 +4418,41 @@ chk "no queue is extended by a bare append" \
 chk "all three record_* functions go through the helper" \
   3 "$(grep -c 'append_state_line "\$set_file"' "$SRC")"
 
+echo "125a. a rotation past a torn queue entry does not strand the account"
+# The end-to-end consequence of case 125's mechanism, and the reason the torn
+# append is worse than a stale record rather than equivalent to one. The retry
+# leaves `collavre_collavre_a` in the queue; the next rotation's loop tests
+# `id -u` on it, finds no such account, and takes the `|| continue` path — which
+# is correct for an account that is genuinely gone and wrong for a fragment.
+# The queue then holds one name, the current user, and looks converged, while
+# the account it was glued from keeps docker and sudo with nothing recording it.
+sd=$(mktemp -d)
+: > "$sd/groups"
+# shellcheck disable=SC2329  # called by revoke_prior_deploy_user
+id() { case "$1" in -u) grep -qx "$2" "$sd/accounts" ;; esac; }
+# shellcheck disable=SC2329  # called by revoke_prior_deploy_user
+revoke_deploy_user_access() { sed -i.bak "/^$1 /d" "$sd/groups"; }
+printf 'collavre_a\ncollavre_b\n' > "$sd/accounts"
+
+printf 'collavre_' > "$sd/deploy_users"          # the torn append
+printf 'collavre_a docker sudo\n' >> "$sd/groups"
+record_deploy_user_grant collavre_a "$sd/deploy_users" "$sd/deploy_user"
+chk "the retry records the account on a line of its own" \
+  1 "$(grep -cxF collavre_a "$sd/deploy_users")"
+
+printf 'collavre_a\n' > "$sd/deploy_user"
+printf 'collavre_b docker sudo\n' >> "$sd/groups"
+revoke_prior_deploy_user collavre_b "$sd/deploy_user" "$sd/deploy_users" >/dev/null 2>&1
+chk "and the rotation strips it" 0 "$(grep -c '^collavre_a ' "$sd/groups")"
+# The control in the other direction. A fragment names nobody and grants
+# nothing, so it must *not* be kept queued for a retry that can never succeed —
+# it leaves by the same id -u path, which is the right answer for it.
+chk "the fragment is not retried forever" 0 "$(grep -c '^collavre_$' "$sd/deploy_users")"
+chk "and the current user stays queued for its own successor" \
+  1 "$(grep -cxF collavre_b "$sd/deploy_users")"
+unset -f id revoke_deploy_user_access
+rm -rf "$sd"
+
 echo "126. a deploy account that cannot run a command is refused"
 # refuse_root_deploy_user states this invariant and tests only UID 0: its own
 # message is "'$user' could never log in, while the summary would still print
