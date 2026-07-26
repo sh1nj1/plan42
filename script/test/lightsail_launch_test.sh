@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|stage_authorized_keys)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -40,7 +40,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           passwd_home ssh_key_holder \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
-          stage_authorized_keys \
+          resolve_symlink_chain stage_beside stage_authorized_keys \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -4555,6 +4555,129 @@ chk "and the previous backup script survives that too" \
 rm -rf "$bd"
 chk "the live backup path is not written by redirection" \
   0 "$(grep -c '^cat > /usr/local/bin/collavre-pg-backup' "$SRC")"
+
+echo "128. a database-name probe that cannot answer is refused, not read as 'it exists'"
+# The third instance of the shape recorded at role_owns_app_objects, and the
+# last `[ "$(psql ...)" = x ] || return 0` in this file. It compares *output*,
+# so a psql that could not answer yields an empty string — which is not "0", so
+# the `|| return 0` retires the guard on the one reading it has no evidence for.
+#
+# Proceeding here is not a deferred refusal. The guard sits ahead of the
+# creation SQL, so a run where the cluster comes back a moment later creates the
+# typo'd database empty, advances both markers onto it, and points DATABASE_URL
+# and the nightly pg_dump at it while the app's data stays in the database
+# nothing now names.
+dn6=$(mktemp -d); printf 'collavre_user\n' > "$dn6/db_user"
+PROBE_FAILS=0
+# shellcheck disable=SC2329  # called by refuse_db_name_change
+psql_as_postgres() {
+  [ "$PROBE_FAILS" = 0 ] || return 1
+  # Answers about the name actually asked for, so the control below is a real
+  # "this database is there" and not the refusal path wearing its clothes.
+  case "$2" in
+    *"count(*)"*"'collavre_production'"*) echo 1 ;;
+    *"count(*)"*) echo 0 ;;
+    *) echo "collavre_production" ;;
+  esac
+}
+PROBE_FAILS=1
+out="$( (refuse_db_name_change collavre_typo "$dn6") 2>&1 )"
+chk "an unanswerable probe is refused" 1 "$?"
+case "$out" in
+  *"would not say whether"*"Nothing has been changed"*)
+    echo "  ok   and it names the cluster, not the name" ;;
+  *) echo "  FAIL passed or was unhelpful: $out"; fail=1 ;;
+esac
+# The control in the other direction, and the one no negative control catches:
+# this guard runs on every re-run, so a probe answered "the database is there"
+# must still proceed. A guard that refused here would stop every convergence.
+PROBE_FAILS=0
+( refuse_db_name_change collavre_production "$dn6" ) >/dev/null 2>&1
+chk "an answered probe still proceeds" 0 "$?"
+unset -f psql_as_postgres
+rm -rf "$dn6"
+
+echo "129. daemon.json is replaced by rename, not by truncating the live file"
+# The validation was already right and the install was not: jq checked the
+# staging file and `cat "$tmp" > "$file"` then truncated the live one to copy it
+# in, so the file that was checked is not the file that ends up installed.
+# Nothing notices, either — the caller only restarts Docker on a run that
+# changed the file, so the running daemon keeps the config it read at boot and
+# the host stays healthy until a reboot it cannot come back from.
+#
+# Injected rather than raced, as case 4a records: a kill loses to a fast local
+# write, and a flaky control is worse than none.
+dj=$(mktemp -d)
+seed_daemon() {
+  printf '{"insecure-registries":["10.0.0.1:5000"],"log-driver":"json-file"}\n' \
+    > "$dj/daemon.json"
+}
+seed_daemon
+( DAEMON_JSON_CHANGED=0; ensure_docker_log_caps "$dj/daemon.json" ) >/dev/null 2>&1
+chk "a clean run caps the logs"      '"10m"' \
+  "$(jq -c '."log-opts"."max-size"' "$dj/daemon.json")"
+chk "and keeps the operator's keys"  1 "$(jq -e 'has("insecure-registries")' "$dj/daemon.json" >/dev/null && echo 1 || echo 0)"
+seed_daemon
+( DAEMON_JSON_CHANGED=0
+  # shellcheck disable=SC2329  # shadows the copy the previous form installed with
+  cat() { command cat "$@" | head -c 20; return 1; }
+  ensure_docker_log_caps "$dj/daemon.json" ) >/dev/null 2>&1
+chk "a copy that fails leaves valid JSON" 1 \
+  "$(jq empty "$dj/daemon.json" >/dev/null 2>&1 && echo 1 || echo 0)"
+chk "and the operator's registry survives" 1 \
+  "$(grep -c insecure-registries "$dj/daemon.json")"
+chk "and no staging file is left behind" 0 \
+  "$(find "$dj" -name 'daemon.json.collavre.*' | wc -l | tr -d ' ')"
+# rename(2) does not follow symlinks and the copy did: without resolution this
+# fix would replace a symlinked /etc/docker/daemon.json with a regular file and
+# leave the real path — the one dockerd reads — holding what it held before.
+# A control against the obvious implementation of the remedy, not against the
+# reviewed revision, which passes it.
+mkdir -p "$dj/real"; printf '{"log-driver":"json-file"}\n' > "$dj/real/daemon.json"
+ln -s real/daemon.json "$dj/link.json"
+( DAEMON_JSON_CHANGED=0; ensure_docker_log_caps "$dj/link.json" ) >/dev/null 2>&1
+chk "a symlinked daemon.json is still a symlink" 1 "$([ -L "$dj/link.json" ] && echo 1 || echo 0)"
+chk "and the real file got the caps" '"10m"' \
+  "$(jq -c '."log-opts"."max-size"' "$dj/real/daemon.json")"
+rm -rf "$dj"
+
+echo "130. stage_beside carries the target's identity, and invents one when there is none"
+# The primitive the three staged installs share. Two properties, and the second
+# is the one that would have shipped a broken cluster: mktemp creates 0600, so a
+# first-run 10-collavre.conf installed straight from a staging file would be
+# unreadable by the postgres user that has to read it — the fix for a truncated
+# config would stop the cluster outright. `cat >` under root's umask produced
+# 0644 and that is what a target-less stage has to reproduce.
+sb=$(mktemp -d)
+printf 'old\n' > "$sb/target"; chmod 0640 "$sb/target"
+t="$(stage_beside "$sb/target")"
+chk "staged in the target's own directory" "$sb" "$(dirname "$t")"
+chk "carrying the target's mode"           640 "$(file_mode "$t")"
+chk "and the live file is untouched"       old "$(cat "$sb/target")"
+rm -f "$t"
+t="$(stage_beside "$sb/absent")"
+chk "a target that does not exist yet gets the default"  644 "$(file_mode "$t")"
+chk "and an explicit mode is honoured"                   755 \
+  "$(u="$(stage_beside "$sb/absent2" 0755)"; file_mode "$u")"
+rm -f "$t"
+mktemp() { return 1; }
+stage_beside "$sb/target" >/dev/null 2>&1
+chk "nowhere to stage reports 1, not 2"    1 "$?"
+unset -f mktemp
+rm -rf "$sb"
+# Source-level control. The helpers are new, so the assertions above cannot be
+# run against the reviewed revision — the suite stops at its own extraction
+# check. What can be asserted there is that no generated file is still written
+# through its live path.
+chk "the PostgreSQL config is not written by redirection" \
+  0 "$(grep -c '^cat > "\$PG_CONF_DIR/conf.d/10-collavre.conf"' "$SRC")"
+chk "it is staged and renamed instead" \
+  1 "$(grep -c '^mv -f "\$PG_CONF_TMP" "\$PG_CONF_REAL"' "$SRC")"
+# Anchored past the comment that quotes the old form: the first spelling of this
+# matched the explanation of the fix and would have gone on passing after a
+# revert, which is the assertion testing the prose instead of the code.
+chk "and daemon.json is not installed by copy" \
+  0 "$(grep -cE '^[[:space:]]*cat "\$tmp" > "\$file"' "$SRC")"
 
 echo "131. a torn append to authorized_keys does not glue the successor to it"
 # The last `>>` in this script that was not a queue, and the one where a

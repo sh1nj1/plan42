@@ -535,27 +535,23 @@ urlencode() {
   printf '%s' "$out"
 }
 
-# Keep a managed block in a config file equal to $content, keyed by a marker.
-# Added on the first run; on later runs the body is replaced in place, so a
-# FORCE=1 re-run with a changed DOCKER_SUBNETS or INSTANCE_HOSTNAME converges
-# the host instead of leaving the previous value in force. In place, not
-# delete-and-append: pg_hba.conf is first-match-wins, and moving the rule to
-# the end of the file could park it behind one that already rejects.
-ensure_block() {
-  local file="$1" marker="$2" content="$3"
-  local begin="# BEGIN collavre:$marker" end="# END collavre:$marker"
-
-  # Resolved before anything else, because the rewrite below installs by
-  # rename(2) and rename does not follow symlinks: pointed at a symlinked
-  # /etc/hosts it would replace the link with a regular file, and the next
-  # thing to read the real path would see the pre-managed contents. The
-  # append branch below and the previous `cat >` both wrote *through* the
-  # link, so resolving here is what keeps the two paths writing to the same
-  # file. `readlink -f` is not used: it is a GNU extension that only reached
-  # macOS recently, and this suite runs on both.
-  local hops=0
+# resolve_symlink_chain <path> — echo the real path a symlink chain ends at.
+#
+# Lifted out of ensure_block so that every install-by-rename in this script
+# resolves the same way. rename(2) does not follow symlinks and `cat > file`
+# does, so converting a copy to a rename without this replaces the *link* with a
+# regular file and leaves the real path — the one every other reader resolves to
+# — holding what it held before. That is a worse failure than the truncation the
+# rename is there to fix, because it is silent and permanent rather than loud
+# and one-run, and /etc/docker/daemon.json is exactly the kind of file config
+# management symlinks.
+#
+# Not `readlink -f`: a GNU extension that only reached macOS recently, and this
+# suite runs on both. Relative targets resolve against the link's own directory
+# rather than $PWD.
+resolve_symlink_chain() {
+  local file="$1" hops=0 target
   while [ -L "$file" ]; do
-    local target
     target="$(readlink "$file")" ||
       die "$file: is a symlink I cannot read. Repair or replace it by hand."
     case "$target" in
@@ -566,6 +562,77 @@ ensure_block() {
     [ "$hops" -lt 16 ] ||
       die "$file: symlink chain is too deep to follow. Repair it by hand."
   done
+  printf '%s\n' "$file"
+}
+
+# stage_beside <target> — echo the path of a staging file in the target's own
+# directory, already carrying the target's owner and mode.
+#
+# The caller writes its content into that path and renames it over the target,
+# so the live file is never the thing being written to. `> file` truncates when
+# the redirection opens, which makes the window the whole write rather than an
+# instant, and every caller of this that generates a file had that window.
+#
+# Same directory, not $TMPDIR: rename(2) needs one filesystem, and /etc and /tmp
+# are commonly separate mounts — across them `mv` degrades to copy-then-unlink,
+# which is the window again. Staging there also proves the space is available
+# before the live file is at risk.
+#
+# `cp -p` rather than chmod/chown --reference: --reference is a GNU extension
+# and this suite's cases run on macOS as well as the Ubuntu the script
+# provisions. Copying the target's identity rather than naming a mode is the
+# point — the callers span root:root 0644, postgres:postgres 0640 and
+# root:root 0755, and spelling any of them here would be a second spelling of
+# what the target already says, wrong the first time a caller points it at a
+# new file.
+#
+# The second argument is the mode to use when the target does not exist yet,
+# and it is not optional in spirit: mktemp creates 0600, which a bare
+# redirection under root's umask never would. Installing a first-run
+# 10-collavre.conf at 0600 root:root would leave PostgreSQL — which reads
+# /etc/postgresql/*/main/conf.d as the postgres user — unable to read the file
+# this script just wrote, so the fix for a truncated config would stop the
+# cluster outright. 0644 is what `cat >` produced and what the callers want.
+stage_beside() {
+  local target tmp mode="${2:-0644}"
+  target="$(resolve_symlink_chain "$1")" || return 1
+  tmp="$(mktemp "$target.collavre.XXXXXX")" || return 1
+  # A staging file that cannot be given the target's identity is not installed:
+  # proceeding at mktemp's 0600 would trade a converged file for a daemon that
+  # cannot read its own configuration.
+  if [ -e "$target" ]; then
+    if ! cp -p "$target" "$tmp" 2>/dev/null; then
+      rm -f "$tmp"
+      return 2
+    fi
+  elif ! chmod "$mode" "$tmp"; then
+    rm -f "$tmp"
+    return 2
+  fi
+  printf '%s\n' "$tmp"
+}
+
+# Keep a managed block in a config file equal to $content, keyed by a marker.
+# Added on the first run; on later runs the body is replaced in place, so a
+# FORCE=1 re-run with a changed DOCKER_SUBNETS or INSTANCE_HOSTNAME converges
+# the host instead of leaving the previous value in force. In place, not
+# delete-and-append: pg_hba.conf is first-match-wins, and moving the rule to
+# the end of the file could park it behind one that already rejects.
+ensure_block() {
+  local file="$1" marker="$2" content="$3"
+  local begin="# BEGIN collavre:$marker" end="# END collavre:$marker"
+
+  # Resolved before anything else, and not only for the rename below: the
+  # append branch writes *through* a link and the rewrite branch replaces it,
+  # so resolving here is what keeps the two branches writing to one file.
+  #
+  # `|| exit 1` is load-bearing. resolve_symlink_chain runs in a command
+  # substitution, and the die() inside it exits only that subshell — the
+  # message is printed, and this function would otherwise carry on with an
+  # empty $file and return 0, reporting a converged block over a path it
+  # refused to follow. Case 4b asserts the status, not just the message,
+  # because the message was right while the status was wrong.
+  file="$(resolve_symlink_chain "$file")" || exit 1
 
   if ! grep -qF "$begin" "$file" 2>/dev/null; then
     {
@@ -579,35 +646,17 @@ ensure_block() {
   grep -qF "$end" "$file" || \
     die "$file: '$begin' with no '$end'. Refusing to rewrite a block I cannot delimit — repair or delete it by hand."
 
-  local tmp
-  # Staged beside the target, not in $TMPDIR: same filesystem, so the swap
-  # below is one rename(2) and the staging has already proved the space is
-  # there. The mode and ownership are taken from the file being replaced and
-  # set before any content is written, so the staging file is never briefly
-  # readable by more than the live one already is.
-  #
-  # Copied from the target rather than hard-coded: this helper rewrites
-  # /etc/fstab and /etc/hosts (root:root 0644) as well as postgresql.conf and
-  # pg_hba.conf (postgres:postgres 0640), and naming either here would be a
-  # second spelling of what the target already says — one that goes wrong
-  # silently the first time a caller points this at a fourth file.
-  #
-  # `cp -p` rather than chmod/chown --reference: --reference is a GNU
-  # extension, and this suite's cases run on the maintainer's macOS as well as
-  # on the Ubuntu the script provisions. It copies the content too, which is
-  # redundant since awk overwrites it — these are files of a few KB, and the
-  # cost buys one spelling that works on both.
-  #
-  # A staging file that could not be given the target's identity is one that
-  # must not be installed: a pg_hba.conf PostgreSQL cannot read back stops the
-  # cluster, so this refuses rather than proceeding at mktemp's root-only 0600.
-  tmp="$(mktemp "$file.collavre.XXXXXX")" ||
-    die "$file: could not stage a rewrite beside it. Is $(dirname "$file") writable?"
-  if ! cp -p "$file" "$tmp" 2>/dev/null; then
-    rm -f "$tmp"
-    die "$file: could not give a staged rewrite the same owner and mode as the" \
-        "file it replaces, so it was NOT installed and $file is untouched."
-  fi
+  # Staged beside the target and carrying its identity — see stage_beside. Its
+  # two failures are reported separately, because the remedies differ: 1 is
+  # "nowhere to stage it" (disk, permissions), 2 is "cannot be given the
+  # target's owner and mode".
+  local tmp rc
+  tmp="$(stage_beside "$file")" || rc=$?
+  case "${rc:-0}" in
+    1) die "$file: could not stage a rewrite beside it. Is $(dirname "$file") writable?" ;;
+    2) die "$file: could not give a staged rewrite the same owner and mode as the" \
+           "file it replaces, so it was NOT installed and $file is untouched." ;;
+  esac
   # index() rather than an anchored match, so awk sees exactly the lines the
   # grep above found. END exits non-zero on an unterminated block (END marker
   # before BEGIN), which would otherwise swallow the rest of the file.
@@ -1082,6 +1131,10 @@ allocate_swapfile() {
 ensure_docker_log_caps() {
   local file="${1:-/etc/docker/daemon.json}" tmp driver
   DAEMON_JSON_CHANGED=0
+  # Before either branch, so the create path and the rewrite path name one file
+  # even when /etc/docker/daemon.json is a link — and so the rename below cannot
+  # replace the link itself.
+  file="$(resolve_symlink_chain "$file")" || exit 1
 
   if [ ! -f "$file" ]; then
     # Indented so no line of the body starts at column 1: the unit tests extract
@@ -1118,7 +1171,27 @@ JSON
     return 0
   fi
 
-  tmp="$(mktemp)"
+  # Staged beside the target rather than in $TMPDIR, and installed by rename.
+  # The validation below was already right and the install was not: `cat "$tmp"
+  # > "$file"` truncates the live daemon.json at open, so an interrupted copy
+  # leaves a prefix that jq never sees — the file that was checked is not the
+  # file that ends up installed. Measured on the shipped function with the copy
+  # failing partway, against an operator's daemon.json holding an
+  # insecure-registries entry:
+  #
+  #   live daemon.json  {"insecure-regist          parses: no
+  #
+  # And nothing notices: the caller only restarts Docker when this returns
+  # having changed the file, so the running daemon keeps the configuration it
+  # read at boot and the host looks healthy until something reboots it. Then
+  # dockerd will not start, and every `kamal deploy` fails against a host whose
+  # last successful run reported success.
+  tmp="$(stage_beside "$file")" || {
+    log "WARNING: could not stage a rewrite of $file beside it; it is unchanged" \
+        "and container logs are NOT capped. Add" \
+        '"log-opts": {"max-size": "10m", "max-file": "3"} by hand.'
+    return 0
+  }
   # Merge rather than replace: everything else in the file is the operator's.
   # Validated before it is installed, because a daemon.json that does not parse
   # stops Docker from starting at all.
@@ -1132,8 +1205,7 @@ JSON
         '"log-opts": {"max-size": "10m", "max-file": "3"} by hand.'
     return 0
   fi
-  cat "$tmp" > "$file"
-  rm -f "$tmp"
+  mv -f "$tmp" "$file"
   log "added container log caps to the existing $file"
   DAEMON_JSON_CHANGED=1
 }
@@ -1580,8 +1652,31 @@ refuse_db_name_change() {
   # provisioned by a revision that did not track it there is: db_user is the
   # marker that says this script has run here before.
   [ -f "$state_dir/db_user" ] || return 0
-  [ "$(psql_as_postgres postgres \
-        "SELECT count(*) FROM pg_database WHERE datname = '$current'")" = 0 ] || return 0
+  # The status is kept, for the reason role_owns_app_objects states and the
+  # superuser guard one commit ago had to be taught: this compares *output*, so
+  # a psql that could not answer produces an empty string, which is not "0" —
+  # and the `|| return 0` then reads "I could not ask" as "the database is
+  # already there". Measured against e16bd114 on a host recorded as provisioned,
+  # asked for a database that does not exist:
+  #
+  #   probe answers        REFUSES
+  #   probe cannot answer  PROCEEDS
+  #
+  # Proceeding is not a deferred refusal. This guard runs before the creation
+  # SQL, so a bypass on a run where PostgreSQL comes back a moment later creates
+  # the typo'd database empty, advances db_name and db_user to it, and points
+  # DATABASE_URL and the nightly pg_dump at it — while the app's data sits in
+  # the database nothing now names. That is precisely the outcome the refusal
+  # exists to make unreachable, and it is reached by way of the check.
+  local existing
+  existing="$(psql_as_postgres postgres \
+    "SELECT count(*) FROM pg_database WHERE datname = '$current'")" ||
+    die "this host has been provisioned before, but the cluster would not say" \
+        "whether DB_NAME='$current' exists on it — so this run cannot tell a" \
+        "first use of a new name from a typo that would be created empty beside" \
+        "the app's real data. Nothing has been changed. Check that PostgreSQL is" \
+        "accepting connections on port $DB_PORT, then re-run."
+  [ "$existing" = 0 ] || return 0
 
   # Previously provisioned, and the database this run names does not exist. That
   # is the change this function exists to stop, arriving on a host too old to
@@ -2461,7 +2556,34 @@ EFFECTIVE_CACHE_MB=$(( TOTAL_MB / 2 ))
 MAINTENANCE_MB=$(( TOTAL_MB / 16 ))
 [ "$MAINTENANCE_MB" -lt 64 ] && MAINTENANCE_MB=64
 
-cat > "$PG_CONF_DIR/conf.d/10-collavre.conf" <<CONF
+# Staged and renamed, not written through the live path. `>` truncates at open,
+# so an interrupted write leaves a prefix — and a prefix of a PostgreSQL config
+# is not a file that fails to load. Every truncation point of the generated
+# file, measured against PostgreSQL's own parser (`postgres -C listen_addresses`
+# on a scratch cluster with this file included):
+#
+#   275 truncation points   175 refuse to start (loud)
+#                            79 START, with listen_addresses = 'localhost'
+#                            21 start with the intended value
+#
+# Those 79 are the early ones — the comment line and the first directive — and
+# they are the quiet failure: the cluster is healthy, `systemctl status` is
+# green, and the docker bridge address this file exists to add is simply not
+# listened on. The app's containers then cannot reach the database at all, with
+# nothing on the host pointing at a truncated config. The run does not even
+# reach the restart that would surface it, so the damage waits for a reboot.
+PG_CONF_FILE="$PG_CONF_DIR/conf.d/10-collavre.conf"
+PG_CONF_TMP="$(stage_beside "$PG_CONF_FILE")" ||
+  die "could not stage $PG_CONF_FILE beside itself. PostgreSQL's configuration" \
+      "is unchanged. Check that $PG_CONF_DIR/conf.d is writable and has space," \
+      "then re-run."
+# `if ! cat` rather than leaning on the `set -euo pipefail` at the top of this
+# file: errexit does cover a bare top-level command, so this is not a live hole
+# — but a `|| something` appended to this line later would suppress it silently,
+# and what would then be installed is the prefix this exists to keep off the
+# live path. The staging file goes with it, so a retry starts from the state a
+# kill leaves: PostgreSQL's configuration untouched.
+if ! cat > "$PG_CONF_TMP" <<CONF
 # Managed by script/lightsail_launch.sh — edit here, not in postgresql.conf.
 listen_addresses = 'localhost,$DB_BIND_ADDRESS'
 password_encryption = scram-sha-256
@@ -2481,6 +2603,14 @@ log_min_duration_statement = 1000
 log_line_prefix = '%m [%p] %q%u@%d '
 timezone = '$TIMEZONE'
 CONF
+then
+  rm -f "$PG_CONF_TMP"
+  die "could not write PostgreSQL's generated configuration — is" \
+      "$PG_CONF_DIR/conf.d full? $PG_CONF_FILE is left as it was and the" \
+      "cluster is untouched."
+fi
+PG_CONF_REAL="$(resolve_symlink_chain "$PG_CONF_FILE")" || exit 1
+mv -f "$PG_CONF_TMP" "$PG_CONF_REAL"
 
 # Containers authenticate with a password over the docker bridge.
 ensure_block "$PG_CONF_DIR/pg_hba.conf" docker \
