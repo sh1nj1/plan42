@@ -2654,6 +2654,27 @@ chk "deploy user recovered"          1 \
 chk "db role recovered"              1 \
   "$(grep -c "DB_USER: host has 'collavre_app'" <<<"$CFG_OUT")"
 chk "and S3 is not claimed to be checked" 0 "$(grep -c 'BACKUP_S3_URI' <<<"$CFG_OUT")"
+# The file it sends the operator to has to be one that is there. This branch
+# exists *because* launch.env is absent, so naming it as "the host's own record"
+# is wrong on exactly the path that prints it — and it reads as "your record is
+# missing" at the moment the operator is being asked to reconstruct a command.
+chk "it does not cite the absent file" 0 \
+  "$(grep -c "record of what it was given is $legacy/launch.env" <<<"$CFG_OUT")"
+chk "it names the files that answered" 1 \
+  "$(grep -c "$legacy/deploy_user, $legacy/db_user" <<<"$CFG_OUT")"
+chk "and says the rest is on you"      1 \
+  "$(grep -c 'could not be checked at all' <<<"$CFG_OUT")"
+
+echo "111a. only the files that actually answered are cited"
+# A directory listing would do; naming the file whose value refused is what
+# makes the citation checkable by the operator reading it.
+half=$(mktemp -d)
+printf 'deploybot\n' > "$half/deploy_user"
+run_cfg "$half" ""
+chk "refused"                        1 "$CFG_STATUS"
+chk "the file that answered named"   1 "$(grep -c "$half/deploy_user" <<<"$CFG_OUT")"
+chk "and db_user is not invented"    0 "$(grep -c 'db_user' <<<"$CFG_OUT")"
+rm -rf "$half"
 rm -rf "$legacy"
 
 echo "112. a first run has nothing to disagree with"
@@ -2685,6 +2706,116 @@ for after in 'apt_get update' 'ensure_sudoers "\$APP_SSH_USER"' \
   chk "before ${after%% *}" 1 \
     "$([ -n "$line" ] && [ "$call_line" -lt "$line" ] && echo 1 || echo 0)"
 done
+
+echo "115. no procedure on the page walks the operator into this refusal blind"
+# The guard is only a stop rather than a trap if the page that prints re-runs
+# says what a re-run has to repeat. §2 does; a recipe elsewhere that names one
+# setting and stops mid-procedure — app down, old cluster already dropped — is
+# the same refusal reached at the worst moment. So every FORCE=1 invocation on
+# the page has to carry the record with it: named in the command itself, or
+# within reading distance of it.
+#
+# Scoped to the enclosing section rather than to a window of N lines: the unit
+# an operator reads is the procedure they are following, and a section boundary
+# is where they stopped reading. A window would also pass or fail on how the
+# prose happens to be wrapped.
+heads="$(grep -n '^#\{2,\} ' "$DOC" | cut -d: -f1)"
+while IFS=: read -r n _; do
+  [ -n "$n" ] || continue
+  from=1; to="$(wc -l < "$DOC")"
+  for h in $heads; do
+    [ "$h" -le "$n" ] && from="$h"
+    if [ "$h" -gt "$n" ]; then to=$(( h - 1 )); break; fi
+  done
+  chk "FORCE=1 at doc line $n cites launch.env, in the section that prints it" 1 \
+    "$([ "$(sed -n "${from},${to}p" "$DOC" | grep -c 'launch\.env')" -gt 0 ] &&
+       echo 1 || echo 0)"
+done <<<"$(grep -n 'FORCE=1' "$DOC" | grep -E 'lightsail_launch\.sh|launch script')"
+
+echo "116. the DB_USER escape hatch operates on the database the host records"
+# The two blocks under "Changing DB_USER on a re-run" are the way out of a run
+# that has already stopped, and they named collavre_production. On a host that
+# followed the rename procedure further down the same page they connect to a
+# database that is not there — and the check block's success signal was "empty
+# output", which is what a psql that cannot connect leaves on stdout while its
+# FATAL goes to stderr. So the escape hatch reported a finished transfer for a
+# connection it never made.
+xfer="$(extract_recipe 'OWNER TO %I')"
+ownck="$(extract_recipe 'asked=yes')"
+chk "the transfer names no database of its own" 0 \
+  "$(grep -c 'collavre_production' <<<"$xfer")"
+chk "nor does the check"                        0 \
+  "$(grep -c 'collavre_production' <<<"$ownck")"
+chk "the name comes from managed state"         1 \
+  "$(grep -cq '/var/lib/collavre/db_name' <<<"$(extract_recipe 'could not read the database name')" \
+     && echo 1 || echo 0)"
+
+# Runs the extracted check block against a psql that cannot connect, one that
+# reports rows still owned, and one that reports none.
+run_ownck() {
+  local work; work="$(mktemp -d)"
+  mkdir -p "$work/bin"
+  cat > "$work/bin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do case "$1" in -u) shift 2 ;; *) break ;; esac; done
+exec "$@"
+SUDO
+  # The stub writes its refusal to stderr and leaves stdout empty, the way psql
+  # does — asserting that split is the whole point of the case.
+  cat > "$work/bin/psql" <<'PSQL'
+#!/usr/bin/env bash
+case "$MODE" in
+  fail)  echo 'psql: error: FATAL:  database "x" does not exist' >&2; exit 2 ;;
+  rows)  echo 'r|creatives'; exit 0 ;;
+  clean) exit 0 ;;
+esac
+PSQL
+  chmod +x "$work/bin/sudo" "$work/bin/psql"
+  printf 'app_db=the_db\n%s' "$ownck" > "$work/check.sh"
+  OWNCK_OUT="$(PATH="$work/bin:$PATH" MODE="$1" bash "$work/check.sh" 2>/dev/null)"
+  rm -rf "$work"
+}
+
+run_ownck fail
+chk "an unanswerable check says so"    1 "$(grep -c 'COULD NOT CHECK' <<<"$OWNCK_OUT")"
+chk "and does not report completion"   0 "$(grep -c 'TRANSFER COMPLETE' <<<"$OWNCK_OUT")"
+run_ownck rows
+chk "rows left are reported"           1 "$(grep -c 'STILL OWNED BY' <<<"$OWNCK_OUT")"
+chk "not as completion"                0 "$(grep -c 'TRANSFER COMPLETE' <<<"$OWNCK_OUT")"
+run_ownck clean
+chk "a clean database is completion"   1 "$(grep -c 'TRANSFER COMPLETE' <<<"$OWNCK_OUT")"
+
+# The negative control. There is no assertion-shaped one against the previous
+# revision — that block printed no verdict at all, the prose carried it — so the
+# discrimination is measured directly instead: under the old form the failed
+# connection and the finished transfer are the same two bytes of stdout.
+prevdir="$(mktemp -d)"; mkdir -p "$prevdir/bin"
+cat > "$prevdir/bin/sudo" <<'SUDO'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do case "$1" in -u) shift 2 ;; *) break ;; esac; done
+exec "$@"
+SUDO
+cat > "$prevdir/bin/psql" <<'PSQL'
+#!/usr/bin/env bash
+case "$MODE" in
+  fail)  echo 'psql: error: FATAL:  database "x" does not exist' >&2; exit 2 ;;
+  clean) exit 0 ;;
+esac
+PSQL
+chmod +x "$prevdir/bin/sudo" "$prevdir/bin/psql"
+echo 'sudo -u postgres psql -qtA -d collavre_production -c "SELECT 1"' > "$prevdir/prev.sh"
+prev_fail="$(PATH="$prevdir/bin:$PATH" MODE=fail  bash "$prevdir/prev.sh" 2>/dev/null)"
+prev_ok="$(  PATH="$prevdir/bin:$PATH" MODE=clean bash "$prevdir/prev.sh" 2>/dev/null)"
+chk "the previous form could not tell them apart" "$prev_ok" "$prev_fail"
+rm -rf "$prevdir"
+# Not vacuous on its own — two empty strings compare equal for any reason at
+# all, including a stub that never ran. What makes it a control is that the
+# same two states are distinguishable under the new form.
+run_ownck fail;  new_fail="$OWNCK_OUT"
+run_ownck clean; new_ok="$OWNCK_OUT"
+chk "where the new form does"          1 \
+  "$([ "$new_fail" != "$new_ok" ] && echo 1 || echo 0)"
+chk "and the old form said nothing at all" "" "$prev_ok"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

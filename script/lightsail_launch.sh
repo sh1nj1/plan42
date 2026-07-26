@@ -176,6 +176,12 @@ fi
 refuse_defaulted_config_change() {
   local state_dir="${1:-$STATE_DIR}" supplied="${2:-$SUPPLIED_SETTINGS}"
   local env_file="$state_dir/launch.env" name prior now drift='' replay='' pair file
+  # Which file the operator should read is not the same question on both
+  # branches, and the branch that answers it wrong is the one that fires on a
+  # host where launch.env does not exist — pointing an operator mid-refusal at
+  # an absent file reads as "the record is missing", which is the opposite of
+  # what just happened: the comparison was answered, by a different file.
+  local record=''
 
   # Recorded as they are found, so the replay command the refusal prints is
   # built from the same comparison that refused — a second pass over the file
@@ -186,6 +192,7 @@ refuse_defaulted_config_change() {
   }
 
   if [ -f "$env_file" ]; then
+    record="The host's own record of what it was given is $env_file."
     # Driven by the current setting list rather than by the file's lines, so a
     # value this revision no longer has, or a line an editor mangled, cannot be
     # turned into an indirect expansion of an arbitrary name.
@@ -210,8 +217,15 @@ refuse_defaulted_config_change() {
       now="${!name}"
       if [ -n "$prior" ] && [ "$prior" != "$now" ]; then
         note_drift "$name" "$prior" "$now"
+        # Named as they answer, so the message sends the operator to the file
+        # that actually decided this refusal rather than to the whole directory.
+        record="$record${record:+, }$state_dir/$file"
       fi
     done
+    [ -z "$record" ] || record="This host predates $env_file, so what it was
+given is recorded only in $record.
+The settings not kept there could not be checked at all — repeating those is
+still on you."
   fi
   unset -f note_drift
 
@@ -236,8 +250,8 @@ deploy account and the database role out from under the running deployment,
 whose .env.production still names the old ones."$'\n\n'\
 "Nothing has been changed. Repeat them to converge the host as it is:"$'\n\n'\
 "    sudo ${replay}FORCE=1 bash script/lightsail_launch.sh"$'\n\n'\
-"or set ACK_CONFIG_RESET=1 if you do mean to reset them to the defaults.
-The host's own record of what it was given is $env_file."
+"or set ACK_CONFIG_RESET=1 if you do mean to reset them to the defaults."$'\n'\
+"$record"
 }
 
 refuse_defaulted_config_change

@@ -200,16 +200,30 @@ before `apt` can create the second cluster, and names both versions. A real
 major upgrade is a deliberate, app-down operation:
 
 ```bash
+sudo cat /var/lib/collavre/launch.env          # read this BEFORE the app goes down; see below
 ./kamal.sh app stop
 sudo apt-get install -y postgresql-<new>       # the script will not install it while 5432 is taken
 sudo pg_dropcluster --stop <new> main          # apt just created an EMPTY one; it is not the upgrade
 sudo pg_upgradecluster <old> main              # copies the data, and gives the new cluster 5432
 sudo pg_dropcluster --stop <old> main
-sudo FORCE=1 PG_MAJOR=<new> bash script/lightsail_launch.sh
+sudo <every setting in launch.env> FORCE=1 PG_MAJOR=<new> bash script/lightsail_launch.sh
 ./kamal.sh app boot
 ```
 
-The second line is the one that is easy to skip and expensive to skip. Installing
+The first line is there because the second-to-last one is a re-run, and a re-run
+that omits a setting this host was provisioned with
+[is refused](#2-create-the-instance-with-the-launch-script) rather than allowed
+to reset it. `PG_MAJOR=<new>` alone is exactly that omission on any host given
+so much as an `SSH_PUBLIC_KEY`. The refusal changes nothing and prints the line
+that clears it, so this costs a paste — but it arrives with the app stopped and
+the old cluster already dropped, which is the wrong moment to be reading a file
+you could have read before the outage. On a host provisioned before `launch.env`
+existed, `sudo cat /var/lib/collavre/deploy_user` and `.../db_user` are what the
+host can still answer.
+
+The `pg_dropcluster --stop <new> main` line is the one that is easy to skip and
+expensive to skip — named rather than numbered, because it is the step whose
+absence is invisible until it is too late. Installing
 the package auto-creates an empty `<new>/main` on the next free port, and
 `pg_upgradecluster` then stops with `target cluster <new>/main already exists`
 rather than upgrading into it. `pg_upgradecluster` itself moves the old cluster
@@ -281,10 +295,32 @@ and neither has a fix the script can apply:
 
 The run stops before anything moves, with `/var/lib/collavre/db_user` still
 naming the old role so a later re-run sees the same state. Move the application
-objects by hand, then re-run:
+objects by hand, then re-run.
+
+Both blocks below operate on one database, so resolve its name once from the
+host's own record rather than assuming the default — an operator who followed
+[the rename procedure](#changing-db_name-on-a-re-run), or who provisioned with
+`DB_NAME`, does not have `collavre_production`:
 
 ```bash
-sudo -u postgres psql -v ON_ERROR_STOP=1 -d collavre_production <<'SQL'
+app_db=${app_db:-$(sudo cat /var/lib/collavre/db_name 2>/dev/null)}
+if [ -z "$app_db" ]; then
+  echo "REFUSING: could not read the database name from"
+  echo "  /var/lib/collavre/db_name — nothing below will operate on the"
+  echo "  right database. Name it and paste this block again:"
+  echo "    app_db=<the database>"
+else
+  echo "operating on: $app_db"
+fi
+```
+
+It refuses rather than falling back, and an empty name is the reason: `psql -d ''`
+connects to the `postgres` database and exits `0`, so a fallback would run the
+transfer below against a database with no application tables in it and report
+success from both blocks.
+
+```bash
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$app_db" <<'SQL'
 DO $$
 DECLARE r record;
 BEGIN
@@ -314,16 +350,28 @@ its superuser rights — that is the point of doing it here rather than in the
 script. Check before re-running that nothing is left behind:
 
 ```bash
-sudo -u postgres psql -qtA -d collavre_production -c \
+left="$(sudo -u postgres psql -qtA -d "$app_db" -c \
   "SELECT relkind, relname FROM pg_class c
      JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname NOT IN ('pg_catalog','information_schema','pg_toast')
       AND c.relkind IN ('r','p','S','v','m')
-      AND pg_get_userbyid(c.relowner) = 'postgres'"
+      AND pg_get_userbyid(c.relowner) = 'postgres'")" && asked=yes || asked=no
+
+if [ "$asked" != yes ]; then
+  echo "COULD NOT CHECK $app_db — the query itself failed, so nothing is proven."
+elif [ -n "$left" ]; then
+  echo "STILL OWNED BY postgres — the transfer is unfinished:"
+  echo "$left"
+else
+  echo "TRANSFER COMPLETE: re-run the script and the rotation goes through."
+fi
 ```
 
-Empty output means the transfer is complete: re-run the script and the rotation
-goes through. The `relkind` filter and `pg_toast` are not tidiness — without
+The verdict is gated on the query having been answered, not on its output being
+empty. A `psql` that cannot connect — the database was renamed, the cluster is
+down — prints its `FATAL` on stderr and leaves stdout empty, which is the same
+thing a completed transfer looks like. "Could not be checked" is not "checked
+and clear". The `relkind` filter and `pg_toast` are not tidiness — without
 them the query returns several dozen catalog TOAST tables that `postgres` owns
 on every cluster and can never come back empty, so it would report a completed
 transfer as unfinished. Indexes and TOAST tables have no ownership of their own;
@@ -1174,7 +1222,7 @@ both the Lightsail firewall and ufw (the script already allows 443).
 | Launch script did nothing | `/var/log/collavre-launch.log`, `/var/log/cloud-init-output.log` |
 | `kamal` can't SSH | `sudo cat /home/collavre/.ssh/authorized_keys` — empty means no `SSH_PUBLIC_KEY` and no key to copy |
 | `kamal` SSH works, Docker denied | Reconnect: `docker` group membership needs a new session |
-| `sudo: a password is required` | The deploy user has no password, so `%sudo` alone cannot authenticate it. `sudo ls /etc/sudoers.d/90-collavre-*` from the `ubuntu` account — missing means the host predates that grant; re-run the launch script with `FORCE=1` |
+| `sudo: a password is required` | The deploy user has no password, so `%sudo` alone cannot authenticate it. `sudo ls /etc/sudoers.d/90-collavre-*` from the `ubuntu` account — missing means the host predates that grant; re-run the launch script with `FORCE=1` **and every setting in `/var/lib/collavre/launch.env`**, or the re-run is refused |
 | App: `could not connect to server` | `sudo ss -lntp \| grep 5432` should show `127.0.0.1:5432` **and** `172.17.0.1:5432` |
 | App: `password authentication failed` | `sudo cat /var/lib/collavre/db_password` vs `DATABASE_URL` — the URL holds the [percent-encoded](#a-custom-db_password-is-percent-encoded-in-database_url) form |
 | PostgreSQL won't start after reboot | `sysctl net.ipv4.ip_nonlocal_bind` must be `1`; `journalctl -u postgresql@17-main` |
