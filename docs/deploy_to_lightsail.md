@@ -49,7 +49,7 @@ Common overrides:
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys` |
-| `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt |
+| `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt. [Changing it on a re-run](#changing-app_ssh_user-on-a-re-run) disarms the account it replaces |
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump |
 | `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
@@ -95,6 +95,26 @@ DATABASE_URL                    postgresql://collavre_user:p%40ss%2Fword@172.17.
 
 Copy `DATABASE_URL` from the summary file as-is. Do not paste the raw password
 into it.
+
+### Changing `APP_SSH_USER` on a re-run
+
+A `FORCE=1` re-run with a different `APP_SSH_USER` creates the new account and
+then takes the `docker` and `sudo` groups back from the one it replaces, along
+with its `sudoers.d` grant. Docker membership is the part that matters:
+`docker run -v /:/host` is a root shell, so an account left in that group has
+not been rotated away from in any meaningful sense — it has only lost the
+slower route.
+
+What the script will not do is delete the account or its `authorized_keys`. Its
+only view of the host is the deploy user recorded in
+`/var/lib/collavre/deploy_user`, and if that name were ever the instance's own
+cloud user, deleting it would remove the last way in. So the run leaves an
+ordinary, group-less account behind and says so in the launch log. Finish the
+rotation by hand once you have confirmed you can reach the host as the new user:
+
+```bash
+ssh <new-user>@<instance-ip> 'sudo deluser --remove-home <old-user>'
+```
 
 ## 3. How PostgreSQL is reachable
 

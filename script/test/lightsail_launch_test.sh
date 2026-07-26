@@ -17,12 +17,12 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
-for fn in die ensure_block ensure_sudoers; do
+for fn in die ensure_block ensure_sudoers revoke_prior_deploy_user; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -149,6 +149,67 @@ case "$out" in
   *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
 esac
 unset -f visudo
+
+# --------------------------------------------------------------------------
+# revoke_prior_deploy_user talks to the host account database, so `id` and
+# `gpasswd` are stubbed. Shell functions shadow both, and `log` is captured
+# rather than printed so the warning can be asserted on.
+# --------------------------------------------------------------------------
+ACCOUNT=""      # the only user that exists, and its groups
+GROUPS_OF=""
+REVOKED=""      # every gpasswd -d, as "user/group"
+LOGGED=""
+id() {
+  case "$1" in
+    -u)  [ "$2" = "$ACCOUNT" ] ;;
+    -nG) [ "$2" = "$ACCOUNT" ] || return 1; printf '%s\n' "$GROUPS_OF" ;;
+    *)   return 1 ;;
+  esac
+}
+gpasswd() { REVOKED="$REVOKED $2/$3"; }
+log() { LOGGED="$LOGGED $*"; }
+revoke() { REVOKED=""; LOGGED=""; revoke_prior_deploy_user "$@"; }
+
+echo "11. the deploy user a re-run replaces loses its root-equivalent access"
+# Docker membership is the point: ensure_sudoers takes back the NOPASSWD file,
+# and without this the replaced account keeps a shorter road to root than the
+# one that was just revoked.
+d=$(mktemp -d); printf 'collavre\n' > "$d/deploy_user"
+ACCOUNT=collavre; GROUPS_OF="collavre docker sudo"
+revoke deploybot "$d/deploy_user"
+chk "docker and sudo revoked" " collavre/docker collavre/sudo" "$REVOKED"
+case "$LOGGED" in
+  *"can still log in"*) echo "  ok   names the account it did not delete" ;;
+  *) echo "  FAIL no warning about the surviving account: $LOGGED"; fail=1 ;;
+esac
+
+echo "12. an unchanged deploy user is left exactly as it is"
+# The common re-run. Revoking here would lock the operator out of their own
+# host on every FORCE=1.
+revoke collavre "$d/deploy_user"
+chk "nothing revoked" "" "$REVOKED"
+chk "nothing warned"  "" "$LOGGED"
+
+echo "13. only the groups the user actually has are touched"
+# gpasswd -d on a non-member fails; firing it anyway would put a spurious
+# error in a provisioning log that operators read for real ones.
+ACCOUNT=collavre; GROUPS_OF="collavre docker"
+revoke deploybot "$d/deploy_user"
+chk "docker only" " collavre/docker" "$REVOKED"
+
+echo "14. a first run, an emptied marker and a deleted account are all no-ops"
+d2=$(mktemp -d)
+revoke collavre "$d2/deploy_user"          # no marker yet
+chk "no marker"        "" "$REVOKED$LOGGED"
+: > "$d2/deploy_user"
+revoke collavre "$d2/deploy_user"          # marker exists but is empty
+chk "empty marker"     "" "$REVOKED$LOGGED"
+printf 'collavre\n' > "$d2/deploy_user"
+ACCOUNT=""                                  # already deluser'd by hand
+revoke deploybot "$d2/deploy_user"
+chk "account is gone"  "" "$REVOKED$LOGGED"
+
+unset -f id gpasswd log revoke
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

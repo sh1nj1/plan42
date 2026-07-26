@@ -218,6 +218,38 @@ ensure_sudoers() {
   done
 }
 
+# Take the docker group back from the deploy user a FORCE=1 re-run replaced.
+#
+# ensure_sudoers above already drops the old NOPASSWD file, but on its own that
+# revokes the longer road to root and leaves the shorter one open: docker group
+# membership is root-equivalent, so an operator rotating APP_SSH_USER away from
+# a compromised account would still be handing it a root shell.
+#
+# The account itself and its authorized_keys are deliberately left alone. This
+# runs on a host whose only other way in is the user the same run just created,
+# and `deluser` on the wrong guess (APP_SSH_USER=ubuntu on the first run, say)
+# is unrecoverable. With both groups gone the keys reach an ordinary account,
+# which is a job for a human who can see the host.
+revoke_prior_deploy_user() {
+  local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}" prior group
+  [ -f "$prior_file" ] || return 0
+  prior="$(cat "$prior_file")"
+  [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
+  id -u "$prior" >/dev/null 2>&1 || return 0
+
+  for group in docker sudo; do
+    # id -nG rather than `getent group`: it reports the primary group too, and
+    # the membership that matters is the effective one either way.
+    if id -nG "$prior" 2>/dev/null | tr ' ' '\n' | grep -qxF "$group"; then
+      gpasswd -d "$prior" "$group" >/dev/null 2>&1 &&
+        log "revoked '$group' from the replaced deploy user '$prior'"
+    fi
+  done
+  log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
+      "remove it by hand once you can reach the host as '$current':" \
+      "deluser --remove-home $prior"
+}
+
 # --------------------------------------------------------------------------
 log "1/9 base packages"
 # --------------------------------------------------------------------------
@@ -341,6 +373,10 @@ else
   systemctl start docker
 fi
 usermod -aG docker "$APP_SSH_USER"
+# Only once the replacement can reach Docker, so an interrupted run never
+# leaves the host with no account that can deploy.
+revoke_prior_deploy_user "$APP_SSH_USER"
+printf '%s\n' "$APP_SSH_USER" > "$STATE_DIR/deploy_user"
 
 # --------------------------------------------------------------------------
 log "5/9 PostgreSQL $PG_MAJOR"
