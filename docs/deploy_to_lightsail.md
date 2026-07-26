@@ -248,19 +248,25 @@ container polling the database they are about to replace.
   copy_status=$?
 
   # Take the grant back whether or not the copy worked — a failed cutover is
-  # precisely when it would otherwise sit there. Do not skip past a REVOKE
-  # FAILED line.
+  # precisely when it would otherwise sit there.
   ssh collavre@<instance-ip> \
-    "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'" ||
-    echo "REVOKE FAILED: collavre_user is still a superuser — take it back by hand"
-  [ "$copy_status" -eq 0 ] ||
-    echo "copy failed: re-grant and re-run it before booting the app"
+    "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
+  revoke_status=$?
 
-  ssh collavre@<instance-ip> \
-    'sudo rm "$(docker volume inspect plan42_storage \
-       --format "{{.Mountpoint}}")/production-primary.sqlite3"'
+  # Clean up and boot only if both worked. Either failure leaves the app down.
+  if [ "$copy_status" -eq 0 ] && [ "$revoke_status" -eq 0 ]; then
+    ssh collavre@<instance-ip> \
+      'sudo rm "$(docker volume inspect plan42_storage \
+         --format "{{.Mountpoint}}")/production-primary.sqlite3"'
 
-  ./kamal.sh app boot   # restart on the data you just loaded
+    ./kamal.sh app boot   # restart on the data you just loaded
+  else
+    [ "$revoke_status" -eq 0 ] ||
+      echo "REVOKE FAILED: collavre_user is still a superuser — take it back by hand"
+    [ "$copy_status" -eq 0 ] ||
+      echo "COPY FAILED: this database is now empty or half-loaded"
+    echo "app left stopped on purpose; do not boot it until the above is cleared"
+  fi
   ```
 
   The grant is not optional. The launch script creates the role with
@@ -286,6 +292,19 @@ container polling the database they are about to replace.
   retry safe. Re-run without re-granting and the task aborts before it touches
   the database, telling you what is missing. So the recovery is: re-grant,
   re-run, and only then `app boot`.
+
+  **Neither failure may reach `app boot`, which is why the tail of the block is
+  a conditional.** `MIGRATION_RUN_RESET` drops the schema before it loads
+  anything, so a copy that dies partway through leaves this database empty or
+  half-populated — booting then serves exactly that. The `sudo rm` is as bad in
+  its own way: it destroys the staged SQLite file the task reads from, so a
+  retry needs another full `scp` of production rather than just the re-grant
+  and re-run above. A failed *revoke* must not boot either, for the reason in
+  the previous paragraph — the container would come up holding superuser
+  credentials, which is the exposure the revoke exists to close. So cleanup and
+  boot are gated on both statuses and the app stays stopped otherwise. `exit`
+  would be the wrong tool: these lines get pasted into an interactive shell,
+  where it closes the session instead of stopping the recipe.
 
   `MIGRATION_RUN_RESET=true` matters because `setup` has already run the
   migration replay this section opened by distrusting. The task's schema load

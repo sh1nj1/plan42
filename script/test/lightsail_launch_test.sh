@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 #
-# Unit tests for the pure helpers in script/lightsail_launch.sh.
+# Unit tests for the pure helpers in script/lightsail_launch.sh, plus the
+# SQLite-cutover recipe in docs/deploy_to_lightsail.md.
 #
 #   bash script/test/lightsail_launch_test.sh
 #
 # The launch script provisions a host and cannot be run here, so the functions
 # under test are extracted from it rather than copied — a harness holding its
-# own copy would keep passing after the real one drifted.
+# own copy would keep passing after the real one drifted. The runbook recipe is
+# extracted from the markdown for the same reason: it is a copy-paste procedure
+# that touches production, so its control flow is worth testing, and testing a
+# transcription of it would prove nothing.
 #
 set -uo pipefail
 
@@ -315,6 +319,97 @@ case "$LOGGED" in
 esac
 
 unset -f ufw log
+
+# --- docs/deploy_to_lightsail.md, the SQLite cutover ------------------------
+#
+# This recipe hands the app role SUPERUSER, resets and reloads the production
+# database, then takes the grant back. Every branch of it is a production
+# incident if it runs when it should not, so it is exercised rather than read.
+
+DOC="${2:-$ROOT/docs/deploy_to_lightsail.md}"
+
+# The fenced bash block containing copy_status= — located by content, so the
+# test follows the recipe if it moves within the page.
+recipe="$(awk '
+  /^  ```bash$/ { inb = 1; buf = ""; next }
+  /^  ```$/     { if (inb && buf ~ /copy_status=/) { printf "%s", buf; exit } inb = 0; next }
+  inb           { line = $0; sub(/^  /, "", line); buf = buf line "\n" }
+' "$DOC")"
+case "$recipe" in
+  *copy_status=*NOSUPERUSER*) : ;;
+  *) echo "could not extract the cutover recipe from $DOC — has it moved?" >&2
+     exit 1 ;;
+esac
+
+# Records what the recipe did against stubbed ssh/scp/kamal. FAIL_COPY and
+# FAIL_REVOKE choose which step reports failure.
+run_cutover() {
+  local work; work="$(mktemp -d)"
+  printf '%s' "$recipe" | sed 's/<instance-ip>/203.0.113.10/g' > "$work/recipe.sh"
+  mkdir -p "$work/bin"
+  cat > "$work/bin/ssh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"ALTER ROLE collavre_user SUPERUSER"*)   echo GRANT  >>"$TRACE" ;;
+  *"ALTER ROLE collavre_user NOSUPERUSER"*) echo REVOKE >>"$TRACE"
+                                            [ -z "$FAIL_REVOKE" ] || exit 255 ;;
+  *"sudo rm"*)                              echo RM_STAGED >>"$TRACE" ;;
+  *"sudo install"*)                         echo STAGE     >>"$TRACE" ;;
+  *)                                        echo ssh       >>"$TRACE" ;;
+esac
+STUB
+  printf '#!/usr/bin/env bash\necho scp >>"$TRACE"\n' > "$work/bin/scp"
+  cat > "$work/bin/kamal.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "kamal:$1${2:+ $2}" >>"$TRACE"
+[ "${1:-}" != app ] || [ "${2:-}" != exec ] || [ -z "$FAIL_COPY" ] || exit 1
+STUB
+  chmod +x "$work/bin"/*
+  cp "$work/bin/kamal.sh" "$work/kamal.sh"
+
+  TRACE="$work/trace"; : > "$TRACE"
+  export TRACE FAIL_COPY="${FAIL_COPY:-}" FAIL_REVOKE="${FAIL_REVOKE:-}"
+  RECIPE_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  RECIPE_TRACE="$(paste -sd'|' "$TRACE")"
+  rm -rf "$work"
+}
+
+echo "23. a clean cutover cleans up and boots"
+FAIL_COPY='' FAIL_REVOKE='' run_cutover
+chk "staged file removed" 1 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app booted"          1 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+
+echo "24. a failed copy does not boot, and keeps the file the retry needs"
+# MIGRATION_RUN_RESET drops the schema before loading, so a copy that dies
+# partway leaves the database empty or half-populated. Booting serves that.
+# The `sudo rm` is the other half: it destroys the staged SQLite file, so a
+# retry would need another full scp of production rather than a re-run.
+FAIL_COPY=1 FAIL_REVOKE='' run_cutover
+chk "app NOT booted"          0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "staged file kept"        0 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "grant still taken back"  1 "$(grep -cx REVOKE <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"COPY FAILED"*"left stopped"*) echo "  ok   operator told what state it is in" ;;
+  *) echo "  FAIL silent or partial: $RECIPE_OUT"; fail=1 ;;
+esac
+
+echo "25. a failed revoke does not boot the credential-bearing container"
+# collavre_user is the role in DATABASE_URL. Booting while it is still a
+# superuser hands every app container that privilege.
+FAIL_COPY='' FAIL_REVOKE=1 run_cutover
+chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"REVOKE FAILED"*"left stopped"*) echo "  ok   the still-superuser role is reported" ;;
+  *) echo "  FAIL silent: $RECIPE_OUT"; fail=1 ;;
+esac
+
+echo "26. both failing reports both, not just the first"
+FAIL_COPY=1 FAIL_REVOKE=1 run_cutover
+chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"REVOKE FAILED"*"COPY FAILED"*) echo "  ok   both reported" ;;
+  *) echo "  FAIL one masked the other: $RECIPE_OUT"; fail=1 ;;
+esac
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
