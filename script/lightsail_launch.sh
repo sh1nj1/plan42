@@ -32,6 +32,28 @@ set -euo pipefail
 # Every value can also be supplied as an environment variable.
 # --------------------------------------------------------------------------
 
+# Which of the settings below the caller actually asked for, recorded before the
+# defaults fill in the rest. Afterwards every one of them is set and the two
+# cases are indistinguishable — and the difference is the whole question a
+# re-run has to answer. `sudo FORCE=1 bash script/lightsail_launch.sh` on a host
+# provisioned with an override reads as "converge this host", but several of
+# these settings converge by *rotating*: the deploy user's sudo and docker
+# grants move to whatever APP_SSH_USER now says, and table ownership and LOGIN
+# move to whatever DB_USER now says. Defaulted back to `collavre` and
+# `collavre_user`, that is a rotation nobody asked for, performed against the
+# account and role the running deployment authenticates as.
+#
+# DB_PASSWORD is not in the list: it is already reloaded from $STATE_DIR when
+# unset, which is this same idea applied to the one setting that had it.
+LAUNCH_SETTINGS='SSH_PUBLIC_KEY APP_SSH_USER PG_MAJOR DB_NAME DB_USER
+                 DB_BIND_ADDRESS DOCKER_SUBNETS SWAP_SIZE_MB TIMEZONE
+                 INSTANCE_HOSTNAME BACKUP_RETENTION_DAYS BACKUP_S3_URI BACKUP_AT'
+SUPPLIED_SETTINGS=''
+for _s in $LAUNCH_SETTINGS; do
+  [ -n "${!_s+set}" ] && SUPPLIED_SETTINGS="$SUPPLIED_SETTINGS $_s"
+done
+unset _s
+
 # SSH public key that may log in as the deploy user. Leave empty to reuse the
 # key Lightsail installed for the default `ubuntu` user.
 : "${SSH_PUBLIC_KEY:=}"
@@ -125,6 +147,100 @@ if [ -f "$MARKER" ] && [ "${FORCE:-0}" != "1" ]; then
   log "already provisioned ($MARKER). Re-run with FORCE=1 to converge again."
   exit 0
 fi
+
+# refuse_defaulted_config_change [state dir] [supplied settings]
+#
+# A re-run applies every setting, not just the ones it was given: an override
+# the operator used the first time and did not repeat is applied as its
+# default. For most of these that is harmless convergence, but three of them
+# are not convergence at all —
+#
+#   APP_SSH_USER   arms a new account and takes docker + sudo + the sudoers.d
+#                  grant back from the one recorded in $STATE_DIR/deploy_user,
+#                  which is the account KAMAL_SSH_USER names and deploys with
+#   DB_USER        REASSIGN OWNED and NOLOGIN move the application's tables and
+#                  its ability to log in to a different role, while the
+#                  deployed DATABASE_URL still names the old one
+#   BACKUP_S3_URI  regenerates /usr/local/bin/collavre-pg-backup without the
+#                  upload, so the nightly dump quietly stops leaving the host
+#
+# — and the first two are triggered by a bare `FORCE=1` re-run, which is what
+# this page and the runbook both advertise. So the question is not what the
+# value is, it is whether the run was *asked* for it. A named setting is an
+# instruction and goes through, whatever it says; an unnamed one that disagrees
+# with the provisioned config is an omission, and is refused before anything
+# is installed or rotated.
+#
+# ACK_CONFIG_RESET=1 accepts the listed defaults for operators who do mean to
+# reset them, so the guard is a stop rather than a dead end.
+refuse_defaulted_config_change() {
+  local state_dir="${1:-$STATE_DIR}" supplied="${2:-$SUPPLIED_SETTINGS}"
+  local env_file="$state_dir/launch.env" name prior now drift='' replay='' pair file
+
+  # Recorded as they are found, so the replay command the refusal prints is
+  # built from the same comparison that refused — a second pass over the file
+  # could print a line that does not clear the guard it is offered for.
+  note_drift() {
+    drift="$drift    $1: host has '$2', this run would apply '$3'"$'\n'
+    replay="$replay$(printf '%s=%q ' "$1" "$2")"
+  }
+
+  if [ -f "$env_file" ]; then
+    # Driven by the current setting list rather than by the file's lines, so a
+    # value this revision no longer has, or a line an editor mangled, cannot be
+    # turned into an indirect expansion of an arbitrary name.
+    for name in $LAUNCH_SETTINGS; do
+      case " $supplied " in *" $name "*) continue ;; esac
+      grep -q "^$name=" "$env_file" || continue
+      prior="$(sed -n "s/^$name=//p" "$env_file" | head -1)"
+      now="${!name}"
+      [ "$prior" = "$now" ] && continue
+      note_drift "$name" "$prior" "$now"
+    done
+  else
+    # Provisioned before launch.env existed. The two settings that rotate a
+    # live credential are still answerable from the state files that predate
+    # it, so the upgrade path is covered for the cases that can hurt rather
+    # than left open until the next re-run happens to record the defaults.
+    for pair in deploy_user:APP_SSH_USER db_user:DB_USER; do
+      file="${pair%%:*}"; name="${pair##*:}"
+      [ -f "$state_dir/$file" ] || continue
+      case " $supplied " in *" $name "*) continue ;; esac
+      prior="$(cat "$state_dir/$file")"
+      now="${!name}"
+      if [ -n "$prior" ] && [ "$prior" != "$now" ]; then
+        note_drift "$name" "$prior" "$now"
+      fi
+    done
+  fi
+  unset -f note_drift
+
+  [ -n "$drift" ] || return 0
+  if [ "${ACK_CONFIG_RESET:-0}" = "1" ]; then
+    log "ACK_CONFIG_RESET=1 — applying defaults over the provisioned values:" \
+        "$(printf '\n%s' "$drift")"
+    return 0
+  fi
+
+  # One argument built with ANSI-C newlines rather than several joined by die's
+  # own space: the recovery below has to arrive on its own line to be pasted,
+  # and $(printf '...\n') cannot put it there — command substitution strips the
+  # trailing newline, so the next argument would land on the same line as the
+  # command it is meant to follow.
+  die "REFUSING: this run would change settings it was not asked to change."$'\n\n'\
+"$drift"$'\n'\
+"Each of these was chosen when the host was provisioned and is not set on this
+run, so the value above is this script's default rather than a decision.
+Applied, APP_SSH_USER and DB_USER do not converge the host: they rotate the
+deploy account and the database role out from under the running deployment,
+whose .env.production still names the old ones."$'\n\n'\
+"Nothing has been changed. Repeat them to converge the host as it is:"$'\n\n'\
+"    sudo ${replay}FORCE=1 bash script/lightsail_launch.sh"$'\n\n'\
+"or set ACK_CONFIG_RESET=1 if you do mean to reset them to the defaults.
+The host's own record of what it was given is $env_file."
+}
+
+refuse_defaulted_config_change
 
 # cloud-init and unattended-upgrades hold the dpkg lock during early boot;
 # DPkg::Lock::Timeout makes apt wait for them instead of failing outright.
@@ -1654,6 +1770,8 @@ Collavre Lightsail host — provisioned $(date -Is)
   PostgreSQL       $PG_MAJOR, listening on localhost + $DB_BIND_ADDRESS only
   database         $DB_NAME owned by $DB_USER
   db password      $STATE_DIR/db_password (root only)$PASSWORD_NOTE
+  launch config    $STATE_DIR/launch.env — a re-run applies every setting, so
+                   repeat these on the command line or it is refused
   backups          /var/backups/collavre, nightly at $BACKUP_AT, ${BACKUP_RETENTION_DAYS}d retention
   log              $LOG_FILE
 
@@ -1672,6 +1790,18 @@ Open ports 80 and 443 in the Lightsail console firewall (Networking tab).
 Never open 5432 there.
 TXT
 }
+
+# What this run was configured with, so the next one can tell an omitted
+# override from a deliberate default (refuse_defaulted_config_change). Written
+# only here, after every step has succeeded: a run that died halfway must not
+# leave a record claiming the host is configured the way it was asked to be.
+# No DB_PASSWORD — it has its own 0600 file, and this one is world-readable
+# because the answers in it ("which deploy user?", "which database?") are what
+# the runbook sends operators here to read.
+{ for _s in $LAUNCH_SETTINGS; do printf '%s=%s\n' "$_s" "${!_s}"; done; } \
+  > "$STATE_DIR/launch.env"
+chmod 0644 "$STATE_DIR/launch.env"
+unset _s
 
 touch "$SUMMARY"
 chmod 0600 "$SUMMARY"

@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -33,7 +33,8 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
           ensure_docker_log_caps dedupe_authorized_keys \
           install_staged_authorized_keys postgresql_conf_includes_confd \
-          refuse_db_name_change passwd_home ssh_key_holder \
+          refuse_db_name_change refuse_defaulted_config_change \
+          passwd_home ssh_key_holder \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -535,6 +536,7 @@ run_cutover() {
   # destination, and bash would create files named after the placeholders.
   printf '%s' "$recipe" |
     sed -e 's/<instance-ip>/203.0.113.10/g' -e 's/<deploy-user>/collavre/g' \
+        -e 's/<db-user>/collavre_user/g' \
     > "$work/recipe.sh"
   mkdir -p "$work/bin"
   cat > "$work/bin/ssh" <<'STUB'
@@ -1607,6 +1609,7 @@ run_move() {
   mkdir -p "$REMOTE" "$work/bin" "$work/rbin"
   printf '%s' "$move" |
     sed -e 's/<instance-ip>/203.0.113.10/g' -e 's/<deploy-user>/collavre/g' \
+        -e 's/<db-user>/collavre_user/g' -e 's/<db-name>/collavre_production/g' \
     > "$work/recipe.sh"
 
   cat > "$work/bin/psql" <<'STUB'
@@ -1742,6 +1745,14 @@ if [ "${1:-}" = /var/lib/collavre/db_user ]; then
   [ -n "${APP_ROLE-}" ] || { echo "cat: $1: No such file or directory" >&2; exit 1; }
   printf '%s\n' "$APP_ROLE"; exit 0
 fi
+# Same for the database name: the recipe asks the host which database it is
+# restoring rather than spelling one, so an absent file is a case under test —
+# on a host that used DB_NAME or the rename procedure, a guess is the wrong
+# database.
+if [ "${1:-}" = /var/lib/collavre/db_name ]; then
+  [ -n "${APP_DB-}" ] || { echo "cat: $1: No such file or directory" >&2; exit 1; }
+  printf '%s\n' "$APP_DB"; exit 0
+fi
 exec /bin/cat "$@"
 STUB
   # datconnlimit is modelled as state rather than as a canned answer, because
@@ -1785,7 +1796,8 @@ STUB
   export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}" \
          FAIL_SHUT="${FAIL_SHUT:-}" FAIL_REOPEN="${FAIL_REOPEN:-}" \
          CONNLIMIT="$work/connlimit" \
-         APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}"
+         APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}" \
+         APP_DB="${APP_DB-collavre_production}"
   R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   R_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
@@ -2507,6 +2519,172 @@ chk "no 'collavre@' anywhere in the runbook" 0 "$(grep -c 'collavre@' "$DOC")"
 # recipes go untested while looking tested.
 chk "the SSH recipes use <deploy-user>" 1 \
   "$(grep -cq '<deploy-user>@<instance-ip>' "$DOC" && echo 1 || echo 0)"
+
+echo "106. the recipes name no database role or database of their own"
+# The counterpart of 105 for DB_USER and DB_NAME, which are overridable in the
+# same way APP_SSH_USER is. A literal role fails the import at SET ROLE and the
+# cutover at its first ALTER ROLE; a literal database name is worse in the
+# restore, which would shut, terminate and reload the wrong one. Asserted on
+# the extracted recipes rather than on the whole page, because the prose around
+# them is entitled to name the defaults.
+chk "the import names no role of its own"      0 "$(grep -c 'collavre_user' <<<"$move")"
+chk "nor a database of its own"                0 "$(grep -c 'collavre_production' <<<"$move")"
+chk "the cutover names no role of its own"     0 "$(grep -c 'collavre_user' <<<"$recipe")"
+chk "the restore names no database of its own" 0 "$(grep -c 'collavre_production' <<<"$restore")"
+# And the placeholders are the ones the harnesses above substitute — an
+# unsubstituted `<db-user>` is a redirection, so these recipes would go untested
+# while looking tested.
+chk "and they use <db-user>/<db-name>"         1 \
+  "$(grep -q '<db-user>' <<<"$move$recipe" && echo 1 || echo 0)"
+
+# --- refuse_defaulted_config_change ------------------------------------------
+#
+# `sudo FORCE=1 bash script/lightsail_launch.sh` reads as "converge this host",
+# but a re-run applies every setting, so an override used once and not repeated
+# is applied as its default. Two of those defaults rotate rather than converge:
+# APP_SSH_USER moves docker + sudo + the sudoers.d grant off the account
+# KAMAL_SSH_USER names, and DB_USER moves table ownership and LOGIN off the role
+# in the deployed DATABASE_URL. A third, BACKUP_S3_URI, is the quiet one — the
+# nightly dump keeps being written and stops leaving the instance.
+
+# The setting list comes out of the script rather than being retyped here: a
+# copy would keep passing after a setting was added to one and not the other,
+# which is exactly the drift this guard exists to catch.
+eval "$(awk '/^LAUNCH_SETTINGS=/ { f = 1 } f { print } f && /'"'"'$/ { exit }' "$SRC")"
+[ -n "${LAUNCH_SETTINGS:-}" ] ||
+  { echo "  FAIL could not extract LAUNCH_SETTINGS from $SRC"; fail=1; }
+
+# $1 = state dir, $2 = space-separated supplied settings, rest = env assignments.
+# The settings not named in the environment take the script's own defaults, which
+# is the case under test — so they are spelled here once, as the script spells
+# them, and each case overrides only what it is about.
+run_cfg() {
+  local state="$1" supplied="$2"; shift 2
+  CFG_STATUS=0
+  CFG_OUT="$(
+    env SSH_PUBLIC_KEY= APP_SSH_USER=collavre PG_MAJOR=17 \
+        DB_NAME=collavre_production DB_USER=collavre_user \
+        DB_BIND_ADDRESS=172.17.0.1 DOCKER_SUBNETS=172.16.0.0/12 \
+        SWAP_SIZE_MB=2048 TIMEZONE=Asia/Seoul INSTANCE_HOSTNAME=collavre \
+        BACKUP_RETENTION_DAYS=7 BACKUP_S3_URI= BACKUP_AT=03:30 \
+        LAUNCH_SETTINGS="$LAUNCH_SETTINGS" "$@" \
+      bash -c '
+        set -uo pipefail
+        '"$(declare -f die refuse_defaulted_config_change)"'
+        log() { echo "[log] $*"; }
+        refuse_defaulted_config_change "$1" "$2"
+      ' _ "$state" " $supplied " 2>&1
+  )" || CFG_STATUS=$?
+}
+
+cfg=$(mktemp -d)
+cat > "$cfg/launch.env" <<'ENV'
+SSH_PUBLIC_KEY=ssh-ed25519 AAAAC3Nz key@host
+APP_SSH_USER=deploybot
+PG_MAJOR=17
+DB_NAME=collavre_production
+DB_USER=collavre_app
+DB_BIND_ADDRESS=172.17.0.1
+DOCKER_SUBNETS=172.16.0.0/12
+SWAP_SIZE_MB=2048
+TIMEZONE=Asia/Seoul
+INSTANCE_HOSTNAME=collavre
+BACKUP_RETENTION_DAYS=7
+BACKUP_S3_URI=s3://collavre-backups/pg
+BACKUP_AT=03:30
+ENV
+
+echo "107. a bare re-run of an overridden host is refused before anything moves"
+run_cfg "$cfg" ""
+chk "refused"                        1 "$CFG_STATUS"
+chk "the deploy-user rotation named" 1 \
+  "$(grep -c "APP_SSH_USER: host has 'deploybot'" <<<"$CFG_OUT")"
+chk "the db-role rotation named"     1 \
+  "$(grep -c "DB_USER: host has 'collavre_app'" <<<"$CFG_OUT")"
+chk "and the quiet one too"          1 \
+  "$(grep -c "BACKUP_S3_URI: host has 's3://collavre-backups/pg'" <<<"$CFG_OUT")"
+chk "and the withdrawn key too"      1 \
+  "$(grep -c "SSH_PUBLIC_KEY: host has 'ssh-ed25519 AAAAC3Nz key@host'" <<<"$CFG_OUT")"
+chk "settings that agree are not"    0 "$(grep -c 'PG_MAJOR' <<<"$CFG_OUT")"
+chk "and it says nothing changed"    1 "$(grep -c 'Nothing has been changed' <<<"$CFG_OUT")"
+
+echo "108. the command it prints to recover is one that actually clears it"
+# The remedy, not just the finding: a refusal that prints an incantation nobody
+# checked is how a guard becomes a dead end. Replay exactly what it said —
+# including which settings it named, rather than a list written here, or the
+# second run would be told they were supplied whatever the message said and
+# would pass with an empty replay.
+replay="$(sed -n 's/^ *sudo \(.*\)FORCE=1 bash script.*/\1/p' <<<"$CFG_OUT")"
+chk "it printed a replay command"    1 "$([ -n "$replay" ] && echo 1 || echo 0)"
+# eval, not word-splitting: the SSH key holds spaces, so the printed line is
+# only a recovery if a shell's own parsing of it is. %q is what makes that true.
+eval "replay_args=($replay)"
+replay_names="$(printf '%s\n' "${replay_args[@]}" | sed 's/=.*//' | tr '\n' ' ')"
+run_cfg "$cfg" "$replay_names" "${replay_args[@]}"
+chk "and replaying it goes through"  0 "$CFG_STATUS"
+chk "it replayed the key intact"     1 \
+  "$(printf '%s\n' "${replay_args[@]}" |
+     grep -cx 'SSH_PUBLIC_KEY=ssh-ed25519 AAAAC3Nz key@host')"
+
+echo "109. naming a setting is an instruction, not an omission"
+# The deliberate rotations this page documents must not need an acknowledgement.
+run_cfg "$cfg" "APP_SSH_USER DB_USER BACKUP_S3_URI SSH_PUBLIC_KEY" \
+  APP_SSH_USER=newbot DB_USER=collavre_app BACKUP_S3_URI=s3://collavre-backups/pg \
+  SSH_PUBLIC_KEY='ssh-ed25519 AAAAC3Nz key@host'
+chk "a named rotation is allowed"    0 "$CFG_STATUS"
+chk "and nothing is reported"        "" "$CFG_OUT"
+
+echo "110. ACK_CONFIG_RESET=1 applies the defaults and says which"
+run_cfg "$cfg" "" ACK_CONFIG_RESET=1
+chk "allowed"                        0 "$CFG_STATUS"
+chk "and it names what it reset"     1 \
+  "$(grep -c "APP_SSH_USER: host has 'deploybot'" <<<"$CFG_OUT")"
+
+echo "111. a host provisioned before launch.env existed is still guarded"
+# The upgrade path. Only the two settings that rotate a credential are
+# answerable from the files that predate launch.env — and the assertion says so
+# rather than implying the others are safe.
+legacy=$(mktemp -d)
+printf 'deploybot\n' > "$legacy/deploy_user"
+printf 'collavre_app\n' > "$legacy/db_user"
+run_cfg "$legacy" ""
+chk "refused"                        1 "$CFG_STATUS"
+chk "deploy user recovered"          1 \
+  "$(grep -c "APP_SSH_USER: host has 'deploybot'" <<<"$CFG_OUT")"
+chk "db role recovered"              1 \
+  "$(grep -c "DB_USER: host has 'collavre_app'" <<<"$CFG_OUT")"
+chk "and S3 is not claimed to be checked" 0 "$(grep -c 'BACKUP_S3_URI' <<<"$CFG_OUT")"
+rm -rf "$legacy"
+
+echo "112. a first run has nothing to disagree with"
+fresh=$(mktemp -d)
+run_cfg "$fresh" ""
+chk "allowed"                        0 "$CFG_STATUS"
+chk "and silent"                     "" "$CFG_OUT"
+rm -rf "$fresh"
+
+echo "113. the password is not one of the settings recorded in launch.env"
+# launch.env is 0644 on purpose — the runbook sends operators to read it — and
+# DB_PASSWORD has its own 0600 file. Listing it here would move the production
+# password into a world-readable one.
+chk "DB_PASSWORD is not tracked"     0 \
+  "$(grep -cw 'DB_PASSWORD' <<<"$LAUNCH_SETTINGS")"
+rm -rf "$cfg"
+
+echo "114. the guard is called before anything it protects"
+# A refusal that says "Nothing has been changed" has to be true, and everything
+# below rotates or installs. Asserted on the call site rather than on the
+# function, because the function being correct is not what makes the message
+# true — its position is.
+call_line="$(grep -n '^refuse_defaulted_config_change$' "$SRC" | head -1 | cut -d: -f1)"
+chk "it is called at all"            1 "$([ -n "$call_line" ] && echo 1 || echo 0)"
+for after in 'apt_get update' 'ensure_sudoers "\$APP_SSH_USER"' \
+             'usermod -aG docker' 'revoke_prior_deploy_user "\$APP_SSH_USER"' \
+             'reassign_prior_db_role "\$DB_USER"'; do
+  line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
+  chk "before ${after%% *}" 1 \
+    "$([ -n "$line" ] && [ "$call_line" -lt "$line" ] && echo 1 || echo 0)"
+done
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

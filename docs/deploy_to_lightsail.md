@@ -61,8 +61,46 @@ host instead of duplicating config:
 
 ```bash
 sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." bash script/lightsail_launch.sh
-sudo FORCE=1 bash script/lightsail_launch.sh   # after the first success
+# after the first success — repeat what you gave it, including the key:
+sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." FORCE=1 bash script/lightsail_launch.sh
 ```
+
+**A re-run applies every setting in the table, not only the ones you name.** An
+override you used the first time and did not repeat is applied as its default,
+and three of those defaults do not converge the host — they rotate it.
+`APP_SSH_USER` back to `collavre` arms a new account and takes `docker`, `sudo`
+and the `sudoers.d` grant from the one your `KAMAL_SSH_USER` names; `DB_USER`
+back to `collavre_user` moves table ownership and takes `LOGIN` from the role
+in the deployed `DATABASE_URL`. An omitted `SSH_PUBLIC_KEY` means "reuse the
+cloud user's key", so the run copies `ubuntu`'s `authorized_keys` into the
+deploy account — the account with passwordless `sudo` and `docker` — which is
+why the bare `sudo FORCE=1 bash script/lightsail_launch.sh` you may have run
+before now stops instead: on a host provisioned with the line above, that is
+the ordinary re-run, and the widening is what it would do first. A defaulted
+`BACKUP_S3_URI` is the quiet one: it regenerates the nightly job without the
+upload, so dumps keep being written and stop leaving the instance.
+
+So the re-run is refused when a setting it was *not given* disagrees with what
+the host was provisioned with. Giving the value is what makes it an
+instruction, so the deliberate rotations documented below are never refused;
+only the omission is. The refusal changes nothing and prints the command that
+converges the host as it stands:
+
+```
+!!! REFUSING: this run would change settings it was not asked to change.
+    APP_SSH_USER: host has 'deploybot', this run would apply 'collavre'
+    BACKUP_S3_URI: host has 's3://collavre-backups/pg', this run would apply ''
+...
+    sudo APP_SSH_USER=deploybot BACKUP_S3_URI=s3://collavre-backups/pg FORCE=1 bash script/lightsail_launch.sh
+```
+
+`ACK_CONFIG_RESET=1` goes ahead with the defaults, for when resetting them is
+what you meant. The host's own record is `/var/lib/collavre/launch.env`, which
+is also the answer to "what did I provision this with?" — read it before a
+re-run rather than after one. On a host provisioned before that file existed,
+`APP_SSH_USER` and `DB_USER` are still checked, against
+`/var/lib/collavre/deploy_user` and `/var/lib/collavre/db_user`; the rest are
+unknowable until the next successful run records them.
 
 Converging means the firewall too: a re-run adds and updates only the rules the
 script owns (SSH, 80, 443, and 5432 from the Docker bridge), so a VPN,
@@ -359,7 +397,11 @@ database that no longer exists. It fails, `collavre-pg-backup.service` goes red,
 and nothing new lands in `/var/backups/collavre`: the one failure on this page
 you discover by needing a dump and not having one. Pass the name explicitly,
 because `DB_NAME` still defaults to `collavre_production` and a plain re-run is
-now refused by the marker you just wrote. If you would rather not re-run
+now refused by the marker you just wrote. Any *other* override this host was
+provisioned with has to be repeated on that same command line — the re-run
+[stops and lists them](#2-create-the-instance-with-the-launch-script) rather
+than resetting them, so you are told, but being told mid-rename is worse than
+reading `/var/lib/collavre/launch.env` first. If you would rather not re-run
 provisioning, edit the `DB_NAME=` line in `/usr/local/bin/collavre-pg-backup`
 and prove it rather than assume it:
 
@@ -466,6 +508,19 @@ need; the instance also has its own `ubuntu` cloud user, and `collavre` may not
 exist at all. `sudo cat /var/lib/collavre/deploy_user` on the instance is the
 host's own answer if you are unsure.
 
+`<db-user>` and `<db-name>` are the same kind of placeholder, for the same
+reason: `DB_USER` and `DB_NAME` are overridable at provisioning time, and
+`DB_NAME` also changes under the [rename procedure](#changing-db_name-on-a-re-run).
+A role that does not exist fails these recipes at their first statement, and a
+database name that does not exist is worse in the import below, which creates
+nothing and reports the miss as a connection error. The instance answers for
+both, and the launch summary repeats them:
+
+```bash
+sudo cat /var/lib/collavre/db_user   # <db-user>
+sudo cat /var/lib/collavre/db_name   # <db-name>
+```
+
 - **Moving an existing PostgreSQL deployment (Neon, RDS):** dump and restore.
   Match `PG_MAJOR` to the source server's major version or the restore may fail.
 
@@ -501,8 +556,8 @@ host's own answer if you are unsure.
     scp collavre.dump <deploy-user>@<instance-ip>:/tmp/collavre.dump.incoming &&
     ssh <deploy-user>@<instance-ip> \
       'mv /tmp/collavre.dump.incoming /tmp/collavre.dump &&
-       pg_restore --no-owner --role=collavre_user --clean --if-exists \
-         -d "postgresql://collavre_user:<password>@127.0.0.1:5432/collavre_production" \
+       pg_restore --no-owner --role=<db-user> --clean --if-exists \
+         -d "postgresql://<db-user>:<password>@127.0.0.1:5432/<db-name>" \
          /tmp/collavre.dump &&
        rm /tmp/collavre.dump'
   move_status=$?
@@ -584,7 +639,7 @@ host's own answer if you are unsure.
   else
     # The copy disables referential integrity, which is superuser-only.
     ssh <deploy-user>@<instance-ip> \
-      "sudo -u postgres psql -c 'ALTER ROLE collavre_user SUPERUSER'"
+      "sudo -u postgres psql -c 'ALTER ROLE <db-user> SUPERUSER'"
 
     ./kamal.sh app exec \
       'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
@@ -594,7 +649,7 @@ host's own answer if you are unsure.
     # Take the grant back whether or not the copy worked — a failed cutover is
     # precisely when it would otherwise sit there.
     ssh <deploy-user>@<instance-ip> \
-      "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
+      "sudo -u postgres psql -c 'ALTER ROLE <db-user> NOSUPERUSER'"
     revoke_status=$?
 
     # Clean up and boot only if both worked. Either failure leaves the app down.
@@ -606,7 +661,7 @@ host's own answer if you are unsure.
       ./kamal.sh app boot   # restart on the data you just loaded
     else
       [ "$revoke_status" -eq 0 ] ||
-        echo "REVOKE FAILED: collavre_user is still a superuser — take it back by hand"
+        echo "REVOKE FAILED: <db-user> is still a superuser — take it back by hand"
       [ "$copy_status" -eq 0 ] ||
         echo "COPY FAILED: this database is now empty or half-loaded"
       echo "app left stopped on purpose; do not boot it until the above is cleared"
@@ -844,15 +899,41 @@ journalctl -u collavre-pg-backup.service        # check last run
 # CONNECTION LIMIT 0 does not apply to superusers, so pg_restore below still
 # connects; a container that survived the stop, or restarts mid-restore, cannot.
 
-# First, whether that last clause is true on THIS host. The exemption that lets
+# Which database, and which role, before anything is asked about either. Both
+# are the host's answer rather than this page's: `DB_NAME` is overridable at
+# provisioning time and the rename procedure above makes it the operator's, so
+# a literal here would shut, count, terminate and restore a database that is
+# not the one holding the data — and every one of those steps would report
+# success against the wrong name or fail for a reason that reads like a
+# cluster problem.
+# `${app_db:-...}` rather than a plain assignment, so the recovery the refusal
+# below prints is one the block actually honours: setting app_db in the shell
+# and pasting again has to survive this line, or the instruction is a dead end.
+app_db=${app_db:-$(sudo cat /var/lib/collavre/db_name 2>/dev/null)}
+app_role=$(sudo cat /var/lib/collavre/db_user 2>/dev/null)
+
+# Then whether that last clause is true on THIS host. The exemption that lets
 # pg_restore in is role-wide, so it lets the app in too whenever the app's own
 # role is a superuser — and `DB_USER=postgres` on a first run is legal (see
 # "Changing DB_USER on a re-run"). Refusing before the ALTER rather than after
 # it, so a refusal leaves the connection limit exactly as the operator had it.
-app_role=$(sudo cat /var/lib/collavre/db_user 2>/dev/null)
 app_super=$(sudo -u postgres psql -qtAd postgres -c \
   "SELECT rolsuper FROM pg_roles WHERE rolname = '$app_role'" 2>/dev/null)
-if [ "$app_super" != f ]; then
+if [ -z "$app_db" ]; then
+  echo "REFUSING: cannot tell which database to restore."
+  echo "  /var/lib/collavre/db_name is missing or unreadable. That file is"
+  echo "  written by script/lightsail_launch.sh once the database exists, so an"
+  echo "  empty answer means this host was provisioned by a revision that"
+  echo "  predates it, or the read failed. Falling back to the default name is"
+  echo "  the one thing this block must not do: on a host that used DB_NAME, or"
+  echo "  the rename procedure, the default names a database that either does"
+  echo "  not exist or is not the live one."
+  echo "Nothing was changed. Confirm the name, then set it for this block:"
+  echo "  sudo -u postgres psql -qtAd postgres -c \\"
+  echo "    \"SELECT datname FROM pg_database WHERE NOT datistemplate\""
+  echo "  app_db=<the database>   # then re-run this block"
+  restore_status=3
+elif [ "$app_super" != f ]; then
   echo "REFUSING: cannot shut this database to the app."
   echo "  DB_USER is '$app_role' and its rolsuper is '$app_super' — anything but"
   echo "  'f' means the gate below cannot tell your app apart from pg_restore,"
@@ -869,7 +950,7 @@ if [ "$app_super" != f ]; then
 else
 
 sudo -u postgres psql -qd postgres -c \
-  "ALTER DATABASE collavre_production CONNECTION LIMIT 0"
+  "ALTER DATABASE $app_db CONNECTION LIMIT 0"
 
 # Read the limit back rather than trusting that the line above ran. These
 # blocks are pasted into an interactive shell with no `set -e`, so a failed
@@ -878,10 +959,10 @@ sudo -u postgres psql -qd postgres -c \
 # that was never shut. `datconnlimit` is the state itself, so it cannot say
 # "closed" about a door that is open.
 shut=$(sudo -u postgres psql -qtAd postgres -c \
-  "SELECT datconnlimit FROM pg_database WHERE datname = 'collavre_production'")
+  "SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'")
 
 if [ "$shut" != 0 ]; then
-  echo "REFUSING: could not shut collavre_production to the app."
+  echo "REFUSING: could not shut $app_db to the app."
   echo "  its connection limit is '$shut', not 0 — the ALTER above did not take"
   echo "  (wrong database name? not superuser? cluster gone?)"
   echo "nothing was dropped; fix that and re-run this block"
@@ -893,29 +974,29 @@ else
 
 sudo -u postgres psql -qtAd postgres -c \
   "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
-    WHERE datname = 'collavre_production' AND pid <> pg_backend_pid()"
+    WHERE datname = '$app_db' AND pid <> pg_backend_pid()"
 
 # Now check, with the door confirmed shut — a point-in-time count taken before
 # this would only have said the app happened to be between connections.
 live=$(sudo -u postgres psql -qtA -d postgres -c \
   "SELECT count(*) FROM pg_stat_activity
-    WHERE datname = 'collavre_production' AND pid <> pg_backend_pid()")
+    WHERE datname = '$app_db' AND pid <> pg_backend_pid()")
 
 # A string comparison, not -ne: if the query above failed, $live is empty or an
 # error message, and `[ "$live" -ne 0 ]` would error and be read as false —
 # a gate that opens when the check breaks. Anything that is not exactly "0"
 # stops here.
 if [ "$live" != 0 ]; then
-  echo "REFUSING: collavre_production is not confirmed idle (check returned: '$live')."
+  echo "REFUSING: $app_db is not confirmed idle (check returned: '$live')."
   sudo -u postgres psql -d postgres -c \
     "SELECT usename, client_addr, state, query
-       FROM pg_stat_activity WHERE datname = 'collavre_production'"
+       FROM pg_stat_activity WHERE datname = '$app_db'"
   echo "run './kamal.sh app stop' on your workstation and check it succeeded"
   echo "nothing was dropped; re-run this block once the app is down"
   restore_status=2
 else
-  sudo -u postgres pg_restore --clean --if-exists -d collavre_production \
-    /var/backups/collavre/collavre_production-YYYYmmdd-HHMMSS.dump
+  sudo -u postgres pg_restore --clean --if-exists -d "$app_db" \
+    "/var/backups/collavre/$app_db-YYYYmmdd-HHMMSS.dump"
   restore_status=$?
 fi
 
@@ -932,7 +1013,7 @@ fi
 reopen_status=0
 if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
   sudo -u postgres psql -qd postgres -c \
-    "ALTER DATABASE collavre_production CONNECTION LIMIT -1"
+    "ALTER DATABASE $app_db CONNECTION LIMIT -1"
   reopen_status=$?
 fi
 
@@ -946,7 +1027,7 @@ fi
 # the restore's own outcome, because it is the one thing here that stands
 # between a good restore and an app that cannot reach it.
 if [ "$reopen_status" -ne 0 ]; then
-  echo "RE-OPEN FAILED: collavre_production is still at 'CONNECTION LIMIT 0'."
+  echo "RE-OPEN FAILED: $app_db is still at 'CONNECTION LIMIT 0'."
   if [ "$restore_status" -eq 0 ]; then
     echo "  The restore finished — the data is not what failed. Do not re-run"
     echo "  this block to clear it: pg_restore --clean would drop a good restore"
@@ -958,23 +1039,23 @@ if [ "$reopen_status" -ne 0 ]; then
   echo "  The app will be refused at boot with 'too many connections', which"
   echo "  will read like a pool problem. Do not boot it until this succeeds:"
   echo "  sudo -u postgres psql -qd postgres -c \\"
-  echo "    \"ALTER DATABASE collavre_production CONNECTION LIMIT -1\""
+  echo "    \"ALTER DATABASE $app_db CONNECTION LIMIT -1\""
   echo "  Confirm with:"
   echo "  sudo -u postgres psql -qtAd postgres -c \\"
-  echo "    \"SELECT datconnlimit FROM pg_database WHERE datname = 'collavre_production'\""
+  echo "    \"SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'\""
 elif [ "$restore_status" -eq 0 ]; then
   echo "restored; boot the app from your workstation: ./kamal.sh app boot"
 elif [ "$restore_status" -eq 2 ] || [ "$restore_status" -eq 3 ]; then
   : # refused before touching anything — see the message above
 else
   echo "RESTORE FAILED: objects may be dropped or only partly reloaded."
-  echo "collavre_production is LEFT AT 'CONNECTION LIMIT 0' deliberately: it is"
+  echo "$app_db is LEFT AT 'CONNECTION LIMIT 0' deliberately: it is"
   echo "  now half-replaced, and a container that survived the stop must not"
   echo "  reconnect and write into it. pg_restore is a superuser and is exempt,"
   echo "  so fix the cause and run this block again — it needs no other step."
   echo "If instead you are abandoning the restore, re-open it by hand with:"
   echo "  sudo -u postgres psql -qd postgres -c \\"
-  echo "    \"ALTER DATABASE collavre_production CONNECTION LIMIT -1\""
+  echo "    \"ALTER DATABASE $app_db CONNECTION LIMIT -1\""
 fi
 ```
 
