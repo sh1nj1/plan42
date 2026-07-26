@@ -198,6 +198,18 @@ module Collavre
     def set_primary_agent
       topic = @creative.topics.find(params[:id])
 
+      # On a Claude Channel session topic, primary_agent_id is not a routing pin
+      # but part of the session identity: Matcher#eligible_in_inbox? needs it to
+      # route the session agent at all, and SessionProvisioner#find_or_create_topic
+      # reuses the topic by (primary_agent_id, session_id). Clearing or reassigning
+      # it would leave a live session unroutable and split the next registration
+      # into a second topic. Releasing a session is session teardown, not an
+      # avatar click.
+      if topic.session_id.present?
+        render json: { error: I18n.t("collavre.topics.session_topic_locked") },
+               status: :unprocessable_entity and return
+      end
+
       # A blank agent_id clears the assignment. The primary agent is an exclusive
       # assignment (it silences every other agent's ambient routing), so the user
       # needs a way back to an unassigned topic — otherwise a single avatar click
@@ -293,6 +305,7 @@ module Collavre
       if topic.primary_agent
         data[:primary_agent] = agent_json(topic.primary_agent)
       end
+      data[:agent_locked] = topic.session_id.present?
       data
     end
 
@@ -302,6 +315,7 @@ module Collavre
     def topic_json_with_agent(topic, agent)
       data = topic.slice(:id, :name, :source_topic_id)
       data[:primary_agent] = agent ? agent_json(agent) : nil
+      data[:agent_locked] = topic.session_id.present?
       data
     end
 

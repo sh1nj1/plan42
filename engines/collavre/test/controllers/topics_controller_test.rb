@@ -328,6 +328,43 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_nil body["topic"]["primary_agent"]
   end
 
+  # On a session topic primary_agent_id is session identity, not a routing pin:
+  # clearing it makes the live session unroutable and makes the next registration
+  # create a second topic instead of reusing the conversation.
+  test "should refuse to clear the primary agent of a session topic" do
+    ai_agent = User.create!(
+      email: "sessionagent@test.local", password: "password123", name: "SessionAgent",
+      llm_vendor: "anthropic", llm_model: "claude", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+    @topic.update!(session_id: "sess-abc123")
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: nil }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal ai_agent.id, @topic.reload.primary_agent_id
+  end
+
+  test "should refuse to reassign the primary agent of a session topic" do
+    ai_agent = User.create!(
+      email: "sessionagent2@test.local", password: "password123", name: "SessionAgent2",
+      llm_vendor: "anthropic", llm_model: "claude", searchable: true
+    )
+    other_agent = User.create!(
+      email: "otheragent@test.local", password: "password123", name: "OtherAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+    @topic.update!(session_id: "sess-def456")
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: other_agent.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal ai_agent.id, @topic.reload.primary_agent_id
+  end
+
   test "should reject non-AI user as primary agent" do
     patch set_primary_agent_creative_topic_url(@creative, @topic),
       params: { agent_id: @user.id }, as: :json

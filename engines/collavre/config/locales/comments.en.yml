@@ -9,6 +9,7 @@ en:
       unarchive: Restore
       archived_topics: "Archived topics (%{count})"
       not_ai_agent: Only AI agents can be set as primary agent.
+      session_topic_locked: This topic belongs to a live agent session. Its primary agent cannot be changed or released.
       default_name_prefix: "Topic"
       branch_prefix: "Branch"
       main_name: "Main"
@@ -200,6 +201,7 @@ en:
         updated_agent: 'Topic "%{name}" primary agent updated to @%{agent}.'
         cleared_agent: 'Topic "%{name}" primary agent released. All agents can respond again.'
         already_exists: 'Topic "%{name}" already exists.'
+        session_topic_locked: 'Topic "%{name}" belongs to a live agent session. Its primary agent cannot be changed or released.'
       work_command:
         agent_not_found: "Please mention an AI agent to execute the workflow."
         no_children: "This creative has no child creatives to work on."

@@ -180,6 +180,20 @@ module Collavre
         assert_match(/Release Topic/, result)
       end
 
+      # A session topic's primary agent is its identity, not a routing pin, so
+      # /topic must neither release nor reassign it.
+      test "leaves a session topic's primary agent untouched" do
+        existing = Topic.create!(creative: @creative, user: @user, name: "Session Topic")
+        existing.set_primary_agent!(@ai_agent)
+        existing.update!(session_id: "sess-xyz789")
+
+        comment = create_comment('/topic "Session Topic"')
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_equal @ai_agent.id, existing.reload.primary_agent_id
+        assert_match(/Session Topic/, result)
+      end
+
       test "reports already exists when topic exists without agent mention" do
         Topic.create!(creative: @creative, user: @user, name: "Duplicate Topic")
         comment = create_comment('/topic "Duplicate Topic"')

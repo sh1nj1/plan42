@@ -150,8 +150,12 @@ export default class extends Controller {
         const renderTopic = (topic) => {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
+            // agent_locked marks a live agent session topic, whose primary agent is
+            // session identity rather than a routing pin — the server refuses to
+            // change it, so the avatar must not offer to release it.
+            const releasableTopicId = canManage && !topic.agent_locked ? topic.id : null
             const agentAvatar = topic.primary_agent
-                ? this.renderAgentAvatar(topic.primary_agent, canManage ? topic.id : null)
+                ? this.renderAgentAvatar(topic.primary_agent, releasableTopicId)
                 : ''
             const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)

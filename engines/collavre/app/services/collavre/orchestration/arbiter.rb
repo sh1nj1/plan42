@@ -103,12 +103,20 @@ module Collavre
         primary = candidates.find { |agent| agent.id == primary_id }
         return [ primary ] if primary
 
-        # A configured primary that is not among the candidates is unavailable
-        # (no feedback permission, inbox-confined, or a stale id). Stay silent:
-        # promoting an arbitrary other agent is precisely the interloper that a
-        # primary assignment exists to keep out of the topic. Mention- and
-        # review-routed candidates bypass arbitration and never reach here.
-        []
+        # The primary is unavailable (no feedback permission, inbox-confined, or
+        # a stale id). What that means depends on where the primary came from:
+        #
+        # - A topic-column assignment is EXCLUSIVE. Stay silent: promoting an
+        #   arbitrary other agent is precisely the interloper the assignment
+        #   exists to keep out of the topic. (Mention- and review-routed
+        #   candidates bypass arbitration and never reach here.)
+        # - A policy-level primary_agent_id is only a PREFERENCE — the admin
+        #   reference defines primary_first as "primary agent responds first,
+        #   others only if unavailable". Keep that fallback intact so an
+        #   unassigned topic behaves exactly as it did before topic pinning.
+        return [] if @policy_resolver.topic_primary_agent_id.present?
+
+        candidates.take(1)
       end
 
       # Rotate between agents using Rails cache for state

@@ -54,7 +54,13 @@ module Collavre
         existing_topic = Topic.find_by(creative: creative, name: data[:name])
 
         if existing_topic
-          if primary_agent
+          if existing_topic.session_id.present?
+            # A Claude Channel session topic carries its agent as session identity,
+            # not as a routing pin (see TopicsController#set_primary_agent). Neither
+            # reassigning nor releasing it is safe from a chat command.
+            I18n.t("collavre.comments.topic_command.session_topic_locked",
+                   name: existing_topic.name)
+          elsif primary_agent
             set_primary_agent(existing_topic, primary_agent)
             broadcast_topic_agent_updated(existing_topic, primary_agent)
             I18n.t("collavre.comments.topic_command.updated_agent",

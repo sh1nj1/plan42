@@ -102,6 +102,19 @@ module Collavre
         topic_primary_agent_id || arbitration_config["primary_agent_id"]
       end
 
+      # Read primary_agent_id directly from the topics table.
+      #
+      # Public because the two sources of a primary agent carry different
+      # strength: a topic-column assignment is exclusive, while a policy-level
+      # primary_agent_id is only a preference. The Arbiter needs to tell them
+      # apart even though #primary_agent_id collapses both.
+      def topic_primary_agent_id
+        topic_id = @context.dig("topic", "id")
+        return nil unless topic_id
+
+        Topic.where(id: topic_id).pick(:primary_agent_id)
+      end
+
       # Bid strategy specific
       def confidence_threshold
         arbitration_config["confidence_threshold"]
@@ -162,14 +175,6 @@ module Collavre
         end
 
         config
-      end
-
-      # Read primary_agent_id directly from the topics table
-      def topic_primary_agent_id
-        topic_id = @context.dig("topic", "id")
-        return nil unless topic_id
-
-        Topic.where(id: topic_id).pick(:primary_agent_id)
       end
     end
   end
