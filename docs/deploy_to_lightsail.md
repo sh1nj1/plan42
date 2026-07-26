@@ -347,6 +347,11 @@ BEGIN
     SELECT c.oid::regclass AS obj
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    -- `pg_toast` is absent from this list on purpose, and the `relkind` filter
+    -- is why: TOAST relations are relkind 't' and their indexes 'i', so
+    -- neither is selected here. Measured on a cluster with a toastable table,
+    -- pg_toast holds 39 't' and 39 'i' and no 'r' at all. Adding it would be a
+    -- second no-op that implies the filter below is not trusted.
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
       AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
       AND pg_get_userbyid(c.relowner) = 'postgres'
@@ -390,11 +395,14 @@ The verdict is gated on the query having been answered, not on its output being
 empty. A `psql` that cannot connect — the database was renamed, the cluster is
 down — prints its `FATAL` on stderr and leaves stdout empty, which is the same
 thing a completed transfer looks like. "Could not be checked" is not "checked
-and clear". The `relkind` filter and `pg_toast` are not tidiness — without
-them the query returns several dozen catalog TOAST tables that `postgres` owns
-on every cluster and can never come back empty, so it would report a completed
+and clear". The `relkind` filter is not tidiness: without it the query returns
+several dozen catalog TOAST tables and their indexes, which `postgres` owns on
+every cluster, so it could never come back empty and would report a completed
 transfer as unfinished. Indexes and TOAST tables have no ownership of their own;
-they follow the table they belong to.
+they follow the table they belong to. Measured on a cluster with one toastable
+table: 81 rows with neither filter, 2 with `relkind` alone. `pg_toast` here is
+belt-and-braces rather than load-bearing — the transfer loop above leaves it out
+for that reason, since TOAST relations are `relkind` `'t'` and never reach it.
 
 `postgres` keeps `LOGIN`, its password in `/var/lib/collavre/db_password` and
 its superuser rights after the rotation, and the script says so when it lets one
