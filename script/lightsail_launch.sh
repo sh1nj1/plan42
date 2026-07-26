@@ -2919,13 +2919,54 @@ record_db_role_grant "$DB_USER" ||
 
 SQL_FILE="$(mktemp /tmp/collavre-db.XXXXXX.sql)"
 trap 'rm -f "$SQL_FILE"' EXIT
-ESCAPED_PASSWORD="${DB_PASSWORD//\'/\'\'}"
+# Doubling the quote through a variable rather than through `\'`, which does not
+# mean the same thing on every bash. This is NOT a production defect being
+# fixed: on the bash Lightsail runs the previous form was already correct.
+# Measured, same input `it's`, same expression `${p//\'/\'\'}`:
+#
+#   bash 5.2.15  (Ubuntu, what this script runs on; also CI)   it''s
+#   bash 3.2.57  (macOS, what a developer runs the suite on)   it\'\'s
+#
+# Two reasons to spell it this way regardless. The line escapes a credential
+# into a SQL literal, and it should not be one whose meaning is decided by the
+# interpreter version — on 3.2 psql reads the `\'` as a meta-command and stops
+# with "invalid command", after write_state_file above has already recorded the
+# password, leaving a host that records a credential its role does not have.
+#
+# And it is what lets the suite assert this at all. Case 141 generates with a
+# quoted password and checks the statement; against the previous form that
+# assertion was green on Ubuntu and red on macOS for a reason having nothing to
+# do with the escaping, so it could not be written. Same platform split as the
+# `head -c 0` fixture two commits back, pointing the other way.
+SQL_QUOTE="'"
+ESCAPED_PASSWORD="${DB_PASSWORD//$SQL_QUOTE/$SQL_QUOTE$SQL_QUOTE}"
 cat > "$SQL_FILE" <<SQL
 \set ON_ERROR_STOP on
 SELECT format('CREATE ROLE %I LOGIN', '$DB_USER')
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER')
 \gexec
-ALTER ROLE "$DB_USER" PASSWORD '$ESCAPED_PASSWORD';
+-- LOGIN on the ALTER as well as on the CREATE, because the CREATE is the
+-- statement a rotation back to a previous name never reaches. reassign_prior_db_role
+-- takes LOGIN from the role it replaces, so after DB_USER goes A -> B -> A the
+-- role 'A' exists, the \gexec produces no statement for it, and an ALTER that
+-- sets only the password leaves it NOLOGIN. Measured on a real cluster:
+--
+--   run                  shipped                       with LOGIN here
+--   1  DB_USER=a         connects                      connects
+--   2  DB_USER=b         connects, a -> NOLOGIN        same
+--   3  DB_USER=a         FATAL: role "a" is not        connects
+--                        permitted to log in
+--
+-- Every statement succeeds on that third run, so ON_ERROR_STOP has nothing to
+-- stop on and the summary hands out a DATABASE_URL naming a role that cannot
+-- open a connection. And run 3 leaves *both* roles NOLOGIN — the rotation
+-- correctly disarms 'b' on its way past — so the cluster is left with no
+-- application login at all, rather than with a working previous one.
+--
+-- Idempotent for the ordinary case: LOGIN on a role that has it changes
+-- nothing, and this ALTER already ran unconditionally against whatever DB_USER
+-- names, so it grants nothing to a role it was not already touching.
+ALTER ROLE "$DB_USER" LOGIN PASSWORD '$ESCAPED_PASSWORD';
 SELECT format('CREATE DATABASE %I OWNER %I', '$DB_NAME', '$DB_USER')
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')
 \gexec

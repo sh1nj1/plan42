@@ -5143,6 +5143,67 @@ esac
 chk "the block says what to do when the drops are refused" 1 \
   "$(grep -c 'must be owner of table' "$DOC")"
 
+echo "140. a DB_USER rotated back to a previous name can log in again"
+# reassign_prior_db_role takes LOGIN from the role it replaces, and the CREATE
+# that carries LOGIN is skipped for a role that already exists. So a host going
+# DB_USER a -> b -> a used to end with an ALTER that set only the password.
+# Measured on a real PostgreSQL cluster, the same three runs each time:
+#
+#   run                shipped                              with LOGIN on the ALTER
+#   1  DB_USER=a       connects                             connects
+#   2  DB_USER=b       connects, a -> NOLOGIN               same
+#   3  DB_USER=a       FATAL: role "a" is not permitted      connects
+#                      to log in;  b also NOLOGIN
+#
+# Every statement succeeds on run 3 — ON_ERROR_STOP has nothing to stop on —
+# and it leaves *no* application login on the cluster, since the rotation
+# correctly disarms 'b' on the way past.
+sqld=$(mktemp -d)
+gen_db_sql() {   # <db-user> <password>
+  awk '/^SQL_FILE="\$\(mktemp/{p=1} p{print} /^trap - EXIT$/{exit}' "$SRC" > "$sqld/sect.sh"
+  # Through the environment rather than spliced into the generated harness:
+  # writing a configured value into a program is the defect case 133 is about,
+  # and a fixture that does it is the same mistake one level up. And the file is
+  # removed first — spliced, a value that closed the assignment killed the run
+  # before it generated anything and the assertion read the *previous* call's
+  # file, which is a pass or a fail decided by fixture quoting.
+  rm -f "$sqld/generated.sql"
+  { printf '%s\n' 'set -euo pipefail' \
+      'DB_NAME=collavre_production' \
+      'chown() { :; }' \
+      'runuser() { cp "${!#}" '"$sqld"'/generated.sql; }'
+    cat "$sqld/sect.sh"
+  } > "$sqld/run.sh"
+  DB_USER="$1" DB_PASSWORD="$2" bash "$sqld/run.sh" >/dev/null 2>&1
+  cat "$sqld/generated.sql" 2>/dev/null
+}
+GEN="$(gen_db_sql collavre_user 'pw')"
+chk "the ALTER restores LOGIN as well as the password" 1 \
+  "$(printf '%s\n' "$GEN" | grep -c '^ALTER ROLE "collavre_user" LOGIN PASSWORD')"
+# The control that keeps the fix from being a rewrite of the statement: the
+# password is still set by the same ALTER. A separate `ALTER ROLE ... LOGIN`
+# would pass the assertion above and leave a run that rotates the password able
+# to fail between the two, with the role's password and the recorded one
+# disagreeing.
+#
+# The password here deliberately carries no quote. `${DB_PASSWORD//\'/\'\'}`
+# does not mean the same thing on every bash: 5.2 (what Lightsail runs) yields
+# `it''s`, 3.2 (what macOS ships, and what a developer runs this suite under)
+# yields `it\'\'s`, which PostgreSQL rejects with a syntax error. An assertion
+# on a quoted password would therefore be red on one machine and green on the
+# other for a reason that has nothing to do with the statement being tested —
+# the same platform split as `head -c 0`, pointing the other way.
+GEN="$(gen_db_sql collavre_user 'pw-not-quoted')"
+chk "and still carries the password in the same statement" 1 \
+  "$(printf '%s\n' "$GEN" | grep -c "^ALTER ROLE \"collavre_user\" LOGIN PASSWORD 'pw-not-quoted';\$")"
+# And the other direction: the CREATE keeps LOGIN too. Dropping it there in
+# favour of the ALTER would leave a window on a fresh host between the two
+# statements, and this file is read by operators as the record of what the role
+# is given.
+chk "the CREATE still carries LOGIN for a role that does not exist yet" 1 \
+  "$(printf '%s\n' "$GEN" | grep -c "CREATE ROLE %I LOGIN")"
+rm -rf "$sqld"
+
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
 exit "$fail"
