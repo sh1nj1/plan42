@@ -63,6 +63,18 @@ sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." bash script/lightsail_launch.sh
 sudo FORCE=1 bash script/lightsail_launch.sh   # after the first success
 ```
 
+Converging means the firewall too: a re-run adds and updates only the rules the
+script owns (SSH, 80, 443, and 5432 from the Docker bridge), so a VPN,
+monitoring or IP-allowlist rule you added by hand survives it. Two consequences
+worth knowing before you re-run:
+
+- If you have narrowed SSH — `ufw allow from <your-ip> to any port 22` with the
+  blanket rule deleted — the script leaves it alone rather than re-opening 22.
+  It only adds its own SSH rule when nothing else allows the port.
+- It does reassert `default deny incoming` and `default allow outgoing`. That
+  is the only setting a re-run tightens on you, and a service reachable solely
+  because the default policy was loosened will stop being reachable.
+
 Progress: `sudo tail -f /var/log/collavre-launch.log` (first boot takes 3–6
 minutes). When it finishes it writes `/root/collavre-lightsail-summary.txt` with
 the generated `DATABASE_URL` and the exact `.env.production` lines to copy.
@@ -233,9 +245,17 @@ container polling the database they are about to replace.
   ./kamal.sh app exec \
     'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
     -e MIGRATION_RUN_RESET:true
+  copy_status=$?
 
+  # Take the grant back whether or not the copy worked — a failed cutover is
+  # precisely when it would otherwise sit there. Do not skip past a REVOKE
+  # FAILED line.
   ssh collavre@<instance-ip> \
-    "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
+    "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'" ||
+    echo "REVOKE FAILED: collavre_user is still a superuser — take it back by hand"
+  [ "$copy_status" -eq 0 ] ||
+    echo "copy failed: re-grant and re-run it before booting the app"
+
   ssh collavre@<instance-ip> \
     'sudo rm "$(docker volume inspect plan42_storage \
        --format "{{.Mountpoint}}")/production-primary.sqlite3"'
@@ -248,10 +268,24 @@ container polling the database they are about to replace.
   `ALTER TABLE ... DISABLE TRIGGER ALL`, which needs a superuser — owning the
   table is not enough. The task checks this up front and aborts with
   instructions rather than dying halfway through with a `ForeignKeyViolation`,
-  so a forgotten grant costs you a message, not a half-loaded database. Take it
-  back afterwards: the other route the task offers,
-  `MIGRATION_RUN_USER=postgres`, would mean giving the superuser role a
-  password that every container on the host could then authenticate with.
+  so a forgotten grant costs you a message, not a half-loaded database. The
+  other route the task offers, `MIGRATION_RUN_USER=postgres`, would mean giving
+  the superuser role a password that every container on the host could then
+  authenticate with — which is why the grant lands on the app role instead.
+
+  **That is also why the revoke is not conditional on the copy succeeding.**
+  `collavre_user` is the role in `DATABASE_URL`, so it is what every app
+  container authenticates as. Leaving it a superuser turns any SQL injection
+  into `COPY ... FROM PROGRAM` — arbitrary commands as the `postgres` user on
+  the host — and a failed cutover is exactly the moment you are least likely to
+  remember a line further down the page. The window is not merely the length of
+  the copy: troubleshooting a failed cutover usually means booting the app to
+  look at it, and the container comes up holding superuser credentials.
+
+  Revoking on failure costs nothing, because the same up-front check makes the
+  retry safe. Re-run without re-granting and the task aborts before it touches
+  the database, telling you what is missing. So the recovery is: re-grant,
+  re-run, and only then `app boot`.
 
   `MIGRATION_RUN_RESET=true` matters because `setup` has already run the
   migration replay this section opened by distrusting. The task's schema load
