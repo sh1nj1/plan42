@@ -429,12 +429,30 @@ ensure_ufw_rule() {
 # port 22` is told nothing authorizes SSH, and gets a blanket rule added beside
 # their restriction, opening 22 to every source they excluded.
 #
+# The port is not always the first thing on the line. A rule written against a
+# particular destination address — `ufw allow from <ip> to <this-host> port 22`,
+# which is how SSH gets pinned to one interface on a host with both a public and
+# a private address — renders as "10.1.2.3 22/tcp", so anchoring on the port
+# misses it and broadens exactly the rule it was meant to respect. Hence the
+# optional leading token. It cannot swallow a different port: "2222/tcp" and
+# "10.1.2.3 2222/tcp" both still fail to match, as does a host address that
+# merely starts with 22 ("22.1.1.1 80/tcp").
+#
 # Deliberately positive: it answers "is 22 open?", never "is 22 closed?". An
 # empty or unparseable `ufw status` therefore means we add the rule, because
 # guessing wrong in that direction only re-opens SSH, while guessing wrong in
 # the other enables a deny-by-default firewall on a host with no way in.
+#
+# That same direction is why an all-ports rule ("Anywhere ALLOW <ip>", from
+# `ufw allow from <ip>` with no port) is deliberately NOT counted, even though
+# it does permit 22 from that source. Its source is some host the operator
+# trusts for an unrelated service as often as it is their own workstation, and
+# reading it as "SSH is handled" would enable a deny-by-default firewall on a
+# box the operator may have no remaining way into. A rule that names port 22 is
+# evidence about SSH; one that names no port at all is not.
 ssh_already_allowed() {
-  ufw status 2>/dev/null | grep -qE '^(22|OpenSSH)([/[:space:]]).*(ALLOW|LIMIT)'
+  ufw status 2>/dev/null |
+    grep -qE '^([^[:space:]]+[[:space:]]+)?(22|OpenSSH)([/[:space:]]).*(ALLOW|LIMIT)'
 }
 
 # Authorize SSH, but only if nothing else already does. An operator who

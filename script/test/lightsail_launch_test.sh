@@ -381,7 +381,10 @@ for s in "22/tcp                     ALLOW       Anywhere" \
          "22/tcp                     ALLOW IN    203.0.113.4" \
          "22/tcp                     LIMIT       203.0.113.9" \
          "22/tcp                     LIMIT IN    Anywhere" \
-         "22/tcp (v6)                LIMIT       Anywhere (v6)"; do
+         "22/tcp (v6)                LIMIT       Anywhere (v6)" \
+         "10.1.2.3 22/tcp            ALLOW       203.0.113.9" \
+         "10.1.2.3 22/tcp            LIMIT       203.0.113.9" \
+         "2001:db8::1 22/tcp         ALLOW       2001:db8::9"; do
   STATUS="$s"
   ssh_already_allowed
   chk "detected: $s" 0 "$?"
@@ -394,21 +397,38 @@ echo "24. a narrowed SSH rule survives the re-run that finds it"
 # LIMIT is here because it is what ufw's own documentation recommends for SSH:
 # reading only ALLOW meant a rate-limited, source-restricted rule was reported
 # as "nothing authorizes SSH", and the blanket rule went in beside it.
+#
+# The destination-qualified forms are the same defect one step further out: the
+# port is not at the start of the line, so a predicate anchored on the port
+# reports "nothing authorizes SSH" for a rule that pins 22 to one interface.
 for s in "22/tcp                     ALLOW IN    203.0.113.4" \
-         "22/tcp                     LIMIT       203.0.113.9"; do
+         "22/tcp                     LIMIT       203.0.113.9" \
+         "10.1.2.3 22/tcp            ALLOW       203.0.113.9" \
+         "10.1.2.3 22/tcp            LIMIT       203.0.113.9"; do
   STATUS="$s"
   UFW_CALLS=""
   ensure_ssh_rule
-  chk "blanket rule not added over [${s#22/tcp                     }]" "" "$UFW_CALLS"
+  chk "blanket rule not added over [$s]" "" "$UFW_CALLS"
 done
 
 echo "25. no SSH rule at all means one is added, never assumed"
 # Failing the other way enables a deny-by-default firewall on a host with no
 # way back in, so every uncertain status must land here.
+#
+# The last three guard the optional leading token that makes the
+# destination-qualified forms match: it must not swallow a different port, nor
+# turn a host address that merely begins with 22 into an SSH rule. The
+# all-ports rule is a decision, not an oversight — it permits 22 from that
+# source, but its source is as often a trusted service host as the operator's
+# own machine, and reading it as "SSH is handled" would enable a
+# deny-by-default firewall on a box with no remaining way in.
 for s in "Status: inactive" \
          "80/tcp                     ALLOW       Anywhere" \
          "2222/tcp                   ALLOW       Anywhere" \
          "22/tcp                     DENY        Anywhere" \
+         "10.1.2.3 2222/tcp          ALLOW       203.0.113.9" \
+         "22.1.1.1 80/tcp            ALLOW       198.51.100.5" \
+         "Anywhere                   ALLOW       203.0.113.9" \
          ""; do
   STATUS="$s"
   UFW_CALLS=""
