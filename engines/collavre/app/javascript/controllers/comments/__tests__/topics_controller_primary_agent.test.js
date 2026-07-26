@@ -176,6 +176,20 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
       expect(wrapper.dataset.action).toBeUndefined()
     })
 
+    // On an agent session topic the primary agent is session identity, not a
+    // routing pin, and the server refuses to change it — so a manager must not
+    // be offered a release control that can only fail.
+    test('renders a plain avatar on a locked session topic even for managers', () => {
+      controller.topics = [{ id: 1, name: 'Main', primary_agent: AGENT, agent_locked: true }]
+
+      controller.renderTopics(controller.topics, true, true)
+
+      const wrapper = controller.listTarget.querySelector('.topic-agent-avatar-wrapper')
+      expect(wrapper.querySelector('.topic-agent-avatar')).not.toBeNull()
+      expect(wrapper.classList.contains('topic-agent-avatar-releasable')).toBe(false)
+      expect(wrapper.dataset.action).toBeUndefined()
+    })
+
     test('PATCHes a null agent_id and drops the avatar once confirmed', async () => {
       confirmDialog.mockResolvedValue(true)
       global.fetch = jest.fn().mockResolvedValue({
