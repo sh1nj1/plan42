@@ -584,6 +584,31 @@ printf '%s\n' "$OLD" > "$st2/ssh_public_key"        # recorded but already remov
 revoke_prior_ssh_key "$AK" "$st2/ssh_public_key"
 chk "still just the new key" "$NEW" "$(cat "$AK")"
 
+echo "40. a rewrite that cannot be completed keeps the old key instead of none"
+# The realistic trigger is a full disk: `grep -vxF > $tmp` writes nothing and
+# exits 2, the `|| true` hides it, and writing that empty result back would
+# leave authorized_keys with no keys at all — locking the deploy account out of
+# a host whose only other way in is the account being rotated. Shadowing grep
+# reproduces exactly that: the filter fails, the membership tests do not.
+st3=$(mktemp -d)
+printf '%s\n%s\n' "$NEW" "$OLD" > "$AK"
+printf '%s\n' "$OLD" > "$st3/ssh_public_key"
+# shellcheck disable=SC2034  # read by revoke_prior_ssh_key, eval'd from the script
+SSH_PUBLIC_KEY="$NEW"
+LOGGED=""
+# shellcheck disable=SC2329  # shadows grep for revoke_prior_ssh_key only
+grep() { case "$*" in *-vxF*) return 2 ;; *) command grep "$@" ;; esac; }
+revoke_prior_ssh_key "$AK" "$st3/ssh_public_key"
+unset -f grep
+chk "the account keeps a way in"      1 "$(command grep -cxF "$NEW" "$AK")"
+chk "the un-withdrawn key is kept"    1 "$(command grep -cxF "$OLD" "$AK")"
+# If the marker advanced, no later run would ever retry the withdrawal.
+chk "marker still names the old key" "$OLD" "$(cat "$st3/ssh_public_key")"
+case "$LOGGED" in
+  *WARNING*"still authorized"*) echo "  ok   the failure is reported, not claimed as a success" ;;
+  *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
+esac
+
 unset -f log
 
 # --- reassign_prior_db_role -------------------------------------------------
@@ -609,7 +634,7 @@ psql_as_postgres() {
 log() { LOGGED="$LOGGED $*"; }
 rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
 
-echo "40. rotating DB_USER moves the tables and retires the old credential"
+echo "41. rotating DB_USER moves the tables and retires the old credential"
 # ALTER DATABASE ... OWNER only moves the database. Every table and sequence
 # the app created stays with the old role, so the new one in DATABASE_URL gets
 # "permission denied" on its own data — while the old role keeps LOGIN and the
@@ -621,11 +646,11 @@ chk "ownership moved, then login revoked" \
     '|REASSIGN OWNED BY "collavre_user" TO "collavre_app"|ALTER ROLE "collavre_user" NOLOGIN' \
     "$SQL"
 
-echo "41. an unchanged DB_USER touches nothing"
+echo "42. an unchanged DB_USER touches nothing"
 rotate collavre_user "$d3/db_user"
 chk "no SQL" "" "$SQL$LOGGED"
 
-echo "42. a superuser predecessor is reported, never disabled"
+echo "43. a superuser predecessor is reported, never disabled"
 # DB_USER=postgres on a first run is legal. NOLOGIN on the cluster superuser
 # locks every operator out of administering it — peer auth needs LOGIN too, so
 # there is no way back in.
@@ -638,7 +663,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "43. first run, emptied marker and a dropped role are all no-ops"
+echo "44. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
 ROLE_IS_SUPER=f
 rotate collavre_user "$d4/db_user"          # no marker yet

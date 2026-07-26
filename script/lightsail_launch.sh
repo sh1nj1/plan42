@@ -480,9 +480,25 @@ revoke_prior_ssh_key() {
       # the one recorded, so an operator key that merely shares a comment or a
       # prefix survives.
       grep -vxF "$prior" "$auth_keys" > "$tmp" || true
-      cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
-      rm -f "$tmp"
-      log "withdrew the SSH key this script installed on a previous run"
+      # An empty result cannot mean "every key was the retired one" — the
+      # successor was confirmed present above — so it means the filter itself
+      # failed, and the `|| true` that keeps `set -e` from firing on grep's
+      # "no lines selected" hides that. Writing it back would truncate
+      # authorized_keys and lock the deploy account out of the host. The
+      # realistic trigger is a full disk: grep writes nothing, exits 2, and
+      # `cat` then succeeds at emptying the file.
+      if [ -s "$tmp" ]; then
+        cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
+        rm -f "$tmp"
+        log "withdrew the SSH key this script installed on a previous run"
+      else
+        rm -f "$tmp"
+        log "WARNING: could not withdraw the previous SSH key — is the disk full?" \
+            "It is still authorized; remove it by hand once the host is healthy"
+        # Deliberately leave the marker pointing at the key still in the file,
+        # so the next run retries the withdrawal instead of forgetting it.
+        return 0
+      fi
     fi
   fi
   printf '%s\n' "$SSH_PUBLIC_KEY" > "$state"

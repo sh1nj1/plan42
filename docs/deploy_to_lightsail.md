@@ -48,7 +48,7 @@ Common overrides:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys` |
+| `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys`. [Changing it on a re-run](#rotating-ssh_public_key-on-a-re-run) withdraws the key it replaces |
 | `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt. [Changing it on a re-run](#changing-app_ssh_user-on-a-re-run) disarms the account it replaces |
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump |
 | `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
@@ -128,6 +128,29 @@ rotation by hand once you have confirmed you can reach the host as the new user:
 ```bash
 ssh <new-user>@<instance-ip> 'sudo deluser --remove-home <old-user>'
 ```
+
+### Rotating `SSH_PUBLIC_KEY` on a re-run
+
+The third member of the same family, on the same account. A re-run with a
+different `SSH_PUBLIC_KEY` adds the new key, and without anything further the
+old one stays in `authorized_keys` — and that account is in `docker` with
+passwordless sudo, so the key you believed you retired is still root on the
+box. Rotating away from a leaked key would have withdrawn nothing while
+reporting success.
+
+So the run withdraws the key it installed last time, recorded in
+`/var/lib/collavre/ssh_public_key`. Only that exact line goes: keys you added
+by hand, and the cloud user's original key, are matched whole-line and left
+alone. The withdrawal happens *after* the new key is in place, so an
+interrupted run leaves two working keys rather than none.
+
+Two cases deliberately do nothing. A re-run with `SSH_PUBLIC_KEY` unset means
+"keep using the cloud user's keys", not "retire mine" — dropping the variable
+from a re-run is easy, and treating it as a rotation would strand you. And if
+the rewrite cannot be completed (a full disk is the realistic way), the script
+says so, leaves the old key authorized, and leaves the marker alone so the next
+run tries again. Both directions are the safe one: the cost is a key that
+outlives its rotation and is reported, rather than a host with no key at all.
 
 ### Changing `DB_USER` on a re-run
 
