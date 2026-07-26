@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -39,7 +39,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           refuse_unusable_db_identifier refuse_unparsable_ssh_key \
           passwd_home ssh_key_holder \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
-          refuse_root_deploy_user \
+          refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -4364,6 +4364,161 @@ chk "db_user is not written by redirection" \
   0 "$(grep -c '> *"\$STATE_DIR/db_user"' "$SRC")"
 chk "both go through write_state_file" \
   2 "$(grep -cE 'write_state_file "\$STATE_DIR/db_(name|user)"' "$SRC")"
+
+echo "125. a torn queue append does not swallow the next value onto its line"
+# The last write in this script that was not going through write_state_file, and
+# the one it was introduced for. `grep -qxF x || printf '%s\n' x >> f` leaves a
+# fragment with no newline when the append is cut short, and the *retry* is what
+# does the damage: grep does not match the fragment, so the full value lands on
+# the end of it and the queue holds one line that is neither.
+#
+# The fragment is injected rather than provoked. RLIMIT_FSIZE and ENOSPC both
+# produce it, but neither is reachable from this harness on the maintainer's
+# machine (`ulimit -f` would not cap an append here), and the partial write is
+# not the claim — what the retry does to it is. Same reasoning as case 4a.
+sd=$(mktemp -d)
+KEYB="ssh-rsa AAAAB3NzaC1yc2ETESTKEYBBBBBBBBBBBBBBBBBBBBBBBBBBBB deploy@b"
+printf 'ssh-rsa AAAAB3NzaC1yc2ETESTKEYAAAAAAAAAAAAAAAAAAAAAAAAAAAA deploy@a\n' \
+  > "$sd/q"
+printf '%s' "${KEYB:0:30}" >> "$sd/q"          # <- the torn append
+append_state_line "$sd/q" "$KEYB"
+chk "the recorded value gets a whole line of its own" \
+  1 "$(grep -cxF "$KEYB" "$sd/q")"
+chk "the fragment is terminated, not extended" \
+  0 "$(grep -c "^${KEYB:0:30}${KEYB:0:4}" "$sd/q")"
+chk "the value already present is not duplicated" \
+  1 "$(append_state_line "$sd/q" "$KEYB"; grep -cxF "$KEYB" "$sd/q")"
+# The control in the other direction: a queue that was never torn must come out
+# byte-identical, since this runs on every convergence and a helper that
+# rewrote every entry would churn a file three rotations depend on.
+printf 'a\nb\n' > "$sd/q2"; before=$(cat "$sd/q2")
+append_state_line "$sd/q2" b
+chk "an entry already queued rewrites nothing" "$before" "$(cat "$sd/q2")"
+append_state_line "$sd/q2" c
+chk "and a new entry is appended in order"     "a b c" "$(tr '\n' ' ' < "$sd/q2" | sed 's/ $//')"
+# A failed write must leave the previous queue readable: a truncated queue is
+# how a root-equivalent key stops being named by anything.
+mktemp() { return 1; }
+append_state_line "$sd/q2" d
+chk "a failed queue write reports it"          1 "$?"
+chk "and the queue is still readable"          "a b c" "$(tr '\n' ' ' < "$sd/q2" | sed 's/ $//')"
+unset -f mktemp
+rm -rf "$sd"
+# Source-level control. append_state_line is new, so the behavioural assertions
+# above cannot fail against 6125e4ee — the suite would stop at its extraction
+# check. The regression that can recur is a record_* function going back to a
+# bare append, which is invisible until a write is cut short.
+# Verified to read 3 against 6125e4ee and 0 here. Worth saying, because the
+# first spelling of this pattern had one `.` too many and matched nothing in
+# *either* revision — a zero-expectation assertion that an empty result
+# satisfies silently, which is the same trap case 78b's dotenv control exists
+# for.
+chk "no queue is extended by a bare append" \
+  0 "$(grep -cE 'printf .%s.n. "\$(user|role|key)" >> "\$set_file"' "$SRC")"
+chk "all three record_* functions go through the helper" \
+  3 "$(grep -c 'append_state_line "\$set_file"' "$SRC")"
+
+echo "126. a deploy account that cannot run a command is refused"
+# refuse_root_deploy_user states this invariant and tests only UID 0: its own
+# message is "'$user' could never log in, while the summary would still print
+# KAMAL_SSH_USER", which is true word for word of /usr/sbin/nologin. Measured
+# against 6125e4ee, 'nobody' and 'daemon' both PROCEED.
+fakebin=$(mktemp -d)
+printf '#!/bin/sh\necho "This account is currently not available."\nexit 1\n' \
+  > "$fakebin/nologin"
+printf '#!/bin/sh\nexit 1\n' > "$fakebin/false"
+chmod +x "$fakebin/nologin" "$fakebin/false"
+# shellcheck disable=SC2329  # called by refuse_nologin_deploy_user
+shell_of() {
+  case "$1" in
+    nobody) echo "$fakebin/nologin" ;; svc) echo "$fakebin/false" ;;
+    ghost) echo "" ;; gone) echo /opt/removed-shell ;; *) echo /bin/sh ;;
+  esac
+}
+# shellcheck disable=SC2329
+getent() { printf '%s:x:1000:1000::/home/%s:%s\n' "$2" "$2" "$(shell_of "$2")"; }
+# shellcheck disable=SC2329
+id() { [ "$2" = brandnew ] && return 1; echo 1000; }
+for u in nobody svc gone ghost; do
+  out="$( (refuse_nologin_deploy_user "$u") 2>&1 )"
+  chk "'$u' is refused" 1 "$?"
+  case "$out" in
+    *"Nothing has been changed"*) echo "  ok   '$u': and says nothing was changed" ;;
+    *) echo "  FAIL '$u': did not say the host is unchanged: $out"; fail=1 ;;
+  esac
+done
+out="$( (refuse_nologin_deploy_user nobody) 2>&1 )"
+case "$out" in
+  *KAMAL_SSH_USER*usermod*) echo "  ok   names both the symptom and the remedy" ;;
+  *) echo "  FAIL does not name KAMAL_SSH_USER and usermod: $out"; fail=1 ;;
+esac
+# The controls, and they are the ones that matter: this guard runs on every
+# invocation before anything is installed, so a false positive refuses every
+# run — a worse defect than the one being fixed. Same shape as 123a.
+refuse_nologin_deploy_user collavre
+chk "an ordinary account proceeds"              0 "$?"
+refuse_nologin_deploy_user brandnew
+chk "an account that does not exist yet proceeds" 0 "$?"
+unset -f getent id shell_of
+rm -rf "$fakebin"
+chk "the guard runs beside the UID 0 one, before anything is installed" \
+  1 "$(grep -c '^refuse_nologin_deploy_user "\$APP_SSH_USER"' "$SRC")"
+
+echo "127. the backup executable is staged and validated, never truncated live"
+# The generated file is *executable*, which makes truncation quieter than it is
+# for a config file: a stump is not a file that fails to load, it is a shorter
+# program that runs. Of the 1233 truncation points of the generated script, 624
+# parse and 153 exit 0 without ever reaching pg_dump — and those 153 are the
+# first 310 bytes, so an early interruption lands there. `cat >` leaves the mode
+# alone and `chmod 0755` was the next statement, so on a re-converge the stump
+# stays executable while the timer stays enabled: green nightly runs, no dumps.
+bd=$(mktemp -d)
+seed_backup() {
+  printf '#!/usr/bin/env bash\n# PREVIOUS GOOD BACKUP\nexit 7\n' > "$bd/collavre-pg-backup"
+  chmod 0755 "$bd/collavre-pg-backup"
+}
+run_backup_section() {
+  awk '/^BACKUP_TMP="\$\(mktemp/{p=1} p{print} /^mv -f "\$BACKUP_TMP"/{exit}' "$SRC" \
+    | sed "s#/usr/local/bin/collavre-pg-backup#\$BIN/collavre-pg-backup#g" > "$bd/sect.sh"
+  { printf '%s\n' 'set -euo pipefail' \
+      'die() { printf "DIE: %s\n" "$*"; exit 1; }' \
+      'BIN="$1"; DB_NAME=collavre_production; BACKUP_RETENTION_DAYS=14' \
+      'BACKUP_S3_URI=""; DB_PORT=5432' \
+      'mktemp() { command mktemp "${1/\/usr\/local\/bin/$BIN}"; }'
+    [ -n "${1:-}" ] && printf '%s\n' "$1"
+    cat "$bd/sect.sh"
+  } > "$bd/run.sh"
+  bash "$bd/run.sh" "$bd" 2>&1
+}
+seed_backup
+run_backup_section >/dev/null
+chk "a clean run installs the whole script" \
+  1 "$(grep -c 'pg_dump' "$bd/collavre-pg-backup")"
+chk "and it is executable"          755 "$(file_mode "$bd/collavre-pg-backup")"
+# Injected, not raced: a write that stops partway is the modelled failure and a
+# kill loses to a fast local write, as case 4a records.
+seed_backup
+out=$(run_backup_section 'cat() { head -c 200; return 1; }')
+chk "a write cut short refuses"     1 "$(printf '%s' "$out" | grep -c '^DIE:')"
+chk "and the previous backup script is still the live one" \
+  1 "$(grep -c 'PREVIOUS GOOD BACKUP' "$bd/collavre-pg-backup")"
+chk "and no staging file is left behind" \
+  0 "$(find "$bd" -name 'collavre-pg-backup.*' | wc -l | tr -d ' ')"
+seed_backup
+# A value that closes the quote the template opens, so the generated file is
+# genuinely unparseable rather than merely odd-looking. My first attempt used
+# `collavre ) unbalanced`, which lands inside the quotes and parses fine — the
+# case passed nothing and said so. refuse_unusable_db_identifier rejects such a
+# DB_NAME long before this point in a real run; this check is what stands behind
+# it, and behind every future value interpolated into a generated program.
+out=$(run_backup_section 'DB_NAME='"'"'x"; ) ; #'"'"'')
+chk "a generated script that is not valid shell refuses" \
+  1 "$(printf '%s' "$out" | grep -c '^DIE:')"
+chk "and the previous backup script survives that too" \
+  1 "$(grep -c 'PREVIOUS GOOD BACKUP' "$bd/collavre-pg-backup")"
+rm -rf "$bd"
+chk "the live backup path is not written by redirection" \
+  0 "$(grep -c '^cat > /usr/local/bin/collavre-pg-backup' "$SRC")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

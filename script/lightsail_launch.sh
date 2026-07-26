@@ -431,6 +431,72 @@ refuse_root_deploy_user() {
       "default 'collavre', which this script creates."
 }
 
+# refuse_nologin_deploy_user <user>
+#
+# The guard above states the invariant it does not test. Its own message is
+# "'$user' could never log in, while the summary would still print
+# KAMAL_SSH_USER=$user and every 'kamal deploy' would fail to authenticate" —
+# which is true word for word of a service account whose shell is
+# /usr/sbin/nologin, and which it accepts. Measured against 6125e4ee:
+#
+#   account   shell               id -u        guard
+#   root      /bin/sh             0            REFUSES
+#   nobody    /usr/sbin/nologin   65534        PROCEEDS
+#   daemon    /usr/sbin/nologin   1            PROCEEDS
+#
+# Kamal runs its commands over `ssh <user>@host <command>`, and a nologin shell
+# refuses command execution the same way it refuses a session — so the account
+# is armed with docker and sudo, published as KAMAL_SSH_USER, and every deploy
+# fails. On a rotation it is worse than a failed run: the predecessor's docker
+# and sudo are taken back in favour of an account that cannot execute anything,
+# and the remedy for that is on the host you no longer have a way into.
+#
+# Placed with refuse_root_deploy_user and for the same reason: refusing at the
+# deploy-user block would already be past the point where a rotation has a
+# predecessor to strip.
+#
+# Only accounts that already exist are tested. One that does not is created by
+# `adduser` below with an ordinary shell, and treating "cannot resolve" as
+# "might be nologin" would refuse every fresh host — the same reasoning the UID
+# check above records.
+refuse_nologin_deploy_user() {
+  local user="$1" shell
+  id -u "$user" >/dev/null 2>&1 || return 0
+  shell="$(getent passwd "$user" | cut -d: -f7)"
+  # An account `id -u` resolves but `getent passwd` will not describe is not a
+  # pass. The question this guard asks is "can this account run a command", and
+  # an unanswerable question has to read as the unsafe answer — the same rule
+  # role_owns_app_objects states and the psql probes had to be taught.
+  [ -n "$shell" ] ||
+    die "APP_SSH_USER='$user' exists but this host will not say what login" \
+        "shell it has, so this run cannot tell an ordinary account from a" \
+        "service account that can never run a 'kamal deploy'. Nothing has been" \
+        "changed. Check 'getent passwd $user', or set APP_SSH_USER to an" \
+        "account this host describes."
+  # Tested by running it rather than by matching names: /usr/sbin/nologin,
+  # /sbin/nologin, /bin/false and /usr/bin/false are four spellings across two
+  # distributions of one behaviour, and a fifth would read as though the
+  # question had been answered. A shell that exits non-zero on `-c true` cannot
+  # run a deploy command, whatever it is called.
+  [ -x "$shell" ] ||
+    die "APP_SSH_USER='$user' has login shell '$shell', which is not executable" \
+        "on this host, so sshd can start no command for it and every" \
+        "'kamal deploy' would fail after this script had already given the" \
+        "account docker and passwordless sudo. Nothing has been changed. Fix" \
+        "the account with 'usermod -s /bin/bash $user', or set APP_SSH_USER to" \
+        "an ordinary account."
+  "$shell" -c true >/dev/null 2>&1 ||
+    die "APP_SSH_USER='$user' has login shell '$shell', which refuses to run a" \
+        "command — this is what /usr/sbin/nologin and /bin/false do, and it is" \
+        "how service accounts like 'nobody' and 'www-data' are configured." \
+        "Kamal deploys by running commands over ssh, so this account would be" \
+        "armed with docker and passwordless sudo, published as" \
+        "KAMAL_SSH_USER=$user, and unable to execute anything. Nothing has been" \
+        "changed. Fix the account with 'usermod -s /bin/bash $user', or set" \
+        "APP_SSH_USER to an ordinary account; leave it unset for the default" \
+        "'collavre', which this script creates."
+}
+
 # Before refuse_defaulted_config_change, and long before anything is installed:
 # a value this script cannot use is not usable whatever the host was given
 # earlier, so it is answered without reading any state at all.
@@ -438,6 +504,7 @@ refuse_unusable_db_identifier DB_NAME "$DB_NAME"
 refuse_unusable_db_identifier DB_USER "$DB_USER"
 refuse_unparsable_ssh_key
 refuse_root_deploy_user "$APP_SSH_USER"
+refuse_nologin_deploy_user "$APP_SSH_USER"
 
 refuse_defaulted_config_change
 
@@ -670,6 +737,52 @@ write_state_file() {
   mv -f "$tmp" "$target"
 }
 
+# append_state_line <set file> <line>
+#
+# Add one line to a queue file, or do nothing if it is already there.
+#
+# The three record_*_grant functions below each ended with a bare
+#
+#   grep -qxF "$x" "$set_file" || printf '%s\n' "$x" >> "$set_file"
+#
+# which is the one write in this script that write_state_file was introduced for
+# and did not reach. An append cut short — ENOSPC, RLIMIT_FSIZE, an interrupted
+# run — leaves the file ending in a fragment with no newline, and the *retry* is
+# what does the damage: `grep -qxF` does not match the fragment, so the full
+# value is appended onto the end of it and the queue gains one line that is
+# neither value. Measured against 6125e4ee, with the partial write injected and
+# an A -> B(torn) -> C rotation:
+#
+#   queue after the retry   line 1  319 bytes  exact match for B: no
+#                           line 2  439 bytes  exact match for B: no   <- 120 + 319
+#   after the C rotation    key B   authorized: yes   named by the queue: no
+#
+# The concatenated line is worse than a corrupt entry, because revoke_prior_*
+# reads "not present in authorized_keys" as "already withdrawn, nothing
+# outstanding" and drops it. So the queue does not merely fail to name B — it
+# quietly retires the only line that ever mentioned it and ends up looking
+# clean, on an account holding passwordless sudo and the docker socket.
+#
+# Read-modify-write rather than a smarter append: a torn write of the *whole*
+# set leaves the staging file short and the live file untouched, which is the
+# state a retry starts from. There is no partial-line state to be in.
+append_state_line() {
+  local set_file="$1" line="$2" existing=''
+  grep -qxF "$line" "$set_file" 2>/dev/null && return 0
+  # A trailing fragment left by an earlier revision's torn append is *not*
+  # dropped here, and cannot be: nothing distinguishes half a key from a
+  # different key. What this does is terminate it, so the value being recorded
+  # gets its own intact line instead of being concatenated onto it. The fragment
+  # then leaves on its own at the next rotation, by the revoke loop's
+  # "absent from authorized_keys, nothing outstanding" path — which is the right
+  # answer for it, since a fragment authorizes nobody. Measured on the A ->
+  # B(torn) -> C fixture: three lines after the retry, the third an exact match
+  # for B, and B withdrawn by the C rotation.
+  [ -f "$set_file" ] && existing="$(grep -v '^[[:space:]]*$' "$set_file")"
+  [ -z "$existing" ] || existing="$existing"$'\n'
+  write_state_file "$set_file" "$existing$line"$'\n'
+}
+
 # record_deploy_user_grant <user> [set file] [single-name marker]
 #
 # The set of accounts this script has granted root-equivalent access to and has
@@ -712,8 +825,7 @@ record_deploy_user_grant() {
       write_state_file "$set_file" "$seed"$'\n' || return 1
     fi
   fi
-  grep -qxF "$user" "$set_file" 2>/dev/null ||
-    printf '%s\n' "$user" >> "$set_file"
+  append_state_line "$set_file" "$user"
 }
 
 # revoke_deploy_user_access <user> <successor>
@@ -1275,8 +1387,7 @@ record_db_role_grant() {
       write_state_file "$set_file" "$seed"$'\n' || return 1
     fi
   fi
-  grep -qxF "$role" "$set_file" 2>/dev/null ||
-    printf '%s\n' "$role" >> "$set_file"
+  append_state_line "$set_file" "$role"
 }
 
 # reassign_one_db_role <prior> <current>
@@ -1985,8 +2096,7 @@ record_ssh_key_grant() {
       write_state_file "$set_file" "$seed"$'\n' || return 1
     fi
   fi
-  grep -qxF "$key" "$set_file" 2>/dev/null ||
-    printf '%s\n' "$key" >> "$set_file"
+  append_state_line "$set_file" "$key"
 }
 
 revoke_prior_ssh_key() {
@@ -2459,7 +2569,34 @@ if [ -n "$BACKUP_S3_URI" ] && ! command -v aws >/dev/null 2>&1; then
   rm -rf "$AWS_CLI_TMP"
 fi
 
-cat > /usr/local/bin/collavre-pg-backup <<BACKUP
+# Staged and renamed, not written through the live path, for the reason
+# ensure_block already records — with one addition that makes this the worse of
+# the two. `cat > /usr/local/bin/collavre-pg-backup` truncates at open, and this
+# file is *executable*: a truncated shell script is not a broken file that fails
+# to load, it is a shorter program that runs. Every truncation point of the
+# generated script, measured:
+#
+#   1233 truncation points   624 syntactically valid
+#                            153 EXIT 0 AND NEVER REACH pg_dump   (bytes 1..310)
+#
+# Those 153 are the first quarter of the file, so an interruption early in the
+# write — the likely one — lands there. And the mode survives: `cat >` does not
+# reset it, and the `chmod 0755` below is the *next* statement, so on a re-
+# converge run the stump keeps the executable bit the previous run gave it while
+# collavre-pg-backup.timer stays enabled. The nightly unit then runs a program
+# that exits 0 without dumping anything: systemctl reports green, the retention
+# sweep is never reached either, and the host has no backups and no symptom.
+# That is why validation is part of the install and not a comment: a file that
+# is not a complete script does not get to be the backup program.
+BACKUP_TMP="$(mktemp /usr/local/bin/collavre-pg-backup.XXXXXX)"
+# `if ! cat` rather than a bare `cat` leaning on the `set -euo pipefail` at the
+# top of this file. Errexit does cover a bare top-level command, so this is not
+# a live hole — but the review one thread over was exactly a place where `set -e`
+# was assumed and was not in force, and a guarantee this local should not depend
+# on a setting 2500 lines away that a future `|| something` would suppress. The
+# staging file is removed on the way out, so a retry starts from the same state
+# a kill would leave: the live path untouched.
+if ! cat > "$BACKUP_TMP" <<BACKUP
 #!/usr/bin/env bash
 # Managed by script/lightsail_launch.sh
 set -euo pipefail
@@ -2498,7 +2635,26 @@ find "\$DEST" -maxdepth 1 -name '*.dump' -mtime "+\$RETENTION_DAYS" -delete
 echo "backup complete: \$FILE (\$(du -h "\$FILE" | cut -f1))"
 exit "\$S3_STATUS"
 BACKUP
-chmod 0755 /usr/local/bin/collavre-pg-backup
+then
+  rm -f "$BACKUP_TMP"
+  die "could not write the staged backup script — is /usr/local/bin full?" \
+      "/usr/local/bin/collavre-pg-backup is left as it was, and nothing was" \
+      "installed over it."
+fi
+# `bash -n` on the staging file, before it can become the thing systemd runs.
+# It is not a whole-program check — 624 of the truncation points above parse
+# fine — but it is the half that is free, and the rename below is what closes
+# the rest: a run killed during the copy leaves the stump in the staging file
+# and the live path untouched, which is the state a retry starts from.
+if ! bash -n "$BACKUP_TMP"; then
+  rm -f "$BACKUP_TMP"
+  die "generated a backup script that is not valid shell — refusing to install" \
+      "it over /usr/local/bin/collavre-pg-backup, which is left as it was." \
+      "This is a bug in this script; the values it interpolates (DB_NAME," \
+      "BACKUP_S3_URI) are the place to look."
+fi
+chmod 0755 "$BACKUP_TMP"
+mv -f "$BACKUP_TMP" /usr/local/bin/collavre-pg-backup
 
 cat > /etc/systemd/system/collavre-pg-backup.service <<'UNIT'
 [Unit]
