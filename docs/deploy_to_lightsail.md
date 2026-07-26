@@ -765,6 +765,31 @@ journalctl -u collavre-pg-backup.service        # check last run
 # trust that it ran, shut the database itself to the app for the duration.
 # CONNECTION LIMIT 0 does not apply to superusers, so pg_restore below still
 # connects; a container that survived the stop, or restarts mid-restore, cannot.
+
+# First, whether that last clause is true on THIS host. The exemption that lets
+# pg_restore in is role-wide, so it lets the app in too whenever the app's own
+# role is a superuser — and `DB_USER=postgres` on a first run is legal (see
+# "Changing DB_USER on a re-run"). Refusing before the ALTER rather than after
+# it, so a refusal leaves the connection limit exactly as the operator had it.
+app_role=$(sudo cat /var/lib/collavre/db_user 2>/dev/null)
+app_super=$(sudo -u postgres psql -qtAd postgres -c \
+  "SELECT rolsuper FROM pg_roles WHERE rolname = '$app_role'" 2>/dev/null)
+if [ "$app_super" != f ]; then
+  echo "REFUSING: cannot shut this database to the app."
+  echo "  DB_USER is '$app_role' and its rolsuper is '$app_super' — anything but"
+  echo "  'f' means the gate below cannot tell your app apart from pg_restore,"
+  echo "  because CONNECTION LIMIT does not apply to superusers. An empty value"
+  echo "  means the question could not be answered (no /var/lib/collavre/db_user,"
+  echo "  no such role, cluster unreachable), which is not the same as 'no'."
+  echo "Nothing was changed. On your workstation, confirm the app is really gone:"
+  echo "  ./kamal.sh app details          # no running container"
+  echo "then run the rest of this block by hand. There is no in-database way to"
+  echo "exclude a superuser app while admitting pg_restore: if DB_USER really is"
+  echo "'postgres' they are the same role, and ALTER ROLE postgres NOLOGIN locks"
+  echo "out the restore along with the app."
+  restore_status=3
+else
+
 sudo -u postgres psql -qd postgres -c \
   "ALTER DATABASE collavre_production CONNECTION LIMIT 0"
 
@@ -814,6 +839,8 @@ else
   sudo -u postgres pg_restore --clean --if-exists -d collavre_production \
     /var/backups/collavre/collavre_production-YYYYmmdd-HHMMSS.dump
   restore_status=$?
+fi
+
 fi
 
 fi
@@ -875,6 +902,23 @@ it, which is why `pg_restore` still connects while the app cannot. The
 `pg_terminate_backend` clears whatever was already attached, and the check
 afterwards then means something — it is asking whether anything got past a
 closed door, not whether the app happened to be quiet.
+
+**That exemption is role-wide, so the block refuses a superuser `DB_USER`
+before it shuts anything.** It is the same property working in both directions:
+on `postgres:17` with `datconnlimit` at `0`, an ordinary role is turned away
+with `FATAL: too many connections for database "collavre_production"`, and
+`postgres` connects and writes a row. `DB_USER=postgres` on a first run is
+legal, so this is a host the script produces rather than a misconfiguration —
+and on it the door would be shut against nobody while the surrounding prose,
+and the `live` count that follows, both read as though it were shut. There is
+no in-database way out: on that host the app's role and `pg_restore`'s role are
+the same role, so nothing distinguishes them, and `ALTER ROLE postgres NOLOGIN`
+locks out the restore along with the app. So the block stops and hands the
+operator the only check that does discriminate, which is on the workstation,
+and it stops *before* the `ALTER` so a refusal leaves the connection limit as
+it found it. The condition is `!= f` rather than `= t`: an unanswerable
+question — no state file, no such role, cluster unreachable — has to read as
+the unsafe answer, the same rule as the `live` comparison below it.
 
 **A failed restore keeps the door shut.** `pg_restore --clean` drops before it
 reloads, so a run that dies partway leaves the database genuinely half-replaced

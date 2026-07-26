@@ -1722,6 +1722,17 @@ run_restore() {
 #!/usr/bin/env bash
 while [ "${1:-}" = -u ] || [ "${1:-}" = postgres ]; do shift; done
 exec "$@"
+  # The recipe reads the configured DB_USER out of the state file the script
+  # writes, so the harness has to answer for it. Unset APP_ROLE means the file
+  # is absent — which is a case under test, not a default to paper over, since
+  # "the question could not be answered" has to refuse just as "yes" does.
+  cat > "$work/bin/cat" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = /var/lib/collavre/db_user ]; then
+  [ -n "${APP_ROLE-}" ] || { echo "cat: $1: No such file or directory" >&2; exit 1; }
+  printf '%s\n' "$APP_ROLE"; exit 0
+fi
+exec /bin/cat "$@"
 STUB
   # datconnlimit is modelled as state rather than as a canned answer, because
   # the whole point of reading it back is that it disagrees with the ALTER when
@@ -1737,6 +1748,7 @@ case "$sql" in
                                [ -n "$FAIL_SHUT" ] || echo 0 > "$CONNLIMIT"
                                [ -z "$FAIL_SHUT" ] || { echo 'ERROR:  database "x" does not exist' >&2; exit 1; } ;;
   *"CONNECTION LIMIT -1"*)     echo "limit:reopened" >>"$TRACE"; echo -1 > "$CONNLIMIT" ;;
+  *rolsuper*)                  echo "rolsuper"       >>"$TRACE"; printf '%s' "$APP_SUPER" ;;
   *datconnlimit*)              echo "readback"       >>"$TRACE"; cat "$CONNLIMIT" ;;
   *pg_terminate_backend*)      echo "terminate"      >>"$TRACE"; echo "${KILLED:-0}" ;;
   *"count(*)"*)                echo "count"          >>"$TRACE"; printf '%s' "$LIVE" ;;
@@ -1754,8 +1766,12 @@ STUB
   # ${LIVE-0}, not ${LIVE:-0}: the empty string is a case under test — it is what
   # a failed check returns — and :- would quietly turn it back into "0", making
   # the one assertion about a broken gate pass for the wrong reason.
+  # APP_SUPER likewise takes ${x-y}, not ${x:-y}: an empty rolsuper is what a
+  # role that does not exist, or a cluster that cannot be reached, comes back
+  # as, and it must not be rewritten into the one value that lets the gate open.
   export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}" \
-         FAIL_SHUT="${FAIL_SHUT:-}" CONNLIMIT="$work/connlimit"
+         FAIL_SHUT="${FAIL_SHUT:-}" CONNLIMIT="$work/connlimit" \
+         APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}"
   R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   R_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
@@ -1763,7 +1779,13 @@ STUB
 
 echo "83. the restore shuts the database before it looks, and re-opens after"
 LIVE=0 KILLED=2 FAIL_RESTORE='' run_restore
-chk "door shut first"        "limit:0" "$(cut -d'|' -f1 <<<"$R_TRACE")"
+# The role check comes before the shut, and the shut before anything else the
+# block does — asserted as the whole prefix rather than as "the first entry",
+# so a step inserted between them fails here instead of silently reordering the
+# gate. Nothing may precede the role check: it decides whether shutting the
+# door means anything at all, and a refusal must leave the limit as it found it.
+chk "role checked, then shut, before all else" "rolsuper|limit:0" \
+  "$(cut -d'|' -f1,2 <<<"$R_TRACE")"
 chk "survivors terminated"   1 "$(grep -c '^terminate$' <<<"${R_TRACE//|/$'\n'}")"
 # The order is the whole point: counting before the limit is applied only says
 # the app happened to be between connections at that instant.
@@ -1820,6 +1842,40 @@ chk "not re-opened either"     0 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/
 chk "operator told"            1 "$(grep -c 'could not shut collavre_production' <<<"$R_OUT")"
 chk "and told nothing was dropped" 1 "$(grep -c 'nothing was dropped' <<<"$R_OUT")"
 unset FAIL_SHUT
+
+echo "86b. a superuser DB_USER is refused, because the door would not hold it"
+# CONNECTION LIMIT is exempt for superusers — that exemption is what lets
+# pg_restore in, and it is role-wide, so it lets the app in too whenever the
+# app's own role is one. `DB_USER=postgres` on a first run is legal, so this is
+# a host the script produces. Measured on postgres:17 with datconnlimit at 0:
+#
+#   collavre_user (rolsuper f) -> FATAL: too many connections for database ...
+#   postgres      (rolsuper t) -> connected, and wrote a row
+#
+# The refusal has to come before the ALTER, not after: a run that cannot gate
+# must leave the connection limit exactly as it found it.
+APP_ROLE=postgres APP_SUPER=t LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "nothing dropped"        0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "the door was never shut" 0 "$(grep -c '^limit:0$' <<<"${R_TRACE//|/$'\n'}")"
+chk "nor re-opened"          0 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "no sessions terminated" 0 "$(grep -c '^terminate$' <<<"${R_TRACE//|/$'\n'}")"
+chk "operator told"          1 "$(grep -c 'cannot shut this database to the app' <<<"$R_OUT")"
+# Refusing without naming the one check that does discriminate leaves the
+# operator with a blocked restore and no way forward — the failure this page
+# hit once already with the superuser rotation guard.
+chk "and given the check that does work" 1 "$(grep -c 'app details' <<<"$R_OUT")"
+
+echo "86c. an unanswerable rolsuper refuses too, rather than reading as 'no'"
+# `!= f`, not `= t`. Each of these comes back empty, and each is a host where
+# the gate cannot be shown to hold.
+for shape in "no state file:::" "no such role:ghost::" "cluster unreachable:collavre_user::"; do
+  IFS=: read -r what role _ _ <<<"$shape"
+  if [ -n "$role" ]; then APP_ROLE="$role"; else unset APP_ROLE; fi
+  APP_SUPER='' LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+  chk "refused: $what" 1 "$(grep -c 'cannot shut this database to the app' <<<"$R_OUT")"
+  chk "  nothing dropped: $what" 0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+done
+unset APP_ROLE
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #
