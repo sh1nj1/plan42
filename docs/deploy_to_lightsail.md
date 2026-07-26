@@ -52,6 +52,7 @@ Common overrides:
 | `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt. [Changing it on a re-run](#changing-app_ssh_user-on-a-re-run) disarms the account it replaces |
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump |
 | `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
+| `DB_USER` | `collavre_user` | [Changing it on a re-run](#changing-db_user-on-a-re-run) moves table ownership to the new role and takes `LOGIN` from the old one |
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
 | `BACKUP_S3_URI` | *(empty)* | e.g. `s3://collavre-backups/pg` — PostgreSQL only, [not uploaded files](#backup_s3_uri-does-not-cover-uploaded-files) |
 
@@ -127,6 +128,32 @@ rotation by hand once you have confirmed you can reach the host as the new user:
 ```bash
 ssh <new-user>@<instance-ip> 'sudo deluser --remove-home <old-user>'
 ```
+
+### Changing `DB_USER` on a re-run
+
+The database counterpart of the above, and it fails in a quieter way. Creating
+the new role and pointing `ALTER DATABASE ... OWNER` at it moves the *database*
+and nothing inside it: every table and sequence the app has already created
+stays owned by the old role. The re-run reports success, prints a `DATABASE_URL`
+naming the new role, and that role gets `permission denied for table ...` on its
+first query. Meanwhile the old role keeps `LOGIN` and the same password out of
+`/var/lib/collavre/db_password`, so a rotation meant to retire a credential
+retires nothing.
+
+So a re-run that changes `DB_USER` also runs `REASSIGN OWNED BY <old> TO <new>`
+in `$DB_NAME` and then `ALTER ROLE <old> NOLOGIN`. Ownership of everything the
+old role owns moves in one statement, and the old login stops working before the
+new URL is published. The role itself is left in place — `NOLOGIN` is reversible
+and dropping it is not.
+
+One case is refused rather than converged: if the previous `DB_USER` was a
+superuser (`DB_USER=postgres` on a first run is legal), the script logs a
+warning and changes nothing. `NOLOGIN` on the cluster superuser locks every
+operator out of administering it, and peer authentication needs `LOGIN` too, so
+there is no way back in. Move ownership and retire that role by hand.
+
+Rotating the *password* rather than the role needs none of this — set
+`DB_PASSWORD`, re-run, and update `DATABASE_URL`.
 
 ## 3. How PostgreSQL is reachable
 
@@ -336,10 +363,27 @@ container polling the database they are about to replace.
     -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1 \
        DEFAULT_USER_EMAIL:you@example.com \
        DEFAULT_USER_PASSWORD:"$ADMIN_PASSWORD"
-  echo "$ADMIN_PASSWORD"                        # sign in, then change it
+  load_status=$?
 
-  ./kamal.sh app boot   # restart on the schema you just loaded
+  if [ "$load_status" -eq 0 ]; then
+    echo "$ADMIN_PASSWORD"   # sign in, then change it
+    ./kamal.sh app boot      # restart on the schema you just loaded
+  else
+    echo "LOAD FAILED: the schema is partial and there may be no admin user"
+    echo "app left stopped on purpose; re-run the load before booting it"
+  fi
   ```
+
+  **The boot is gated on the load for the same reason the cutover above is.**
+  These lines are pasted into an interactive shell with no `set -e`, so an
+  unconditional `app boot` runs even when the load returned nonzero.
+  `db:schema:load` drops and recreates every table, so a failure partway leaves
+  a partial schema — and `db:seed` is what creates the first admin, so a load
+  that got far enough to reset the database but not far enough to seed it boots
+  a production app with no way to sign in and no owner on any record. Neither
+  state is one to serve while you work out what happened. Re-run the same
+  `app exec` once it is fixed; it resets the schema again, so a retry is clean
+  rather than additive.
 
   **`app stop` is not politeness.** `setup` ends by booting the app, so by the
   time you run the load a container is already talking to this database — and

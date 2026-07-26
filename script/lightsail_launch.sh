@@ -250,6 +250,52 @@ revoke_prior_deploy_user() {
       "deluser --remove-home $prior"
 }
 
+# psql_as_postgres <database> <sql>
+#
+# One place to reach the cluster as the superuser, so the rotation below can be
+# exercised in tests by stubbing a single command.
+psql_as_postgres() {
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qtA -d "$1" -c "$2"
+}
+
+# reassign_prior_db_role <current> [state file]
+#
+# The deploy-user counterpart of revoke_prior_deploy_user, for the same reason:
+# a re-run that changes DB_USER creates the new role and moves the *database*
+# owner to it, but every table and sequence the app already created stays owned
+# by the old role. The new role is then handed out in DATABASE_URL and cannot
+# read its own tables — "permission denied for table users" on the first query
+# after a rotation that reported success. Meanwhile the old role keeps LOGIN and
+# the very same password out of $STATE_DIR/db_password, so a rotation intended
+# to retire a credential retires nothing.
+#
+# REASSIGN OWNED moves ownership of everything the old role owns in this
+# database in one statement, including objects added since. It is a no-op when
+# the role owns nothing, so it is safe on a host where the app never booted.
+reassign_prior_db_role() {
+  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior
+  [ -f "$prior_file" ] || return 0
+  prior="$(cat "$prior_file")"
+  [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
+  [ "$(psql_as_postgres postgres \
+        "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
+
+  # Never touch a superuser. DB_USER=postgres on a first run is a legal thing
+  # to have done, and NOLOGIN on the cluster superuser locks every operator out
+  # of administering it — peer auth needs LOGIN too, so there is no way back in.
+  if [ "$(psql_as_postgres postgres \
+            "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ]; then
+    log "WARNING: previous DB_USER '$prior' is a superuser — leaving it alone;" \
+        "move ownership and retire it by hand if that is what you meant"
+    return 0
+  fi
+
+  psql_as_postgres "$DB_NAME" "REASSIGN OWNED BY \"$prior\" TO \"$current\""
+  log "moved ownership of everything in '$DB_NAME' from '$prior' to '$current'"
+  psql_as_postgres postgres "ALTER ROLE \"$prior\" NOLOGIN"
+  log "revoked LOGIN from the replaced database role '$prior'"
+}
+
 # ensure_ufw_rule <name> <rule> [state file]
 #
 # Converge one ufw rule the way ensure_block converges one config stanza:
@@ -373,19 +419,37 @@ install -d -m 0700 -o "$APP_SSH_USER" -g "$APP_SSH_USER" "$APP_HOME/.ssh"
 AUTH_KEYS="$APP_HOME/.ssh/authorized_keys"
 touch "$AUTH_KEYS"
 
-if [ -n "$SSH_PUBLIC_KEY" ]; then
-  grep -qxF "$SSH_PUBLIC_KEY" "$AUTH_KEYS" || printf '%s\n' "$SSH_PUBLIC_KEY" >> "$AUTH_KEYS"
-else
-  # Reuse whatever key Lightsail installed for the default cloud user.
+# install_authorized_keys <authorized_keys> [home root]
+#
+# Give the deploy user a way in: the explicit SSH_PUBLIC_KEY when there is one,
+# otherwise whatever key Lightsail installed for the default cloud user.
+install_authorized_keys() {
+  local auth_keys="$1" home_root="${2:-/home}" candidate src
+  if [ -n "$SSH_PUBLIC_KEY" ]; then
+    grep -qxF "$SSH_PUBLIC_KEY" "$auth_keys" ||
+      printf '%s\n' "$SSH_PUBLIC_KEY" >> "$auth_keys"
+    return 0
+  fi
   for candidate in ubuntu admin ec2-user; do
-    src="/home/$candidate/.ssh/authorized_keys"
-    if [ -s "$src" ]; then
+    src="$home_root/$candidate/.ssh/authorized_keys"
+    [ -s "$src" ] || continue
+    # APP_SSH_USER may *be* the cloud user, in which case there is nothing to
+    # copy — and appending a file to itself is not a harmless no-op: GNU cat
+    # refuses with "input file is output file" and exits 1, which under
+    # `set -e` would abort provisioning here, before Docker and PostgreSQL are
+    # installed. -ef rather than string equality, so a symlinked or
+    # bind-mounted home resolves to the same answer.
+    if [ "$src" -ef "$auth_keys" ]; then
+      log "APP_SSH_USER is the cloud user '$candidate' — its keys are already in place"
+    else
       log "no SSH_PUBLIC_KEY given — copying keys from $candidate"
-      cat "$src" >> "$AUTH_KEYS"
-      break
+      cat "$src" >> "$auth_keys"
     fi
+    return 0
   done
-fi
+}
+
+install_authorized_keys "$AUTH_KEYS"
 sort -u -o "$AUTH_KEYS" "$AUTH_KEYS"
 chown "$APP_SSH_USER:$APP_SSH_USER" "$AUTH_KEYS"
 chmod 0600 "$AUTH_KEYS"
@@ -506,7 +570,12 @@ if [ -z "$DB_PASSWORD" ]; then
     log "generated a random database password"
   fi
 fi
-printf '%s' "$DB_PASSWORD" > "$STATE_DIR/db_password"
+# The umask is what makes this 0600, not the chmod. A bare redirection creates
+# the file 0644 under the default umask and only narrows it a command later,
+# and $STATE_DIR is 0755 — so the production password would be world-readable
+# for that window, or permanently if the run were interrupted between the two.
+# The chmod stays to converge a file an earlier revision left 0644.
+( umask 077; printf '%s' "$DB_PASSWORD" > "$STATE_DIR/db_password" )
 chmod 0600 "$STATE_DIR/db_password"
 
 # Mirrors db/setup_postgres_databases.sql: create-if-missing, never drop.
@@ -532,6 +601,11 @@ chmod 0600 "$SQL_FILE"
 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q -d postgres -f "$SQL_FILE"
 rm -f "$SQL_FILE"
 trap - EXIT
+
+# After the role and database exist, before the summary hands out a
+# DATABASE_URL naming the new role.
+reassign_prior_db_role "$DB_USER"
+printf '%s\n' "$DB_USER" > "$STATE_DIR/db_user"
 
 # --------------------------------------------------------------------------
 log "7/9 firewall"

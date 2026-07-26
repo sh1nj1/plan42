@@ -21,13 +21,14 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
 for fn in die ensure_block ensure_sudoers revoke_prior_deploy_user \
-          ensure_ufw_rule ssh_already_allowed ensure_ssh_rule; do
+          ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
+          install_authorized_keys reassign_prior_db_role; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -328,13 +329,17 @@ unset -f ufw log
 
 DOC="${2:-$ROOT/docs/deploy_to_lightsail.md}"
 
-# The fenced bash block containing copy_status= — located by content, so the
-# test follows the recipe if it moves within the page.
-recipe="$(awk '
-  /^  ```bash$/ { inb = 1; buf = ""; next }
-  /^  ```$/     { if (inb && buf ~ /copy_status=/) { printf "%s", buf; exit } inb = 0; next }
-  inb           { line = $0; sub(/^  /, "", line); buf = buf line "\n" }
-' "$DOC")"
+# extract_recipe <marker> — the fenced bash block containing <marker>, located
+# by content, so a test follows its recipe if it moves within the page.
+extract_recipe() {
+  awk -v want="$1" '
+    /^  ```bash$/ { inb = 1; buf = ""; next }
+    /^  ```$/     { if (inb && buf ~ want) { printf "%s", buf; exit } inb = 0; next }
+    inb           { line = $0; sub(/^  /, "", line); buf = buf line "\n" }
+  ' "$DOC"
+}
+
+recipe="$(extract_recipe 'copy_status=')"
 case "$recipe" in
   *copy_status=*NOSUPERUSER*) : ;;
   *) echo "could not extract the cutover recipe from $DOC — has it moved?" >&2
@@ -410,6 +415,148 @@ case "$RECIPE_OUT" in
   *"REVOKE FAILED"*"COPY FAILED"*) echo "  ok   both reported" ;;
   *) echo "  FAIL one masked the other: $RECIPE_OUT"; fail=1 ;;
 esac
+
+# --- the fresh-install recipe ----------------------------------------------
+
+fresh="$(extract_recipe 'load_status=')"
+case "$fresh" in
+  *db:schema:load:primary*load_status=*) : ;;
+  *) echo "could not extract the fresh-install recipe from $DOC — has it moved?" >&2
+     exit 1 ;;
+esac
+
+run_fresh() {
+  local work; work="$(mktemp -d)"
+  printf '%s' "$fresh" > "$work/recipe.sh"
+  mkdir -p "$work/bin"
+  cat > "$work/bin/kamal.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "kamal:$1${2:+ $2}" >>"$TRACE"
+[ "${1:-}" != app ] || [ "${2:-}" != exec ] || [ -z "$FAIL_LOAD" ] || exit 1
+STUB
+  chmod +x "$work/bin"/*
+  cp "$work/bin/kamal.sh" "$work/kamal.sh"
+  TRACE="$work/trace"; : > "$TRACE"
+  export TRACE FAIL_LOAD="${FAIL_LOAD:-}"
+  FRESH_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  FRESH_TRACE="$(paste -sd'|' "$TRACE")"
+  rm -rf "$work"
+}
+
+echo "27. a clean fresh install prints the admin password and boots"
+FAIL_LOAD='' run_fresh
+chk "app stopped first" 1 "$(grep -cx 'kamal:app stop' <<<"${FRESH_TRACE//|/$'\n'}")"
+chk "app booted"        1 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
+
+echo "28. a failed schema load does not boot the app onto a partial schema"
+# db:schema:load drops and recreates every table, and db:seed is what creates
+# the first admin — so a load that resets the database but does not finish
+# leaves an app with no way to sign in and no owner on any record.
+FAIL_LOAD=1 run_fresh
+chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
+case "$FRESH_OUT" in
+  *"LOAD FAILED"*"left stopped"*) echo "  ok   operator told what state it is in" ;;
+  *) echo "  FAIL silent or partial: $FRESH_OUT"; fail=1 ;;
+esac
+
+# --- install_authorized_keys ------------------------------------------------
+#
+# The failure this guards is not a lost key but an aborted run: `cat f >> f` is
+# an error under GNU cat, and `set -e` would end provisioning at that line.
+
+LOGGED=""
+log() { LOGGED="$LOGGED $*"; }
+
+echo "29. the deploy user's own keys are not copied onto themselves"
+# APP_SSH_USER=ubuntu — src and dest are one file.
+h=$(mktemp -d); mkdir -p "$h/ubuntu/.ssh"
+printf 'ssh-ed25519 CLOUDKEY cloud\n' > "$h/ubuntu/.ssh/authorized_keys"
+SSH_PUBLIC_KEY="" LOGGED=""
+install_authorized_keys "$h/ubuntu/.ssh/authorized_keys" "$h"
+chk "run survives"        0 "$?"
+chk "the key is intact"   1 "$(grep -c CLOUDKEY "$h/ubuntu/.ssh/authorized_keys")"
+case "$LOGGED" in
+  *"already in place"*) echo "  ok   says why it copied nothing" ;;
+  *) echo "  FAIL no explanation: $LOGGED"; fail=1 ;;
+esac
+
+echo "30. a separate deploy user still inherits the cloud user's keys"
+mkdir -p "$h/collavre/.ssh"; : > "$h/collavre/.ssh/authorized_keys"
+SSH_PUBLIC_KEY="" LOGGED=""
+install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
+chk "cloud key copied" 1 "$(grep -c CLOUDKEY "$h/collavre/.ssh/authorized_keys")"
+
+echo "31. an explicit SSH_PUBLIC_KEY is added once, not once per run"
+SSH_PUBLIC_KEY="ssh-ed25519 EXPLICIT me"
+install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
+install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
+chk "no duplicate" 1 "$(grep -c EXPLICIT "$h/collavre/.ssh/authorized_keys")"
+
+unset -f log
+
+# --- reassign_prior_db_role -------------------------------------------------
+#
+# A rotation that reports success while the new role cannot read its own tables
+# and the old credential still works is worse than one that refuses.
+
+SQL=""
+LOGGED=""
+ROLE_EXISTS=1
+ROLE_IS_SUPER=f
+DB_NAME=collavre_production
+psql_as_postgres() {
+  case "$2" in
+    *"count(*)"*) printf '%s\n' "$ROLE_EXISTS"; return 0 ;;
+    *rolsuper*)   printf '%s\n' "$ROLE_IS_SUPER"; return 0 ;;
+  esac
+  SQL="$SQL|$2"
+}
+log() { LOGGED="$LOGGED $*"; }
+rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
+
+echo "32. rotating DB_USER moves the tables and retires the old credential"
+# ALTER DATABASE ... OWNER only moves the database. Every table and sequence
+# the app created stays with the old role, so the new one in DATABASE_URL gets
+# "permission denied" on its own data — while the old role keeps LOGIN and the
+# same password out of the state file.
+d3=$(mktemp -d); printf 'collavre_user\n' > "$d3/db_user"
+ROLE_EXISTS=1 ROLE_IS_SUPER=f
+rotate collavre_app "$d3/db_user"
+chk "ownership moved, then login revoked" \
+    '|REASSIGN OWNED BY "collavre_user" TO "collavre_app"|ALTER ROLE "collavre_user" NOLOGIN' \
+    "$SQL"
+
+echo "33. an unchanged DB_USER touches nothing"
+rotate collavre_user "$d3/db_user"
+chk "no SQL" "" "$SQL$LOGGED"
+
+echo "34. a superuser predecessor is reported, never disabled"
+# DB_USER=postgres on a first run is legal. NOLOGIN on the cluster superuser
+# locks every operator out of administering it — peer auth needs LOGIN too, so
+# there is no way back in.
+printf 'postgres\n' > "$d3/db_user"
+ROLE_IS_SUPER=t
+rotate collavre_app "$d3/db_user"
+chk "no SQL ran" "" "$SQL"
+case "$LOGGED" in
+  *"is a superuser"*"by hand"*) echo "  ok   operator is told to finish it by hand" ;;
+  *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
+esac
+
+echo "35. first run, emptied marker and a dropped role are all no-ops"
+d4=$(mktemp -d)
+ROLE_IS_SUPER=f
+rotate collavre_user "$d4/db_user"          # no marker yet
+chk "no marker"    "" "$SQL$LOGGED"
+: > "$d4/db_user"
+rotate collavre_user "$d4/db_user"          # marker exists but is empty
+chk "empty marker" "" "$SQL$LOGGED"
+printf 'collavre_user\n' > "$d4/db_user"
+ROLE_EXISTS=0                                # dropped by hand
+rotate collavre_app "$d4/db_user"
+chk "role is gone" "" "$SQL$LOGGED"
+
+unset -f psql_as_postgres log rotate
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
