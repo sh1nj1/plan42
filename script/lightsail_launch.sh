@@ -784,6 +784,26 @@ grep -q '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config 2>/dev/null || \
   log "WARNING: sshd_config has no Include for sshd_config.d — harden SSH by hand"
 systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
 
+# install_deploy_ssh_dir <user> <home> — create <home>/.ssh owned by the
+# account, and echo the group it was given.
+#
+# The group is asked for, not assumed. adduser creates one named after the user,
+# but APP_SSH_USER is allowed to name an account that already exists — the cloud
+# user, or one an operator made with `useradd -g users deploybot` — and then
+# there is no group of that name. `install` and `chown` reject an unknown group,
+# so guessing ends the run here under `set -e`, before authorized keys, Docker
+# and PostgreSQL are configured. `id -gn` answers for both cases.
+install_deploy_ssh_dir() {
+  local user="$1" home="$2" group
+  group="$(id -gn "$user")"
+  # Explicitly, rather than leaving it to `set -e` inside the command
+  # substitution the caller wraps this in: the last command here is a printf
+  # that always succeeds, so a swallowed failure would hand back a group name
+  # for a directory that was never created.
+  install -d -m 0700 -o "$user" -g "$group" "$home/.ssh" || return 1
+  printf '%s\n' "$group"
+}
+
 if ! id -u "$APP_SSH_USER" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "Collavre deploy" "$APP_SSH_USER"
 fi
@@ -792,7 +812,7 @@ install -d -m 0755 /etc/sudoers.d
 ensure_sudoers "$APP_SSH_USER"
 
 APP_HOME="$(getent passwd "$APP_SSH_USER" | cut -d: -f6)"
-install -d -m 0700 -o "$APP_SSH_USER" -g "$APP_SSH_USER" "$APP_HOME/.ssh"
+APP_SSH_GROUP="$(install_deploy_ssh_dir "$APP_SSH_USER" "$APP_HOME")"
 AUTH_KEYS="$APP_HOME/.ssh/authorized_keys"
 touch "$AUTH_KEYS"
 
@@ -889,7 +909,7 @@ revoke_prior_ssh_key() {
 install_authorized_keys "$AUTH_KEYS"
 revoke_prior_ssh_key "$AUTH_KEYS"
 sort -u -o "$AUTH_KEYS" "$AUTH_KEYS"
-chown "$APP_SSH_USER:$APP_SSH_USER" "$AUTH_KEYS"
+chown "$APP_SSH_USER:$APP_SSH_GROUP" "$AUTH_KEYS"
 chmod 0600 "$AUTH_KEYS"
 [ -s "$AUTH_KEYS" ] || log "WARNING: $AUTH_KEYS is empty — kamal will not be able to connect"
 

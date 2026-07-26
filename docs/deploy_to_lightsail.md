@@ -363,7 +363,30 @@ container polling the database they are about to replace.
 - **Moving an existing PostgreSQL deployment (Neon, RDS):** dump and restore.
   Match `PG_MAJOR` to the source server's major version or the restore may fail.
 
+  **Stop writes to the source before the final dump.** `pg_dump` takes a
+  consistent snapshot of the moment it starts, so every transaction committed
+  after that — a signup, an edit, a job enqueued — is in the old database and
+  not in `collavre.dump`. Nothing later in this procedure notices: the restore
+  succeeds, the new instance comes up, and the loss only surfaces when someone
+  goes looking for a record that was there before the move. The window is the
+  dump plus the transfer plus the restore, which on a real database is not
+  seconds.
+
+  So: put the old deployment into maintenance mode, or stop its app, and leave
+  it that way until DNS points at the new instance. If you would rather rehearse
+  first, take a dump while the source is live and restore it to get timings and
+  catch version problems — then throw that copy away and repeat with writes
+  stopped. A trial run is not a migration, and the only thing that makes it one
+  is the source being quiet.
+
   ```bash
+  # on the source, first — stop the app or enable maintenance mode, then confirm
+  # nothing is still writing:
+  psql "$SOURCE_DATABASE_URL" -qtA -c \
+    "SELECT count(*) FROM pg_stat_activity
+      WHERE datname = current_database() AND pid <> pg_backend_pid()
+        AND state <> 'idle'"
+
   pg_dump --format=custom "$SOURCE_DATABASE_URL" -f collavre.dump
   scp collavre.dump collavre@<instance-ip>:/tmp/
   ssh collavre@<instance-ip> \
@@ -684,13 +707,35 @@ journalctl -u collavre-pg-backup.service        # check last run
 
 # restore — stop the app FIRST, from your workstation:
 #   ./kamal.sh app stop
-# then, on the instance:
-sudo -u postgres pg_restore --clean --if-exists -d collavre_production \
-  /var/backups/collavre/collavre_production-YYYYmmdd-HHMMSS.dump
-restore_status=$?
+# then, on the instance. The stop happens on a different machine, so this
+# checks the thing that actually matters rather than trusting that it ran:
+# nothing else is connected to the database about to be dropped.
+live=$(sudo -u postgres psql -qtA -d postgres -c \
+  "SELECT count(*) FROM pg_stat_activity
+    WHERE datname = 'collavre_production' AND pid <> pg_backend_pid()")
+
+# A string comparison, not -ne: if the query above failed, $live is empty or an
+# error message, and `[ "$live" -ne 0 ]` would error and be read as false —
+# a gate that opens when the check breaks. Anything that is not exactly "0"
+# stops here.
+if [ "$live" != 0 ]; then
+  echo "REFUSING: collavre_production is not confirmed idle (check returned: '$live')."
+  sudo -u postgres psql -d postgres -c \
+    "SELECT usename, client_addr, state, query
+       FROM pg_stat_activity WHERE datname = 'collavre_production'"
+  echo "run './kamal.sh app stop' on your workstation and check it succeeded"
+  echo "nothing was dropped; re-run this block once the app is down"
+  restore_status=2
+else
+  sudo -u postgres pg_restore --clean --if-exists -d collavre_production \
+    /var/backups/collavre/collavre_production-YYYYmmdd-HHMMSS.dump
+  restore_status=$?
+fi
 
 if [ "$restore_status" -eq 0 ]; then
   echo "restored; boot the app from your workstation: ./kamal.sh app boot"
+elif [ "$restore_status" -eq 2 ]; then
+  : # refused before touching anything — see the message above
 else
   echo "RESTORE FAILED: objects may be dropped or only partly reloaded"
   echo "leave the app stopped and work out what happened before booting it"

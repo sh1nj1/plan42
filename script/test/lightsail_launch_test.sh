@@ -21,14 +21,14 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
-          install_authorized_keys reassign_prior_db_role \
+          install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
           ensure_docker_log_caps; do
@@ -1336,6 +1336,64 @@ case "$UFW_CALLS" in
   *) echo "  FAIL wrong order: $UFW_CALLS"; fail=1 ;;
 esac
 unset -f ufw
+
+# --------------------------------------------------------------------------
+# install_deploy_ssh_dir. `id` and `install` are stubbed so the group the
+# function actually asks for is what gets recorded, and so an unknown group
+# fails the way the real `install` does.
+# --------------------------------------------------------------------------
+PRIMARY_GROUP=collavre
+KNOWN_GROUPS="collavre users ubuntu"
+INSTALL_LOG="$(mktemp)"
+# shellcheck disable=SC2329  # called by install_deploy_ssh_dir, eval'd from the script
+id() { [ "${1:-}" = -gn ] || { command id "$@"; return; }; printf '%s\n' "$PRIMARY_GROUP"; }
+# shellcheck disable=SC2329  # called by install_deploy_ssh_dir, eval'd from the script
+install() {
+  local g="" args=("$@") i
+  for (( i = 0; i < ${#args[@]} - 1; i++ )); do
+    [ "${args[i]}" = -g ] && g="${args[i+1]}"
+  done
+  # The function runs inside $( ), so a variable assignment would die with the
+  # subshell. Recorded to a file for the same reason as the mktemp template.
+  printf '%s\n' "$*" > "$INSTALL_LOG"
+  case " $KNOWN_GROUPS " in
+    *" $g "*) return 0 ;;
+    *) echo "install: invalid group '$g'" >&2; return 1 ;;
+  esac
+}
+
+echo "73. the deploy user's own primary group is used, not one named after it"
+# APP_SSH_USER may name an account that already exists — the cloud user, or one
+# made with `useradd -g users deploybot`. Assuming a same-named group makes
+# `install` exit non-zero, and under set -e that ends the run before authorized
+# keys, Docker and PostgreSQL.
+PRIMARY_GROUP=users
+out="$(install_deploy_ssh_dir deploybot /home/deploybot)"
+chk "the call succeeded"      0 "$?"
+chk "echoes the real group"   "users" "$out"
+INSTALL_CALL="$(cat "$INSTALL_LOG")"
+case "$INSTALL_CALL" in
+  *"-g users"*) echo "  ok   install was given the account's own group" ;;
+  *) echo "  FAIL install called with: $INSTALL_CALL"; fail=1 ;;
+esac
+case "$INSTALL_CALL" in
+  *"-m 0700"*"-o deploybot"*"/home/deploybot/.ssh"*)
+    echo "  ok   still 0700 and owned by the account" ;;
+  *) echo "  FAIL wrong mode/owner/path: $INSTALL_CALL"; fail=1 ;;
+esac
+
+echo "74. the ordinary case — a matching group — is unchanged"
+PRIMARY_GROUP=collavre
+out="$(install_deploy_ssh_dir collavre /home/collavre)"
+chk "succeeds"      0 "$?"
+chk "group echoed"  "collavre" "$out"
+
+echo "75. a genuinely failing install is reported, not papered over by the printf"
+PRIMARY_GROUP=nosuchgroup
+out="$(install_deploy_ssh_dir deploybot /home/deploybot 2>/dev/null)"
+chk "returns non-zero" 1 "$?"
+chk "no group echoed"  "" "$out"
+unset -f id install
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
