@@ -68,6 +68,22 @@ module Collavre
           return
         end
 
+        # Guard: an exclusive primary-agent assignment created (or moved) after
+        # this dispatch was scheduled must still bind it. A :delayed decision
+        # (agent busy / rate limited) sits in the job queue with its agent already
+        # chosen and is never re-matched, so without this a demoted agent speaks
+        # in a topic that now belongs to someone else. Unlike a queued waiter
+        # there is no Task yet to cancel, so cancelling on assignment change
+        # cannot cover this path — the check has to happen here.
+        if context && !Orchestration::Matcher.new(context).assignment_permits?(agent)
+          Rails.logger.info(
+            "[AiAgentJob] Skipping job for agent #{agent.id}: topic " \
+            "#{context.dig('topic', 'id')} is now assigned to another agent " \
+            "(event=#{event_name})"
+          )
+          return
+        end
+
         # Guard: skip if there's already a running task for the same agent + comment
         comment_id = context&.dig("comment", "id")
         if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)

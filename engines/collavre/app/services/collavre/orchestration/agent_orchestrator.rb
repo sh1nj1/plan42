@@ -25,10 +25,12 @@ module Collavre
           task.reload
           cleanup_waiting_notices!(task)
           refresh_deferred_context!(task)
+          revalidate_assignment!(task) unless task.status == "cancelled"
 
           if task.status == "cancelled"
-            # refresh_deferred_context! cancelled this task (no eligible comment),
-            # try the next queued task for this topic.
+            # refresh_deferred_context! found no eligible comment, or
+            # revalidate_assignment! found the topic now assigned to another
+            # agent. Either way this waiter is dead — try the next queued task.
             dequeue_next_for_topic(topic_id, creative_id)
           else
             AiAgentJob.perform_later(task)
@@ -84,6 +86,33 @@ module Collavre
         task.update!(trigger_event_payload: context)
       end
       private_class_method :refresh_deferred_context!
+
+      # Cancel a promoted waiter whose agent the topic's primary-agent assignment
+      # now excludes. A queued task keeps the agent chosen when it was dispatched,
+      # so a pin created or moved while it waited would otherwise be bypassed by
+      # the very work it is supposed to silence.
+      #
+      # Runs AFTER refresh_deferred_context! so the check judges what the agent is
+      # about to answer, not the stale snapshot: if the latest comment @mentions
+      # this agent, the mention outranks the assignment and the task survives.
+      # That refresh replaces the whole "chat" hash, dropping the resolved
+      # mentioned_user, so rebuild the context to recompute it from the content.
+      def self.revalidate_assignment!(task)
+        context = task.trigger_event_payload
+        return unless context&.key?("topic")
+
+        agent = task.agent
+        return unless agent
+        return if Matcher.new(SystemEvents::ContextBuilder.new(context).build)
+                         .assignment_permits?(agent)
+
+        Rails.logger.info(
+          "[AgentOrchestrator] Cancelling queued task #{task.id}: topic #{task.topic_id} " \
+          "is now assigned to another agent (agent=#{agent.id})"
+        )
+        task.update!(status: "cancelled")
+      end
+      private_class_method :revalidate_assignment!
 
       def initialize(event_name:, context:)
         @event_name = event_name

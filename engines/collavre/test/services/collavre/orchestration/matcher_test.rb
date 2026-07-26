@@ -477,6 +477,128 @@ module Collavre
         assert_equal [ @ai_agent ], Matcher.new(context).match
       end
 
+      # --- Revalidating an already-scheduled dispatch (#assignment_permits?) ---
+
+      test "assignment_permits? allows any agent when the topic has no primary" do
+        other = build_agent(routing_expression: "true")
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Unassigned revalidate", user: @user)
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id }
+        )
+
+        assert matcher.assignment_permits?(other)
+      end
+
+      test "assignment_permits? allows the assigned primary agent" do
+        topic = @creative.topics.create!(name: "Assigned revalidate", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id }
+        )
+
+        assert matcher.assignment_permits?(@ai_agent)
+      end
+
+      test "assignment_permits? refuses an agent the assignment now excludes" do
+        other = build_agent(routing_expression: "true")
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Reassigned mid-flight", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id }
+        )
+
+        assert_not matcher.assignment_permits?(other)
+      end
+
+      test "assignment_permits? allows a mentioned non-primary agent" do
+        other = build_agent(routing_expression: nil)
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Assigned yet mentioned", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => { "mentioned_user" => { "id" => other.id } }
+        )
+
+        # Mirrors #match: a mention outranks the assignment, so a deferred
+        # mention must not be cancelled when a pin lands while it waits.
+        assert matcher.assignment_permits?(other)
+      end
+
+      test "assignment_permits? refuses a non-primary agent when someone else is mentioned" do
+        other = build_agent(routing_expression: "true")
+        mentioned = build_agent(routing_expression: nil)
+        grant_feedback(other)
+        grant_feedback(mentioned)
+        topic = @creative.topics.create!(name: "Mention for someone else", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "chat" => { "mentioned_user" => { "id" => mentioned.id } }
+        )
+
+        assert_not matcher.assignment_permits?(other)
+      end
+
+      test "assignment_permits? allows the quoted author of a review message" do
+        other = build_agent(routing_expression: nil)
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Review under assignment", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        quoted = @creative.comments.create!(
+          content: "Draft from the other agent", user: other, topic: topic, private: false
+        )
+        review = @creative.comments.create!(
+          content: "shorter please", user: @user, topic: topic, private: false,
+          quoted_comment: quoted
+        )
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "id" => review.id }
+        )
+
+        # Only the quoted author can apply a review in place, so no assignment
+        # can transfer it — refusing here would leave a dead Review button.
+        assert matcher.assignment_permits?(other)
+      end
+
+      test "assignment_permits? refuses a non-author agent on a review message" do
+        author = build_agent(routing_expression: nil)
+        other = build_agent(routing_expression: "true")
+        grant_feedback(author)
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Review by non-author", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+
+        quoted = @creative.comments.create!(
+          content: "Draft", user: author, topic: topic, private: false
+        )
+        review = @creative.comments.create!(
+          content: "shorter please", user: @user, topic: topic, private: false,
+          quoted_comment: quoted
+        )
+
+        matcher = Matcher.new(
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "id" => review.id }
+        )
+
+        assert_not matcher.assignment_permits?(other)
+      end
+
       private
 
       def build_agent(routing_expression:)

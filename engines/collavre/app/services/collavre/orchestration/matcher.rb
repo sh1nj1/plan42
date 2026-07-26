@@ -39,6 +39,39 @@ module Collavre
         match_by_expression
       end
 
+      # May this agent still take the floor in this topic, given the topic's
+      # CURRENT primary-agent assignment?
+      #
+      # #match runs when an event is dispatched, but the agent it selects can
+      # reach execution much later: a :deferred decision parks a queued Task
+      # until the topic's blocker finishes, and a :delayed one sleeps in the job
+      # queue. Neither path re-matches — AiAgentJob#perform runs the agent the
+      # decision named — so an assignment created or moved during that window
+      # would be bypassed by work scheduled moments before it, and a demoted
+      # agent would speak in a topic that is now exclusively someone else's.
+      #
+      # Mirrors #match's precedence rather than re-deriving it: review and
+      # mention are exclusive routings that outrank the assignment (see
+      # #match_by_primary_agent), so those dispatches stay valid. Expression
+      # routing does not, so it is revalidated. Only the assignment is rechecked
+      # here — re-running the whole match would also re-evaluate each
+      # routing_expression against the refreshed comment, silently dropping
+      # deferred work for reasons that have nothing to do with the assignment.
+      def assignment_permits?(agent)
+        primary_id = matched_topic&.primary_agent_id
+        return true if primary_id.nil? || primary_id == agent.id
+
+        # A review can only ever be applied in place by the author of the quoted
+        # comment; no assignment can transfer it, so the alternative to running
+        # it is not "the primary answers instead" but a dead Review button.
+        return true if matched_comment&.review_message? &&
+          matched_comment.quoted_comment&.user_id == agent.id
+
+        mentioned_id = @context.dig("chat", "mentioned_user", "id") ||
+          @context.dig(:chat, :mentioned_user, :id)
+        mentioned_id.present? && mentioned_id.to_i == agent.id
+      end
+
       private
 
       # Returns [author] for a routable review message, [] for an unroutable one,

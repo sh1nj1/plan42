@@ -333,6 +333,46 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected no new task when duplicate running task exists for same comment"
   end
 
+  test "delayed job skips dispatch when the topic was assigned to another agent during the delay" do
+    # Scheduler returns :delayed for a busy / rate-limited agent and enqueues
+    # with agent.id — no Task row exists yet, so there is nothing to cancel when
+    # the assignment lands. Nothing re-matches before execution either, so
+    # without a check here a demoted agent speaks in a topic that is now
+    # exclusively someone else's.
+    topic = Topic.create!(creative: @creative, name: "assigned-during-delay", user: @owner)
+    primary = User.create!(
+      email: "assigned_primary@example.com", name: "Assigned Primary",
+      password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash",
+      searchable: true
+    )
+    topic.set_primary_agent!(primary)
+
+    context = @context.merge("topic" => { "id" => topic.id })
+    tasks_before = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      AiAgentJob.perform_now(@agent.id, "comment_created", context)
+    end
+
+    assert_equal tasks_before, Task.where(agent_id: @agent.id).count,
+      "an agent the topic assignment now excludes must not run"
+  end
+
+  test "delayed job still dispatches when the assignment names this agent" do
+    topic = Topic.create!(creative: @creative, name: "assigned-to-me", user: @owner)
+    topic.set_primary_agent!(@agent)
+
+    context = @context.merge("topic" => { "id" => topic.id })
+    tasks_before = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      AiAgentJob.perform_now(@agent.id, "comment_created", context)
+    end
+
+    assert_equal tasks_before + 1, Task.where(agent_id: @agent.id).count,
+      "the assigned primary agent must still run"
+  end
+
   test "skips duplicate execution when agent has delegated Claude Channel task for same comment" do
     # A delegated task is still in-flight (waiting on external MCP reply);
     # re-dispatching the same comment would produce duplicate replies.
