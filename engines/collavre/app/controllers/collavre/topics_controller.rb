@@ -10,7 +10,11 @@ module Collavre
     def index
       is_owner = @creative.user == Current.user
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
-      can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
+      # Mirrors require_creative_write! — the gate on #create and
+      # #set_primary_agent. Reported as two capabilities because the client gates
+      # two separate controls on it, and only #update/#destroy/#move/#reorder
+      # need :admin.
+      can_write = can_manage || @creative.has_permission?(Current.user, :write)
 
       # Eagerly ensure Main (and System for inboxes) exist BEFORE loading
       # active_topics. Otherwise the first inbox visit sees no System topic in
@@ -36,7 +40,8 @@ module Collavre
         topics: active_topics.map { |t| topic_json(t) },
         archived_topics: archived_topics,
         can_manage: can_manage,
-        can_create_topic: can_create_topic,
+        can_create_topic: can_write,
+        can_set_primary_agent: can_write,
         last_topic_id: last_topic_id,
         is_inbox: @creative.inbox?,
         system_topic_id: system_topic_id,
@@ -46,15 +51,22 @@ module Collavre
     end
 
     def create
+      requested_agent = params[:agent_id].present? ? User.find_by(id: params[:agent_id]) : nil
+
+      if requested_agent&.ai_user? && !assignable_primary_agent?(requested_agent)
+        render json: { errors: [ agent_no_creative_access_message(requested_agent) ] },
+               status: :unprocessable_entity and return
+      end
+
       topic = @creative.topics.build(topic_params)
       topic.user = Current.user
 
       Topic.transaction do
         if topic.save
           agent = nil
-          if params[:agent_id].present?
-            agent = User.find_by(id: params[:agent_id])
-            topic.set_primary_agent!(agent) if agent&.ai_user?
+          if requested_agent&.ai_user?
+            agent = requested_agent
+            topic.set_primary_agent!(agent)
           end
 
           # Move comments to the new topic if comment_ids provided
@@ -228,6 +240,11 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.not_ai_agent") }, status: :unprocessable_entity and return
       end
 
+      unless assignable_primary_agent?(agent)
+        render json: { error: agent_no_creative_access_message(agent) },
+               status: :unprocessable_entity and return
+      end
+
       topic.set_primary_agent!(agent)
 
       broadcast_topic_event("updated", topic: topic_json_with_agent(topic, agent))
@@ -239,6 +256,14 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
+    end
+
+    def assignable_primary_agent?(agent)
+      Topic.primary_agent_assignable?(@creative, agent)
+    end
+
+    def agent_no_creative_access_message(agent)
+      I18n.t("collavre.topics.agent_no_creative_access", name: agent.display_name)
     end
 
     # When a topic moves to a different creative, members who had access on the

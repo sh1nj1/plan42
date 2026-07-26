@@ -10,6 +10,7 @@ en:
       archived_topics: "Archived topics (%{count})"
       not_ai_agent: Only AI agents can be set as primary agent.
       session_topic_locked: This topic belongs to a live agent session. Its primary agent cannot be changed or released.
+      agent_no_creative_access: "%{name} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first."
       default_name_prefix: "Topic"
       branch_prefix: "Branch"
       main_name: "Main"
@@ -202,6 +203,7 @@ en:
         cleared_agent: 'Topic "%{name}" primary agent released. All agents can respond again.'
         already_exists: 'Topic "%{name}" already exists.'
         session_topic_locked: 'Topic "%{name}" belongs to a live agent session. Its primary agent cannot be changed or released.'
+        agent_no_creative_access: '@%{agent} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first.'
       work_command:
         agent_not_found: "Please mention an AI agent to execute the workflow."
         no_children: "This creative has no child creatives to work on."

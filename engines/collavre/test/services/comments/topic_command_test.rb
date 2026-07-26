@@ -15,6 +15,9 @@ module Collavre
           llm_model: "gpt-4",
           searchable: true
         )
+        # Pinning requires the agent to be able to answer here (see
+        # Topic.primary_agent_assignable?), so the agent under test is shared.
+        CreativeShare.create!(creative: @creative, user: @ai_agent, shared_by: @user, permission: :feedback)
         @topic = Topic.create!(creative: @creative, user: @user, name: "Test Topic")
       end
 
@@ -107,6 +110,36 @@ module Collavre
         # No primary agent should be set
         topic = Topic.find_by(creative: @creative, name: "No Agent Topic")
         assert_nil topic.primary_agent_id
+      end
+
+      # User.mentionable_for resolves every searchable agent, shared or not, so
+      # /topic could otherwise pin an agent that cannot answer — which mutes the
+      # topic outright, since the pin also excludes every other agent.
+      test "refuses to pin an agent that has no feedback access on the creative" do
+        outsider = User.create!(
+          email: "outsider@test.local", password: "password123", name: "OutsiderAgent",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        comment = create_comment('/topic "Outsider Topic" @OutsiderAgent: ')
+
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_match(/OutsiderAgent/, result)
+        assert_not Topic.exists?(creative: @creative, name: "Outsider Topic")
+        assert_nil Topic.find_by(primary_agent_id: outsider.id)
+      end
+
+      test "leaves an existing topic's agent untouched when the mention has no access" do
+        @topic.set_primary_agent!(@ai_agent)
+        outsider = User.create!(
+          email: "outsider2@test.local", password: "password123", name: "OutsiderAgent2",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        comment = create_comment('/topic "Test Topic" @OutsiderAgent2: ')
+
+        TopicCommand.new(comment: comment, user: @user).call
+
+        assert_equal @ai_agent.id, @topic.reload.primary_agent_id
       end
 
       test "returns error when topic name is missing" do

@@ -50,6 +50,16 @@ module Collavre
         # Find primary agent from @mentions using the same parsing as chat
         primary_agent = comment.mentioned_users.find(&:ai_user?)
 
+        # User.mentionable_for resolves every searchable agent, including ones
+        # with no share on this creative. Pinning such an agent would silence
+        # the topic outright: the pin is exclusive (Matcher#match_by_primary_agent
+        # suppresses the other agents' ambient routing) while the pinned agent
+        # itself fails the feedback check and cannot answer either.
+        if primary_agent && !Topic.primary_agent_assignable?(creative, primary_agent)
+          return I18n.t("collavre.comments.topic_command.agent_no_creative_access",
+                        agent: primary_agent.display_name)
+        end
+
         # Find existing topic or create new one
         existing_topic = Topic.find_by(creative: creative, name: data[:name])
 

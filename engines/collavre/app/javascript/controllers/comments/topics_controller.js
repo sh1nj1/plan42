@@ -13,6 +13,7 @@ export default class extends Controller {
         this.topics = []
         this.canManageTopics = false
         this.canCreateTopic = false
+        this.canSetPrimaryAgent = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
         this._loadTopicsVersion = 0
@@ -90,9 +91,16 @@ export default class extends Controller {
                 const topics = Array.isArray(data) ? data : data.topics
                 const canManage = Array.isArray(data) ? false : data.can_manage
                 const canCreateTopic = Array.isArray(data) ? false : (data.can_create_topic ?? canManage)
+                // Assigning an agent is authorized at :write, not :admin, so the
+                // release control must follow the same capability — otherwise a
+                // write collaborator can pin an agent by drag-and-drop and then
+                // has no way to undo it. Falls back to canManage for a server
+                // that predates the field.
+                const canSetPrimaryAgent = Array.isArray(data) ? false : (data.can_set_primary_agent ?? canManage)
                 this.topics = topics
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
+                this.canSetPrimaryAgent = canSetPrimaryAgent
                 this.archivedTopics = data.archived_topics || []
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 this.isInbox = !!data.is_inbox
@@ -108,7 +116,7 @@ export default class extends Controller {
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage()
 
-                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
                 this.restoreSelection()
             }
         } catch (e) {
@@ -131,7 +139,7 @@ export default class extends Controller {
         this.selectTopic(this.mainTopicId || "")
     }
 
-    renderTopics(topics, canManage = false, canCreateTopic = canManage) {
+    renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage) {
         const dragActions = canManage
             ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
@@ -153,7 +161,7 @@ export default class extends Controller {
             // agent_locked marks a live agent session topic, whose primary agent is
             // session identity rather than a routing pin — the server refuses to
             // change it, so the avatar must not offer to release it.
-            const releasableTopicId = canManage && !topic.agent_locked ? topic.id : null
+            const releasableTopicId = canSetPrimaryAgent && !topic.agent_locked ? topic.id : null
             const agentAvatar = topic.primary_agent
                 ? this.renderAgentAvatar(topic.primary_agent, releasableTopicId)
                 : ''
@@ -371,7 +379,7 @@ export default class extends Controller {
 
         // Update local state and UI immediately
         this.topics = topics
-        this.renderTopics(topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
 
         // Send to server
@@ -490,7 +498,7 @@ export default class extends Controller {
     toggleArchivedTopics(event) {
         event.stopPropagation()
         this.showingArchived = !this.showingArchived
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -684,7 +692,7 @@ export default class extends Controller {
                 if (index !== -1) {
                     this.topics[index] = { ...this.topics[index], ...updatedTopic }
                 }
-                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
                 this.restoreSelection()
             } else {
                 alertDialog(this._i18n("update_error"))
@@ -913,7 +921,7 @@ export default class extends Controller {
         if (existsByName) return
 
         this.topics = [...topics, data.topic]
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
 
         // Auto-select the new topic if created by the current user
         const currentUserId = document.body.dataset.currentUserId
@@ -941,7 +949,7 @@ export default class extends Controller {
         })
 
         this.topics = reorderedTopics
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -951,7 +959,7 @@ export default class extends Controller {
         if (index === -1) return
 
         this.topics[index] = { ...this.topics[index], ...updatedTopic }
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -968,7 +976,7 @@ export default class extends Controller {
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }
 
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 

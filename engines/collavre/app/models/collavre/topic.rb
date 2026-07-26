@@ -33,6 +33,28 @@ module Collavre
       update!(primary_agent: agent)
     end
 
+    # A primary agent is an exclusive assignment: Matcher#match_by_primary_agent
+    # routes ambient events to it alone and returns [] — silence, not a fallback
+    # — when it cannot respond. Routing also requires :feedback on the creative,
+    # so pinning an agent that lacks it would disable the topic outright: the
+    # pinned agent is not permitted to answer, and every other agent is excluded
+    # by the assignment. User.mentionable_for and the agent palette both surface
+    # searchable agents regardless of creative access, so this is reachable from
+    # plain drag-and-drop or `/topic "name" @agent`, not just a crafted request.
+    #
+    # This is deliberately the same predicate Matcher#has_creative_permission?
+    # applies, so "assignable" and "can respond" cannot drift apart.
+    #
+    # Deliberately NOT enforced inside #set_primary_agent!: SessionProvisioner
+    # and Api::V1::AgentsController#register write the pin as session identity
+    # before the inbox share exists, and must not be gated on it.
+    def self.primary_agent_assignable?(creative, agent)
+      return false unless agent&.ai_user?
+      return false unless creative
+
+      creative.has_permission?(agent, :feedback)
+    end
+
     def archived?
       archived_at.present?
     end

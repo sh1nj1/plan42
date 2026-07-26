@@ -169,11 +169,23 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
     })
 
     test('renders a plain avatar for users who cannot manage topics', () => {
-      controller.renderTopics(controller.topics, false, false)
+      controller.renderTopics(controller.topics, false, false, false)
 
       const wrapper = controller.listTarget.querySelector('.topic-agent-avatar-wrapper')
       expect(wrapper.classList.contains('topic-agent-avatar-releasable')).toBe(false)
       expect(wrapper.dataset.action).toBeUndefined()
+    })
+
+    // set_primary_agent is authorized at :write while can_manage means :admin.
+    // A write collaborator can pin an agent by dropping it on the topic, so
+    // gating the release on can_manage would make that a one-way door.
+    test('renders the release control for a write collaborator who cannot manage', () => {
+      controller.renderTopics(controller.topics, false, true, true)
+
+      const wrapper = controller.listTarget.querySelector('.topic-agent-avatar-wrapper')
+      expect(wrapper.classList.contains('topic-agent-avatar-releasable')).toBe(true)
+      expect(wrapper.dataset.action).toContain('comments--topics#clearTopicPrimaryAgent')
+      expect(wrapper.dataset.id).toBe('1')
     })
 
     // On an agent session topic the primary agent is session identity, not a

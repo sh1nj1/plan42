@@ -10,6 +10,7 @@ ko:
       archived_topics: "아카이브된 토픽 (%{count}개)"
       not_ai_agent: AI 에이전트만 Primary Agent로 설정할 수 있습니다.
       session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.
+      agent_no_creative_access: "%{name}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요."
       default_name_prefix: "토픽"
       branch_prefix: "분기"
       main_name: "메인"
@@ -199,6 +200,7 @@ ko:
         cleared_agent: '토픽 "%{name}"의 Primary Agent 지정이 해제되었습니다. 다시 모든 에이전트가 응답할 수 있습니다.'
         already_exists: '토픽 "%{name}"이(가) 이미 존재합니다.'
         session_topic_locked: '토픽 "%{name}"은(는) 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.'
+        agent_no_creative_access: '@%{agent}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요.'
       work_command:
         agent_not_found: "워크플로우를 실행할 AI 에이전트를 멘션해주세요."
         no_children: "이 크리에이티브에는 작업할 하위 크리에이티브가 없습니다."
