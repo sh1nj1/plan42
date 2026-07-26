@@ -374,20 +374,27 @@ chk "only our own rule deleted" 1 "$(printf '%s' "$UFW_CALLS" | grep -c delete)"
 chk "no reset"                  0 "$(printf '%s' "$UFW_CALLS" | grep -c reset)"
 
 echo "23. SSH already allowed is detected in every form ufw prints it"
+# Only IPv4 counts — see case 25a. ufw writes the "(v6)" line alongside its IPv4
+# twin and deletes them together, so the dual-stack pair is what a real host
+# carries; the tagged line is never alone, and here it must not be what decides.
 for s in "22/tcp                     ALLOW       Anywhere" \
          "22                         ALLOW IN    Anywhere" \
          "OpenSSH                    ALLOW       Anywhere" \
-         "22/tcp (v6)                ALLOW       Anywhere (v6)" \
          "22/tcp                     ALLOW IN    203.0.113.4" \
          "22/tcp                     LIMIT       203.0.113.9" \
          "22/tcp                     LIMIT IN    Anywhere" \
-         "22/tcp (v6)                LIMIT       Anywhere (v6)" \
          "10.1.2.3 22/tcp            ALLOW       203.0.113.9" \
          "10.1.2.3 22/tcp            LIMIT       203.0.113.9" \
-         "2001:db8::1 22/tcp         ALLOW       2001:db8::9"; do
+         "22/tcp                     ALLOW       Anywhere                   # ssh: admin only" \
+         "22/tcp                     ALLOW       203.0.113.4                # ops: jump box" \
+         "22/tcp                     ALLOW       Anywhere
+22/tcp (v6)                ALLOW       Anywhere (v6)" \
+         "22/tcp                     ALLOW       203.0.113.4
+22/tcp                     ALLOW       2001:db8::9"; do
   STATUS="$s"
   ssh_already_allowed
-  chk "detected: $s" 0 "$?"
+  chk "detected: ${s%%
+*}" 0 "$?"
 done
 
 echo "24. a narrowed SSH rule survives the re-run that finds it"
@@ -430,6 +437,28 @@ for s in "Status: inactive" \
          "22.1.1.1 80/tcp            ALLOW       198.51.100.5" \
          "Anywhere                   ALLOW       203.0.113.9" \
          ""; do
+  STATUS="$s"
+  UFW_CALLS=""
+  ensure_ssh_rule
+  chk "rule added for [${s:-empty status}]" "|allow OpenSSH" "$UFW_CALLS"
+done
+
+echo "25a. an IPv6-only rule does not authorize IPv4, whatever it looks like"
+# The dangerous direction: `ufw --force enable` applies `default deny incoming`,
+# and an operator reaches a Lightsail instance over its IPv4 address. Treating
+# an IPv6-only rule as "SSH is handled" skips the IPv4 rule and then closes 22
+# on the connection in use.
+#
+# All three render differently, which is the whole difficulty. Only the first
+# carries the "(v6)" tag; the second is untagged and betrayed by its leading
+# token; the third is untagged with an ordinary-looking first column and is
+# recognisable only by the colons further along the line — and it is the most
+# likely of the three, since narrowing SSH to your own address is why a host
+# would have an IPv6-only rule at all.
+for s in "22/tcp (v6)                ALLOW       Anywhere (v6)" \
+         "2001:db8::1 22/tcp         ALLOW       2001:db8::9" \
+         "22/tcp                     ALLOW       2001:db8::9" \
+         "22/tcp                     LIMIT       2001:db8::9"; do
   STATUS="$s"
   UFW_CALLS=""
   ensure_ssh_rule

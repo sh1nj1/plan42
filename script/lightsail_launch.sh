@@ -450,8 +450,38 @@ ensure_ufw_rule() {
 # reading it as "SSH is handled" would enable a deny-by-default firewall on a
 # box the operator may have no remaining way into. A rule that names port 22 is
 # evidence about SSH; one that names no port at all is not.
+# IPv6 lines are dropped before the match, and that stage is load-bearing. What
+# has to be true here is that *IPv4* port 22 is reachable: `ufw --force enable`
+# below applies `default deny incoming`, and an operator reaching a Lightsail
+# instance does so over its IPv4 address. ufw prints the address family only as
+# a "(v6)" tag on the rule, so a host carrying nothing but
+# "22/tcp (v6) ... ALLOW" would otherwise read as authorized — the IPv4 rule
+# skipped, and the firewall then enabled against the connection in use.
+# Dual-stack hosts are unaffected: `ufw allow OpenSSH` writes both lines, and
+# the IPv4 one survives the filter.
+#
+# The "(v6)" tag alone is not enough to find them, and neither is the leading
+# token. ufw only tags a rule that names no address at all ("22/tcp (v6)"); one
+# written against an IPv6 *destination* renders untagged as
+# "2001:db8::1 22/tcp ALLOW ...", and one restricted to an IPv6 *source* renders
+# as "22/tcp ALLOW 2001:db8::9" — untagged, and with an ordinary IPv4-looking
+# first column. That last form is the one to keep in mind: narrowing SSH to your
+# own address is the most likely reason a host has an IPv6-only rule in the
+# first place. So the family is decided by a colon anywhere in the rule, which
+# is the only thing all three have in common.
+#
+# The comment is stripped first because `ufw allow 22/tcp comment 'ssh: admin'`
+# puts an operator's colon on an IPv4 line. Failing that way is safe — it adds a
+# blanket rule rather than locking anyone out — but it would broaden the very
+# rule this function exists to leave alone.
+#
+# All of it verified against real ufw on ubuntu:24.04, against `iptables -S` as
+# the ground truth for whether IPv4 port 22 is actually reachable, rather than
+# reasoned about from the rendering.
 ssh_already_allowed() {
   ufw status 2>/dev/null |
+    sed 's/#.*//' |
+    grep -vE '\(v6\)|:' |
     grep -qE '^([^[:space:]]+[[:space:]]+)?(22|OpenSSH)([/[:space:]]).*(ALLOW|LIMIT)'
 }
 
