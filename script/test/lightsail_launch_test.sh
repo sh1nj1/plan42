@@ -609,6 +609,70 @@ case "$LOGGED" in
   *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
 esac
 
+echo "41. a rewrite that stops PART WAY also keeps the old key instead of none"
+# Case 40 is the write that produces nothing. This is the write that produces
+# some of the file, which a size test cannot tell from a good one — and it is
+# the likelier shape on a nearly-full disk. It matters more than it looks:
+# install_authorized_keys *appends*, so the successor is the last line and is
+# exactly what a short write drops. The result is a non-empty authorized_keys
+# that no longer contains the key the operator is rotating to.
+st4=$(mktemp -d)
+printf '%s\n%s\n%s\n' "$OLD" "$OPERATOR" "$NEW" > "$AK"
+printf '%s\n' "$OLD" > "$st4/ssh_public_key"
+# shellcheck disable=SC2034  # read by revoke_prior_ssh_key, eval'd from the script
+SSH_PUBLIC_KEY="$NEW"
+LOGGED=""
+# Emits a truncated result — the operator key but not the trailing successor —
+# then fails, exactly as grep does when it runs out of space mid-write.
+# shellcheck disable=SC2329  # shadows grep for revoke_prior_ssh_key only
+grep() {
+  case "$*" in
+    *-vxF*) printf '%s\n' "$OPERATOR"; return 2 ;;
+    *) command grep "$@" ;;
+  esac
+}
+revoke_prior_ssh_key "$AK" "$st4/ssh_public_key"
+unset -f grep
+chk "the account keeps a way in"     1 "$(command grep -cxF "$NEW" "$AK")"
+chk "the un-withdrawn key is kept"   1 "$(command grep -cxF "$OLD" "$AK")"
+chk "the operator's key is kept"     1 "$(command grep -cxF "$OPERATOR" "$AK")"
+chk "marker still names the old key" "$OLD" "$(cat "$st4/ssh_public_key")"
+case "$LOGGED" in
+  *WARNING*"still authorized"*) echo "  ok   the partial write is reported, not claimed as a success" ;;
+  *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
+esac
+
+echo "42. the scratch file is staged beside authorized_keys, not in TMPDIR"
+# Same filesystem, so the rewrite cannot fail for space the staging just
+# proved is available, and a full or unwritable /tmp is not on its own able to
+# break the file the operator logs in with.
+#
+# Asserted on the path mktemp is *asked* for rather than by pointing TMPDIR
+# somewhere broken: GNU mktemp fails on a missing TMPDIR but BSD mktemp falls
+# back to a private directory and succeeds, so the TMPDIR form would pass
+# vacuously on the machine this harness usually runs on and only mean
+# something on the host being provisioned.
+st5=$(mktemp -d)
+printf '%s\n%s\n' "$OLD" "$NEW" > "$AK"
+printf '%s\n' "$OLD" > "$st5/ssh_public_key"
+# shellcheck disable=SC2034  # read by revoke_prior_ssh_key, eval'd from the script
+SSH_PUBLIC_KEY="$NEW"
+LOGGED=""
+# Recorded to a file, not a variable: the call site is `tmp="$(mktemp ...)"`,
+# a command substitution, so anything the shadow assigns dies with its
+# subshell.
+TEMPLATE_LOG="$st5/mktemp_template"
+: > "$TEMPLATE_LOG"
+# shellcheck disable=SC2329  # shadows mktemp for revoke_prior_ssh_key only
+mktemp() { printf '%s\n' "${1:-(no template)}" >> "$TEMPLATE_LOG"; command mktemp "$@"; }
+revoke_prior_ssh_key "$AK" "$st5/ssh_public_key"
+unset -f mktemp
+chk "staged in the target's own directory" \
+  "$(dirname "$AK")" "$(dirname "$(head -1 "$TEMPLATE_LOG")")"
+chk "the rotation still completed"  0 "$(command grep -cxF "$OLD" "$AK")"
+chk "the new key is authorized"     1 "$(command grep -cxF "$NEW" "$AK")"
+chk "no scratch file left behind"   0 "$(find "$(dirname "$AK")" -name '*.revoke.*' | wc -l | tr -d ' ')"
+
 unset -f log
 
 # --- reassign_prior_db_role -------------------------------------------------
@@ -634,7 +698,7 @@ psql_as_postgres() {
 log() { LOGGED="$LOGGED $*"; }
 rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
 
-echo "41. rotating DB_USER moves the tables and retires the old credential"
+echo "43. rotating DB_USER moves the tables and retires the old credential"
 # ALTER DATABASE ... OWNER only moves the database. Every table and sequence
 # the app created stays with the old role, so the new one in DATABASE_URL gets
 # "permission denied" on its own data — while the old role keeps LOGIN and the
@@ -646,11 +710,11 @@ chk "ownership moved, then login revoked" \
     '|REASSIGN OWNED BY "collavre_user" TO "collavre_app"|ALTER ROLE "collavre_user" NOLOGIN' \
     "$SQL"
 
-echo "42. an unchanged DB_USER touches nothing"
+echo "44. an unchanged DB_USER touches nothing"
 rotate collavre_user "$d3/db_user"
 chk "no SQL" "" "$SQL$LOGGED"
 
-echo "43. a superuser predecessor is reported, never disabled"
+echo "45. a superuser predecessor is reported, never disabled"
 # DB_USER=postgres on a first run is legal. NOLOGIN on the cluster superuser
 # locks every operator out of administering it — peer auth needs LOGIN too, so
 # there is no way back in.
@@ -663,7 +727,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "44. first run, emptied marker and a dropped role are all no-ops"
+echo "46. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
 ROLE_IS_SUPER=f
 rotate collavre_user "$d4/db_user"          # no marker yet

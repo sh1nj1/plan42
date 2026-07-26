@@ -475,19 +475,24 @@ revoke_prior_ssh_key() {
     prior="$(cat "$state")"
     if [ -n "$prior" ] && [ "$prior" != "$SSH_PUBLIC_KEY" ] &&
        grep -qxF "$prior" "$auth_keys"; then
-      tmp="$(mktemp)"
+      # Staged beside the target rather than in $TMPDIR: same filesystem, so
+      # the rewrite below cannot fail for space the staging just proved is
+      # there, and a small or full /tmp is not on its own able to break the
+      # file the operator logs in with.
+      tmp="$(mktemp "$auth_keys.revoke.XXXXXX")"
       # Exact whole-line match: a key is withdrawn only if it is byte-for-byte
       # the one recorded, so an operator key that merely shares a comment or a
       # prefix survives.
       grep -vxF "$prior" "$auth_keys" > "$tmp" || true
-      # An empty result cannot mean "every key was the retired one" — the
-      # successor was confirmed present above — so it means the filter itself
-      # failed, and the `|| true` that keeps `set -e` from firing on grep's
-      # "no lines selected" hides that. Writing it back would truncate
-      # authorized_keys and lock the deploy account out of the host. The
-      # realistic trigger is a full disk: grep writes nothing, exits 2, and
-      # `cat` then succeeds at emptying the file.
-      if [ -s "$tmp" ]; then
+      # Check what the staged file *is*, not merely that it exists. `grep`
+      # writing a short file is the dangerous case and it is the likely one:
+      # the successor was appended, so it is the last line, and a write that
+      # runs out of space stops before reaching it. A size test passes on
+      # that file, `cat` installs it, and the account is locked out of a host
+      # whose log says the rotation succeeded. The `|| true` above — needed so
+      # `set -e` does not fire on grep's "no lines selected" — is what hides
+      # the error, so the successor's presence has to be re-established here.
+      if grep -qxF "$SSH_PUBLIC_KEY" "$tmp"; then
         cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
         rm -f "$tmp"
         log "withdrew the SSH key this script installed on a previous run"
