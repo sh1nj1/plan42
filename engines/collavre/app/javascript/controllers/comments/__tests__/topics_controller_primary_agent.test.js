@@ -236,4 +236,21 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
       expect(event.stopPropagation).toHaveBeenCalled()
     })
   })
+
+  // Dropping an agent on the create-topic target now gets a 422 when the agent
+  // has no feedback access on the creative. Without surfacing it the drop looks
+  // like it silently did nothing.
+  describe('createTopicWithAgent', () => {
+    test('surfaces the server error when the agent cannot be assigned', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        json: async () => ({ errors: ['Outsider has no feedback access here.'] }),
+      })
+
+      await controller.createTopicWithAgent(AGENT)
+
+      expect(alertDialog).toHaveBeenCalledWith('Outsider has no feedback access here.')
+    })
+  })
 })

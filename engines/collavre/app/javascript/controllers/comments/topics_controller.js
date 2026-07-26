@@ -1128,10 +1128,18 @@ export default class extends Controller {
                 await this.loadTopics()
                 this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
-                console.error('Failed to create topic with agent')
+                // Dropping an agent that has no feedback access here is now
+                // refused (it would mute the topic), and that is a user mistake
+                // with a fix — sharing the creative. A console line would leave
+                // the drop looking like it silently did nothing.
+                const data = await response.json().catch(() => ({}))
+                const message = data.errors?.[0] || data.error
+                console.error('Failed to create topic with agent', message)
+                alertDialog(message || this._i18n('create_error'))
             }
         } catch (e) {
             console.error('Error creating topic with agent', e)
+            alertDialog(this._i18n('create_error'))
         }
     }
 
