@@ -447,6 +447,28 @@ ensure_block() {
   local file="$1" marker="$2" content="$3"
   local begin="# BEGIN collavre:$marker" end="# END collavre:$marker"
 
+  # Resolved before anything else, because the rewrite below installs by
+  # rename(2) and rename does not follow symlinks: pointed at a symlinked
+  # /etc/hosts it would replace the link with a regular file, and the next
+  # thing to read the real path would see the pre-managed contents. The
+  # append branch below and the previous `cat >` both wrote *through* the
+  # link, so resolving here is what keeps the two paths writing to the same
+  # file. `readlink -f` is not used: it is a GNU extension that only reached
+  # macOS recently, and this suite runs on both.
+  local hops=0
+  while [ -L "$file" ]; do
+    local target
+    target="$(readlink "$file")" ||
+      die "$file: is a symlink I cannot read. Repair or replace it by hand."
+    case "$target" in
+      /*) file="$target" ;;
+      *)  file="$(dirname "$file")/$target" ;;
+    esac
+    hops=$((hops + 1))
+    [ "$hops" -lt 16 ] ||
+      die "$file: symlink chain is too deep to follow. Repair it by hand."
+  done
+
   if ! grep -qF "$begin" "$file" 2>/dev/null; then
     {
       printf '\n%s (managed by script/lightsail_launch.sh)\n' "$begin"
@@ -460,7 +482,34 @@ ensure_block() {
     die "$file: '$begin' with no '$end'. Refusing to rewrite a block I cannot delimit — repair or delete it by hand."
 
   local tmp
-  tmp="$(mktemp)"
+  # Staged beside the target, not in $TMPDIR: same filesystem, so the swap
+  # below is one rename(2) and the staging has already proved the space is
+  # there. The mode and ownership are taken from the file being replaced and
+  # set before any content is written, so the staging file is never briefly
+  # readable by more than the live one already is.
+  #
+  # Copied from the target rather than hard-coded: this helper rewrites
+  # /etc/fstab and /etc/hosts (root:root 0644) as well as postgresql.conf and
+  # pg_hba.conf (postgres:postgres 0640), and naming either here would be a
+  # second spelling of what the target already says — one that goes wrong
+  # silently the first time a caller points this at a fourth file.
+  #
+  # `cp -p` rather than chmod/chown --reference: --reference is a GNU
+  # extension, and this suite's cases run on the maintainer's macOS as well as
+  # on the Ubuntu the script provisions. It copies the content too, which is
+  # redundant since awk overwrites it — these are files of a few KB, and the
+  # cost buys one spelling that works on both.
+  #
+  # A staging file that could not be given the target's identity is one that
+  # must not be installed: a pg_hba.conf PostgreSQL cannot read back stops the
+  # cluster, so this refuses rather than proceeding at mktemp's root-only 0600.
+  tmp="$(mktemp "$file.collavre.XXXXXX")" ||
+    die "$file: could not stage a rewrite beside it. Is $(dirname "$file") writable?"
+  if ! cp -p "$file" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    die "$file: could not give a staged rewrite the same owner and mode as the" \
+        "file it replaces, so it was NOT installed and $file is untouched."
+  fi
   # index() rather than an anchored match, so awk sees exactly the lines the
   # grep above found. END exits non-zero on an unterminated block (END marker
   # before BEGIN), which would otherwise swallow the rest of the file.
@@ -482,10 +531,20 @@ ensure_block() {
     die "$file: collavre:$marker block is malformed (END before BEGIN?). Repair it by hand."
   fi
 
-  # Through the existing inode: pg_hba.conf is postgres:postgres 0640, and a
-  # mv from mktemp would hand it root:root 0600 and stop PostgreSQL reading it.
-  cat "$tmp" > "$file"
-  rm -f "$tmp"
+  # Renamed, never copied through the existing inode. `cat "$tmp" > "$file"`
+  # truncates the live path when the redirection opens, so a run killed during
+  # the copy — an OOM kill on a 512MB instance, a power loss — leaves the file
+  # holding a prefix of itself. Measured by sampling the live path during the
+  # copy of a large pg_hba.conf: 0 bytes. These are the files that decide
+  # whether the host comes back, and each fails a different way — an empty
+  # pg_hba.conf refuses every connection, a truncated fstab loses mounts, and
+  # a block left without its END marker makes the *next* run die on "repair or
+  # delete it by hand" rather than converge.
+  #
+  # The in-place copy was there to preserve owner and mode; that is now done on
+  # the staging file above, where it costs nothing and does not require the
+  # live path to be destroyed first.
+  mv -f "$tmp" "$file"
 }
 
 # Give $1 passwordless sudo, and make sure it is the only deploy user holding
@@ -1109,11 +1168,59 @@ refuse_superuser_db_rotation() {
       "or set DB_USER='$prior' to leave the rotation undone."
 }
 
-reassign_prior_db_role() {
-  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior
-  [ -f "$prior_file" ] || return 0
-  prior="$(cat "$prior_file")"
-  [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
+# record_db_role_grant <role> [set file] [legacy single marker]
+#
+# The same shape as record_deploy_user_grant, one resource over, and for the
+# same reason: db_user is a single marker, so it can name the role this host is
+# *currently* deployed against or the queue of roles a rotation has not finished
+# retiring, but not both.
+#
+# The interrupted A -> B -> C sequence is what it cannot survive. Ownership is
+# moved by reassign_prior_db_role and the marker is advanced on the next line;
+# a run that dies between them leaves every table owned by B while db_user still
+# says A. If the operator's next run asks for C rather than replaying B, the
+# rotation reads A as the predecessor, reassigns from a role that owns nothing,
+# moves no objects, records C, and the summary hands out a DATABASE_URL for a
+# role that cannot read a row. Measured against 07365195:
+#
+#   run2  A -> B, dies before the marker write   objects: B   db_user: A
+#   run3  C                                      objects: B   db_user: C
+#
+# Nothing on the host names B at that point, so no later run can find it either.
+# Called before the role is made an owner, not after, for the same reason the
+# deploy-user version is called before the grant: a name in this file that turns
+# out to own nothing costs one cheap query, and a name missing from it is a
+# database whose owner nothing is looking for.
+record_db_role_grant() {
+  local role="$1" set_file="${2:-$STATE_DIR/db_users}"
+  local prior_file="${3:-$STATE_DIR/db_user}"
+  # Upgrade path, as for deploy_users: on a host provisioned by the earlier
+  # revision the single marker names the one predecessor it knew about, and
+  # seeding from it means the fix for forgetting roles does not start by
+  # forgetting one. Guarded on `! -f`, so it runs once per host — the write is
+  # therefore all-or-nothing, and a failed seed leaves the file absent for a
+  # retry rather than empty and authoritative.
+  if [ ! -f "$set_file" ] && [ -s "$prior_file" ]; then
+    local seed
+    seed="$(grep -v '^[[:space:]]*$' "$prior_file")" || seed=''
+    if [ -n "$seed" ]; then
+      write_state_file "$set_file" "$seed"$'\n' || return 1
+    fi
+  fi
+  grep -qxF "$role" "$set_file" 2>/dev/null ||
+    printf '%s\n' "$role" >> "$set_file"
+}
+
+# reassign_one_db_role <prior> <current>
+#
+# Moves one replaced role's objects. Returns 0 when there is nothing left for a
+# later run to do with <prior>, non-zero when it must stay in the queue — so the
+# caller decides what is still outstanding, rather than this deciding it by
+# where it writes a marker.
+reassign_one_db_role() {
+  local prior="$1" current="$2"
+  # A role that no longer exists owns nothing and cannot be reassigned: there
+  # is nothing outstanding, so it leaves the queue.
   [ "$(psql_as_postgres postgres \
         "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
 
@@ -1152,6 +1259,43 @@ reassign_prior_db_role() {
   log "revoked LOGIN from the replaced database role '$prior'"
 }
 
+reassign_prior_db_role() {
+  local current="$1" prior_file="${2:-$STATE_DIR/db_user}"
+  local set_file="${3:-${prior_file%/*}/db_users}" prior kept=''
+
+  # Not a no-op on the ordinary path: this seeds the set on a host the earlier
+  # revision provisioned, and puts $current in it on a first run, so that a
+  # later rotation has something to reassign from.
+  record_db_role_grant "$current" "$set_file" "$prior_file" || {
+    # Returning rather than carrying on: the loop reads $set_file, which on
+    # this path may not exist. Nothing has been reassigned, and the file is
+    # left in the state a later run retries from.
+    log "WARNING: could not record '$current' in '$set_file'; no database role" \
+        "was reassigned on this run, and the queue is unchanged"
+    return 1
+  }
+
+  while read -r prior; do
+    [ -n "$prior" ] || continue
+    # The role this run deploys against stays in the set: it is the predecessor
+    # the *next* rotation reassigns from.
+    if [ "$prior" = "$current" ]; then
+      kept="$kept$prior"$'\n'
+      continue
+    fi
+    reassign_one_db_role "$prior" "$current" || kept="$kept$prior"$'\n'
+  done < "$set_file"
+
+  # Rewritten only after the loop, so a REASSIGN that fails under `set -e` takes
+  # the run down with the queue intact and every member retried — the failure
+  # cannot quietly consume the entry it failed on.
+  write_state_file "$set_file" "$kept" ||
+    log "WARNING: could not rewrite '$set_file'. Ownership was moved, but this" \
+        "host still lists roles a later run will try to reassign again;" \
+        "REASSIGN OWNED BY on a role that owns nothing is a no-op, so the retry" \
+        "is harmless. Check that $STATE_DIR has space."
+}
+
 # refuse_db_name_change <name> [state dir]
 #
 # DB_NAME is the one identifier a re-run could change with no trace at all. The
@@ -1176,9 +1320,18 @@ reassign_prior_db_role() {
 refuse_db_name_change() {
   local current="$1" state_dir="${2:-$STATE_DIR}" prior others
 
-  if [ -f "$state_dir/db_name" ]; then
-    prior="$(cat "$state_dir/db_name")"
-    [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
+  # Read into a variable rather than branching on the file, because an empty
+  # marker is not the same question as an absent one and must not answer it.
+  # A truncated db_name says "a name was recorded and this run cannot read it",
+  # which is exactly the case the no-record path below is built to catch; the
+  # earlier form returned 0 from inside the `-f` branch, so an empty file
+  # skipped both this comparison and that fallback, and the guard passed
+  # anything.
+  prior=''
+  [ -f "$state_dir/db_name" ] && prior="$(cat "$state_dir/db_name")"
+
+  if [ -n "$prior" ]; then
+    [ "$prior" != "$current" ] || return 0
     die "this host was provisioned with DB_NAME='$prior', and DB_NAME is now" \
         "'$current'. This script creates a database if it is missing; it does not" \
         "rename or copy one, so '$current' would be created empty while the app's" \
@@ -1188,9 +1341,10 @@ refuse_db_name_change() {
         "on a re-run' in docs/deploy_to_lightsail.md."
   fi
 
-  # No record. On a genuine first run there is nothing to protect, and adopting
-  # the name is right. On a host provisioned by a revision that did not track it
-  # there is: db_user is the marker that says this script has run here before.
+  # No usable record — absent, or present but unreadable. On a genuine first run
+  # there is nothing to protect, and adopting the name is right. On a host
+  # provisioned by a revision that did not track it there is: db_user is the
+  # marker that says this script has run here before.
   [ -f "$state_dir/db_user" ] || return 0
   [ "$(psql_as_postgres postgres \
         "SELECT count(*) FROM pg_database WHERE datname = '$current'")" = 0 ] || return 0
@@ -1667,8 +1821,60 @@ install_staged_authorized_keys() {
   mv -f "$tmp" "$auth_keys"
 }
 
+# record_ssh_key_grant <key> [set file] [legacy single marker]
+#
+# The third instance of the same separation, after deploy_users and db_users:
+# ssh_public_key.<user> is the key this host is *currently* deployed with, and
+# this file is the set of managed keys no run has confirmed withdrawn. One
+# marker cannot be both, and the A -> B -> C sequence is where it shows.
+#
+# install_authorized_keys appends the successor and revoke_prior_ssh_key
+# advances the marker afterwards, so a run that dies between them leaves B in
+# authorized_keys with the marker still naming A. A later run rotating to C
+# withdraws A — the only key the marker knows — records C, and B stays
+# authorized with nothing on the host naming it. Measured against 07365195:
+#
+#   control  A -> B -> C                       keys=[C]    marker=C
+#   run2 interrupted before the marker write:
+#            A -> B(interrupted) -> C          keys=[B C]  marker=C
+#
+# B is not a stale entry in a file: this account holds passwordless sudo and the
+# docker socket, so an untracked key on it is permanent root on the host, and it
+# is untracked precisely because the rotation that was supposed to retire it is
+# the thing that lost the record.
+#
+# Called before the key is appended, not after — the same ordering as
+# record_deploy_user_grant, and for the same reason: a key in this file that
+# turns out not to be in authorized_keys costs one grep, and a key missing from
+# it is root access nobody is looking for.
+record_ssh_key_grant() {
+  local key="$1" set_file="${2:-$STATE_DIR/ssh_public_keys.$APP_SSH_USER}"
+  local prior_file="${3:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}"
+  [ -n "$key" ] || return 0
+  # Upgrade path, guarded on `! -f` so it runs once per host: seed from the
+  # single marker the earlier revision kept, which names the predecessor most
+  # likely to still be authorized. A failed seed leaves the file absent — the
+  # state a retry starts from — rather than empty and authoritative.
+  if [ ! -f "$set_file" ] && [ -s "$prior_file" ]; then
+    local seed
+    seed="$(grep -v '^[[:space:]]*$' "$prior_file")" || seed=''
+    if [ -n "$seed" ]; then
+      write_state_file "$set_file" "$seed"$'\n' || return 1
+    fi
+  fi
+  grep -qxF "$key" "$set_file" 2>/dev/null ||
+    printf '%s\n' "$key" >> "$set_file"
+}
+
 revoke_prior_ssh_key() {
-  local auth_keys="$1" state="${2:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}" prior tmp
+  local auth_keys="$1" state="${2:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}"
+  # Derived from $state, not rebuilt from $APP_SSH_USER: a caller that passes
+  # an explicit marker path — every case in the suite that predates the queue —
+  # need not also have $APP_SSH_USER set, and the two names cannot drift onto
+  # different accounts. 'ssh_public_key.deploy' -> 'ssh_public_keys.deploy'.
+  local base="${state##*/}"
+  local set_file="${3:-${state%/*}/ssh_public_keys${base#ssh_public_key}}"
+  local prior tmp pat kept='' drop='' n=0
   # An empty SSH_PUBLIC_KEY means "keep using the cloud user's keys", not
   # "retire the managed one" — withdrawing here would strand an operator who
   # simply dropped the variable from a re-run.
@@ -1677,44 +1883,84 @@ revoke_prior_ssh_key() {
   # must leave two usable keys, never zero.
   grep -qxF "$SSH_PUBLIC_KEY" "$auth_keys" || return 0
 
-  if [ -f "$state" ]; then
-    prior="$(cat "$state")"
-    if [ -n "$prior" ] && [ "$prior" != "$SSH_PUBLIC_KEY" ] &&
-       grep -qxF "$prior" "$auth_keys"; then
-      # Staged beside the target rather than in $TMPDIR: same filesystem, so
-      # the rewrite below cannot fail for space the staging just proved is
-      # there, and a small or full /tmp is not on its own able to break the
-      # file the operator logs in with.
-      tmp="$(mktemp "$auth_keys.revoke.XXXXXX")"
-      # Exact whole-line match: a key is withdrawn only if it is byte-for-byte
-      # the one recorded, so an operator key that merely shares a comment or a
-      # prefix survives.
-      grep -vxF "$prior" "$auth_keys" > "$tmp" || true
-      # Check what the staged file *is*, not merely that it exists. `grep`
-      # writing a short file is the dangerous case and it is the likely one:
-      # the successor was appended, so it is the last line, and a write that
-      # runs out of space stops before reaching it. A size test passes on
-      # that file, `cat` installs it, and the account is locked out of a host
-      # whose log says the rotation succeeded. The `|| true` above — needed so
-      # `set -e` does not fire on grep's "no lines selected" — is what hides
-      # the error, so the successor's presence has to be re-established here.
-      # The install is part of the condition rather than a statement after it:
-      # it declines to install a file it could not give to the user, and a
-      # withdrawal that did not reach the live file has withdrawn nothing.
-      if grep -qxF "$SSH_PUBLIC_KEY" "$tmp" &&
-         install_staged_authorized_keys "$tmp" "$auth_keys"; then
-        log "withdrew the SSH key this script installed on a previous run"
-      else
-        rm -f "$tmp"
-        log "WARNING: could not withdraw the previous SSH key — is the disk full?" \
-            "It is still authorized; remove it by hand once the host is healthy"
-        # Deliberately leave the marker pointing at the key still in the file,
-        # so the next run retries the withdrawal instead of forgetting it.
-        return 0
-      fi
+  # Seeds the set on a host the earlier revision provisioned, and puts the
+  # current key in it on a first run, so a later rotation has a predecessor to
+  # withdraw. The call site records it earlier too, before the append; this one
+  # is what makes the function correct when called on its own.
+  record_ssh_key_grant "$SSH_PUBLIC_KEY" "$set_file" "$state" || {
+    log "WARNING: could not record the current SSH key in '$set_file'; no key" \
+        "was withdrawn on this run, and the queue is unchanged"
+    return 0
+  }
+
+  while read -r prior; do
+    [ -n "$prior" ] || continue
+    # The key this run deploys with stays: it is what the *next* rotation
+    # withdraws.
+    if [ "$prior" = "$SSH_PUBLIC_KEY" ]; then
+      kept="$kept$prior"$'\n'
+      continue
+    fi
+    # Already absent from authorized_keys — withdrawn by an earlier run, or by
+    # the operator. Nothing outstanding, so it leaves the queue.
+    grep -qxF "$prior" "$auth_keys" || continue
+    drop="$drop$prior"$'\n'
+    n=$((n + 1))
+  done < "$set_file"
+
+  if [ -n "$drop" ]; then
+    # One rewrite for the whole queue rather than one per key: each rewrite is
+    # a chance to install a short file, and authorized_keys is the only way
+    # into this host.
+    #
+    # Staged beside the target rather than in $TMPDIR: same filesystem, so
+    # the rewrite below cannot fail for space the staging just proved is
+    # there, and a small or full /tmp is not on its own able to break the
+    # file the operator logs in with.
+    pat="$(mktemp "$auth_keys.revoke.XXXXXX")"
+    printf '%s' "$drop" > "$pat"
+    tmp="$(mktemp "$auth_keys.revoke.XXXXXX")"
+    # Exact whole-line matches: a key is withdrawn only if it is byte-for-byte
+    # one of those recorded, so an operator key that merely shares a comment or
+    # a prefix survives.
+    grep -vxF -f "$pat" "$auth_keys" > "$tmp" || true
+    rm -f "$pat"
+    # Check what the staged file *is*, not merely that it exists. `grep`
+    # writing a short file is the dangerous case and it is the likely one:
+    # the successor was appended, so it is the last line, and a write that
+    # runs out of space stops before reaching it. A size test passes on
+    # that file, the install goes ahead, and the account is locked out of a
+    # host whose log says the rotation succeeded. The `|| true` above —
+    # needed so `set -e` does not fire on grep's "no lines selected" — is
+    # what hides the error, so the successor's presence has to be
+    # re-established here. The install is part of the condition rather than a
+    # statement after it: it declines to install a file it could not give to
+    # the user, and a withdrawal that did not reach the live file has
+    # withdrawn nothing.
+    if grep -qxF "$SSH_PUBLIC_KEY" "$tmp" &&
+       install_staged_authorized_keys "$tmp" "$auth_keys"; then
+      log "withdrew $n SSH key(s) this script installed on previous runs"
+    else
+      rm -f "$tmp"
+      log "WARNING: could not withdraw $n previous SSH key(s) — is the disk full?" \
+          "They are still authorized; remove them by hand once the host is healthy"
+      # Deliberately kept in the queue, so the next run retries the withdrawal
+      # instead of forgetting keys that still hold root on this account.
+      kept="$kept$drop"
     fi
   fi
-  printf '%s\n' "$SSH_PUBLIC_KEY" > "$state"
+
+  write_state_file "$set_file" "$kept" ||
+    log "WARNING: could not rewrite '$set_file'. Any key withdrawn above is" \
+        "still withdrawn; this host merely still lists it, and a later run" \
+        "will find it absent from $auth_keys and drop it then."
+
+  # The single marker stays the record of the key this host is deployed with —
+  # adopt_legacy_ssh_key_marker keys off its presence — while the set above is
+  # the queue. Written atomically: a bare redirection truncates at open, and an
+  # empty marker here reads as "no managed key" to the adoption path.
+  write_state_file "$state" "$SSH_PUBLIC_KEY"$'\n' ||
+    log "WARNING: could not record the current SSH key in '$state'"
 }
 
 # dedupe_authorized_keys <authorized_keys> [key that must survive]
@@ -1764,6 +2010,15 @@ dedupe_authorized_keys() {
 # see adopt_legacy_ssh_key_marker. It has to happen there rather than here: the
 # case it refuses is one where this run would otherwise re-arm a key it cannot
 # identify, and by this point the sudo half of that is already done.
+# Before the append, not after. install_authorized_keys puts the key in
+# authorized_keys on an account that already holds sudo and docker; an
+# interrupted run between that and the record below would otherwise leave a
+# root-equivalent key no later run can find.
+record_ssh_key_grant "$SSH_PUBLIC_KEY" ||
+  die "could not record the SSH key in $STATE_DIR/ssh_public_keys.$APP_SSH_USER," \
+      "so this run cannot promise that a later one could find the key again." \
+      "Nothing has been installed. Check that $STATE_DIR is writable and has" \
+      "space, then re-run."
 install_authorized_keys "$AUTH_KEYS"
 revoke_prior_ssh_key "$AUTH_KEYS"
 dedupe_authorized_keys "$AUTH_KEYS" "$SSH_PUBLIC_KEY"
@@ -1983,6 +2238,15 @@ chmod 0600 "$STATE_DIR/db_password"
 # Collavre keeps primary/cache/queue/cable in ONE database — the Solid Queue,
 # Cache and Cable tables are created by a primary db/migrate migration. Do not
 # add separate _cache/_queue/_cable databases.
+# Before the role is created and made the database's owner, not after. The
+# reassignment below and the marker write after it are two steps, and an
+# interrupted run between them is what strands a role that owns every table
+# with nothing on the host naming it.
+record_db_role_grant "$DB_USER" ||
+  die "could not record '$DB_USER' in $STATE_DIR/db_users, so this run cannot" \
+      "promise that a later one could find the role again. Nothing has been" \
+      "changed. Check that $STATE_DIR is writable and has space, then re-run."
+
 SQL_FILE="$(mktemp /tmp/collavre-db.XXXXXX.sql)"
 trap 'rm -f "$SQL_FILE"' EXIT
 ESCAPED_PASSWORD="${DB_PASSWORD//\'/\'\'}"
@@ -2006,10 +2270,23 @@ trap - EXIT
 # After the role and database exist, before the summary hands out a
 # DATABASE_URL naming the new role.
 reassign_prior_db_role "$DB_USER"
-printf '%s\n' "$DB_USER" > "$STATE_DIR/db_user"
+# Both through write_state_file rather than a redirection. `>` truncates before
+# it writes, so an interrupted run leaves the marker present and empty — and
+# both readers treat an empty marker as "nothing recorded here" rather than as
+# "this could not be read", which is the guard answering with the one value it
+# has no evidence for.
+write_state_file "$STATE_DIR/db_user" "$DB_USER"$'\n' ||
+  die "could not record DB_USER='$DB_USER' in $STATE_DIR/db_user. The role and" \
+      "database exist and this run has not handed out a DATABASE_URL yet, so" \
+      "re-running with the same DB_USER is safe. Check that $STATE_DIR is" \
+      "writable and has space."
 # Recorded only once the database it names actually exists, so an interrupted
 # run cannot leave a marker for a database that was never created.
-printf '%s\n' "$DB_NAME" > "$STATE_DIR/db_name"
+write_state_file "$STATE_DIR/db_name" "$DB_NAME"$'\n' ||
+  die "could not record DB_NAME='$DB_NAME' in $STATE_DIR/db_name, so a later" \
+      "run could not tell a corrected typo from a rename and would refuse." \
+      "The database exists and holds the app's data. Check that $STATE_DIR is" \
+      "writable and has space, then re-run with the same DB_NAME."
 
 # --------------------------------------------------------------------------
 log "7/9 firewall"

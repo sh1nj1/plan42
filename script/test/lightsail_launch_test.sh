@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -38,6 +38,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           refuse_db_name_change refuse_defaulted_config_change \
           refuse_unusable_db_identifier refuse_unparsable_ssh_key \
           passwd_home ssh_key_holder \
+          record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -104,8 +105,14 @@ ensure_block "$f" hostname "127.0.1.1 collavre"
 chk "byte-identical" "$before" "$(cat "$f")"
 
 echo "4. ownership and permissions survive the rewrite"
-# pg_hba.conf is postgres:postgres 0640; a mv from mktemp would leave it
-# root:root 0600 and PostgreSQL would fail to start.
+# pg_hba.conf is postgres:postgres 0640; a staging file left at mktemp's
+# root:root 0600 would stop PostgreSQL reading it back.
+#
+# The inode deliberately changes. It used not to: the block was copied through
+# the live inode with `cat "$tmp" > "$file"` precisely to keep the mode, and
+# that is what made the rewrite non-atomic — see 4a. Preserving the mode is the
+# invariant; preserving the inode was the mechanism, and asserting the
+# mechanism here is what would forbid the fix.
 f=$(mktemp)
 printf 'A\n' > "$f"
 ensure_block "$f" docker "OLD"
@@ -113,7 +120,83 @@ chmod 0640 "$f"
 ino="$(inode "$f")"
 ensure_block "$f" docker "NEW"
 chk "mode preserved"  "640"  "$(file_mode "$f")"
-chk "same inode"      "$ino" "$(inode "$f")"
+if [ "$ino" = "$(inode "$f")" ]; then
+  echo "  FAIL rewritten through the live inode rather than renamed into place"; fail=1
+else
+  echo "  ok   renamed into place, so the live path is never a partial file"
+fi
+
+echo "4a. a copy that fails does not leave the live file truncated"
+# The previous form ended in `cat "$tmp" > "$file"`, which truncates the live
+# path when the redirection opens — so a run that died during the copy left the
+# file holding a prefix of itself. Measured on that revision by sampling the
+# live path during the rewrite of a 10MB pg_hba.conf: 0 bytes. This helper
+# rewrites /etc/fstab, /etc/hosts, postgresql.conf and pg_hba.conf, and each
+# fails differently: an empty pg_hba.conf refuses every connection, a truncated
+# fstab loses mounts, and a block left without its END marker makes the *next*
+# run die on "repair or delete it by hand" instead of converging.
+#
+# Injected rather than sampled or killed. Both of those are races: measured at
+# ~1MB the sampling loop missed the window on 3 runs in 8, and a flaky control
+# is worse than none. Shadowing the copy is deterministic and models exactly
+# the failure — a copy that does not complete — in the same way cases 44-46
+# shadow grep and mktemp.
+f=$(mktemp)
+{ printf '# BEGIN collavre:docker\nOLD\n# END collavre:docker\n'
+  printf 'operator-line\n'; } > "$f"
+# shellcheck disable=SC2329  # shadows cat for ensure_block only
+cat() { return 1; }
+ensure_block "$f" docker "NEW" || true
+unset -f cat
+chk "the operator's line survived"  1 "$(grep -cxF 'operator-line' "$f")"
+chk "the END marker survived"       1 "$(grep -cxF '# END collavre:docker' "$f")"
+chk "the file is not empty"         1 "$([ -s "$f" ] && echo 1 || echo 0)"
+chk "no staging file left beside it" 0 \
+  "$(find "$(dirname "$f")" -maxdepth 1 -name "$(basename "$f").collavre.*" | wc -l | tr -d ' ')"
+
+echo "4b. a symlinked target is written through, not replaced by the rename"
+# The regression the rename introduces and the copy did not have. rename(2)
+# does not follow symlinks: pointed at a symlinked /etc/hosts — which is how a
+# host running systemd-resolved or a config-management tool is often laid out —
+# an unresolved `mv` swaps the link itself for a regular file, and the real file
+# every other reader still resolves to keeps whatever it held before. Measured
+# on the same helper with the resolution removed:
+#
+#   link is a symlink afterwards   no
+#   real file                      OLD      <- the run reported success
+#   link (now a regular file)      NEW
+#
+# So the block converges on a file nothing reads, and the next run reads its own
+# managed block back out of it and reports converged again. The append branch
+# writes *through* the link, so this is also what keeps the first run and every
+# later one meaning the same file.
+d=$(mktemp -d)
+printf 'A\n' > "$d/real"
+ln -s "$d/real" "$d/link"
+ensure_block "$d/link" docker "OLD"
+ensure_block "$d/link" docker "NEW"
+chk "still a symlink"              "yes" "$([ -L "$d/link" ] && echo yes || echo no)"
+chk "the real file has the block"  1 "$(grep -cxF 'NEW' "$d/real")"
+chk "and no second regular file"   1 "$(find "$d" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+# Relative targets resolve against the link's own directory, not $PWD — the
+# form /etc/postgresql/17/main/pg_hba.conf takes when a tool points it at a
+# sibling. Resolving against $PWD would create the file in the harness's cwd.
+mkdir -p "$d/sub"
+printf 'A\n' > "$d/sub/rel-real"
+ln -s rel-real "$d/sub/rel-link"
+ensure_block "$d/sub/rel-link" docker "OLD"
+ensure_block "$d/sub/rel-link" docker "NEW"
+chk "relative link resolved beside itself" 1 "$(grep -cxF 'NEW' "$d/sub/rel-real")"
+chk "nothing created in the cwd"           0 "$(find . -maxdepth 1 -name 'rel-real' | wc -l | tr -d ' ')"
+# A loop must refuse rather than spin: this runs as root over /etc.
+ln -s "$d/loop-b" "$d/loop-a"
+ln -s "$d/loop-a" "$d/loop-b"
+out="$( (ensure_block "$d/loop-a" docker "NEW") 2>&1 )"
+chk "a symlink loop is refused" 1 "$?"
+case "$out" in
+  *"too deep to follow"*) echo "  ok   says what it will not chase" ;;
+  *) echo "  FAIL unhelpful: $out"; fail=1 ;;
+esac
 
 echo "5. multi-line bodies are replaced whole"
 f=$(mktemp)
@@ -1277,12 +1360,28 @@ revoke_prior_ssh_key "$AK" "$st3/ssh_public_key"
 unset -f grep
 chk "the account keeps a way in"      1 "$(command grep -cxF "$NEW" "$AK")"
 chk "the un-withdrawn key is kept"    1 "$(command grep -cxF "$OLD" "$AK")"
-# If the marker advanced, no later run would ever retry the withdrawal.
-chk "marker still names the old key" "$OLD" "$(cat "$st3/ssh_public_key")"
+# The retry record is the queue, not the marker. The marker names the key the
+# host is deployed with and advances; a key whose withdrawal failed stays
+# queued, which is what makes a later run try again. Asserted on the queue
+# rather than on the marker because the previous form could only express one of
+# the two, and expressed the wrong one — see 44a.
+chk "the un-withdrawn key stays queued" 1 \
+  "$(command grep -cxF "$OLD" "$st3/ssh_public_keys" 2>/dev/null || echo 0)"
+chk "and the marker names the deployed key" "$NEW" "$(cat "$st3/ssh_public_key")"
+
 case "$LOGGED" in
   *WARNING*"still authorized"*) echo "  ok   the failure is reported, not claimed as a success" ;;
   *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
 esac
+
+echo "44a. and the NEXT run actually retries the withdrawal it could not do"
+# The point of keeping the record: without this, 44 asserts only that a file
+# has a line in it. Same state dir, same authorized_keys, no shadowed grep.
+LOGGED=""
+revoke_prior_ssh_key "$AK" "$st3/ssh_public_key"
+chk "the old key is withdrawn on the retry" 0 "$(command grep -cxF "$OLD" "$AK")"
+chk "the account still has its key"         1 "$(command grep -cxF "$NEW" "$AK")"
+chk "and the queue is down to the current key" "$NEW" "$(cat "$st3/ssh_public_keys")"
 
 echo "45. a rewrite that stops PART WAY also keeps the old key instead of none"
 # Case 40 is the write that produces nothing. This is the write that produces
@@ -1311,7 +1410,9 @@ unset -f grep
 chk "the account keeps a way in"     1 "$(command grep -cxF "$NEW" "$AK")"
 chk "the un-withdrawn key is kept"   1 "$(command grep -cxF "$OLD" "$AK")"
 chk "the operator's key is kept"     1 "$(command grep -cxF "$OPERATOR" "$AK")"
-chk "marker still names the old key" "$OLD" "$(cat "$st4/ssh_public_key")"
+chk "the un-withdrawn key stays queued" 1 \
+  "$(command grep -cxF "$OLD" "$st4/ssh_public_keys" 2>/dev/null || echo 0)"
+chk "and the marker names the deployed key" "$NEW" "$(cat "$st4/ssh_public_key")"
 case "$LOGGED" in
   *WARNING*"still authorized"*) echo "  ok   the partial write is reported, not claimed as a success" ;;
   *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
@@ -1342,8 +1443,17 @@ TEMPLATE_LOG="$st5/mktemp_template"
 mktemp() { printf '%s\n' "${1:-(no template)}" >> "$TEMPLATE_LOG"; command mktemp "$@"; }
 revoke_prior_ssh_key "$AK" "$st5/ssh_public_key"
 unset -f mktemp
+# The authorized_keys rewrite specifically, not merely the first mktemp of the
+# call: this function also writes state files under $STATE_DIR through
+# write_state_file, which legitimately stages beside *those*. Matching on the
+# .revoke. template is what keeps the assertion about the file the operator
+# logs in with — and it still fails on an implementation that stages in TMPDIR,
+# since there would then be no such line at all.
+revoke_template="$(command grep -F '.revoke.' "$TEMPLATE_LOG" | head -1)"
+chk "the authorized_keys rewrite was staged at all" \
+  1 "$([ -n "$revoke_template" ] && echo 1 || echo 0)"
 chk "staged in the target's own directory" \
-  "$(dirname "$AK")" "$(dirname "$(head -1 "$TEMPLATE_LOG")")"
+  "$(dirname "$AK")" "$(dirname "$revoke_template")"
 chk "the rotation still completed"  0 "$(command grep -cxF "$OLD" "$AK")"
 chk "the new key is authorized"     1 "$(command grep -cxF "$NEW" "$AK")"
 chk "no scratch file left behind"   0 "$(find "$(dirname "$AK")" -name '*.revoke.*' | wc -l | tr -d ' ')"
@@ -1379,7 +1489,14 @@ psql_as_postgres() {
 }
 # shellcheck disable=SC2329  # called by reassign_prior_db_role
 log() { LOGGED="$LOGGED $*"; }
-rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
+# Clears the queue, so each case starts from a host whose entire recorded state
+# is the marker it just wrote. Before the queue existed, `db_user` was the only
+# input and every case could share one state dir; now a rotation leaves a
+# db_users file behind, and a later case that rewrites only the marker would
+# otherwise inherit the previous case's predecessor. Use rotate_resume for the
+# cases that mean to carry that state over.
+rotate() { SQL=""; LOGGED=""; rm -f "${2%/*}/db_users"; reassign_prior_db_role "$@"; }
+rotate_resume() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
 
 echo "47. rotating DB_USER moves the tables and retires the old credential"
 # ALTER DATABASE ... OWNER only moves the database. Every table and sequence
@@ -1394,8 +1511,31 @@ chk "ownership moved, then login revoked" \
     "$SQL"
 
 echo "48. an unchanged DB_USER touches nothing"
-rotate collavre_user "$d3/db_user"
+# Its own state dir, rather than continuing from 47. 47 leaves a host mid-
+# rotation: it moved the objects to collavre_app and — as the real script does
+# on the next line, and this harness does not — had yet to advance the marker.
+# Re-running there with collavre_user is not "unchanged DB_USER", it is the
+# interrupted A -> B -> C sequence, and reassigning is the correct answer to it
+# (see 48a). Sharing $d3 only looked harmless while the single marker was
+# forgetting the predecessor that makes the two cases different.
+d3b=$(mktemp -d); printf 'collavre_user\n' > "$d3b/db_user"
+rotate collavre_user "$d3b/db_user"
 chk "no SQL" "" "$SQL$LOGGED"
+
+echo "48a. a rotation interrupted before the marker advanced is still completed"
+# Continuing from 47 deliberately: objects with collavre_app, marker still at
+# collavre_user, which is where a run killed between the reassign and the
+# marker write leaves the host. Asking for a third role must move the objects
+# from the one that actually holds them.
+#
+# Against the previous revision this reassigns from collavre_user — the marker
+# — which owns nothing, so nothing moves, and the summary hands out a
+# DATABASE_URL for a role that cannot read a table.
+rotate_resume collavre_third "$d3/db_user"
+chk "moved from the role that actually owns them" \
+    '|REASSIGN OWNED BY "collavre_app" TO "collavre_third"|ALTER ROLE "collavre_app" NOLOGIN' \
+    "$SQL"
+chk "and the queue is down to the current role" "collavre_third" "$(cat "$d3/db_users")"
 
 echo "49. a superuser predecessor stops the run rather than half-rotating it"
 # DB_USER=postgres on a first run is legal, and the rotation away from it cannot
@@ -1405,6 +1545,14 @@ echo "49. a superuser predecessor stops the run rather than half-rotating it"
 # and the advanced marker meant no later run looked at the old role again.
 printf 'postgres\n' > "$d3/db_user"
 ROLE_IS_SUPER=t
+# `rotate` runs in a subshell here, to capture the die() output, so the SQL=""
+# it performs does not reach this shell — "$SQL" below is whatever the last
+# non-subshell case left behind. That read as a pass only while the preceding
+# case happened to run no SQL; 48a runs some. Same shape as the leak recorded
+# at 86c, one variable over: state a case relies on being empty has to be made
+# empty here rather than assumed.
+SQL=""
+rm -f "$d3/db_users"
 out="$( (rotate collavre_app "$d3/db_user") 2>&1 )"
 chk "exits non-zero" 1 "$?"
 chk "no SQL ran"     "" "$SQL"
