@@ -548,6 +548,42 @@ EOF
 # REASSIGN OWNED moves ownership of everything the old role owns in this
 # database in one statement, including objects added since. It is a no-op when
 # the role owns nothing, so it is safe on a host where the app never booted.
+# Refuse a rotation away from a superuser predecessor, before the database SQL
+# runs and therefore before anything has moved.
+#
+# The earlier form let this case through with a warning, which was worse than it
+# looked. The caller's SQL had already run ALTER DATABASE ... OWNER TO the new
+# role by then, so the run went on to record the new DB_USER and publish a
+# DATABASE_URL naming a role that owns the database and not one table in it —
+# 'permission denied for table users' on the app's first query — while the
+# advanced marker meant no later run would ever look at the old role again.
+#
+# It cannot be converged here. REASSIGN OWNED BY the bootstrap superuser is
+# rejected by PostgreSQL outright ("required by the database system"), and
+# enumerating the objects instead is the fragile thing this function exists to
+# avoid: whatever relkind the enumeration forgets comes back as the same
+# permission error, later and on one table rather than all of them. So the run
+# stops with nothing changed, the marker still naming the old role, and the
+# runbook carries the transfer to do by hand.
+refuse_superuser_db_rotation() {
+  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior
+  [ -f "$prior_file" ] || return 0
+  prior="$(cat "$prior_file")"
+  [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
+  [ "$(psql_as_postgres postgres \
+        "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
+  [ "$(psql_as_postgres postgres \
+        "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ] || return 0
+
+  die "this host was provisioned with DB_USER='$prior', which is a superuser, and" \
+      "DB_USER is now '$current'. Every table and sequence the app created is owned" \
+      "by '$prior', and PostgreSQL refuses to reassign a superuser's objects, so" \
+      "'$current' would own the database and be unable to read a row of it." \
+      "Nothing has been changed. Move the objects by hand — see 'Changing DB_USER" \
+      "on a re-run' in docs/deploy_to_lightsail.md — then re-run, or set" \
+      "DB_USER='$prior' to leave the rotation undone."
+}
+
 reassign_prior_db_role() {
   local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior
   [ -f "$prior_file" ] || return 0
@@ -556,14 +592,14 @@ reassign_prior_db_role() {
   [ "$(psql_as_postgres postgres \
         "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
 
-  # Never touch a superuser. DB_USER=postgres on a first run is a legal thing
-  # to have done, and NOLOGIN on the cluster superuser locks every operator out
-  # of administering it — peer auth needs LOGIN too, so there is no way back in.
+  # A backstop. refuse_superuser_db_rotation() runs before the database SQL and
+  # should have ended the run already; getting here means it was bypassed, and
+  # REASSIGN OWNED BY a superuser is rejected by PostgreSQL itself, so failing
+  # with the reason beats failing with a raw SQL error.
   if [ "$(psql_as_postgres postgres \
             "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ]; then
-    log "WARNING: previous DB_USER '$prior' is a superuser — leaving it alone;" \
-        "move ownership and retire it by hand if that is what you meant"
-    return 0
+    die "previous DB_USER '$prior' is a superuser; its objects cannot be reassigned." \
+        "See 'Changing DB_USER on a re-run' in docs/deploy_to_lightsail.md."
   fi
 
   psql_as_postgres "$DB_NAME" "REASSIGN OWNED BY \"$prior\" TO \"$current\""
@@ -976,6 +1012,10 @@ fi
 # The chmod stays to converge a file an earlier revision left 0644.
 ( umask 077; printf '%s' "$DB_PASSWORD" > "$STATE_DIR/db_password" )
 chmod 0600 "$STATE_DIR/db_password"
+
+# Before anything moves: a rotation away from a superuser predecessor cannot be
+# completed, so it must not be started.
+refuse_superuser_db_rotation "$DB_USER"
 
 # Mirrors db/setup_postgres_databases.sql: create-if-missing, never drop.
 # Collavre keeps primary/cache/queue/cable in ONE database — the Solid Queue,

@@ -21,14 +21,15 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
-          install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key \
+          install_authorized_keys reassign_prior_db_role \
+          refuse_superuser_db_rotation revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
           ensure_docker_log_caps; do
   declare -F "$fn" >/dev/null || {
@@ -911,20 +912,52 @@ echo "48. an unchanged DB_USER touches nothing"
 rotate collavre_user "$d3/db_user"
 chk "no SQL" "" "$SQL$LOGGED"
 
-echo "49. a superuser predecessor is reported, never disabled"
-# DB_USER=postgres on a first run is legal. NOLOGIN on the cluster superuser
-# locks every operator out of administering it — peer auth needs LOGIN too, so
-# there is no way back in.
+echo "49. a superuser predecessor stops the run rather than half-rotating it"
+# DB_USER=postgres on a first run is legal, and the rotation away from it cannot
+# be completed: PostgreSQL refuses to reassign a superuser's objects at all. The
+# earlier form warned and returned, by which point the caller's SQL had already
+# moved the database — so the new role owned it and could not read one table,
+# and the advanced marker meant no later run looked at the old role again.
 printf 'postgres\n' > "$d3/db_user"
 ROLE_IS_SUPER=t
-rotate collavre_app "$d3/db_user"
-chk "no SQL ran" "" "$SQL"
-case "$LOGGED" in
-  *"is a superuser"*"by hand"*) echo "  ok   operator is told to finish it by hand" ;;
-  *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
+out="$( (rotate collavre_app "$d3/db_user") 2>&1 )"
+chk "exits non-zero" 1 "$?"
+chk "no SQL ran"     "" "$SQL"
+case "$out" in
+  *"is a superuser"*"cannot be reassigned"*) echo "  ok   says why, not just that" ;;
+  *) echo "  FAIL unhelpful: $out"; fail=1 ;;
 esac
 
-echo "50. first run, emptied marker and a dropped role are all no-ops"
+echo "50. the refusal happens before the database SQL, with the marker intact"
+# The point of a separate pre-check: reassign_prior_db_role runs after ALTER
+# DATABASE ... OWNER, so refusing there is already too late.
+refuse() { SQL=""; LOGGED=""; refuse_superuser_db_rotation "$@"; }
+printf 'postgres\n' > "$d3/db_user"
+ROLE_EXISTS=1 ROLE_IS_SUPER=t
+out="$( (refuse collavre_app "$d3/db_user") 2>&1 )"
+chk "exits non-zero"          1 "$?"
+chk "marker still names the old role" "postgres" "$(cat "$d3/db_user")"
+case "$out" in
+  *"provisioned with DB_USER='postgres'"*"Nothing has been changed"*"re-run"*)
+    echo "  ok   names the state and the way out" ;;
+  *) echo "  FAIL unhelpful: $out"; fail=1 ;;
+esac
+# The three shapes that must still be let through.
+ROLE_IS_SUPER=f
+refuse collavre_app "$d3/db_user"
+chk "an ordinary predecessor proceeds" 0 "$?"
+ROLE_IS_SUPER=t
+refuse postgres "$d3/db_user"
+chk "an unchanged superuser DB_USER proceeds" 0 "$?"
+d3b=$(mktemp -d)
+refuse collavre_app "$d3b/db_user"
+chk "a first run proceeds" 0 "$?"
+ROLE_EXISTS=0 ROLE_IS_SUPER=t
+refuse collavre_app "$d3/db_user"
+chk "a dropped predecessor proceeds" 0 "$?"
+ROLE_EXISTS=1 ROLE_IS_SUPER=f
+
+echo "51. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
 ROLE_IS_SUPER=f
 rotate collavre_user "$d4/db_user"          # no marker yet
@@ -953,7 +986,7 @@ mk_lsclusters() {   # mk_lsclusters <name> <lines...>
 CLUSTER_BIN_DIR="$(mktemp -d)"
 PATH="$CLUSTER_BIN_DIR:$PATH"
 
-echo "51. a bumped PG_MAJOR that would land on a second port is refused"
+echo "52. a bumped PG_MAJOR that would land on a second port is refused"
 # pg_createcluster allocates the first free port from 5432 up, so installing a
 # new major version beside an existing one puts it on 5433 — while psql, the
 # database, the backups and DATABASE_URL all keep using 5432. Provisioning would
@@ -968,7 +1001,7 @@ case "$out" in
   *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
 esac
 
-echo "52. an existing cluster of the RIGHT version on the wrong port is refused too"
+echo "53. an existing cluster of the RIGHT version on the wrong port is refused too"
 # The other way in: the operator moved 17 to 5433 by hand, or a previous run
 # created it beside something since removed. Everything downstream names 5432.
 mk_lsclusters pg_ls_17_5433 '17  main    5433 online postgres /var/lib/postgresql/17/main /var/log/x'
@@ -979,7 +1012,7 @@ case "$out" in
   *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
 esac
 
-echo "53. the supported layouts are allowed through"
+echo "54. the supported layouts are allowed through"
 # A bare host (no postgresql-common yet) and the ordinary re-run must not be
 # refused — this guard exists to catch a silent miss, not to block convergence.
 out="$( (ensure_cluster_on_default_port pg_ls_absent) 2>&1 )"
@@ -1058,7 +1091,7 @@ new_swap_env() {   # <existing-MiB>  ("" for no file)
   LOGGED=""; SWAPOFF_FAILS=""; DISK_FREE_MIB=""
 }
 
-echo "54. a first run creates the swap file at the configured size"
+echo "55. a first run creates the swap file at the configured size"
 new_swap_env ""
 SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
 chk "created at 8MiB"   8 "$(swap_mib "$SWAPFILE")"
@@ -1066,7 +1099,7 @@ chk "enabled"           "$SWAPFILE" "$SWAPPED_ON"
 chk "mode 0600"         "600" "$(file_mode "$SWAPFILE")"
 chk "fstab entry"       1 "$(grep -c "^$SWAPFILE none swap" "$FSTAB")"
 
-echo "55. an unchanged SWAP_SIZE_MB rewrites nothing"
+echo "56. an unchanged SWAP_SIZE_MB rewrites nothing"
 new_swap_env 8
 ino="$(inode "$SWAPFILE")"
 SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
@@ -1074,7 +1107,7 @@ chk "same inode"  "$ino" "$(inode "$SWAPFILE")"
 chk "still on"    "$SWAPFILE" "$SWAPPED_ON"
 chk "silent"      "" "$LOGGED"
 
-echo "56. a raised SWAP_SIZE_MB actually resizes, rather than being skipped"
+echo "57. a raised SWAP_SIZE_MB actually resizes, rather than being skipped"
 # The whole finding: the old guard asked "is swap on?" and returned, so an
 # operator raising this after an OOM got a successful run and the old headroom.
 new_swap_env 4
@@ -1086,13 +1119,13 @@ case "$LOGGED" in
   *) echo "  FAIL silent or vague: $LOGGED"; fail=1 ;;
 esac
 
-echo "57. a lowered SWAP_SIZE_MB shrinks it too"
+echo "58. a lowered SWAP_SIZE_MB shrinks it too"
 new_swap_env 16
 SWAP_SIZE_MB=4 ensure_swapfile "$SWAPFILE" "$FSTAB"
 chk "shrunk to 4MiB" 4 "$(swap_mib "$SWAPFILE")"
 chk "re-enabled"     "$SWAPFILE" "$SWAPPED_ON"
 
-echo "58. SWAP_SIZE_MB=0 actually disables swap"
+echo "59. SWAP_SIZE_MB=0 actually disables swap"
 new_swap_env 8
 SWAP_SIZE_MB=0 ensure_swapfile "$SWAPFILE" "$FSTAB"
 chk "file removed"      0 "$([ -e "$SWAPFILE" ] && echo 1 || echo 0)"
@@ -1105,13 +1138,13 @@ SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
 chk "one managed block after re-enabling" 1 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
 chk "swap line back"                      1 "$(grep -c 'none swap' "$FSTAB")"
 
-echo "59. SWAP_SIZE_MB=0 on a host that never had swap is a no-op"
+echo "60. SWAP_SIZE_MB=0 on a host that never had swap is a no-op"
 new_swap_env ""
 SWAP_SIZE_MB=0 ensure_swapfile "$SWAPFILE" "$FSTAB"
 chk "nothing created" 0 "$([ -e "$SWAPFILE" ] && echo 1 || echo 0)"
 chk "silent"          "" "$LOGGED"
 
-echo "60. a swapoff that fails leaves the old swap running and says so"
+echo "61. a swapoff that fails leaves the old swap running and says so"
 # Low memory is exactly when swapoff fails and exactly when this setting is
 # being changed, so it must not abandon a provisioning run.
 new_swap_env 4
@@ -1125,7 +1158,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "61. a resize that does not fit puts the previous swap back"
+echo "62. a resize that does not fit puts the previous swap back"
 # Growing means freeing the old file first, so an allocation that fails would
 # otherwise end the run with no swap at all — worse than it started, on the
 # low-memory host the setting exists for. The old size is known to fit.
@@ -1142,7 +1175,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent or claims success: $LOGGED"; fail=1 ;;
 esac
 
-echo "62. a first run that cannot allocate dies rather than reporting success"
+echo "63. a first run that cannot allocate dies rather than reporting success"
 # have=0, so there is nothing to restore; the run must stop loudly instead of
 # continuing on a swapfile that was never made.
 new_swap_env ""
@@ -1157,7 +1190,7 @@ esac
 DISK_FREE_MIB=""
 unset -f swapon swapoff mkswap fallocate dd
 
-echo "63. an unsupported DB_PORT is refused before anything is installed"
+echo "64. an unsupported DB_PORT is refused before anything is installed"
 # Nothing here writes postgresql.conf, and pg_createcluster takes the first free
 # port from 5432 — so an overridden DB_PORT is named by DATABASE_URL, the ufw
 # rule and the backup while the cluster listens on 5432 regardless.
@@ -1185,14 +1218,14 @@ chk "and says nothing"     "" "$out"
 # --------------------------------------------------------------------------
 caps_of() { jq -c '."log-opts"' "$1"; }
 
-echo "64. a host with no daemon.json gets the caps written"
+echo "65. a host with no daemon.json gets the caps written"
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
 ensure_docker_log_caps "$f"
 chk "reports it changed the file" 1 "$DAEMON_JSON_CHANGED"
 chk "caps present" '{"max-size":"10m","max-file":"3"}' "$(caps_of "$f")"
 chk "valid JSON"   0 "$(jq empty "$f" >/dev/null 2>&1; echo $?)"
 
-echo "65. an existing daemon.json without caps has them merged in, not clobbered"
+echo "66. an existing daemon.json without caps has them merged in, not clobbered"
 # The finding: the old condition skipped the whole block whenever the file
 # existed, so a by-hand run on an existing instance left logs uncapped and
 # still reported Docker as configured.
@@ -1205,7 +1238,7 @@ chk "driver set"   'json-file' "$(jq -r '."log-driver"' "$f")"
 chk "operator's registries kept" '["r.internal:5000"]' "$(jq -c '."insecure-registries"' "$f")"
 chk "operator's live-restore kept" 'true' "$(jq -r '."live-restore"' "$f")"
 
-echo "66. existing caps are left exactly as the operator set them"
+echo "67. existing caps are left exactly as the operator set them"
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
 printf '{"log-driver":"json-file","log-opts":{"max-size":"50m","max-file":"10"}}\n' > "$f"
 before="$(cat "$f")"
@@ -1213,7 +1246,7 @@ ensure_docker_log_caps "$f"
 chk "reports no change" 0 "$DAEMON_JSON_CHANGED"
 chk "byte-identical"    "$before" "$(cat "$f")"
 
-echo "67. a non-json-file driver is reported, not overridden"
+echo "68. a non-json-file driver is reported, not overridden"
 # journald and local rotate on their own; forcing json-file would redirect an
 # operator's logs rather than cap them.
 for drv in journald local awslogs; do
@@ -1229,7 +1262,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "68. an unparseable daemon.json is reported, never overwritten"
+echo "69. an unparseable daemon.json is reported, never overwritten"
 # It is the operator's file and Docker will not start until it is repaired;
 # replacing it would destroy the evidence of what they meant.
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
@@ -1243,7 +1276,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "69. a merged file is stable across re-runs"
+echo "70. a merged file is stable across re-runs"
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
 printf '{"live-restore":true}\n' > "$f"
 ensure_docker_log_caps "$f"
@@ -1267,7 +1300,7 @@ LOGGED=""
 # shellcheck disable=SC2329  # called by ensure_ufw_rule, eval'd from the script
 log() { LOGGED="$LOGGED $*"; }
 
-echo "70. a delete that fails leaves the marker so the next run retries"
+echo "71. a delete that fails leaves the marker so the next run retries"
 # `ufw delete` exits 0 even for a rule that was not there, so a non-zero status
 # means it could not act and the old rule is still installed. Advancing the
 # marker there loses the only record of it: the previous Docker subnet keeps
@@ -1291,7 +1324,7 @@ ensure_ufw_rule postgres "$new" "$st"
 chk "retry withdraws the old rule" 1 "$(printf '%s' "$UFW_CALLS" | grep -c "|delete $old")"
 chk "marker advanced now"          "$new" "$(cat "$st")"
 
-echo "71. the replacement is added before the predecessor is withdrawn"
+echo "72. the replacement is added before the predecessor is withdrawn"
 # An interrupted run must never leave the host with neither rule.
 d=$(mktemp -d); st="$d/ufw_postgres"
 printf '%s\n' "$old" > "$st"

@@ -219,11 +219,61 @@ old role owns moves in one statement, and the old login stops working before the
 new URL is published. The role itself is left in place — `NOLOGIN` is reversible
 and dropping it is not.
 
-One case is refused rather than converged: if the previous `DB_USER` was a
-superuser (`DB_USER=postgres` on a first run is legal), the script logs a
-warning and changes nothing. `NOLOGIN` on the cluster superuser locks every
-operator out of administering it, and peer authentication needs `LOGIN` too, so
-there is no way back in. Move ownership and retire that role by hand.
+**One case stops the run rather than converging: a previous `DB_USER` that is a
+superuser** (`DB_USER=postgres` on a first run is legal). Two separate reasons,
+and neither has a fix the script can apply:
+
+- `NOLOGIN` on the cluster superuser locks every operator out of administering
+  it — peer authentication needs `LOGIN` too, so there is no way back in.
+- PostgreSQL refuses to reassign a superuser's objects at all:
+  `cannot reassign ownership of objects owned by role postgres because they are
+  required by the database system`. So the new role would own the database and
+  not one table in it.
+
+The run stops before anything moves, with `/var/lib/collavre/db_user` still
+naming the old role so a later re-run sees the same state. Move the application
+objects by hand, then re-run:
+
+```bash
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d collavre_production <<'SQL'
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT c.oid::regclass AS obj
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+      AND pg_get_userbyid(c.relowner) = 'postgres'
+      -- A sequence owned by a table column follows its table; altering it
+      -- directly is an error, so leave those to the table's own ALTER.
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_depend d
+        WHERE d.objid = c.oid
+          AND d.classid = 'pg_class'::regclass
+          AND d.deptype = 'a')
+  LOOP
+    EXECUTE format('ALTER TABLE %s OWNER TO %I', r.obj, 'collavre_app');
+  END LOOP;
+END $$;
+SQL
+```
+
+Substitute your new `DB_USER` for `collavre_app`. `postgres` keeps `LOGIN` and
+its superuser rights — that is the point of doing it here rather than in the
+script. Check before re-running that nothing is left behind:
+
+```bash
+sudo -u postgres psql -qtA -d collavre_production -c \
+  "SELECT relkind, relname FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname NOT IN ('pg_catalog','information_schema')
+      AND pg_get_userbyid(c.relowner) = 'postgres'"
+```
+
+Empty output means the transfer is complete. Setting `DB_USER` back to the old
+value is the other way out, and leaves the rotation undone.
 
 Rotating the *password* rather than the role needs none of this — set
 `DB_PASSWORD`, re-run, and update `DATABASE_URL`.
