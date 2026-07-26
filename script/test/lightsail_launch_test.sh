@@ -4874,9 +4874,16 @@ dj=$(mktemp -d)
 # The staged write is cut short by shadowing `cat` for one call, injected rather
 # than raced: a kill loses to a fast local write, and a flaky control is worse
 # than none.
+# The shortened write reports success, which is the case that matters and the
+# one this fixture got wrong first: `head -c 0` errors on BSD and succeeds on
+# GNU, so the case passed on macOS because the *write* failed rather than
+# because the check caught a short file, and CI failed it on Linux — where the
+# 0-byte staging file validated (jq accepts an empty document) and was renamed
+# into place. `dd` is used instead so the write succeeds on both, which is what
+# a disk that fills after the file is created actually does.
 torn_create() {  # $1 = bytes of the write that survive
   ( KEEP=$1
-    cat() { command head -c "$KEEP" 2>/dev/null; }
+    cat() { dd bs=1 count="$KEEP" 2>/dev/null; return 0; }
     ensure_docker_log_caps "$dj/daemon.json" >/dev/null 2>&1 )
 }
 torn_create 0

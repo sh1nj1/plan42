@@ -1129,7 +1129,7 @@ allocate_swapfile() {
 # not rotate at all, so sustained Rails output fills a Lightsail SSD, which is
 # the specific failure this block exists to prevent.
 ensure_docker_log_caps() {
-  local file="${1:-/etc/docker/daemon.json}" tmp driver
+  local file="${1:-/etc/docker/daemon.json}" tmp driver wrote
   DAEMON_JSON_CHANGED=0
   # Before either branch, so the create path and the rewrite path name one file
   # even when /etc/docker/daemon.json is a link — and so the rename below cannot
@@ -1192,16 +1192,29 @@ ensure_docker_log_caps() {
           '{"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}.'
       return 0
     }
-    if ! cat > "$tmp" <<'JSON' || ! jq empty "$tmp" >/dev/null 2>&1; then
+    # Checked for what it is supposed to say, not merely for parsing. `jq empty`
+    # exits 0 on a zero-length file — the same fact the empty-file repair above
+    # rests on — so a staged write that produced nothing would validate and be
+    # renamed into place, installing the exact file this whole change exists to
+    # keep off the live path. CI found that: a shortened write errors on BSD
+    # `head` and succeeds on GNU, so the case passed here for the wrong reason
+    # and failed on Linux for the right one.
+    # Written first and judged after, because a heredoc body has to follow the
+    # line that opens it — folding the check into the same `if` would make the
+    # check itself the first line of the JSON.
+    wrote=1
+    cat > "$tmp" <<'JSON' || wrote=0
     {
       "log-driver": "json-file",
       "log-opts": { "max-size": "10m", "max-file": "3" }
     }
 JSON
+    if [ "$wrote" = 0 ] ||
+       ! jq -e '."log-opts"."max-size" == "10m"' "$tmp" >/dev/null 2>&1; then
       rm -f "$tmp"
-      log "WARNING: a staged $file did not come out as valid JSON, so it was" \
-          "NOT installed and container logs are NOT capped. The live path is" \
-          "untouched, so a later run creates it cleanly."
+      log "WARNING: a staged $file did not come out as the file it was staged" \
+          "to be, so it was NOT installed and container logs are NOT capped." \
+          "The live path is untouched, so a later run creates it cleanly."
       return 0
     fi
     # No chmod: stage_beside gives a staging file for an absent target the
@@ -1257,11 +1270,14 @@ JSON
   }
   # Merge rather than replace: everything else in the file is the operator's.
   # Validated before it is installed, because a daemon.json that does not parse
-  # stops Docker from starting at all.
+  # stops Docker from starting at all — and validated by asking whether the caps
+  # are in it rather than whether it parses, for the same reason as the create
+  # branch above: `jq empty` exits 0 on a zero-length file, so "it parses" is an
+  # answer an empty staging file also gives.
   if ! jq '."log-driver" = "json-file"
            | ."log-opts" = ((."log-opts" // {})
                + {"max-size": "10m", "max-file": "3"})' "$file" > "$tmp" ||
-     ! jq empty "$tmp" >/dev/null 2>&1; then
+     ! jq -e '."log-opts"."max-size" == "10m"' "$tmp" >/dev/null 2>&1; then
     rm -f "$tmp"
     log "WARNING: could not merge the log caps into $file; it is unchanged and" \
         "container logs are NOT capped. Add" \
