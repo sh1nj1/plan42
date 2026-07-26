@@ -262,7 +262,14 @@ revoke_prior_deploy_user() {
       # docker back from one an operator made with `useradd -g docker`.
       groupadd -f "$prior" >/dev/null 2>&1 || true
       usermod -g "$prior" "$prior" >/dev/null 2>&1 || true
-    else
+    fi
+    # A group can be BOTH the primary one and a member entry in /etc/group, and
+    # `useradd -g docker` followed by `gpasswd -a` is how it happens. Moving the
+    # primary group leaves that /etc/group line behind, so the account keeps the
+    # group; re-reading membership is what tells the two cases apart. Guarded so
+    # gpasswd is never called on a non-member, whose error would land in the
+    # provisioning log operators read for real ones.
+    if in_group "$prior" "$group"; then
       gpasswd -d "$prior" "$group" >/dev/null 2>&1 || true
     fi
     # Verify rather than trust an exit status. This is what decides whether the
@@ -278,8 +285,9 @@ revoke_prior_deploy_user() {
   done
   if [ -n "$held" ]; then
     log "WARNING: could NOT revoke$held from the replaced deploy user '$prior';" \
-        "it still has root-equivalent access to this host. Take it back by hand:" \
-        "usermod -g $prior $prior   # when the group is its primary one"
+        "it still has root-equivalent access to this host. Take it back by hand," \
+        "both of these — the group can be primary AND a member entry at once:" \
+        "usermod -g $prior $prior; for g in$held; do gpasswd -d $prior \$g; done"
     # Deliberately leave the marker naming the user that still holds the group,
     # so the next run retries the revocation instead of forgetting it.
     return 0
