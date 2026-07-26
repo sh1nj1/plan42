@@ -169,12 +169,23 @@ with its `sudoers.d` grant. Docker membership is the part that matters:
 not been rotated away from in any meaningful sense — it has only lost the
 slower route.
 
-What the script will not do is delete the account or its `authorized_keys`. Its
-only view of the host is the deploy user recorded in
-`/var/lib/collavre/deploy_user`, and if that name were ever the instance's own
-cloud user, deleting it would remove the last way in. So the run leaves an
-ordinary, group-less account behind and says so in the launch log. Finish the
-rotation by hand once you have confirmed you can reach the host as the new user:
+Every account the script grants those groups to is recorded in
+`/var/lib/collavre/deploy_users` **before** the grant is made, and a name leaves
+that file only once the host confirms it holds neither group. Both halves are
+load-bearing. Recorded before, because the grants are in step 3 and step 4 while
+the revocation is at the end of step 4 — a run interrupted across the Docker
+install would otherwise leave the new account holding root-equivalent access
+with nothing on the host naming it. A list rather than one name, because a
+revocation that fails has to be retried without pinning the record to the
+account it failed on: pinning it is how a second rotation walks past the account
+in between and loses it. `/var/lib/collavre/deploy_user` still names the current
+deploy user, which is what the recipes on this page read.
+
+What the script will not do is delete the account or its `authorized_keys`. If
+the name it replaced were ever the instance's own cloud user, deleting it would
+remove the last way in. So the run leaves an ordinary, group-less account behind
+and says so in the launch log. Finish the rotation by hand once you have
+confirmed you can reach the host as the new user:
 
 ```bash
 ssh <new-user>@<instance-ip> 'sudo deluser --remove-home <old-user>'
