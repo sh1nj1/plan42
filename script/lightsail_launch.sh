@@ -886,6 +886,47 @@ install_authorized_keys() {
 # never in this file, so key-A survives — on an account the same re-run has just
 # put back in `docker` and sudoers. A key retired two rotations ago is root
 # again, and nothing says so.
+
+# install_staged_authorized_keys <staged file> <authorized_keys>
+#
+# Put a fully-written staging file at the live path, atomically. Both callers
+# below stage first and then have to install what they staged, and both got
+# this wrong in the same way, so it lives in one place.
+#
+# `cat "$tmp" > "$auth_keys"` is not the same thing, which is the part that
+# looks like a detail and is not. The shell performs the `>` redirect — an
+# O_TRUNC — in the forked child, and only then execs the writer, so the live
+# file is empty across an entire process spawn rather than across a single
+# write(2). Killing that child at a uniformly random point, on a realistic
+# four-key file:
+#
+#   cat "$tmp" > "$auth_keys"   damaged 7/400, all of them 0 bytes
+#   mv "$tmp" "$auth_keys"      damaged 0/400
+#
+# Every damaged run had lost the successor key, which is the whole file. An OOM
+# kill during provisioning is the realistic way to land in that window on a
+# 512MB instance — the same memory pressure SWAP_SIZE_MB exists for, and step 2
+# has not necessarily helped yet.
+#
+# The ownership is set on the staging file rather than after the rename,
+# because the obvious form of this fix has a lockout of its own: mktemp creates
+# 0600 root-owned, and sshd refuses an authorized_keys it cannot read as the
+# user. Measured against a real sshd with StrictModes on:
+#
+#   owner=collavre mode=600 -> OK       owner=root mode=600 -> Authentication
+#   owner=root     mode=644 -> OK       refused: bad ownership or modes
+#
+# So a crash between a bare `mv` and the caller's `chown` would leave the host
+# refusing the very key the run just installed. Setting both first means the
+# file is correct at every instant, and the caller's chown/chmod becomes a
+# no-op rather than a load-bearing step.
+install_staged_authorized_keys() {
+  local tmp="$1" auth_keys="$2"
+  [ -z "${APP_SSH_USER:-}" ] || chown "$APP_SSH_USER:${APP_SSH_GROUP:-$APP_SSH_USER}" "$tmp" 2>/dev/null || true
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$auth_keys"
+}
+
 revoke_prior_ssh_key() {
   local auth_keys="$1" state="${2:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}" prior tmp
   # An empty SSH_PUBLIC_KEY means "keep using the cloud user's keys", not
@@ -918,8 +959,7 @@ revoke_prior_ssh_key() {
       # `set -e` does not fire on grep's "no lines selected" — is what hides
       # the error, so the successor's presence has to be re-established here.
       if grep -qxF "$SSH_PUBLIC_KEY" "$tmp"; then
-        cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
-        rm -f "$tmp"
+        install_staged_authorized_keys "$tmp" "$auth_keys"
         log "withdrew the SSH key this script installed on a previous run"
       else
         rm -f "$tmp"
@@ -963,8 +1003,7 @@ dedupe_authorized_keys() {
   if sort -u -o "$tmp" "$auth_keys" 2>/dev/null &&
      { [ ! -s "$auth_keys" ] || [ -s "$tmp" ]; } &&
      { [ -z "$must_keep" ] || grep -qxF "$must_keep" "$tmp"; }; then
-    cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
-    rm -f "$tmp"
+    install_staged_authorized_keys "$tmp" "$auth_keys"
     return 0
   fi
   rm -f "$tmp"

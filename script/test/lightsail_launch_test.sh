@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -31,7 +31,8 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
-          ensure_docker_log_caps dedupe_authorized_keys; do
+          ensure_docker_log_caps dedupe_authorized_keys \
+          install_staged_authorized_keys; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -499,11 +500,20 @@ DOC="${2:-$ROOT/docs/deploy_to_lightsail.md}"
 
 # extract_recipe <marker> — the fenced bash block containing <marker>, located
 # by content, so a test follows its recipe if it moves within the page.
+#
+# The fence's own indentation is measured rather than assumed: recipes nested
+# under a list item are indented two spaces and top-level ones are not, and a
+# hard-coded indent silently matches no block at all — which reads as "the
+# recipe moved" rather than as "this extractor cannot see it".
 extract_recipe() {
   awk -v want="$1" '
-    /^  ```bash$/ { inb = 1; buf = ""; next }
-    /^  ```$/     { if (inb && buf ~ want) { printf "%s", buf; exit } inb = 0; next }
-    inb           { line = $0; sub(/^  /, "", line); buf = buf line "\n" }
+    !inb && /^[[:space:]]*```bash$/ {
+      inb = 1; buf = ""
+      match($0, /^[[:space:]]*/); ind = substr($0, 1, RLENGTH)
+      next
+    }
+    inb && $0 == ind "```" { if (buf ~ want) { printf "%s", buf; exit } inb = 0; next }
+    inb { line = $0; sub("^" ind, "", line); buf = buf line "\n" }
   ' "$DOC"
 }
 
@@ -1536,6 +1546,7 @@ STUB
   export FAIL_DUMP="${FAIL_DUMP:-}" FAIL_XFER="${FAIL_XFER:-}" FAIL_RESTORE="${FAIL_RESTORE:-}"
   MOVE_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   MOVE_TRACE="$(paste -sd'|' "$TRACE")"
+  # shellcheck disable=SC2119  # the real sort; the stub below is scoped to case 84
   MOVE_LEFT="$(find "$REMOTE" -maxdepth 1 -type f -exec basename {} \; | sort | paste -sd, -)"
   rm -rf "$work"
 }
@@ -1581,12 +1592,121 @@ FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE='' run_move
 chk "every transfer staged under .incoming" 0 \
   "$(grep '^scp:' <<<"${MOVE_TRACE//|/$'\n'}" | grep -cv '\.incoming$')"
 
+# --- docs/deploy_to_lightsail.md, the §6 restore -----------------------------
+#
+# The stop runs on the workstation and this block on the instance, so there is
+# no local exit status to gate on. The gate is a state instead: CONNECTION LIMIT
+# 0 plus pg_terminate_backend, which holds for the whole restore rather than for
+# the instant a count is taken. Verified on postgres:17 that a superuser is
+# exempt from the limit (so pg_restore connects) while the app's role is refused
+# with "too many connections" — including on a reconnect mid-restore, which is
+# the case a point-in-time count cannot see.
+#
+# What is asserted here is the part that regresses silently: the limit is put
+# back on EVERY path. A database left at 0 refuses the app at boot, and the
+# error it gives reads like a connection-pool problem rather than like a step
+# this block forgot to undo.
+
+restore="$(extract_recipe 'restore_status=')"
+case "$restore" in
+  *CONNECTION\ LIMIT\ 0*pg_restore*CONNECTION\ LIMIT\ -1*) : ;;
+  *) echo "could not extract the restore recipe from $DOC — has it moved?" >&2
+     exit 1 ;;
+esac
+
+# LIVE is what the count query returns: "0" for a quiet database, a number for a
+# container that survived the stop, "" for a check that itself failed.
+run_restore() {
+  local work; work="$(mktemp -d)"
+  mkdir -p "$work/bin"
+  printf '%s' "$restore" > "$work/recipe.sh"
+
+  cat > "$work/bin/sudo" <<'STUB'
+#!/usr/bin/env bash
+while [ "${1:-}" = -u ] || [ "${1:-}" = postgres ]; do shift; done
+exec "$@"
+STUB
+  cat > "$work/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+sql="${*: -1}"
+case "$sql" in
+  *"CONNECTION LIMIT 0"*)      echo "limit:0"          >>"$TRACE" ;;
+  *"CONNECTION LIMIT -1"*)     echo "limit:reopened"   >>"$TRACE" ;;
+  *pg_terminate_backend*)      echo "terminate"        >>"$TRACE"; echo "${KILLED:-0}" ;;
+  *"count(*)"*)                echo "count"            >>"$TRACE"; printf '%s' "$LIVE" ;;
+  *usename*)                   echo "listing"          >>"$TRACE" ;;
+esac
+STUB
+  cat > "$work/bin/pg_restore" <<'STUB'
+#!/usr/bin/env bash
+echo "PG_RESTORE_RAN" >>"$TRACE"
+[ -z "$FAIL_RESTORE" ] || exit 1
+STUB
+  chmod +x "$work/bin"/*
+
+  TRACE="$work/trace"; : > "$TRACE"
+  # ${LIVE-0}, not ${LIVE:-0}: the empty string is a case under test — it is what
+  # a failed check returns — and :- would quietly turn it back into "0", making
+  # the one assertion about a broken gate pass for the wrong reason.
+  export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}"
+  R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  R_TRACE="$(paste -sd'|' "$TRACE")"
+  rm -rf "$work"
+}
+
+echo "83. the restore shuts the database before it looks, and re-opens after"
+LIVE=0 KILLED=2 FAIL_RESTORE='' run_restore
+chk "door shut first"        "limit:0" "$(cut -d'|' -f1 <<<"$R_TRACE")"
+chk "survivors terminated"   1 "$(grep -c '^terminate$' <<<"${R_TRACE//|/$'\n'}")"
+# The order is the whole point: counting before the limit is applied only says
+# the app happened to be between connections at that instant.
+chk "counted only after the door was shut" 1 \
+  "$(grep -q 'limit:0|terminate|count' <<<"$R_TRACE" && echo 1 || echo 0)"
+chk "restore ran"            1 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened"              1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "operator told to boot"  1 "$(grep -c 'app boot' <<<"$R_OUT")"
+
+echo "84. a container that survived the stop stops the restore, door re-opened"
+LIVE=1 KILLED=0 FAIL_RESTORE='' run_restore
+chk "nothing dropped"    0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened anyway"   1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "operator told"      1 "$(grep -c 'REFUSING' <<<"$R_OUT")"
+chk "and told nothing was dropped" 1 "$(grep -c 'nothing was dropped' <<<"$R_OUT")"
+
+echo "85. a check that itself fails refuses, rather than reading empty as quiet"
+LIVE='' KILLED=0 FAIL_RESTORE='' run_restore
+chk "nothing dropped"  0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened anyway" 1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "operator told"    1 "$(grep -c 'REFUSING' <<<"$R_OUT")"
+
+echo "86. a FAILED restore still re-opens, or the app cannot boot to be fixed"
+LIVE=0 KILLED=0 FAIL_RESTORE=1 run_restore
+chk "restore attempted"  1 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened"          1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "told it may be half-done" 1 "$(grep -c 'RESTORE FAILED' <<<"$R_OUT")"
+chk "not told to boot"   0 "$(grep -c 'app boot' <<<"$R_OUT")"
+
 # --- dedupe_authorized_keys -------------------------------------------------
 #
 # `sort -u -o F F` rewrote authorized_keys in place. A sort stopped after it has
 # truncated the output — an OOM kill on the instance this script provisions swap
 # for — leaves the file holding a lexical prefix of itself, so the key that goes
-# missing is whichever sorts last. `ulimit -f` reproduces that deterministically.
+# missing is whichever sorts last.
+#
+# sort is STUBBED here, and that is load-bearing rather than convenient. The
+# failure belongs to GNU coreutils, which writes -o in place; BSD sort stages
+# and renames already, so on macOS the pre-fix one-liner survives every trigger
+# and a test driving the real binary passes against the bug it exists for.
+# Measured, same input, `ulimit -f 16`:
+#
+#   GNU coreutils 9.4 (ubuntu:24.04, what the instance runs)
+#     write limit     60001 lines -> 485, current key GONE
+#     killed mid-write 60001 lines -> 0,   file EMPTY
+#   BSD sort 2.3-Apple (this harness's machine)
+#     write limit     201 lines -> 201, byte-identical
+#
+# So the stub reproduces the GNU shape — truncate the output, then fail — and
+# the assertion holds on either platform.
 
 new_keys_env() {
   KEYDIR="$(mktemp -d)"; KEYS="$KEYDIR/authorized_keys"
@@ -1601,7 +1721,7 @@ new_keys_env() {
 }
 KEY_CURRENT='ssh-ed25519 zzCURRENT current@laptop'   # sorts last, so it is the casualty
 
-echo "83. the ordinary case still drops duplicates"
+echo "87. the ordinary case still drops duplicates"
 new_keys_env
 before=$(wc -l < "$KEYS")
 dedupe_authorized_keys "$KEYS" "$KEY_CURRENT"
@@ -1610,10 +1730,22 @@ chk "the current key kept" 1 "$(grep -cxF "$KEY_CURRENT" "$KEYS")"
 chk "silent"               "" "$LOGGED"
 chk "no scratch file left" 0 "$(find "$KEYDIR" -name 'authorized_keys.sort.*' | wc -l | tr -d ' ')"
 
-echo "84. a sort that dies part way leaves authorized_keys alone"
+echo "88. a sort that dies part way leaves authorized_keys alone"
 new_keys_env
 before_l=$(wc -l < "$KEYS" | tr -d ' '); before_b=$(wc -c < "$KEYS" | tr -d ' ')
-( ulimit -f 8; dedupe_authorized_keys "$KEYS" "$KEY_CURRENT" ) >/dev/null 2>&1
+# GNU sort's -o target is opened and truncated before the run can fail, so a
+# partial write leaves a prefix behind. Copied from the measured run above.
+# shellcheck disable=SC2329,SC2120  # shadows sort for dedupe_authorized_keys only
+sort() {
+  local out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in -o) out="$2"; shift 2 ;; *) shift ;; esac
+  done
+  [ -n "$out" ] && head -c 200 > "$out"          # truncate, write a prefix...
+  return 2                                        # ...then fail, as GNU does
+}
+dedupe_authorized_keys "$KEYS" "$KEY_CURRENT" >/dev/null 2>&1
+unset -f sort
 chk "not truncated"  "$before_l" "$(wc -l < "$KEYS" | tr -d ' ')"
 chk "byte-identical" "$before_b" "$(wc -c < "$KEYS" | tr -d ' ')"
 # Both copies are still there — the file was not rewritten at all, which is the
@@ -1621,7 +1753,7 @@ chk "byte-identical" "$before_b" "$(wc -c < "$KEYS" | tr -d ' ')"
 chk "the current key survives" 2 "$(grep -cxF "$KEY_CURRENT" "$KEYS")"
 chk "no scratch file left" 0 "$(find "$KEYDIR" -name 'authorized_keys.sort.*' | wc -l | tr -d ' ')"
 
-echo "85. it stages beside the target, not in TMPDIR"
+echo "89. it stages beside the target, not in TMPDIR"
 # Same filesystem, so the swap is one rename and a full or missing /tmp cannot
 # reach the file the operator logs in with. Asserted on the path mktemp is asked
 # for: GNU mktemp fails on a missing TMPDIR but BSD mktemp falls back, so a
@@ -1634,6 +1766,70 @@ dedupe_authorized_keys "$KEYS" "$KEY_CURRENT"
 unset -f mktemp
 chk "template is a sibling of authorized_keys" 1 \
   "$(grep -c "^$KEYS\.sort\." "$tmpl_log")"
+
+# --- install_staged_authorized_keys ------------------------------------------
+#
+# Staging is only half of it: what is staged still has to arrive. `cat "$tmp" >
+# "$auth_keys"` puts the O_TRUNC in the calling shell and the write in a
+# separate process, so the live path is empty across a whole process spawn
+# rather than across one write(2). Killing that writer at a uniformly random
+# point, on a realistic four-key file:
+#
+#   cat "$tmp" > "$auth_keys"   damaged 7/400, every one of them 0 bytes
+#   mv  "$tmp"   "$auth_keys"   damaged 0/400
+#
+# Both cases below assert the property rather than the spelling, so a later
+# rewrite that reintroduces a copy fails them however it is written.
+
+ino() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1"; }
+
+echo "90. the live path is replaced, never rewritten in place"
+new_keys_env
+before_ino=$(ino "$KEYS")
+tmp="$(mktemp "$KEYS.sort.XXXXXX")"
+printf '%s\n' "$KEY_CURRENT" > "$tmp"
+staged_ino=$(ino "$tmp")
+install_staged_authorized_keys "$tmp" "$KEYS"
+# A copy leaves the target's inode alone; a rename carries the staged file's in.
+# That is the difference between "the file was emptied and refilled" and "the
+# file was swapped", and it is what decides whether an interrupted run can be
+# seen by sshd holding a partial file.
+chk "the staged inode is now the live one" "$staged_ino" "$(ino "$KEYS")"
+chk "and it is not the old one"            1 \
+  "$([ "$before_ino" != "$(ino "$KEYS")" ] && echo 1 || echo 0)"
+chk "contents arrived whole"               1 "$(grep -cxF "$KEY_CURRENT" "$KEYS")"
+chk "no scratch file left"                 0 \
+  "$(find "$KEYDIR" -name 'authorized_keys.sort.*' | wc -l | tr -d ' ')"
+
+echo "91. ownership and mode are set before the swap, not after"
+# The obvious form of the fix has a lockout of its own. mktemp creates 0600
+# root-owned, and sshd with StrictModes refuses an authorized_keys it cannot
+# read as the user — measured against a real sshd:
+#
+#   owner=collavre mode=600 -> OK    owner=root mode=600 -> Authentication
+#   owner=root     mode=644 -> OK    refused: bad ownership or modes
+#
+# So a crash between a bare `mv` and the caller's chown leaves the host refusing
+# the key the run just installed. Asserted as an ordering, because the final
+# state is identical either way and only the window differs.
+new_keys_env
+order="$KEYDIR/order"; : > "$order"
+# shellcheck disable=SC2329  # shadow chown/chmod/mv for this case only
+chown() { echo "chown $*" >> "$order"; }
+# shellcheck disable=SC2329
+chmod() { echo "chmod $*" >> "$order"; command chmod "$@"; }
+# shellcheck disable=SC2329
+mv() { echo "mv $*" >> "$order"; command mv "$@"; }
+tmp="$(mktemp "$KEYS.sort.XXXXXX")"
+printf '%s\n' "$KEY_CURRENT" > "$tmp"
+APP_SSH_USER=collavre APP_SSH_GROUP=collavre install_staged_authorized_keys "$tmp" "$KEYS"
+unset -f chown chmod mv
+chk "chown ran on the staging file" 1 "$(grep -c "^chown collavre:collavre $KEYS\.sort\." "$order")"
+chk "chmod ran on the staging file" 1 "$(grep -c "^chmod 0600 $KEYS\.sort\." "$order")"
+mv_at=$(grep -n '^mv ' "$order" | cut -d: -f1); chmod_at=$(grep -n '^chmod ' "$order" | cut -d: -f1)
+chk "both before the rename"        1 \
+  "$([ -n "$mv_at" ] && [ -n "$chmod_at" ] && [ "$mv_at" -gt "$chmod_at" ] && echo 1 || echo 0)"
+chk "the live file ends 0600"       600 "$(stat -c %a "$KEYS" 2>/dev/null || stat -f %Lp "$KEYS")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
