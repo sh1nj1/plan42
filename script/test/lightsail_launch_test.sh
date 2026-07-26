@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -31,7 +31,7 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
-          ensure_docker_log_caps; do
+          ensure_docker_log_caps dedupe_authorized_keys; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -1188,6 +1188,38 @@ case "$out" in
   *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
 esac
 DISK_FREE_MIB=""
+
+echo "63a. swap that is active but absent from fstab gets its entry"
+# The size matches, so the early return fires — but this host loses its swap at
+# the next reboot, which is when a low-memory instance most needs it. Reached by
+# an operator who ran swapon by hand, or a run interrupted between swapon and
+# the fstab write below it.
+new_swap_env ""
+dd if=/dev/zero of="$SWAPFILE" bs=1048576 count=8 status=none
+SWAPPED_ON="$SWAPFILE"                    # active, but new_swap_env wrote no entry
+ino="$(inode "$SWAPFILE")"
+SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "fstab entry written"   1 "$(grep -c "^$SWAPFILE none swap" "$FSTAB")"
+chk "the file is untouched" "$ino" "$(inode "$SWAPFILE")"
+chk "still enabled"         "$SWAPFILE" "$SWAPPED_ON"
+chk "one managed block"     1 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
+
+echo "63b. and the ordinary re-run stays a no-op"
+new_swap_env 8
+SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "still one managed block" 1 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
+chk "still one swap line"     1 "$(grep -c "^$SWAPFILE none swap" "$FSTAB")"
+chk "silent"                  "" "$LOGGED"
+
+echo "63c. SWAP_SIZE_MB=0 clears a stale fstab line, but writes none on a bare host"
+new_swap_env ""
+ensure_block "$FSTAB" swap "$SWAPFILE none swap sw 0 0"   # file deleted by hand
+SWAP_SIZE_MB=0 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "the stale line is gone" 0 "$(grep -c 'none swap' "$FSTAB")"
+new_swap_env ""
+SWAP_SIZE_MB=0 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "no block added to a bare host" 0 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
+
 unset -f swapon swapoff mkswap fallocate dd
 
 echo "64. an unsupported DB_PORT is refused before anything is installed"
@@ -1548,6 +1580,60 @@ FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE='' run_move
 # filename alone would pass without ever staging anything.
 chk "every transfer staged under .incoming" 0 \
   "$(grep '^scp:' <<<"${MOVE_TRACE//|/$'\n'}" | grep -cv '\.incoming$')"
+
+# --- dedupe_authorized_keys -------------------------------------------------
+#
+# `sort -u -o F F` rewrote authorized_keys in place. A sort stopped after it has
+# truncated the output — an OOM kill on the instance this script provisions swap
+# for — leaves the file holding a lexical prefix of itself, so the key that goes
+# missing is whichever sorts last. `ulimit -f` reproduces that deterministically.
+
+new_keys_env() {
+  KEYDIR="$(mktemp -d)"; KEYS="$KEYDIR/authorized_keys"
+  : > "$KEYS"
+  for i in $(seq 1 200); do
+    printf 'ssh-ed25519 %s%03d operator%d@desk\n' \
+      "$(head -c 60 /dev/zero | tr '\0' 'A')" "$i" "$i" >> "$KEYS"
+  done
+  printf '%s\n' "$KEY_CURRENT" >> "$KEYS"
+  printf '%s\n' "$KEY_CURRENT" >> "$KEYS"        # a duplicate for it to remove
+  LOGGED=""
+}
+KEY_CURRENT='ssh-ed25519 zzCURRENT current@laptop'   # sorts last, so it is the casualty
+
+echo "83. the ordinary case still drops duplicates"
+new_keys_env
+before=$(wc -l < "$KEYS")
+dedupe_authorized_keys "$KEYS" "$KEY_CURRENT"
+chk "one line shorter"     "$(( before - 1 ))" "$(wc -l < "$KEYS" | tr -d ' ')"
+chk "the current key kept" 1 "$(grep -cxF "$KEY_CURRENT" "$KEYS")"
+chk "silent"               "" "$LOGGED"
+chk "no scratch file left" 0 "$(find "$KEYDIR" -name 'authorized_keys.sort.*' | wc -l | tr -d ' ')"
+
+echo "84. a sort that dies part way leaves authorized_keys alone"
+new_keys_env
+before_l=$(wc -l < "$KEYS" | tr -d ' '); before_b=$(wc -c < "$KEYS" | tr -d ' ')
+( ulimit -f 8; dedupe_authorized_keys "$KEYS" "$KEY_CURRENT" ) >/dev/null 2>&1
+chk "not truncated"  "$before_l" "$(wc -l < "$KEYS" | tr -d ' ')"
+chk "byte-identical" "$before_b" "$(wc -c < "$KEYS" | tr -d ' ')"
+# Both copies are still there — the file was not rewritten at all, which is the
+# point. Deduplication is cosmetic; keeping every key is not.
+chk "the current key survives" 2 "$(grep -cxF "$KEY_CURRENT" "$KEYS")"
+chk "no scratch file left" 0 "$(find "$KEYDIR" -name 'authorized_keys.sort.*' | wc -l | tr -d ' ')"
+
+echo "85. it stages beside the target, not in TMPDIR"
+# Same filesystem, so the swap is one rename and a full or missing /tmp cannot
+# reach the file the operator logs in with. Asserted on the path mktemp is asked
+# for: GNU mktemp fails on a missing TMPDIR but BSD mktemp falls back, so a
+# TMPDIR-based check would pass vacuously on the machine this harness runs on.
+new_keys_env
+tmpl_log="$KEYDIR/template"
+# shellcheck disable=SC2329  # shadows mktemp for dedupe_authorized_keys only
+mktemp() { printf '%s\n' "$1" >> "$tmpl_log"; command mktemp "$@"; }
+dedupe_authorized_keys "$KEYS" "$KEY_CURRENT"
+unset -f mktemp
+chk "template is a sibling of authorized_keys" 1 \
+  "$(grep -c "^$KEYS\.sort\." "$tmpl_log")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

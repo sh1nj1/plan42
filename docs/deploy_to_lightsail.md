@@ -744,9 +744,18 @@ journalctl -u collavre-pg-backup.service        # check last run
 
 # restore — stop the app FIRST, from your workstation:
 #   ./kamal.sh app stop
-# then, on the instance. The stop happens on a different machine, so this
-# checks the thing that actually matters rather than trusting that it ran:
-# nothing else is connected to the database about to be dropped.
+# then, on the instance. The stop happens on a different machine, so rather than
+# trust that it ran, shut the database itself to the app for the duration.
+# CONNECTION LIMIT 0 does not apply to superusers, so pg_restore below still
+# connects; a container that survived the stop, or restarts mid-restore, cannot.
+sudo -u postgres psql -qd postgres -c \
+  "ALTER DATABASE collavre_production CONNECTION LIMIT 0"
+sudo -u postgres psql -qtAd postgres -c \
+  "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
+    WHERE datname = 'collavre_production' AND pid <> pg_backend_pid()"
+
+# Now check, with the door already shut — a point-in-time count taken before
+# this would only have said the app happened to be between connections.
 live=$(sudo -u postgres psql -qtA -d postgres -c \
   "SELECT count(*) FROM pg_stat_activity
     WHERE datname = 'collavre_production' AND pid <> pg_backend_pid()")
@@ -768,6 +777,12 @@ else
     /var/backups/collavre/collavre_production-YYYYmmdd-HHMMSS.dump
   restore_status=$?
 fi
+
+# Always re-open, on every path. A database left at CONNECTION LIMIT 0 refuses
+# the app at boot with "too many connections", which reads like a pool problem
+# and not like a step this block forgot to undo.
+sudo -u postgres psql -qd postgres -c \
+  "ALTER DATABASE collavre_production CONNECTION LIMIT -1"
 
 if [ "$restore_status" -eq 0 ]; then
   echo "restored; boot the app from your workstation: ./kamal.sh app boot"
@@ -796,6 +811,19 @@ and `app boot` from your workstation where `kamal.sh` and the env file live, the
 one block. `pg_restore --clean --if-exists` is re-runnable, so a failed restore
 is fixed by fixing the cause and running it again, not by booting to look
 around.
+
+**Which is also why the block shuts the database rather than only counting
+connections.** A count is true for the instant it runs. If `app stop` did not
+take and the surviving container happens to be between connections — restarting,
+reconnecting after a dropped socket, or simply idle — the count is `0` and the
+restore starts anyway, with Puma free to reconnect while objects are being
+dropped. Since the stop happens on another machine, there is no local status to
+gate on, so the gate has to be a state rather than an observation:
+`CONNECTION LIMIT 0` holds for the whole restore, and superusers are exempt from
+it, which is why `pg_restore` still connects while the app cannot. The
+`pg_terminate_backend` clears whatever was already attached, and the check
+afterwards then means something — it is asking whether anything got past a
+closed door, not whether the app happened to be quiet.
 
 Local dumps die with the instance. Enable `BACKUP_S3_URI`, or take a Lightsail
 snapshot schedule, before this host holds real customer data.

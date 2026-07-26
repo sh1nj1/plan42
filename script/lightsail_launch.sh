@@ -358,6 +358,25 @@ ensure_swapfile() {
     have=$(( $(stat -c %s "$swap" 2>/dev/null || stat -f %z "$swap" 2>/dev/null || echo 0) / 1048576 ))
 
   if [ "$want" -eq "$have" ] && { [ "$want" -eq 0 ] || [ "$active" = yes ]; }; then
+    # The file needs no work, but the fstab entry still might. Swap that is
+    # active without being in fstab is gone after the next reboot, and this is
+    # how a host arrives in that state: an operator who ran `swapon` by hand
+    # before provisioning, or an earlier run interrupted between `swapon` and
+    # `ensure_block` below. Returning here would report a convergent run over a
+    # host that silently loses its headroom on the next restart — and a reboot
+    # is precisely when a low-memory instance is most likely to need it.
+    # ensure_block is idempotent, so the ordinary re-run is unaffected.
+    if [ "$want" -eq 0 ]; then
+      # Converge a block that is already there — an operator who deleted the
+      # swapfile by hand leaves the fstab line behind, and that line fails the
+      # next boot's mount. Do not *create* an empty managed block on a host that
+      # never had swap and is not asking for any.
+      if grep -qF '# BEGIN collavre:swap' "$fstab" 2>/dev/null; then
+        ensure_block "$fstab" swap ""
+      fi
+    else
+      ensure_block "$fstab" swap "$swap none swap sw 0 0"
+    fi
     return 0
   fi
 
@@ -915,6 +934,49 @@ revoke_prior_ssh_key() {
   printf '%s\n' "$SSH_PUBLIC_KEY" > "$state"
 }
 
+# dedupe_authorized_keys <authorized_keys> [key that must survive]
+#
+# `sort -u -o F F` rewrites F in place, and F is the only way into this host.
+#
+# A full filesystem is not the hazard, which is worth stating because it is the
+# obvious guess: GNU sort reads all of its input before it opens the output, and
+# opening it frees that file's own blocks, so the result — never larger than the
+# input — fits by construction. Measured on a 0 KiB filesystem, the file came
+# through intact. What is dangerous is anything that stops sort *after* it has
+# truncated the output: the write is not atomic, and the file is left holding a
+# prefix of itself. On a 512MB instance an OOM kill is the realistic one — the
+# same memory pressure SWAP_SIZE_MB exists for, and step 8 has not run yet:
+#
+#   sort -u -o F F, killed mid-write:  60001 lines -> 28659, current key gone
+#
+# Note which key goes missing. The file is being sorted, so the survivors are a
+# lexical prefix and the casualty is whatever sorts last — not necessarily the
+# key just installed, and not something the caller can predict.
+#
+# So sort into a sibling and rename. Same directory, so the swap is one
+# rename(2) and the live path only ever holds a complete file; a sort that dies
+# damages the staging file and nothing else. The successor is confirmed present
+# before the swap, the same rule as revoke_prior_ssh_key above.
+dedupe_authorized_keys() {
+  local auth_keys="$1" must_keep="${2:-}" tmp
+  tmp="$(mktemp "$auth_keys.sort.XXXXXX")"
+  if sort -u -o "$tmp" "$auth_keys" 2>/dev/null &&
+     { [ ! -s "$auth_keys" ] || [ -s "$tmp" ]; } &&
+     { [ -z "$must_keep" ] || grep -qxF "$must_keep" "$tmp"; }; then
+    cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
+    rm -f "$tmp"
+    return 0
+  fi
+  rm -f "$tmp"
+  # Not fatal, and deliberately so: duplicate lines in authorized_keys stop
+  # nobody logging in, so the file as it stands is correct if untidy. Failing
+  # the run here would abandon provisioning over cosmetics — but the operator
+  # should know the host could not complete a small write.
+  log "WARNING: could not rewrite $auth_keys to drop duplicate keys, so it is" \
+      "unchanged — logins are unaffected. Something stopped a small write on" \
+      "this host; check its memory and disk before relying on the instance."
+}
+
 # Adopt the single marker an earlier revision wrote, once, for the account this
 # run is about. On the hosts that revision could produce there was only ever one
 # deploy account, so the old value is that account's — and adopting it is what
@@ -929,7 +991,7 @@ fi
 
 install_authorized_keys "$AUTH_KEYS"
 revoke_prior_ssh_key "$AUTH_KEYS"
-sort -u -o "$AUTH_KEYS" "$AUTH_KEYS"
+dedupe_authorized_keys "$AUTH_KEYS" "$SSH_PUBLIC_KEY"
 chown "$APP_SSH_USER:$APP_SSH_GROUP" "$AUTH_KEYS"
 chmod 0600 "$AUTH_KEYS"
 [ -s "$AUTH_KEYS" ] || log "WARNING: $AUTH_KEYS is empty — kamal will not be able to connect"
