@@ -1395,6 +1395,53 @@ chk "returns non-zero" 1 "$?"
 chk "no group echoed"  "" "$out"
 unset -f id install
 
+# --------------------------------------------------------------------------
+# Per-account key records. The real install_authorized_keys and
+# revoke_prior_ssh_key, driven through a rotation that leaves one account and
+# comes back to it.
+# --------------------------------------------------------------------------
+echo "76. moving APP_SSH_USER away and back still withdraws that account's old key"
+# The global marker advances with each run, so on the way back it names a key
+# that was never in this file — while the same re-run has just put the account
+# back in docker and sudoers.
+STATE_DIR="$(mktemp -d)"
+KEY_A="ssh-ed25519 AAAAKEYA first@laptop"
+KEY_B="ssh-ed25519 AAAAKEYB second@laptop"
+KEY_C="ssh-ed25519 AAAAKEYC third@laptop"
+collavre_keys="$(mktemp)"; deploybot_keys="$(mktemp)"
+
+run_key_step() {   # <user> <key> <authorized_keys>
+  APP_SSH_USER="$1" SSH_PUBLIC_KEY="$2"
+  install_authorized_keys "$3" /nonexistent
+  if [ -f "$STATE_DIR/ssh_public_key" ] &&
+     [ ! -f "$STATE_DIR/ssh_public_key.$APP_SSH_USER" ]; then
+    mv "$STATE_DIR/ssh_public_key" "$STATE_DIR/ssh_public_key.$APP_SSH_USER"
+  fi
+  revoke_prior_ssh_key "$3"
+}
+
+run_key_step collavre  "$KEY_A" "$collavre_keys"
+run_key_step deploybot "$KEY_B" "$deploybot_keys"
+chk "key A stays while collavre is not the deploy user" \
+    1 "$(grep -cxF "$KEY_A" "$collavre_keys")"
+run_key_step collavre  "$KEY_C" "$collavre_keys"
+chk "the key rotated TO is authorized" 1 "$(grep -cxF "$KEY_C" "$collavre_keys")"
+chk "the key retired two rotations ago is gone" \
+    0 "$(grep -cxF "$KEY_A" "$collavre_keys")"
+chk "the other account is untouched" 1 "$(grep -cxF "$KEY_B" "$deploybot_keys")"
+
+echo "77. a host with the old single marker adopts it rather than starting blank"
+# Otherwise the first run after this change has no record, withdraws nothing,
+# and the key it replaces stays authorized forever.
+STATE_DIR="$(mktemp -d)"
+legacy_keys="$(mktemp)"
+printf '%s\n' "$KEY_A" > "$legacy_keys"
+printf '%s\n' "$KEY_A" > "$STATE_DIR/ssh_public_key"     # written by an earlier revision
+run_key_step collavre "$KEY_C" "$legacy_keys"
+chk "the adopted predecessor is withdrawn" 0 "$(grep -cxF "$KEY_A" "$legacy_keys")"
+chk "the successor is authorized"          1 "$(grep -cxF "$KEY_C" "$legacy_keys")"
+chk "the global marker is gone"            0 "$([ -e "$STATE_DIR/ssh_public_key" ] && echo 1 || echo 0)"
+
 # --- docs/deploy_to_lightsail.md, the PostgreSQL move ------------------------
 #
 # pg_restore --clean drops every object before it reloads one, so this recipe is
@@ -1501,6 +1548,7 @@ FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE='' run_move
 # filename alone would pass without ever staging anything.
 chk "every transfer staged under .incoming" 0 \
   "$(grep '^scp:' <<<"${MOVE_TRACE//|/$'\n'}" | grep -cv '\.incoming$')"
+
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
 exit "$fail"

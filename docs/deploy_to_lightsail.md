@@ -189,9 +189,20 @@ box. Rotating away from a leaked key would have withdrawn nothing while
 reporting success.
 
 So the run withdraws the key it installed last time, recorded in
-`/var/lib/collavre/ssh_public_key`. Only that exact line goes: keys you added
-by hand, and the cloud user's original key, are matched whole-line and left
-alone. The withdrawal happens *after* the new key is in place, so an
+`/var/lib/collavre/ssh_public_key.<user>`. Only that exact line goes: keys you
+added by hand, and the cloud user's original key, are matched whole-line and
+left alone.
+
+The record is **per account**, because `authorized_keys` is. Changing
+`APP_SSH_USER` and changing back is the case that needs it: rotating
+`collavre`/key-A to `deploybot`/key-B leaves key-A in `collavre`'s file, which is
+correct — that is not the file being rewritten, and the same re-run takes
+`docker` and sudo away from `collavre`. But coming back later to
+`collavre`/key-C regrants those privileges, and with one shared record the
+withdrawal would be looking for key-B, which was never in that file. Key-A would
+be root again, two rotations after you retired it. A host provisioned by an
+earlier revision has its single `ssh_public_key` file adopted by the account the
+next run names. The withdrawal happens *after* the new key is in place, so an
 interrupted run leaves two working keys rather than none.
 
 Two cases deliberately do nothing. A re-run with `SSH_PUBLIC_KEY` unset means

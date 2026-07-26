@@ -858,8 +858,17 @@ install_authorized_keys() {
 # Only the key *this script* installed is withdrawn, recorded in a state file
 # rather than guessed at, so keys an operator added by hand and the cloud
 # user's original key are never touched.
+#
+# The record is per account, because authorized_keys is. A single global marker
+# loses track as soon as APP_SSH_USER moves and comes back: rotate
+# collavre/key-A to deploybot/key-B, and collavre keeps key-A (correctly — its
+# file is not the one being rewritten) while the marker advances to key-B. Come
+# back to collavre with key-C and the withdrawal hunts for key-B, which was
+# never in this file, so key-A survives — on an account the same re-run has just
+# put back in `docker` and sudoers. A key retired two rotations ago is root
+# again, and nothing says so.
 revoke_prior_ssh_key() {
-  local auth_keys="$1" state="${2:-$STATE_DIR/ssh_public_key}" prior tmp
+  local auth_keys="$1" state="${2:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}" prior tmp
   # An empty SSH_PUBLIC_KEY means "keep using the cloud user's keys", not
   # "retire the managed one" — withdrawing here would strand an operator who
   # simply dropped the variable from a re-run.
@@ -905,6 +914,18 @@ revoke_prior_ssh_key() {
   fi
   printf '%s\n' "$SSH_PUBLIC_KEY" > "$state"
 }
+
+# Adopt the single marker an earlier revision wrote, once, for the account this
+# run is about. On the hosts that revision could produce there was only ever one
+# deploy account, so the old value is that account's — and adopting it is what
+# keeps the first run after this change able to withdraw, instead of starting
+# from no record and leaving the current key authorized forever. If APP_SSH_USER
+# has since moved, the file is claimed by whichever account is named first; that
+# is the same key the old code would have hunted for, so nothing gets worse.
+if [ -f "$STATE_DIR/ssh_public_key" ] &&
+   [ ! -f "$STATE_DIR/ssh_public_key.$APP_SSH_USER" ]; then
+  mv "$STATE_DIR/ssh_public_key" "$STATE_DIR/ssh_public_key.$APP_SSH_USER"
+fi
 
 install_authorized_keys "$AUTH_KEYS"
 revoke_prior_ssh_key "$AUTH_KEYS"
