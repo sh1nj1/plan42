@@ -1,4 +1,9 @@
 CollavreGithub::Engine.routes.draw do
+  # API endpoints (OAuth token auth)
+  namespace :api do
+    resource :token, only: [ :show ], controller: "tokens"
+  end
+
   # Webhook endpoint (public, no auth)
   # Both singular and plural for backward compatibility
   post "webhook", to: "webhooks#create", as: :webhook
