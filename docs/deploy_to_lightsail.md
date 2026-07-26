@@ -750,11 +750,32 @@ journalctl -u collavre-pg-backup.service        # check last run
 # connects; a container that survived the stop, or restarts mid-restore, cannot.
 sudo -u postgres psql -qd postgres -c \
   "ALTER DATABASE collavre_production CONNECTION LIMIT 0"
+
+# Read the limit back rather than trusting that the line above ran. These
+# blocks are pasted into an interactive shell with no `set -e`, so a failed
+# ALTER just scrolls past — and if nothing happens to be attached a moment
+# later, the count below reads 0 and the restore starts against a database
+# that was never shut. `datconnlimit` is the state itself, so it cannot say
+# "closed" about a door that is open.
+shut=$(sudo -u postgres psql -qtAd postgres -c \
+  "SELECT datconnlimit FROM pg_database WHERE datname = 'collavre_production'")
+
+if [ "$shut" != 0 ]; then
+  echo "REFUSING: could not shut collavre_production to the app."
+  echo "  its connection limit is '$shut', not 0 — the ALTER above did not take"
+  echo "  (wrong database name? not superuser? cluster gone?)"
+  echo "nothing was dropped; fix that and re-run this block"
+  # Its own status, not the refusal below: this block never shut the database,
+  # so it must not "re-open" it either — that would lift a limit the operator
+  # may have set themselves.
+  restore_status=3
+else
+
 sudo -u postgres psql -qtAd postgres -c \
   "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
     WHERE datname = 'collavre_production' AND pid <> pg_backend_pid()"
 
-# Now check, with the door already shut — a point-in-time count taken before
+# Now check, with the door confirmed shut — a point-in-time count taken before
 # this would only have said the app happened to be between connections.
 live=$(sudo -u postgres psql -qtA -d postgres -c \
   "SELECT count(*) FROM pg_stat_activity
@@ -778,11 +799,14 @@ else
   restore_status=$?
 fi
 
-# Re-open on the two paths where the database is whole — a restore that
-# succeeded, and a refusal that touched nothing. A database left at CONNECTION
-# LIMIT 0 refuses the app at boot with "too many connections", which reads like
-# a pool problem and not like a step this block forgot to undo, so it must not
-# be left shut by accident. On the failure path it is left shut on purpose.
+fi
+
+# Re-open on the two paths where this block shut the door and the database is
+# whole — a restore that succeeded, and a refusal that touched nothing. A
+# database left at CONNECTION LIMIT 0 refuses the app at boot with "too many
+# connections", which reads like a pool problem and not like a step this block
+# forgot to undo, so it must not be left shut by accident. On the failure path
+# it is left shut on purpose; on status 3 it was never shut to begin with.
 if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
   sudo -u postgres psql -qd postgres -c \
     "ALTER DATABASE collavre_production CONNECTION LIMIT -1"
@@ -790,7 +814,7 @@ fi
 
 if [ "$restore_status" -eq 0 ]; then
   echo "restored; boot the app from your workstation: ./kamal.sh app boot"
-elif [ "$restore_status" -eq 2 ]; then
+elif [ "$restore_status" -eq 2 ] || [ "$restore_status" -eq 3 ]; then
   : # refused before touching anything — see the message above
 else
   echo "RESTORE FAILED: objects may be dropped or only partly reloaded."

@@ -1632,15 +1632,24 @@ run_restore() {
 while [ "${1:-}" = -u ] || [ "${1:-}" = postgres ]; do shift; done
 exec "$@"
 STUB
+  # datconnlimit is modelled as state rather than as a canned answer, because
+  # the whole point of reading it back is that it disagrees with the ALTER when
+  # the ALTER did not take. FAIL_SHUT makes the ALTER a no-op — psql prints its
+  # error and exits non-zero, which an interactive paste with no `set -e` walks
+  # straight past, which is the case under test.
+  echo -1 > "$work/connlimit"
   cat > "$work/bin/psql" <<'STUB'
 #!/usr/bin/env bash
 sql="${*: -1}"
 case "$sql" in
-  *"CONNECTION LIMIT 0"*)      echo "limit:0"          >>"$TRACE" ;;
-  *"CONNECTION LIMIT -1"*)     echo "limit:reopened"   >>"$TRACE" ;;
-  *pg_terminate_backend*)      echo "terminate"        >>"$TRACE"; echo "${KILLED:-0}" ;;
-  *"count(*)"*)                echo "count"            >>"$TRACE"; printf '%s' "$LIVE" ;;
-  *usename*)                   echo "listing"          >>"$TRACE" ;;
+  *"CONNECTION LIMIT 0"*)      echo "limit:0"        >>"$TRACE"
+                               [ -n "$FAIL_SHUT" ] || echo 0 > "$CONNLIMIT"
+                               [ -z "$FAIL_SHUT" ] || { echo 'ERROR:  database "x" does not exist' >&2; exit 1; } ;;
+  *"CONNECTION LIMIT -1"*)     echo "limit:reopened" >>"$TRACE"; echo -1 > "$CONNLIMIT" ;;
+  *datconnlimit*)              echo "readback"       >>"$TRACE"; cat "$CONNLIMIT" ;;
+  *pg_terminate_backend*)      echo "terminate"      >>"$TRACE"; echo "${KILLED:-0}" ;;
+  *"count(*)"*)                echo "count"          >>"$TRACE"; printf '%s' "$LIVE" ;;
+  *usename*)                   echo "listing"        >>"$TRACE" ;;
 esac
 STUB
   cat > "$work/bin/pg_restore" <<'STUB'
@@ -1654,7 +1663,8 @@ STUB
   # ${LIVE-0}, not ${LIVE:-0}: the empty string is a case under test — it is what
   # a failed check returns — and :- would quietly turn it back into "0", making
   # the one assertion about a broken gate pass for the wrong reason.
-  export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}"
+  export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}" \
+         FAIL_SHUT="${FAIL_SHUT:-}" CONNLIMIT="$work/connlimit"
   R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   R_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
@@ -1666,8 +1676,8 @@ chk "door shut first"        "limit:0" "$(cut -d'|' -f1 <<<"$R_TRACE")"
 chk "survivors terminated"   1 "$(grep -c '^terminate$' <<<"${R_TRACE//|/$'\n'}")"
 # The order is the whole point: counting before the limit is applied only says
 # the app happened to be between connections at that instant.
-chk "counted only after the door was shut" 1 \
-  "$(grep -q 'limit:0|terminate|count' <<<"$R_TRACE" && echo 1 || echo 0)"
+chk "counted only after the door was shut AND confirmed shut" 1 \
+  "$(grep -q 'limit:0|readback|terminate|count' <<<"$R_TRACE" && echo 1 || echo 0)"
 chk "restore ran"            1 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
 chk "re-opened"              1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
 chk "operator told to boot"  1 "$(grep -c 'app boot' <<<"$R_OUT")"
@@ -1700,6 +1710,25 @@ chk "says the retry needs no extra step"     1 \
   "$(grep -c 'superuser and is exempt' <<<"$R_OUT")"
 chk "prints the command that lifts it"       1 \
   "$(grep -c 'CONNECTION LIMIT -1' <<<"$R_OUT")"
+
+echo "86a. an ALTER that did not take is caught by reading the limit back"
+# The gate's own first step was ungated. These blocks are pasted into an
+# interactive shell with no `set -e`, so a failed ALTER scrolls past; if nothing
+# is attached at that instant the count reads 0 and the restore starts against a
+# database that was never shut. Measured on postgres:17 with the ALTER made to
+# fail: shut exit=1, live=0, datconnlimit still -1, restore proceeds.
+LIVE=0 KILLED=0 FAIL_RESTORE='' FAIL_SHUT=1 run_restore
+chk "the limit was read back"  1 "$(grep -c '^readback$' <<<"${R_TRACE//|/$'\n'}")"
+chk "nothing dropped"          0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
+# It must not even reach the terminate: killing sessions on a database it failed
+# to close is a disruption bought for nothing.
+chk "no sessions terminated"   0 "$(grep -c '^terminate$' <<<"${R_TRACE//|/$'\n'}")"
+# And it must not "re-open" a door it never shut — that would lift a limit the
+# operator may have set themselves.
+chk "not re-opened either"     0 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "operator told"            1 "$(grep -c 'could not shut collavre_production' <<<"$R_OUT")"
+chk "and told nothing was dropped" 1 "$(grep -c 'nothing was dropped' <<<"$R_OUT")"
+unset FAIL_SHUT
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #
