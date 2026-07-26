@@ -344,6 +344,11 @@ psql_as_postgres() {
 # rather than being fatal: nothing downstream depends on the size, and dying
 # here would abandon a provisioning run over the one condition where the
 # operator most needs the host to come up.
+#
+# The same rule decides the other way a resize fails. Growing the file means
+# freeing the old one first, so an allocation that does not fit would otherwise
+# leave the host with no swap at all — strictly worse than the state the run
+# started from. The previous size is restored and the run continues.
 ensure_swapfile() {
   local swap="${1:-/swapfile}" fstab="${2:-/etc/fstab}"
   local want="$SWAP_SIZE_MB" have=0 active=no
@@ -374,13 +379,43 @@ ensure_swapfile() {
   fi
 
   rm -f "$swap"
-  fallocate -l "${want}M" "$swap" || \
-    dd if=/dev/zero of="$swap" bs=1M count="$want" status=none
-  chmod 600 "$swap"
-  mkswap "$swap" >/dev/null
+  if ! allocate_swapfile "$swap" "$want"; then
+    # The new size did not fit. Put back what was there rather than leaving the
+    # host with none: the operator raising SWAP_SIZE_MB is doing so under memory
+    # pressure, and a run that answers by taking away the swap they already had
+    # makes exactly the condition it was called about worse. The old size is
+    # known to fit — its space was freed a moment ago — and a swapfile's
+    # contents are dead once swapoff has faulted the pages back, so recreating
+    # it is a restore and not an approximation of one.
+    rm -f "$swap"
+    if [ "$have" -gt 0 ] && allocate_swapfile "$swap" "$have"; then
+      swapon "$swap"
+      log "WARNING: could not allocate ${want}MiB for $swap — not enough free disk." \
+          "SWAP_SIZE_MB=$want did NOT take effect; the previous ${have}MiB swap is back." \
+          "Grow the disk, or lower SWAP_SIZE_MB, and re-run."
+      return 0
+    fi
+    rm -f "$swap"
+    die "could not allocate ${want}MiB for $swap and could not restore the previous" \
+        "${have}MiB either — this host now has no swap. Free some disk and re-run."
+  fi
   swapon "$swap"
   ensure_block "$fstab" swap "$swap none swap sw 0 0"
   [ "$have" -eq 0 ] || log "resized $swap from ${have}MiB to ${want}MiB"
+}
+
+# fallocate where the filesystem supports it, dd otherwise. Returns non-zero
+# without leaving a partial file behind, so the caller can decide what to do
+# rather than inheriting a truncated swapfile at the live path.
+allocate_swapfile() {
+  local path="$1" mib="$2"
+  if ! { fallocate -l "${mib}M" "$path" 2>/dev/null || \
+         dd if=/dev/zero of="$path" bs=1M count="$mib" status=none 2>/dev/null; }; then
+    rm -f "$path"
+    return 1
+  fi
+  chmod 600 "$path"
+  mkswap "$path" >/dev/null
 }
 
 # Make sure container logs are capped, whether or not this host already has a

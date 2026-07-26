@@ -228,6 +228,25 @@ there is no way back in. Move ownership and retire that role by hand.
 Rotating the *password* rather than the role needs none of this — set
 `DB_PASSWORD`, re-run, and update `DATABASE_URL`.
 
+### Changing `SWAP_SIZE_MB` on a re-run
+
+A re-run compares the size of `/swapfile` on disk, so raising or lowering the
+value resizes it and `SWAP_SIZE_MB=0` removes it. Two cases stop short of that,
+both reported and neither fatal, because raising this is usually a response to
+memory pressure and a run that aborts — or that leaves the host with less swap
+than it had — makes the thing it was called about worse:
+
+- **`swapoff` fails.** The pages cannot be faulted back into RAM, which is
+  precisely the low-memory condition being fixed. The old swap keeps running,
+  unchanged. Free some memory and re-run.
+- **The new size does not fit on the disk.** Growing means freeing the old file
+  first, so the previous size is re-created and re-enabled instead. Grow the
+  disk or lower `SWAP_SIZE_MB`, then re-run.
+
+In both cases the log says the value did not take effect and what is running
+instead. A *first* run that cannot allocate has nothing to fall back to and
+stops the provisioning run.
+
 ## 3. How PostgreSQL is reachable
 
 PostgreSQL listens on `localhost` and `172.17.0.1` — the docker0 bridge

@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -29,7 +29,8 @@ eval "$(awk '
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key \
-          ensure_cluster_on_default_port ensure_swapfile ensure_docker_log_caps; do
+          ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
+          ensure_docker_log_caps; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -1013,14 +1014,38 @@ swapon() {
 swapoff() { [ -z "$SWAPOFF_FAILS" ] || return 1; SWAPPED_ON=""; return 0; }
 # shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
 mkswap() { :; }
-# shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
-fallocate() { : > "$3"; dd if=/dev/zero of="$3" bs=1048576 count="${2%M}" status=none 2>/dev/null; }
+# DISK_FREE_MIB caps what the filesystem will accept; "" means unlimited. The
+# two stubs fail the way the real tools were observed to fail on a full tmpfs:
+# fallocate refuses outright and writes nothing, dd writes what fits and then
+# returns non-zero — so the partial file is a real partial file, which is the
+# thing the caller has to not leave at the live path.
+DISK_FREE_MIB=""
+# shellcheck disable=SC2329  # called by allocate_swapfile, eval'd from the script
+fallocate() {
+  local mib="${2%M}"
+  [ -z "$DISK_FREE_MIB" ] || [ "$mib" -le "$DISK_FREE_MIB" ] || return 1
+  : > "$3"
+  command dd if=/dev/zero of="$3" bs=1048576 count="$mib" status=none 2>/dev/null
+}
+# shellcheck disable=SC2329  # called by allocate_swapfile, eval'd from the script
+dd() {
+  local a path="" mib=""
+  for a in "$@"; do
+    case "$a" in of=*) path="${a#of=}" ;; count=*) mib="${a#count=}" ;; esac
+  done
+  if [ -n "$DISK_FREE_MIB" ] && [ "$mib" -gt "$DISK_FREE_MIB" ]; then
+    command dd if=/dev/zero of="$path" bs=1048576 count="$DISK_FREE_MIB" status=none 2>/dev/null
+    return 1
+  fi
+  command dd if=/dev/zero of="$path" bs=1048576 count="$mib" status=none 2>/dev/null
+}
 LOGGED=""
 # shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
 log() { LOGGED="$LOGGED $*"; }
 swap_mib() { echo $(( $(stat -c %s "$1" 2>/dev/null || stat -f %z "$1") / 1048576 )); }
 
 new_swap_env() {   # <existing-MiB>  ("" for no file)
+  DISK_FREE_MIB=""   # reset before the setup dd, not only after it
   d=$(mktemp -d); SWAPFILE="$d/swapfile"; FSTAB="$d/fstab"
   printf 'UUID=xxx / ext4 defaults 0 1\n' > "$FSTAB"
   if [ -n "$1" ]; then
@@ -1030,7 +1055,7 @@ new_swap_env() {   # <existing-MiB>  ("" for no file)
   else
     SWAPPED_ON=""
   fi
-  LOGGED=""; SWAPOFF_FAILS=""
+  LOGGED=""; SWAPOFF_FAILS=""; DISK_FREE_MIB=""
 }
 
 echo "54. a first run creates the swap file at the configured size"
@@ -1099,9 +1124,40 @@ case "$LOGGED" in
   *"WARNING"*"did NOT take effect"*) echo "  ok   operator told it did not take" ;;
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
-unset -f swapon swapoff mkswap fallocate
 
-echo "61. an unsupported DB_PORT is refused before anything is installed"
+echo "61. a resize that does not fit puts the previous swap back"
+# Growing means freeing the old file first, so an allocation that fails would
+# otherwise end the run with no swap at all — worse than it started, on the
+# low-memory host the setting exists for. The old size is known to fit.
+new_swap_env 8
+DISK_FREE_MIB=20
+SWAP_SIZE_MB=64 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "run continues"        0 "$?"
+chk "previous size back"   8 "$(swap_mib "$SWAPFILE")"
+chk "swap re-enabled"      "$SWAPFILE" "$SWAPPED_ON"
+chk "no truncated file"    0 "$(( $(swap_mib "$SWAPFILE") == 20 ? 1 : 0 ))"
+case "$LOGGED" in
+  *"WARNING"*"did NOT take effect"*"8MiB swap is back"*)
+    echo "  ok   operator told the raise did not take, and what is running" ;;
+  *) echo "  FAIL silent or claims success: $LOGGED"; fail=1 ;;
+esac
+
+echo "62. a first run that cannot allocate dies rather than reporting success"
+# have=0, so there is nothing to restore; the run must stop loudly instead of
+# continuing on a swapfile that was never made.
+new_swap_env ""
+DISK_FREE_MIB=20
+out="$( (SWAP_SIZE_MB=64 ensure_swapfile "$SWAPFILE" "$FSTAB") 2>&1 )"
+chk "exits non-zero" 1 "$?"
+chk "no partial swapfile left" 0 "$([ -e "$SWAPFILE" ] && echo 1 || echo 0)"
+case "$out" in
+  *"could not allocate 64MiB"*"no swap"*) echo "  ok   says what state the host is in" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+DISK_FREE_MIB=""
+unset -f swapon swapoff mkswap fallocate dd
+
+echo "63. an unsupported DB_PORT is refused before anything is installed"
 # Nothing here writes postgresql.conf, and pg_createcluster takes the first free
 # port from 5432 — so an overridden DB_PORT is named by DATABASE_URL, the ufw
 # rule and the backup while the cluster listens on 5432 regardless.
@@ -1129,14 +1185,14 @@ chk "and says nothing"     "" "$out"
 # --------------------------------------------------------------------------
 caps_of() { jq -c '."log-opts"' "$1"; }
 
-echo "62. a host with no daemon.json gets the caps written"
+echo "64. a host with no daemon.json gets the caps written"
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
 ensure_docker_log_caps "$f"
 chk "reports it changed the file" 1 "$DAEMON_JSON_CHANGED"
 chk "caps present" '{"max-size":"10m","max-file":"3"}' "$(caps_of "$f")"
 chk "valid JSON"   0 "$(jq empty "$f" >/dev/null 2>&1; echo $?)"
 
-echo "63. an existing daemon.json without caps has them merged in, not clobbered"
+echo "65. an existing daemon.json without caps has them merged in, not clobbered"
 # The finding: the old condition skipped the whole block whenever the file
 # existed, so a by-hand run on an existing instance left logs uncapped and
 # still reported Docker as configured.
@@ -1149,7 +1205,7 @@ chk "driver set"   'json-file' "$(jq -r '."log-driver"' "$f")"
 chk "operator's registries kept" '["r.internal:5000"]' "$(jq -c '."insecure-registries"' "$f")"
 chk "operator's live-restore kept" 'true' "$(jq -r '."live-restore"' "$f")"
 
-echo "64. existing caps are left exactly as the operator set them"
+echo "66. existing caps are left exactly as the operator set them"
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
 printf '{"log-driver":"json-file","log-opts":{"max-size":"50m","max-file":"10"}}\n' > "$f"
 before="$(cat "$f")"
@@ -1157,7 +1213,7 @@ ensure_docker_log_caps "$f"
 chk "reports no change" 0 "$DAEMON_JSON_CHANGED"
 chk "byte-identical"    "$before" "$(cat "$f")"
 
-echo "65. a non-json-file driver is reported, not overridden"
+echo "67. a non-json-file driver is reported, not overridden"
 # journald and local rotate on their own; forcing json-file would redirect an
 # operator's logs rather than cap them.
 for drv in journald local awslogs; do
@@ -1173,7 +1229,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "66. an unparseable daemon.json is reported, never overwritten"
+echo "68. an unparseable daemon.json is reported, never overwritten"
 # It is the operator's file and Docker will not start until it is repaired;
 # replacing it would destroy the evidence of what they meant.
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
@@ -1187,7 +1243,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "67. a merged file is stable across re-runs"
+echo "69. a merged file is stable across re-runs"
 d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
 printf '{"live-restore":true}\n' > "$f"
 ensure_docker_log_caps "$f"
@@ -1211,7 +1267,7 @@ LOGGED=""
 # shellcheck disable=SC2329  # called by ensure_ufw_rule, eval'd from the script
 log() { LOGGED="$LOGGED $*"; }
 
-echo "68. a delete that fails leaves the marker so the next run retries"
+echo "70. a delete that fails leaves the marker so the next run retries"
 # `ufw delete` exits 0 even for a rule that was not there, so a non-zero status
 # means it could not act and the old rule is still installed. Advancing the
 # marker there loses the only record of it: the previous Docker subnet keeps
@@ -1235,7 +1291,7 @@ ensure_ufw_rule postgres "$new" "$st"
 chk "retry withdraws the old rule" 1 "$(printf '%s' "$UFW_CALLS" | grep -c "|delete $old")"
 chk "marker advanced now"          "$new" "$(cat "$st")"
 
-echo "69. the replacement is added before the predecessor is withdrawn"
+echo "71. the replacement is added before the predecessor is withdrawn"
 # An interrupted run must never leave the host with neither rule.
 d=$(mktemp -d); st="$d/ufw_postgres"
 printf '%s\n' "$old" > "$st"
