@@ -1095,9 +1095,34 @@ EOF
   apt_install "postgresql-$PG_MAJOR" "postgresql-client-$PG_MAJOR"
 fi
 
+# postgresql_conf_includes_confd <postgresql.conf>
+#
+# Whether an *active* include_dir already pulls in conf.d. The distinction is
+# the whole point of the function. Debian and Ubuntu ship this directive live
+# in the stock postgresql.conf, so on a fresh install the managed block is
+# correctly skipped — but an operator who commented it out on an existing host
+# leaves the same text in the file, and a plain substring match reads their
+# `#include_dir = 'conf.d'` as "already configured".
+#
+# Measured on ubuntu:24.04 with the stock line commented out: the run writes
+# conf.d/10-collavre.conf, restarts cleanly and reports success, and PostgreSQL
+# never reads the file. listen_addresses stays at `localhost`, so nothing binds
+# the docker bridge while DATABASE_URL hands the containers 172.17.0.1:5432 —
+# the failure surfaces as the app being unable to reach its own database,
+# several steps after the step that caused it.
+#
+# Comments are stripped before the test rather than anchored around, because an
+# active directive can carry a trailing one and a disabled one can be indented
+# or spaced (`  #  include_dir = ...`). The path is matched as a whole final
+# component so `include_dir = 'myconf.d'` is not read as conf.d.
+postgresql_conf_includes_confd() {
+  sed 's/#.*//' "$1" |
+    grep -qE "^[[:space:]]*include_dir[[:space:]]*=[[:space:]]*'?([^']*/)?conf\.d'?[[:space:]]*$"
+}
+
 PG_CONF_DIR="/etc/postgresql/$PG_MAJOR/main"
 [ -d "$PG_CONF_DIR/conf.d" ] || install -d -m 0755 "$PG_CONF_DIR/conf.d"
-grep -q "include_dir = 'conf.d'" "$PG_CONF_DIR/postgresql.conf" || \
+postgresql_conf_includes_confd "$PG_CONF_DIR/postgresql.conf" || \
   ensure_block "$PG_CONF_DIR/postgresql.conf" include "include_dir = 'conf.d'"
 
 TOTAL_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)

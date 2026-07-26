@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -32,7 +32,7 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           refuse_superuser_db_rotation revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
           ensure_docker_log_caps dedupe_authorized_keys \
-          install_staged_authorized_keys; do
+          install_staged_authorized_keys postgresql_conf_includes_confd; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -1602,10 +1602,16 @@ chk "every transfer staged under .incoming" 0 \
 # with "too many connections" — including on a reconnect mid-restore, which is
 # the case a point-in-time count cannot see.
 #
-# What is asserted here is the part that regresses silently: the limit is put
-# back on EVERY path. A database left at 0 refuses the app at boot, and the
-# error it gives reads like a connection-pool problem rather than like a step
-# this block forgot to undo.
+# What is asserted here is which paths put the limit back, because both
+# mistakes are silent and they point in opposite directions. Leaving it at 0
+# after a restore that worked refuses the app at boot with an error that reads
+# like a connection-pool problem rather than like a step this block forgot to
+# undo. Re-opening after a restore that FAILED is worse: pg_restore --clean
+# drops before it reloads, so the database is genuinely half-replaced, and the
+# surviving container reconnects and writes into it. Measured on postgres:17
+# with a dump truncated to 70%, `posts` came back with all 20,000 rows and
+# `users` with none; a signup then landed and returned an id, and the retry the
+# recipe itself recommends dropped it again with no error anywhere.
 
 restore="$(extract_recipe 'restore_status=')"
 case "$restore" in
@@ -1679,12 +1685,21 @@ chk "nothing dropped"  0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")
 chk "re-opened anyway" 1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
 chk "operator told"    1 "$(grep -c 'REFUSING' <<<"$R_OUT")"
 
-echo "86. a FAILED restore still re-opens, or the app cannot boot to be fixed"
+echo "86. a FAILED restore leaves the door shut, so nothing writes to the wreckage"
 LIVE=0 KILLED=0 FAIL_RESTORE=1 run_restore
 chk "restore attempted"  1 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
-chk "re-opened"          1 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
+chk "NOT re-opened"      0 "$(grep -c '^limit:reopened$' <<<"${R_TRACE//|/$'\n'}")"
 chk "told it may be half-done" 1 "$(grep -c 'RESTORE FAILED' <<<"$R_OUT")"
 chk "not told to boot"   0 "$(grep -c 'app boot' <<<"$R_OUT")"
+# A door left shut without saying so is the failure this whole page keeps
+# hitting from the other side: the operator meets it later as a boot that
+# cannot connect. It has to be stated, and the way out has to be printed.
+chk "says the database is deliberately shut" 1 \
+  "$(grep -c 'LEFT AT .CONNECTION LIMIT 0.' <<<"$R_OUT")"
+chk "says the retry needs no extra step"     1 \
+  "$(grep -c 'superuser and is exempt' <<<"$R_OUT")"
+chk "prints the command that lifts it"       1 \
+  "$(grep -c 'CONNECTION LIMIT -1' <<<"$R_OUT")"
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #
@@ -1830,6 +1845,67 @@ mv_at=$(grep -n '^mv ' "$order" | cut -d: -f1); chmod_at=$(grep -n '^chmod ' "$o
 chk "both before the rename"        1 \
   "$([ -n "$mv_at" ] && [ -n "$chmod_at" ] && [ "$mv_at" -gt "$chmod_at" ] && echo 1 || echo 0)"
 chk "the live file ends 0600"       600 "$(stat -c %a "$KEYS" 2>/dev/null || stat -f %Lp "$KEYS")"
+
+# --- postgresql_conf_includes_confd -----------------------------------------
+#
+# The predicate was `grep -q "include_dir = 'conf.d'"`, which a COMMENTED
+# directive satisfies. Debian and Ubuntu ship the directive active, so a fresh
+# install is fine and the by-hand converge path on a host where an operator
+# disabled it is not: measured on ubuntu:24.04, the run wrote
+# conf.d/10-collavre.conf, restarted the cluster cleanly and reported success,
+# while PostgreSQL never read the file —
+#
+#   listen_addresses in force : localhost
+#   listening on 172.17.0.1   : NO   (bound: 127.0.0.1:5432, [::1]:5432)
+#   DATABASE_URL handed out   : ...@172.17.0.1:5432/collavre_production
+#
+# so the containers are pointed at an address nothing is listening on, several
+# steps after the step that caused it.
+
+echo "92. an active include_dir is honoured, so nothing is appended"
+for active in \
+  "include_dir = 'conf.d'" \
+  "include_dir='conf.d'" \
+  "  include_dir = 'conf.d'  # stock Debian" \
+  "include_dir = '/etc/postgresql/16/main/conf.d'" \
+  "include_dir = conf.d"
+do
+  f=$(mktemp); printf "port = 5432\n%s\nmax_connections = 100\n" "$active" > "$f"
+  postgresql_conf_includes_confd "$f"
+  chk "skipped: $active" 0 "$?"
+  rm -f "$f"
+done
+
+echo "93. a commented-out include_dir does not count as configured"
+# The one that shipped. Each of these leaves conf.d unread by PostgreSQL.
+for off in \
+  "#include_dir = 'conf.d'" \
+  "#  include_dir = 'conf.d'" \
+  "   #include_dir = 'conf.d'   # turned this off, using the main file" \
+  "#include_dir = '...'" \
+  "include_dir = 'other.d'" \
+  "include_dir = 'myconf.d'" \
+  "include_if_exists = 'conf.d'"
+do
+  f=$(mktemp); printf "port = 5432\n%s\nmax_connections = 100\n" "$off" > "$f"
+  postgresql_conf_includes_confd "$f"
+  chk "install needed: $off" 1 "$?"
+  rm -f "$f"
+done
+
+echo "94. at the call site, a disabled directive gets the managed block"
+# The predicate on its own could be right while the caller still skipped, so
+# this drives the pair and then reads what PostgreSQL would.
+f=$(mktemp)
+printf "port = 5432\n#include_dir = 'conf.d'\n" > "$f"
+postgresql_conf_includes_confd "$f" || ensure_block "$f" include "include_dir = 'conf.d'"
+chk "conf.d is now actually included" 1 \
+  "$(sed 's/#.*//' "$f" | grep -cE "^[[:space:]]*include_dir[[:space:]]*=[[:space:]]*'conf\.d'")"
+chk "the operator's own line is untouched" 1 "$(grep -c "^#include_dir = 'conf.d'$" "$f")"
+# Re-running must not stack a second block on a host converged by this change.
+postgresql_conf_includes_confd "$f" || ensure_block "$f" include "include_dir = 'conf.d'"
+chk "and a re-run appends nothing" 1 "$(grep -c '# BEGIN collavre:include' "$f")"
+rm -f "$f"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

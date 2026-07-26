@@ -778,19 +778,29 @@ else
   restore_status=$?
 fi
 
-# Always re-open, on every path. A database left at CONNECTION LIMIT 0 refuses
-# the app at boot with "too many connections", which reads like a pool problem
-# and not like a step this block forgot to undo.
-sudo -u postgres psql -qd postgres -c \
-  "ALTER DATABASE collavre_production CONNECTION LIMIT -1"
+# Re-open on the two paths where the database is whole — a restore that
+# succeeded, and a refusal that touched nothing. A database left at CONNECTION
+# LIMIT 0 refuses the app at boot with "too many connections", which reads like
+# a pool problem and not like a step this block forgot to undo, so it must not
+# be left shut by accident. On the failure path it is left shut on purpose.
+if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
+  sudo -u postgres psql -qd postgres -c \
+    "ALTER DATABASE collavre_production CONNECTION LIMIT -1"
+fi
 
 if [ "$restore_status" -eq 0 ]; then
   echo "restored; boot the app from your workstation: ./kamal.sh app boot"
 elif [ "$restore_status" -eq 2 ]; then
   : # refused before touching anything — see the message above
 else
-  echo "RESTORE FAILED: objects may be dropped or only partly reloaded"
-  echo "leave the app stopped and work out what happened before booting it"
+  echo "RESTORE FAILED: objects may be dropped or only partly reloaded."
+  echo "collavre_production is LEFT AT 'CONNECTION LIMIT 0' deliberately: it is"
+  echo "  now half-replaced, and a container that survived the stop must not"
+  echo "  reconnect and write into it. pg_restore is a superuser and is exempt,"
+  echo "  so fix the cause and run this block again — it needs no other step."
+  echo "If instead you are abandoning the restore, re-open it by hand with:"
+  echo "  sudo -u postgres psql -qd postgres -c \\"
+  echo "    \"ALTER DATABASE collavre_production CONNECTION LIMIT -1\""
 fi
 ```
 
@@ -824,6 +834,20 @@ it, which is why `pg_restore` still connects while the app cannot. The
 `pg_terminate_backend` clears whatever was already attached, and the check
 afterwards then means something — it is asking whether anything got past a
 closed door, not whether the app happened to be quiet.
+
+**A failed restore keeps the door shut.** `pg_restore --clean` drops before it
+reloads, so a run that dies partway leaves the database genuinely half-replaced
+— on a 20,000-row pair of tables, truncating the dump to 70% gives back
+`posts` with every row and `users` with none. Re-opening at that point is worse
+than never having shut it: the surviving container reconnects to a database
+that looks like it has been emptied, and a signup lands in it and returns an id.
+The recipe's own advice is to fix the cause and run the block again, and the
+retry drops that row along with everything else, so the write is gone with no
+error anywhere — the failure is announced to the operator and the data loss is
+not. The limit therefore stays at `0` until a restore succeeds. Nothing is
+waiting on it: `pg_restore` is a superuser and exempt, so the retry needs no
+extra step, and the message says which command lifts it if the restore is being
+abandoned instead.
 
 Local dumps die with the instance. Enable `BACKUP_S3_URI`, or take a Lightsail
 snapshot schedule, before this host holds real customer data.
