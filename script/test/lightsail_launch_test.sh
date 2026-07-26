@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -39,6 +39,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           refuse_unusable_db_identifier refuse_unparsable_ssh_key \
           passwd_home ssh_key_holder \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
+          refuse_root_deploy_user \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -3135,8 +3136,31 @@ DB_EXISTS=1
 refuse_db_name_change collavre_production "$dn4"
 chk "proceeds rather than refusing against an empty name" 0 "$?"
 
+echo "97a. but an empty marker does not answer for the record it lost"
+# 97 above is only half the question, and the half that passes either way: the
+# database it names exists, so there is nothing to protect and every revision
+# proceeds. The other half is the one that matters. An empty db_name is not
+# "nothing was recorded here" — it is "a name was recorded and this run cannot
+# read it", which is the same state case 96 refuses on a host too old to have
+# written one at all. The earlier form returned 0 from inside the `-f` branch,
+# so an empty file skipped the comparison AND the cluster fallback beneath it,
+# and the guard passed a changed DB_NAME on a host it was installed to defend.
+#
+# That is reachable from this PR's own write: `> "$STATE_DIR/db_name"`
+# truncates before it writes, so a run interrupted between the two leaves
+# exactly this file.
+dn5=$(mktemp -d); : > "$dn5/db_name"; printf 'collavre_user\n' > "$dn5/db_user"
+DB_EXISTS=0 DB_LIST="collavre_production"
+out="$( (refuse_db_name_change collavre_typo "$dn5") 2>&1 )"
+chk "an unreadable marker is refused, not adopted" 1 "$?"
+case "$out" in
+  *"provisioned before"*"does not exist"*"collavre_production"*)
+    echo "  ok   and it lists the database the data is actually in" ;;
+  *) echo "  FAIL passed or was unhelpful: $out"; fail=1 ;;
+esac
+
 unset -f psql_as_postgres
-rm -rf "$dn" "$dn2" "$dn3" "$dn4"
+rm -rf "$dn" "$dn2" "$dn3" "$dn4" "$dn5"
 
 # --- adopt_legacy_ssh_key_marker --------------------------------------------
 #
@@ -4168,6 +4192,74 @@ case "$out" in
   *"already serves 5432"*) echo "  ok   on the version, which is the useful answer" ;;
   *) echo "  FAIL reported the name over the version: $out"; fail=1 ;;
 esac
+
+echo "123. a UID 0 deploy user is refused before any account is touched"
+# Step 3 writes PermitRootLogin no into sshd_config.d and then, further down the
+# same step, arms $APP_SSH_USER and prints it as KAMAL_SSH_USER. Nothing between
+# the two rejected the account sshd had just been told to turn away, so the run
+# reported success over a host no deploy could authenticate to.
+#
+# shellcheck disable=SC2329  # called by refuse_root_deploy_user
+id() { case "$2" in root|toor) echo 0 ;; collavre) echo 1001 ;; *) return 1 ;; esac; }
+out="$( (refuse_root_deploy_user root) 2>&1 )"
+chk "exits non-zero" 1 "$?"
+case "$out" in
+  *"PermitRootLogin no"*"KAMAL_SSH_USER=root"*"Nothing has been changed"*)
+    echo "  ok   names the contradiction, not just the rule" ;;
+  *) echo "  FAIL unhelpful: $out"; fail=1 ;;
+esac
+# By UID, not by the name. An account aliased to 0 is locked out by the same
+# drop-in, and refusing only the literal 'root' would read as a check that had
+# been done.
+out="$( (refuse_root_deploy_user toor) 2>&1 )"
+chk "an aliased UID 0 account is refused too" 1 "$?"
+
+echo "123a. and an ordinary deploy user is not"
+# The control that matters: this guard runs on every invocation, ahead of
+# refuse_defaulted_config_change, so a false positive here refuses every run.
+refuse_root_deploy_user collavre
+chk "an existing ordinary account proceeds" 0 "$?"
+# The default first-run shape. `id` fails because adduser has not run yet, and
+# treating "cannot resolve" as "might be root" would refuse every fresh host.
+refuse_root_deploy_user brand-new
+chk "an account that does not exist yet proceeds" 0 "$?"
+unset -f id
+
+echo "124. the database markers are replaced, not truncated then filled"
+# Same class as launch.env and db_password on this PR, and the reason the write
+# is worth fixing rather than only the read: `>` truncates before it writes, so
+# an interrupted run leaves the marker present and empty — and 97a is what an
+# empty db_name then does to the guard. The two markers are checked through the
+# helper the script now routes them through.
+sd=$(mktemp -d)
+printf 'collavre_production\n' > "$sd/db_name"
+before=$(inode "$sd/db_name")
+write_state_file "$sd/db_name" "collavre_renamed"$'\n'
+chk "the value is replaced"          "collavre_renamed" "$(cat "$sd/db_name")"
+chk "by rename, not in place"        1 "$([ "$(inode "$sd/db_name")" != "$before" ] && echo 1 || echo 0)"
+chk "and the mode is the default"    644 "$(file_mode "$sd/db_name")"
+# A staging write that fails must leave the previous value readable, which is
+# the whole point: the reader has no way to tell an empty marker from a lost
+# one, so it must never see either.
+printf 'collavre_user\n' > "$sd/db_user"
+mktemp() { return 1; }
+write_state_file "$sd/db_user" "collavre_next"$'\n'
+chk "a failed write reports it"                  1 "$?"
+chk "and the previous value is still readable"   "collavre_user" "$(cat "$sd/db_user")"
+unset -f mktemp
+rm -rf "$sd"
+
+# The assertions above pass against the previous revision too — write_state_file
+# was already correct there, and the defect was that these two markers did not
+# go through it. So the regression control is at the call site, in the source:
+# nothing may replace a durable marker with a redirection, which is the one
+# thing the behavioural cases cannot see.
+chk "db_name is not written by redirection" \
+  0 "$(grep -c '> *"\$STATE_DIR/db_name"' "$SRC")"
+chk "db_user is not written by redirection" \
+  0 "$(grep -c '> *"\$STATE_DIR/db_user"' "$SRC")"
+chk "both go through write_state_file" \
+  2 "$(grep -cE 'write_state_file "\$STATE_DIR/db_(name|user)"' "$SRC")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

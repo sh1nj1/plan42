@@ -401,12 +401,43 @@ refuse_unparsable_ssh_key() {
   fi
 }
 
+# refuse_root_deploy_user <user>
+#
+# The deploy account cannot be UID 0, because step 3 writes `PermitRootLogin no`
+# into /etc/ssh/sshd_config.d/99-collavre.conf and then, further down that same
+# step, arms $APP_SSH_USER and hands it to Kamal as KAMAL_SSH_USER. Nothing in
+# between rejects the account sshd has just been told to turn away, so the run
+# reports success and every deploy fails to authenticate.
+#
+# Refused here rather than at the deploy-user block so that "nothing has been
+# changed" is literally true: by the time that block runs, a rotation has a
+# predecessor to take sudo and docker back from, and it would be stripped in
+# favour of an account that cannot log in — leaving the host with no working
+# way in at all. The remedy for that is on the host, which is the thing you no
+# longer have.
+#
+# Tested by UID rather than by the name 'root', since an account aliased to 0
+# is locked out by exactly the same drop-in. An account that does not exist yet
+# is fine: `adduser` below creates an ordinary one.
+refuse_root_deploy_user() {
+  local user="$1" uid
+  uid="$(id -u "$user" 2>/dev/null)" || return 0
+  [ "$uid" -eq 0 ] || return 0
+  die "APP_SSH_USER='$user' is UID 0, and this script hardens sshd with" \
+      "PermitRootLogin no before it arms the deploy account — so '$user' could" \
+      "never log in, while the summary would still print KAMAL_SSH_USER=$user" \
+      "and every 'kamal deploy' would fail to authenticate. Nothing has been" \
+      "changed. Set APP_SSH_USER to an ordinary account; leave it unset for the" \
+      "default 'collavre', which this script creates."
+}
+
 # Before refuse_defaulted_config_change, and long before anything is installed:
 # a value this script cannot use is not usable whatever the host was given
 # earlier, so it is answered without reading any state at all.
 refuse_unusable_db_identifier DB_NAME "$DB_NAME"
 refuse_unusable_db_identifier DB_USER "$DB_USER"
 refuse_unparsable_ssh_key
+refuse_root_deploy_user "$APP_SSH_USER"
 
 refuse_defaulted_config_change
 
