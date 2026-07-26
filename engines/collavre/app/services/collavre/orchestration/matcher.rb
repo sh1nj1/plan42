@@ -8,7 +8,9 @@ module Collavre
     # 1. Mention-based: If a user is @mentioned, route exclusively to that user
     #    - If mentioned user is AI agent → route to that agent only
     #    - If mentioned user is human → no AI agents respond
-    # 2. Expression-based: Evaluate each agent's routing_expression (Liquid)
+    # 2. Primary-agent assignment: If the topic has a primary_agent, that agent is
+    #    the topic's sole ambient responder (see #match_by_primary_agent)
+    # 3. Expression-based: Evaluate each agent's routing_expression (Liquid)
     #
     # Permission checks:
     # - All agents need feedback permission on the creative to respond
@@ -29,8 +31,45 @@ module Collavre
         mentioned_result = match_by_mention
         return mentioned_result unless mentioned_result.nil?
 
-        # Priority 2: Liquid expression routing (fallback)
+        # Priority 2: Topic primary agent assignment (exclusive)
+        primary_result = match_by_primary_agent
+        return primary_result unless primary_result.nil?
+
+        # Priority 3: Liquid expression routing (fallback)
         match_by_expression
+      end
+
+      # May this agent still take the floor in this topic, given the topic's
+      # CURRENT primary-agent assignment?
+      #
+      # #match runs when an event is dispatched, but the agent it selects can
+      # reach execution much later: a :deferred decision parks a queued Task
+      # until the topic's blocker finishes, and a :delayed one sleeps in the job
+      # queue. Neither path re-matches — AiAgentJob#perform runs the agent the
+      # decision named — so an assignment created or moved during that window
+      # would be bypassed by work scheduled moments before it, and a demoted
+      # agent would speak in a topic that is now exclusively someone else's.
+      #
+      # Mirrors #match's precedence rather than re-deriving it: review and
+      # mention are exclusive routings that outrank the assignment (see
+      # #match_by_primary_agent), so those dispatches stay valid. Expression
+      # routing does not, so it is revalidated. Only the assignment is rechecked
+      # here — re-running the whole match would also re-evaluate each
+      # routing_expression against the refreshed comment, silently dropping
+      # deferred work for reasons that have nothing to do with the assignment.
+      def assignment_permits?(agent)
+        primary_id = matched_topic&.primary_agent_id
+        return true if primary_id.nil? || primary_id == agent.id
+
+        # A review can only ever be applied in place by the author of the quoted
+        # comment; no assignment can transfer it, so the alternative to running
+        # it is not "the primary answers instead" but a dead Review button.
+        return true if matched_comment&.review_message? &&
+          matched_comment.quoted_comment&.user_id == agent.id
+
+        mentioned_id = @context.dig("chat", "mentioned_user", "id") ||
+          @context.dig(:chat, :mentioned_user, :id)
+        mentioned_id.present? && mentioned_id.to_i == agent.id
       end
 
       private
@@ -90,6 +129,34 @@ module Collavre
         return [] unless eligible_in_inbox?(mentioned_user)
 
         [ mentioned_user ]
+      end
+
+      # Returns [primary_agent] when the topic has one, nil when it does not.
+      #
+      # A topic's primary agent is an exclusive assignment: it is the only agent
+      # that speaks on ambient events in that topic. This deliberately overrides
+      # each agent's own routing_expression in BOTH directions:
+      #
+      # - The primary speaks even with no routing_expression (or one that
+      #   evaluates false), so pinning an agent is enough to talk to it.
+      # - Every other agent stays silent even when its expression matches, so a
+      #   project-wide roster of agents does not all pile into one task.
+      #
+      # Other agents are not muted, only demoted to explicit invitation: an
+      # @mention routes to them via #match_by_mention, which runs first.
+      #
+      # Returning [] (rather than nil) when the primary is ineligible is
+      # intentional — falling through to expression routing would let exactly
+      # the agents this assignment excludes take the floor instead.
+      def match_by_primary_agent
+        agent = matched_topic&.primary_agent
+        return nil unless agent
+
+        return [] unless agent.ai_user?
+        return [] unless has_creative_permission?(agent)
+        return [] unless eligible_in_inbox?(agent)
+
+        [ agent ]
       end
 
       def match_by_expression

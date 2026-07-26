@@ -10,7 +10,11 @@ module Collavre
     def index
       is_owner = @creative.user == Current.user
       can_manage = @creative.has_permission?(Current.user, :admin) || is_owner
-      can_create_topic = can_manage || @creative.has_permission?(Current.user, :write)
+      # Mirrors require_creative_write! — the gate on #create and
+      # #set_primary_agent. Reported as two capabilities because the client gates
+      # two separate controls on it, and only #update/#destroy/#move/#reorder
+      # need :admin.
+      can_write = can_manage || @creative.has_permission?(Current.user, :write)
 
       # Eagerly ensure Main (and System for inboxes) exist BEFORE loading
       # active_topics. Otherwise the first inbox visit sees no System topic in
@@ -36,7 +40,8 @@ module Collavre
         topics: active_topics.map { |t| topic_json(t) },
         archived_topics: archived_topics,
         can_manage: can_manage,
-        can_create_topic: can_create_topic,
+        can_create_topic: can_write,
+        can_set_primary_agent: can_write,
         last_topic_id: last_topic_id,
         is_inbox: @creative.inbox?,
         system_topic_id: system_topic_id,
@@ -46,15 +51,27 @@ module Collavre
     end
 
     def create
+      requested_agent = params[:agent_id].present? ? User.find_by(id: params[:agent_id]) : nil
+
+      # No topic yet, so a Claude Channel agent is rejected on an inbox creative:
+      # a topic created here never carries a session_id, which is the only place
+      # Matcher#eligible_in_inbox? will route one.
+      rejection = requested_agent&.ai_user? &&
+        Topic.primary_agent_rejection(@creative, requested_agent)
+      if rejection
+        render json: { errors: [ unassignable_agent_message(requested_agent, rejection) ] },
+               status: :unprocessable_entity and return
+      end
+
       topic = @creative.topics.build(topic_params)
       topic.user = Current.user
 
       Topic.transaction do
         if topic.save
           agent = nil
-          if params[:agent_id].present?
-            agent = User.find_by(id: params[:agent_id])
-            topic.set_primary_agent!(agent) if agent&.ai_user?
+          if requested_agent&.ai_user?
+            agent = requested_agent
+            topic.set_primary_agent!(agent)
           end
 
           # Move comments to the new topic if comment_ids provided
@@ -140,9 +157,37 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.move.duplicate_name", name: topic.name) }, status: :unprocessable_entity and return
       end
 
+      # A Claude Channel session topic is looked up as
+      # inbox.topics.find_by(primary_agent_id:, session_id:) — re-parenting it
+      # takes it out of that scope, so the next registration would fork a second
+      # topic and Matcher#eligible_in_inbox? would stop routing the session
+      # agent. Same identity that #set_primary_agent refuses to rewrite.
+      if topic.session_id.present?
+        render json: { error: I18n.t("collavre.topics.move.session_topic_locked") }, status: :unprocessable_entity and return
+      end
+
+      released_agent = nil
+      released_reason = nil
+
       Topic.transaction do
         topic.comments.update_all(creative_id: target_creative.id)
         topic.update!(creative: target_creative)
+
+        # The assignment is exclusive: Matcher#match_by_primary_agent returns []
+        # — silence, not a fallback — when the pinned agent cannot be routed to
+        # at the destination. The pin travels with the topic, so a move into a
+        # creative the agent is not shared on — or, for a Claude Channel session
+        # agent, into an inbox, where Matcher confines it to its own session
+        # topic — would leave the topic unable to route to anyone. Release it
+        # instead, which restores ordinary expression routing at the new
+        # location, and tell the caller so the change is not silent.
+        pinned_agent = topic.primary_agent
+        rejection = pinned_agent && Topic.primary_agent_rejection(target_creative, pinned_agent, topic: topic)
+        if rejection
+          released_agent = pinned_agent
+          released_reason = rejection
+          topic.set_primary_agent!(nil)
+        end
       end
 
       # update_all above skips counter-cache callbacks, so recompute
@@ -151,14 +196,22 @@ module Collavre
       Creative.reset_counters(target_creative.id, :comments)
 
       broadcast_topic_event("deleted", topic_id: topic.id)
-      broadcast_topic_event("created", creative: target_creative, topic: topic.slice(:id, :name))
+      # topic_json rather than a bare id/name slice: the pin decides who may
+      # speak, so the target's topic list has to show whether it survived the
+      # move (and, when it did not, show no avatar rather than a stale one).
+      broadcast_topic_event("created", creative: target_creative, topic: topic_json(topic))
 
       render json: {
         success: true,
         topic: topic.slice(:id, :name),
         target_creative_id: target_creative.id,
         target_creative_name: target_creative.creative_snippet,
-        missing_members: missing_members_for_move(source_creative, target_creative)
+        missing_members: missing_members_for_move(source_creative, target_creative),
+        released_primary_agent: released_agent && {
+          id: released_agent.id,
+          name: released_agent.display_name,
+          message: released_primary_agent_message(released_agent, released_reason, target_creative)
+        }
       }
     end
 
@@ -197,10 +250,41 @@ module Collavre
 
     def set_primary_agent
       topic = @creative.topics.find(params[:id])
+
+      # On a Claude Channel session topic, primary_agent_id is not a routing pin
+      # but part of the session identity: Matcher#eligible_in_inbox? needs it to
+      # route the session agent at all, and SessionProvisioner#find_or_create_topic
+      # reuses the topic by (primary_agent_id, session_id). Clearing or reassigning
+      # it would leave a live session unroutable and split the next registration
+      # into a second topic. Releasing a session is session teardown, not an
+      # avatar click.
+      if topic.session_id.present?
+        render json: { error: I18n.t("collavre.topics.session_topic_locked") },
+               status: :unprocessable_entity and return
+      end
+
+      # A blank agent_id clears the assignment. The primary agent is an exclusive
+      # assignment (it silences every other agent's ambient routing), so the user
+      # needs a way back to an unassigned topic — otherwise a single avatar click
+      # would permanently dedicate the topic to one agent.
+      if params[:agent_id].blank?
+        topic.set_primary_agent!(nil)
+
+        broadcast_topic_event("updated", topic: topic_json_with_agent(topic, nil))
+
+        return render json: { success: true, topic: topic_json_with_agent(topic, nil) }
+      end
+
       agent = User.find_by(id: params[:agent_id])
 
       unless agent&.ai_user?
         render json: { error: I18n.t("collavre.topics.not_ai_agent") }, status: :unprocessable_entity and return
+      end
+
+      rejection = Topic.primary_agent_rejection(@creative, agent, topic: topic)
+      if rejection
+        render json: { error: unassignable_agent_message(agent, rejection) },
+               status: :unprocessable_entity and return
       end
 
       topic.set_primary_agent!(agent)
@@ -214,6 +298,29 @@ module Collavre
 
     def set_creative
       @creative = Creative.find(params[:creative_id]).effective_origin
+    end
+
+    # A move can now release the pin for either reason, and the advice differs:
+    # sharing the target creative fixes a missing-permission release, but a
+    # Claude Channel session agent stays confined to its own session topic no
+    # matter what is shared — telling the user to share and re-assign would send
+    # them after a fix that cannot work.
+    def released_primary_agent_message(agent, rejection, target_creative)
+      key = if rejection == :session_agent_outside_session_topic
+              "collavre.topics.move.primary_agent_released_session_agent"
+      else
+              "collavre.topics.move.primary_agent_released"
+      end
+
+      I18n.t(key, agent: agent.display_name, creative: target_creative.creative_snippet)
+    end
+
+    def unassignable_agent_message(agent, rejection)
+      if rejection == :session_agent_outside_session_topic
+        I18n.t("collavre.topics.session_agent_not_assignable", name: agent.display_name)
+      else
+        I18n.t("collavre.topics.agent_no_creative_access", name: agent.display_name)
+      end
     end
 
     # When a topic moves to a different creative, members who had access on the
@@ -280,12 +387,17 @@ module Collavre
       if topic.primary_agent
         data[:primary_agent] = agent_json(topic.primary_agent)
       end
+      data[:agent_locked] = topic.session_id.present?
       data
     end
 
+    # Always carries a :primary_agent key, explicitly nil when cleared. The client
+    # merges this payload into its cached topic, so an omitted key would leave a
+    # stale avatar on screen instead of removing it.
     def topic_json_with_agent(topic, agent)
       data = topic.slice(:id, :name, :source_topic_id)
-      data[:primary_agent] = agent_json(agent)
+      data[:primary_agent] = agent ? agent_json(agent) : nil
+      data[:agent_locked] = topic.session_id.present?
       data
     end
 

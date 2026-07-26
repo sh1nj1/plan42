@@ -77,7 +77,10 @@ module Collavre
         assert_equal [ @agent2 ], selected
       end
 
-      test "primary_first returns first candidate when primary not in candidates" do
+      # A policy-level primary_agent_id is a preference, not an assignment:
+      # "primary agent responds first, others only if unavailable"
+      # (admin.orchestration.strategy_primary_first). The fallback stays.
+      test "primary_first returns first candidate when policy primary not in candidates" do
         OrchestratorPolicy.create!(
           policy_type: "arbitration",
           config: { "strategy" => "primary_first", "primary_agent_id" => 99999 }
@@ -87,6 +90,35 @@ module Collavre
         selected = arbiter.select(@candidates)
 
         assert_equal [ @agent1 ], selected
+      end
+
+      # A topic-column assignment IS exclusive, so the same "primary missing"
+      # shape must stay silent rather than promote an arbitrary stand-in.
+      test "topic-assigned primary stays silent when it is not a candidate" do
+        @topic.set_primary_agent!(@agent1)
+
+        selected = Arbiter.new(@context).select([ @agent2, @agent3 ])
+
+        assert_empty selected
+      end
+
+      test "mention routing bypasses arbitration in a topic with a primary agent" do
+        @topic.set_primary_agent!(@agent1)
+        context = @context.merge("chat" => { "mentioned_user" => { "id" => @agent3.id } })
+
+        selected = Arbiter.new(context).select([ @agent3 ])
+
+        # A topic primary agent forces strategy primary_first; without the mention
+        # bypass @agent3 would be dropped for not being @agent1.
+        assert_equal [ @agent3 ], selected
+      end
+
+      test "topic primary agent takes the floor over other candidates" do
+        @topic.set_primary_agent!(@agent2)
+
+        selected = Arbiter.new(@context).select(@candidates)
+
+        assert_equal [ @agent2 ], selected
       end
 
       test "primary_first returns first candidate when no primary configured" do

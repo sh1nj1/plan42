@@ -1489,6 +1489,15 @@ body.chat-fullscreen {
     font-size: var(--text-00);
 }
 
+/* The avatar is also the release control for the topic's agent assignment. */
+.topic-agent-avatar-releasable {
+    cursor: pointer;
+}
+
+.topic-agent-avatar-releasable:hover {
+    opacity: 0.6;
+}
+
 .ai-agent-draggable {
     cursor: grab;
 }

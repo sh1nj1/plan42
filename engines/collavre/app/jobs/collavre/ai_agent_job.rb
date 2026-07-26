@@ -46,6 +46,43 @@ module Collavre
           return
         end
 
+        # Guard: an exclusive primary-agent assignment can also land after a task
+        # has already been cleared for execution, so checking at enqueue time is
+        # not sufficient. AgentOrchestrator.dequeue_next_for_topic revalidates and
+        # then enqueues asynchronously — a pin created in that window is missed —
+        # and approval resumption (Comments::ActionExecutor) re-enqueues a
+        # pending_approval task with no check at all, after a pause that can last
+        # as long as the human takes to approve. Re-check at the moment of
+        # execution so a demoted agent cannot answer in a topic that is now
+        # exclusively someone else's.
+        resumed_context = task.trigger_event_payload
+        if resumed_context&.key?("topic") &&
+           !Orchestration::Matcher.new(
+             SystemEvents::ContextBuilder.new(resumed_context).build
+           ).assignment_permits?(agent)
+          Rails.logger.info(
+            "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
+            "is now assigned to another agent (agent=#{agent.id})"
+          )
+          if task.parent_task_id.present?
+            task.update!(status: "failed")
+            Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+              task,
+              error_message: "Topic reassigned to another agent before dispatch"
+            )
+          else
+            task.update!(status: "cancelled")
+          end
+          # A pending_approval task kept its slot across the pause (the
+          # ApprovalPendingError rescue sets should_release = false), and this
+          # early return skips the ensure block that would give it back, so
+          # release explicitly. release! is idempotent, so a queued task that
+          # never reserved one is unaffected.
+          Orchestration::ResourceTracker.for(agent).release!(task.id)
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          return
+        end
+
         task.update!(status: "running")
       else
         # Create new task
@@ -64,6 +101,22 @@ module Collavre
           Rails.logger.info(
             "[AiAgentJob] Skipping Claude Channel job for agent #{agent.id}: " \
             "session offline (routing_expression blank, event=#{event_name})"
+          )
+          return
+        end
+
+        # Guard: an exclusive primary-agent assignment created (or moved) after
+        # this dispatch was scheduled must still bind it. A :delayed decision
+        # (agent busy / rate limited) sits in the job queue with its agent already
+        # chosen and is never re-matched, so without this a demoted agent speaks
+        # in a topic that now belongs to someone else. Unlike a queued waiter
+        # there is no Task yet to cancel, so cancelling on assignment change
+        # cannot cover this path — the check has to happen here.
+        if context && !Orchestration::Matcher.new(context).assignment_permits?(agent)
+          Rails.logger.info(
+            "[AiAgentJob] Skipping job for agent #{agent.id}: topic " \
+            "#{context.dig('topic', 'id')} is now assigned to another agent " \
+            "(event=#{event_name})"
           )
           return
         end

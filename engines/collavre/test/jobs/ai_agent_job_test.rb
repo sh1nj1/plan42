@@ -333,6 +333,46 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected no new task when duplicate running task exists for same comment"
   end
 
+  test "delayed job skips dispatch when the topic was assigned to another agent during the delay" do
+    # Scheduler returns :delayed for a busy / rate-limited agent and enqueues
+    # with agent.id — no Task row exists yet, so there is nothing to cancel when
+    # the assignment lands. Nothing re-matches before execution either, so
+    # without a check here a demoted agent speaks in a topic that is now
+    # exclusively someone else's.
+    topic = Topic.create!(creative: @creative, name: "assigned-during-delay", user: @owner)
+    primary = User.create!(
+      email: "assigned_primary@example.com", name: "Assigned Primary",
+      password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash",
+      searchable: true
+    )
+    topic.set_primary_agent!(primary)
+
+    context = @context.merge("topic" => { "id" => topic.id })
+    tasks_before = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      AiAgentJob.perform_now(@agent.id, "comment_created", context)
+    end
+
+    assert_equal tasks_before, Task.where(agent_id: @agent.id).count,
+      "an agent the topic assignment now excludes must not run"
+  end
+
+  test "delayed job still dispatches when the assignment names this agent" do
+    topic = Topic.create!(creative: @creative, name: "assigned-to-me", user: @owner)
+    topic.set_primary_agent!(@agent)
+
+    context = @context.merge("topic" => { "id" => topic.id })
+    tasks_before = Task.where(agent_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      AiAgentJob.perform_now(@agent.id, "comment_created", context)
+    end
+
+    assert_equal tasks_before + 1, Task.where(agent_id: @agent.id).count,
+      "the assigned primary agent must still run"
+  end
+
   test "skips duplicate execution when agent has delegated Claude Channel task for same comment" do
     # A delegated task is still in-flight (waiting on external MCP reply);
     # re-dispatching the same comment would produce duplicate replies.
@@ -753,5 +793,66 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected WorkflowExecutor#fail_subtask! to be invoked so the parent workflow fails"
     assert_equal sub_task.id, fail_called_with[:sub_task].id
     assert_match(/offline/i, fail_called_with[:error_message].to_s)
+  end
+
+  # A resumed Task takes the branch above the agent_id guard, so the assignment
+  # was rechecked only at enqueue time. Comments::ActionExecutor re-enqueues an
+  # approved tool call with perform_later(task) and no check at all, and the
+  # pause between the two lasts as long as the human takes to approve — plenty
+  # of room for the topic to be pinned to someone else.
+  test "resumed task does not run when the topic was assigned to another agent while it waited" do
+    topic = Topic.create!(creative: @creative, name: "resumed-reassigned", user: @owner)
+    primary = User.create!(
+      email: "resumed_primary@example.com", name: "Resumed Primary",
+      password: "password", llm_vendor: "google", llm_model: "gemini-1.5-flash",
+      searchable: true
+    )
+    task = Task.create!(
+      name: "Response to comment_created",
+      status: "pending_approval",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: @context.merge("topic" => { "id" => topic.id }),
+      agent: @agent,
+      topic_id: topic.id,
+      creative_id: @creative.id
+    )
+
+    # The pin lands after the task was enqueued for resumption.
+    topic.set_primary_agent!(primary)
+
+    replies_before = Comment.where(creative_id: @creative.id, user_id: @agent.id).count
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      AiAgentJob.perform_now(task)
+    end
+
+    assert_equal "cancelled", task.reload.status,
+      "a resumed task the assignment now excludes must be cancelled, not left pending"
+    assert_equal replies_before, Comment.where(creative_id: @creative.id, user_id: @agent.id).count,
+      "the demoted agent must not reply in a topic that now belongs to another agent"
+  end
+
+  # Negative control: without it the test above would also pass if the guard
+  # simply cancelled every resumed task.
+  test "resumed task still runs when the assignment names its own agent" do
+    topic = Topic.create!(creative: @creative, name: "resumed-still-mine", user: @owner)
+    topic.set_primary_agent!(@agent)
+
+    task = Task.create!(
+      name: "Response to comment_created",
+      status: "pending_approval",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: @context.merge("topic" => { "id" => topic.id }),
+      agent: @agent,
+      topic_id: topic.id,
+      creative_id: @creative.id
+    )
+
+    AiClient.stub :new, ->(**kwargs) { FakeAiClient.new } do
+      AiAgentJob.perform_now(task)
+    end
+
+    assert_equal "done", task.reload.status,
+      "the assigned agent's own resumed task must still run"
   end
 end

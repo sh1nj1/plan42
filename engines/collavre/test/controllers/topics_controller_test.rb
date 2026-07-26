@@ -23,6 +23,35 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal @creative.id, json["effective_creative_id"]
   end
 
+  # set_primary_agent is guarded by require_creative_write!, so the client needs a
+  # write-level capability to gate the release control on. Reporting only
+  # can_manage (:admin) would let a write collaborator pin an agent by dropping it
+  # on the topic and then leave them no way to release it.
+  test "index reports can_set_primary_agent for a write collaborator who cannot manage" do
+    collaborator = users(:two)
+    Collavre::CreativeShare.create!(creative: @creative, user: collaborator, shared_by: @user, permission: :write)
+    sign_in_as collaborator, password: "password"
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_not json["can_manage"], "write collaborator must not be reported as a manager"
+    assert json["can_set_primary_agent"], "write collaborator must be able to release an assignment"
+  end
+
+  test "index withholds can_set_primary_agent from a read-only collaborator" do
+    collaborator = users(:two)
+    Collavre::CreativeShare.create!(creative: @creative, user: collaborator, shared_by: @user, permission: :read)
+    sign_in_as collaborator, password: "password"
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    json = JSON.parse(response.body)
+    assert_not json["can_set_primary_agent"]
+  end
+
   test "index eagerly creates System topic on first inbox visit so badge has matching topic" do
     inbox = Collavre::Creative.inbox_for(@user)
     inbox.topics.where(name: Collavre::Creative::SYSTEM_TOPIC_NAME).destroy_all
@@ -274,11 +303,94 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_empty json["missing_members"]
   end
 
+  # The pin travels with the topic, and it is exclusive: if the agent has no
+  # feedback access at the destination, Matcher#match_by_primary_agent returns []
+  # and the moved topic can route to nobody at all. Release it instead so the
+  # topic falls back to ordinary expression routing there.
+  test "move releases a primary agent that cannot respond on the target" do
+    target_creative = creatives(:root_parent)
+    agent = move_test_agent("moveagent@test.local", "MoveAgent")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_nil @topic.reload.primary_agent_id, "an unanswerable pin must not survive the move"
+    json = JSON.parse(response.body)
+    assert_equal agent.id, json.dig("released_primary_agent", "id")
+    assert json.dig("released_primary_agent", "message").present?,
+           "the release must be reported so it is not silent"
+  end
+
+  # The release has two possible causes now, and the advice differs. A Claude
+  # Channel session agent holds inbox-wide :feedback, so moving its topic into
+  # the inbox passes the permission check while Matcher#eligible_in_inbox? still
+  # refuses to route it anywhere but its own session topic. Reporting the
+  # permission message here would tell the user to share a creative the agent is
+  # already shared on — advice that cannot fix anything.
+  test "move reports session confinement, not missing access, when releasing a session agent" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    agent = move_test_agent("sessionmove@test.local", "SessionMoveAgent")
+    agent.update!(llm_vendor: "anthropic", llm_model: "claude-code")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    Collavre::CreativeShare.create!(creative: inbox, user: agent, shared_by: @user, permission: :feedback)
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: inbox.id }, as: :json
+
+    assert_response :success
+    assert_nil @topic.reload.primary_agent_id,
+               "a session agent cannot be routed to on an ordinary inbox topic, so the pin must not survive"
+    message = JSON.parse(response.body).dig("released_primary_agent", "message")
+    assert_equal I18n.t("collavre.topics.move.primary_agent_released_session_agent",
+                        agent: agent.display_name, creative: inbox.creative_snippet),
+                 message
+    refute_equal I18n.t("collavre.topics.move.primary_agent_released",
+                        agent: agent.display_name, creative: inbox.creative_snippet),
+                 message,
+                 "the agent already has feedback access here — telling the user to share would be unfollowable"
+  end
+
+  test "move keeps a primary agent that still has feedback access on the target" do
+    target_creative = creatives(:root_parent)
+    agent = move_test_agent("stayagent@test.local", "StayAgent")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    Collavre::CreativeShare.create!(creative: target_creative, user: agent, shared_by: @user, permission: :feedback)
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :success
+    assert_equal agent.id, @topic.reload.primary_agent_id, "a valid assignment must survive the move"
+    assert_nil JSON.parse(response.body)["released_primary_agent"]
+  end
+
+  # A session topic's pin is identity, not routing: SessionProvisioner reuses it
+  # via inbox.topics.find_by(primary_agent_id:, session_id:). Moving it out of
+  # the inbox would fork a second topic on the next registration, so the whole
+  # move is refused rather than releasing the pin.
+  test "should not move a Claude Channel session topic" do
+    target_creative = creatives(:root_parent)
+    agent = move_test_agent("sessionagent@test.local", "SessionAgent")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    @topic.update!(session_id: "sess-move-1")
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: target_creative.id }, as: :json
+
+    assert_response :unprocessable_entity
+    @topic.reload
+    assert_equal @creative.id, @topic.creative_id, "the session topic must stay put"
+    assert_equal agent.id, @topic.primary_agent_id
+  end
+
   test "should set primary agent on topic" do
     ai_agent = User.create!(
       email: "agent@test.local", password: "password123", name: "TestAgent",
       llm_vendor: "openai", llm_model: "gpt-4", searchable: true
     )
+    Collavre::CreativeShare.create!(creative: @creative, user: ai_agent, shared_by: @user, permission: :feedback)
 
     patch set_primary_agent_creative_topic_url(@creative, @topic),
       params: { agent_id: ai_agent.id }, as: :json
@@ -297,6 +409,7 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       email: "new@test.local", password: "password123", name: "NewAgent",
       llm_vendor: "openai", llm_model: "gpt-4", searchable: true
     )
+    Collavre::CreativeShare.create!(creative: @creative, user: new_agent, shared_by: @user, permission: :feedback)
     @topic.set_primary_agent!(old_agent)
 
     patch set_primary_agent_creative_topic_url(@creative, @topic),
@@ -305,6 +418,64 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     @topic.reload
     assert_equal new_agent.id, @topic.primary_agent_id
+  end
+
+  test "should clear primary agent when agent_id is blank" do
+    ai_agent = User.create!(
+      email: "clearme@test.local", password: "password123", name: "ClearAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: nil }, as: :json
+
+    assert_response :success
+    @topic.reload
+    assert_nil @topic.primary_agent_id
+
+    body = JSON.parse(response.body)
+    # The client merges this payload into its cached topic, so the key must be
+    # present-and-null to actually remove the avatar.
+    assert body["topic"].key?("primary_agent")
+    assert_nil body["topic"]["primary_agent"]
+  end
+
+  # On a session topic primary_agent_id is session identity, not a routing pin:
+  # clearing it makes the live session unroutable and makes the next registration
+  # create a second topic instead of reusing the conversation.
+  test "should refuse to clear the primary agent of a session topic" do
+    ai_agent = User.create!(
+      email: "sessionagent@test.local", password: "password123", name: "SessionAgent",
+      llm_vendor: "anthropic", llm_model: "claude", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+    @topic.update!(session_id: "sess-abc123")
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: nil }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal ai_agent.id, @topic.reload.primary_agent_id
+  end
+
+  test "should refuse to reassign the primary agent of a session topic" do
+    ai_agent = User.create!(
+      email: "sessionagent2@test.local", password: "password123", name: "SessionAgent2",
+      llm_vendor: "anthropic", llm_model: "claude", searchable: true
+    )
+    other_agent = User.create!(
+      email: "otheragent@test.local", password: "password123", name: "OtherAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+    @topic.update!(session_id: "sess-def456")
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: other_agent.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal ai_agent.id, @topic.reload.primary_agent_id
   end
 
   test "should reject non-AI user as primary agent" do
@@ -321,11 +492,138 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  # A searchable agent is offered by the palette (and by User.mentionable_for)
+  # even with no share here. Pinning one would make the topic mute: the pin
+  # excludes every other agent's ambient routing while the pinned agent itself
+  # fails Matcher#has_creative_permission? and cannot answer.
+  test "should reject a primary agent that has no feedback access on the creative" do
+    outsider = User.create!(
+      email: "outsider@test.local", password: "password123", name: "Outsider",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: outsider.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_nil @topic.reload.primary_agent_id
+  end
+
+  test "should reject moving a pin onto an agent without feedback access" do
+    shared_agent = User.create!(
+      email: "shared-agent@test.local", password: "password123", name: "SharedAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    Collavre::CreativeShare.create!(creative: @creative, user: shared_agent, shared_by: @user, permission: :feedback)
+    outsider = User.create!(
+      email: "outsider2@test.local", password: "password123", name: "Outsider2",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(shared_agent)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: outsider.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_equal shared_agent.id, @topic.reload.primary_agent_id
+  end
+
+  test "should reject creating a topic pinned to an agent without feedback access" do
+    outsider = User.create!(
+      email: "outsider3@test.local", password: "password123", name: "Outsider3",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+
+    assert_no_difference("Topic.count") do
+      post collavre.creative_topics_url(@creative),
+        params: { topic: { name: "Talk to Outsider3" }, agent_id: outsider.id }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  # An agent shared only on an ancestor still resolves through the permission
+  # cascade, so it must stay assignable — the guard has to be the routing
+  # predicate, not a direct-share lookup.
+  test "should accept a primary agent whose feedback access is inherited" do
+    child = Collavre::Creative.create!(user: @user, parent: @creative, description: "Child")
+    child_topic = child.topics.create!(name: "Child Topic", user: @user)
+    ai_agent = User.create!(
+      email: "inherited@test.local", password: "password123", name: "InheritedAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    Collavre::CreativeShare.create!(creative: @creative, user: ai_agent, shared_by: @user, permission: :feedback)
+
+    patch set_primary_agent_creative_topic_url(child, child_topic),
+      params: { agent_id: ai_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal ai_agent.id, child_topic.reload.primary_agent_id
+  end
+
+  # Registration grants a Claude Channel agent inbox-wide :feedback, so the
+  # permission check alone passes on every inbox topic — but
+  # Matcher#eligible_in_inbox? confines it to the topic carrying its session_id.
+  # Pinning it on an ordinary inbox topic would make match_by_primary_agent
+  # return [] and mute the topic for everyone.
+  test "should reject a Claude Channel session agent on an ordinary inbox topic" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    inbox_topic = inbox.topics.create!(name: "Ordinary Inbox Topic", user: @user)
+    session_agent = User.create!(
+      email: "cc-session@test.local", password: "password123", name: "Claude Channel (dev)",
+      llm_vendor: "anthropic", llm_model: "claude-code", searchable: false, created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: inbox, user: session_agent, shared_by: @user, permission: :feedback)
+
+    patch set_primary_agent_creative_topic_url(inbox, inbox_topic),
+      params: { agent_id: session_agent.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_nil inbox_topic.reload.primary_agent_id
+    assert_equal I18n.t("collavre.topics.session_agent_not_assignable", name: session_agent.display_name),
+      JSON.parse(response.body)["error"],
+      "the message must name the session rule, not claim the agent lacks access"
+  end
+
+  test "should reject creating an inbox topic pinned to a Claude Channel session agent" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    session_agent = User.create!(
+      email: "cc-session-create@test.local", password: "password123", name: "Claude Channel (create)",
+      llm_vendor: "anthropic", llm_model: "claude-code", searchable: false, created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: inbox, user: session_agent, shared_by: @user, permission: :feedback)
+
+    assert_no_difference("Topic.count") do
+      post collavre.creative_topics_url(inbox),
+        params: { topic: { name: "Talk to session" }, agent_id: session_agent.id }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  # Negative control: the confinement is inbox-only. On an ordinary creative
+  # Matcher routes a Claude Channel agent by routing_expression like any other,
+  # so rejecting it there would break a legitimate assignment.
+  test "should accept a Claude Channel session agent outside the inbox" do
+    session_agent = User.create!(
+      email: "cc-session-work@test.local", password: "password123", name: "Claude Channel (work)",
+      llm_vendor: "anthropic", llm_model: "claude-code", searchable: false, created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: @creative, user: session_agent, shared_by: @user, permission: :feedback)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: session_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal session_agent.id, @topic.reload.primary_agent_id
+  end
+
   test "should create topic with agent_id" do
     ai_agent = User.create!(
       email: "agent2@test.local", password: "password123", name: "Agent2",
       llm_vendor: "openai", llm_model: "gpt-4", searchable: true
     )
+    Collavre::CreativeShare.create!(creative: @creative, user: ai_agent, shared_by: @user, permission: :feedback)
 
     assert_difference("Topic.count") do
       post collavre.creative_topics_url(@creative),
@@ -400,5 +698,14 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     # Verify new topic is at the end
     assert_equal [ topic3.id, @topic.id, topic2.id, new_topic.id ], @creative.topics.reload.pluck(:id)
     assert_equal 3, new_topic.position
+  end
+
+  private
+
+  def move_test_agent(email, name)
+    User.create!(
+      email: email, password: "password123", name: name,
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
   end
 end
