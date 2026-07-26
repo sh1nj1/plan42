@@ -102,6 +102,25 @@ die() { printf '\n!!! [%s] %s\n' "$(date -Is)" "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root"
 
+# DB_PORT names the port, it does not choose it. Nothing here writes
+# postgresql.conf: the cluster is created by the postgresql-$PG_MAJOR package,
+# and pg_createcluster takes the first free port from 5432. So an overridden
+# DB_PORT is consumed by psql, the ufw rule, the backup unit and DATABASE_URL
+# while the cluster listens on 5432 regardless — and the check that would catch
+# a mismatched cluster cannot help on a fresh host, because pg_lsclusters does
+# not exist until several steps after this one.
+#
+# Refused rather than converged, deliberately. Making it work means writing a
+# port into postgresql.conf and restarting a cluster this script did not create
+# the layout of, which is a bigger promise than the one line of configuration
+# suggests. The variable stays, because four places name the port and a literal
+# in each of them is how they drift apart.
+[ "$DB_PORT" = "5432" ] || die \
+  "DB_PORT=$DB_PORT is not supported: this script does not configure the cluster's port," \
+  "so PostgreSQL would still listen on 5432 while DATABASE_URL, the ufw rule and the" \
+  "nightly backup all named $DB_PORT. Leave DB_PORT unset, and move the cluster by hand" \
+  "afterwards if you need a different port."
+
 if [ -f "$MARKER" ] && [ "${FORCE:-0}" != "1" ]; then
   log "already provisioned ($MARKER). Re-run with FORCE=1 to converge again."
   exit 0
@@ -309,6 +328,59 @@ revoke_prior_deploy_user() {
 # so this is the one place that would otherwise silently disagree with them.
 psql_as_postgres() {
   runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qtA -p "$DB_PORT" -d "$1" -c "$2"
+}
+
+# Make /swapfile match $SWAP_SIZE_MB, including when that means removing it.
+#
+# The previous form asked "is swap already on?" and skipped everything if so,
+# which converges only the first run: raising SWAP_SIZE_MB after an OOM left the
+# old headroom in place, and SWAP_SIZE_MB=0 left swap enabled — both reported as
+# a successful convergent run. The size on disk is what has to be compared,
+# because that is the thing the setting names.
+#
+# A resize means swapoff first, and swapoff can fail when the pages cannot be
+# faulted back into RAM — the low-memory instance this setting exists for is
+# exactly where that happens. That is reported and the old swap left running,
+# rather than being fatal: nothing downstream depends on the size, and dying
+# here would abandon a provisioning run over the one condition where the
+# operator most needs the host to come up.
+ensure_swapfile() {
+  local swap="${1:-/swapfile}" fstab="${2:-/etc/fstab}"
+  local want="$SWAP_SIZE_MB" have=0 active=no
+  swapon --show=NAME --noheadings 2>/dev/null | grep -qxF "$swap" && active=yes
+  # GNU stat first; BSD stat rejects -c, and the unit tests run on both.
+  [ -f "$swap" ] &&
+    have=$(( $(stat -c %s "$swap" 2>/dev/null || stat -f %z "$swap" 2>/dev/null || echo 0) / 1048576 ))
+
+  if [ "$want" -eq "$have" ] && { [ "$want" -eq 0 ] || [ "$active" = yes ]; }; then
+    return 0
+  fi
+
+  if [ "$active" = yes ] && ! swapoff "$swap" 2>/dev/null; then
+    log "WARNING: could not swapoff $swap (${have}MiB), so it is unchanged;" \
+        "SWAP_SIZE_MB=$want did NOT take effect. Free some memory and re-run," \
+        "or resize it by hand."
+    return 0
+  fi
+
+  if [ "$want" -eq 0 ]; then
+    rm -f "$swap"
+    # An empty managed block rather than a deletion: ensure_block owns these
+    # lines by marker, and leaving the marker in place keeps a later re-run with
+    # a non-zero size converging the same block instead of appending a second.
+    ensure_block "$fstab" swap ""
+    log "swap disabled (SWAP_SIZE_MB=0)"
+    return 0
+  fi
+
+  rm -f "$swap"
+  fallocate -l "${want}M" "$swap" || \
+    dd if=/dev/zero of="$swap" bs=1M count="$want" status=none
+  chmod 600 "$swap"
+  mkswap "$swap" >/dev/null
+  swapon "$swap"
+  ensure_block "$fstab" swap "$swap none swap sw 0 0"
+  [ "$have" -eq 0 ] || log "resized $swap from ${have}MiB to ${want}MiB"
 }
 
 # Refuse to provision when $PG_MAJOR's cluster is not the one on $DB_PORT.
@@ -523,16 +595,7 @@ dpkg-reconfigure -f noninteractive unattended-upgrades
 # --------------------------------------------------------------------------
 log "2/9 swap (${SWAP_SIZE_MB}MiB)"
 # --------------------------------------------------------------------------
-if [ "$SWAP_SIZE_MB" -gt 0 ] && ! swapon --show=NAME --noheadings | grep -q '/swapfile'; then
-  if [ ! -f /swapfile ]; then
-    fallocate -l "${SWAP_SIZE_MB}M" /swapfile || \
-      dd if=/dev/zero of=/swapfile bs=1M count="$SWAP_SIZE_MB" status=none
-    chmod 600 /swapfile
-    mkswap /swapfile
-  fi
-  swapon /swapfile
-  ensure_block /etc/fstab swap "/swapfile none swap sw 0 0"
-fi
+ensure_swapfile
 cat > /etc/sysctl.d/99-collavre.conf <<'SYSCTL'
 # Prefer RAM, use swap only under real pressure.
 vm.swappiness = 10

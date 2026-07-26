@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -29,7 +29,7 @@ eval "$(awk '
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key \
-          ensure_cluster_on_default_port; do
+          ensure_cluster_on_default_port ensure_swapfile; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -993,6 +993,136 @@ chk "and says nothing"              "" "$out"
 mk_lsclusters pg_ls_both "$(printf '17  main    5432 online postgres /a /b\n16  main    5433 online postgres /c /d')"
 out="$( (ensure_cluster_on_default_port pg_ls_both) 2>&1 )"
 chk "ours on 5432 beside an idle old one: proceeds" 0 "$?"
+
+# --------------------------------------------------------------------------
+# ensure_swapfile. swapon/swapoff/mkswap are stubbed and the swap file is an
+# ordinary file in a temp dir, so the size on disk is what the function reads —
+# the real thing it compares against SWAP_SIZE_MB.
+#
+# SWAPPED_ON is the kernel's view; the stubs mutate it, so "did the size change"
+# and "is it still enabled" are separate assertions rather than one.
+# --------------------------------------------------------------------------
+SWAPPED_ON=""
+SWAPOFF_FAILS=""
+# shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
+swapon() {
+  if [ "${1:-}" = --show=NAME ]; then printf '%s\n' "$SWAPPED_ON"; return 0; fi
+  SWAPPED_ON="$1"
+}
+# shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
+swapoff() { [ -z "$SWAPOFF_FAILS" ] || return 1; SWAPPED_ON=""; return 0; }
+# shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
+mkswap() { :; }
+# shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
+fallocate() { : > "$3"; dd if=/dev/zero of="$3" bs=1048576 count="${2%M}" status=none 2>/dev/null; }
+LOGGED=""
+# shellcheck disable=SC2329  # called by ensure_swapfile, eval'd from the script
+log() { LOGGED="$LOGGED $*"; }
+swap_mib() { echo $(( $(stat -c %s "$1" 2>/dev/null || stat -f %z "$1") / 1048576 )); }
+
+new_swap_env() {   # <existing-MiB>  ("" for no file)
+  d=$(mktemp -d); SWAPFILE="$d/swapfile"; FSTAB="$d/fstab"
+  printf 'UUID=xxx / ext4 defaults 0 1\n' > "$FSTAB"
+  if [ -n "$1" ]; then
+    dd if=/dev/zero of="$SWAPFILE" bs=1048576 count="$1" status=none
+    SWAPPED_ON="$SWAPFILE"
+    ensure_block "$FSTAB" swap "$SWAPFILE none swap sw 0 0"
+  else
+    SWAPPED_ON=""
+  fi
+  LOGGED=""; SWAPOFF_FAILS=""
+}
+
+echo "54. a first run creates the swap file at the configured size"
+new_swap_env ""
+SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "created at 8MiB"   8 "$(swap_mib "$SWAPFILE")"
+chk "enabled"           "$SWAPFILE" "$SWAPPED_ON"
+chk "mode 0600"         "600" "$(file_mode "$SWAPFILE")"
+chk "fstab entry"       1 "$(grep -c "^$SWAPFILE none swap" "$FSTAB")"
+
+echo "55. an unchanged SWAP_SIZE_MB rewrites nothing"
+new_swap_env 8
+ino="$(inode "$SWAPFILE")"
+SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "same inode"  "$ino" "$(inode "$SWAPFILE")"
+chk "still on"    "$SWAPFILE" "$SWAPPED_ON"
+chk "silent"      "" "$LOGGED"
+
+echo "56. a raised SWAP_SIZE_MB actually resizes, rather than being skipped"
+# The whole finding: the old guard asked "is swap on?" and returned, so an
+# operator raising this after an OOM got a successful run and the old headroom.
+new_swap_env 4
+SWAP_SIZE_MB=12 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "grown to 12MiB"  12 "$(swap_mib "$SWAPFILE")"
+chk "re-enabled"      "$SWAPFILE" "$SWAPPED_ON"
+case "$LOGGED" in
+  *"resized"*"4MiB to 12MiB"*) echo "  ok   says what it changed" ;;
+  *) echo "  FAIL silent or vague: $LOGGED"; fail=1 ;;
+esac
+
+echo "57. a lowered SWAP_SIZE_MB shrinks it too"
+new_swap_env 16
+SWAP_SIZE_MB=4 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "shrunk to 4MiB" 4 "$(swap_mib "$SWAPFILE")"
+chk "re-enabled"     "$SWAPFILE" "$SWAPPED_ON"
+
+echo "58. SWAP_SIZE_MB=0 actually disables swap"
+new_swap_env 8
+SWAP_SIZE_MB=0 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "file removed"      0 "$([ -e "$SWAPFILE" ] && echo 1 || echo 0)"
+chk "swap off"          "" "$SWAPPED_ON"
+chk "no fstab swap line" 0 "$(grep -c 'none swap' "$FSTAB")"
+chk "other mounts kept"  1 "$(grep -c '^UUID=xxx' "$FSTAB")"
+# The marker stays so a later non-zero run converges this block rather than
+# appending a second one.
+SWAP_SIZE_MB=8 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "one managed block after re-enabling" 1 "$(grep -c '# BEGIN collavre:swap' "$FSTAB")"
+chk "swap line back"                      1 "$(grep -c 'none swap' "$FSTAB")"
+
+echo "59. SWAP_SIZE_MB=0 on a host that never had swap is a no-op"
+new_swap_env ""
+SWAP_SIZE_MB=0 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "nothing created" 0 "$([ -e "$SWAPFILE" ] && echo 1 || echo 0)"
+chk "silent"          "" "$LOGGED"
+
+echo "60. a swapoff that fails leaves the old swap running and says so"
+# Low memory is exactly when swapoff fails and exactly when this setting is
+# being changed, so it must not abandon a provisioning run.
+new_swap_env 4
+SWAPOFF_FAILS=1
+SWAP_SIZE_MB=12 ensure_swapfile "$SWAPFILE" "$FSTAB"
+chk "returns success" 0 "$?"
+chk "size unchanged"  4 "$(swap_mib "$SWAPFILE")"
+chk "still enabled"   "$SWAPFILE" "$SWAPPED_ON"
+case "$LOGGED" in
+  *"WARNING"*"did NOT take effect"*) echo "  ok   operator told it did not take" ;;
+  *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
+esac
+unset -f swapon swapoff mkswap fallocate
+
+echo "61. an unsupported DB_PORT is refused before anything is installed"
+# Nothing here writes postgresql.conf, and pg_createcluster takes the first free
+# port from 5432 — so an overridden DB_PORT is named by DATABASE_URL, the ufw
+# rule and the backup while the cluster listens on 5432 regardless.
+guard="$(awk '/^\[ "\$DB_PORT" = "5432" \]/, /different port\.\"$/' "$SRC")"
+# The range end must be the guard's own last line; an unmatched end pattern
+# would run to EOF and "pass" by executing half the script.
+chk "extracted just the guard" 5 "$(printf '%s\n' "$guard" | wc -l | tr -d ' ')"
+case "$guard" in
+  *'die'*) echo "  ok   the guard is in the script" ;;
+  *) echo "  FAIL no DB_PORT guard found in $SRC"; fail=1 ;;
+esac
+out="$( (DB_PORT=5433 eval "$guard") 2>&1 )"
+chk "exits non-zero" 1 "$?"
+case "$out" in
+  *"DB_PORT=5433 is not supported"*"still listen on 5432"*)
+    echo "  ok   says what would have happened" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+out="$( (DB_PORT=5432 eval "$guard") 2>&1 )"
+chk "the default proceeds" 0 "$?"
+chk "and says nothing"     "" "$out"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

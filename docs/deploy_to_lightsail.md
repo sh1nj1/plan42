@@ -89,6 +89,17 @@ password alone from `/var/lib/collavre/db_password`).
 
 **In the console firewall (Networking tab): open 80 and 443. Never open 5432.**
 
+**Leave 80 and 443 closed until [§5](#5-get-data-into-the-new-database) is
+finished**, if you are bringing existing data or doing a fresh install. `setup`
+boots the app, and the recipes in §5 stop it again and replace the schema
+underneath — so between those two points a reachable instance is serving a
+database that is about to be discarded. `app stop` closes the window in which
+the *app* writes; it cannot close the one before it. Anything a visitor does in
+that interval — a signup, a password reset — is thrown away by the schema
+replacement without ever failing visibly. Open them once §5 is done; TLS
+([§7](#7-tls)) needs 443 reachable, so that is the point at which it has to be
+open, and nothing before it is waiting on it.
+
 ### A custom `DB_PASSWORD` is percent-encoded in `DATABASE_URL`
 
 The generated password is alphanumeric, so it appears in `DATABASE_URL`
