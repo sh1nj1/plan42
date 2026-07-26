@@ -306,6 +306,40 @@ rotation undone.
 Rotating the *password* rather than the role needs none of this — set
 `DB_PASSWORD`, re-run, and update `DATABASE_URL`.
 
+### Changing `DB_NAME` on a re-run
+
+**Refused, like `PG_MAJOR`.** The database SQL is create-if-missing, so a
+re-run with a different `DB_NAME` would make a second, empty database and leave
+the first exactly where it is. Nothing fails: the summary, `DATABASE_URL` and
+the nightly backup all move to the new name, so the app boots with no data and
+the backup starts dumping the empty database while the real one sits there
+referenced by nothing and no longer protected.
+
+The name a run used is recorded in `/var/lib/collavre/db_name`, and a re-run
+that disagrees with it stops before anything is created. On a host provisioned
+before that file existed the run falls back to the cluster: if the database
+`DB_NAME` names is already there it is adopted and recorded, and if it is not,
+the run stops and lists the databases that do exist rather than guessing
+whether you are correcting a typo or renaming.
+
+To actually move to a new name, do it deliberately and then tell the script:
+
+```bash
+# on the instance, with the app stopped from your workstation:
+#   ./kamal.sh app stop
+sudo -u postgres psql -qd postgres -c \
+  "ALTER DATABASE collavre_production RENAME TO collavre_prod"
+echo collavre_prod | sudo tee /var/lib/collavre/db_name
+```
+
+`RENAME TO` needs no other session connected — which is why the app has to be
+stopped first — and it keeps the same data, owner and grants, so nothing else
+has to be reissued. Update `DATABASE_URL` in `.env.production` to the new name
+and redeploy; re-running the launch script afterwards is optional and will now
+agree with the marker. Copying instead of renaming (a `pg_dump` into a new
+database) is the other option, and then the old one is yours to drop once you
+have checked the copy.
+
 ### Changing `SWAP_SIZE_MB` on a re-run
 
 A re-run compares the size of `/swapfile` on disk, so raising or lowering the

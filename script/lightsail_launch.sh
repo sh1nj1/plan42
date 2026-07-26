@@ -703,6 +703,63 @@ reassign_prior_db_role() {
   log "revoked LOGIN from the replaced database role '$prior'"
 }
 
+# refuse_db_name_change <name> [state dir]
+#
+# DB_NAME is the one identifier a re-run could change with no trace at all. The
+# create-if-missing SQL below simply makes a second, empty database; nothing
+# renames or migrates the first, and until now nothing recorded which one a
+# previous run had chosen. Measured on postgres:17 against a host holding 5,000
+# rows, re-running with a mistyped name:
+#
+#   run reports success
+#   databases: collavre_prod, collavre_production
+#   tables in the new one the URL and backup will name : 0
+#   rows in the real one, now referenced by nothing    : 5000
+#
+# So the app boots empty and the nightly pg_dump starts backing up the empty
+# one — the live data is not lost, but nothing points at it and nothing is
+# protecting it any more. Both halves are silent.
+#
+# Refused rather than converged, on the same grounds as DB_PORT: renaming is
+# ALTER DATABASE ... RENAME TO, which needs no other session connected and
+# would strand the already-deployed DATABASE_URL mid-flight, and "migrate" means
+# a dump and restore whose timing is the operator's call, not a launch script's.
+refuse_db_name_change() {
+  local current="$1" state_dir="${2:-$STATE_DIR}" prior others
+
+  if [ -f "$state_dir/db_name" ]; then
+    prior="$(cat "$state_dir/db_name")"
+    [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
+    die "this host was provisioned with DB_NAME='$prior', and DB_NAME is now" \
+        "'$current'. This script creates a database if it is missing; it does not" \
+        "rename or copy one, so '$current' would be created empty while the app's" \
+        "data stayed in '$prior' — and the summary, DATABASE_URL and the nightly" \
+        "backup would all name the empty one. Nothing has been changed. Set" \
+        "DB_NAME='$prior', or move the data deliberately — see 'Changing DB_NAME" \
+        "on a re-run' in docs/deploy_to_lightsail.md."
+  fi
+
+  # No record. On a genuine first run there is nothing to protect, and adopting
+  # the name is right. On a host provisioned by a revision that did not track it
+  # there is: db_user is the marker that says this script has run here before.
+  [ -f "$state_dir/db_user" ] || return 0
+  [ "$(psql_as_postgres postgres \
+        "SELECT count(*) FROM pg_database WHERE datname = '$current'")" = 0 ] || return 0
+
+  # Previously provisioned, and the database this run names does not exist. That
+  # is the change this function exists to stop, arriving on a host too old to
+  # have left a record of it.
+  others="$(psql_as_postgres postgres \
+    "SELECT string_agg(datname, ', ' ORDER BY datname) FROM pg_database
+      WHERE datistemplate = false AND datname <> 'postgres'")"
+  die "this host has been provisioned before, but DB_NAME='$current' does not" \
+      "exist on it. An earlier revision did not record the name it used, so this" \
+      "run cannot tell a corrected typo from a rename — and creating '$current'" \
+      "would leave the app pointed at an empty database. Databases present:" \
+      "${others:-(none)}. Nothing has been changed. Re-run with DB_NAME set to the" \
+      "one you mean; it will be recorded from then on."
+}
+
 # ensure_ufw_rule <name> <rule> [state file]
 #
 # Converge one ufw rule the way ensure_block converges one config stanza:
@@ -899,6 +956,139 @@ install_deploy_ssh_dir() {
   printf '%s\n' "$group"
 }
 
+# passwd_home <user> [passwd table]
+#
+# The home directory of an account, or nothing when there is no such account.
+# The optional second argument lets the tests supply a passwd table instead of
+# the host's.
+passwd_home() {
+  local user="$1" src="${2:-}"
+  if [ -n "$src" ]; then
+    awk -F: -v u="$user" '$1 == u { print $6; exit }' "$src"
+  else
+    # An account that does not exist is an answer here, not an error. `getent`
+    # exits 2 for it, and under `pipefail` that status would take the whole run
+    # down at the caller's plain assignment — with no message, since neither
+    # branch of this function is reached. The awk branch above already reports a
+    # missing account as empty output, so this one has to agree with it.
+    getent passwd "$user" | cut -d: -f6 || true
+  fi
+}
+
+# ssh_key_holder <key> [passwd table]
+#
+# The first account whose authorized_keys contains this key byte-for-byte, or
+# nothing. This is the only surviving evidence of who a key belongs to, which
+# is what the caller below needs and does not otherwise have.
+ssh_key_holder() {
+  local key="$1" src="${2:-}" user home tbl rc=1
+  tbl="$(mktemp)"
+  if [ -n "$src" ]; then cat "$src" > "$tbl"; else getent passwd > "$tbl"; fi
+  while IFS=: read -r user _ _ _ _ home _; do
+    [ -n "$home" ] && [ -f "$home/.ssh/authorized_keys" ] || continue
+    if grep -qxF "$key" "$home/.ssh/authorized_keys" 2>/dev/null; then
+      printf '%s\n' "$user"
+      rc=0
+      break
+    fi
+  done < "$tbl"
+  rm -f "$tbl"
+  return "$rc"
+}
+
+# adopt_legacy_ssh_key_marker <user> [state dir] [passwd table]
+#
+# An earlier revision recorded the key it installed in one file per host rather
+# than one per account. This re-files that record so the per-account withdrawal
+# can still find it — but it must work out *whose* it is, and the account named
+# by APP_SSH_USER today is not the answer.
+#
+# On a host that rotated collavre/key-A to deploybot/key-B under that revision,
+# the marker holds B and collavre's authorized_keys still holds A: the old code
+# looked for A in deploybot's file, did not find it, and advanced the marker
+# anyway. Assigning B to whichever account this run happens to name turns that
+# into a privilege escalation. A run that switches back to collavre/key-C files
+# B as collavre's predecessor, fails to find B in collavre's file, records C —
+# and key-A stays authorized on an account this same run puts back in sudoers
+# and the docker group. A key retired two rotations ago is root again, and the
+# marker that would have named B for deploybot has been consumed, so B is
+# unwithdrawable too. Both halves are silent.
+#
+# So the marker is adopted only where authorized_keys agrees it belongs, and
+# where it does not, ownership is preserved rather than invented. What cannot
+# be recovered is key-A: no per-account record of it was ever written, and
+# nothing distinguishes it from a key the operator installed themselves. That
+# is why the ambiguous case stops the run instead of warning — it stops it
+# before usermod and ensure_sudoers below, which are what make the difference
+# between an old key sitting in a file and an old key holding root.
+adopt_legacy_ssh_key_marker() {
+  local user="$1" state_dir="${2:-$STATE_DIR}" src="${3:-}"
+  local legacy mine key owner home auth_keys=""
+  legacy="$state_dir/ssh_public_key"
+  mine="$state_dir/ssh_public_key.$user"
+  [ -f "$legacy" ] && [ ! -f "$mine" ] || return 0
+
+  key="$(cat "$legacy")"
+  # A marker with nothing in it names no key and can strand the branch forever.
+  [ -n "$key" ] || { rm -f "$legacy"; return 0; }
+
+  home="$(passwd_home "$user" "$src")"
+  [ -z "$home" ] || auth_keys="$home/.ssh/authorized_keys"
+
+  # Verifiably this account's — the ordinary upgrade, and the case the adoption
+  # exists for. Checked directly rather than through the search below so the
+  # common path does not depend on reading every account on the host.
+  if [ -n "$auth_keys" ] && grep -qxF "$key" "$auth_keys" 2>/dev/null; then
+    mv "$legacy" "$mine"
+    return 0
+  fi
+
+  owner="$(ssh_key_holder "$key" "$src")" || owner=""
+
+  # Authorized for nobody: the key it names is already gone, so the record
+  # describes nothing and assigning it to an account would invent a predecessor
+  # that no longer exists.
+  if [ -z "$owner" ]; then
+    rm -f "$legacy"
+    log "the SSH key recorded by an earlier revision is no longer authorized for" \
+        "any account on this host, so the record was dropped rather than filed" \
+        "against '$user'"
+    return 0
+  fi
+
+  # Verifiably another account's. File it there, so that account's own key stays
+  # withdrawable by a later run naming it.
+  #
+  # An account with no keys of its own cannot be hiding a managed one, so there
+  # is nothing to stop the run for; this is also the first-run-creates-the-user
+  # path, where the account does not exist yet.
+  if [ -z "$auth_keys" ] || [ ! -s "$auth_keys" ]; then
+    mv "$legacy" "$state_dir/ssh_public_key.$owner"
+    log "the SSH key recorded by an earlier revision belongs to '$owner', not to" \
+        "'$user'; filed it against '$owner'"
+    return 0
+  fi
+
+  if [ -n "${ACK_UNATTRIBUTED_SSH_KEYS:-}" ]; then
+    mv "$legacy" "$state_dir/ssh_public_key.$owner"
+    log "ACK_UNATTRIBUTED_SSH_KEYS is set: filed the earlier revision's record" \
+        "against '$owner', and proceeding with '$user' unchecked — the keys in" \
+        "$auth_keys are the operator's responsibility"
+    return 0
+  fi
+
+  die "this host rotated deploy accounts under an earlier revision of this" \
+      "script: the key it recorded is authorized for '$owner', not for" \
+      "'$user', which this run names. That revision kept only one record per" \
+      "host, so if it ever installed a key for '$user' there is nothing left" \
+      "that says which of the keys in $auth_keys it was — and this run is" \
+      "about to give '$user' passwordless sudo and the docker socket again." \
+      "Nothing has been changed. Read $auth_keys, remove any key you do not" \
+      "recognise, then re-run with ACK_UNATTRIBUTED_SSH_KEYS=1 to continue."
+}
+
+adopt_legacy_ssh_key_marker "$APP_SSH_USER"
+
 if ! id -u "$APP_SSH_USER" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "Collavre deploy" "$APP_SSH_USER"
 fi
@@ -1092,18 +1282,11 @@ dedupe_authorized_keys() {
       "this host; check its memory and disk before relying on the instance."
 }
 
-# Adopt the single marker an earlier revision wrote, once, for the account this
-# run is about. On the hosts that revision could produce there was only ever one
-# deploy account, so the old value is that account's — and adopting it is what
-# keeps the first run after this change able to withdraw, instead of starting
-# from no record and leaving the current key authorized forever. If APP_SSH_USER
-# has since moved, the file is claimed by whichever account is named first; that
-# is the same key the old code would have hunted for, so nothing gets worse.
-if [ -f "$STATE_DIR/ssh_public_key" ] &&
-   [ ! -f "$STATE_DIR/ssh_public_key.$APP_SSH_USER" ]; then
-  mv "$STATE_DIR/ssh_public_key" "$STATE_DIR/ssh_public_key.$APP_SSH_USER"
-fi
-
+# The single marker an earlier revision wrote has already been re-filed against
+# the account authorized_keys says it belongs to, up beside the sudo grant —
+# see adopt_legacy_ssh_key_marker. It has to happen there rather than here: the
+# case it refuses is one where this run would otherwise re-arm a key it cannot
+# identify, and by this point the sudo half of that is already done.
 install_authorized_keys "$AUTH_KEYS"
 revoke_prior_ssh_key "$AUTH_KEYS"
 dedupe_authorized_keys "$AUTH_KEYS" "$SSH_PUBLIC_KEY"
@@ -1238,6 +1421,40 @@ systemctl restart postgresql
 # --------------------------------------------------------------------------
 log "6/9 database '$DB_NAME' and role '$DB_USER'"
 # --------------------------------------------------------------------------
+# Before anything moves — and that includes $STATE_DIR, not just the database.
+# A rotation away from a superuser predecessor cannot be completed, so it must
+# not be started, and the refusal says "Nothing has been changed": it has to be
+# true. Recording the new DB_PASSWORD first made it false in a way that outlived
+# the run. The refused run left the new password in the state file while the
+# live role still had the old one, so the recovery this very message recommends
+# — re-run with the previous DB_USER and no DB_PASSWORD — read the unapplied
+# value back and applied it, silently rotating the password of a role whose
+# credential nobody asked to change. The already-deployed DATABASE_URL then
+# names a password the server no longer accepts, which surfaces as
+# authentication failures the next time the app reconnects rather than at the
+# moment the mistake is made.
+#
+# The name guard runs first, and the order is load-bearing rather than
+# alphabetical. refuse_superuser_db_rotation asks how many objects the previous
+# role owns *in $DB_NAME*, so when a re-run changes both, it asks that question
+# of a database that does not exist: psql fails, the count comes back empty, and
+# the "unanswerable reads as unsafe" rule turns that into a refusal blaming
+# object ownership. Measured on postgres:17, re-running a DB_USER=postgres host
+# with a new role and a mistyped name:
+#
+#   DIE: ... An unknown number of object(s) in 'collavre_prod' are still owned
+#        by 'postgres' ... Move the objects by hand
+#
+# Nothing is changed either way, so this is not a data-safety difference — but
+# the by-hand transfer it sends the operator to cannot be performed on a
+# database that is not there, which is the same dead end as a guard whose own
+# recovery is unreachable. Asking about the name first names the real problem.
+refuse_db_name_change "$DB_NAME"
+
+# Beside it, and before the password handling for the same reason: a refusal
+# here must not have written anything to $STATE_DIR either.
+refuse_superuser_db_rotation "$DB_USER"
+
 if [ -z "$DB_PASSWORD" ]; then
   if [ -f "$STATE_DIR/db_password" ]; then
     # Re-run: keep the password already handed out in DATABASE_URL.
@@ -1255,10 +1472,6 @@ fi
 # The chmod stays to converge a file an earlier revision left 0644.
 ( umask 077; printf '%s' "$DB_PASSWORD" > "$STATE_DIR/db_password" )
 chmod 0600 "$STATE_DIR/db_password"
-
-# Before anything moves: a rotation away from a superuser predecessor cannot be
-# completed, so it must not be started.
-refuse_superuser_db_rotation "$DB_USER"
 
 # Mirrors db/setup_postgres_databases.sql: create-if-missing, never drop.
 # Collavre keeps primary/cache/queue/cable in ONE database — the Solid Queue,
@@ -1288,6 +1501,9 @@ trap - EXIT
 # DATABASE_URL naming the new role.
 reassign_prior_db_role "$DB_USER"
 printf '%s\n' "$DB_USER" > "$STATE_DIR/db_user"
+# Recorded only once the database it names actually exists, so an interrupted
+# run cannot leave a marker for a database that was never created.
+printf '%s\n' "$DB_NAME" > "$STATE_DIR/db_name"
 
 # --------------------------------------------------------------------------
 log "7/9 firewall"

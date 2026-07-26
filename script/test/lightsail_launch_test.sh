@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -32,7 +32,9 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           refuse_superuser_db_rotation role_owns_app_objects revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
           ensure_docker_log_caps dedupe_authorized_keys \
-          install_staged_authorized_keys postgresql_conf_includes_confd; do
+          install_staged_authorized_keys postgresql_conf_includes_confd \
+          refuse_db_name_change passwd_home ssh_key_holder \
+          adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -1722,6 +1724,7 @@ run_restore() {
 #!/usr/bin/env bash
 while [ "${1:-}" = -u ] || [ "${1:-}" = postgres ]; do shift; done
 exec "$@"
+STUB
   # The recipe reads the configured DB_USER out of the state file the script
   # writes, so the harness has to answer for it. Unset APP_ROLE means the file
   # is absent — which is a case under test, not a default to paper over, since
@@ -2082,6 +2085,282 @@ chk "the operator's own line is untouched" 1 "$(grep -c "^#include_dir = 'conf.d
 postgresql_conf_includes_confd "$f" || ensure_block "$f" include "include_dir = 'conf.d'"
 chk "and a re-run appends nothing" 1 "$(grep -c '# BEGIN collavre:include' "$f")"
 rm -f "$f"
+
+# --- refuse_db_name_change --------------------------------------------------
+#
+# DB_NAME was the one identifier a re-run could change with no trace: the SQL is
+# create-if-missing, nothing renames the old database, and nothing recorded
+# which one a previous run chose. Measured on postgres:17 against a host holding
+# 5,000 rows, re-running with a mistyped name:
+#
+#   run reports success
+#   tables in the new one the URL and backup will name : 0
+#   rows in the real one, now referenced by nothing    : 5000
+#
+# The data is not destroyed; it is orphaned, and the nightly pg_dump moves to
+# the empty database. Both halves are silent.
+
+# Its own stub rather than the shared one above: this guard asks pg_database a
+# count(*), which the shared stub answers with the ROLE_EXISTS probe.
+# shellcheck disable=SC2329  # called by refuse_db_name_change
+psql_as_postgres() {
+  case "$2" in
+    *pg_database*datistemplate*) printf '%s\n' "$DB_LIST" ;;
+    *pg_database*)               printf '%s\n' "$DB_EXISTS" ;;
+  esac
+}
+DB_EXISTS=1 DB_LIST="collavre_production"
+
+echo "95. a changed DB_NAME is refused before anything is created"
+dn=$(mktemp -d)
+printf 'collavre_production\n' > "$dn/db_name"
+printf 'collavre_user\n'       > "$dn/db_user"
+out="$( (refuse_db_name_change collavre_prod "$dn") 2>&1 )"
+chk "exits non-zero" 1 "$?"
+chk "the marker still names the real database" "collavre_production" "$(cat "$dn/db_name")"
+case "$out" in
+  *"provisioned with DB_NAME='collavre_production'"*"created empty"*"Nothing has been changed"*)
+    echo "  ok   names the state, the consequence and the way out" ;;
+  *) echo "  FAIL unhelpful: $out"; fail=1 ;;
+esac
+# The shapes that must still go through.
+refuse_db_name_change collavre_production "$dn"
+chk "an unchanged DB_NAME proceeds" 0 "$?"
+dn2=$(mktemp -d)
+refuse_db_name_change collavre_production "$dn2"
+chk "a genuine first run proceeds"  0 "$?"
+chk "and it is a first run precisely because nothing was provisioned here" \
+  0 "$(find "$dn2" -mindepth 1 | wc -l | tr -d ' ')"
+
+echo "96. an older host with no db_name record is judged by the cluster"
+# The migration case. Adopting blindly would let exactly the reported change
+# through on every host provisioned before this marker existed.
+dn3=$(mktemp -d); printf 'collavre_user\n' > "$dn3/db_user"
+DB_EXISTS=1
+refuse_db_name_change collavre_production "$dn3"
+chk "the database it names exists, so adopt it" 0 "$?"
+DB_EXISTS=0 DB_LIST="collavre_production"
+out="$( (refuse_db_name_change collavre_prod "$dn3") 2>&1 )"
+chk "it does not exist, so refuse"  1 "$?"
+case "$out" in
+  *"provisioned before"*"does not exist"*"collavre_production"*)
+    echo "  ok   refuses and lists what is actually there" ;;
+  *) echo "  FAIL unhelpful: $out"; fail=1 ;;
+esac
+# An empty cluster listing must not read as a missing variable.
+DB_EXISTS=0 DB_LIST=""
+out="$( (refuse_db_name_change collavre_prod "$dn3") 2>&1 )"
+case "$out" in
+  *"Databases present: (none)"*) echo "  ok   an empty listing says so" ;;
+  *) echo "  FAIL bare or confusing listing: $out"; fail=1 ;;
+esac
+
+echo "97. an empty marker is not treated as a previous name"
+# A truncated write would otherwise refuse every future run against ''.
+dn4=$(mktemp -d); : > "$dn4/db_name"; printf 'collavre_user\n' > "$dn4/db_user"
+DB_EXISTS=1
+refuse_db_name_change collavre_production "$dn4"
+chk "proceeds rather than refusing against an empty name" 0 "$?"
+
+unset -f psql_as_postgres
+rm -rf "$dn" "$dn2" "$dn3" "$dn4"
+
+# --- adopt_legacy_ssh_key_marker --------------------------------------------
+#
+# An earlier revision kept ONE record of the managed SSH key per host. Re-filing
+# it under whichever account APP_SSH_USER names today is not a migration, it is
+# a guess — and on a host that rotated accounts under that revision the guess is
+# wrong in the direction that grants root. Driven through the reported sequence
+# with the real functions:
+#
+#   world that revision left: marker=key-B, collavre holds key-A, deploybot key-B
+#   run names collavre/key-C -> B filed as collavre's predecessor
+#   withdrawal looks for B in collavre's file : NOT FOUND, nothing withdrawn
+#   collavre authorized_keys : key-A, key-C      key-A still authorized: 1
+#   deploybot's marker       : consumed, so key-B is unwithdrawable too
+#
+# Both halves are silent, and the run then re-arms collavre with `usermod -aG
+# sudo` and the docker group, so key-A is root again. The functions take a
+# passwd table so the shapes can be built without accounts on this machine.
+ssh_world() {
+  W=$(mktemp -d)
+  mkdir -p "$W/state" "$W/home/collavre/.ssh" "$W/home/deploybot/.ssh"
+  printf 'collavre:x:1001:1001::%s/home/collavre:/bin/bash\n' "$W" > "$W/passwd"
+  printf 'deploybot:x:1002:1002::%s/home/deploybot:/bin/bash\n' "$W" >> "$W/passwd"
+  KA='ssh-ed25519 AAAAKEY-A operator-A'
+  KB='ssh-ed25519 AAAAKEY-B operator-B'
+}
+
+echo "98. a marker that names another account's key does not become this one's"
+ssh_world
+printf '%s\n' "$KA" > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/home/deploybot/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+OUT="$( adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" 2>&1 )"
+chk "exits non-zero" 1 "$?"
+# The refusal has to be a refusal: the sudo grant and the docker group are a few
+# lines below the call site, so continuing is what turns a stale key into root.
+chk "no predecessor invented for collavre" 0 \
+  "$([ -f "$W/state/ssh_public_key.collavre" ] && echo 1 || echo 0)"
+chk "and deploybot's record is not consumed" 1 \
+  "$([ -f "$W/state/ssh_public_key" ] && echo 1 || echo 0)"
+chk "names the other account"    1 "$(grep -c "authorized for 'deploybot'" <<<"$OUT")"
+chk "and the way out"            1 "$(grep -c 'ACK_UNATTRIBUTED_SSH_KEYS=1' <<<"$OUT")"
+rm -rf "$W"
+
+echo "99. the shapes that must still go through, still do"
+# The refusal is only worth having if it is narrow. Each of these is a host the
+# adoption exists to serve, and stopping any of them would be worse than the
+# escalation: the first one is the ordinary upgrade, and without it the first
+# run after the per-account change would withdraw nothing and then advance,
+# leaving the key it replaced authorized forever.
+ssh_world
+printf '%s\n' "$KA" > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n' "$KA" > "$W/state/ssh_public_key"
+adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "the account's own key is adopted" "$KA" "$(cat "$W/state/ssh_public_key.collavre" 2>/dev/null)"
+chk "  claimed once, not copied" 0 "$([ -f "$W/state/ssh_public_key" ] && echo 1 || echo 0)"
+rm -rf "$W"
+
+ssh_world
+: > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/home/deploybot/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "an account with no keys cannot be hiding one, so it is filed at its owner" 1 \
+  "$([ -f "$W/state/ssh_public_key.deploybot" ] && echo 1 || echo 0)"
+rm -rf "$W"
+
+ssh_world
+printf '%s\n' "$KA" > "$W/home/collavre/.ssh/authorized_keys"
+printf 'ssh-ed25519 GONE gone\n' > "$W/state/ssh_public_key"
+adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "a key authorized for nobody is dropped, not filed" 0 \
+  "$([ -f "$W/state/ssh_public_key.collavre" ] && echo 1 || echo 0)"
+chk "  and the stale record does not survive to refuse every later run" 0 \
+  "$([ -f "$W/state/ssh_public_key" ] && echo 1 || echo 0)"
+rm -rf "$W"
+
+ssh_world
+printf '%s\n' "$KA" > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/home/deploybot/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+ACK_UNATTRIBUTED_SSH_KEYS=1 \
+  adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "the acknowledged override proceeds, filing at the owner" 1 \
+  "$([ -f "$W/state/ssh_public_key.deploybot" ] && echo 1 || echo 0)"
+rm -rf "$W"
+
+ssh_world
+adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "a first run with no legacy record is a silent no-op" 0 "$?"
+rm -rf "$W"
+
+# The cases above all pass a passwd table, which is the third argument and the
+# reason they can run without accounts on this machine. Production does not pass
+# it, and that argument selects between two different implementations — so
+# without a case that omits it, every one of them exercises a function the host
+# never runs. It is the branch the host DOES run that fails: `getent passwd
+# <missing>` exits 2, the pipeline into `cut` carries that status under
+# `pipefail`, and the caller's plain `home="$(passwd_home ...)"` hands it to
+# `set -e`. The run ends at that line, with no message from either branch of the
+# function — on the first-run-creates-the-user path the function's own comment
+# names as supported.
+echo "99a. a missing account is an answer on the production path, not a failure"
+ssh_world
+getent() { return 2; }   # Ubuntu: nothing on stdout, exit 2
+( set -e; passwd_home ghost >/dev/null )
+chk "passwd_home does not fail for an account that does not exist" 0 "$?"
+out="$( passwd_home ghost )"
+chk "  and reports it the same way the awk branch does" "" "$out"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+( set -e; adopt_legacy_ssh_key_marker collavre "$W/state" >/dev/null 2>&1 )
+chk "so the caller survives it under the run's own set -e" 0 "$?"
+unset -f getent
+rm -rf "$W"
+
+# --- step 6, at the call site -----------------------------------------------
+#
+# refuse_superuser_db_rotation ran AFTER the new DB_PASSWORD was written to
+# $STATE_DIR, so a refusal whose message says "Nothing has been changed" had
+# already changed something, and it outlived the run. The recovery that message
+# recommends — re-run with the previous DB_USER and no DB_PASSWORD — reads the
+# state file back, so it applied the password of the abandoned rotation to the
+# role nobody asked to change, and the DATABASE_URL already deployed stopped
+# authenticating. Verified over scram auth on postgres:17 rather than by
+# reading. Extracted from the script so the ORDER is what is under test.
+step6="$(awk '/^log "6\/9/ { f = 1 } f { print } f && /^chmod 0600 "\$STATE_DIR\/db_password"$/ { exit }' "$SRC")"
+[ -n "$step6" ] || { echo "  FAIL could not extract step 6 from $SRC"; fail=1; }
+
+echo "100. a refused rotation writes nothing to the state directory"
+s6=$(mktemp -d)
+printf 'postgres' > "$s6/db_user"          # provisioned with the superuser
+printf 'OLD-PASSWORD' > "$s6/db_password"  # the one DATABASE_URL was built from
+printf 'collavre_production\n' > "$s6/db_name"
+OUT="$(
+  STATE_DIR="$s6" DB_USER=collavre_app DB_PASSWORD=NEW-PASSWORD \
+  DB_NAME=collavre_production bash -c '
+    set -uo pipefail
+    '"$(declare -f die refuse_superuser_db_rotation role_owns_app_objects refuse_db_name_change)"'
+    # Its own log(), not the harness one: that appends to $LOGGED, which is
+    # unbound in here, so under set -u the extracted region would die on its
+    # first line and both assertions below would pass for the wrong reason.
+    log() { echo "[log] $*"; }
+    psql_as_postgres() {
+      case "$2" in
+        *"count(*) FROM pg_roles"*) echo 1 ;;   # postgres exists
+        *rolsuper*)                 echo t ;;   # and is a superuser
+        *pg_class*)                 echo 5 ;;   # still owns application objects
+        *pg_database*)              echo 1 ;;
+      esac
+    }
+    '"$step6"'
+  ' 2>&1
+)"
+chk "the rotation is refused"  1 "$(grep -c 'which is a superuser' <<<"$OUT")"
+# The whole point: the message and the filesystem must agree.
+chk "and the message is true"  OLD-PASSWORD "$(cat "$s6/db_password")"
+rm -rf "$s6"
+
+echo "101. a re-run that changes both DB_NAME and DB_USER names the right one"
+# The two guards are not independent. refuse_superuser_db_rotation counts the
+# objects the previous role owns IN $DB_NAME, so when both change it asks that
+# of a database that does not exist: psql fails, the count comes back empty, and
+# the deliberate "unanswerable reads as unsafe" rule turns it into a refusal
+# about object ownership. Measured on postgres:17 with the guards in the other
+# order — it dies with "An unknown number of object(s) in 'collavre_prod' are
+# still owned by 'postgres' ... Move the objects by hand", and that transfer
+# cannot be performed on a database that is not there. Nothing is changed either
+# way, so this is about which problem the operator is sent to fix.
+s6b=$(mktemp -d)
+printf 'postgres' > "$s6b/db_user"
+printf 'OLD-PASSWORD' > "$s6b/db_password"
+printf 'collavre_production\n' > "$s6b/db_name"
+OUT="$(
+  STATE_DIR="$s6b" DB_USER=collavre_app DB_PASSWORD=NEW-PASSWORD \
+  DB_NAME=collavre_prod bash -c '
+    set -uo pipefail
+    '"$(declare -f die refuse_superuser_db_rotation role_owns_app_objects refuse_db_name_change)"'
+    log() { echo "[log] $*"; }
+    psql_as_postgres() {
+      case "$2" in
+        *"count(*) FROM pg_roles"*) echo 1 ;;
+        *rolsuper*)                 echo t ;;
+        # The database named by this run does not exist, so the ownership query
+        # cannot run at all. Empty stdout is what psql leaves behind, measured.
+        *pg_class*)                 return 2 ;;
+        *pg_database*)              echo 0 ;;
+      esac
+    }
+    '"$step6"'
+  ' 2>&1
+)"
+chk "the run is refused"                 1 "$(grep -c 'Nothing has been changed' <<<"$OUT")"
+chk "and it is the name it complains about" 1 "$(grep -c "provisioned with DB_NAME='collavre_production'" <<<"$OUT")"
+chk "not an ownership transfer that cannot be done" 0 "$(grep -c 'Move the objects by hand' <<<"$OUT")"
+chk "nor an object count it could not obtain"       0 "$(grep -c 'An unknown number of' <<<"$OUT")"
+chk "and nothing was written"       OLD-PASSWORD "$(cat "$s6b/db_password")"
+rm -rf "$s6b"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
