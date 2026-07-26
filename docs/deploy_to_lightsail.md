@@ -259,42 +259,67 @@ container polling the database they are about to replace.
   # The task reads the SQLite file from inside the container. /rails/storage is
   # the plan42_storage volume, shared by every container of the app, and uid
   # 1000 is the image's `rails` user.
-  scp storage/production-primary.sqlite3 collavre@<instance-ip>:/tmp/
-  ssh collavre@<instance-ip> \
-    'sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
-       "$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")/" &&
-     rm /tmp/production-primary.sqlite3'
-
-  # The copy disables referential integrity, which is superuser-only.
-  ssh collavre@<instance-ip> \
-    "sudo -u postgres psql -c 'ALTER ROLE collavre_user SUPERUSER'"
-
-  ./kamal.sh app exec \
-    'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
-    -e MIGRATION_RUN_RESET:true
-  copy_status=$?
-
-  # Take the grant back whether or not the copy worked — a failed cutover is
-  # precisely when it would otherwise sit there.
-  ssh collavre@<instance-ip> \
-    "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
-  revoke_status=$?
-
-  # Clean up and boot only if both worked. Either failure leaves the app down.
-  if [ "$copy_status" -eq 0 ] && [ "$revoke_status" -eq 0 ]; then
+  # Stage under a temporary name and rename into place, so the task can only
+  # ever see a complete file. stage_status covers the whole staging step.
+  scp storage/production-primary.sqlite3 collavre@<instance-ip>:/tmp/ &&
     ssh collavre@<instance-ip> \
-      'sudo rm "$(docker volume inspect plan42_storage \
-         --format "{{.Mountpoint}}")/production-primary.sqlite3"'
+      'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
+       sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
+         "$vol/production-primary.sqlite3.incoming" &&
+       sudo mv "$vol/production-primary.sqlite3.incoming" \
+               "$vol/production-primary.sqlite3" &&
+       rm /tmp/production-primary.sqlite3'
+  stage_status=$?
 
-    ./kamal.sh app boot   # restart on the data you just loaded
+  if [ "$stage_status" -ne 0 ]; then
+    echo "STAGING FAILED: nothing was granted and nothing was converted"
+    echo "the volume still holds whatever was there before — on a retry that is"
+    echo "the stale snapshot the previous attempt deliberately kept"
+    echo "app left stopped on purpose; re-stage before converting"
   else
-    [ "$revoke_status" -eq 0 ] ||
-      echo "REVOKE FAILED: collavre_user is still a superuser — take it back by hand"
-    [ "$copy_status" -eq 0 ] ||
-      echo "COPY FAILED: this database is now empty or half-loaded"
-    echo "app left stopped on purpose; do not boot it until the above is cleared"
+    # The copy disables referential integrity, which is superuser-only.
+    ssh collavre@<instance-ip> \
+      "sudo -u postgres psql -c 'ALTER ROLE collavre_user SUPERUSER'"
+
+    ./kamal.sh app exec \
+      'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
+      -e MIGRATION_RUN_RESET:true
+    copy_status=$?
+
+    # Take the grant back whether or not the copy worked — a failed cutover is
+    # precisely when it would otherwise sit there.
+    ssh collavre@<instance-ip> \
+      "sudo -u postgres psql -c 'ALTER ROLE collavre_user NOSUPERUSER'"
+    revoke_status=$?
+
+    # Clean up and boot only if both worked. Either failure leaves the app down.
+    if [ "$copy_status" -eq 0 ] && [ "$revoke_status" -eq 0 ]; then
+      ssh collavre@<instance-ip> \
+        'sudo rm "$(docker volume inspect plan42_storage \
+           --format "{{.Mountpoint}}")/production-primary.sqlite3"'
+
+      ./kamal.sh app boot   # restart on the data you just loaded
+    else
+      [ "$revoke_status" -eq 0 ] ||
+        echo "REVOKE FAILED: collavre_user is still a superuser — take it back by hand"
+      [ "$copy_status" -eq 0 ] ||
+        echo "COPY FAILED: this database is now empty or half-loaded"
+      echo "app left stopped on purpose; do not boot it until the above is cleared"
+    fi
   fi
   ```
+
+  **The conversion is gated on staging for a reason that only shows up on a
+  retry.** `MIGRATION_RUN_RESET` drops the schema and reloads it from the
+  SQLite file *in the volume* — never from the file `scp` just sent. Those are
+  the same file only when staging worked. When it did not, the volume still
+  holds the previous attempt's snapshot, which the failure path above
+  deliberately keeps so a retry does not need another full copy over the wire.
+  Ungated, a failed `scp` therefore converts from that stale snapshot, reports
+  success, deletes it, and boots the app on older data — a silent rollback of
+  production, and the loudest signal is a timestamp nobody is looking at. The
+  rename makes the staging step atomic as well, so a copy interrupted midway
+  leaves the previous file in place rather than a truncated database.
 
   The grant is not optional. The launch script creates the role with
   `CREATE ROLE ... LOGIN` and nothing else, and the copy runs

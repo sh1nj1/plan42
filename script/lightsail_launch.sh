@@ -449,7 +449,47 @@ install_authorized_keys() {
   done
 }
 
+# revoke_prior_ssh_key <authorized_keys> [state file]
+#
+# The counterpart of revoke_prior_deploy_user and reassign_prior_db_role, for
+# the same reason and on the same account: a re-run with a changed
+# SSH_PUBLIC_KEY appends the new key and leaves the old one authorized. This
+# account is in `docker` and has passwordless sudo, so a key the operator
+# believes they retired still reaches root — the rotation reports success and
+# withdraws nothing.
+#
+# Only the key *this script* installed is withdrawn, recorded in a state file
+# rather than guessed at, so keys an operator added by hand and the cloud
+# user's original key are never touched.
+revoke_prior_ssh_key() {
+  local auth_keys="$1" state="${2:-$STATE_DIR/ssh_public_key}" prior tmp
+  # An empty SSH_PUBLIC_KEY means "keep using the cloud user's keys", not
+  # "retire the managed one" — withdrawing here would strand an operator who
+  # simply dropped the variable from a re-run.
+  [ -n "$SSH_PUBLIC_KEY" ] || return 0
+  # Never revoke before the successor is actually in place: an interrupted run
+  # must leave two usable keys, never zero.
+  grep -qxF "$SSH_PUBLIC_KEY" "$auth_keys" || return 0
+
+  if [ -f "$state" ]; then
+    prior="$(cat "$state")"
+    if [ -n "$prior" ] && [ "$prior" != "$SSH_PUBLIC_KEY" ] &&
+       grep -qxF "$prior" "$auth_keys"; then
+      tmp="$(mktemp)"
+      # Exact whole-line match: a key is withdrawn only if it is byte-for-byte
+      # the one recorded, so an operator key that merely shares a comment or a
+      # prefix survives.
+      grep -vxF "$prior" "$auth_keys" > "$tmp" || true
+      cat "$tmp" > "$auth_keys"   # rewrite in place, keeping mode and owner
+      rm -f "$tmp"
+      log "withdrew the SSH key this script installed on a previous run"
+    fi
+  fi
+  printf '%s\n' "$SSH_PUBLIC_KEY" > "$state"
+}
+
 install_authorized_keys "$AUTH_KEYS"
+revoke_prior_ssh_key "$AUTH_KEYS"
 sort -u -o "$AUTH_KEYS" "$AUTH_KEYS"
 chown "$APP_SSH_USER:$APP_SSH_USER" "$AUTH_KEYS"
 chmod 0600 "$AUTH_KEYS"

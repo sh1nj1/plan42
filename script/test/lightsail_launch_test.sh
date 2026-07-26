@@ -21,14 +21,14 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
 for fn in die ensure_block ensure_sudoers revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
-          install_authorized_keys reassign_prior_db_role; do
+          install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -359,11 +359,13 @@ case "$*" in
   *"ALTER ROLE collavre_user NOSUPERUSER"*) echo REVOKE >>"$TRACE"
                                             [ -z "$FAIL_REVOKE" ] || exit 255 ;;
   *"sudo rm"*)                              echo RM_STAGED >>"$TRACE" ;;
-  *"sudo install"*)                         echo STAGE     >>"$TRACE" ;;
+  *"sudo install"*)                         echo STAGE     >>"$TRACE"
+                                            [ -z "$FAIL_STAGE" ] || exit 1 ;;
   *)                                        echo ssh       >>"$TRACE" ;;
 esac
 STUB
-  printf '#!/usr/bin/env bash\necho scp >>"$TRACE"\n' > "$work/bin/scp"
+  printf '#!/usr/bin/env bash\necho scp >>"$TRACE"\n[ -z "$FAIL_SCP" ] || exit 1\n' \
+    > "$work/bin/scp"
   cat > "$work/bin/kamal.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "kamal:$1${2:+ $2}" >>"$TRACE"
@@ -374,13 +376,14 @@ STUB
 
   TRACE="$work/trace"; : > "$TRACE"
   export TRACE FAIL_COPY="${FAIL_COPY:-}" FAIL_REVOKE="${FAIL_REVOKE:-}"
+  export FAIL_SCP="${FAIL_SCP:-}" FAIL_STAGE="${FAIL_STAGE:-}"
   RECIPE_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   RECIPE_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
 }
 
 echo "23. a clean cutover cleans up and boots"
-FAIL_COPY='' FAIL_REVOKE='' run_cutover
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' run_cutover
 chk "staged file removed" 1 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "app booted"          1 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 
@@ -389,7 +392,7 @@ echo "24. a failed copy does not boot, and keeps the file the retry needs"
 # partway leaves the database empty or half-populated. Booting serves that.
 # The `sudo rm` is the other half: it destroys the staged SQLite file, so a
 # retry would need another full scp of production rather than a re-run.
-FAIL_COPY=1 FAIL_REVOKE='' run_cutover
+FAIL_COPY=1 FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' run_cutover
 chk "app NOT booted"          0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "staged file kept"        0 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "grant still taken back"  1 "$(grep -cx REVOKE <<<"${RECIPE_TRACE//|/$'\n'}")"
@@ -401,7 +404,7 @@ esac
 echo "25. a failed revoke does not boot the credential-bearing container"
 # collavre_user is the role in DATABASE_URL. Booting while it is still a
 # superuser hands every app container that privilege.
-FAIL_COPY='' FAIL_REVOKE=1 run_cutover
+FAIL_COPY='' FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' run_cutover
 chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 case "$RECIPE_OUT" in
   *"REVOKE FAILED"*"left stopped"*) echo "  ok   the still-superuser role is reported" ;;
@@ -409,11 +412,43 @@ case "$RECIPE_OUT" in
 esac
 
 echo "26. both failing reports both, not just the first"
-FAIL_COPY=1 FAIL_REVOKE=1 run_cutover
+FAIL_COPY=1 FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' run_cutover
 chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 case "$RECIPE_OUT" in
   *"REVOKE FAILED"*"COPY FAILED"*) echo "  ok   both reported" ;;
   *) echo "  FAIL one masked the other: $RECIPE_OUT"; fail=1 ;;
+esac
+
+echo "27. a failed scp never converts, so a stale snapshot cannot be restored"
+# The task loads from the file in the VOLUME, not from the one scp just sent.
+# Case 24 deliberately keeps the staged file so a retry need not re-copy — so
+# on a retry the volume holds the previous attempt's snapshot. Ungated, a
+# failed scp converts from THAT: production silently rolled back to older data,
+# reported as success, and the evidence deleted afterwards.
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP=1 FAIL_STAGE='' run_cutover
+chk "no conversion ran"   0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"      0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "stale file NOT deleted" 0 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"STAGING FAILED"*"stale"*) echo "  ok   the retry hazard is named, not just the failure" ;;
+  *) echo "  FAIL silent or vague: $RECIPE_OUT"; fail=1 ;;
+esac
+
+echo "28. a failed install into the volume is caught too, not just the scp"
+# scp can succeed to /tmp and the privileged install still fail — no space,
+# no docker group, volume gone.
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE=1 run_cutover
+chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+
+echo "29. staging renames into place rather than writing the live path directly"
+# An interrupted copy must leave the previous file intact, not a truncated
+# database the next run would happily convert from.
+case "$recipe" in
+  *".incoming"*"mv"*) echo "  ok   staged under a temporary name, then renamed" ;;
+  *) echo "  FAIL staging writes the live path directly"; fail=1 ;;
 esac
 
 # --- the fresh-install recipe ----------------------------------------------
@@ -443,12 +478,12 @@ STUB
   rm -rf "$work"
 }
 
-echo "27. a clean fresh install prints the admin password and boots"
+echo "30. a clean fresh install prints the admin password and boots"
 FAIL_LOAD='' run_fresh
 chk "app stopped first" 1 "$(grep -cx 'kamal:app stop' <<<"${FRESH_TRACE//|/$'\n'}")"
 chk "app booted"        1 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
 
-echo "28. a failed schema load does not boot the app onto a partial schema"
+echo "31. a failed schema load does not boot the app onto a partial schema"
 # db:schema:load drops and recreates every table, and db:seed is what creates
 # the first admin — so a load that resets the database but does not finish
 # leaves an app with no way to sign in and no owner on any record.
@@ -468,7 +503,7 @@ LOGGED=""
 # shellcheck disable=SC2329  # called by install_authorized_keys, eval'd from the script
 log() { LOGGED="$LOGGED $*"; }
 
-echo "29. the deploy user's own keys are not copied onto themselves"
+echo "32. the deploy user's own keys are not copied onto themselves"
 # APP_SSH_USER=ubuntu — src and dest are one file.
 h=$(mktemp -d); mkdir -p "$h/ubuntu/.ssh"
 printf 'ssh-ed25519 CLOUDKEY cloud\n' > "$h/ubuntu/.ssh/authorized_keys"
@@ -481,18 +516,73 @@ case "$LOGGED" in
   *) echo "  FAIL no explanation: $LOGGED"; fail=1 ;;
 esac
 
-echo "30. a separate deploy user still inherits the cloud user's keys"
+echo "33. a separate deploy user still inherits the cloud user's keys"
 mkdir -p "$h/collavre/.ssh"; : > "$h/collavre/.ssh/authorized_keys"
 SSH_PUBLIC_KEY="" LOGGED=""
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
 chk "cloud key copied" 1 "$(grep -c CLOUDKEY "$h/collavre/.ssh/authorized_keys")"
 
-echo "31. an explicit SSH_PUBLIC_KEY is added once, not once per run"
+echo "34. an explicit SSH_PUBLIC_KEY is added once, not once per run"
 # shellcheck disable=SC2034  # read by install_authorized_keys, eval'd from the script
 SSH_PUBLIC_KEY="ssh-ed25519 EXPLICIT me"
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
 chk "no duplicate" 1 "$(grep -c EXPLICIT "$h/collavre/.ssh/authorized_keys")"
+
+# --- revoke_prior_ssh_key ---------------------------------------------------
+#
+# The same family as the deploy-user and DB_USER rotations: appending the new
+# key converges the successor and leaves the predecessor authorized. This
+# account is in `docker` with passwordless sudo, so the key an operator thinks
+# they retired still reaches root.
+
+AK="$h/collavre/.ssh/authorized_keys"
+OLD="ssh-ed25519 OLDKEY retired"
+NEW="ssh-ed25519 NEWKEY current"
+OPERATOR="ssh-rsa OPKEY someone-else"
+st=$(mktemp -d)
+
+echo "35. rotating SSH_PUBLIC_KEY withdraws the key the last run installed"
+printf '%s\n%s\n' "$OLD" "$OPERATOR" > "$AK"
+printf '%s\n' "$OLD" > "$st/ssh_public_key"
+SSH_PUBLIC_KEY="$NEW" LOGGED=""
+install_authorized_keys "$AK" "$h"
+revoke_prior_ssh_key "$AK" "$st/ssh_public_key"
+chk "the new key is authorized"    1 "$(grep -cxF "$NEW" "$AK")"
+chk "the retired key is gone"      0 "$(grep -cxF "$OLD" "$AK")"
+chk "an operator's own key stays"  1 "$(grep -cxF "$OPERATOR" "$AK")"
+chk "state advanced to the new key" "$NEW" "$(cat "$st/ssh_public_key")"
+
+echo "36. an unchanged SSH_PUBLIC_KEY withdraws nothing"
+before="$(cat "$AK")"
+revoke_prior_ssh_key "$AK" "$st/ssh_public_key"
+chk "authorized_keys untouched" "$before" "$(cat "$AK")"
+
+echo "37. an empty SSH_PUBLIC_KEY means 'keep the cloud keys', not 'retire mine'"
+# Dropping the variable from a re-run must not strand the operator.
+SSH_PUBLIC_KEY=""
+revoke_prior_ssh_key "$AK" "$st/ssh_public_key"
+chk "nothing withdrawn" "$before" "$(cat "$AK")"
+
+echo "38. the predecessor is never withdrawn before the successor is in place"
+# An interrupted run must leave two usable keys, never zero.
+printf '%s\n' "$OLD" > "$AK"
+printf '%s\n' "$OLD" > "$st/ssh_public_key"
+SSH_PUBLIC_KEY="$NEW"
+revoke_prior_ssh_key "$AK" "$st/ssh_public_key"     # successor not added yet
+chk "the old key still lets you in" 1 "$(grep -cxF "$OLD" "$AK")"
+
+echo "39. first run and an already-absent key are no-ops"
+st2=$(mktemp -d)
+printf '%s\n' "$NEW" > "$AK"
+# shellcheck disable=SC2034  # read by revoke_prior_ssh_key, eval'd from the script
+SSH_PUBLIC_KEY="$NEW"
+revoke_prior_ssh_key "$AK" "$st2/ssh_public_key"    # no marker yet
+chk "key kept"          1 "$(grep -cxF "$NEW" "$AK")"
+chk "marker recorded"   "$NEW" "$(cat "$st2/ssh_public_key")"
+printf '%s\n' "$OLD" > "$st2/ssh_public_key"        # recorded but already removed
+revoke_prior_ssh_key "$AK" "$st2/ssh_public_key"
+chk "still just the new key" "$NEW" "$(cat "$AK")"
 
 unset -f log
 
@@ -519,7 +609,7 @@ psql_as_postgres() {
 log() { LOGGED="$LOGGED $*"; }
 rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
 
-echo "32. rotating DB_USER moves the tables and retires the old credential"
+echo "40. rotating DB_USER moves the tables and retires the old credential"
 # ALTER DATABASE ... OWNER only moves the database. Every table and sequence
 # the app created stays with the old role, so the new one in DATABASE_URL gets
 # "permission denied" on its own data — while the old role keeps LOGIN and the
@@ -531,11 +621,11 @@ chk "ownership moved, then login revoked" \
     '|REASSIGN OWNED BY "collavre_user" TO "collavre_app"|ALTER ROLE "collavre_user" NOLOGIN' \
     "$SQL"
 
-echo "33. an unchanged DB_USER touches nothing"
+echo "41. an unchanged DB_USER touches nothing"
 rotate collavre_user "$d3/db_user"
 chk "no SQL" "" "$SQL$LOGGED"
 
-echo "34. a superuser predecessor is reported, never disabled"
+echo "42. a superuser predecessor is reported, never disabled"
 # DB_USER=postgres on a first run is legal. NOLOGIN on the cluster superuser
 # locks every operator out of administering it — peer auth needs LOGIN too, so
 # there is no way back in.
@@ -548,7 +638,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "35. first run, emptied marker and a dropped role are all no-ops"
+echo "43. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
 ROLE_IS_SUPER=f
 rotate collavre_user "$d4/db_user"          # no marker yet
