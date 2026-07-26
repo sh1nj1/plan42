@@ -175,7 +175,9 @@ replays every migration from zero, and `db/schema.rb` is known to drift from a
 full replay — so if you are bringing existing data, **load it before the app
 serves a request**. Which side of `./kamal.sh setup` that falls on depends on
 the source: a PostgreSQL dump goes in over SSH before the first deploy, while
-the SQLite converter needs the app image and so runs after it, app stopped.
+the SQLite converter and the fresh-install schema load both need the app image
+and so run after it — with `./kamal.sh app stop` first, since `setup` leaves a
+container polling the database they are about to replace.
 
 - **Moving an existing PostgreSQL deployment (Neon, RDS):** dump and restore.
   Match `PG_MAJOR` to the source server's major version or the restore may fail.
@@ -274,6 +276,7 @@ the SQLite converter needs the app image and so runs after it, app stopped.
 
   ```bash
   ./kamal.sh setup
+  ./kamal.sh app stop   # no reads or writes while the schema is dropped and reloaded
 
   ADMIN_PASSWORD="$(openssl rand -base64 18)"   # not in shell history; print it below
   ./kamal.sh app exec 'bin/rails db:schema:load:primary db:seed' \
@@ -284,6 +287,25 @@ the SQLite converter needs the app image and so runs after it, app stopped.
 
   ./kamal.sh app boot   # restart on the schema you just loaded
   ```
+
+  **`app stop` is not politeness.** `setup` ends by booting the app, so by the
+  time you run the load a container is already talking to this database — and
+  not only when a browser reaches it. `config/deploy.yml` defaults
+  `SOLID_QUEUE_IN_PUMA` to `true`, so the web container runs the Solid Queue
+  supervisor in-process and polls for work on a timer whether or not anyone has
+  found the host yet. Those tables are in the schema being loaded: `db/schema.rb`
+  declares 13 `solid_*` tables `force: :cascade`, and `cache`, `queue` and
+  `cable` all fall back to `DATABASE_URL` unless you set their own
+  ([§3](#3-how-postgresql-is-reachable)), so the load drops the queue tables out
+  from under a live poller. `DROP TABLE` needs an `ACCESS EXCLUSIVE` lock and
+  the poller is querying the same tables, so the two contend in both directions:
+  the load blocks behind a poll that is mid-transaction, and a poll that arrives
+  while a table is gone fails against a relation that does not exist yet. How
+  that surfaces depends on where the timer lands — a load that pauses, errors in
+  `./kamal.sh logs`, or nothing visible at all on a lucky run. Which is the
+  argument for stopping rather than for timing it well. It also settles what
+  happens to anything written between `setup` and the load: the schema is
+  replaced either way, so there is no point letting a request believe otherwise.
 
   **Supply the admin credentials.** `db/seeds.rb` falls back to
   `admin@example.com` / `password123` and marks that user `system_admin`. That
@@ -348,7 +370,9 @@ the SQLite converter needs the app image and so runs after it, app stopped.
   `bin/rails db:schema:load:primary`,
   which the entrypoint does not migrate for (it only migrates the
   `./bin/rails server` command line). Run the `app exec` above and then
-  `./kamal.sh deploy`.
+  `./kamal.sh deploy`. The `app stop` is a no-op on this path rather than a
+  step to skip — there is no container to stop, and kamal does not treat that
+  as an error.
 
 ## 6. Backups
 
