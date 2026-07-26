@@ -149,11 +149,23 @@ open, and nothing before it is waiting on it.
 ### A custom `DB_PASSWORD` is percent-encoded in `DATABASE_URL`
 
 The generated password is alphanumeric, so it appears in `DATABASE_URL`
-unchanged. A password you supply yourself may not be: `config/database.yml`
-runs `URI.parse(ENV["DATABASE_URL"])` on boot, and that rejects `@`, `/`, `#`,
-`%`, `?` and spaces in the user/password part outright — every Rails command in
-the container would abort with `URI::InvalidURIError` before it reached the
-database.
+unchanged. A password you supply yourself may not be — and the failure is not
+the loud one it looks like it should be. Measured against the resolver Rails
+actually uses (`ActiveRecord::DatabaseConfigurations::ConnectionUrlResolver`):
+
+```
+p@ss        URI::InvalidURIError    (likewise p#ss, p?ss, p%ss, "p ss")
+p@ss/word   parses — host "ss", database "word@172.17.0.1:5432/collavre_production"
+pa%41ss     parses — password "paAss"
+```
+
+Only a password with a *single* offending character aborts the boot. One
+holding `@` **and** `/` parses cleanly into a different host and a different
+database name, so the container fails to resolve a hostname in the middle of a
+deploy with nothing on screen pointing at the password. One containing a valid
+percent-escape is decoded, so Rails authenticates with a different string than
+the one in `/var/lib/collavre/db_password` — and reports only that the password
+was rejected.
 
 So the script percent-encodes the role, password and database name when it
 composes the URL. Rails decodes them again when it resolves the connection, so
@@ -546,10 +558,16 @@ KAMAL_SSH_USER=collavre
 KAMAL_SSH_KEY_PATH=~/.ssh/<key matching the instance>
 KAMAL_REGISTRY_USER=<docker hub user>
 KAMAL_REGISTRY_PASSWORD=<docker hub access token>
-DATABASE_URL=postgresql://collavre_user:<password>@172.17.0.1:5432/collavre_production
+DATABASE_URL=<the DATABASE_URL line from the summary file, copied verbatim>
 PORT=80
 SOLID_QUEUE_IN_PUMA=true
 ```
+
+`DATABASE_URL` is the one value here you must not compose yourself: the script
+already wrote it, [percent-encoded](#a-custom-db_password-is-percent-encoded-in-database_url),
+into the 0600 summary file. Assembling it from `/var/lib/collavre/db_password`
+puts the raw password into a URL, which — as measured above — is as likely to
+resolve to the wrong host as it is to fail outright.
 
 Keep the rest of `env.template` in mind — `RAILS_MASTER_KEY`, `SECRET_KEY_BASE`,
 the `ACTIVE_RECORD_ENCRYPTION_*` keys and the OAuth/S3/FCM credentials all still

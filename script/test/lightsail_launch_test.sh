@@ -2154,6 +2154,40 @@ chk "no connection URI"       0 "$(grep -c 'postgres\(ql\)\?://' <<<"$move")"
 chk "and the page says why"   1 \
   "$(grep -c 'invalid percent-encoded token' "$DOC")"
 
+echo "78b. the deploy section does not ask for a hand-composed DATABASE_URL"
+# Same defect as 78a one consumer over: section 4's .env.production is the one
+# place on this page the operator *types* a DATABASE_URL, and it carried a
+# <password> slot. The parser there is Rails', not libpq's, and it fails in the
+# same misdirected way. Measured against
+# ActiveRecord::DatabaseConfigurations::ConnectionUrlResolver:
+#
+#   p@ss        URI::InvalidURIError            (likewise p#ss, p?ss, p%ss)
+#   p@ss/word   parses — host "ss", database "word@172.17.0.1:5432/..."
+#   pa%41ss     parses — password "paAss"
+#
+# So the page's blanket claim that any of those six characters aborts the boot
+# with URI::InvalidURIError was wrong for the pair most likely to occur
+# together — and wrong about this page's *own* worked example, p@ss/word, which
+# resolves a hostname instead of raising.
+#
+# Asserted on the dotenv block rather than the whole page: section 3 shows the
+# same URL shape to say where PostgreSQL listens, which is a description and not
+# an instruction to fill one in. There is exactly one dotenv block on the page.
+deploy_env="$(awk '/^```dotenv$/{f=1;next} f&&/^```$/{exit} f' "$DOC")"
+chk "there is a dotenv block"  1 "$([ -n "$deploy_env" ] && echo 1 || echo 0)"
+chk "no password placeholder"  0 "$(grep -c '<password>' <<<"$deploy_env")"
+chk "no hand-built URI"        0 "$(grep -c 'postgres\(ql\)\?://' <<<"$deploy_env")"
+chk "names the summary file"   1 "$(grep -c 'summary file' <<<"$deploy_env")"
+# And the corrected claim has to stay corrected: the two silent cases are what
+# make copying the summary file load-bearing rather than merely tidy. Scoped to
+# the Rails block — `pa%41ss` is also measured against libpq further down the
+# page, and the whole-page count would then pass for the wrong reason.
+rails_urls="$(awk '/ConnectionUrlResolver/{f=1;next} f&&/^```$/{n++; if(n==2) exit; next} f&&n==1' "$DOC")"
+chk "states the silent parse"  1 "$(grep -c 'host "ss"' <<<"$rails_urls")"
+chk "states the silent decode" 1 "$(grep -c 'password "paAss"' <<<"$rails_urls")"
+chk "no blanket abort claim"   0 \
+  "$(grep -c 'every Rails command in' "$DOC")"
+
 echo "79. a failed pg_dump never reaches the transfer or the restore"
 FAIL_DUMP=1 FAIL_XFER='' FAIL_RESTORE='' run_move
 chk "no transfer"             0 "$(grep -c '^scp:' <<<"${MOVE_TRACE//|/$'\n'}")"
