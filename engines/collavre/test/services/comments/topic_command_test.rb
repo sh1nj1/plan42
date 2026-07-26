@@ -168,6 +168,18 @@ module Collavre
         assert_equal @ai_agent.id, existing.primary_agent_id
       end
 
+      test "releases primary agent when existing assigned topic is named without a mention" do
+        existing = Topic.create!(creative: @creative, user: @user, name: "Release Topic")
+        existing.set_primary_agent!(@ai_agent)
+
+        comment = create_comment('/topic "Release Topic"')
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        existing.reload
+        assert_nil existing.primary_agent_id
+        assert_match(/Release Topic/, result)
+      end
+
       test "reports already exists when topic exists without agent mention" do
         Topic.create!(creative: @creative, user: @user, name: "Duplicate Topic")
         comment = create_comment('/topic "Duplicate Topic"')

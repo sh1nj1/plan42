@@ -151,7 +151,7 @@ export default class extends Controller {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
             const agentAvatar = topic.primary_agent
-                ? this.renderAgentAvatar(topic.primary_agent)
+                ? this.renderAgentAvatar(topic.primary_agent, canManage ? topic.id : null)
                 : ''
             const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
@@ -1028,6 +1028,8 @@ export default class extends Controller {
     _i18n(key) {
         const translations = {
             set_agent_error: this.element.dataset.topicSetAgentError || 'Unable to assign the agent to this topic.',
+            agent_assigned_title: this.element.dataset.topicAgentAssignedTitle || '%{name} is assigned to this topic — click to release',
+            clear_agent_confirm: this.element.dataset.topicClearAgentConfirm || 'Release %{name} from this topic? Every agent will be able to respond here again.',
             create_error: this.element.dataset.topicCreateError || 'Unable to create the topic.',
             update_error: this.element.dataset.topicUpdateError || 'Unable to update the topic.',
             delete_error: this.element.dataset.topicDeleteError || 'Unable to delete the topic.',
@@ -1037,6 +1039,28 @@ export default class extends Controller {
         return translations[key] || key
     }
 
+    // Clicking the avatar of an assigned agent releases the assignment. The avatar
+    // sits inside the topic tag, so the click must not also fall through to
+    // selecting that topic.
+    async clearTopicPrimaryAgent(event) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        const topicId = event.currentTarget.dataset.id
+        if (!topicId) return
+
+        const topic = (this.topics || []).find(t => String(t.id) === String(topicId))
+        const agentName = topic?.primary_agent?.name || ''
+
+        const confirmed = await confirmDialog(
+            this._i18n('clear_agent_confirm').replace('%{name}', agentName)
+        )
+        if (!confirmed) return
+
+        await this.setTopicPrimaryAgent(topicId, null)
+    }
+
+    // Pass agent === null to release the topic's assignment.
     async setTopicPrimaryAgent(topicId, agent) {
         if (!this.creativeId) return
 
@@ -1047,7 +1071,7 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({ agent_id: agent.id })
+                body: JSON.stringify({ agent_id: agent ? agent.id : null })
             })
 
             const data = await response.json().catch(() => ({}))
@@ -1099,9 +1123,19 @@ export default class extends Controller {
         }
     }
 
-    renderAgentAvatar(agent) {
+    // When topicId is given the avatar doubles as the release control: clicking it
+    // unassigns the agent from the topic. Pass null to render it as a plain badge
+    // (viewers who cannot manage topics).
+    renderAgentAvatar(agent, topicId = null) {
         const size = 16
-        let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper" style="width:${size}px;height:${size}px;" title="${this.escapeAttr(agent.name)}">`
+        const releasable = topicId !== null && topicId !== undefined
+        const title = releasable
+            ? this._i18n('agent_assigned_title').replace('%{name}', agent.name)
+            : agent.name
+        const releaseAttrs = releasable
+            ? ` data-action="click->comments--topics#clearTopicPrimaryAgent" data-id="${this.escapeAttr(String(topicId))}" role="button"`
+            : ''
+        let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper${releasable ? ' topic-agent-avatar-releasable' : ''}"${releaseAttrs} style="width:${size}px;height:${size}px;" title="${this.escapeAttr(title)}">`
         html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
         if (agent.default_avatar) {
             html += `<span class="avatar-initial">${this.escapeAttr(agent.initial)}</span>`

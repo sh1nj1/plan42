@@ -56,9 +56,17 @@ module Collavre
         if existing_topic
           if primary_agent
             set_primary_agent(existing_topic, primary_agent)
+            broadcast_topic_agent_updated(existing_topic, primary_agent)
             I18n.t("collavre.comments.topic_command.updated_agent",
                    name: existing_topic.name,
                    agent: primary_agent.name)
+          elsif existing_topic.primary_agent_id
+            # /topic "name" with no @mention on an already-assigned topic releases
+            # the assignment — the keyboard counterpart of clicking the avatar off.
+            set_primary_agent(existing_topic, nil)
+            broadcast_topic_agent_updated(existing_topic, nil)
+            I18n.t("collavre.comments.topic_command.cleared_agent",
+                   name: existing_topic.name)
           else
             I18n.t("collavre.comments.topic_command.already_exists",
                    name: existing_topic.name)
@@ -91,6 +99,17 @@ module Collavre
             name: agent.display_name,
             avatar_url: resolve_avatar_url(agent)
           }
+        end
+        TopicsChannel.broadcast_to(creative, data)
+      end
+
+      # Push an assignment change on an existing topic to every connected client.
+      # :primary_agent is always present (nil when released) so the merge on the
+      # client can actually remove the avatar rather than keep a stale one.
+      def broadcast_topic_agent_updated(topic, agent)
+        data = { action: "updated", topic: topic.slice(:id, :name), user_id: user.id }
+        data[:topic][:primary_agent] = if agent
+          { id: agent.id, name: agent.display_name, avatar_url: resolve_avatar_url(agent) }
         end
         TopicsChannel.broadcast_to(creative, data)
       end

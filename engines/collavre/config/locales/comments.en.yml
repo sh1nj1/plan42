@@ -108,6 +108,8 @@ en:
       recent_chats: Recent chats
       remove_from_history: Remove from history
       topic_set_agent_error: Unable to assign the agent to this topic.
+      topic_agent_assigned_title: "%{name} is assigned to this topic — click to release"
+      topic_clear_agent_confirm: "Release %{name} from this topic? Every agent will be able to respond here again."
       topic_create_error: Unable to create the topic.
       topic_update_error: Unable to update the topic.
       topic_delete_error: Unable to delete the topic.
@@ -196,6 +198,7 @@ en:
         created: 'Topic "%{name}" created.'
         created_with_agent: 'Topic "%{name}" created with @%{agent} as primary agent.'
         updated_agent: 'Topic "%{name}" primary agent updated to @%{agent}.'
+        cleared_agent: 'Topic "%{name}" primary agent released. All agents can respond again.'
         already_exists: 'Topic "%{name}" already exists.'
       work_command:
         agent_not_found: "Please mention an AI agent to execute the workflow."

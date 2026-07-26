@@ -197,6 +197,19 @@ module Collavre
 
     def set_primary_agent
       topic = @creative.topics.find(params[:id])
+
+      # A blank agent_id clears the assignment. The primary agent is an exclusive
+      # assignment (it silences every other agent's ambient routing), so the user
+      # needs a way back to an unassigned topic — otherwise a single avatar click
+      # would permanently dedicate the topic to one agent.
+      if params[:agent_id].blank?
+        topic.set_primary_agent!(nil)
+
+        broadcast_topic_event("updated", topic: topic_json_with_agent(topic, nil))
+
+        return render json: { success: true, topic: topic_json_with_agent(topic, nil) }
+      end
+
       agent = User.find_by(id: params[:agent_id])
 
       unless agent&.ai_user?
@@ -283,9 +296,12 @@ module Collavre
       data
     end
 
+    # Always carries a :primary_agent key, explicitly nil when cleared. The client
+    # merges this payload into its cached topic, so an omitted key would leave a
+    # stale avatar on screen instead of removing it.
     def topic_json_with_agent(topic, agent)
       data = topic.slice(:id, :name, :source_topic_id)
-      data[:primary_agent] = agent_json(agent)
+      data[:primary_agent] = agent ? agent_json(agent) : nil
       data
     end
 

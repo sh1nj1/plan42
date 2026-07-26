@@ -15,7 +15,7 @@ jest.unstable_mockModule('../../../lib/utils/dialog', () => ({
 
 const { Application } = await import('@hotwired/stimulus')
 const TopicsController = (await import('../topics_controller')).default
-const { alertDialog } = await import('../../../lib/utils/dialog')
+const { alertDialog, confirmDialog } = await import('../../../lib/utils/dialog')
 
 const AGENT = {
   id: 4,
@@ -34,7 +34,8 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
     container = document.createElement('div')
     container.innerHTML = `
       <div id="topics" data-controller="comments--topics"
-           data-topic-set-agent-error="에이전트를 지정할 수 없습니다.">
+           data-topic-set-agent-error="에이전트를 지정할 수 없습니다."
+           data-topic-clear-agent-confirm="%{name} 할당을 해제할까요?">
         <div data-comments--topics-target="list"></div>
       </div>
     `
@@ -142,5 +143,71 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
     await controller.setTopicPrimaryAgent('1', AGENT)
 
     expect(alertDialog).toHaveBeenCalledWith('Unable to assign the agent to this topic.')
+  })
+
+  // Releasing the assignment is what keeps a topic primary agent from being a
+  // one-way door: the pin silences every other agent's ambient routing, so the
+  // avatar has to be able to come back off.
+  describe('release', () => {
+    const clearEvent = (topicId) => ({
+      preventDefault: jest.fn(),
+      stopPropagation: jest.fn(),
+      currentTarget: { dataset: { id: topicId } },
+    })
+
+    beforeEach(() => {
+      controller.topics = [{ id: 1, name: 'Main', primary_agent: AGENT }]
+    })
+
+    test('renders the assigned avatar as a release control for managers', () => {
+      controller.renderTopics(controller.topics, true, true)
+
+      const wrapper = controller.listTarget.querySelector('.topic-agent-avatar-wrapper')
+      expect(wrapper.classList.contains('topic-agent-avatar-releasable')).toBe(true)
+      expect(wrapper.dataset.action).toContain('comments--topics#clearTopicPrimaryAgent')
+      expect(wrapper.dataset.id).toBe('1')
+    })
+
+    test('renders a plain avatar for users who cannot manage topics', () => {
+      controller.renderTopics(controller.topics, false, false)
+
+      const wrapper = controller.listTarget.querySelector('.topic-agent-avatar-wrapper')
+      expect(wrapper.classList.contains('topic-agent-avatar-releasable')).toBe(false)
+      expect(wrapper.dataset.action).toBeUndefined()
+    })
+
+    test('PATCHes a null agent_id and drops the avatar once confirmed', async () => {
+      confirmDialog.mockResolvedValue(true)
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, topic: { id: 1, name: 'Main', primary_agent: null } }),
+      })
+
+      await controller.clearTopicPrimaryAgent(clearEvent('1'))
+
+      expect(confirmDialog).toHaveBeenCalledWith('GitHub PR Analyzer 할당을 해제할까요?')
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({ agent_id: null })
+      expect(controller.listTarget.querySelector('.topic-agent-avatar')).toBeNull()
+    })
+
+    test('does nothing when the confirmation is declined', async () => {
+      confirmDialog.mockResolvedValue(false)
+      global.fetch = jest.fn()
+
+      await controller.clearTopicPrimaryAgent(clearEvent('1'))
+
+      expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    // The avatar sits inside the topic tag, whose own click handler selects the
+    // topic. Releasing must not double as a selection.
+    test('stops the click from reaching the topic tag', async () => {
+      confirmDialog.mockResolvedValue(false)
+      const event = clearEvent('1')
+
+      await controller.clearTopicPrimaryAgent(event)
+
+      expect(event.stopPropagation).toHaveBeenCalled()
+    })
   })
 })

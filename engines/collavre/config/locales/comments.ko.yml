@@ -105,6 +105,8 @@ ko:
       recent_chats: 최근 채팅
       remove_from_history: 히스토리에서 제거
       topic_set_agent_error: 이 토픽에 에이전트를 지정할 수 없습니다.
+      topic_agent_assigned_title: "%{name}이(가) 이 토픽에 할당되어 있습니다 — 클릭하면 해제됩니다"
+      topic_clear_agent_confirm: "%{name}의 토픽 할당을 해제할까요? 이 토픽에서 다시 모든 에이전트가 응답할 수 있게 됩니다."
       topic_create_error: 토픽을 생성할 수 없습니다.
       topic_update_error: 토픽을 수정할 수 없습니다.
       topic_delete_error: 토픽을 삭제할 수 없습니다.
@@ -193,6 +195,7 @@ ko:
         created: '토픽 "%{name}"이(가) 생성되었습니다.'
         created_with_agent: '토픽 "%{name}"이(가) 생성되었습니다. @%{agent}이(가) Primary Agent로 설정되었습니다.'
         updated_agent: '토픽 "%{name}"의 Primary Agent가 @%{agent}(으)로 변경되었습니다.'
+        cleared_agent: '토픽 "%{name}"의 Primary Agent 지정이 해제되었습니다. 다시 모든 에이전트가 응답할 수 있습니다.'
         already_exists: '토픽 "%{name}"이(가) 이미 존재합니다.'
       work_command:
         agent_not_found: "워크플로우를 실행할 AI 에이전트를 멘션해주세요."

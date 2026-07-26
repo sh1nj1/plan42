@@ -307,6 +307,27 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_equal new_agent.id, @topic.primary_agent_id
   end
 
+  test "should clear primary agent when agent_id is blank" do
+    ai_agent = User.create!(
+      email: "clearme@test.local", password: "password123", name: "ClearAgent",
+      llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+    )
+    @topic.set_primary_agent!(ai_agent)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: nil }, as: :json
+
+    assert_response :success
+    @topic.reload
+    assert_nil @topic.primary_agent_id
+
+    body = JSON.parse(response.body)
+    # The client merges this payload into its cached topic, so the key must be
+    # present-and-null to actually remove the avatar.
+    assert body["topic"].key?("primary_agent")
+    assert_nil body["topic"]["primary_agent"]
+  end
+
   test "should reject non-AI user as primary agent" do
     patch set_primary_agent_creative_topic_url(@creative, @topic),
       params: { agent_id: @user.id }, as: :json

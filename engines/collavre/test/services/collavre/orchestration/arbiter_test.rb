@@ -77,7 +77,7 @@ module Collavre
         assert_equal [ @agent2 ], selected
       end
 
-      test "primary_first returns first candidate when primary not in candidates" do
+      test "primary_first stays silent when the configured primary is not a candidate" do
         OrchestratorPolicy.create!(
           policy_type: "arbitration",
           config: { "strategy" => "primary_first", "primary_agent_id" => 99999 }
@@ -86,7 +86,28 @@ module Collavre
         arbiter = Arbiter.new(@context)
         selected = arbiter.select(@candidates)
 
-        assert_equal [ @agent1 ], selected
+        # Promoting an arbitrary other agent is the interloper the primary
+        # assignment exists to keep out.
+        assert_empty selected
+      end
+
+      test "mention routing bypasses arbitration in a topic with a primary agent" do
+        @topic.set_primary_agent!(@agent1)
+        context = @context.merge("chat" => { "mentioned_user" => { "id" => @agent3.id } })
+
+        selected = Arbiter.new(context).select([ @agent3 ])
+
+        # A topic primary agent forces strategy primary_first; without the mention
+        # bypass @agent3 would be dropped for not being @agent1.
+        assert_equal [ @agent3 ], selected
+      end
+
+      test "topic primary agent takes the floor over other candidates" do
+        @topic.set_primary_agent!(@agent2)
+
+        selected = Arbiter.new(@context).select(@candidates)
+
+        assert_equal [ @agent2 ], selected
       end
 
       test "primary_first returns first candidate when no primary configured" do
