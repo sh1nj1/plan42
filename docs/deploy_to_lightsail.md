@@ -1201,8 +1201,18 @@ app_super=$(sudo -u postgres psql -qtAd postgres -c \
 # and nowhere else, so re-opening to a literal `-1` would not restore the
 # database to what it was, it would silently lift a limit — on every successful
 # restore, and on the idle refusal too, which touches nothing else at all.
-prior_limit=$(sudo -u postgres psql -qtAd postgres -c \
-  "SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'" 2>/dev/null)
+#
+# `${prior_limit:-...}` rather than a plain assignment, and the reason is the
+# retry the failure path below invites. A restore that fails leaves the database
+# at 0 on purpose; pasting the block again then re-reads `datconnlimit` and gets
+# that 0 — this block's own leftover — as "what it was before". The successful
+# second attempt puts back 0, the original cap is gone with nothing left that
+# knows it, and the message printed is the one that says the 0 was already
+# there. So the value has to survive the attempt that failed, and it is unset at
+# the bottom once it has been put back, so a later unrelated restore in the same
+# shell reads the cluster afresh rather than inheriting this one's answer.
+prior_limit=${prior_limit:-$(sudo -u postgres psql -qtAd postgres -c \
+  "SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'" 2>/dev/null)}
 
 # "This block has not shut anything yet", set before the two refusals below so
 # that it is answered on every path rather than only on the ones that reach the
@@ -1349,6 +1359,7 @@ if ! printf '%s' "$prior_limit" | grep -qE '^-?[0-9]+$'; then
   fi
 fi
 reopen_status=0
+reopen_ran=0
 # The third clause is the unconfirmed close. Status 3 otherwise means "refused
 # before touching anything", and re-opening there would lift a cap this block
 # never applied — but when the ALTER itself reported success the limit is this
@@ -1361,6 +1372,7 @@ if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ] ||
   sudo -u postgres psql -qd postgres -c \
     "ALTER DATABASE \"$app_db\" CONNECTION LIMIT $reopen_limit"
   reopen_status=$?
+  reopen_ran=1
 fi
 
 # The re-open is checked, not assumed. It is its own connection to the cluster
@@ -1398,9 +1410,12 @@ elif [ "$restore_status" -eq 0 ]; then
   # is their configuration rather than this block's leftover, so it is reported
   # rather than overridden.
   if [ "$reopen_limit" = 0 ]; then
-    echo "restored, and $app_db is back at 'CONNECTION LIMIT 0' — which is where"
-    echo "  it was before this block ran, not something left behind here. The app"
-    echo "  will be refused at boot until you lift it:"
+    echo "restored, and $app_db is back at 'CONNECTION LIMIT 0' — the limit it"
+    echo "  carried when this block read it. That is your own cap unless a"
+    echo "  previous attempt failed and you re-ran this block from a fresh"
+    echo "  shell, in which case it is that attempt's leftover and the original"
+    echo "  value is not recorded anywhere. Either way the app is refused at"
+    echo "  boot until you lift it:"
     echo "  sudo -u postgres psql -qd postgres -c \\"
     echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1'"
   else
@@ -1416,11 +1431,28 @@ else
   echo "$app_db is LEFT AT 'CONNECTION LIMIT 0' deliberately: it is"
   echo "  now half-replaced, and a container that survived the stop must not"
   echo "  reconnect and write into it. pg_restore is a superuser and is exempt,"
-  echo "  so fix the cause and run this block again — it needs no other step."
+  echo "  so fix the cause and run this block again."
+  echo "Its limit before this block ran was '$reopen_limit'. Re-running in THIS"
+  echo "  shell keeps that value; re-running in a new one would read the 0 above"
+  echo "  as the previous limit and put that back on success. If you open a new"
+  echo "  shell, carry it over first:"
+  echo "  prior_limit=$reopen_limit    # then paste this block again"
   echo "If instead you are abandoning the restore, re-open it by hand with:"
   echo "  sudo -u postgres psql -qd postgres -c \\"
   echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT $reopen_limit'"
 fi
+
+# The saved value is released once it has been put back, and only then. Kept
+# across the failure path above — that is the whole point of saving it — but a
+# value left set outliving a completed restore is the same defect in the other
+# direction: a second, unrelated restore pasted into the same shell would open
+# its database to the first one's limit instead of reading the cluster.
+# `reopen_ran`, set where the ALTER is issued, rather than re-testing the three
+# clauses that decide whether it is issued: a second spelling of that condition
+# is one that drifts, and on the failure path it would drift in the direction
+# that throws the value away — `reopen_status` is still its initial 0 there,
+# because nothing ran to change it.
+if [ "$reopen_ran" -eq 1 ] && [ "$reopen_status" -eq 0 ]; then unset prior_limit; fi
 ```
 
 **`pg_restore --clean` drops every object before recreating it**, so this is the

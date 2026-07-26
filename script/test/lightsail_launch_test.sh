@@ -2836,8 +2836,16 @@ PRIOR_LIMIT=0 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
 chk "restore ran"                  1 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
 chk "left as the operator had it"  0 "$R_LIMIT"
 chk "NOT told to boot"             0 "$(grep -c 'app boot' <<<"$R_OUT")"
-chk "told the limit predates this" 1 \
-  "$(grep -c 'not something left behind here' <<<"$R_OUT")"
+# Not "the limit predates this block" any more, and the change is the point. The
+# block used to assert that flatly; it cannot, since a failed attempt leaves 0
+# behind and a retry from a fresh shell reads that 0 as the previous limit. So
+# the two halves are asserted separately: where the value came from, and that
+# the one reading which would make it this block's own leftover is named rather
+# than argued away.
+chk "told where the 0 came from"   1 \
+  "$(grep -c 'carried when this block read it' <<<"$R_OUT")"
+chk "and that a retry can be its source" 1 \
+  "$(grep -c "previous attempt failed" <<<"$R_OUT")"
 chk "and how to lift it"           1 \
   "$(grep -cF "'ALTER DATABASE \"collavre_production\" CONNECTION LIMIT -1'" <<<"$R_OUT")"
 # Not a failure report: nothing failed, and RESTORE FAILED here would send the
@@ -4848,6 +4856,144 @@ chk "no configured value is spliced into the generated script" 0 \
   "$(grep -cE '^(DB_NAME="\$DB_NAME"|RETENTION_DAYS=\$BACKUP_RETENTION_DAYS|S3_URI="\$BACKUP_S3_URI")$' "$SRC")"
 chk "they are serialized with %q instead" 1 \
   "$(grep -c "printf 'DB_NAME=%q" "$SRC")"
+
+
+# log() is redefined per region above and the nearest one accumulates into
+# $LOGGED rather than printing. These three cases assert on what the run *says*,
+# so it has to print — without this the message assertions below pass on an
+# empty capture, which is the failure mode a negative control exists to catch.
+log() { echo "[log] $*"; }
+
+echo "134. a create of daemon.json that is cut short never reaches the live path"
+# The rewrite path was staged earlier on this branch; the create path below it
+# was not, and it is the one a first-time provision takes. `cat > "$file"` opens
+# the live path with O_TRUNC, so a write that fails leaves a partial daemon.json
+# that no later run repairs — the retry finds the file present and takes the
+# rewrite path, where every branch declines to touch it.
+dj=$(mktemp -d)
+# The staged write is cut short by shadowing `cat` for one call, injected rather
+# than raced: a kill loses to a fast local write, and a flaky control is worse
+# than none.
+torn_create() {  # $1 = bytes of the write that survive
+  ( KEEP=$1
+    cat() { command head -c "$KEEP" 2>/dev/null; }
+    ensure_docker_log_caps "$dj/daemon.json" >/dev/null 2>&1 )
+}
+torn_create 0
+chk "a torn create leaves no live daemon.json" 0 \
+  "$([ -e "$dj/daemon.json" ] && echo 1 || echo 0)"
+chk "and no staging file behind either" 0 \
+  "$(find "$dj" -name '*.collavre.*' | wc -l | tr -d ' ')"
+# The retry is the assertion that matters: against the old form this is where
+# the run gives up for good.
+ensure_docker_log_caps "$dj/daemon.json" >/dev/null 2>&1
+chk "so the next run creates it whole" '10m' \
+  "$(jq -r '."log-opts"."max-size" // "NONE"' "$dj/daemon.json" 2>/dev/null || echo UNPARSEABLE)"
+# 0644, not mktemp's 0600. A daemon.json dockerd cannot read is the same outage
+# by another route, which is why stage_beside refuses rather than narrowing it.
+chk "at the mode the old form produced" 644 "$(file_mode "$dj/daemon.json")"
+# The read side, for hosts already carrying the damage: an empty daemon.json is
+# the one size the rewrite path cannot see, since `jq empty` exits 0 on it and
+# the driver query returns "" rather than the default — so the old form reported
+# an operator who chose another driver over a host with uncapped logs.
+: > "$dj/empty.json"
+ej="$(ensure_docker_log_caps "$dj/empty.json" 2>&1)"
+chk "an empty daemon.json is not read as a driver choice" 0 \
+  "$(grep -c 'rotates on its own' <<<"$ej")"
+chk "it is named as an interrupted create" 1 \
+  "$(grep -c 'exists but is empty' <<<"$ej")"
+chk "and the caps are put in" '10m' \
+  "$(jq -r '."log-opts"."max-size" // "NONE"' "$dj/empty.json" 2>/dev/null || echo UNPARSEABLE)"
+# The control the empty case must not widen into: a partial file may hold half
+# of an operator's configuration, nothing tells it apart from one this script
+# tore, and it is still left exactly as it is.
+printf '{"insecure-regist' > "$dj/partial.json"
+pj="$(ensure_docker_log_caps "$dj/partial.json" 2>&1)"
+chk "a partial daemon.json is still left alone" 1 \
+  "$(grep -c 'not valid JSON' <<<"$pj")"
+chk "and not rewritten" '{"insecure-regist' "$(cat "$dj/partial.json")"
+rm -rf "$dj"
+chk "the create is not written by redirection" 0 \
+  "$(grep -cE '^    cat > "\$file" <<' "$SRC")"
+
+echo "135. no key to install is a refusal, not a completed run"
+# The contract above install_authorized_keys says non-zero aborts the run. A
+# `for` loop whose every iteration took the `continue` completes with status 0,
+# so the one path where nothing could be installed was the one reporting
+# success — and the steps after it put the account in docker and sudoers.
+kd=$(mktemp -d); mkdir -p "$kd/home"
+: > "$kd/authorized_keys"
+( SSH_PUBLIC_KEY=''; install_authorized_keys "$kd/authorized_keys" "$kd/home" ) >/dev/null 2>&1
+chk "nothing to install reports failure" 1 "$?"
+# The control in the other direction, and the one that constrains the fix: this
+# runs on every convergence, so refusing a host whose cloud user was renamed
+# away but whose authorized_keys is already populated would take down every
+# re-run on a host that works.
+printf 'ssh-ed25519 AAAAOPS ops@laptop\n' > "$kd/authorized_keys"
+kout=$( SSH_PUBLIC_KEY=''; install_authorized_keys "$kd/authorized_keys" "$kd/home" 2>&1 )
+chk "an already-populated file is left alone" 0 "$?"
+chk "and the run says why it did nothing" 1 \
+  "$(grep -c 'already authorizes someone' <<<"$kout")"
+chk "the key it had is untouched" 1 "$(grep -c 'AAAAOPS' "$kd/authorized_keys")"
+# And the ordinary path is unchanged.
+mkdir -p "$kd/home/ubuntu/.ssh"
+printf 'ssh-ed25519 AAAACLOUD cloud\n' > "$kd/home/ubuntu/.ssh/authorized_keys"
+: > "$kd/authorized_keys"
+( SSH_PUBLIC_KEY=''; install_authorized_keys "$kd/authorized_keys" "$kd/home" ) >/dev/null 2>&1
+chk "a cloud user's keys are still copied" 0 "$?"
+chk "and land in the file" 1 "$(grep -c 'AAAACLOUD' "$kd/authorized_keys")"
+rm -rf "$kd"
+# Source-level: the call site acts on the status rather than leaving it to
+# errexit, which would abort with nothing said about the account holding sudo.
+chk "the call site names the account it aborts over" 1 \
+  "$(grep -c 'no SSH key could be installed' "$SRC")"
+
+echo "136. the Docker plugins are installed on a host that already has docker"
+# The plugin install sat inside `if ! command -v docker`, unreachable on the one
+# host that needs it named separately: the documented by-hand run on an existing
+# instance carrying Ubuntu's docker.io. The runbook promises buildx for the
+# remote builder, so the first `builder.remote` Kamal build fails on a host this
+# script reported as converged.
+docker_step() {  # DOCKER_PRESENT / BUILDX_OK / COMPOSE_OK are read from the env
+  ( set +u
+    log(){ printf 'LOG: %s\n' "$*"; }
+    install(){ :; }; curl(){ :; }; chmod(){ :; }; apt_get(){ :; }
+    dpkg(){ echo amd64; }; VERSION_CODENAME=noble
+    apt_install(){ printf 'INSTALL:%s\n' "$*"; }
+    command(){
+      if [ "${1:-}" = -v ] && [ "${2:-}" = docker ]; then
+        [ "$DOCKER_PRESENT" = yes ]; return $?
+      fi
+      builtin command "$@"
+    }
+    docker(){
+      [ "${1:-}" = buildx ]  && { [ "$BUILDX_OK" = yes ];  return $?; }
+      [ "${1:-}" = compose ] && { [ "$COMPOSE_OK" = yes ]; return $?; }
+      return 0
+    }
+    . "$td/step.sh" 2>/dev/null ) | grep '^INSTALL:' | sed 's/^INSTALL://'
+}
+td=$(mktemp -d)
+# The step is top-level code rather than a function, so it is taken from $SRC by
+# its banner and the comment that follows it rather than through the extraction
+# above. An empty extraction would make every row read "installs nothing", which
+# is a real answer for one of them — so the extraction is asserted first.
+awk '/^log "4\/9 Docker CE"/{p=1} /^# Cap container logs/{exit} p{print}' "$SRC" > "$td/step.sh"
+chk "the Docker step was extracted" 1 "$(grep -c 'apt_install' "$td/step.sh")"
+chk "a fresh host installs the whole set" \
+  'docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin' \
+  "$(DOCKER_PRESENT=no BUILDX_OK=no COMPOSE_OK=no docker_step)"
+# The control that constrains the fix: this runs on every convergence, so a
+# converged host must come out of it with nothing to do.
+chk "a host with both plugins installs nothing" '' \
+  "$(DOCKER_PRESENT=yes BUILDX_OK=yes COMPOSE_OK=yes docker_step)"
+chk "docker.io without buildx gets buildx" 'docker-buildx-plugin' \
+  "$(DOCKER_PRESENT=yes BUILDX_OK=no COMPOSE_OK=yes docker_step)"
+chk "and without either gets both" 'docker-buildx-plugin docker-compose-plugin' \
+  "$(DOCKER_PRESENT=yes BUILDX_OK=no COMPOSE_OK=no docker_step)"
+rm -rf "$td"
+chk "the plugins are not gated on the docker binary" 0 \
+  "$(grep -cE 'apt_install docker-ce docker-ce-cli containerd.io' "$SRC")"
 
 
 echo

@@ -1136,16 +1136,79 @@ ensure_docker_log_caps() {
   # replace the link itself.
   file="$(resolve_symlink_chain "$file")" || exit 1
 
+  # An existing but empty daemon.json is treated as absent, and this is the read
+  # side of the same accident — it repairs hosts the staged create below can
+  # only stop from happening again. Truncate-at-open is what a failed `cat >`
+  # leaves, so 0 bytes is the likely damage, and it is the one size the rewrite
+  # path cannot see: `jq empty` exits 0 on an empty file, and
+  # `."log-driver" // "json-file"` comes back as the empty string rather than
+  # the default, so the run reports "log-driver is '', which rotates on its own"
+  # — an all-clear over a host whose container logs are uncapped, which is the
+  # one failure this function exists to prevent.
+  #
+  # Replacing it destroys nothing, which is why this may act where the
+  # invalid-JSON branch below must not: a partial file may hold half of an
+  # operator's configuration and nothing distinguishes it from a file this
+  # script tore, but an empty one holds no decision of theirs to lose.
+  if [ -f "$file" ] && [ ! -s "$file" ]; then
+    log "$file exists but is empty — that is what an interrupted create leaves," \
+        "not a configuration, so it is being written afresh"
+    rm -f "$file"
+  fi
+
   if [ ! -f "$file" ]; then
+    # Staged and renamed, like the rewrite below. `cat > "$file"` opens the live
+    # path with O_TRUNC, so a write cut short by a full disk or a kill leaves a
+    # partial daemon.json that no later run repairs — the retry finds the file
+    # present, so it takes the rewrite path, where every branch declines:
+    #
+    #   live file after a torn create   what the operator's retry then says
+    #   0 bytes                         "log-driver is '', which rotates on
+    #                                    its own; leaving it alone"
+    #   20 bytes / 60 bytes             "not valid JSON ... left untouched
+    #                                    rather than overwritten — it is not
+    #                                    this script's file"
+    #
+    # The 0-byte row is the likely one, since that is what truncate-at-open
+    # leaves when the write fails immediately, and it is the worse of the two:
+    # `jq empty` exits 0 on an empty file, `."log-driver" // "json-file"` comes
+    # back as the empty string rather than the default, and the run reports the
+    # host as having an operator who chose another driver. Not a warning — an
+    # all-clear, over a host whose logs are uncapped, which is the one failure
+    # this function exists to prevent.
+    #
+    # The other row is loud but no more repairable, and its message is wrong in
+    # the specific way that matters: it is exactly this script's file. Nothing
+    # in the rewrite path can tell a partial file this script wrote from an
+    # operator's broken one, and it must not guess — which is why the fix is
+    # here, keeping the partial file off the live path, rather than there.
+    #
     # Indented so no line of the body starts at column 1: the unit tests extract
     # these functions with an awk range that ends at the first column-1 "}", and
     # a bare closing brace in a heredoc would cut the function in half.
-    cat > "$file" <<'JSON'
+    tmp="$(stage_beside "$file")" || {
+      log "WARNING: could not stage $file beside itself, so it was NOT created" \
+          "and container logs are NOT capped. Create it by hand with" \
+          '{"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}.'
+      return 0
+    }
+    if ! cat > "$tmp" <<'JSON' || ! jq empty "$tmp" >/dev/null 2>&1; then
     {
       "log-driver": "json-file",
       "log-opts": { "max-size": "10m", "max-file": "3" }
     }
 JSON
+      rm -f "$tmp"
+      log "WARNING: a staged $file did not come out as valid JSON, so it was" \
+          "NOT installed and container logs are NOT capped. The live path is" \
+          "untouched, so a later run creates it cleanly."
+      return 0
+    fi
+    # No chmod: stage_beside gives a staging file for an absent target the
+    # 0644 the old `cat >` produced, and refuses rather than installing at
+    # mktemp's 0600 — a daemon.json dockerd cannot read is the same outage by
+    # another route.
+    mv -f "$tmp" "$file"
     DAEMON_JSON_CHANGED=1
     return 0
   fi
@@ -2176,6 +2239,25 @@ install_authorized_keys() {
     fi
     return 0
   done
+
+  # No SSH_PUBLIC_KEY and no cloud user to copy from. A `for` loop whose every
+  # iteration took the `continue` completes with status 0, so that used to be
+  # this function's answer — the contract above says non-zero aborts the run,
+  # and the one path where nothing could be installed was the one reporting
+  # success.
+  #
+  # Not unconditionally, though: an account that already has a key is not a
+  # failure to give it one. A host whose cloud user was renamed or removed
+  # converges through here on every later run with authorized_keys already
+  # populated, and refusing that would take down every re-run on a host that is
+  # working — a worse defect than the one being fixed, and one no negative
+  # control catches, since a control only exercises the empty file.
+  if [ -s "$auth_keys" ]; then
+    log "no SSH_PUBLIC_KEY given and no cloud user's keys to copy —" \
+        "$auth_keys already authorizes someone, so it is left as it is"
+    return 0
+  fi
+  return 1
 }
 
 # revoke_prior_ssh_key <authorized_keys> [state file]
@@ -2453,17 +2535,58 @@ record_ssh_key_grant "$SSH_PUBLIC_KEY" ||
       "so this run cannot promise that a later one could find the key again." \
       "Nothing has been installed. Check that $STATE_DIR is writable and has" \
       "space, then re-run."
-install_authorized_keys "$AUTH_KEYS"
+# The status is acted on rather than left to errexit. A bare call does abort
+# under `set -euo pipefail`, but it aborts with nothing said — and the one thing
+# this failure needs to say is which account was left holding sudo, since the
+# operator's next move is either to supply a key or to take that grant back.
+install_authorized_keys "$AUTH_KEYS" ||
+  die "no SSH key could be installed for '$APP_SSH_USER': SSH_PUBLIC_KEY is" \
+      "empty, none of /home/{ubuntu,admin,ec2-user}/.ssh/authorized_keys" \
+      "exists, and $AUTH_KEYS is empty. Stopping here rather than finishing:" \
+      "'$APP_SSH_USER' already has passwordless sudo from the step above, and" \
+      "a run that carried on would print KAMAL_SSH_USER=$APP_SSH_USER over an" \
+      "account nothing can log in as. The grant is recorded in" \
+      "$STATE_DIR/deploy_users, so a later run naming a different APP_SSH_USER" \
+      "takes it back. Re-run with" \
+      "SSH_PUBLIC_KEY=\"\$(cat ~/.ssh/id_ed25519.pub)\"."
 revoke_prior_ssh_key "$AUTH_KEYS"
 dedupe_authorized_keys "$AUTH_KEYS" "$SSH_PUBLIC_KEY"
 chown "$APP_SSH_USER:$APP_SSH_GROUP" "$AUTH_KEYS"
 chmod 0600 "$AUTH_KEYS"
+# Still a warning rather than a second gate, and what it covers has narrowed to
+# the *other* way this file ends up empty: a withdrawal or a dedupe that removed
+# the last line, where a key was installed and stopping would be wrong. The
+# no-key-at-all case is the `die` above, which is the one that has to stop.
 [ -s "$AUTH_KEYS" ] || log "WARNING: $AUTH_KEYS is empty — kamal will not be able to connect"
 
 # --------------------------------------------------------------------------
 log "4/9 Docker CE"
 # --------------------------------------------------------------------------
+# What to install, decided per package rather than from the presence of the
+# `docker` binary. The plugin install used to sit inside `if ! command -v
+# docker`, which made it unreachable on the one host that needs it named
+# separately: a by-hand run on an existing instance — the documented path — that
+# already carries Ubuntu's `docker.io`. There `command -v docker` answers, the
+# whole branch is skipped, and neither buildx nor compose is ever installed,
+# while docs/deploy_to_lightsail.md tells the operator the launch script
+# installs buildx so the remote builder works out of the box. The first
+# `builder.remote` Kamal build then fails on a host this script reported as
+# converged.
+#
+# `docker buildx version` rather than a test on a path: the CLI looks for
+# plugins in several directories, and what decides whether Kamal can build is
+# whether the CLI finds one, not whether a particular file is there.
+DOCKER_WANT=''
 if ! command -v docker >/dev/null 2>&1; then
+  DOCKER_WANT='docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin'
+else
+  docker buildx version  >/dev/null 2>&1 || DOCKER_WANT="$DOCKER_WANT docker-buildx-plugin"
+  docker compose version >/dev/null 2>&1 || DOCKER_WANT="$DOCKER_WANT docker-compose-plugin"
+  [ -z "$DOCKER_WANT" ] ||
+    log "docker is already installed but$DOCKER_WANT is missing — installing it"
+fi
+
+if [ -n "$DOCKER_WANT" ]; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     -o /etc/apt/keyrings/docker.asc
@@ -2474,8 +2597,8 @@ if ! command -v docker >/dev/null 2>&1; then
 deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable
 EOF
   apt_get update -y
-  apt_install docker-ce docker-ce-cli containerd.io \
-    docker-buildx-plugin docker-compose-plugin
+  # shellcheck disable=SC2086  # a package list, deliberately word-split
+  apt_install $DOCKER_WANT
 fi
 
 # Cap container logs — an unrotated Rails log fills a Lightsail SSD fast.
