@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|ensure_docker_log_caps)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -29,7 +29,7 @@ eval "$(awk '
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key \
-          ensure_cluster_on_default_port ensure_swapfile; do
+          ensure_cluster_on_default_port ensure_swapfile ensure_docker_log_caps; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -1123,6 +1123,130 @@ esac
 out="$( (DB_PORT=5432 eval "$guard") 2>&1 )"
 chk "the default proceeds" 0 "$?"
 chk "and says nothing"     "" "$out"
+
+# --------------------------------------------------------------------------
+# ensure_docker_log_caps. Real jq; the file is a temp path.
+# --------------------------------------------------------------------------
+caps_of() { jq -c '."log-opts"' "$1"; }
+
+echo "62. a host with no daemon.json gets the caps written"
+d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+ensure_docker_log_caps "$f"
+chk "reports it changed the file" 1 "$DAEMON_JSON_CHANGED"
+chk "caps present" '{"max-size":"10m","max-file":"3"}' "$(caps_of "$f")"
+chk "valid JSON"   0 "$(jq empty "$f" >/dev/null 2>&1; echo $?)"
+
+echo "63. an existing daemon.json without caps has them merged in, not clobbered"
+# The finding: the old condition skipped the whole block whenever the file
+# existed, so a by-hand run on an existing instance left logs uncapped and
+# still reported Docker as configured.
+d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+printf '{"insecure-registries":["r.internal:5000"],"live-restore":true}\n' > "$f"
+ensure_docker_log_caps "$f"
+chk "reports it changed the file" 1 "$DAEMON_JSON_CHANGED"
+chk "caps added"   '{"max-size":"10m","max-file":"3"}' "$(caps_of "$f")"
+chk "driver set"   'json-file' "$(jq -r '."log-driver"' "$f")"
+chk "operator's registries kept" '["r.internal:5000"]' "$(jq -c '."insecure-registries"' "$f")"
+chk "operator's live-restore kept" 'true' "$(jq -r '."live-restore"' "$f")"
+
+echo "64. existing caps are left exactly as the operator set them"
+d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+printf '{"log-driver":"json-file","log-opts":{"max-size":"50m","max-file":"10"}}\n' > "$f"
+before="$(cat "$f")"
+ensure_docker_log_caps "$f"
+chk "reports no change" 0 "$DAEMON_JSON_CHANGED"
+chk "byte-identical"    "$before" "$(cat "$f")"
+
+echo "65. a non-json-file driver is reported, not overridden"
+# journald and local rotate on their own; forcing json-file would redirect an
+# operator's logs rather than cap them.
+for drv in journald local awslogs; do
+  d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+  printf '{"log-driver":"%s"}\n' "$drv" > "$f"
+  before="$(cat "$f")"
+  ensure_docker_log_caps "$f"
+  chk "no change for $drv" 0 "$DAEMON_JSON_CHANGED"
+  chk "untouched: $drv"    "$before" "$(cat "$f")"
+done
+case "$LOGGED" in
+  *"rotates on its own"*) echo "  ok   says why it left it alone" ;;
+  *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
+esac
+
+echo "66. an unparseable daemon.json is reported, never overwritten"
+# It is the operator's file and Docker will not start until it is repaired;
+# replacing it would destroy the evidence of what they meant.
+d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+printf '{"log-driver": "json-file",,,\n' > "$f"
+before="$(cat "$f")"
+ensure_docker_log_caps "$f"
+chk "reports no change" 0 "$DAEMON_JSON_CHANGED"
+chk "untouched"         "$before" "$(cat "$f")"
+case "$LOGGED" in
+  *"WARNING"*"not valid JSON"*) echo "  ok   operator told" ;;
+  *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
+esac
+
+echo "67. a merged file is stable across re-runs"
+d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+printf '{"live-restore":true}\n' > "$f"
+ensure_docker_log_caps "$f"
+after_first="$(cat "$f")"
+ensure_docker_log_caps "$f"
+chk "second run changes nothing" 0 "$DAEMON_JSON_CHANGED"
+chk "byte-identical"             "$after_first" "$(cat "$f")"
+
+# --------------------------------------------------------------------------
+# ensure_ufw_rule, revisited: a delete that FAILS must not advance the marker.
+# --------------------------------------------------------------------------
+UFW_CALLS=""
+UFW_DELETE_FAILS=""
+# shellcheck disable=SC2329  # called by ensure_ufw_rule, eval'd from the script
+ufw() {
+  UFW_CALLS="$UFW_CALLS|$*"
+  [ "${1:-}" != delete ] || [ -z "$UFW_DELETE_FAILS" ] || return 1
+  return 0
+}
+LOGGED=""
+# shellcheck disable=SC2329  # called by ensure_ufw_rule, eval'd from the script
+log() { LOGGED="$LOGGED $*"; }
+
+echo "68. a delete that fails leaves the marker so the next run retries"
+# `ufw delete` exits 0 even for a rule that was not there, so a non-zero status
+# means it could not act and the old rule is still installed. Advancing the
+# marker there loses the only record of it: the previous Docker subnet keeps
+# reaching PostgreSQL for the life of the instance and no run can find it.
+d=$(mktemp -d); st="$d/ufw_postgres"
+old="allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp"
+new="allow from 10.200.0.0/16 to 172.18.0.1 port 5432 proto tcp"
+printf '%s\n' "$old" > "$st"
+UFW_CALLS=""; LOGGED=""; UFW_DELETE_FAILS=1
+ensure_ufw_rule postgres "$new" "$st"
+chk "returns success"        0 "$?"
+chk "new rule still added"   1 "$(printf '%s' "$UFW_CALLS" | grep -c '|allow from 10.200.0.0/16')"
+chk "marker NOT advanced"    "$old" "$(cat "$st")"
+case "$LOGGED" in
+  *"WARNING"*"still"*"in force"*) echo "  ok   operator told, with the command to fix it" ;;
+  *) echo "  FAIL silent or vague: $LOGGED"; fail=1 ;;
+esac
+# and the retry works once ufw can act again
+UFW_CALLS=""; LOGGED=""; UFW_DELETE_FAILS=""
+ensure_ufw_rule postgres "$new" "$st"
+chk "retry withdraws the old rule" 1 "$(printf '%s' "$UFW_CALLS" | grep -c "|delete $old")"
+chk "marker advanced now"          "$new" "$(cat "$st")"
+
+echo "69. the replacement is added before the predecessor is withdrawn"
+# An interrupted run must never leave the host with neither rule.
+d=$(mktemp -d); st="$d/ufw_postgres"
+printf '%s\n' "$old" > "$st"
+UFW_CALLS=""; LOGGED=""; UFW_DELETE_FAILS=""
+ensure_ufw_rule postgres "$new" "$st"
+case "$UFW_CALLS" in
+  "|allow from 10.200.0.0/16"*"|delete allow from 172.17.0.0/16"*)
+    echo "  ok   add precedes delete" ;;
+  *) echo "  FAIL wrong order: $UFW_CALLS"; fail=1 ;;
+esac
+unset -f ufw
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

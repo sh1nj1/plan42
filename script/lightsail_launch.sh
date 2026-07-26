@@ -383,6 +383,79 @@ ensure_swapfile() {
   [ "$have" -eq 0 ] || log "resized $swap from ${have}MiB to ${want}MiB"
 }
 
+# Make sure container logs are capped, whether or not this host already has a
+# /etc/docker/daemon.json. Sets DAEMON_JSON_CHANGED to 1 when it changed the
+# file, so the caller knows a restart is needed for it to take effect.
+#
+# A global rather than an echoed value: log() writes to stdout, so a caller
+# using $(...) would capture the warnings below along with the flag and then
+# compare that to an integer.
+#
+# The previous form only wrote the file when it was absent. On the by-hand path
+# the runbook documents — an existing instance, Docker already installed,
+# possibly with an operator's own daemon.json — the caps were silently skipped
+# while the run reported Docker as configured. json-file with no `max-size` does
+# not rotate at all, so sustained Rails output fills a Lightsail SSD, which is
+# the specific failure this block exists to prevent.
+ensure_docker_log_caps() {
+  local file="${1:-/etc/docker/daemon.json}" tmp driver
+  DAEMON_JSON_CHANGED=0
+
+  if [ ! -f "$file" ]; then
+    # Indented so no line of the body starts at column 1: the unit tests extract
+    # these functions with an awk range that ends at the first column-1 "}", and
+    # a bare closing brace in a heredoc would cut the function in half.
+    cat > "$file" <<'JSON'
+    {
+      "log-driver": "json-file",
+      "log-opts": { "max-size": "10m", "max-file": "3" }
+    }
+JSON
+    DAEMON_JSON_CHANGED=1
+    return 0
+  fi
+
+  if ! jq empty "$file" >/dev/null 2>&1; then
+    log "WARNING: $file is not valid JSON, so the container log caps were NOT" \
+        "applied and Docker will not start until it is repaired. Left untouched" \
+        "rather than overwritten — it is not this script's file."
+    return 0
+  fi
+
+  # Only json-file is unbounded by default. journald, local and the cloud
+  # drivers do their own rotation, and forcing json-file onto a host whose
+  # operator chose otherwise would redirect their logs, not cap them.
+  driver="$(jq -r '."log-driver" // "json-file"' "$file")"
+  if [ "$driver" != "json-file" ]; then
+    log "docker log-driver is '$driver', which rotates on its own;" \
+        "leaving $file alone"
+    return 0
+  fi
+
+  if [ "$(jq -r '."log-opts"."max-size" // empty' "$file")" != "" ]; then
+    return 0
+  fi
+
+  tmp="$(mktemp)"
+  # Merge rather than replace: everything else in the file is the operator's.
+  # Validated before it is installed, because a daemon.json that does not parse
+  # stops Docker from starting at all.
+  if ! jq '."log-driver" = "json-file"
+           | ."log-opts" = ((."log-opts" // {})
+               + {"max-size": "10m", "max-file": "3"})' "$file" > "$tmp" ||
+     ! jq empty "$tmp" >/dev/null 2>&1; then
+    rm -f "$tmp"
+    log "WARNING: could not merge the log caps into $file; it is unchanged and" \
+        "container logs are NOT capped. Add" \
+        '"log-opts": {"max-size": "10m", "max-file": "3"} by hand.'
+    return 0
+  fi
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+  log "added container log caps to the existing $file"
+  DAEMON_JSON_CHANGED=1
+}
+
 # Refuse to provision when $PG_MAJOR's cluster is not the one on $DB_PORT.
 #
 # This script assumes one cluster, on the default port: DATABASE_URL, the ufw
@@ -475,18 +548,37 @@ reassign_prior_db_role() {
 # whose display form ("172.17.0.1 5432/tcp ALLOW IN 172.17.0.0/16") is not the
 # syntax `ufw delete` takes.
 ensure_ufw_rule() {
-  local name="$1" rule="$2" state="${3:-$STATE_DIR/ufw_$1}" prior
-  if [ -f "$state" ]; then
-    prior="$(cat "$state")"
-    if [ -n "$prior" ] && [ "$prior" != "$rule" ]; then
-      # Unquoted on purpose: a rule is a word list, not one argument.
-      # shellcheck disable=SC2086
-      ufw delete $prior >/dev/null 2>&1 &&
-        log "withdrew the previous $name rule: $prior"
-    fi
-  fi
+  local name="$1" rule="$2" state="${3:-$STATE_DIR/ufw_$1}" prior=""
+  [ -f "$state" ] && prior="$(cat "$state")"
+
+  # The replacement goes in first, so an interrupted run never leaves the host
+  # with neither rule. Same ordering as the deploy-user and SSH-key revocations.
+  # Unquoted on purpose: a rule is a word list, not one argument.
   # shellcheck disable=SC2086
   ufw $rule >/dev/null
+
+  if [ -n "$prior" ] && [ "$prior" != "$rule" ]; then
+    # `ufw delete` exits 0 both when it removed the rule and when there was
+    # nothing to remove ("Could not delete non-existent rule"), so a zero status
+    # does mean the rule is gone afterwards. It exits non-zero when it could not
+    # act at all — unparseable rule text, a lock it could not take — and that is
+    # the case where the old rule is still installed.
+    #
+    # The marker is NOT advanced then. Advancing it would drop the only record
+    # of what is still in force: for the postgres rule that means the previous
+    # Docker subnet keeps reaching the database for the life of the instance,
+    # and no later run can find it to revoke. Leaving the marker makes the next
+    # run retry, and `ufw` ignores a re-add of the rule already present.
+    # shellcheck disable=SC2086
+    if ! ufw delete $prior >/dev/null 2>&1; then
+      log "WARNING: could NOT withdraw the previous $name rule, and it is still" \
+          "in force: $prior — the marker is left unchanged so the next run" \
+          "retries it. Remove it by hand with: ufw delete $prior"
+      return 0
+    fi
+    log "withdrew the previous $name rule: $prior"
+  fi
+
   printf '%s\n' "$rule" > "$state"
 }
 
@@ -750,23 +842,17 @@ fi
 
 # Cap container logs — an unrotated Rails log fills a Lightsail SSD fast.
 install -d -m 0755 /etc/docker
-DAEMON_JSON_WRITTEN=0
-if [ ! -f /etc/docker/daemon.json ]; then
-  cat > /etc/docker/daemon.json <<'JSON'
-{
-  "log-driver": "json-file",
-  "log-opts": { "max-size": "10m", "max-file": "3" }
-}
-JSON
-  DAEMON_JSON_WRITTEN=1
-fi
+DAEMON_JSON_CHANGED=0
+ensure_docker_log_caps
 systemctl enable docker
-if [ "$DAEMON_JSON_WRITTEN" -eq 1 ]; then
+if [ "$DAEMON_JSON_CHANGED" -eq 1 ]; then
   # The package starts the daemon during install, so it is already running with
   # the stock config by the time we get here — `enable --now` would leave it
   # that way and the log caps would not apply until something restarted Docker.
-  # Only on the run that wrote the file, so a re-run never bounces live
-  # containers.
+  # Only on a run that changed the file, so a re-run never bounces live
+  # containers. On an existing instance that restart does bounce them, once:
+  # they come back under their restart policy, and an uncapped log filling the
+  # disk takes the whole host down rather than one container.
   systemctl restart docker
 else
   systemctl start docker
