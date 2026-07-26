@@ -684,11 +684,32 @@ case "$*" in
   *"sudo rm"*)                              echo RM_STAGED >>"$TRACE" ;;
   *"sudo install"*)                         echo STAGE     >>"$TRACE"
                                             [ -z "$FAIL_STAGE" ] || exit 1 ;;
+  # The receiving half of the blob copy. Reads the stream so the sending tar is
+  # not killed by SIGPIPE, which would make FAIL_TAR indistinguishable from a
+  # receiver that hung up.
+  *"sudo tar -xf"*)                         cat >/dev/null
+                                            echo BLOBS     >>"$TRACE"
+                                            [ -z "$FAIL_BLOB" ] || exit 1 ;;
   *)                                        echo ssh       >>"$TRACE" ;;
 esac
 STUB
   printf '#!/usr/bin/env bash\necho scp >>"$TRACE"\n[ -z "$FAIL_SCP" ] || exit 1\n' \
     > "$work/bin/scp"
+  # The snapshot is what the recipe sends, so the stub has to produce a file at
+  # the path the VACUUM INTO names — otherwise the scp that follows would be
+  # testing a missing file rather than the step under test.
+  cat > "$work/bin/sqlite3" <<'STUB'
+#!/usr/bin/env bash
+echo SNAPSHOT >>"$TRACE"
+[ -z "$FAIL_SNAP" ] || { echo "Error: near \"VACUUM\": syntax error" >&2; exit 1; }
+sql="${*: -1}"
+dest="${sql#*\'}"; dest="${dest%\'*}"
+[ -z "$dest" ] || : > "$dest"
+STUB
+  # Sending half of the blob copy: its own status is the thing case 32h is about,
+  # so it is a separate stub from the receiver rather than one knob for both.
+  printf '#!/usr/bin/env bash\necho TAR_SEND >>"$TRACE"\n[ -z "$FAIL_TAR" ] || exit 2\n' \
+    > "$work/bin/tar"
   cat > "$work/bin/kamal.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "kamal:$1${2:+ $2}" >>"$TRACE"
@@ -698,11 +719,32 @@ STUB
   chmod +x "$work/bin"/*
   cp "$work/bin/kamal.sh" "$work/kamal.sh"
 
+  # NO_SQLITE3 is a host with no sqlite3 at all, and absence cannot be stubbed:
+  # removing the stub would only uncover the real binary further down PATH. So
+  # that case runs with PATH holding nothing but the stubs, which means the few
+  # real commands the recipe needs have to be reachable there — and `bash`
+  # itself is invoked by absolute path, since PATH is what would resolve it.
+  local recipe_path="$work/bin:$PATH"
+  if [ -n "${NO_SQLITE3:-}" ]; then
+    rm -f "$work/bin/sqlite3"
+    local c
+    # env and bash among them: every stub here is `#!/usr/bin/env bash`, so
+    # without them the stubs fail to start and the case passes on the wrong
+    # failure — it did, before this line: `app stop` reported STOP FAILED and
+    # the recipe never reached the snapshot at all.
+    for c in mktemp rm env bash; do ln -s "$(command -v "$c")" "$work/bin/$c"; done
+    recipe_path="$work/bin"
+  fi
+
   TRACE="$work/trace"; : > "$TRACE"
   export TRACE FAIL_COPY="${FAIL_COPY:-}" FAIL_REVOKE="${FAIL_REVOKE:-}"
   export FAIL_SCP="${FAIL_SCP:-}" FAIL_STAGE="${FAIL_STAGE:-}"
-  export FAIL_STOP="${FAIL_STOP:-}"
-  RECIPE_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  export FAIL_STOP="${FAIL_STOP:-}" FAIL_SNAP="${FAIL_SNAP:-}"
+  export FAIL_TAR="${FAIL_TAR:-}" FAIL_BLOB="${FAIL_BLOB:-}"
+  # The recipe refuses unless the operator states the source is stopped, so the
+  # default here is the stated case and case 32b is the unstated one.
+  export source_quiesced="${SOURCE_QUIESCED-1}"
+  RECIPE_OUT="$(cd "$work" && PATH="$recipe_path" "$BASH" ./recipe.sh 2>&1)"
   RECIPE_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
 }
@@ -781,6 +823,113 @@ case "$RECIPE_OUT" in
   *"STOP FAILED"*) echo "  ok   operator told the container may still be serving" ;;
   *) echo "  FAIL silent or vague: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
 esac
+
+echo "32b. an undeclared source stops the whole recipe, before kamal is touched"
+# The source is the one thing on this page that cannot be checked: SQLite has no
+# pg_stat_activity, and the file looks identical whether the writer left or is
+# between requests. So the recipe asks, and the ask has to be a gate rather than
+# a sentence — nothing may run ahead of it, including `setup`, which on a
+# half-configured instance is not a no-op.
+SOURCE_QUIESCED='' FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' \
+  FAIL_STOP='' run_cutover
+chk "nothing ran at all"   "" "$RECIPE_TRACE"
+chk "no snapshot taken"     0 "$(grep -cx SNAPSHOT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"        0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *REFUSING*source_quiesced=1*) echo "  ok   refusal names the way through" ;;
+  *) echo "  FAIL vague or absent: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
+esac
+unset SOURCE_QUIESCED
+
+echo "32c. the source is snapshotted, not copied — WAL contents are not in the file"
+# config/database.yml runs SQLite in WAL mode. A cp of production-primary.sqlite3
+# omits everything committed since the last checkpoint, converts cleanly, and
+# reports success — measured at 1 row of 3 with a writer still attached. The
+# assertion is on both halves: a snapshot is taken, and the raw file is not what
+# goes over the wire, since adding the snapshot while still sending the original
+# would test nothing.
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' run_cutover
+chk "snapshot taken"                1 "$(grep -cx SNAPSHOT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "snapshot precedes the transfer" 1 \
+  "$(grep -q 'SNAPSHOT|scp' <<<"$RECIPE_TRACE" && echo 1 || echo 0)"
+chk "sqlite3 is what reads the source" 1 \
+  "$(grep -c 'sqlite3 storage/production-primary.sqlite3' <<<"$recipe")"
+chk "the raw database file is not sent" 0 \
+  "$(grep -c 'scp storage/production-primary.sqlite3' <<<"$recipe")"
+
+echo "32d. a failed snapshot converts nothing"
+FAIL_SNAP=1 FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' \
+  run_cutover
+chk "nothing transferred"  0 "$(grep -cx scp <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "nothing staged"       0 "$(grep -cx STAGE <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"SNAPSHOT FAILED"*"source is untouched"*)
+    echo "  ok   says the source was only read" ;;
+  *) echo "  FAIL silent or vague: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
+esac
+unset FAIL_SNAP
+
+echo "32e. a host without sqlite3 refuses rather than falling back to cp"
+# The fallback is the bug. Absence is modelled by running with nothing but the
+# stubs on PATH, because removing the stub alone would find the real binary.
+NO_SQLITE3=1 FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' \
+  run_cutover
+chk "nothing transferred"  0 "$(grep -cx scp <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"no sqlite3"*) echo "  ok   names what is missing" ;;
+  *) echo "  FAIL does not say why: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
+esac
+unset NO_SQLITE3
+
+echo "32f. Active Storage blobs are copied, before the conversion and the boot"
+# The conversion copies active_storage_blobs rows; with :local storage the files
+# they name sit beside the SQLite file on the source, and the volume here is new.
+# Skipped, every attachment 404s from metadata that says it exists.
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' run_cutover
+chk "blobs sent"     1 "$(grep -cx TAR_SEND <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "blobs unpacked" 1 "$(grep -cx BLOBS <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "staged, then blobs, then granted" 1 \
+  "$(grep -q 'STAGE|TAR_SEND|BLOBS|GRANT' <<<"$RECIPE_TRACE" && echo 1 || echo 0)"
+chk "the SQLite files are excluded from that copy" 1 \
+  "$(grep -c "exclude='\*.sqlite3\*'" <<<"$recipe")"
+
+echo "32g. a failed blob copy converts nothing"
+# Worth stopping for rather than warning about: the database would be correct and
+# the app would boot, so the only symptom is broken attachments — found later, by
+# a user, with the source already stopped.
+FAIL_BLOB=1 FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' \
+  run_cutover
+chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"BLOB COPY FAILED"*"attachments"*)
+    echo "  ok   says what booting now would produce" ;;
+  *) echo "  FAIL silent or vague: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
+esac
+unset FAIL_BLOB
+
+echo "32h. a sending tar that fails is caught, though the receiver is happy"
+# The status of a pipeline is its last element's. Read as \$?, a tar that cannot
+# read the source sends an empty stream to a receiver that unpacks it and exits
+# 0 — a blob copy that copied nothing, reported as success, on the one path
+# where the source is already stopped and the evidence is behind you.
+FAIL_TAR=1 FAIL_BLOB='' FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' \
+  FAIL_STOP='' run_cutover
+chk "the receiver did succeed" 1 "$(grep -cx BLOBS <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no conversion ran"        0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"           0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"BLOB COPY FAILED"*) echo "  ok   the sending half is not trusted to ssh" ;;
+  *) echo "  FAIL the empty stream passed for a copy: ${RECIPE_OUT:-(no output)}"
+     fail=1 ;;
+esac
+unset FAIL_TAR
 
 echo "33. staging renames into place rather than writing the live path directly"
 # An interrupted copy must leave the previous file intact, not a truncated
@@ -1900,6 +2049,19 @@ STUB
   cat > "$work/bin/psql" <<'STUB'
 #!/usr/bin/env bash
 sql="${*: -1}"
+# $app_db comes out of a state file, and DB_NAME accepts names that an unquoted
+# identifier cannot carry — the launch script creates them through format('%I').
+# Modelled at the parser rather than asserted about, so the case fails the way
+# the cluster fails: syntax error, no state change, and a read-back that then
+# disagrees with the ALTER.
+case "$sql" in
+  *"ALTER DATABASE"*)
+    ident="${sql#*ALTER DATABASE }"; ident="${ident%% CONNECTION*}"
+    case "$ident" in
+      '"'*'"')      : ;;
+      *[!a-z0-9_]*) echo 'ERROR:  syntax error at or near "-"' >&2; exit 1 ;;
+    esac ;;
+esac
 case "$sql" in
   *"CONNECTION LIMIT 0"*)      echo "limit:0"        >>"$TRACE"
                                [ -n "$FAIL_SHUT" ] || echo 0 > "$CONNLIMIT"
@@ -2076,6 +2238,29 @@ echo "86e. a failing re-open on the refusal path is reported too"
 LIVE=1 KILLED=0 FAIL_RESTORE='' FAIL_REOPEN=1 run_restore
 chk "nothing dropped"             0 "$(grep -c '^PG_RESTORE_RAN$' <<<"${R_TRACE//|/$'\n'}")"
 chk "told the door is still shut" 1 "$(grep -c 'RE-OPEN FAILED' <<<"$R_OUT")"
+unset FAIL_REOPEN
+
+echo "86f. a database name that needs quoting is shut, restored and re-opened"
+# `collavre-prod` is a legal DB_NAME: the launch script creates the database
+# through format('%I') and URL-encodes it into DATABASE_URL, so a host can be
+# running on one. Unquoted here PostgreSQL reads the hyphen as subtraction, the
+# read-back then answers -1, and this block refuses with restore_status=3 — a
+# host whose backups cannot be restored by the runbook that wrote them.
+APP_DB='collavre-prod' LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "the door was shut"      1 "$(grep -cx 'limit:0' <<<"${R_TRACE//|/$'\n'}")"
+chk "and confirmed shut"     0 "$(grep -c 'REFUSING' <<<"$R_OUT")"
+chk "restore ran"            1 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
+chk "re-opened"              1 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|/$'\n'}")"
+chk "operator told to boot"  1 "$(grep -c 'app boot' <<<"$R_OUT")"
+
+echo "86g. and the recovery it prints for such a name is runnable as printed"
+# The recovery is pasted, so the identifier's quotes have to survive the shell
+# that pastes it. Printed inside double quotes they would be eaten and the
+# command would fail exactly where the operator has no other route left.
+APP_DB='collavre-prod' LIVE=0 KILLED=0 FAIL_RESTORE='' FAIL_REOPEN=1 run_restore
+chk "told the door is still shut" 1 "$(grep -c 'RE-OPEN FAILED' <<<"$R_OUT")"
+chk "the printed ALTER quotes the name" 1 \
+  "$(grep -cF "'ALTER DATABASE \"collavre-prod\" CONNECTION LIMIT -1'" <<<"$R_OUT")"
 unset FAIL_REOPEN
 
 # --- dedupe_authorized_keys -------------------------------------------------

@@ -436,8 +436,12 @@ To actually move to a new name, do it deliberately and then tell the script:
 # the marker describe the cluster rather than describe a command that reported
 # success. `grep -qx` is the gate rather than psql's own status, so an empty
 # answer — a query that failed, a cluster that went away — fails closed.
+# Both names are double-quoted because you are substituting your own into them,
+# and DB_NAME accepts names an unquoted identifier cannot carry: the launch
+# script creates them through `format('%I')`, so `collavre-prod` is legal there
+# and a syntax error here without the quotes.
 sudo -u postgres psql -qd postgres -c \
-  "ALTER DATABASE collavre_production RENAME TO collavre_prod" &&
+  "ALTER DATABASE \"collavre_production\" RENAME TO \"collavre_prod\"" &&
   sudo -u postgres psql -qtAd postgres -c \
     "SELECT 1 FROM pg_database WHERE datname = 'collavre_prod'" | grep -qx 1 &&
   echo collavre_prod | sudo tee /var/lib/collavre/db_name
@@ -664,9 +668,53 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
   is what `MIGRATION_RUN_USER` is for, and dotenv never touches it.
 
   ```bash
+  # Stop the source deployment before anything below reads its files, then say
+  # so here. `./kamal.sh app stop` further down stops the *new* instance's app,
+  # which is holding an empty database — it says nothing about the deployment
+  # still serving the SQLite file this recipe copies.
+  #
+  # This is asked rather than checked because SQLite gives no answer to ask for.
+  # The PostgreSQL path above can list pg_stat_activity; here the file is the
+  # only witness, and it looks the same whether the writer went away or is
+  # simply between requests. So a check would be the reassurance without the
+  # fact, and the one thing it must not do is report "quiet" about a source
+  # that is still committing.
+  source_quiesced=${source_quiesced:-}
+  if [ "$source_quiesced" != 1 ]; then
+    echo "REFUSING: the source deployment has not been declared stopped."
+    echo "  Nothing has been copied, granted or converted."
+    echo "  Stop it (or put it in maintenance mode) so no further writes land,"
+    echo "  then re-run this block with:"
+    echo "    source_quiesced=1"
+    echo "  Writes committed to the source after the snapshot below are not"
+    echo "  migrated and are not detectable afterwards: the converted database"
+    echo "  is complete as of the snapshot and says nothing about what came next."
+  else
+
   ./kamal.sh setup
   ./kamal.sh app stop   # no writes while the schema is dropped and reloaded
   stop_status=$?
+
+  # Snapshot the source rather than copying its file. config/database.yml runs
+  # SQLite with `journal_mode: WAL`, so transactions committed since the last
+  # checkpoint live in production-primary.sqlite3-wal and are simply absent from
+  # the main file — a copy of it alone converts cleanly, reports success, and is
+  # missing the most recent rows with nothing to indicate it. VACUUM INTO writes
+  # one self-contained file with the WAL folded in and no -wal/-shm companions
+  # to forget, and it reads a consistent snapshot rather than a file that may be
+  # written mid-transfer.
+  #
+  # No fallback to `cp` if sqlite3 is missing: that is the bug, not a
+  # workaround. Install it on the machine holding the source, or take the
+  # snapshot wherever that machine can.
+  snap_status=1
+  snap_dir=
+  if [ "$stop_status" -eq 0 ] && command -v sqlite3 >/dev/null; then
+    snap_dir="$(mktemp -d)"
+    sqlite3 storage/production-primary.sqlite3 \
+      "VACUUM INTO '$snap_dir/production-primary.sqlite3'"
+    snap_status=$?
+  fi
 
   # The task reads the SQLite file from inside the container. /rails/storage is
   # the plan42_storage volume, shared by every container of the app, and uid
@@ -674,8 +722,9 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
   # Stage under a temporary name and rename into place, so the task can only
   # ever see a complete file. stage_status covers the whole staging step.
   stage_status=1
-  if [ "$stop_status" -eq 0 ]; then
-    scp storage/production-primary.sqlite3 <deploy-user>@<instance-ip>:/tmp/ &&
+  if [ "$snap_status" -eq 0 ]; then
+    scp "$snap_dir/production-primary.sqlite3" \
+        <deploy-user>@<instance-ip>:/tmp/ &&
       ssh <deploy-user>@<instance-ip> \
         'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
          sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
@@ -686,15 +735,49 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
     stage_status=$?
   fi
 
+  # Active Storage blobs. The conversion copies active_storage_blobs *rows*; the
+  # files those rows name are not in the database. With no S3 credentials
+  # config/environments/production.rb selects `:local`, and config/storage.yml
+  # roots that service at Rails.root/storage — the same directory as the SQLite
+  # file — so on such a source the blobs are on disk beside it while
+  # plan42_storage on the new instance is newly created and empty. Skipped,
+  # every attachment 404s after boot from metadata that insists it exists.
+  #
+  # Harmless when the source used S3: blob keys fan out into two-character
+  # directories, the exclude drops the SQLite files and their -wal/-shm
+  # companions, and what is left to send is then nothing.
+  blob_status=1
+  if [ "$stage_status" -eq 0 ]; then
+    tar -cf - -C storage --exclude='*.sqlite3*' . |
+      ssh <deploy-user>@<instance-ip> \
+        'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
+         sudo tar -xf - -C "$vol" --no-same-owner &&
+         sudo chown -R 1000:1000 "$vol"'
+    # Not $?, which is only ssh's: a tar that fails to read the source would
+    # otherwise send an empty stream to a receiver that unpacks it happily.
+    blob_status=$(( ${PIPESTATUS[0]} | ${PIPESTATUS[1]} ))
+  fi
+
   if [ "$stop_status" -ne 0 ]; then
     echo "STOP FAILED: a container may still be serving and polling this database"
     echo "nothing was staged, granted or converted"
     echo "check './kamal.sh app details' before retrying — do not convert while it runs"
+  elif [ "$snap_status" -ne 0 ]; then
+    command -v sqlite3 >/dev/null ||
+      echo "SNAPSHOT FAILED: no sqlite3 on this machine"
+    echo "SNAPSHOT FAILED: nothing was staged, granted or converted"
+    echo "the source is untouched — VACUUM INTO only reads it"
+    echo "app left stopped on purpose; snapshot before converting"
   elif [ "$stage_status" -ne 0 ]; then
     echo "STAGING FAILED: nothing was granted and nothing was converted"
     echo "the volume still holds whatever was there before — on a retry that is"
     echo "the stale snapshot the previous attempt deliberately kept"
     echo "app left stopped on purpose; re-stage before converting"
+  elif [ "$blob_status" -ne 0 ]; then
+    echo "BLOB COPY FAILED: nothing was granted and nothing was converted"
+    echo "the database was not touched, so this is safe to retry from the top"
+    echo "converting now would boot an app whose attachments are all missing"
+    echo "app left stopped on purpose; copy the blobs before converting"
   else
     # The copy disables referential integrity, which is superuser-only.
     ssh <deploy-user>@<instance-ip> \
@@ -726,7 +809,41 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
       echo "app left stopped on purpose; do not boot it until the above is cleared"
     fi
   fi
+
+  # Deliberately not kept for a retry, unlike the PostgreSQL dump above. That
+  # one is a transfer that can be repeated; this is a point-in-time snapshot of
+  # a database that has since been stopped and may have been restarted, so a
+  # second attempt has to take a fresh one rather than convert this.
+  [ -z "$snap_dir" ] || rm -rf "$snap_dir"
+
+  fi
   ```
+
+  **Why the snapshot and not the file.** With a writer still attached, the main
+  database file and the database are not the same thing:
+
+  ```
+  writer holds the connection, two rows committed since the last checkpoint
+    production-primary.sqlite3        8192 bytes
+    production-primary.sqlite3-wal    4152 bytes
+    rows the writer sees                   3
+    rows in a copy of the main file        1     <- what the old recipe sent
+    rows in VACUUM INTO's snapshot         3
+  ```
+
+  Nothing downstream notices the difference. The conversion succeeds, the app
+  boots, and the two missing rows are missing — which is why this is the one
+  step here that must not be a plain copy. It is also why a source that shut
+  down cleanly hides the problem: closing the last connection checkpoints the
+  WAL to zero, so the file is complete exactly when you did the thing that made
+  it complete, and incomplete on precisely the run where nobody stopped the
+  source.
+
+  **Blob files are a second migration, not a detail of this one.** The converter
+  says so itself — "only DB metadata rows are copied … leave the storage
+  volume/bucket as-is" — which is correct advice for swapping a database under a
+  deployment that stays put, and wrong here, because this page is moving hosts.
+  The volume it lands on is new.
 
   **The conversion is gated on staging for a reason that only shows up on a
   retry.** `MIGRATION_RUN_RESET` drops the schema and reloads it from the
@@ -1008,8 +1125,13 @@ elif [ "$app_super" != f ]; then
   restore_status=3
 else
 
+# Double-quoted, because $app_db came out of a state file rather than out of
+# this page: DB_NAME is an operator setting, and the launch script creates
+# whatever it is given through `format('%I')`. `collavre-prod` is a legal
+# database name there and a syntax error here unquoted — PostgreSQL reads the
+# hyphen as subtraction. Quoting is right for an ordinary name too.
 sudo -u postgres psql -qd postgres -c \
-  "ALTER DATABASE $app_db CONNECTION LIMIT 0"
+  "ALTER DATABASE \"$app_db\" CONNECTION LIMIT 0"
 
 # Read the limit back rather than trusting that the line above ran. These
 # blocks are pasted into an interactive shell with no `set -e`, so a failed
@@ -1072,7 +1194,7 @@ fi
 reopen_status=0
 if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
   sudo -u postgres psql -qd postgres -c \
-    "ALTER DATABASE $app_db CONNECTION LIMIT -1"
+    "ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1"
   reopen_status=$?
 fi
 
@@ -1098,7 +1220,9 @@ if [ "$reopen_status" -ne 0 ]; then
   echo "  The app will be refused at boot with 'too many connections', which"
   echo "  will read like a pool problem. Do not boot it until this succeeds:"
   echo "  sudo -u postgres psql -qd postgres -c \\"
-  echo "    \"ALTER DATABASE $app_db CONNECTION LIMIT -1\""
+  # Single-quoted for the shell so the identifier's own double quotes survive
+  # being pasted — the recovery this prints has to be runnable as printed.
+  echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1'"
   echo "  Confirm with:"
   echo "  sudo -u postgres psql -qtAd postgres -c \\"
   echo "    \"SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'\""
@@ -1114,7 +1238,7 @@ else
   echo "  so fix the cause and run this block again — it needs no other step."
   echo "If instead you are abandoning the restore, re-open it by hand with:"
   echo "  sudo -u postgres psql -qd postgres -c \\"
-  echo "    \"ALTER DATABASE $app_db CONNECTION LIMIT -1\""
+  echo "    'ALTER DATABASE \"$app_db\" CONNECTION LIMIT -1'"
 fi
 ```
 
