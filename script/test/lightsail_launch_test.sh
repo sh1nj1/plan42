@@ -678,8 +678,12 @@ run_cutover() {
   cat > "$work/bin/ssh" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
-  *"ALTER ROLE collavre_user SUPERUSER"*)   echo GRANT  >>"$TRACE" ;;
-  *"ALTER ROLE collavre_user NOSUPERUSER"*) echo REVOKE >>"$TRACE"
+  # The role is quoted in the recipe, so match it quoted: a pattern that still
+  # said `ALTER ROLE collavre_user` would fall through to the catch-all and
+  # every case here would pass without a grant ever being recognised.
+  *'ALTER ROLE "collavre_user" SUPERUSER'*)   echo GRANT  >>"$TRACE"
+                                            [ -z "$FAIL_GRANT" ] || exit 1 ;;
+  *'ALTER ROLE "collavre_user" NOSUPERUSER'*) echo REVOKE >>"$TRACE"
                                             [ -z "$FAIL_REVOKE" ] || exit 255 ;;
   *"sudo rm"*)                              echo RM_STAGED >>"$TRACE" ;;
   *"sudo install"*)                         echo STAGE     >>"$TRACE"
@@ -753,6 +757,7 @@ STUB
   export FAIL_SCP="${FAIL_SCP:-}" FAIL_STAGE="${FAIL_STAGE:-}"
   export FAIL_STOP="${FAIL_STOP:-}" FAIL_SNAP="${FAIL_SNAP:-}"
   export FAIL_TAR="${FAIL_TAR:-}" FAIL_BLOB="${FAIL_BLOB:-}"
+  export FAIL_GRANT="${FAIL_GRANT:-}"
   # The recipe refuses unless the operator states the source is stopped, so the
   # default here is the stated case and case 32b is the unstated one.
   export source_quiesced="${SOURCE_QUIESCED-1}"
@@ -993,6 +998,47 @@ if command -v zsh >/dev/null; then
 else
   echo "  SKIP no zsh on this machine — the text assertion above is all that ran"
 fi
+
+echo "32j. the role in the grant is quoted, and a failed grant converts nothing"
+# Same assumption as the database name further down the page, one setting over:
+# DB_USER goes through `format('%I')` in the launch script, so `collavre-app` is
+# a role it creates and `ALTER ROLE collavre-app SUPERUSER` is a syntax error.
+# Unquoted, the whole cutover then fails on a host the script provisioned
+# happily — and it fails while telling the operator the wrong thing, which is
+# what the second half of this case is about.
+chk "the grant quotes the role"  1 \
+  "$(grep -c 'ALTER ROLE \\"<db-user>\\" SUPERUSER' <<<"$recipe")"
+chk "so does the revoke"         1 \
+  "$(grep -c 'ALTER ROLE \\"<db-user>\\" NOSUPERUSER' <<<"$recipe")"
+FAIL_GRANT=1 FAIL_TAR='' FAIL_BLOB='' FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' \
+  FAIL_STAGE='' FAIL_STOP='' run_cutover
+chk "no conversion ran" 0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"    0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+# Attempted anyway: a connection that dropped after the ALTER committed leaves
+# the role raised with nothing on this side to say so, and NOSUPERUSER against a
+# role that is not one succeeds and changes nothing.
+chk "the revoke is still attempted" 1 "$(grep -cx REVOKE <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"GRANT FAILED"*"as it was"*) echo "  ok   says the database was not touched" ;;
+  *) echo "  FAIL silent about the grant: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
+esac
+# MIGRATION_RUN_RESET drops the schema first, so "empty or half-loaded" would be
+# a false claim about a database no conversion ever reached.
+case "$RECIPE_OUT" in
+  *"COPY FAILED"*)
+    echo "  FAIL blames a conversion that never ran: $RECIPE_OUT"; fail=1 ;;
+  *) echo "  ok   does not blame a conversion that never ran" ;;
+esac
+FAIL_GRANT=1 FAIL_REVOKE=1 FAIL_COPY='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' \
+  run_cutover
+case "$RECIPE_OUT" in
+  *"is still a superuser"*)
+    echo "  FAIL claims a grant that never happened: $RECIPE_OUT"; fail=1 ;;
+  *"read"*rolsuper*) echo "  ok   sends the operator to read rolsuper instead" ;;
+  *) echo "  FAIL vague about which repair is needed: ${RECIPE_OUT:-(no output)}"
+     fail=1 ;;
+esac
+unset FAIL_GRANT
 
 echo "33. staging renames into place rather than writing the live path directly"
 # An interrupted copy must leave the previous file intact, not a truncated

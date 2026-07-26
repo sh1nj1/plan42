@@ -794,32 +794,56 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
     echo "converting now would boot an app whose attachments are all missing"
     echo "app left stopped on purpose; copy the blobs before converting"
   else
-    # The copy disables referential integrity, which is superuser-only.
+    # The copy disables referential integrity, which is superuser-only. The role
+    # is double-quoted for the same reason the database is further down this
+    # page: DB_USER is an operator setting and the launch script creates whatever
+    # it is given through `format('%I')`, so `collavre-app` is a role it makes
+    # and `ALTER ROLE collavre-app SUPERUSER` is a syntax error.
     ssh <deploy-user>@<instance-ip> \
-      "sudo -u postgres psql -c 'ALTER ROLE <db-user> SUPERUSER'"
+      "sudo -u postgres psql -c 'ALTER ROLE \"<db-user>\" SUPERUSER'"
+    grant_status=$?
 
-    ./kamal.sh app exec \
-      'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
-      -e MIGRATION_RUN_RESET:true
-    copy_status=$?
+    # Gated on the grant, not run alongside it. MIGRATION_RUN_RESET drops the
+    # schema before loading, so a conversion attempted without the superuser it
+    # needs trades a working empty database for a broken one and gains nothing.
+    copy_status=1
+    if [ "$grant_status" -eq 0 ]; then
+      ./kamal.sh app exec \
+        'bin/rails "db:sqlite_to_postgres[storage/production-primary.sqlite3,production]"' \
+        -e MIGRATION_RUN_RESET:true
+      copy_status=$?
+    fi
 
     # Take the grant back whether or not the copy worked — a failed cutover is
-    # precisely when it would otherwise sit there.
+    # precisely when it would otherwise sit there — and whether or not the grant
+    # itself reported success, because a connection that dropped after the ALTER
+    # committed leaves the role raised with nothing on this side to say so.
+    # NOSUPERUSER against a role that is not one succeeds and changes nothing.
     ssh <deploy-user>@<instance-ip> \
-      "sudo -u postgres psql -c 'ALTER ROLE <db-user> NOSUPERUSER'"
+      "sudo -u postgres psql -c 'ALTER ROLE \"<db-user>\" NOSUPERUSER'"
     revoke_status=$?
 
-    # Clean up and boot only if both worked. Either failure leaves the app down.
-    if [ "$copy_status" -eq 0 ] && [ "$revoke_status" -eq 0 ]; then
+    # Clean up and boot only if all three worked. Any failure leaves the app down.
+    if [ "$grant_status" -eq 0 ] && [ "$copy_status" -eq 0 ] &&
+       [ "$revoke_status" -eq 0 ]; then
       ssh <deploy-user>@<instance-ip> \
         'sudo rm "$(docker volume inspect plan42_storage \
            --format "{{.Mountpoint}}")/production-primary.sqlite3"'
 
       ./kamal.sh app boot   # restart on the data you just loaded
     else
-      [ "$revoke_status" -eq 0 ] ||
+      [ "$grant_status" -eq 0 ] ||
+        echo "GRANT FAILED: nothing was converted, and this database is as it was"
+      # Only claimed when the grant is known to have taken. Reported the other
+      # way round it sends the operator to withdraw a grant that never happened,
+      # which is the wrong repair and hides the one that is needed.
+      if [ "$revoke_status" -ne 0 ] && [ "$grant_status" -eq 0 ]; then
         echo "REVOKE FAILED: <db-user> is still a superuser — take it back by hand"
-      [ "$copy_status" -eq 0 ] ||
+      elif [ "$revoke_status" -ne 0 ]; then
+        echo "REVOKE FAILED: the grant did not report success either, so read"
+        echo "  rolsuper for <db-user> before acting — it may never have been raised"
+      fi
+      [ "$copy_status" -eq 0 ] || [ "$grant_status" -ne 0 ] ||
         echo "COPY FAILED: this database is now empty or half-loaded"
       echo "app left stopped on purpose; do not boot it until the above is cleared"
     fi
