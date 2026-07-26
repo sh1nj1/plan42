@@ -326,6 +326,113 @@ refuse_unusable_db_identifier() {
       "docs/deploy_to_lightsail.md — then re-run with the new name."
 }
 
+# ipv4_dotted_quad <value>
+#
+# Four decimal octets, 0-255, no leading zeros — `010` is 8 to inet_pton and 10
+# to a reader, and this value is spelled into three files that do not have to
+# agree about which. Written with case and arithmetic rather than a regex
+# because [[ =~ ]] does not mean the same thing under the bash macOS ships as
+# under the bash Lightsail runs, and this suite is run under both.
+ipv4_dotted_quad() {
+  local LC_ALL=C rest="$1" octet count=0
+  while [ "$count" -lt 4 ]; do
+    if [ "$count" -lt 3 ]; then
+      case "$rest" in
+        *.*) octet="${rest%%.*}"; rest="${rest#*.}" ;;
+        *) return 1 ;;
+      esac
+    else
+      octet="$rest"; rest=''
+    fi
+    case "$octet" in
+      0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;;
+      *) return 1 ;;
+    esac
+    [ "$octet" -le 255 ] || return 1
+    count=$((count + 1))
+  done
+  [ -z "$rest" ]
+}
+
+# refuse_unusable_bind_address <setting name> <value>
+# refuse_unusable_subnet <setting name> <value>
+#
+# DB_BIND_ADDRESS and DOCKER_SUBNETS are spliced into generated PostgreSQL
+# configuration — listen_addresses and a pg_hba.conf line — and into a ufw rule
+# and DATABASE_URL. Neither was checked, and the generated files are installed
+# by rename and then `systemctl restart postgresql`. Measured on a real cluster
+# with `include_dir = 'conf.d'` and this script's own generated file:
+#
+#   DB_BIND_ADDRESS          postgres -C   the cluster after a restart
+#   172.17.0.1               rc=0          UP, listening on the bridge
+#   172.17.0.999             rc=0          UP, WARNING, listening on localhost
+#   bogus.invalid            rc=0          UP, WARNING, listening on localhost
+#   1.2.3.4                  rc=0          UP, WARNING, listening on localhost
+#   not a host               rc=0          DOWN, FATAL: invalid list syntax
+#
+#   DOCKER_SUBNETS           the cluster after a restart
+#   172.16.0.0/12            UP, the rule matches
+#   not-a-subnet             UP, read as a host name, the rule never matches
+#   172.16.0.0/99            DOWN, FATAL: invalid CIDR mask in address
+#   "172.16.0.0/12 all trust"  DOWN, FATAL: invalid authentication method "all"
+#
+# Two bands, and the loud one is not the dangerous one. A value that breaks the
+# *syntax* stops the cluster on a FORCE=1 convergence — the live database goes
+# down and does not come back, which is the failure the reviewer describes and
+# it is at least visible. A value that is merely wrong starts perfectly: the
+# cluster is healthy, `systemctl status` is green, and it is listening on
+# localhost alone, or carrying a pg_hba rule that matches nothing. The app's
+# containers cannot reach the database and nothing on the host says why — the
+# same quiet ending as a truncated config, arrived at from a live value.
+#
+# Checked here rather than by validating the staged file, which is what the
+# finding asks for and does not close it. `postgres -C listen_addresses` exits
+# 0 on every row above, including the one that will not start: the list is
+# parsed at startup, not by the GUC machinery. And the value lands inside single
+# quotes, so one of its own ends them — measured, DB_BIND_ADDRESS set to
+# `172.17.0.1'<newline>fsync = off<newline>#` gives a staged file that validates
+# and starts, with `postgres -C fsync` reporting `off`. A validator can only
+# ever say the file is a configuration; it cannot say it is this one.
+#
+# Restoring the previous file when the restart fails is the other half the
+# finding offers, and it treats the quiet band as a success: there is no failed
+# restart to trigger it.
+refuse_unusable_bind_address() {
+  local setting="$1" value="$2"
+  ipv4_dotted_quad "$value" && return 0
+  die "REFUSING: $setting='$value' is not an IPv4 address. It is written into" \
+      "PostgreSQL's listen_addresses, into a ufw rule and into DATABASE_URL," \
+      "and PostgreSQL does not refuse it: an address it cannot bind is a" \
+      "warning, so the cluster comes back up listening on localhost only and" \
+      "no container can reach it, on a host this run would have reported as" \
+      "converged. A value carrying a space or a quote is worse — it ends the" \
+      "quoting of the generated file. Nothing has been changed. The default is" \
+      "172.17.0.1, the docker0 bridge gateway; set $setting to the gateway" \
+      "address of the bridge your containers are on — 'ip -4 addr show docker0'."
+}
+
+refuse_unusable_subnet() {
+  local setting="$1" value="$2" addr bits
+  case "$value" in
+    */*/*) ;;
+    */*)
+      addr="${value%/*}"; bits="${value#*/}"
+      case "$bits" in
+        0|[1-9]|[12][0-9]|3[0-2]) ipv4_dotted_quad "$addr" && return 0 ;;
+      esac
+      ;;
+  esac
+  die "REFUSING: $setting='$value' is not an IPv4 network in CIDR form. It is" \
+      "written into a pg_hba.conf line and into a ufw rule. A malformed mask" \
+      "stops PostgreSQL from starting at all; a value that merely is not a" \
+      "network is read as a host name, and the cluster starts with a rule that" \
+      "matches nothing — every container is then refused with 'no pg_hba.conf" \
+      "entry' on a run that reported success. One network, not a list: the" \
+      "pg_hba address field and 'ufw allow from' each take exactly one." \
+      "Nothing has been changed. The default is 172.16.0.0/12, which covers" \
+      "every Docker bridge network."
+}
+
 # refuse_unparsable_ssh_key
 #
 # SSH_PUBLIC_KEY is appended to authorized_keys verbatim, and its own presence
@@ -401,10 +508,66 @@ refuse_unparsable_ssh_key() {
   fi
 }
 
+# refuse_forced_command_ssh_key
+#
+# refuse_unparsable_ssh_key asks sshd's own parser whether the line is a key,
+# and deliberately accepts the option prefixes an operator legitimately holds.
+# `command="..."` is one sshd reads perfectly and one this account cannot do its
+# job with: sshd runs that command *instead of* the one the client asked for, so
+# every remote command Kamal sends is discarded. Measured against a scratch
+# sshd, one authorized_keys line at a time, the client asking for
+# `echo KAMAL-REMOTE-COMMAND-RAN`:
+#
+#   authorized_keys line             ssh-keygen -l   rc    what actually ran
+#   <key>                            parses           0    the command
+#   from="127.0.0.1" <key>           parses           0    the command
+#   no-pty,no-agent-forwarding <key> parses           0    the command
+#   restrict <key>                   parses           0    the command
+#   restrict,pty <key>               parses           0    the command
+#   command="/usr/bin/false" <key>   parses           1    nothing
+#   command="/usr/bin/true"  <key>   parses           0    nothing
+#
+# The last row is the one worth refusing for. It is not a deploy that fails —
+# it is a deploy whose every step reports success while nothing is executed, on
+# a host whose provisioning also reported success. And the five rows above it
+# are why this is a separate question rather than "refuse a line with options":
+# they are the forms the guard above exists to keep working, and each of them
+# runs the client's command.
+#
+# The options are the words before the key blob. Every SSH public key encodes a
+# length-prefixed algorithm name, so the blob always begins "AAAA" — cutting
+# there keeps a `command=` that appears in the *comment* out of this, where it
+# is text rather than an option and refusing it would refuse a key sshd is
+# perfectly happy with.
+#
+# Refused rather than checked after the install, for the reason the guard above
+# gives: revoke_prior_ssh_key withdraws the predecessor as soon as `grep -qxF`
+# finds this line in the file, and finding it there is not evidence that a
+# command can be run through it. There is no client here to prove that with, so
+# the only place the question can be answered is before anything is appended.
+refuse_forced_command_ssh_key() {
+  local options
+  [ -n "$SSH_PUBLIC_KEY" ] || return 0
+  options="${SSH_PUBLIC_KEY%%AAAA*}"
+  case "$options" in
+    *command=*) ;;
+    *) return 0 ;;
+  esac
+  die "REFUSING: SSH_PUBLIC_KEY carries a forced command. sshd reads the key" \
+      "fine, and then runs that command in place of whatever the client asks" \
+      "for — so 'kamal deploy' would connect, run the forced command, and" \
+      "either fail on every step or, if the command exits 0, report every step" \
+      "as done without running any of it. Nothing has been changed. Left to" \
+      "run, this would be appended to $APP_SSH_USER's authorized_keys and the" \
+      "key it replaces withdrawn on the strength of finding this one in the" \
+      "file. Supply the plain line from your .pub file; restrictions that do" \
+      "not replace the command — from=, no-pty, restrict — are accepted."
+}
+
 # refuse_root_deploy_user <user>
 #
 # The deploy account cannot be UID 0, because step 3 writes `PermitRootLogin no`
-# into /etc/ssh/sshd_config.d/99-collavre.conf and then, further down that same
+# into /etc/ssh/sshd_config.d/01-collavre.conf and then, further down that same
 # step, arms $APP_SSH_USER and hands it to Kamal as KAMAL_SSH_USER. Nothing in
 # between rejects the account sshd has just been told to turn away, so the run
 # reports success and every deploy fails to authenticate.
@@ -539,7 +702,10 @@ refuse_nologin_deploy_user() {
 # earlier, so it is answered without reading any state at all.
 refuse_unusable_db_identifier DB_NAME "$DB_NAME"
 refuse_unusable_db_identifier DB_USER "$DB_USER"
+refuse_unusable_bind_address DB_BIND_ADDRESS "$DB_BIND_ADDRESS"
+refuse_unusable_subnet DOCKER_SUBNETS "$DOCKER_SUBNETS"
 refuse_unparsable_ssh_key
+refuse_forced_command_ssh_key
 refuse_root_deploy_user "$APP_SSH_USER"
 refuse_nologin_deploy_user "$APP_SSH_USER"
 
@@ -671,12 +837,40 @@ ensure_block() {
   # because the message was right while the status was wrong.
   file="$(resolve_symlink_chain "$file")" || exit 1
 
+  local tmp rc
   if ! grep -qF "$begin" "$file" 2>/dev/null; then
-    {
+    # Staged and renamed, like the rewrite below — an append is not the safer
+    # half of this function. `>>` writes into the live file directly, so a kill
+    # or an ENOSPC between the two printfs leaves a BEGIN with no END, and the
+    # very next run stops at the malformed-block check three lines down asking
+    # to be repaired by hand. That check is right to refuse: it cannot tell a
+    # half-written block of this script's from an operator's edit. What it
+    # costs is the file — /etc/fstab, /etc/hosts, postgresql.conf, pg_hba.conf
+    # — needing an editor on a host whose provisioning has just been killed.
+    #
+    # There is nothing to preserve on this path and still a copy is made: the
+    # rename replaces the target, so the staging file has to hold the whole
+    # file, not just the block. 0644 is for a target that does not exist yet
+    # — the mode `>>` produced under root's umask; every caller in this script
+    # points at a file that does exist, where cp -p carries its own.
+    rc=0
+    tmp="$(stage_beside "$file" 0644)" || rc=$?
+    case "$rc" in
+      1) die "$file: could not stage the collavre:$marker block beside it. Is $(dirname "$file") writable?" ;;
+      2) die "$file: could not give a staged copy the same owner and mode as the" \
+             "file it replaces, so the collavre:$marker block was NOT added and" \
+             "$file is untouched." ;;
+    esac
+    if ! {
       printf '\n%s (managed by script/lightsail_launch.sh)\n' "$begin"
       printf '%s\n' "$content"
       printf '%s\n' "$end"
-    } >> "$file"
+    } >> "$tmp"; then
+      rm -f "$tmp"
+      die "$file: could not write the collavre:$marker block to a staging file" \
+          "beside it — is $(dirname "$file") full? $file is untouched."
+    fi
+    mv -f "$tmp" "$file"
     return 0
   fi
 
@@ -687,9 +881,9 @@ ensure_block() {
   # two failures are reported separately, because the remedies differ: 1 is
   # "nowhere to stage it" (disk, permissions), 2 is "cannot be given the
   # target's owner and mode".
-  local tmp rc
+  rc=0
   tmp="$(stage_beside "$file")" || rc=$?
-  case "${rc:-0}" in
+  case "$rc" in
     1) die "$file: could not stage a rewrite beside it. Is $(dirname "$file") writable?" ;;
     2) die "$file: could not give a staged rewrite the same owner and mode as the" \
            "file it replaces, so it was NOT installed and $file is untouched." ;;
@@ -1979,10 +2173,45 @@ ensure_ufw_rule() {
 # All of it verified against real ufw on ubuntu:24.04, against `iptables -S` as
 # the ground truth for whether IPv4 port 22 is actually reachable, rather than
 # reasoned about from the rendering.
+#
+# And the direction, which is the one this got wrong. `ufw status` renders an
+# inbound rule with a bare action and puts the direction in the action column
+# only when it is not inbound — there is no "ALLOW IN" in this output. So a rule
+# that authorizes nothing inbound reads exactly like one that does, apart from a
+# word the pattern did not look at. Measured against real ufw on ubuntu:24.04,
+# one `ufw status` per row, the shipped pattern beside the direction-aware one:
+#
+#   ufw status shows                 shipped   with the filter   the run then
+#   22/tcp      ALLOW OUT            YES       no                adds inbound 22
+#   OpenSSH     ALLOW OUT            YES       no                adds inbound 22
+#   22/tcp ALLOW OUT + 80/tcp ALLOW  YES       no                adds inbound 22
+#   22/tcp      ALLOW                YES       YES               leaves it alone
+#   OpenSSH     ALLOW                YES       YES               leaves it alone
+#   22/tcp      LIMIT                YES       YES               leaves it alone
+#   22 from 203.0.113.7  ALLOW       YES       YES               leaves it alone
+#   80/tcp only                      no        no                adds inbound 22
+#   22/tcp      DENY                 no        no                adds inbound 22
+#
+# The first three rows are the failure and the four after them are why the fix
+# is a filter rather than a stricter pattern: an operator who narrowed 22 to one
+# source, or used the OpenSSH profile, or rate-limited it, must still be left
+# alone. Getting those wrong broadens the rule this function exists to protect.
+#
+# The consequence of the first row is the worst outcome this script has. `ufw
+# default deny incoming` is applied and ufw is enabled a few steps later, so a
+# host whose only port-22 rule is *outbound* has SSH read as authorized, no
+# inbound rule added, and the firewall turned on — locking out the operator who
+# is running this over SSH at the time, on an instance whose console is the only
+# way back in.
+#
+# FWD as well as OUT: `ufw route allow ... port 22` renders "22/tcp ALLOW FWD",
+# which is a rule about traffic passing *through* this host and authorizes
+# nothing arriving at it. Confirmed in the same run as the table above.
 ssh_already_allowed() {
   ufw status 2>/dev/null |
     sed 's/#.*//' |
     grep -vE '\(v6\)|:' |
+    grep -vE '(ALLOW|LIMIT|DENY|REJECT)[[:space:]]+(OUT|FWD)' |
     grep -qE '^([^[:space:]]+[[:space:]]+)?(22|OpenSSH)([/[:space:]]).*(ALLOW|LIMIT)'
 }
 
@@ -2035,20 +2264,104 @@ net.ipv4.ip_nonlocal_bind = 1
 SYSCTL
 sysctl --system >/dev/null
 
+# verify_ssh_hardening [effective config file] [sshd config dir]
+#
+# Read back what sshd actually resolved the three hardened keywords to, and
+# refuse a run that reported hardening it did not perform.
+#
+# Naming the drop-in so it sorts first is necessary and not sufficient: a
+# directive above the Include in sshd_config itself, or an operator's own
+# drop-in with an earlier prefix, still wins, and the file name says nothing
+# about either. The only thing that answers is sshd's own resolution of the
+# whole configuration.
+#
+# Refusing rather than warning, and refusing here rather than later: this is the
+# top of step 3, before the deploy account is created, before sudo and docker
+# are granted and before any key is installed, so a run that stops here has
+# changed nothing but the drop-in — and SSH is left exactly as the operator had
+# it, so nobody is locked out by the refusal. The alternative is a run that
+# prints its summary over a host still accepting passwords and root logins.
+#
+# An answer that cannot be read is not the same as a wrong one, and is warned
+# about instead. `sshd -T` needs host keys and a parseable configuration; a host
+# where it will not run has told us nothing, and dying over a question we could
+# not ask would stop provisioning on a host that may well be fine. Match blocks
+# do not cause that — `sshd -T` without `-C` prints the global block and exits 0,
+# measured on both OpenSSH builds this was checked against.
+verify_ssh_hardening() {
+  local src="${1:-}" conf_dir="${2:-/etc/ssh}" effective key value offender
+  if [ -n "$src" ]; then
+    effective="$(cat "$src")"
+  elif ! effective="$(sshd -T 2>/dev/null)"; then
+    log "WARNING: could not read the effective SSH configuration on this host" \
+        "(\`sshd -T\` failed), so the hardening above is unverified. Check it" \
+        "by hand: sshd -T | grep -E" \
+        "'^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication)'"
+    return 0
+  fi
+  for key in passwordauthentication permitrootlogin kbdinteractiveauthentication; do
+    value="$(printf '%s\n' "$effective" |
+             awk -v k="$key" 'tolower($1) == k { print $2; exit }')"
+    [ -n "$value" ] || {
+      log "WARNING: sshd did not report '$key', so that part of the hardening" \
+          "above is unverified"
+      continue
+    }
+    if [ "$value" = "no" ]; then
+      continue
+    fi
+    # Name the file rather than leave the operator to find it: with the drop-in
+    # sorting first, something above the Include or an earlier prefix is the
+    # only way to get here, and both are one grep away.
+    offender="$(grep -ilE "^[[:space:]]*$key[[:space:]]" \
+                  "$conf_dir"/sshd_config.d/*.conf "$conf_dir"/sshd_config \
+                  2>/dev/null | grep -v '01-collavre.conf' | head -1)" || true
+    die "SSH hardening did not take effect: sshd resolves '$key' to '$value'," \
+        "not 'no', even though $conf_dir/sshd_config.d/01-collavre.conf sets" \
+        "it. sshd uses the FIRST value it obtains for a keyword, so something" \
+        "read earlier is setting it${offender:+ — ${offender}}. Stopping here" \
+        "rather than finishing: nothing has been granted yet and SSH is" \
+        "unchanged, so the host stays reachable. Remove or correct that" \
+        "setting and re-run."
+  done
+}
+
 # --------------------------------------------------------------------------
 log "3/9 SSH hardening + deploy user '$APP_SSH_USER'"
 # --------------------------------------------------------------------------
 install -d -m 0755 /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/99-collavre.conf <<'SSHD'
+# 01-, not 99-. sshd_config(5): "for each keyword, the first obtained value will
+# be used", and the Include glob is expanded in lexical order — so a drop-in
+# that sorts *after* an existing one cannot override it, which is the opposite
+# of how a "99-" suffix reads. Ubuntu's cloud images ship 50-cloud-init.conf,
+# and on an existing instance it commonly carries `PasswordAuthentication yes`.
+# Measured with `sshd -T`, on OpenSSH 9.x/Linux and 10.2/macOS alike:
+#
+#   drop-ins present                        passwordauth  permitrootlogin
+#   50-cloud-init.conf + 99-collavre.conf   yes           yes
+#   50-cloud-init.conf + 01-collavre.conf   no            no
+#   01-collavre.conf alone (fresh host)     no            no
+#
+# `kbdinteractiveauthentication no` in every row is the control: the 99- file
+# was being read the whole time. It lost only the keywords something else had
+# already set — which is every keyword that matters here, on exactly the hosts
+# the existing-instance path exists for.
+cat > /etc/ssh/sshd_config.d/01-collavre.conf <<'SSHD'
 PasswordAuthentication no
 PermitRootLogin no
 KbdInteractiveAuthentication no
 SSHD
+# A host provisioned by an earlier version of this script carries the 99- file.
+# It is inert now that 01- sets the same keywords first, and that is the reason
+# to remove it rather than leave it: a file whose every line is overridden is
+# one an operator can edit to no effect.
+rm -f /etc/ssh/sshd_config.d/99-collavre.conf
 # Ubuntu ships `Include /etc/ssh/sshd_config.d/*.conf` at the top of
 # sshd_config; without it the drop-in above is silently ignored.
 grep -q '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config 2>/dev/null || \
   log "WARNING: sshd_config has no Include for sshd_config.d — harden SSH by hand"
 systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+verify_ssh_hardening
 
 # install_deploy_ssh_dir <user> <home> — create <home>/.ssh owned by the
 # account, and echo the group it was given.
@@ -2819,6 +3132,35 @@ ensure_block "$PG_CONF_DIR/pg_hba.conf" docker \
 
 systemctl enable postgresql
 systemctl restart postgresql
+
+# A cluster that is up is not a cluster reachable on the address this run is
+# about to publish. refuse_unusable_bind_address answers the shape of
+# DB_BIND_ADDRESS before anything is written; it cannot answer whether the
+# address is on this host, because docker0 does not exist yet when it runs.
+# PostgreSQL will not answer it either — an address it cannot bind is a WARNING
+# in a log nobody reads and the cluster starts anyway, listening on localhost
+# alone. Measured against a live cluster, which is the only thing that knows:
+#
+#   listen_addresses            cluster   pg_isready -h <the address>
+#   localhost,127.0.0.1         UP        0, accepting connections
+#   localhost,1.2.3.4           UP        2, no response
+#   localhost,172.17.0.999      UP        2, no response
+#
+# Asked here rather than believed, because every later step takes it on trust:
+# DATABASE_URL, the ufw rule and the summary all name this address, and the
+# first thing to discover it is wrong would be the first deploy. pg_isready
+# needs no credentials and a pg_hba refusal still counts as a response, so this
+# asks about reachability and nothing else.
+pg_isready -h "$DB_BIND_ADDRESS" -p "$DB_PORT" -t 10 >/dev/null 2>&1 ||
+  die "PostgreSQL restarted, but it is not listening on DB_BIND_ADDRESS=" \
+      "$DB_BIND_ADDRESS:$DB_PORT. The cluster is up — it fell back to" \
+      "localhost, which it does with only a WARNING when an address cannot be" \
+      "bound, so nothing else on this host would have said so. Left to run," \
+      "the summary would print a DATABASE_URL over that address and no" \
+      "container could open it. Check the bridge with 'ip -4 addr show" \
+      "docker0' and set DB_BIND_ADDRESS to its address (the default," \
+      "172.17.0.1, is the usual one), then re-run with FORCE=1. The" \
+      "configuration this run installed is in $PG_CONF_DIR/conf.d/10-collavre.conf."
 
 # --------------------------------------------------------------------------
 log "6/9 database '$DB_NAME' and role '$DB_USER'"

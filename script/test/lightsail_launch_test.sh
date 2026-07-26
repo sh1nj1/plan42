@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -37,10 +37,13 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           install_staged_authorized_keys postgresql_conf_includes_confd \
           refuse_db_name_change refuse_defaulted_config_change \
           refuse_unusable_db_identifier refuse_unparsable_ssh_key \
+          refuse_forced_command_ssh_key ipv4_dotted_quad \
+          refuse_unusable_bind_address refuse_unusable_subnet \
           passwd_home ssh_key_holder \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
           resolve_symlink_chain stage_beside stage_authorized_keys \
+          verify_ssh_hardening \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -685,6 +688,43 @@ for s in "22/tcp                     ALLOW       Anywhere" \
   STATUS="$s"
   ssh_already_allowed
   chk "detected: ${s%%
+*}" 0 "$?"
+done
+
+echo "23a. a rule that is not inbound does not count as authorization"
+# `ufw status` puts the direction in the action column only when it is *not*
+# inbound — there is no "ALLOW IN" in this output, so an inbound rule and an
+# outbound one differ by a word the pattern above did not read. Every line below
+# is real ufw output from ubuntu:24.04, one `ufw status` per rule shape, not a
+# rendering written from the man page.
+#
+# The consequence is the worst outcome in this script rather than a missed
+# optimisation: `ufw default deny incoming` is applied and ufw enabled a few
+# steps later, so a host whose only port-22 rule is outbound has SSH read as
+# authorized, no inbound rule added, and the firewall turned on — locking out
+# the operator who is running this over SSH at the time.
+for s in "22/tcp                     ALLOW OUT   Anywhere" \
+         "OpenSSH                    ALLOW OUT   Anywhere" \
+         "22/tcp                     ALLOW FWD   Anywhere" \
+         "80/tcp                     ALLOW       Anywhere
+
+22/tcp                     ALLOW OUT   Anywhere"; do
+  STATUS="$s"
+  ssh_already_allowed
+  chk "not authorization: ${s%%
+*}" 1 "$?"
+done
+# The controls, and they are what rules out a stricter pattern in favour of a
+# filter: the four shapes an operator legitimately has must still be left alone.
+# Getting these wrong re-adds a blanket `allow OpenSSH` over a rule someone
+# narrowed on purpose, which is the failure case 24 exists for.
+for s in "22/tcp                     ALLOW       Anywhere" \
+         "OpenSSH                    ALLOW       Anywhere" \
+         "22/tcp                     LIMIT       Anywhere" \
+         "22/tcp                     ALLOW       203.0.113.7"; do
+  STATUS="$s"
+  ssh_already_allowed
+  chk "still authorization: ${s%%
 *}" 0 "$?"
 done
 
@@ -4004,8 +4044,17 @@ else
   chk "and one with no comment"                 0 "$g_rc"
   # authorized_keys lines may carry restrictions, and a shape check strict enough
   # to catch truncation would refuse these — which is why the guard parses.
+  guard "no-pty,no-agent-forwarding $GOOD_NEW"
+  chk "and one behind a no-pty restriction"     0 "$g_rc"
+  # A forced command still goes through *here*, and that is the point rather
+  # than an oversight: this guard answers "can sshd read it", which for this
+  # line is yes. The reason it must not be the whole answer is case 142, where
+  # the run refuses it a guard later — sshd reads it and then runs that command
+  # instead of Kamal's. The example used to be spelled `command="x",no-pty` on
+  # this row, which read as this suite endorsing the line rather than as one
+  # question of two.
   guard "command=\"x\",no-pty $GOOD_NEW"
-  chk "and one behind a command= restriction"   0 "$g_rc"
+  chk "a forced command is still parsable"      0 "$g_rc"
   guard "from=\"10.0.0.0/8\" $GOOD_NEW"
   chk "and one behind a from= restriction"      0 "$g_rc"
   guard "   $GOOD_NEW"
@@ -5244,6 +5293,301 @@ for pw in 'aB3xQ9zL7mN2pR5tV8wY1cD4fG6hJ0kM' 'p$aswd$x' 'pas"wd' 'pas\wd' 'pas;w
     "$(printf '%s\n' "$GEN" | grep -cF "PASSWORD '$pw';")"
 done
 rm -rf "$sqld"
+
+echo "142. a forced-command SSH key is refused before it replaces a working one"
+# Measured against a scratch sshd rather than reasoned about, because what is
+# claimed is what sshd does with the line and nothing else can answer it. One
+# authorized_keys line at a time, the client asking for `echo <marker>`:
+#
+#   line                             ssh-keygen -l   ssh rc   what actually ran
+#   <key>                            parses          0        the client's command
+#   from="127.0.0.1" <key>           parses          0        the client's command
+#   no-pty,no-agent-forwarding <key> parses          0        the client's command
+#   restrict <key>                   parses          0        the client's command
+#   restrict,pty <key>               parses          0        the client's command
+#   command="/usr/bin/false" <key>   parses          1        nothing
+#   command="/usr/bin/true"  <key>   parses          0        nothing
+#
+# The last row is why this is a refusal and not a warning: every Kamal step
+# reports success and none of them runs, on a host provisioning also reported
+# as converged. The five rows above it are the controls, and they are the ones
+# that constrain the fix — case 119 exists because a shape check strict enough
+# to catch a truncated key refuses those, so "refuse a line with options" is
+# not available here.
+if ! command -v ssh-keygen >/dev/null 2>&1; then
+  echo "  SKIP no ssh-keygen here — the neighbouring guard's dependency is missing"
+else
+  fcd="$(mktemp -d)"
+  ssh-keygen -q -t ed25519 -N '' -C 'operator@laptop' -f "$fcd/k" >/dev/null
+  FC_KEY="$(cat "$fcd/k.pub")"
+  fc_rc=0
+  fcguard() {
+    ( SSH_PUBLIC_KEY="$1" APP_SSH_USER=collavre
+      refuse_forced_command_ssh_key ) >/dev/null 2>&1 && fc_rc=0 || fc_rc=1
+  }
+
+  fcguard "command=\"/usr/bin/true\" $FC_KEY"
+  chk "a forced command that exits 0 is refused"       1 "$fc_rc"
+  fcguard "command=\"/usr/bin/false\" $FC_KEY"
+  chk "and one that fails, for the same reason"        1 "$fc_rc"
+  # Options are order-free, so the check cannot key on the line starting with
+  # `command=`.
+  fcguard "no-pty,command=\"/usr/bin/true\" $FC_KEY"
+  chk "and one behind another option"                  1 "$fc_rc"
+
+  fcguard "$FC_KEY"
+  chk "a plain key still goes through"                 0 "$fc_rc"
+  fcguard "from=\"127.0.0.1\" $FC_KEY"
+  chk "and one behind a from= restriction"             0 "$fc_rc"
+  fcguard "restrict $FC_KEY"
+  chk "and one behind restrict, which runs the command" 0 "$fc_rc"
+  fcguard ""
+  chk "and no key at all"                              0 "$fc_rc"
+  # The over-refusal control that decides where the options end. A comment is
+  # free text an operator may have anything in, and sshd does not read it as an
+  # option — refusing this would refuse a key that works.
+  fcguard "$FC_KEY command=in-the-comment"
+  chk "a command= in the comment is not an option"     0 "$fc_rc"
+
+  # Source-level, because the behavioural rows above pass on a revision that
+  # never calls the guard: it is the call that makes the run stop.
+  chk "and the run calls it"                           1 \
+    "$(grep -c '^refuse_forced_command_ssh_key$' "$SRC")"
+  rm -rf "$fcd"
+fi
+
+echo "143. a DB_BIND_ADDRESS or DOCKER_SUBNETS the cluster cannot use is refused"
+# Measured on a real cluster with `include_dir = 'conf.d'` and this script's own
+# generated file, restarted once per value:
+#
+#   DB_BIND_ADDRESS       postgres -C   the cluster after the restart
+#   172.17.0.1            rc=0          UP, listening on the bridge
+#   172.17.0.999          rc=0          UP, WARNING, listening on localhost
+#   bogus.invalid         rc=0          UP, WARNING, listening on localhost
+#   not a host            rc=0          DOWN, FATAL: invalid list syntax
+#
+#   DOCKER_SUBNETS        the cluster after the restart
+#   172.16.0.0/12         UP, the rule matches
+#   not-a-subnet          UP, read as a host name, the rule matches nothing
+#   172.16.0.0/99         DOWN, FATAL: invalid CIDR mask in address
+#
+# Two bands, and the quiet one is the dangerous one: a healthy cluster no
+# container can reach. `postgres -C` answers rc=0 on every row including the one
+# that will not start, so validating the staged file does not close this — the
+# value has to be answered before it is written.
+bind_rc=0
+bindguard() { ( refuse_unusable_bind_address DB_BIND_ADDRESS "$1" ) >/dev/null 2>&1 && bind_rc=0 || bind_rc=1; }
+subguard()  { ( refuse_unusable_subnet DOCKER_SUBNETS "$1" ) >/dev/null 2>&1 && bind_rc=0 || bind_rc=1; }
+
+bindguard 172.17.0.1
+chk "the default bridge address goes through"          0 "$bind_rc"
+bindguard 10.0.0.5
+chk "and any other dotted quad"                        0 "$bind_rc"
+bindguard 1.2.3.4
+chk "including one this host does not hold"            0 "$bind_rc"
+bindguard 172.17.0.999
+chk "an octet over 255 is refused"                     1 "$bind_rc"
+bindguard bogus.invalid
+chk "and a host name, which PostgreSQL only warns on"  1 "$bind_rc"
+bindguard "not a host"
+chk "and a value with a space, which stops the cluster" 1 "$bind_rc"
+bindguard "172.17.0.1'"$'\n'"fsync = off"
+chk "and one that closes the quoting of the file"      1 "$bind_rc"
+bindguard 172.17.0
+chk "and three octets"                                 1 "$bind_rc"
+bindguard ""
+chk "and nothing at all"                               1 "$bind_rc"
+
+subguard 172.16.0.0/12
+chk "the default subnet goes through"                  0 "$bind_rc"
+subguard 192.168.0.0/24
+chk "and any other network"                            0 "$bind_rc"
+subguard 172.16.0.0/32
+chk "and a single host as /32"                         0 "$bind_rc"
+subguard 172.16.0.0/99
+chk "a mask over 32 is refused"                        1 "$bind_rc"
+subguard not-a-subnet
+chk "and a name, which the rule would never match"     1 "$bind_rc"
+subguard "172.16.0.0/12 all trust"
+chk "and extra fields, which stop the cluster"         1 "$bind_rc"
+subguard 172.16.0.0
+chk "and an address with no mask"                      1 "$bind_rc"
+
+chk "and the run asks both before anything is written" 2 \
+  "$(grep -c '^refuse_unusable_\(bind_address DB_BIND_ADDRESS\|subnet DOCKER_SUBNETS\)' "$SRC")"
+# The liveness half, which no value check can answer: docker0 does not exist
+# when the guards above run. Asserted at source level because it needs a
+# cluster — measured there as rc=0 bound, rc=2 up-but-not-listening.
+chk "and asks the cluster whether it is listening on it" 1 \
+  "$(grep -c '^pg_isready -h "\$DB_BIND_ADDRESS"' "$SRC")"
+
+echo "144. an interrupted first append leaves the managed block off the live file"
+# The rewrite path was staged and renamed two commits ago; the append that adds
+# the block for the first time still wrote into the live file. Measured by
+# failing one printf of the three — which is what a disk filling between two
+# writes does — and then running the next convergence over what was left:
+#
+#   fails at  reviewed: live file        next run          fixed: live file
+#   BEGIN     unchanged                  adds the block    unchanged
+#   the body  BEGIN + END, empty body    rewrites it       BEGIN + END, empty
+#   END       BEGIN, no END              REFUSES           unchanged
+#   nothing   the whole block            no-op             the whole block
+#
+# The third row is the finding: the next run stops at the malformed-block check
+# and asks for /etc/fstab, /etc/hosts, postgresql.conf or pg_hba.conf to be
+# repaired by hand, on a host whose provisioning has just been killed. That
+# check is right to refuse — it cannot tell a torn write of this script's from
+# an operator's edit — so the fix belongs on the write.
+#
+# Rows 1, 2 and 4 are unchanged by the fix and are the controls. Row 2 is worth
+# keeping visible rather than tidying away: an empty managed block is not a torn
+# file, and the next run converges it.
+abd=$(mktemp -d)
+ab_printf_fail_at=0; ab_printf_n=0
+printf() {
+  ab_printf_n=$((ab_printf_n + 1))
+  [ "$ab_printf_n" != "$ab_printf_fail_at" ] || return 1
+  builtin printf "$@"
+}
+ab_run() { # <fail at nth printf>  -> "<BEGIN count> <END count> <untouched line> <strays>"
+  rm -rf "$abd/f"; builtin printf 'UUID=abc / ext4 defaults 0 1\n' > "$abd/f"
+  ab_printf_fail_at="$1"; ab_printf_n=0
+  ( ensure_block "$abd/f" swap "/swapfile none swap sw 0 0" ) >/dev/null 2>&1
+  ab_printf_fail_at=0
+  echo "$(grep -c 'BEGIN collavre:swap' "$abd/f") $(grep -c 'END collavre:swap' "$abd/f") $(grep -c '^UUID=abc' "$abd/f") $(ls -A "$abd" | grep -c collavre)"
+}
+chk "a failed BEGIN leaves the file as it was"          "0 0 1 0" "$(ab_run 1)"
+chk "a failed END leaves no half-written block behind"  "0 0 1 0" "$(ab_run 3)"
+chk "and no staging file beside it"                     "0 0 1 0" "$(ab_run 3)"
+chk "an uninterrupted append still adds the block"      "1 1 1 0" "$(ab_run none)"
+# The control that says the next run is not left asking for an editor. Against
+# the reviewed revision this is the refusal.
+rm -rf "$abd/f"; builtin printf 'UUID=abc / ext4 defaults 0 1\n' > "$abd/f"
+ab_printf_fail_at=3; ab_printf_n=0
+( ensure_block "$abd/f" swap "/swapfile none swap sw 0 0" ) >/dev/null 2>&1
+ab_printf_fail_at=0
+ab_next="$( ( ensure_block "$abd/f" swap "/swapfile none swap sw 0 0" ) 2>&1 >/dev/null | grep -c "with no '# END" )"
+chk "so the next run converges instead of refusing"     0 "$ab_next"
+chk "and the block is there afterwards"                 1 "$(grep -c 'END collavre:swap' "$abd/f")"
+unset -f printf
+rm -rf "$abd"
+
+echo "146. the SSH hardening drop-in is installed where it can win, and read back"
+# sshd_config(5): "for each keyword, the first obtained value will be used", and
+# the Include glob is expanded in lexical order. So a "99-" drop-in loses every
+# keyword an earlier file has already set — which reads backwards, because a
+# high number means "last, therefore final" almost everywhere else.
+#
+# Ubuntu's cloud images ship 50-cloud-init.conf, and on an existing instance it
+# commonly carries `PasswordAuthentication yes`. Measured with `sshd -T` rather
+# than read off the manual page, on OpenSSH 9.x/Linux and 10.2/macOS alike:
+#
+#   drop-ins present                        passwordauth  permitrootlogin
+#   50-cloud-init.conf + 99-collavre.conf   yes           yes
+#   50-cloud-init.conf + 01-collavre.conf   no            no
+#   01-collavre.conf alone (fresh host)     no            no
+#
+# `kbdinteractiveauthentication no` in all three rows is the control that says
+# what went wrong: the 99- file was read the whole time. It lost exactly the
+# keywords something else had already set, and gained the one nothing else
+# mentions — so nothing about the run looked wrong, and step 3 reported "SSH
+# hardening" over a host still taking passwords and root logins.
+#
+# The rename is necessary and not sufficient, which is why the read-back is the
+# other half. A drop-in an operator prefixed 00-, or a directive above the
+# Include in sshd_config itself, still wins, and no file name can answer that.
+LOGGED=""
+log() { LOGGED="$LOGGED $*"; }
+
+vshd="$(mktemp -d)"
+mkdir -p "$vshd/sshd_config.d" "$vshd/bin"
+printf 'PasswordAuthentication yes\n' > "$vshd/sshd_config.d/00-operator.conf"
+printf 'PasswordAuthentication no\nPermitRootLogin no\nKbdInteractiveAuthentication no\n' \
+  > "$vshd/sshd_config.d/01-collavre.conf"
+printf 'Include %s/sshd_config.d/*.conf\n' "$vshd" > "$vshd/sshd_config"
+
+# <what sshd -T reports> -> 0 when the run continues, 1 when it stops
+vh() {
+  printf '%s\n' "$1" > "$vshd/eff"
+  ( verify_ssh_hardening "$vshd/eff" "$vshd" ) >/dev/null 2>&1 && echo 0 || echo 1
+}
+vh_eff() { printf 'passwordauthentication %s\npermitrootlogin %s\nkbdinteractiveauthentication %s' "$1" "$2" "$3"; }
+
+chk "an effective config that matches the drop-in passes" 0 "$(vh "$(vh_eff no no no)")"
+chk "password authentication still on stops the run"      1 "$(vh "$(vh_eff yes no no)")"
+# `prohibit-password` is the Ubuntu default and still admits root by key, so it
+# is not the 'no' this script writes.
+chk "and root login still on, however narrowly"           1 "$(vh "$(vh_eff no prohibit-password no)")"
+chk "and keyboard-interactive still on"                   1 "$(vh "$(vh_eff no no yes)")"
+
+printf '%s\n' "$(vh_eff yes no no)" > "$vshd/eff"
+vh_msg="$( ( verify_ssh_hardening "$vshd/eff" "$vshd" ) 2>&1 )"
+chk "and the refusal names the file that won"             1 \
+  "$(printf '%s' "$vh_msg" | grep -c '00-operator\.conf')"
+
+# Unknown is not wrong. A host where `sshd -T` will not run has answered
+# nothing, and stopping over a question that could not be asked would refuse
+# hosts that are fine — so that branch warns and the run goes on.
+printf '#!/bin/sh\nexit 1\n' > "$vshd/bin/sshd"
+chmod +x "$vshd/bin/sshd"
+vh_unread="$( ( PATH="$vshd/bin:$PATH"
+                log() { printf 'LOG %s\n' "$*"; }
+                verify_ssh_hardening "" "$vshd" ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "an sshd -T that will not run warns instead of stopping" 1 \
+  "$(printf '%s' "$vh_unread" | grep -c '^rc=0$')"
+chk "and says the hardening is unverified"                1 \
+  "$(printf '%s' "$vh_unread" | grep -c 'unverified')"
+
+# Source level, because every row above passes on a revision that writes the
+# drop-in under the losing name and never reads anything back.
+chk "the drop-in is written where it sorts first"         1 \
+  "$(grep -c '^cat > /etc/ssh/sshd_config\.d/01-collavre\.conf <<' "$SRC")"
+chk "and the inert 99- file it replaces is removed"       1 \
+  "$(grep -c '^rm -f /etc/ssh/sshd_config\.d/99-collavre\.conf$' "$SRC")"
+chk "and the run reads back what sshd resolved"           1 \
+  "$(grep -c '^verify_ssh_hardening$' "$SRC")"
+
+# The claim is about what sshd does with two files, so sshd is asked. The name
+# and the body both come from the script: a harness that wrote its own 01- file
+# would keep passing after the script went back to 99-.
+vh_sshd=""
+for vh_c in sshd /usr/sbin/sshd; do
+  command -v "$vh_c" >/dev/null 2>&1 && { vh_sshd="$vh_c"; break; }
+done
+vh_effective() { # <config dir> -> "<passwordauthentication> <permitrootlogin>"
+  "$vh_sshd" -T -f "$1/sshd_config" 2>/dev/null |
+    awk 'tolower($1)=="passwordauthentication"{p=$2}
+         tolower($1)=="permitrootlogin"{r=$2}
+         END{print p, r}'
+}
+if [ -z "$vh_sshd" ] || ! command -v ssh-keygen >/dev/null 2>&1; then
+  echo "  SKIP no sshd here — the ordering claim is sshd's own and nothing else answers it"
+else
+  vhr="$(mktemp -d)"
+  mkdir -p "$vhr/sshd_config.d"
+  ssh-keygen -q -t ed25519 -N '' -f "$vhr/hk" >/dev/null 2>&1
+  printf 'Include %s/sshd_config.d/*.conf\nHostKey %s/hk\n' "$vhr" "$vhr" > "$vhr/sshd_config"
+  # the shipped write, replayed: the file name off the `cat >` line, the body
+  # out of its heredoc
+  vh_name="$(awk '/^cat > \/etc\/ssh\/sshd_config\.d\// { sub(/.*sshd_config\.d\//, ""); sub(/ .*/, ""); print; exit }' "$SRC")"
+  awk '/^cat > \/etc\/ssh\/sshd_config\.d\// { f = 1; next }
+       f && /^SSHD$/ { exit }
+       f' "$SRC" > "$vhr/sshd_config.d/$vh_name"
+  if [ "$(vh_effective "$vhr")" != "no no" ]; then
+    echo "  SKIP sshd -T is not usable here — it could not read even the drop-in alone"
+  else
+    chk "the drop-in alone hardens a fresh host"          "no no" "$(vh_effective "$vhr")"
+    printf 'PasswordAuthentication yes\nPermitRootLogin yes\n' \
+      > "$vhr/sshd_config.d/50-cloud-init.conf"
+    chk "and still does beside Ubuntu's cloud-init drop-in" "no no" "$(vh_effective "$vhr")"
+    # The negative control, and the one that says the assertion above is about
+    # the name rather than the content: the same body under the old name.
+    mv "$vhr/sshd_config.d/$vh_name" "$vhr/sshd_config.d/99-collavre.conf"
+    chk "where a 99- name would have lost both keywords"  "yes yes" "$(vh_effective "$vhr")"
+  fi
+  rm -rf "$vhr"
+fi
+rm -rf "$vshd"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
