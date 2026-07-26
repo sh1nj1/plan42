@@ -53,8 +53,13 @@ module Collavre
     def create
       requested_agent = params[:agent_id].present? ? User.find_by(id: params[:agent_id]) : nil
 
-      if requested_agent&.ai_user? && !assignable_primary_agent?(requested_agent)
-        render json: { errors: [ agent_no_creative_access_message(requested_agent) ] },
+      # No topic yet, so a Claude Channel agent is rejected on an inbox creative:
+      # a topic created here never carries a session_id, which is the only place
+      # Matcher#eligible_in_inbox? will route one.
+      rejection = requested_agent&.ai_user? &&
+        Topic.primary_agent_rejection(@creative, requested_agent)
+      if rejection
+        render json: { errors: [ unassignable_agent_message(requested_agent, rejection) ] },
                status: :unprocessable_entity and return
       end
 
@@ -162,20 +167,25 @@ module Collavre
       end
 
       released_agent = nil
+      released_reason = nil
 
       Topic.transaction do
         topic.comments.update_all(creative_id: target_creative.id)
         topic.update!(creative: target_creative)
 
         # The assignment is exclusive: Matcher#match_by_primary_agent returns []
-        # — silence, not a fallback — when the pinned agent lacks :feedback. The
-        # pin travels with the topic, so a move into a creative the agent is not
-        # shared on would leave the topic unable to route to anyone. Release it
+        # — silence, not a fallback — when the pinned agent cannot be routed to
+        # at the destination. The pin travels with the topic, so a move into a
+        # creative the agent is not shared on — or, for a Claude Channel session
+        # agent, into an inbox, where Matcher confines it to its own session
+        # topic — would leave the topic unable to route to anyone. Release it
         # instead, which restores ordinary expression routing at the new
         # location, and tell the caller so the change is not silent.
         pinned_agent = topic.primary_agent
-        if pinned_agent && !Topic.primary_agent_assignable?(target_creative, pinned_agent)
+        rejection = pinned_agent && Topic.primary_agent_rejection(target_creative, pinned_agent, topic: topic)
+        if rejection
           released_agent = pinned_agent
+          released_reason = rejection
           topic.set_primary_agent!(nil)
         end
       end
@@ -200,9 +210,7 @@ module Collavre
         released_primary_agent: released_agent && {
           id: released_agent.id,
           name: released_agent.display_name,
-          message: I18n.t("collavre.topics.move.primary_agent_released",
-                          agent: released_agent.display_name,
-                          creative: target_creative.creative_snippet)
+          message: released_primary_agent_message(released_agent, released_reason, target_creative)
         }
       }
     end
@@ -273,8 +281,9 @@ module Collavre
         render json: { error: I18n.t("collavre.topics.not_ai_agent") }, status: :unprocessable_entity and return
       end
 
-      unless assignable_primary_agent?(agent)
-        render json: { error: agent_no_creative_access_message(agent) },
+      rejection = Topic.primary_agent_rejection(@creative, agent, topic: topic)
+      if rejection
+        render json: { error: unassignable_agent_message(agent, rejection) },
                status: :unprocessable_entity and return
       end
 
@@ -291,12 +300,27 @@ module Collavre
       @creative = Creative.find(params[:creative_id]).effective_origin
     end
 
-    def assignable_primary_agent?(agent)
-      Topic.primary_agent_assignable?(@creative, agent)
+    # A move can now release the pin for either reason, and the advice differs:
+    # sharing the target creative fixes a missing-permission release, but a
+    # Claude Channel session agent stays confined to its own session topic no
+    # matter what is shared — telling the user to share and re-assign would send
+    # them after a fix that cannot work.
+    def released_primary_agent_message(agent, rejection, target_creative)
+      key = if rejection == :session_agent_outside_session_topic
+              "collavre.topics.move.primary_agent_released_session_agent"
+      else
+              "collavre.topics.move.primary_agent_released"
+      end
+
+      I18n.t(key, agent: agent.display_name, creative: target_creative.creative_snippet)
     end
 
-    def agent_no_creative_access_message(agent)
-      I18n.t("collavre.topics.agent_no_creative_access", name: agent.display_name)
+    def unassignable_agent_message(agent, rejection)
+      if rejection == :session_agent_outside_session_topic
+        I18n.t("collavre.topics.session_agent_not_assignable", name: agent.display_name)
+      else
+        I18n.t("collavre.topics.agent_no_creative_access", name: agent.display_name)
+      end
     end
 
     # When a topic moves to a different creative, members who had access on the

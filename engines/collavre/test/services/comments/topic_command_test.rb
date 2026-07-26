@@ -327,6 +327,31 @@ module Collavre
         assert_match(/Session Topic/, result)
       end
 
+      # The inbox share registration creates puts a Claude Channel agent in
+      # User.mentionable_for even though it is searchable: false, so `/topic`
+      # can name one. Matcher only routes it in its own session topic, so
+      # pinning it on an ordinary inbox topic would mute that topic entirely.
+      test "refuses a Claude Channel session agent on an ordinary inbox topic" do
+        inbox = Creative.inbox_for(@user)
+        session_agent = User.create!(
+          email: "cc-cmd@test.local", password: "password123", name: "ClaudeChannelDev",
+          llm_vendor: "anthropic", llm_model: "claude-code", searchable: false,
+          created_by_id: @user.id
+        )
+        CreativeShare.create!(creative: inbox, user: session_agent, shared_by: @user, permission: :feedback)
+        inbox_topic = Topic.create!(creative: inbox, user: @user, name: "Inbox Command Topic")
+        comment = Collavre::Comment.create!(
+          creative: inbox, topic: inbox_topic, user: @user,
+          content: '/topic "Inbox Command Topic" @ClaudeChannelDev: '
+        )
+
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_nil inbox_topic.reload.primary_agent_id
+        assert_equal I18n.t("collavre.comments.topic_command.session_agent_not_assignable",
+                            agent: session_agent.display_name), result
+      end
+
       test "reports already exists when topic exists without agent mention" do
         Topic.create!(creative: @creative, user: @user, name: "Duplicate Topic")
         comment = create_comment('/topic "Duplicate Topic"')

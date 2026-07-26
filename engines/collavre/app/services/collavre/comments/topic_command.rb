@@ -50,16 +50,6 @@ module Collavre
         # Find primary agent from @mentions using the same parsing as chat
         primary_agent = comment.mentioned_users.find(&:ai_user?)
 
-        # User.mentionable_for resolves every searchable agent, including ones
-        # with no share on this creative. Pinning such an agent would silence
-        # the topic outright: the pin is exclusive (Matcher#match_by_primary_agent
-        # suppresses the other agents' ambient routing) while the pinned agent
-        # itself fails the feedback check and cannot answer either.
-        if primary_agent && !Topic.primary_agent_assignable?(creative, primary_agent)
-          return I18n.t("collavre.comments.topic_command.agent_no_creative_access",
-                        agent: primary_agent.display_name)
-        end
-
         # Find existing topic or create new one
         existing_topic = Topic.find_by(creative: creative, name: data[:name])
 
@@ -69,6 +59,25 @@ module Collavre
           # reassigning nor releasing it is safe from a chat command.
           return I18n.t("collavre.comments.topic_command.session_topic_locked",
                         name: existing_topic.name)
+        end
+
+        # User.mentionable_for resolves every searchable agent — and, on an
+        # inbox, every agent holding a share there, which includes the user's own
+        # Claude Channel session agent. Pinning an agent Matcher will not route
+        # to silences the topic outright: the pin is exclusive
+        # (Matcher#match_by_primary_agent suppresses the other agents' ambient
+        # routing) while the pinned agent itself is filtered out and cannot
+        # answer either. Resolved against the topic being targeted, so the check
+        # is the same mirror of Matcher the REST paths apply.
+        rejection = primary_agent &&
+          Topic.primary_agent_rejection(creative, primary_agent, topic: existing_topic)
+        if rejection
+          key = if rejection == :session_agent_outside_session_topic
+                  "collavre.comments.topic_command.session_agent_not_assignable"
+          else
+                  "collavre.comments.topic_command.agent_no_creative_access"
+          end
+          return I18n.t(key, agent: primary_agent.display_name)
         end
 
         # Assigning or releasing a primary agent rewrites the topic's routing:

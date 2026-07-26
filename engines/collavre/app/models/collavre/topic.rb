@@ -42,17 +42,37 @@ module Collavre
     # searchable agents regardless of creative access, so this is reachable from
     # plain drag-and-drop or `/topic "name" @agent`, not just a crafted request.
     #
-    # This is deliberately the same predicate Matcher#has_creative_permission?
-    # applies, so "assignable" and "can respond" cannot drift apart.
+    # This deliberately mirrors BOTH predicates Matcher applies before it will
+    # route to a primary agent — #has_creative_permission? and
+    # #eligible_in_inbox? — so "assignable" and "can respond" cannot drift
+    # apart. Checking only the permission is not enough: registration grants a
+    # Claude Channel agent inbox-wide :feedback, so it passes that check on
+    # every inbox topic while Matcher confines it to its own session topic.
+    # Pinning one on an ordinary inbox topic would therefore silence the topic
+    # for everyone, and it is reachable by plain drag-and-drop (the agent is
+    # created_by the user, so the palette lists it) or by `/topic "Main" @agent`
+    # (the inbox share puts it in User.mentionable_for regardless of searchable).
+    #
+    # Returns nil when assignable, otherwise a symbol naming the reason, so
+    # callers can render a message that says which rule was hit.
     #
     # Deliberately NOT enforced inside #set_primary_agent!: SessionProvisioner
     # and Api::V1::AgentsController#register write the pin as session identity
     # before the inbox share exists, and must not be gated on it.
-    def self.primary_agent_assignable?(creative, agent)
-      return false unless agent&.ai_user?
-      return false unless creative
+    def self.primary_agent_rejection(creative, agent, topic: nil)
+      return :not_an_agent unless agent&.ai_user?
+      return :no_creative_access unless creative&.has_permission?(agent, :feedback)
 
-      creative.has_permission?(agent, :feedback)
+      # Mirror Matcher#eligible_in_inbox?
+      return nil unless creative.inbox?
+      return nil unless agent.claude_channel_agent?
+      return nil if topic&.session_id.present? && topic.primary_agent_id == agent.id
+
+      :session_agent_outside_session_topic
+    end
+
+    def self.primary_agent_assignable?(creative, agent, topic: nil)
+      primary_agent_rejection(creative, agent, topic: topic).nil?
     end
 
     def archived?

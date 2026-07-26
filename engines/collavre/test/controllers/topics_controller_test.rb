@@ -323,6 +323,35 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
            "the release must be reported so it is not silent"
   end
 
+  # The release has two possible causes now, and the advice differs. A Claude
+  # Channel session agent holds inbox-wide :feedback, so moving its topic into
+  # the inbox passes the permission check while Matcher#eligible_in_inbox? still
+  # refuses to route it anywhere but its own session topic. Reporting the
+  # permission message here would tell the user to share a creative the agent is
+  # already shared on — advice that cannot fix anything.
+  test "move reports session confinement, not missing access, when releasing a session agent" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    agent = move_test_agent("sessionmove@test.local", "SessionMoveAgent")
+    agent.update!(llm_vendor: "anthropic", llm_model: "claude-code")
+    Collavre::CreativeShare.create!(creative: @creative, user: agent, shared_by: @user, permission: :feedback)
+    Collavre::CreativeShare.create!(creative: inbox, user: agent, shared_by: @user, permission: :feedback)
+    @topic.set_primary_agent!(agent)
+
+    patch move_creative_topic_url(@creative, @topic), params: { target_creative_id: inbox.id }, as: :json
+
+    assert_response :success
+    assert_nil @topic.reload.primary_agent_id,
+               "a session agent cannot be routed to on an ordinary inbox topic, so the pin must not survive"
+    message = JSON.parse(response.body).dig("released_primary_agent", "message")
+    assert_equal I18n.t("collavre.topics.move.primary_agent_released_session_agent",
+                        agent: agent.display_name, creative: inbox.creative_snippet),
+                 message
+    refute_equal I18n.t("collavre.topics.move.primary_agent_released",
+                        agent: agent.display_name, creative: inbox.creative_snippet),
+                 message,
+                 "the agent already has feedback access here — telling the user to share would be unfollowable"
+  end
+
   test "move keeps a primary agent that still has feedback access on the target" do
     target_creative = creatives(:root_parent)
     agent = move_test_agent("stayagent@test.local", "StayAgent")
@@ -530,6 +559,63 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal ai_agent.id, child_topic.reload.primary_agent_id
+  end
+
+  # Registration grants a Claude Channel agent inbox-wide :feedback, so the
+  # permission check alone passes on every inbox topic — but
+  # Matcher#eligible_in_inbox? confines it to the topic carrying its session_id.
+  # Pinning it on an ordinary inbox topic would make match_by_primary_agent
+  # return [] and mute the topic for everyone.
+  test "should reject a Claude Channel session agent on an ordinary inbox topic" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    inbox_topic = inbox.topics.create!(name: "Ordinary Inbox Topic", user: @user)
+    session_agent = User.create!(
+      email: "cc-session@test.local", password: "password123", name: "Claude Channel (dev)",
+      llm_vendor: "anthropic", llm_model: "claude-code", searchable: false, created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: inbox, user: session_agent, shared_by: @user, permission: :feedback)
+
+    patch set_primary_agent_creative_topic_url(inbox, inbox_topic),
+      params: { agent_id: session_agent.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_nil inbox_topic.reload.primary_agent_id
+    assert_equal I18n.t("collavre.topics.session_agent_not_assignable", name: session_agent.display_name),
+      JSON.parse(response.body)["error"],
+      "the message must name the session rule, not claim the agent lacks access"
+  end
+
+  test "should reject creating an inbox topic pinned to a Claude Channel session agent" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    session_agent = User.create!(
+      email: "cc-session-create@test.local", password: "password123", name: "Claude Channel (create)",
+      llm_vendor: "anthropic", llm_model: "claude-code", searchable: false, created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: inbox, user: session_agent, shared_by: @user, permission: :feedback)
+
+    assert_no_difference("Topic.count") do
+      post collavre.creative_topics_url(inbox),
+        params: { topic: { name: "Talk to session" }, agent_id: session_agent.id }, as: :json
+    end
+
+    assert_response :unprocessable_entity
+  end
+
+  # Negative control: the confinement is inbox-only. On an ordinary creative
+  # Matcher routes a Claude Channel agent by routing_expression like any other,
+  # so rejecting it there would break a legitimate assignment.
+  test "should accept a Claude Channel session agent outside the inbox" do
+    session_agent = User.create!(
+      email: "cc-session-work@test.local", password: "password123", name: "Claude Channel (work)",
+      llm_vendor: "anthropic", llm_model: "claude-code", searchable: false, created_by_id: @user.id
+    )
+    Collavre::CreativeShare.create!(creative: @creative, user: session_agent, shared_by: @user, permission: :feedback)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic),
+      params: { agent_id: session_agent.id }, as: :json
+
+    assert_response :success
+    assert_equal session_agent.id, @topic.reload.primary_agent_id
   end
 
   test "should create topic with agent_id" do
