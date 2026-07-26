@@ -5185,14 +5185,6 @@ chk "the ALTER restores LOGIN as well as the password" 1 \
 # would pass the assertion above and leave a run that rotates the password able
 # to fail between the two, with the role's password and the recorded one
 # disagreeing.
-#
-# The password here deliberately carries no quote. `${DB_PASSWORD//\'/\'\'}`
-# does not mean the same thing on every bash: 5.2 (what Lightsail runs) yields
-# `it''s`, 3.2 (what macOS ships, and what a developer runs this suite under)
-# yields `it\'\'s`, which PostgreSQL rejects with a syntax error. An assertion
-# on a quoted password would therefore be red on one machine and green on the
-# other for a reason that has nothing to do with the statement being tested —
-# the same platform split as `head -c 0`, pointing the other way.
 GEN="$(gen_db_sql collavre_user 'pw-not-quoted')"
 chk "and still carries the password in the same statement" 1 \
   "$(printf '%s\n' "$GEN" | grep -c "^ALTER ROLE \"collavre_user\" LOGIN PASSWORD 'pw-not-quoted';\$")"
@@ -5202,6 +5194,55 @@ chk "and still carries the password in the same statement" 1 \
 # is given.
 chk "the CREATE still carries LOGIN for a role that does not exist yet" 1 \
   "$(printf '%s\n' "$GEN" | grep -c "CREATE ROLE %I LOGIN")"
+rm -rf "$sqld"
+
+echo "141. a custom DB_PASSWORD containing a quote reaches the role intact"
+# This assertion could not be written while the escaping was spelled
+# `${DB_PASSWORD//\'/\'\'}`, because that expression does not mean the same
+# thing on every bash — measured, same input, same expression:
+#
+#   bash 5.2.15  (Ubuntu: Lightsail, and this job)              it''s
+#   bash 3.2.57  (macOS: what a developer runs this suite on)   it\'\'s
+#
+# So it was green here and red on a laptop for a reason with nothing to do with
+# the statement under test, and case 140 above says as much where it picks an
+# unquoted password on purpose. Spelling the doubling through a variable makes
+# the two agree, which is what makes the case possible rather than what makes
+# it pass — on this runner the previous form was already correct.
+#
+# It is worth asserting because a custom DB_PASSWORD is supported and
+# documented, and because on the revision where the two disagree the failure
+# lands after the password has been recorded: measured on a real cluster under
+# bash 3.2, psql stops with `invalid command \'x` and the role is left existing
+# with NO password while $STATE_DIR/db_password holds one, so the re-run reads
+# that same value back and stops in the same place.
+#
+# These match on `PASSWORD '...'` without the LOGIN that case 140 adds. The two
+# fixes landed together and the first draft asserted the whole statement, so
+# every row here — including the five controls — went red against a revision
+# missing *either* of them, and the case reported the escaping as broken for
+# five passwords that contain no quote. A control that fails for the neighbouring
+# change's reason is not a control.
+sqld=$(mktemp -d)
+GEN="$(gen_db_sql collavre_user "pas'wd")"
+chk "the quote is doubled for the SQL literal" 1 \
+  "$(printf '%s\n' "$GEN" | grep -c "PASSWORD 'pas''wd';\$")"
+# The half that says which way it went wrong: a backslash before the quote is
+# what the version-dependent form produced, and psql reads it as a meta-command
+# rather than as part of the literal.
+chk "and not escaped with a backslash" 0 \
+  "$(printf '%s\n' "$GEN" | grep -c "PASSWORD 'pas\\\\'")"
+# The controls, and they are the ones that matter: every password an existing
+# host actually has must come out unchanged. Measured against a live cluster on
+# both spellings — generated-alphanumeric, and customs carrying a dollar, a
+# double quote, a backslash and a semicolon — all six rc=0 and connecting on
+# both; only the quoted row moves. Asserted here on the generated text, since
+# this job has no cluster.
+for pw in 'aB3xQ9zL7mN2pR5tV8wY1cD4fG6hJ0kM' 'p$aswd$x' 'pas"wd' 'pas\wd' 'pas;wd--x'; do
+  GEN="$(gen_db_sql collavre_user "$pw")"
+  chk "a password with no quote is passed through unchanged: $pw" 1 \
+    "$(printf '%s\n' "$GEN" | grep -cF "PASSWORD '$pw';")"
+done
 rm -rf "$sqld"
 
 echo
