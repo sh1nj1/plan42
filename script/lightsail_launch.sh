@@ -191,6 +191,9 @@ refuse_defaulted_config_change() {
     replay="$replay$(printf '%s=%q ' "$1" "$2")"
   }
 
+  # Which settings launch.env actually answered, so the fallback below can cover
+  # the ones it did not. Presence of the file is not the question — see there.
+  local answered=' '
   if [ -f "$env_file" ]; then
     record="The host's own record of what it was given is $env_file."
     # Driven by the current setting list rather than by the file's lines, so a
@@ -199,30 +202,48 @@ refuse_defaulted_config_change() {
     for name in $LAUNCH_SETTINGS; do
       case " $supplied " in *" $name "*) continue ;; esac
       grep -q "^$name=" "$env_file" || continue
+      answered="$answered$name "
       prior="$(sed -n "s/^$name=//p" "$env_file" | head -1)"
       now="${!name}"
       [ "$prior" = "$now" ] && continue
       note_drift "$name" "$prior" "$now"
     done
-  else
-    # Provisioned before launch.env existed. The two settings that rotate a
-    # live credential are still answerable from the state files that predate
-    # it, so the upgrade path is covered for the cases that can hurt rather
-    # than left open until the next re-run happens to record the defaults.
-    for pair in deploy_user:APP_SSH_USER db_user:DB_USER; do
-      file="${pair%%:*}"; name="${pair##*:}"
-      [ -f "$state_dir/$file" ] || continue
-      case " $supplied " in *" $name "*) continue ;; esac
-      prior="$(cat "$state_dir/$file")"
-      now="${!name}"
-      if [ -n "$prior" ] && [ "$prior" != "$now" ]; then
-        note_drift "$name" "$prior" "$now"
-        # Named as they answer, so the message sends the operator to the file
-        # that actually decided this refusal rather than to the whole directory.
-        record="$record${record:+, }$state_dir/$file"
-      fi
-    done
-    [ -z "$record" ] || record="This host predates $env_file, so what it was
+  fi
+
+  # Per setting rather than "launch.env is absent", because the file existing is
+  # not the same as the file answering, and the branch that conflated them was
+  # reachable without an editor or an upgrade. launch.env is written with one
+  # redirection at the very end of a run, so a full disk or an interruption
+  # between the truncate and the last line leaves it present and short — and
+  # every missing line is skipped in silence by the `grep -q ... || continue`
+  # above. Measured on the shipped function, with an empty launch.env beside a
+  # $STATE_DIR that names the provisioned accounts:
+  #
+  #   no launch.env      REFUSES   (answered from deploy_user / db_user)
+  #   launch.env empty   PROCEEDS  <- the guard checked nothing at all
+  #
+  # and what proceeds is the bare `FORCE=1` re-run this exists to refuse: it
+  # rotates the deploy account and the database role away from the ones the
+  # deployed .env.production and DATABASE_URL still name. The two settings that
+  # rotate a live credential have their own state files, which are written at
+  # the step that performs the rotation rather than at the end of the run, so
+  # they answer for a host whose launch.env is absent *or* short.
+  for pair in deploy_user:APP_SSH_USER db_user:DB_USER; do
+    file="${pair%%:*}"; name="${pair##*:}"
+    case "$answered" in *" $name "*) continue ;; esac
+    [ -f "$state_dir/$file" ] || continue
+    case " $supplied " in *" $name "*) continue ;; esac
+    prior="$(cat "$state_dir/$file")"
+    now="${!name}"
+    if [ -n "$prior" ] && [ "$prior" != "$now" ]; then
+      note_drift "$name" "$prior" "$now"
+      # Named as they answer, so the message sends the operator to the file
+      # that actually decided this refusal rather than to the whole directory.
+      record="$record${record:+, }$state_dir/$file"
+    fi
+  done
+  if [ ! -f "$env_file" ] && [ -n "$record" ]; then
+    record="This host predates $env_file, so what it was
 given is recorded only in $record.
 The settings not kept there could not be checked at all — repeating those is
 still on you."
@@ -542,14 +563,17 @@ in_group() {
 # within one filesystem, where it is atomic. Anywhere else `mv` degrades to a
 # copy-then-unlink and the window this exists to close is back.
 #
-# 0644 is not a widening: it is what a bare redirection already produced under
-# the default umask, and the chmod is here only because mktemp creates 0600.
-# db_password is the one marker that must not go through this — it is written
-# under `umask 077` precisely so it is never 0644, even briefly.
+# The default 0644 is not a widening: it is what a bare redirection already
+# produced under the default umask, and the chmod is here only because mktemp
+# creates 0600. db_password passes 0600 instead — it must never be 0644, even
+# for the instant between the staging write and the rename, and going through
+# mktemp is what guarantees that: the file is 0600 from the moment it exists,
+# which the `umask 077` subshell it replaces could only achieve by getting the
+# umask right.
 write_state_file() {
-  local target="$1" content="$2" tmp
+  local target="$1" content="$2" mode="${3:-0644}" tmp
   tmp="$(mktemp "$target.XXXXXX")" || return 1
-  if ! printf '%s' "$content" > "$tmp" || ! chmod 0644 "$tmp"; then
+  if ! chmod "$mode" "$tmp" || ! printf '%s' "$content" > "$tmp"; then
     rm -f "$tmp"
     return 1
   fi
@@ -929,12 +953,16 @@ JSON
 # Migrating between clusters is pg_upgradecluster's job and needs a human to
 # decide when the app stops, so this aborts and says so rather than guessing.
 ensure_cluster_on_default_port() {
-  local lsclusters="${1:-pg_lsclusters}" ver port owner_of_default=""
+  local lsclusters="${1:-pg_lsclusters}" ver cluster port owner_of_default=""
+  local name_of_default=""
   command -v "$lsclusters" >/dev/null 2>&1 || return 0
 
-  while read -r ver _cluster port _rest; do
+  while read -r ver cluster port _rest; do
     [ -n "$ver" ] || continue
-    [ "$port" = "$DB_PORT" ] && owner_of_default="$ver"
+    if [ "$port" = "$DB_PORT" ]; then
+      owner_of_default="$ver"
+      name_of_default="$cluster"
+    fi
     if [ "$ver" = "$PG_MAJOR" ] && [ "$port" != "$DB_PORT" ]; then
       die "PostgreSQL $PG_MAJOR is installed but its 'main' cluster listens on $port, not $DB_PORT." \
           "This script only supports a single cluster on $DB_PORT — DATABASE_URL, the ufw rule" \
@@ -952,6 +980,34 @@ EOF
         "the backups and DATABASE_URL kept using $DB_PORT — a version bump that silently does not" \
         "happen. Either set PG_MAJOR=$owner_of_default, or migrate deliberately with" \
         "'pg_upgradecluster $owner_of_default main' and drop the old cluster before re-running."
+  fi
+
+  # The version and the port agreeing is not enough: everything below names the
+  # cluster *directory*, and it names it 'main'. pg_createcluster's default name
+  # is 'main', so this is only reachable on a host where someone created the
+  # cluster by hand with --datadir or -o, but there it fails in silence rather
+  # than loudly. `/etc/postgresql/$PG_MAJOR/main` is absent, so the apt install
+  # at step 5 runs and reports the package already present without creating a
+  # second cluster; `install -d` then makes the missing directory, the tuning,
+  # listen_addresses and the pg_hba rule for the docker bridge are all written
+  # into a tree no postmaster reads, and `systemctl restart postgresql` restarts
+  # the real cluster — successfully, because the umbrella unit does not care
+  # which clusters exist. Nothing fails. The containers then cannot reach the
+  # database, because listen_addresses was never actually set on the cluster
+  # that is running.
+  #
+  # Naming the discovered path instead would mean threading it through the
+  # backup unit and the runbook's recovery blocks, which spell
+  # /etc/postgresql/<major>/main as literal text an operator pastes.
+  if [ -n "$name_of_default" ] && [ "$name_of_default" != main ]; then
+    die "The PostgreSQL $owner_of_default cluster serving $DB_PORT is named '$name_of_default', not 'main'." \
+        "This script writes listen_addresses, the tuning and the pg_hba rule for the docker bridge" \
+        "into /etc/postgresql/$PG_MAJOR/main, and the runbook's recovery steps name that path too —" \
+        "against a cluster called '$name_of_default' all of it would be written where no postmaster" \
+        "reads it, the run would report success, and the containers would still be unable to reach" \
+        "the database. Move the cluster to the standard name with" \
+        "'pg_renamecluster $owner_of_default $name_of_default main', or provision this app on a host" \
+        "whose $DB_PORT cluster is 'main'."
   fi
 }
 
@@ -1880,18 +1936,47 @@ if [ -z "$DB_PASSWORD" ]; then
   if [ -f "$STATE_DIR/db_password" ]; then
     # Re-run: keep the password already handed out in DATABASE_URL.
     DB_PASSWORD="$(cat "$STATE_DIR/db_password")"
+    # An empty marker is not "no password", it is a password this host can no
+    # longer name. Left to fall through, it reaches `ALTER ROLE ... PASSWORD ''`
+    # below unconditionally, which rotates the live role to an empty password
+    # while the deployed DATABASE_URL still carries the real one — the app meets
+    # `password authentication failed` at its next reconnect, several steps
+    # after the step that caused it, and the value it needs is gone from the
+    # host. Written atomically since this revision, so this answers for a host
+    # an earlier one truncated rather than for anything this script can still do.
+    if [ -z "$DB_PASSWORD" ]; then
+      die "$STATE_DIR/db_password exists but is empty, so this host cannot name" \
+          "the password its role is using. Applying it would set the role's" \
+          "password to '' and break the deployed DATABASE_URL." \
+          "Nothing has been changed. Take the password out of the DATABASE_URL" \
+          "the deployment is running with — it is percent-encoded there, so" \
+          "decode it — and re-run with DB_PASSWORD=<that value>. If it cannot be" \
+          "recovered, re-run with a new DB_PASSWORD= and redeploy with the" \
+          "DATABASE_URL this run prints."
+    fi
   else
     # URL-safe alphabet only: this password goes into DATABASE_URL verbatim.
     DB_PASSWORD="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 32)"
     log "generated a random database password"
   fi
 fi
-# The umask is what makes this 0600, not the chmod. A bare redirection creates
-# the file 0644 under the default umask and only narrows it a command later,
-# and $STATE_DIR is 0755 — so the production password would be world-readable
-# for that window, or permanently if the run were interrupted between the two.
-# The chmod stays to converge a file an earlier revision left 0644.
-( umask 077; printf '%s' "$DB_PASSWORD" > "$STATE_DIR/db_password" )
+# 0600 from the moment the file exists, and replaced in one step. The mode is
+# not the chmod's doing: mktemp creates 0600, and the chmod inside
+# write_state_file runs before the content is written — where a bare redirection
+# creates the file 0644 under the default umask and only narrows it a command
+# later, leaving the production password world-readable in a 0755 directory for
+# that window, or permanently if the run died in between.
+#
+# The rename is the other half. `> file` truncates when the redirection opens,
+# so a write that fails after that — a full disk, an interrupted run — leaves
+# this marker existing and empty, and the read above cannot tell that from a
+# host with no password recorded. It is the only durable record of the
+# credential the app is deployed with. The chmod stays a step below to converge
+# a file an earlier revision left 0644.
+write_state_file "$STATE_DIR/db_password" "$DB_PASSWORD" 0600 ||
+  die "could not record the database password in $STATE_DIR/db_password." \
+      "Nothing has been changed — the role still has the password the previous" \
+      "run gave it, and that file still holds it. Free some disk and re-run."
 chmod 0600 "$STATE_DIR/db_password"
 
 # Mirrors db/setup_postgres_databases.sql: create-if-missing, never drop.
@@ -2103,10 +2188,19 @@ TXT
 # No DB_PASSWORD — it has its own 0600 file, and this one is world-readable
 # because the answers in it ("which deploy user?", "which database?") are what
 # the runbook sends operators here to read.
-{ for _s in $LAUNCH_SETTINGS; do printf '%s=%s\n' "$_s" "${!_s}"; done; } \
-  > "$STATE_DIR/launch.env"
-chmod 0644 "$STATE_DIR/launch.env"
-unset _s
+#
+# Through write_state_file rather than a redirection, because the reader treats
+# a line that is not here as a setting it has nothing to say about: a run that
+# truncated this file and then died leaves refuse_defaulted_config_change with
+# nothing to compare, and the next bare FORCE=1 rotates the deploy account and
+# the database role unchallenged. Failing to record the settings must not be
+# the same event as recording that there were none.
+_launch_record="$(for _s in $LAUNCH_SETTINGS; do printf '%s=%s\n' "$_s" "${!_s}"; done)"
+write_state_file "$STATE_DIR/launch.env" "$_launch_record"$'\n' ||
+  log "WARNING: could not record this run's settings in $STATE_DIR/launch.env;" \
+      "the previous record is intact, so the next run still compares against it —" \
+      "repeat this run's overrides on that run too"
+unset _s _launch_record
 
 touch "$SUMMARY"
 chmod 0600 "$SUMMARY"
