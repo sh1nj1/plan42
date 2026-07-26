@@ -391,15 +391,49 @@ in_group() {
   id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -qxF "$2"
 }
 
-revoke_prior_deploy_user() {
-  local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}" prior group held
-  [ -f "$prior_file" ] || { printf '%s\n' "$current" > "$prior_file"; return 0; }
-  prior="$(cat "$prior_file")"
-  if [ -z "$prior" ] || [ "$prior" = "$current" ] ||
-     ! id -u "$prior" >/dev/null 2>&1; then
-    printf '%s\n' "$current" > "$prior_file"
-    return 0
+# record_deploy_user_grant <user> [set file] [single-name marker]
+#
+# The set of accounts this script has granted root-equivalent access to and has
+# not taken it back from, one name per line.
+#
+# A set rather than the single predecessor an earlier revision kept, because one
+# name cannot describe a host that has rotated twice. A revocation that fails
+# leaves the marker naming the account it could not strip, so the *next*
+# rotation retries that one and advances the marker straight past the account in
+# between — which goes on holding docker and sudo with nothing on the host
+# recording that it does. Measured on the extracted function:
+#
+#   A -> B (revoke of A fails) -> C   B left holding 'docker sudo', marker at C
+#
+# and no failure is needed to reach the same state. The grants are in steps 3
+# and 4 and the revocation is at the end of step 4, so an interruption anywhere
+# across the Docker install — an apt run, on a 512MB instance — strands B
+# identically. Which is why this is called *before* the grant rather than after
+# it: a name in this file that turns out to hold neither group costs a re-read
+# of two group lists, and a name missing from it is root access nobody is
+# looking for.
+record_deploy_user_grant() {
+  local user="$1" set_file="${2:-$STATE_DIR/deploy_users}"
+  local prior_file="${3:-$STATE_DIR/deploy_user}"
+  # Upgrade path. On a host provisioned by the earlier revision the single
+  # marker names the one predecessor it knew about, and it is exactly the
+  # account most likely to be unrevoked — seeding from it means the fix for
+  # forgetting accounts does not begin by forgetting one.
+  if [ ! -f "$set_file" ] && [ -s "$prior_file" ]; then
+    grep -v '^[[:space:]]*$' "$prior_file" > "$set_file" || true
   fi
+  grep -qxF "$user" "$set_file" 2>/dev/null ||
+    printf '%s\n' "$user" >> "$set_file"
+}
+
+# revoke_deploy_user_access <user> <successor>
+#
+# Takes docker and sudo back from one replaced account. Returns 0 when the
+# account holds neither group afterwards, non-zero when it still holds one — so
+# the caller decides whether to keep retrying it, rather than this deciding by
+# where it writes a marker.
+revoke_deploy_user_access() {
+  local prior="$1" current="$2" group held
 
   for group in docker sudo; do
     in_group "$prior" "$group" || continue
@@ -437,14 +471,46 @@ revoke_prior_deploy_user() {
         "it still has root-equivalent access to this host. Take it back by hand," \
         "both of these — the group can be primary AND a member entry at once:" \
         "usermod -g $prior $prior; for g in$held; do gpasswd -d $prior \$g; done"
-    # Deliberately leave the marker naming the user that still holds the group,
-    # so the next run retries the revocation instead of forgetting it.
-    return 0
+    # Deliberately kept in the set by the caller, so the next run retries the
+    # revocation instead of forgetting it.
+    return 1
   fi
 
   log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
       "remove it by hand once you can reach the host as '$current':" \
       "deluser --remove-home $prior"
+}
+
+revoke_prior_deploy_user() {
+  local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}"
+  local set_file="${3:-${prior_file%/*}/deploy_users}" prior kept=''
+
+  # Not a no-op on the ordinary path: this is what seeds the set on a host the
+  # earlier revision provisioned, and what puts $current in it on a first run,
+  # so that a *later* rotation has something to revoke.
+  record_deploy_user_grant "$current" "$set_file" "$prior_file"
+
+  while read -r prior; do
+    if [ -z "$prior" ] || [ "$prior" = "$current" ]; then
+      # $current holds both groups on purpose. It stays in the set because the
+      # run that replaces it is the one that takes them back.
+      [ -z "$prior" ] || kept="$kept$prior"$'\n'
+      continue
+    fi
+    # An account that no longer exists cannot hold either group through, so
+    # there is nothing left for a later run to retry.
+    id -u "$prior" >/dev/null 2>&1 || continue
+    revoke_deploy_user_access "$prior" "$current" || kept="$kept$prior"$'\n'
+  done < "$set_file"
+
+  # Rewritten from what the loop kept rather than appended to, so an account
+  # that was revoked leaves the set and one that was not stays in it. Both
+  # markers are written at the end: the single-name one is what the runbook and
+  # refuse_defaulted_config_change read for "who is the deploy user", which is
+  # $current whether or not its predecessor could be stripped — the earlier
+  # revision pinned it to the predecessor on that path, so a failed revocation
+  # also made the host misreport who it belongs to.
+  printf '%s' "$kept" > "$set_file"
   printf '%s\n' "$current" > "$prior_file"
 }
 
@@ -1222,6 +1288,11 @@ adopt_legacy_ssh_key_marker "$APP_SSH_USER"
 if ! id -u "$APP_SSH_USER" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "Collavre deploy" "$APP_SSH_USER"
 fi
+# Before the grant, not after it. Everything from here to the revocation at the
+# end of step 4 — the whole Docker install — is a window in which an interrupted
+# run would otherwise leave this account holding sudo and docker with nothing on
+# the host recording that it does, and no later run able to find it.
+record_deploy_user_grant "$APP_SSH_USER"
 usermod -aG sudo "$APP_SSH_USER"
 install -d -m 0755 /etc/sudoers.d
 ensure_sudoers "$APP_SSH_USER"
@@ -1316,9 +1387,25 @@ install_authorized_keys() {
 # refusing the very key the run just installed. Setting both first means the
 # file is correct at every instant, and the caller's chown/chmod becomes a
 # no-op rather than a load-bearing step.
+#
+# Which is why a chown that fails refuses the install rather than being
+# suppressed. Suppressing it puts the root-owned 0600 file at the live path,
+# and the caller's own `chown "$APP_SSH_USER:$APP_SSH_GROUP" "$AUTH_KEYS"` a few
+# lines later is not a recovery: it is the same command on the same names, so it
+# fails for whatever reason this one just did and `set -e` ends the run with the
+# unreadable file already installed. Declining to install leaves the live file
+# as it was — still holding a key that works — so the cost is a run rather than
+# the host, and on APP_SSH_USER=ubuntu the host is the only way in.
 install_staged_authorized_keys() {
   local tmp="$1" auth_keys="$2"
-  [ -z "${APP_SSH_USER:-}" ] || chown "$APP_SSH_USER:${APP_SSH_GROUP:-$APP_SSH_USER}" "$tmp" 2>/dev/null || true
+  if [ -n "${APP_SSH_USER:-}" ] &&
+     ! chown "$APP_SSH_USER:${APP_SSH_GROUP:-$APP_SSH_USER}" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    log "WARNING: could not give a rewritten $auth_keys to" \
+        "'$APP_SSH_USER' — sshd refuses an authorized_keys it cannot read as" \
+        "the user, so it was NOT installed and the live file is untouched"
+    return 1
+  fi
   chmod 0600 "$tmp"
   mv -f "$tmp" "$auth_keys"
 }
@@ -1354,8 +1441,11 @@ revoke_prior_ssh_key() {
       # whose log says the rotation succeeded. The `|| true` above — needed so
       # `set -e` does not fire on grep's "no lines selected" — is what hides
       # the error, so the successor's presence has to be re-established here.
-      if grep -qxF "$SSH_PUBLIC_KEY" "$tmp"; then
-        install_staged_authorized_keys "$tmp" "$auth_keys"
+      # The install is part of the condition rather than a statement after it:
+      # it declines to install a file it could not give to the user, and a
+      # withdrawal that did not reach the live file has withdrawn nothing.
+      if grep -qxF "$SSH_PUBLIC_KEY" "$tmp" &&
+         install_staged_authorized_keys "$tmp" "$auth_keys"; then
         log "withdrew the SSH key this script installed on a previous run"
       else
         rm -f "$tmp"
@@ -1398,8 +1488,8 @@ dedupe_authorized_keys() {
   tmp="$(mktemp "$auth_keys.sort.XXXXXX")"
   if sort -u -o "$tmp" "$auth_keys" 2>/dev/null &&
      { [ ! -s "$auth_keys" ] || [ -s "$tmp" ]; } &&
-     { [ -z "$must_keep" ] || grep -qxF "$must_keep" "$tmp"; }; then
-    install_staged_authorized_keys "$tmp" "$auth_keys"
+     { [ -z "$must_keep" ] || grep -qxF "$must_keep" "$tmp"; } &&
+     install_staged_authorized_keys "$tmp" "$auth_keys"; then
     return 0
   fi
   rm -f "$tmp"

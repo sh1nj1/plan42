@@ -21,12 +21,13 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
 for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
+          record_deploy_user_grant revoke_deploy_user_access \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation role_owns_app_objects revoke_prior_ssh_key \
@@ -41,6 +42,20 @@ for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
     exit 1
   }
 done
+
+# The suite runs unprivileged, where `chown collavre:collavre` fails on every
+# host, and install_staged_authorized_keys now *declines to install* a file it
+# could not hand to the deploy user rather than suppressing the error. Without a
+# seam here every case that rewrites authorized_keys would exercise the refusal
+# path and nothing else — the failure would look like a broken function instead
+# of an unprivileged test run.
+#
+# Succeeding by default is the honest default because the production caller runs
+# as root against an account it has just created. The cases that need the
+# failure make it fail explicitly (CHOWN_FAILS), which is the one place where
+# what is under test is the refusal itself.
+CHOWN_FAILS=0
+chown() { [ "$CHOWN_FAILS" = 0 ]; }
 
 fail=0
 chk() {
@@ -319,16 +334,137 @@ case "$LOGGED" in
   *) echo "  ok   does not claim the access is gone" ;;
 esac
 
-echo "18. and the marker is not advanced, so the next run retries"
-# Advancing it here would forget which account still holds root — a permanent
-# silent failure rather than one the next FORCE=1 run picks up.
-chk "marker still names the unrevoked user" "legacy" "$(cat "$d4/deploy_user")"
+echo "18. and the account it could not strip stays queued for the next run"
+# The retry lives in the set rather than in the single-name marker. Pinning that
+# marker to the unrevoked account — what an earlier revision did — bought the
+# retry at the price of the host misreporting who its deploy user is, and it is
+# what case 18a shows losing an account outright on the second rotation.
+chk "still queued for revocation" 1 \
+  "$(grep -cxF legacy "$d4/deploy_users")"
+chk "the marker names the account in use" "deploybot" "$(cat "$d4/deploy_user")"
 usermod() { usermod_host "$@"; }             # the host is healthy again
 revoke deploybot "$d4/deploy_user"           # the retry, on a healthy host
 chk "the retry revokes it"     0 "$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | grep -cxF docker)"
-chk "and then advances" "deploybot" "$(cat "$d4/deploy_user")"
+chk "and it leaves the queue" 0 "$(grep -cxF legacy "$d4/deploy_users")"
+chk "while the marker still names the account in use" "deploybot" "$(cat "$d4/deploy_user")"
 
 unset -f id gpasswd usermod usermod_host groupadd log revoke supp_holds drop_word
+
+# --------------------------------------------------------------------------
+# One name cannot describe a host that has rotated twice, so the cases below
+# need more than one account on the host. The model is a directory holding one
+# file per account, whose contents are what `id -nG` would print; FAIL_REVOKE
+# names the accounts whose `gpasswd -d` does nothing, which is how the sequence
+# that matters is reached.
+#
+# grant() is what the script does at its two grant sites (step 3's `usermod -aG
+# sudo` and step 4's `usermod -aG docker`), so a case can place them relative to
+# the revocation the same way the script does — which is the whole point here,
+# since the second of these cases is about an interruption between them.
+# --------------------------------------------------------------------------
+HOSTDB=""; FAIL_REVOKE=""
+id() {
+  case "$1" in
+    -u)  [ -f "$HOSTDB/$2" ] ;;
+    -nG) [ -f "$HOSTDB/$2" ] || return 1; cat "$HOSTDB/$2" ;;
+    -gn) [ -f "$HOSTDB/$2" ] || return 1; cut -d' ' -f1 "$HOSTDB/$2" ;;
+    *)   return 1 ;;
+  esac
+}
+gpasswd() {   # gpasswd -d <user> <group>
+  case " $FAIL_REVOKE " in *" $2 "*) return 1 ;; esac
+  tr ' ' '\n' < "$HOSTDB/$2" | grep -vxF "$3" | tr '\n' ' ' |
+    sed 's/ *$//' > "$HOSTDB/$2.next"
+  mv "$HOSTDB/$2.next" "$HOSTDB/$2"
+}
+# shellcheck disable=SC2329  # called through the extracted function
+usermod() { :; }
+# shellcheck disable=SC2329
+groupadd() { :; }
+log() { :; }
+grant() { printf '%s docker sudo' "$1" > "$HOSTDB/$1"; }
+holds() { tr ' ' '\n' < "$HOSTDB/$1" | grep -cxF "$2"; }
+
+# The negative control is the previous revision's *marker discipline* rather
+# than a copy of its revocation body: one name in the file, advanced only when
+# the account it names comes back clean. The body is unchanged and is called
+# here, so the control isolates the one thing that did change — and copying
+# fifty lines that still exist would drift from them rather than test against
+# them.
+revoke_single_marker() {
+  local current="$1" f="$2" prior
+  [ -f "$f" ] || { printf '%s\n' "$current" > "$f"; return 0; }
+  prior="$(cat "$f")"
+  if [ -z "$prior" ] || [ "$prior" = "$current" ] ||
+     ! id -u "$prior" >/dev/null 2>&1; then
+    printf '%s\n' "$current" > "$f"; return 0
+  fi
+  revoke_deploy_user_access "$prior" "$current" || return 0   # marker pinned
+  printf '%s\n' "$current" > "$f"
+}
+
+echo "18a. a rotation whose revocation failed does not lose the NEXT account"
+# A -> B with the revocation of A failing, then B -> C. The earlier revision
+# retried A on the third run and advanced its one marker straight to C, so B
+# went on holding docker and sudo with nothing on the host naming it.
+HOSTDB=$(mktemp -d); d5=$(mktemp -d)
+grant collavre; printf 'collavre\n' > "$d5/deploy_user"
+FAIL_REVOKE=collavre; grant deploybot
+revoke_prior_deploy_user deploybot "$d5/deploy_user"
+FAIL_REVOKE=""; grant ci
+revoke_prior_deploy_user ci "$d5/deploy_user"
+chk "the account in between lost docker" 0 "$(holds deploybot docker)"
+chk "and sudo"                           0 "$(holds deploybot sudo)"
+chk "the one that failed was retried"    0 "$(holds collavre docker)"
+# The account in use stays queued on purpose — it holds both groups, and the
+# run that replaces it is the one that takes them back. So the assertion is that
+# nothing ELSE is left in it, which is also what keeps the queue from growing by
+# one name per rotation forever.
+chk "nothing but the account in use is queued" "ci" \
+  "$(tr '\n' ' ' < "$d5/deploy_users" | sed 's/ *$//')"
+
+# The control. Same host, same sequence, previous marker discipline.
+HOSTDB=$(mktemp -d); d6=$(mktemp -d)
+grant collavre; printf 'collavre\n' > "$d6/deploy_user"
+FAIL_REVOKE=collavre; grant deploybot
+revoke_single_marker deploybot "$d6/deploy_user"
+FAIL_REVOKE=""; grant ci
+revoke_single_marker ci "$d6/deploy_user"
+chk "the previous form left it holding docker" 1 "$(holds deploybot docker)"
+chk "with the marker naming neither it nor its predecessor" "ci" \
+  "$(cat "$d6/deploy_user")"
+
+echo "18b. an interrupted rotation does not hide the account it already granted"
+# No failure anywhere. The grants are at step 3 and step 4 and the revocation is
+# at the end of step 4, so the window is the whole Docker install — an apt run
+# on a 512MB instance. Recording the grant BEFORE it is what closes this; a
+# record written after the revocation cannot describe a run that never reached
+# it.
+HOSTDB=$(mktemp -d); d7=$(mktemp -d)
+grant collavre; printf 'collavre\n' > "$d7/deploy_user"
+record_deploy_user_grant deploybot "$d7/deploy_users" "$d7/deploy_user"
+grant deploybot                              # ... and the run dies here
+grant ci
+record_deploy_user_grant ci "$d7/deploy_users" "$d7/deploy_user"
+revoke_prior_deploy_user ci "$d7/deploy_user"
+chk "the interrupted run's account lost docker" 0 "$(holds deploybot docker)"
+chk "and sudo"                                  0 "$(holds deploybot sudo)"
+chk "so did the one before it"                  0 "$(holds collavre docker)"
+
+echo "18c. a host provisioned before the queue existed is seeded from its marker"
+# The upgrade path. Starting empty would begin the fix for forgetting accounts
+# by forgetting the one account the old revision did record — and that account
+# is the one most likely to be unrevoked, since a clean rotation is why the
+# marker would have moved on.
+HOSTDB=$(mktemp -d); d8=$(mktemp -d)
+grant collavre; printf 'collavre\n' > "$d8/deploy_user"   # no deploy_users file
+grant deploybot
+revoke_prior_deploy_user deploybot "$d8/deploy_user"
+chk "the legacy predecessor was found and stripped" 0 "$(holds collavre docker)"
+chk "and the queue now holds only the account in use" "ci_absent deploybot" \
+  "ci_absent $(tr '\n' ' ' < "$d8/deploy_users" | sed 's/ *$//')"
+
+unset -f id gpasswd usermod groupadd log grant holds revoke_single_marker
 
 # --------------------------------------------------------------------------
 # The firewall helpers shell out to ufw, so it is stubbed: every invocation is
@@ -2079,13 +2215,70 @@ mv() { echo "mv $*" >> "$order"; command mv "$@"; }
 tmp="$(mktemp "$KEYS.sort.XXXXXX")"
 printf '%s\n' "$KEY_CURRENT" > "$tmp"
 APP_SSH_USER=collavre APP_SSH_GROUP=collavre install_staged_authorized_keys "$tmp" "$KEYS"
-unset -f chown chmod mv
+# Restored rather than unset: the suite-wide stub is what lets every later case
+# run the install path unprivileged, and `unset -f` here would drop it for the
+# rest of the file instead of just ending this case's recording.
+unset -f chmod mv; chown() { [ "$CHOWN_FAILS" = 0 ]; }
 chk "chown ran on the staging file" 1 "$(grep -c "^chown collavre:collavre $KEYS\.sort\." "$order")"
 chk "chmod ran on the staging file" 1 "$(grep -c "^chmod 0600 $KEYS\.sort\." "$order")"
 mv_at=$(grep -n '^mv ' "$order" | cut -d: -f1); chmod_at=$(grep -n '^chmod ' "$order" | cut -d: -f1)
 chk "both before the rename"        1 \
   "$([ -n "$mv_at" ] && [ -n "$chmod_at" ] && [ "$mv_at" -gt "$chmod_at" ] && echo 1 || echo 0)"
 chk "the live file ends 0600"       600 "$(stat -c %a "$KEYS" 2>/dev/null || stat -f %Lp "$KEYS")"
+
+# Present only in the staged file, so "did the staged contents reach the live
+# path" is answerable by looking at the live path alone.
+KEY_STAGED_ONLY='ssh-ed25519 zzSTAGED staged@laptop'
+
+echo "91a. a staging file that could not be given to the user is NOT installed"
+# `chown ... || true` put the root-owned 0600 file at the live path, and the
+# caller's own `chown "$APP_SSH_USER:$APP_SSH_GROUP" "$AUTH_KEYS"` a few lines
+# later is not a recovery from that: it is the same command on the same names,
+# so it fails for whatever reason the first one did and `set -e` ends the run
+# with the unreadable file already live. sshd with StrictModes then refuses the
+# key the run just installed, and on APP_SSH_USER=ubuntu that file is the only
+# way into the instance.
+#
+# So the assertion is about the LIVE file, not about the return value: what
+# makes declining safe is that what was already there still works.
+new_keys_env
+printf '%s\n' "$KEY_CURRENT" > "$KEYS"
+live_before="$(cat "$KEYS")"
+tmp="$(mktemp "$KEYS.sort.XXXXXX")"
+printf '%s\n' "$KEY_CURRENT" "$KEY_STAGED_ONLY" > "$tmp"
+LOGGED=""
+CHOWN_FAILS=1
+APP_SSH_USER=collavre APP_SSH_GROUP=collavre \
+  install_staged_authorized_keys "$tmp" "$KEYS" && st=0 || st=$?
+CHOWN_FAILS=0
+chk "it reports failure"            1 "$st"
+chk "the live file is untouched"    "$live_before" "$(cat "$KEYS")"
+chk "and still holds a usable key"  1 "$(grep -cxF "$KEY_CURRENT" "$KEYS")"
+chk "the staging file is cleaned up" 0 "$([ -e "$tmp" ] && echo 1 || echo 0)"
+case "$LOGGED" in
+  *"NOT installed"*) echo "  ok   says the file was not installed" ;;
+  *) echo "  FAIL silent about declining: $LOGGED"; fail=1 ;;
+esac
+# The negative control. Under the previous form the same failure installed the
+# file anyway, which is the finding: the live path takes the staged contents
+# from a chown that did not happen.
+install_prev() {   # the previous revision of install_staged_authorized_keys
+  local tmp="$1" auth_keys="$2"
+  [ -z "${APP_SSH_USER:-}" ] || chown "$APP_SSH_USER:${APP_SSH_GROUP:-$APP_SSH_USER}" "$tmp" 2>/dev/null || true
+  command chmod 0600 "$tmp"
+  command mv -f "$tmp" "$auth_keys"
+}
+printf '%s\n' "$KEY_CURRENT" > "$KEYS"
+tmp="$(mktemp "$KEYS.sort.XXXXXX")"
+printf '%s\n' "$KEY_CURRENT" "$KEY_STAGED_ONLY" > "$tmp"
+CHOWN_FAILS=1
+APP_SSH_USER=collavre APP_SSH_GROUP=collavre install_prev "$tmp" "$KEYS"
+CHOWN_FAILS=0
+chk "the previous form installed it regardless" 1 "$(grep -cxF "$KEY_STAGED_ONLY" "$KEYS")"
+# install_prev only. `unset -f log` here would expose /usr/bin/log on macOS,
+# which exits 64 on the next call and fails a case several hundred lines away
+# for a reason that has nothing to do with what it tests.
+unset -f install_prev
 
 # --- postgresql_conf_includes_confd -----------------------------------------
 #
@@ -2816,6 +3009,20 @@ run_ownck clean; new_ok="$OWNCK_OUT"
 chk "where the new form does"          1 \
   "$([ "$new_fail" != "$new_ok" ] && echo 1 || echo 0)"
 chk "and the old form said nothing at all" "" "$prev_ok"
+
+echo "117. the grant is recorded before it is made, not after"
+# Asserted on the call site rather than on the function, for the same reason as
+# case 114: the function being correct is not what closes the interruption
+# window — its position is. A record written after the grants describes only
+# runs that reached the end, and the run that matters is the one that did not.
+rec_line="$(grep -n '^record_deploy_user_grant "\$APP_SSH_USER"$' "$SRC" | head -1 | cut -d: -f1)"
+chk "it is called at all"                 1 "$([ -n "$rec_line" ] && echo 1 || echo 0)"
+for after in 'usermod -aG sudo "\$APP_SSH_USER"' 'usermod -aG docker "\$APP_SSH_USER"' \
+             'revoke_prior_deploy_user "\$APP_SSH_USER"'; do
+  line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
+  chk "before ${after%% \"*}" 1 \
+    "$([ -n "$line" ] && [ "$rec_line" -lt "$line" ] && echo 1 || echo 0)"
+done
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
