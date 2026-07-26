@@ -317,23 +317,31 @@ container polling the database they are about to replace.
   ```bash
   ./kamal.sh setup
   ./kamal.sh app stop   # no writes while the schema is dropped and reloaded
+  stop_status=$?
 
   # The task reads the SQLite file from inside the container. /rails/storage is
   # the plan42_storage volume, shared by every container of the app, and uid
   # 1000 is the image's `rails` user.
   # Stage under a temporary name and rename into place, so the task can only
   # ever see a complete file. stage_status covers the whole staging step.
-  scp storage/production-primary.sqlite3 collavre@<instance-ip>:/tmp/ &&
-    ssh collavre@<instance-ip> \
-      'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
-       sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
-         "$vol/production-primary.sqlite3.incoming" &&
-       sudo mv "$vol/production-primary.sqlite3.incoming" \
-               "$vol/production-primary.sqlite3" &&
-       rm /tmp/production-primary.sqlite3'
-  stage_status=$?
+  stage_status=1
+  if [ "$stop_status" -eq 0 ]; then
+    scp storage/production-primary.sqlite3 collavre@<instance-ip>:/tmp/ &&
+      ssh collavre@<instance-ip> \
+        'vol="$(docker volume inspect plan42_storage --format "{{.Mountpoint}}")" &&
+         sudo install -o 1000 -g 1000 -m 0600 /tmp/production-primary.sqlite3 \
+           "$vol/production-primary.sqlite3.incoming" &&
+         sudo mv "$vol/production-primary.sqlite3.incoming" \
+                 "$vol/production-primary.sqlite3" &&
+         rm /tmp/production-primary.sqlite3'
+    stage_status=$?
+  fi
 
-  if [ "$stage_status" -ne 0 ]; then
+  if [ "$stop_status" -ne 0 ]; then
+    echo "STOP FAILED: a container may still be serving and polling this database"
+    echo "nothing was staged, granted or converted"
+    echo "check './kamal.sh app details' before retrying — do not convert while it runs"
+  elif [ "$stage_status" -ne 0 ]; then
     echo "STAGING FAILED: nothing was granted and nothing was converted"
     echo "the volume still holds whatever was there before — on a retry that is"
     echo "the stale snapshot the previous attempt deliberately kept"
@@ -444,15 +452,23 @@ container polling the database they are about to replace.
   ```bash
   ./kamal.sh setup
   ./kamal.sh app stop   # no reads or writes while the schema is dropped and reloaded
+  stop_status=$?
 
   ADMIN_PASSWORD="$(openssl rand -base64 18)"   # not in shell history; print it below
-  ./kamal.sh app exec 'bin/rails db:schema:load:primary db:seed' \
-    -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1 \
-       DEFAULT_USER_EMAIL:you@example.com \
-       DEFAULT_USER_PASSWORD:"$ADMIN_PASSWORD"
-  load_status=$?
+  load_status=1
+  if [ "$stop_status" -eq 0 ]; then
+    ./kamal.sh app exec 'bin/rails db:schema:load:primary db:seed' \
+      -e DISABLE_DATABASE_ENVIRONMENT_CHECK:1 \
+         DEFAULT_USER_EMAIL:you@example.com \
+         DEFAULT_USER_PASSWORD:"$ADMIN_PASSWORD"
+    load_status=$?
+  fi
 
-  if [ "$load_status" -eq 0 ]; then
+  if [ "$stop_status" -ne 0 ]; then
+    echo "STOP FAILED: a container may still be serving and polling this database"
+    echo "nothing was loaded; the schema is whatever the migration replay produced"
+    echo "check './kamal.sh app details' before retrying — do not load while it runs"
+  elif [ "$load_status" -eq 0 ]; then
     echo "$ADMIN_PASSWORD"   # sign in, then change it
     ./kamal.sh app boot      # restart on the schema you just loaded
   else
@@ -490,6 +506,17 @@ container polling the database they are about to replace.
   argument for stopping rather than for timing it well. It also settles what
   happens to anything written between `setup` and the load: the schema is
   replaced either way, so there is no point letting a request believe otherwise.
+
+  **Which is why the load is gated on the stop, not merely preceded by it.**
+  Everything in the paragraph above is an argument about a container that is
+  still running — so it applies unchanged when `app stop` is the thing that
+  failed. Unreachable host, a docker daemon that will not answer, a role that
+  cannot stop the container: the command returns nonzero, the container keeps
+  serving and polling, and with no `set -e` the next line drops every table
+  underneath it. Adding the `app stop` fixed the case where nobody ran it;
+  gating on it fixes the case where it ran and did not work. `kamal app stop`
+  is idempotent, so the recovery is to fix whatever broke it, run it again, and
+  carry on — nothing was loaded.
 
   **Supply the admin credentials.** `db/seeds.rb` falls back to
   `admin@example.com` / `password123` and marks that user `system_admin`. That
@@ -575,10 +602,38 @@ sudo /usr/local/bin/collavre-pg-backup          # run one now
 systemctl list-timers collavre-pg-backup.timer  # check schedule
 journalctl -u collavre-pg-backup.service        # check last run
 
-# restore
+# restore — stop the app FIRST, from your workstation:
+#   ./kamal.sh app stop
+# then, on the instance:
 sudo -u postgres pg_restore --clean --if-exists -d collavre_production \
   /var/backups/collavre/collavre_production-YYYYmmdd-HHMMSS.dump
+restore_status=$?
+
+if [ "$restore_status" -eq 0 ]; then
+  echo "restored; boot the app from your workstation: ./kamal.sh app boot"
+else
+  echo "RESTORE FAILED: objects may be dropped or only partly reloaded"
+  echo "leave the app stopped and work out what happened before booting it"
+fi
 ```
+
+**`pg_restore --clean` drops every object before recreating it**, so this is the
+same hazard as the schema load in [§5](#5-first-deploy) and wants the same
+treatment: `app stop` first, `app boot` only after it succeeds. A live Puma and
+the in-process Solid Queue poller (`SOLID_QUEUE_IN_PUMA` defaults to `true`)
+would otherwise be querying tables as they are dropped — requests failing
+against relations that no longer exist, and, worse, writes landing in the window
+between a table being recreated and its rows being copied back in. Those writes
+are not rolled back by anything; they are simply overwritten or left orphaned
+depending on when they arrive, and a restore that reports success is what you
+are left looking at.
+
+Unlike the recipes in §5, the two halves run in different places — `app stop`
+and `app boot` from your workstation where `kamal.sh` and the env file live, the
+`pg_restore` on the instance — so this is deliberately three steps rather than
+one block. `pg_restore --clean --if-exists` is re-runnable, so a failed restore
+is fixed by fixing the cause and running it again, not by booting to look
+around.
 
 Local dumps die with the instance. Enable `BACKUP_S3_URI`, or take a Lightsail
 snapshot schedule, before this host holds real customer data.

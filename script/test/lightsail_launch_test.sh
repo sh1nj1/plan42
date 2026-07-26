@@ -535,6 +535,7 @@ STUB
   cat > "$work/bin/kamal.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "kamal:$1${2:+ $2}" >>"$TRACE"
+[ "${1:-}" != app ] || [ "${2:-}" != stop ] || [ -z "$FAIL_STOP" ] || exit 1
 [ "${1:-}" != app ] || [ "${2:-}" != exec ] || [ -z "$FAIL_COPY" ] || exit 1
 STUB
   chmod +x "$work/bin"/*
@@ -543,13 +544,14 @@ STUB
   TRACE="$work/trace"; : > "$TRACE"
   export TRACE FAIL_COPY="${FAIL_COPY:-}" FAIL_REVOKE="${FAIL_REVOKE:-}"
   export FAIL_SCP="${FAIL_SCP:-}" FAIL_STAGE="${FAIL_STAGE:-}"
+  export FAIL_STOP="${FAIL_STOP:-}"
   RECIPE_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   RECIPE_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
 }
 
 echo "27. a clean cutover cleans up and boots"
-FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' run_cutover
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' run_cutover
 chk "staged file removed" 1 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "app booted"          1 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 
@@ -558,7 +560,7 @@ echo "28. a failed copy does not boot, and keeps the file the retry needs"
 # partway leaves the database empty or half-populated. Booting serves that.
 # The `sudo rm` is the other half: it destroys the staged SQLite file, so a
 # retry would need another full scp of production rather than a re-run.
-FAIL_COPY=1 FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' run_cutover
+FAIL_COPY=1 FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' run_cutover
 chk "app NOT booted"          0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "staged file kept"        0 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "grant still taken back"  1 "$(grep -cx REVOKE <<<"${RECIPE_TRACE//|/$'\n'}")"
@@ -570,7 +572,7 @@ esac
 echo "29. a failed revoke does not boot the credential-bearing container"
 # collavre_user is the role in DATABASE_URL. Booting while it is still a
 # superuser hands every app container that privilege.
-FAIL_COPY='' FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' run_cutover
+FAIL_COPY='' FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' run_cutover
 chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 case "$RECIPE_OUT" in
   *"REVOKE FAILED"*"left stopped"*) echo "  ok   the still-superuser role is reported" ;;
@@ -578,7 +580,7 @@ case "$RECIPE_OUT" in
 esac
 
 echo "30. both failing reports both, not just the first"
-FAIL_COPY=1 FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' run_cutover
+FAIL_COPY=1 FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' FAIL_STOP='' run_cutover
 chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 case "$RECIPE_OUT" in
   *"REVOKE FAILED"*"COPY FAILED"*) echo "  ok   both reported" ;;
@@ -591,7 +593,7 @@ echo "31. a failed scp never converts, so a stale snapshot cannot be restored"
 # on a retry the volume holds the previous attempt's snapshot. Ungated, a
 # failed scp converts from THAT: production silently rolled back to older data,
 # reported as success, and the evidence deleted afterwards.
-FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP=1 FAIL_STAGE='' run_cutover
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP=1 FAIL_STAGE='' FAIL_STOP='' run_cutover
 chk "no conversion ran"   0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "app NOT booted"      0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
@@ -604,10 +606,24 @@ esac
 echo "32. a failed install into the volume is caught too, not just the scp"
 # scp can succeed to /tmp and the privileged install still fail — no space,
 # no docker group, volume gone.
-FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE=1 run_cutover
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE=1 FAIL_STOP='' run_cutover
 chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+
+echo "32a. a failed 'app stop' stages nothing, so no live container is converted under"
+# The cutover's own MIGRATION_RUN_RESET does DROP SCHEMA public CASCADE. A stop
+# that ran and failed leaves a container serving and polling while that lands,
+# so the gate has to be on the stop's status, not on having written the line.
+FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' FAIL_STOP=1 run_cutover
+chk "nothing staged"       0 "$(grep -cx STAGE <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/$'\n'}")"
+chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
+case "$RECIPE_OUT" in
+  *"STOP FAILED"*) echo "  ok   operator told the container may still be serving" ;;
+  *) echo "  FAIL silent or vague: ${RECIPE_OUT:-(no output)}"; fail=1 ;;
+esac
 
 echo "33. staging renames into place rather than writing the live path directly"
 # An interrupted copy must leave the previous file intact, not a truncated
@@ -633,19 +649,20 @@ run_fresh() {
   cat > "$work/bin/kamal.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "kamal:$1${2:+ $2}" >>"$TRACE"
+[ "${1:-}" != app ] || [ "${2:-}" != stop ] || [ -z "$FAIL_STOP" ] || exit 1
 [ "${1:-}" != app ] || [ "${2:-}" != exec ] || [ -z "$FAIL_LOAD" ] || exit 1
 STUB
   chmod +x "$work/bin"/*
   cp "$work/bin/kamal.sh" "$work/kamal.sh"
   TRACE="$work/trace"; : > "$TRACE"
-  export TRACE FAIL_LOAD="${FAIL_LOAD:-}"
+  export TRACE FAIL_LOAD="${FAIL_LOAD:-}" FAIL_STOP="${FAIL_STOP:-}"
   FRESH_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
   FRESH_TRACE="$(paste -sd'|' "$TRACE")"
   rm -rf "$work"
 }
 
 echo "34. a clean fresh install prints the admin password and boots"
-FAIL_LOAD='' run_fresh
+FAIL_LOAD='' FAIL_STOP='' run_fresh
 chk "app stopped first" 1 "$(grep -cx 'kamal:app stop' <<<"${FRESH_TRACE//|/$'\n'}")"
 chk "app booted"        1 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
 
@@ -653,11 +670,24 @@ echo "35. a failed schema load does not boot the app onto a partial schema"
 # db:schema:load drops and recreates every table, and db:seed is what creates
 # the first admin — so a load that resets the database but does not finish
 # leaves an app with no way to sign in and no owner on any record.
-FAIL_LOAD=1 run_fresh
+FAIL_LOAD=1 FAIL_STOP='' run_fresh
 chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
 case "$FRESH_OUT" in
   *"LOAD FAILED"*"left stopped"*) echo "  ok   operator told what state it is in" ;;
   *) echo "  FAIL silent or partial: $FRESH_OUT"; fail=1 ;;
+esac
+
+echo "35a. a failed 'app stop' loads nothing, rather than dropping tables under a live container"
+# Adding the `app stop` only fixed the case where nobody ran it. Without
+# `set -e` a stop that *ran and failed* — unreachable host, a docker daemon
+# that will not answer — falls straight through to the load, which is the live
+# schema replacement the stop exists to prevent.
+FAIL_LOAD='' FAIL_STOP=1 run_fresh
+chk "nothing loaded"  0 "$(grep -cx 'kamal:app exec' <<<"${FRESH_TRACE//|/$'\n'}")"
+chk "app NOT booted"  0 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
+case "$FRESH_OUT" in
+  *"STOP FAILED"*) echo "  ok   operator told the container may still be serving" ;;
+  *) echo "  FAIL silent or vague: ${FRESH_OUT:-(no output)}"; fail=1 ;;
 esac
 
 # --- install_authorized_keys ------------------------------------------------
