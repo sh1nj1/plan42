@@ -2627,6 +2627,44 @@ install_authorized_keys() {
       tmp="$(stage_authorized_keys "$auth_keys")" || return 1
       cat "$src" >> "$tmp" || { rm -f "$tmp"; return 1; }
       install_staged_authorized_keys "$tmp" "$auth_keys" || return 1
+      # Record what was copied, or the rotation this documents cannot undo it.
+      # `record_ssh_key_grant "$SSH_PUBLIC_KEY"` at the call site is a no-op on
+      # this path — the variable is empty, that is what put us here — so the
+      # queue stayed empty and a later run naming an explicit key found no
+      # predecessor to withdraw. Measured on the shipped functions, the two runs
+      # the runbook describes:
+      #
+      #   run 1  SSH_PUBLIC_KEY=''      authorized: cloud-1 cloud-2   queue: -
+      #   run 2  SSH_PUBLIC_KEY=<new>   authorized: cloud-1 cloud-2 new
+      #                                 queue: new
+      #
+      # The table in docs says changing SSH_PUBLIC_KEY on a re-run "withdraws
+      # the key it replaces", and on the empty -> explicit transition it
+      # withdrew nothing, on the account that has passwordless sudo and docker.
+      #
+      # Only on this branch, never on the `-ef` one above: there the file *is*
+      # the cloud user's own, so queueing it would have a later rotation strip
+      # the operator's Lightsail key from the account they log in as. Copied
+      # keys are this script's to withdraw; a cloud account's own keys are not.
+      #
+      # Warned rather than fatal, matching ensure_ufw_rule's marker: the keys
+      # are installed by the time we get here, so dying would leave exactly the
+      # same untracked keys with less said about them.
+      # Guarded on the two state variables the same way install_staged_authorized_keys
+      # guards its chown on APP_SSH_USER: this function is called directly by a
+      # dozen fixtures that have no state directory and no deploy account, and
+      # under `set -u` naming them unconditionally makes it abort there. The
+      # real call site always has both — it is the line below that sets
+      # AUTH_KEYS — so the production path is the one that records.
+      if [ -n "${STATE_DIR:-}" ] && [ -n "${APP_SSH_USER:-}" ]; then
+        while read -r _copied; do
+          case "$_copied" in ''|'#'*) continue ;; esac
+          record_ssh_key_grant "$_copied" ||
+            log "WARNING: copied a key from $candidate but could not record it," \
+                "so a later SSH_PUBLIC_KEY rotation will not withdraw it:" \
+                "${_copied##* }"
+        done < "$src"
+      fi
     fi
     return 0
   done

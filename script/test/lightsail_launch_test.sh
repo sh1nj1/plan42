@@ -5589,6 +5589,65 @@ else
 fi
 rm -rf "$vshd"
 
+echo "147. keys copied from the cloud user are withdrawn by a later rotation"
+# The runbook's variable table promises that changing SSH_PUBLIC_KEY on a re-run
+# "withdraws the key it replaces". On the empty -> explicit transition it
+# withdrew nothing: `record_ssh_key_grant "$SSH_PUBLIC_KEY"` at the call site is
+# a no-op when the variable is empty, which is exactly what puts the run on the
+# copy-from-the-cloud-user path, so the queue stayed empty and the rotation
+# found no predecessor. Measured on the shipped functions:
+#
+#   run 1  SSH_PUBLIC_KEY=''      authorized: cloud-1 cloud-2      queue: -
+#   run 2  SSH_PUBLIC_KEY=<new>   authorized: cloud-1 cloud-2 new  queue: new
+#
+# on the account that has passwordless sudo and docker.
+kd=$(mktemp -d)
+K1="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAACLOUDKEYONE cloud-1"
+K2="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAACLOUDKEYTWO cloud-2"
+KN="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAANEWDEPLOYKEY new"
+# No such account on this machine, and the ownership is not what is under test —
+# without this the install refuses and every row below reads "withdrawn" off an
+# empty file, which is how this fixture first passed while measuring nothing.
+# shellcheck disable=SC2329  # called by install_staged_authorized_keys
+chown() { :; }
+key_rotation() {   # <deploy account> -> "<authorized names>|<queue names>"
+  # One name per statement: bash expands every word of a `local` before it
+  # performs any of the assignments, so `local a="$1" b="$a"` leaves b empty —
+  # and under this suite's `set -u` it aborts the case instead, which is how
+  # this was caught rather than silently measuring the wrong directory.
+  local acct="$1"
+  local h="$kd/$acct" sd="$kd/state.$acct"
+  local ak out=''
+  rm -rf "$h" "$sd"; mkdir -p "$sd" "$h/ubuntu/.ssh" "$h/$acct/.ssh"
+  printf '%s\n%s\n' "$K1" "$K2" > "$h/ubuntu/.ssh/authorized_keys"
+  ak="$h/$acct/.ssh/authorized_keys"
+  [ "$acct" = ubuntu ] || : > "$ak"
+  local k
+  for k in '' "$KN"; do
+    STATE_DIR="$sd" APP_SSH_USER="$acct" SSH_PUBLIC_KEY="$k"
+    record_ssh_key_grant "$SSH_PUBLIC_KEY" >/dev/null 2>&1
+    install_authorized_keys "$ak" "$h" >/dev/null 2>&1
+    revoke_prior_ssh_key "$ak" >/dev/null 2>&1
+  done
+  while read -r l; do [ -n "$l" ] && out="$out${l##* } "; done < "$ak"
+  out="${out}|"
+  [ -s "$sd/ssh_public_keys.$acct" ] &&
+    while read -r l; do [ -n "$l" ] && out="$out ${l##* }"; done < "$sd/ssh_public_keys.$acct"
+  printf '%s' "$out"
+}
+chk "a copied cloud key is withdrawn when SSH_PUBLIC_KEY is set" \
+  "new | new" "$(key_rotation collavre)"
+# The control that decides where the recording may go, and it is the one that
+# would be a lockout if it moved: when APP_SSH_USER *is* the cloud user, the
+# file is that account's own and this script never wrote it. Queueing it would
+# have a later rotation strip the operator's Lightsail key from the account they
+# log in as. Copied keys are this script's to withdraw; a cloud account's own
+# are not.
+chk "but the cloud user's own keys are left alone" \
+  "cloud-1 cloud-2 new | new" "$(key_rotation ubuntu)"
+unset -f chown
+rm -rf "$kd"
+
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
 exit "$fail"
