@@ -194,6 +194,7 @@ ko:
         failed: "요약 실패"
       topic_command:
         missing_name: '토픽 이름을 따옴표로 지정하세요: /topic "토픽 이름"'
+        not_authorized: 토픽의 Primary Agent를 변경하려면 쓰기 권한이 필요합니다.
         created: '토픽 "%{name}"이(가) 생성되었습니다.'
         created_with_agent: '토픽 "%{name}"이(가) 생성되었습니다. @%{agent}이(가) Primary Agent로 설정되었습니다.'
         updated_agent: '토픽 "%{name}"의 Primary Agent가 @%{agent}(으)로 변경되었습니다.'

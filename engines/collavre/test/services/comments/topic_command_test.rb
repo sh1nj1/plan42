@@ -142,6 +142,62 @@ module Collavre
         assert_equal @ai_agent.id, @topic.reload.primary_agent_id
       end
 
+      # The pin decides who may speak in the topic, so changing it is a routing
+      # change: TopicsController#set_primary_agent requires :write. Comments are
+      # authorized at :feedback, so without this gate commenting access would be
+      # enough to redirect an existing topic from chat.
+      test "refuses to release an assignment for a commenter without write access" do
+        @topic.set_primary_agent!(@ai_agent)
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Test Topic"', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/write permission/i, result)
+        assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+      end
+
+      test "refuses to reassign an existing topic for a commenter without write access" do
+        @topic.set_primary_agent!(@ai_agent)
+        other_agent = User.create!(
+          email: "otheragent@test.local", password: "password123", name: "OtherAgent",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        CreativeShare.create!(creative: @creative, user: other_agent, shared_by: @user, permission: :feedback)
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Test Topic" @OtherAgent: ', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/write permission/i, result)
+        assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+      end
+
+      test "lets a write collaborator release an assignment" do
+        @topic.set_primary_agent!(@ai_agent)
+        collaborator = users(:two)
+        CreativeShare.create!(creative: @creative, user: collaborator, shared_by: @user, permission: :write)
+        comment = create_comment('/topic "Test Topic"', user: collaborator)
+
+        TopicCommand.new(comment: comment, user: collaborator).call
+
+        assert_nil @topic.reload.primary_agent_id
+      end
+
+      # The gate must cover only the assignment write — naming an unassigned
+      # topic still just reports that it exists, which commenters may do.
+      test "still reports an unassigned existing topic to a commenter without write access" do
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Test Topic"', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/already exists/i, result)
+      end
+
       test "returns error when topic name is missing" do
         comment = create_comment("/topic")
 
@@ -239,11 +295,11 @@ module Collavre
 
       private
 
-      def create_comment(content)
+      def create_comment(content, user: @user)
         Collavre::Comment.create!(
           creative: @creative,
           topic: @topic,
-          user: @user,
+          user: user,
           content: content
         )
       end

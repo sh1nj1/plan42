@@ -197,6 +197,7 @@ en:
         failed: "Compress failed"
       topic_command:
         missing_name: 'Please specify a topic name in quotes: /topic "topic name"'
+        not_authorized: "You need write permission to change a topic's primary agent."
         created: 'Topic "%{name}" created.'
         created_with_agent: 'Topic "%{name}" created with @%{agent} as primary agent.'
         updated_agent: 'Topic "%{name}" primary agent updated to @%{agent}.'

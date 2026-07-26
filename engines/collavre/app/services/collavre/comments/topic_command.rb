@@ -70,6 +70,15 @@ module Collavre
             # reassigning nor releasing it is safe from a chat command.
             I18n.t("collavre.comments.topic_command.session_topic_locked",
                    name: existing_topic.name)
+          elsif changes_assignment?(existing_topic, primary_agent) &&
+                !creative.has_permission?(user, :write)
+            # Assigning or releasing a primary agent rewrites the topic's routing:
+            # the pin decides who may speak here and silences every other agent.
+            # The REST equivalent (TopicsController#set_primary_agent) requires
+            # :write, but CommentsController#create only authorizes the comment at
+            # :feedback, so the command has to apply the same gate itself —
+            # otherwise commenting access would be enough to redirect the topic.
+            I18n.t("collavre.comments.topic_command.not_authorized")
           elsif primary_agent
             set_primary_agent(existing_topic, primary_agent)
             broadcast_topic_agent_updated(existing_topic, primary_agent)
@@ -144,6 +153,14 @@ module Collavre
 
       def set_primary_agent(topic, agent)
         topic.set_primary_agent!(agent)
+      end
+
+      # True when the command would write primary_agent_id on an existing topic:
+      # a mention assigns (or moves) the pin, and a bare /topic on an already
+      # assigned topic releases it. `/topic "name"` on an unassigned topic only
+      # reports that it already exists, so it stays open to commenters.
+      def changes_assignment?(topic, primary_agent)
+        primary_agent.present? || topic.primary_agent_id.present?
       end
     end
   end
