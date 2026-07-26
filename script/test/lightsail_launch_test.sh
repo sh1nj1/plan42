@@ -465,6 +465,7 @@ esac
 # an error under GNU cat, and `set -e` would end provisioning at that line.
 
 LOGGED=""
+# shellcheck disable=SC2329  # called by install_authorized_keys, eval'd from the script
 log() { LOGGED="$LOGGED $*"; }
 
 echo "29. the deploy user's own keys are not copied onto themselves"
@@ -487,6 +488,7 @@ install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
 chk "cloud key copied" 1 "$(grep -c CLOUDKEY "$h/collavre/.ssh/authorized_keys")"
 
 echo "31. an explicit SSH_PUBLIC_KEY is added once, not once per run"
+# shellcheck disable=SC2034  # read by install_authorized_keys, eval'd from the script
 SSH_PUBLIC_KEY="ssh-ed25519 EXPLICIT me"
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
@@ -503,7 +505,9 @@ SQL=""
 LOGGED=""
 ROLE_EXISTS=1
 ROLE_IS_SUPER=f
+# shellcheck disable=SC2034  # read by reassign_prior_db_role, eval'd from the script
 DB_NAME=collavre_production
+# shellcheck disable=SC2329  # called by reassign_prior_db_role
 psql_as_postgres() {
   case "$2" in
     *"count(*)"*) printf '%s\n' "$ROLE_EXISTS"; return 0 ;;
@@ -511,6 +515,7 @@ psql_as_postgres() {
   esac
   SQL="$SQL|$2"
 }
+# shellcheck disable=SC2329  # called by reassign_prior_db_role
 log() { LOGGED="$LOGGED $*"; }
 rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
 
