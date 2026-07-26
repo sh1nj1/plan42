@@ -2095,6 +2095,17 @@ cmd="$*"; cmd="${cmd//\/tmp\//$REMOTE/}"
 echo ssh >>"$TRACE"
 PATH="$RBIN:$PATH" bash -c "$cmd"
 STUB
+  # The restore runs on the instance as the `postgres` superuser over the local
+  # socket, so the remote sandbox needs a sudo of its own. It records who it was
+  # asked to become rather than silently stripping the argument: "restored as
+  # postgres" is the property that replaced a connection URL carrying the app's
+  # password, and a stub that dropped `-u` would let a recipe that went back to
+  # running as the deploy user pass here.
+  cat > "$work/rbin/sudo" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = -u ]; then echo "sudo-u:$2" >>"$TRACE"; shift 2; fi
+exec "$@"
+STUB
   cat > "$work/rbin/pg_restore" <<'STUB'
 #!/usr/bin/env bash
 for a in "$@"; do case "$a" in *collavre.dump) echo "PG_RESTORE:$(cat "$a" 2>&1)" >>"$TRACE" ;; esac; done
@@ -2117,6 +2128,31 @@ FAIL_DUMP='' FAIL_XFER='' FAIL_RESTORE='' DUMP_TAG=fresh run_move
 chk "staged under .incoming"  1 "$(grep -c 'scp:/tmp/collavre.dump.incoming' <<<"${MOVE_TRACE//|/$'\n'}")"
 chk "restored the new dump"   1 "$(grep -c 'PG_RESTORE:DUMP-fresh' <<<"${MOVE_TRACE//|/$'\n'}")"
 chk "nothing left behind"     ""  "$MOVE_LEFT"
+chk "restored as postgres"    1 "$(grep -c '^sudo-u:postgres$' <<<"${MOVE_TRACE//|/$'\n'}")"
+
+echo "78a. the move never asks for the password to be pasted into a URL"
+# $DB_PASSWORD is stored raw and appears encoded only inside DATABASE_URL, so a
+# URL built by hand from the two files this page tells you to read is wrong
+# whenever the operator chose their own password. Measured against libpq 14.15,
+# the three that fail do so after the scp with the source already quiesced —
+# and `pa%41ss` does not fail at all, it authenticates as "paAss".
+#
+#   p@ss      could not translate host name "ss@127.0.0.1"
+#   p/ss      could not translate host name "ss"
+#   p%ss      invalid percent-encoded token
+#   pa%41ss   connects, as a different password
+#
+# Asserted against the recipe text rather than by running it, because the defect
+# is a value the operator is instructed to type: no stub can fail on a password
+# the harness never had. Both spellings are checked — the placeholder this page
+# used and a URI scheme anywhere in the block — so neither a rename of the
+# placeholder nor a differently-worded URL brings it back unnoticed.
+chk "no password placeholder" 0 "$(grep -c '<password>' <<<"$move")"
+chk "no connection URI"       0 "$(grep -c 'postgres\(ql\)\?://' <<<"$move")"
+# The page has to keep saying why, or the next edit re-derives the URL as the
+# obvious way to name a database.
+chk "and the page says why"   1 \
+  "$(grep -c 'invalid percent-encoded token' "$DOC")"
 
 echo "79. a failed pg_dump never reaches the transfer or the restore"
 FAIL_DUMP=1 FAIL_XFER='' FAIL_RESTORE='' run_move
@@ -2264,6 +2300,15 @@ case "$sql" in
                                  [ -z "$FAIL_PRIOR_READ" ] || exit 1
                                else
                                  echo "readback" >>"$TRACE"
+                                 # The ALTER committed and the confirmation did
+                                 # not come back — the cluster restarted in
+                                 # between, the connection dropped. Modelled
+                                 # separately from FAIL_SHUT because the two
+                                 # leave the database in opposite states while
+                                 # looking identical from the recipe's side:
+                                 # $shut is empty either way, and only one of
+                                 # them has locked the app out.
+                                 [ -z "$FAIL_READBACK" ] || exit 1
                                fi
                                cat "$CONNLIMIT" ;;
   *pg_terminate_backend*)      echo "terminate"      >>"$TRACE"; echo "${KILLED:-0}" ;;
@@ -2288,6 +2333,7 @@ STUB
   export TRACE LIVE="${LIVE-0}" KILLED="${KILLED:-0}" FAIL_RESTORE="${FAIL_RESTORE:-}" \
          FAIL_SHUT="${FAIL_SHUT:-}" FAIL_REOPEN="${FAIL_REOPEN:-}" \
          FAIL_PRIOR_READ="${FAIL_PRIOR_READ:-}" \
+         FAIL_READBACK="${FAIL_READBACK:-}" \
          CONNLIMIT="$work/connlimit" DATCONN_N="$work/datconn_n" \
          APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}" \
          APP_DB="${APP_DB-collavre_production}"
@@ -2521,6 +2567,52 @@ chk "nothing dropped"            0 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|
 chk "not re-opened"              0 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|/$'\n'}")"
 chk "and no note about a limit"  0 "$(grep -c 'NOTE:' <<<"$R_OUT")"
 unset FAIL_PRIOR_READ APP_DB
+
+echo "86l. an ALTER that took but could not be confirmed still gets put back"
+# The read-back is a second connection and fails on its own terms — PostgreSQL
+# restarted between the two statements, the socket dropped. $shut is then empty,
+# which is indistinguishable from the ALTER having failed, and the block took
+# the refusing branch and stopped: status 3, "nothing was changed", no re-open.
+# But the door really is shut, so what the operator meets next is the app
+# refused at boot with "too many connections" — from the block that told them it
+# had touched nothing. The ALTER's own exit status is the only thing that can
+# tell those two apart, and it is now kept.
+PRIOR_LIMIT=25 FAIL_READBACK=1 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "refused"                    1 "$(grep -c 'REFUSING' <<<"$R_OUT")"
+chk "nothing dropped"            0 "$(grep -cx 'PG_RESTORE_RAN' <<<"${R_TRACE//|/$'\n'}")"
+# The assertion the finding is about: what the database is left at, not which
+# statements ran. 0 here is an app that cannot start.
+chk "left at the operator's cap" 25 "$R_LIMIT"
+chk "re-opened"                  1 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|/$'\n'}")"
+# And the refusal must not claim the ALTER failed — that is the one reading it
+# has no evidence for, and the one that sends the operator looking at the wrong
+# thing while the app stays locked out.
+chk "does not blame the ALTER"   0 "$(grep -c 'did not take' <<<"$R_OUT")"
+chk "says it cannot tell"        1 "$(grep -c 'reported success' <<<"$R_OUT")"
+unset PRIOR_LIMIT FAIL_READBACK
+
+echo "86m. a prior limit that could not be read is still put back on that path"
+# Both reads failed: the block has no value to restore and the door may be shut.
+# -1 is the lesser wrong here for the same reason it is on the ordinary path —
+# leaving it shut for want of a number produces exactly the misdirected "too
+# many connections" the re-open exists to avoid — but it must be said out loud,
+# and 86k's silence is scoped to the paths that never shut anything, not to
+# status 3 as a whole.
+FAIL_PRIOR_READ=1 FAIL_READBACK=1 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "re-opened to the default"  -1 "$R_LIMIT"
+chk "and the operator is told"   1 "$(grep -c 'NOTE: could not read' <<<"$R_OUT")"
+unset FAIL_PRIOR_READ FAIL_READBACK
+
+echo "86n. the ALTER failing is still not a reason to touch the limit"
+# The negative half of 86l, and the reason this is gated on the ALTER's status
+# rather than on "status 3 might have shut it": here the statement did not run,
+# the limit is the operator's, and re-opening would be the block changing
+# something on the path where it refused to change anything.
+PRIOR_LIMIT=25 FAIL_SHUT=1 LIVE=0 KILLED=0 FAIL_RESTORE='' run_restore
+chk "not re-opened"              0 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|/$'\n'}")"
+chk "the cap is untouched"       25 "$R_LIMIT"
+chk "and the ALTER is blamed"    1 "$(grep -c 'did not take' <<<"$R_OUT")"
+unset PRIOR_LIMIT FAIL_SHUT
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #
@@ -3677,9 +3769,223 @@ for after in 'install_authorized_keys "\$AUTH_KEYS"' \
              'dedupe_authorized_keys "\$AUTH_KEYS"' \
              'apt_get update' 'usermod -aG docker'; do
   line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
+  # Both operands tested for emptiness before the comparison: against a script
+  # with no call at all these are all meant to fail, and `[ "" -lt 5 ]` fails
+  # with a shell error rather than an answer, which buries the assertion it was
+  # supposed to report.
   chk "before ${after%% *}" 1 \
-    "$([ -n "$line" ] && [ "$grd_line" -lt "$line" ] && echo 1 || echo 0)"
+    "$([ -n "$grd_line" ] && [ -n "$line" ] && [ "$grd_line" -lt "$line" ] &&
+       echo 1 || echo 0)"
 done
+
+# --- a record that does not answer is not a record of "nothing to check" ------
+#
+# launch.env is written with one redirection at the very end of a run, and
+# refuse_defaulted_config_change branches on the file *existing*. A write that
+# failed after the truncate — a full disk, an interrupted run — leaves it
+# present and short, and every missing line is skipped by the reader's
+# `grep -q "^$name=" || continue`. So the guard answered "no drift" about a
+# comparison it never made, and what went through is the bare `FORCE=1` re-run
+# it exists to refuse.
+
+cfg_short=$(mktemp -d)
+printf 'deploybot\n'    > "$cfg_short/deploy_user"
+printf 'collavre_app\n' > "$cfg_short/db_user"
+
+echo "120. a launch.env that cannot answer falls back to the markers that can"
+: > "$cfg_short/launch.env"
+run_cfg "$cfg_short" ""
+chk "an empty record: refused"        1 "$CFG_STATUS"
+chk "the deploy-user rotation named"  1 \
+  "$(grep -c "APP_SSH_USER: host has 'deploybot'" <<<"$CFG_OUT")"
+chk "the db-role rotation named"      1 \
+  "$(grep -c "DB_USER: host has 'collavre_app'" <<<"$CFG_OUT")"
+
+# Truncated mid-line, which is what a redirection killed part-way through
+# actually leaves: the settings before the cut survive and the rest are gone.
+# SSH_PUBLIC_KEY is empty on both sides here, so nothing but the fallback can
+# produce a refusal — a case that passed on the surviving line would prove
+# nothing about the lines that did not survive.
+printf 'SSH_PUBLIC_KEY=\nAPP_SSH_U' > "$cfg_short/launch.env"
+run_cfg "$cfg_short" ""
+chk "a truncated record: refused"     1 "$CFG_STATUS"
+chk "the setting cut off mid-line"    1 \
+  "$(grep -c "APP_SSH_USER: host has 'deploybot'" <<<"$CFG_OUT")"
+
+# The control that keeps this from being a guard that fires on everything: a
+# record that does answer and agrees must still proceed, and the fallback must
+# not re-fire on a setting launch.env already settled. The markers here name
+# somebody else on purpose — if the fallback ran unconditionally this would
+# refuse a host where nothing drifted.
+{ for _n in $LAUNCH_SETTINGS; do
+    case "$_n" in
+      APP_SSH_USER) echo "APP_SSH_USER=collavre" ;;
+      DB_USER)      echo "DB_USER=collavre_user" ;;
+      PG_MAJOR)     echo "PG_MAJOR=17" ;;
+      DB_NAME)      echo "DB_NAME=collavre_production" ;;
+      DB_BIND_ADDRESS) echo "DB_BIND_ADDRESS=172.17.0.1" ;;
+      DOCKER_SUBNETS)  echo "DOCKER_SUBNETS=172.16.0.0/12" ;;
+      SWAP_SIZE_MB) echo "SWAP_SIZE_MB=2048" ;;
+      TIMEZONE)     echo "TIMEZONE=Asia/Seoul" ;;
+      INSTANCE_HOSTNAME) echo "INSTANCE_HOSTNAME=collavre" ;;
+      BACKUP_RETENTION_DAYS) echo "BACKUP_RETENTION_DAYS=7" ;;
+      BACKUP_AT)    echo "BACKUP_AT=03:30" ;;
+      *)            echo "$_n=" ;;
+    esac
+  done; } > "$cfg_short/launch.env"
+unset _n
+run_cfg "$cfg_short" ""
+chk "a record that agrees: proceeds"  0 "$CFG_STATUS"
+chk "and says nothing"                "" "$CFG_OUT"
+
+echo "120a. against the previous form the empty record went straight through"
+# The previous reader inline, so what differs is the branch and not a second
+# copy of the function. Everything else — the setting list, the markers, the
+# environment — is the case above.
+: > "$cfg_short/launch.env"
+prev_status=0
+prev_out="$(
+  env SSH_PUBLIC_KEY= APP_SSH_USER=collavre DB_USER=collavre_user \
+      LAUNCH_SETTINGS="$LAUNCH_SETTINGS" \
+    bash -c '
+      set -uo pipefail
+      state_dir="$1"; env_file="$state_dir/launch.env"; drift=""
+      if [ -f "$env_file" ]; then
+        for name in $LAUNCH_SETTINGS; do
+          grep -q "^$name=" "$env_file" || continue
+          prior="$(sed -n "s/^$name=//p" "$env_file" | head -1)"
+          [ "$prior" = "${!name}" ] && continue
+          drift="$drift $name"
+        done
+      else
+        for pair in deploy_user:APP_SSH_USER db_user:DB_USER; do
+          file="${pair%%:*}"; name="${pair##*:}"
+          [ -f "$state_dir/$file" ] || continue
+          prior="$(cat "$state_dir/$file")"
+          [ -n "$prior" ] && [ "$prior" != "${!name}" ] && drift="$drift $name"
+        done
+      fi
+      [ -z "$drift" ] || { echo "REFUSING:$drift"; exit 1; }
+    ' _ "$cfg_short" 2>&1
+)" || prev_status=$?
+chk "the previous form: NOT refused"  0 "$prev_status"
+chk "and silent about the rotation"   0 "$(grep -c APP_SSH_USER <<<"$prev_out")"
+
+echo "120b. launch.env is replaced in one step rather than truncated in place"
+# The assertion is on the write, not on the wording: a redirection here is the
+# defect, whatever the comment above it says.
+lenv_line="$(grep -c 'write_state_file "\$STATE_DIR/launch.env"' "$SRC")"
+chk "written through write_state_file" 1 "$lenv_line"
+chk "and not by a redirection"         0 \
+  "$(grep -c '> *"\$STATE_DIR/launch.env"' "$SRC")"
+
+# --- an empty db_password is a password this host cannot name ----------------
+#
+# Same window, and the consequence is worse: the empty value is read back as
+# the password and reaches `ALTER ROLE ... PASSWORD ''` unconditionally, so the
+# live role is rotated to an empty password while the deployed DATABASE_URL
+# still carries the real one. The app meets `password authentication failed` at
+# its next reconnect, and the value it needs is gone from the host.
+echo "121. an empty db_password marker is refused rather than applied"
+pw_recipe="$(awk '/^if \[ -z "\$DB_PASSWORD" \]; then$/ { f = 1 }
+                  f { print }
+                  f && /^fi$/ { exit }' "$SRC")"
+chk "the block was extracted" 1 \
+  "$(grep -q 'STATE_DIR/db_password' <<<"$pw_recipe" && echo 1 || echo 0)"
+
+run_pw() {   # run_pw <state dir>
+  PW_STATUS=0
+  PW_OUT="$(
+    env STATE_DIR="$1" DB_PASSWORD= \
+      bash -c '
+        set -uo pipefail
+        '"$(declare -f die)"'
+        log() { echo "[log] $*"; }
+        '"$pw_recipe"'
+        echo "APPLIED:$DB_PASSWORD"
+      ' 2>&1
+  )" || PW_STATUS=$?
+}
+
+pwd_dir=$(mktemp -d)
+: > "$pwd_dir/db_password"
+run_pw "$pwd_dir"
+chk "an empty marker: refused"    1 "$PW_STATUS"
+chk "nothing was applied"         0 "$(grep -c '^APPLIED:' <<<"$PW_OUT")"
+chk "it says what it cannot name" 1 "$(grep -c 'cannot name' <<<"$PW_OUT")"
+# The recovery has to be reachable, not just named — an operator who still has
+# the deployed DATABASE_URL can decode the password out of it.
+chk "and where to get it back"    1 "$(grep -c 'DATABASE_URL' <<<"$PW_OUT")"
+
+printf 'realpassword' > "$pwd_dir/db_password"
+run_pw "$pwd_dir"
+chk "a marker with a value: kept" 0 "$PW_STATUS"
+chk "and it is the one applied"   "APPLIED:realpassword" \
+  "$(grep '^APPLIED:' <<<"$PW_OUT")"
+
+rm -f "$pwd_dir/db_password"
+run_pw "$pwd_dir"
+chk "no marker at all: generates" 0 "$PW_STATUS"
+chk "and it is not empty"         0 "$(grep -c '^APPLIED:$' <<<"$PW_OUT")"
+
+echo "121a. the password marker is 0600 from the moment it exists"
+# mktemp creates 0600 and write_state_file chmods before it writes, so the
+# content never lands in a file that was briefly 0644 in a 0755 directory —
+# which is what the `umask 077` subshell it replaces could only achieve by
+# getting the umask right.
+pwt=$(mktemp -d)
+write_state_file "$pwt/db_password" "s3cret" 0600
+chk "the value round-trips"   "s3cret" "$(cat "$pwt/db_password")"
+chk "and the mode is 0600"    "600"    "$(file_mode "$pwt/db_password")"
+write_state_file "$pwt/plain" "x"
+chk "the default stays 0644"  "644"    "$(file_mode "$pwt/plain")"
+
+echo "121b. a write that fails leaves the previous value in place"
+# The property the redirection did not have. `ulimit -f 0` stands in for the
+# full disk this fails on: the staging file is what gets truncated, and the
+# marker the host depends on is untouched until the rename.
+printf 'previous' > "$pwt/db_password"
+{ ( ulimit -f 0; write_state_file "$pwt/db_password" "replacement" 0600 ); } 2>/dev/null
+chk "the marker still reads"  "previous" "$(cat "$pwt/db_password")"
+
+# --- the cluster serving DB_PORT has to be the one this script configures ----
+echo "122. a same-version cluster that is not named 'main' is refused"
+# Version and port agreeing is not enough. Everything downstream names
+# /etc/postgresql/<major>/main as literal text — the tuning, listen_addresses,
+# the pg_hba rule for the docker bridge, and the runbook's recovery blocks. On a
+# host whose cluster is called something else that path is absent, the step-5
+# apt install reports the package already present without creating a second
+# cluster, `install -d` makes the missing directory, and all of it is written
+# into a tree no postmaster reads. `systemctl restart postgresql` then succeeds,
+# because the umbrella unit does not care which clusters exist, and the run
+# reports success over containers that cannot reach the database.
+PG_MAJOR=17
+DB_PORT=5432
+mk_lsclusters pg_ls_named_app '17  app     5432 online postgres /var/lib/postgresql/17/app /var/log/x'
+out="$( (ensure_cluster_on_default_port pg_ls_named_app) 2>&1 )"
+chk "exits non-zero" 1 "$?"
+case "$out" in
+  *"is named 'app', not 'main'"*"pg_renamecluster"*)
+    echo "  ok   names the cluster it found and how to move it" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+
+# The controls. 'main' on the default port is the ordinary re-run and must not
+# be refused, and a cluster of the WRONG version named 'app' must still be
+# refused on the version — the name check must not preempt the answer that
+# tells the operator to set PG_MAJOR.
+mk_lsclusters pg_ls_named_main '17  main    5432 online postgres /var/lib/postgresql/17/main /var/log/x'
+out="$( (ensure_cluster_on_default_port pg_ls_named_main) 2>&1 )"
+chk "'main' on 5432: proceeds" 0 "$?"
+chk "and says nothing"         "" "$out"
+
+mk_lsclusters pg_ls_16_app '16  app     5432 online postgres /a /b'
+out="$( (ensure_cluster_on_default_port pg_ls_16_app) 2>&1 )"
+chk "a wrong-version 'app': refused" 1 "$?"
+case "$out" in
+  *"already serves 5432"*) echo "  ok   on the version, which is the useful answer" ;;
+  *) echo "  FAIL reported the name over the version: $out"; fail=1 ;;
+esac
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

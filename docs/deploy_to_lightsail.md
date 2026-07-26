@@ -635,9 +635,8 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
     scp collavre.dump <deploy-user>@<instance-ip>:/tmp/collavre.dump.incoming &&
     ssh <deploy-user>@<instance-ip> \
       'mv /tmp/collavre.dump.incoming /tmp/collavre.dump &&
-       pg_restore --no-owner --role=<db-user> --clean --if-exists \
-         -d "postgresql://<db-user>:<password>@127.0.0.1:5432/<db-name>" \
-         /tmp/collavre.dump &&
+       sudo -u postgres pg_restore --no-owner --role=<db-user> \
+         --clean --if-exists -d "<db-name>" /tmp/collavre.dump &&
        rm /tmp/collavre.dump'
   move_status=$?
 
@@ -660,6 +659,33 @@ sudo cat /var/lib/collavre/db_name   # <db-name>
   one on stale data. The transfer also lands on `.incoming` and is renamed, so an
   interrupted `scp` cannot leave a truncated archive at the path the restore
   reads.
+
+  **Why the restore goes through `sudo -u postgres` and not a connection URL.**
+  An earlier revision of this block had you paste `<password>` into
+  `postgresql://<db-user>:<password>@127.0.0.1:5432/<db-name>`, which
+  contradicts [the password section above](#a-custom-db_password-is-percent-encoded-in-database_url):
+  what the state file holds is the *raw* password, and the URL is the one place
+  it appears encoded. A `DB_PASSWORD` you chose yourself is then pasted into a
+  parser that reads parts of it as syntax. Measured against libpq 14.15:
+
+  ```
+  p@ss        could not translate host name "ss@127.0.0.1" to address
+  p/ss        could not translate host name "ss" to address
+  p%ss        invalid percent-encoded token: "p%ss"
+  pa%41ss     connects — as the password "paAss"
+  ```
+
+  The first three fail after the `scp`, with the source already in maintenance
+  mode. The fourth is the one worth the paragraph: it does not fail at all, it
+  authenticates with a different password than the one in the file, so the
+  restore works on a host where the app's own role would be rejected — a
+  password problem discovered at the next boot rather than here. (`#` and `?`
+  pass through libpq unharmed; the wider list in the password section is
+  Ruby's `URI.parse`, which is a different parser with a different answer.)
+
+  The local socket needs no password at all, and `postgres` is already the
+  superuser the `--clean` needs; `--role=<db-user>` still hands the restored
+  objects to the app's role.
 
 - **Coming from SQLite:** `bin/rails db:sqlite_to_postgres[...]`
   (`lib/tasks/db_convert.rake`). Like the fresh install below, this one runs
@@ -1159,6 +1185,12 @@ app_super=$(sudo -u postgres psql -qtAd postgres -c \
 # restore, and on the idle refusal too, which touches nothing else at all.
 prior_limit=$(sudo -u postgres psql -qtAd postgres -c \
   "SELECT datconnlimit FROM pg_database WHERE datname = '$app_db'" 2>/dev/null)
+
+# "This block has not shut anything yet", set before the two refusals below so
+# that it is answered on every path rather than only on the ones that reach the
+# ALTER. Non-zero is the safe value: the re-open is gated on it, and a refusal
+# that never touched the limit must not lift the operator's own cap.
+shut_applied=1
 if [ -z "$app_db" ]; then
   echo "REFUSING: cannot tell which database to restore."
   echo "  /var/lib/collavre/db_name is missing or unreadable. That file is"
@@ -1196,6 +1228,14 @@ else
 # hyphen as subtraction. Quoting is right for an ordinary name too.
 sudo -u postgres psql -qd postgres -c \
   "ALTER DATABASE \"$app_db\" CONNECTION LIMIT 0"
+# Kept separately from the read-back below, because they answer different
+# questions and only one of them decides who owns the limit afterwards. The
+# read-back says whether the door is shut; this says whether *this block* is
+# the one that shut it. They disagree exactly when the ALTER committed and the
+# read-back could not be answered — the cluster restarted in between, the
+# connection dropped — and that is the case where "nothing was changed" is
+# false and the re-open below is the only thing that will unlock the app.
+shut_applied=$?
 
 # Read the limit back rather than trusting that the line above ran. These
 # blocks are pasted into an interactive shell with no `set -e`, so a failed
@@ -1208,12 +1248,25 @@ shut=$(sudo -u postgres psql -qtAd postgres -c \
 
 if [ "$shut" != 0 ]; then
   echo "REFUSING: could not shut $app_db to the app."
-  echo "  its connection limit is '$shut', not 0 — the ALTER above did not take"
-  echo "  (wrong database name? not superuser? cluster gone?)"
+  echo "  its connection limit is '$shut', not 0"
+  if [ "$shut_applied" -eq 0 ]; then
+    # The ALTER reported success and the read-back disagrees, so the value
+    # above is not evidence the limit is unchanged — it is the absence of an
+    # answer. Saying "the ALTER did not take" here would be a guess in the one
+    # direction that leaves the app locked out, so the re-open below runs.
+    echo "  but the ALTER above reported success, so the limit may in fact be"
+    echo "  0 and this block cannot tell. Putting it back below rather than"
+    echo "  leaving the app to meet 'too many connections' at boot."
+  else
+    echo "  and the ALTER above did not take"
+    echo "  (wrong database name? not superuser? cluster gone?)"
+  fi
   echo "nothing was dropped; fix that and re-run this block"
-  # Its own status, not the refusal below: this block never shut the database,
-  # so it must not "re-open" it either — that would lift a limit the operator
-  # may have set themselves.
+  # Its own status, not the refusal below: this block never dropped anything.
+  # Whether it also has a limit to put back is a separate question, answered by
+  # $shut_applied at the re-open — on the path where the ALTER never ran, the
+  # limit is still the operator's and lifting it would be this block changing
+  # something it had refused to touch.
   restore_status=3
 else
 
@@ -1265,17 +1318,28 @@ fi
 reopen_limit=$prior_limit
 if ! printf '%s' "$prior_limit" | grep -qE '^-?[0-9]+$'; then
   reopen_limit=-1
-  # Only where it changes what happens next. On status 3 this block never shut
-  # the door and never opens it, so the previous limit is still in force and
-  # saying it could not be read would be a warning about nothing.
-  if [ "$restore_status" -ne 3 ]; then
+  # Only where it changes what happens next — which is "is this block about to
+  # re-open?", not "which status is it". On the status-3 paths that never ran
+  # the ALTER the previous limit is still in force and saying it could not be
+  # read would be a warning about nothing; on the status-3 path where the ALTER
+  # took and the read-back did not answer, the re-open runs and the operator is
+  # about to get -1 instead of their cap, which is the case the note is for.
+  if [ "$restore_status" -ne 3 ] || [ "$shut_applied" -eq 0 ]; then
     echo "NOTE: could not read $app_db's previous connection limit ('$prior_limit')."
     echo "  Re-opening to -1, the default. If you had capped this database, set"
     echo "  the cap again by hand once this block finishes."
   fi
 fi
 reopen_status=0
-if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ]; then
+# The third clause is the unconfirmed close. Status 3 otherwise means "refused
+# before touching anything", and re-opening there would lift a cap this block
+# never applied — but when the ALTER itself reported success the limit is this
+# block's to put back whether or not the read-back could confirm it, and
+# putting back the value it found is a no-op in the case where the ALTER turned
+# out not to have taken. Leaving it out is not symmetrical with that: it leaves
+# a database at CONNECTION LIMIT 0 under a message that says nothing changed.
+if [ "$restore_status" -eq 0 ] || [ "$restore_status" -eq 2 ] ||
+   { [ "$restore_status" -eq 3 ] && [ "$shut_applied" -eq 0 ]; }; then
   sudo -u postgres psql -qd postgres -c \
     "ALTER DATABASE \"$app_db\" CONNECTION LIMIT $reopen_limit"
   reopen_status=$?
@@ -1325,7 +1389,10 @@ elif [ "$restore_status" -eq 0 ]; then
     echo "restored; boot the app from your workstation: ./kamal.sh app boot"
   fi
 elif [ "$restore_status" -eq 2 ] || [ "$restore_status" -eq 3 ]; then
-  : # refused before touching anything — see the message above
+  # Refused without dropping anything, and whatever limit was applied has been
+  # put back above — see the refusal's own message, which is the one that knows
+  # which of these two it was.
+  :
 else
   echo "RESTORE FAILED: objects may be dropped or only partly reloaded."
   echo "$app_db is LEFT AT 'CONNECTION LIMIT 0' deliberately: it is"
