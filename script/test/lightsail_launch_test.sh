@@ -4553,7 +4553,12 @@ seed_backup
 # side, and the next value interpolated into a generated program by someone who
 # does not know about %q. Both produce exactly this — a staged file that is not
 # a whole script — so that is what the fixture produces directly.
-out=$(run_backup_section 'printf() { command printf "$@"; command printf "if [\n"; }')
+#
+# The injection goes through `cat`, which both the heredoc form and the current
+# one use, so the fixture reaches the guard the same way whichever way the file
+# is generated. An injection that only lands on the current spelling would read
+# as a regression against every earlier revision while measuring nothing.
+out=$(run_backup_section 'cat() { command cat "$@"; command printf "if [\n"; }')
 chk "a generated script that is not valid shell refuses" \
   1 "$(printf '%s' "$out" | grep -c '^DIE:')"
 chk "and the previous backup script survives that too" \
@@ -4795,18 +4800,27 @@ echo "133. configured values reach the backup script as data, not as source"
 # both: they are perfectly good shell, which is exactly the problem. The
 # validation below asks whether the file is a program, not whether it is the
 # intended one, so it cannot be what closes this.
-gen_backup() {
-  # The generation step as shipped, reduced to the three configured values and
-  # one line that uses one of them.
-  { printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
-      && printf 'DB_NAME=%q\nRETENTION_DAYS=%q\nS3_URI=%q\n' \
-           collavre_production 7 "$1" \
-      && printf 'echo "UPLOAD-TO=${S3_URI%%/}"\n'; } > "$2"
-}
+#
+# Driven through the real generation region rather than a reduction of it: the
+# whole claim is about what that region writes, so a harness that reimplements
+# it would pass against every revision including the one being fixed.
+bd=$(mktemp -d)
 bk=$(mktemp -d)
+gen_backup() {
+  seed_backup
+  run_backup_section "BACKUP_S3_URI='$1'" >/dev/null
+}
+# What the nightly unit does with the generated file, reduced to the part in
+# question: it runs it, under the `set -u` the generated file sets for itself,
+# so every assignment in it is evaluated. As root.
+upload_prefix() {
+  ( set -u
+    eval "$(grep -E '^S3_URI=' "$bd/collavre-pg-backup")"
+    printf 'UPLOAD-TO=%s\n' "$S3_URI" ) 2>&1
+}
 # Command substitution in a configured prefix must survive as characters.
-gen_backup 's3://b/$(touch '"$bk"'/RAN; echo pwned)/db' "$bk/gen"
-out="$(bash "$bk/gen" 2>&1)"
+gen_backup 's3://b/$(touch '"$bk"'/RAN; echo pwned)/db'
+out="$(upload_prefix)"
 chk "a substitution in the S3 prefix is not executed" 0 \
   "$([ -f "$bk/RAN" ] && echo 1 || echo 0)"
 chk "and reaches the upload as characters" \
@@ -4814,20 +4828,19 @@ chk "and reaches the upload as characters" \
 # A literal $name is the quieter half: under the generated script's own `set -u`
 # the spliced form dies with `unbound variable`, so the nightly backup stops
 # and the failure is nowhere near the value that caused it.
-gen_backup 's3://b/$archive/db' "$bk/gen2"
-out2="$(bash "$bk/gen2" 2>&1)"; rc2=$?
-chk "a literal \$name does not kill the nightly run" 0 "$rc2"
+gen_backup 's3://b/$archive/db'
+out2="$(upload_prefix)"
 chk "and is uploaded to the prefix as configured" \
   'UPLOAD-TO=s3://b/$archive/db' "$out2"
 # The controls in the other direction, and the ones that constrain the fix:
 # every real host has one of these two, so a change in either is a change to
 # where every existing backup goes.
-gen_backup 's3://collavre-backups/prod' "$bk/gen3"
+gen_backup 's3://collavre-backups/prod'
 chk "an ordinary prefix is unchanged" 'UPLOAD-TO=s3://collavre-backups/prod' \
-  "$(bash "$bk/gen3" 2>&1)"
-gen_backup '' "$bk/gen4"
-chk "and the unset default stays empty" 'UPLOAD-TO=' "$(bash "$bk/gen4" 2>&1)"
-rm -rf "$bk"
+  "$(upload_prefix)"
+gen_backup ''
+chk "and the unset default stays empty" 'UPLOAD-TO=' "$(upload_prefix)"
+rm -rf "$bk" "$bd"
 # Source-level control. The assertions above are about the shape of the
 # generation step, so this is what fails against a revert: the heredoc spliced
 # all three in, and %q is what replaced it.
