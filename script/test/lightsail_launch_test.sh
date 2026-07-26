@@ -1705,6 +1705,51 @@ chk "an untransferred superuser still dies" 1 "$?"
 chk "and still runs no SQL" "" "$SQL"
 ROLE_EXISTS=1 ROLE_IS_SUPER=f OWNS=1
 
+echo "50c. a probe the cluster cannot answer stops the run rather than passing it"
+# 50a already asserts this for the ownership count ("an unreadable count
+# refuses"). The two role probes above it did not: they compared the *output*
+# of psql and threw the status away, so a connection that died produced an
+# empty string, which is neither "1" nor "t", and the guard read a dead cluster
+# as "no such role" and then as "not a superuser".
+#
+# Proceeding here is not a refusal deferred to reassign_prior_db_role, which is
+# what makes this worth a case of its own rather than a tidier spelling: the
+# call site runs this guard *before* the SQL block, and that block contains
+# ALTER DATABASE ... OWNER TO. A bypass therefore moves the stop from "nothing
+# has been changed" to a host whose database belongs to the new role and whose
+# every table still belongs to the superuser — the exact half-rotated state
+# case 50 says the pre-check exists to make unreachable.
+#
+# The die message names the port, and DB_PORT is not set until the cluster
+# cases below; set here rather than moved, since those cases share the value
+# and reordering them to suit this one would be the tail wagging the dog.
+DB_PORT=5432
+printf 'postgres\n' > "$d3/db_user"
+ROLE_EXISTS=1 ROLE_IS_SUPER=t OWNS=2
+for q in 'count(*) FROM pg_roles' 'rolsuper'; do
+  FAIL_SQL="$q"
+  out="$( (refuse collavre_app "$d3/db_user") 2>&1 )"
+  chk "an unanswerable '$q' stops the run" 1 "$?"
+  case "$out" in
+    *"could not ask the cluster"*"Nothing has been changed"*"re-run"*)
+      echo "  ok   '$q': says what could not be asked, and that nothing changed" ;;
+    *) echo "  FAIL '$q': unhelpful or silent: $out"; fail=1 ;;
+  esac
+done
+FAIL_SQL=""
+# The control in the other direction, and it is the one that matters: this
+# guard runs on every re-run that changes DB_USER, so a probe treated as
+# unanswerable when it did answer would refuse every rotation on the host.
+# 50's four let-through shapes are asserted against a working psql above; this
+# re-asserts the two that the change actually rewrote.
+ROLE_IS_SUPER=f
+refuse collavre_app "$d3/db_user"
+chk "an answered 'not a superuser' still proceeds" 0 "$?"
+ROLE_EXISTS=0 ROLE_IS_SUPER=t
+refuse collavre_app "$d3/db_user"
+chk "an answered 'no such role' still proceeds"    0 "$?"
+ROLE_EXISTS=1 ROLE_IS_SUPER=f OWNS=1
+
 echo "51. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
 ROLE_IS_SUPER=f

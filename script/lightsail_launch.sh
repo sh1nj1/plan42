@@ -1161,14 +1161,51 @@ role_owns_app_objects() {
 }
 
 refuse_superuser_db_rotation() {
-  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior owns
+  local current="$1" prior_file="${2:-$STATE_DIR/db_user}" prior owns exists super
   [ -f "$prior_file" ] || return 0
   prior="$(cat "$prior_file")"
   [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
-  [ "$(psql_as_postgres postgres \
-        "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" = 1 ] || return 0
-  [ "$(psql_as_postgres postgres \
-        "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" = t ] || return 0
+
+  # Both probes keep their status, for the reason role_owns_app_objects states
+  # two functions up and this one did not apply to itself: an unanswerable
+  # question has to read as the unsafe answer. Under the earlier
+  # `[ "$(psql ...)" = 1 ] || return 0` a psql that could not answer produced an
+  # empty string, which is neither "1" nor "t", so a dead connection read as
+  # "no such role" and then as "not a superuser" — and the guard passed the run
+  # it exists to stop. Measured against 6125e4ee on a host recorded as
+  # DB_USER=postgres owning 7 objects, each query failed in turn:
+  #
+  #   failing query      guard
+  #   --                 REFUSES
+  #   count(*)           PROCEEDS
+  #   rolsuper           PROCEEDS
+  #   pg_get_userbyid    REFUSES     (the one path that already checked)
+  #
+  # Proceeding is not a deferred refusal. This guard is called before the SQL
+  # block on purpose — `ALTER DATABASE ... OWNER TO` runs at that point, and
+  # reassign_prior_db_role only afterwards — so a bypass moves the stop from
+  # "nothing has been changed" to a host whose database belongs to the new role
+  # while every table in it still belongs to the superuser. That is the half-
+  # rotated state the pre-check exists to make unreachable.
+  #
+  # die() rather than a bare non-zero: this runs after PostgreSQL is up, so a
+  # cluster that cannot answer here also cannot run the SQL block below, and
+  # the run is going to stop either way. Stopping with the reason, before
+  # anything is written, is the difference worth having.
+  exists="$(psql_as_postgres postgres \
+    "SELECT count(*) FROM pg_roles WHERE rolname = '$prior'")" ||
+    die "could not ask the cluster whether the previous DB_USER '$prior' still" \
+        "exists, so this run cannot tell a completed rotation from one that would" \
+        "strand every table with a superuser. Nothing has been changed. Check that" \
+        "PostgreSQL is accepting connections on port $DB_PORT and re-run."
+  [ "$exists" = 1 ] || return 0
+  super="$(psql_as_postgres postgres \
+    "SELECT rolsuper FROM pg_roles WHERE rolname = '$prior'")" ||
+    die "could not ask the cluster whether the previous DB_USER '$prior' is a" \
+        "superuser, whose objects PostgreSQL refuses to reassign. Nothing has been" \
+        "changed. Check that PostgreSQL is accepting connections on port $DB_PORT" \
+        "and re-run."
+  [ "$super" = t ] || return 0
 
   # A superuser predecessor that owns nothing has already been transferred by
   # hand, and the rotation it was blocking is now the thing that finishes the
