@@ -21,14 +21,15 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|reassign_prior_db_role|revoke_prior_ssh_key|ensure_cluster_on_default_port)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
-for fn in die ensure_block ensure_sudoers revoke_prior_deploy_user \
+for fn in die ensure_block ensure_sudoers in_group revoke_prior_deploy_user \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
-          install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key; do
+          install_authorized_keys reassign_prior_db_role revoke_prior_ssh_key \
+          ensure_cluster_on_default_port; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
     exit 1
@@ -157,24 +158,46 @@ esac
 unset -f visudo
 
 # --------------------------------------------------------------------------
-# revoke_prior_deploy_user talks to the host account database, so `id` and
-# `gpasswd` are stubbed. Shell functions shadow both, and `log` is captured
-# rather than printed so the warning can be asserted on.
+# revoke_prior_deploy_user talks to the host account database, so `id`,
+# `gpasswd`, `usermod` and `groupadd` are stubbed. Shell functions shadow them,
+# and `log` is captured rather than printed so the warning can be asserted on.
+#
+# The stubs MUTATE $GROUPS_OF rather than only recording the call, because the
+# function now re-reads membership to decide what it claims. A stub that always
+# reported success would make the "could not revoke" path untestable — which is
+# the path that matters.
+#
+# GROUPS_OF is "primary supplementary...", matching `id -nG` output order, so
+# the primary group is its first word. gpasswd refuses primary groups with
+# exit 3 exactly as the real one does; verified on ubuntu:24.04.
 # --------------------------------------------------------------------------
 ACCOUNT=""      # the only user that exists, and its groups
 GROUPS_OF=""
 REVOKED=""      # every gpasswd -d, as "user/group"
+USERMOD=""      # every usermod -g, as "user:group"
 LOGGED=""
 id() {
   case "$1" in
     -u)  [ "$2" = "$ACCOUNT" ] ;;
     -nG) [ "$2" = "$ACCOUNT" ] || return 1; printf '%s\n' "$GROUPS_OF" ;;
+    -gn) [ "$2" = "$ACCOUNT" ] || return 1; printf '%s\n' "${GROUPS_OF%% *}" ;;
     *)   return 1 ;;
   esac
 }
-gpasswd() { REVOKED="$REVOKED $2/$3"; }
+gpasswd() {
+  REVOKED="$REVOKED $2/$3"
+  # /etc/group only: a primary membership lives in /etc/passwd and is refused.
+  [ "${GROUPS_OF%% *}" = "$3" ] && return 3
+  GROUPS_OF="$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | grep -vxF "$3" | tr '\n' ' ')"
+  GROUPS_OF="${GROUPS_OF% }"
+}
+usermod() {   # usermod -g <group> <user>
+  USERMOD="$USERMOD $3:$2"
+  supp="$(printf '%s\n' "$GROUPS_OF" | cut -s -d' ' -f2-)"; GROUPS_OF="$2${supp:+ $supp}"
+}
+groupadd() { :; }
 log() { LOGGED="$LOGGED $*"; }
-revoke() { REVOKED=""; LOGGED=""; revoke_prior_deploy_user "$@"; }
+revoke() { REVOKED=""; USERMOD=""; LOGGED=""; revoke_prior_deploy_user "$@"; }
 
 echo "11. the deploy user a re-run replaces loses its root-equivalent access"
 # Docker membership is the point: ensure_sudoers takes back the NOPASSWD file,
@@ -215,7 +238,51 @@ ACCOUNT=""                                  # already deluser'd by hand
 revoke deploybot "$d2/deploy_user"
 chk "account is gone"  "" "$REVOKED$LOGGED"
 
-unset -f id gpasswd log revoke
+echo "15. a PRIMARY docker group is taken back too, not just a supplementary one"
+# gpasswd cannot remove a primary group — it exits 3 while `id -nG` goes on
+# reporting the membership. An account made with `useradd -g docker` would
+# otherwise keep a root shell through the docker socket after a rotation that
+# reported success.
+d3=$(mktemp -d); printf 'legacy\n' > "$d3/deploy_user"
+ACCOUNT=legacy; GROUPS_OF="docker sudo"      # docker is PRIMARY here
+revoke deploybot "$d3/deploy_user"
+chk "no longer in docker" 1 "$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | grep -cvxF docker)"
+chk "primary group moved to its own" " legacy:legacy" "$USERMOD"
+chk "sudo revoked by gpasswd"        " legacy/sudo"   "$REVOKED"
+case "$LOGGED" in
+  *"could NOT revoke"*) echo "  FAIL claimed failure on a revocation that worked: $LOGGED"; fail=1 ;;
+  *"can still log in"*) echo "  ok   reports the account as revoked but still present" ;;
+  *) echo "  FAIL no warning at all: $LOGGED"; fail=1 ;;
+esac
+chk "marker advanced" "deploybot" "$(cat "$d3/deploy_user")"
+
+echo "16. a revocation that does not take is reported, not claimed as done"
+# The failure this replaces: gpasswd exits nonzero, the && swallows it, and the
+# unconditional warning tells the operator the account lost root when it did not.
+d4=$(mktemp -d); printf 'legacy\n' > "$d4/deploy_user"
+ACCOUNT=legacy; GROUPS_OF="docker"
+usermod() { USERMOD="$USERMOD $3:$2"; }      # the host refuses the change
+revoke deploybot "$d4/deploy_user"
+case "$LOGGED" in
+  *"could NOT revoke docker"*) echo "  ok   says which group it failed to take back" ;;
+  *) echo "  FAIL silent or wrongly reassuring: $LOGGED"; fail=1 ;;
+esac
+case "$LOGGED" in
+  *"no longer in docker or sudo"*) echo "  FAIL still claims the access is gone"; fail=1 ;;
+  *) echo "  ok   does not claim the access is gone" ;;
+esac
+
+echo "17. and the marker is not advanced, so the next run retries"
+# Advancing it here would forget which account still holds root — a permanent
+# silent failure rather than one the next FORCE=1 run picks up.
+chk "marker still names the unrevoked user" "legacy" "$(cat "$d4/deploy_user")"
+unset -f usermod
+usermod() { USERMOD="$USERMOD $3:$2"; supp="$(printf '%s\n' "$GROUPS_OF" | cut -s -d' ' -f2-)"; GROUPS_OF="$2${supp:+ $supp}"; }
+revoke deploybot "$d4/deploy_user"           # the retry, on a healthy host
+chk "the retry revokes it"     1 "$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | grep -cvxF docker)"
+chk "and then advances" "deploybot" "$(cat "$d4/deploy_user")"
+
+unset -f id gpasswd usermod groupadd log revoke
 
 # --------------------------------------------------------------------------
 # The firewall helpers shell out to ufw, so it is stubbed: every invocation is
@@ -230,7 +297,7 @@ ufw() {
 }
 log() { LOGGED="$LOGGED $*"; }
 
-echo "15. the postgres rule is added once and recorded"
+echo "18. the postgres rule is added once and recorded"
 d=$(mktemp -d)
 UFW_CALLS=""
 ensure_ufw_rule postgres "allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" \
@@ -239,7 +306,7 @@ chk "rule added" "|allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" "
 chk "recorded"   "allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto tcp" \
   "$(cat "$d/ufw_postgres")"
 
-echo "16. an unchanged rule deletes nothing"
+echo "19. an unchanged rule deletes nothing"
 # The common re-run. ufw skips re-adding an identical rule itself, so the only
 # thing that must not happen here is a delete.
 UFW_CALLS=""; LOGGED=""
@@ -247,7 +314,7 @@ ensure_ufw_rule postgres "allow from 172.17.0.0/16 to 172.17.0.1 port 5432 proto
   "$d/ufw_postgres"
 chk "no delete" 0 "$(printf '%s' "$UFW_CALLS" | grep -c delete)"
 
-echo "17. a changed rule withdraws the old one instead of accumulating"
+echo "20. a changed rule withdraws the old one instead of accumulating"
 # Without this, moving DB_BIND_ADDRESS or DOCKER_SUBNETS would leave the
 # previous subnet reaching 5432 for the life of the host.
 UFW_CALLS=""; LOGGED=""
@@ -260,32 +327,42 @@ chk "new rule added" 1 "$(printf '%s' "$UFW_CALLS" | grep -c '|allow from 10.200
 chk "state advanced" "allow from 10.200.0.0/16 to 172.18.0.1 port 5432 proto tcp" \
   "$(cat "$d/ufw_postgres")"
 
-echo "18. unrelated operator rules are never touched"
+echo "21. unrelated operator rules are never touched"
 # The whole reason `ufw reset` is gone: a re-run must not disturb a VPN,
 # monitoring or allowlist rule this script knows nothing about.
 chk "only our own rule deleted" 1 "$(printf '%s' "$UFW_CALLS" | grep -c delete)"
 chk "no reset"                  0 "$(printf '%s' "$UFW_CALLS" | grep -c reset)"
 
-echo "19. SSH already allowed is detected in every form ufw prints it"
+echo "22. SSH already allowed is detected in every form ufw prints it"
 for s in "22/tcp                     ALLOW       Anywhere" \
          "22                         ALLOW IN    Anywhere" \
          "OpenSSH                    ALLOW       Anywhere" \
          "22/tcp (v6)                ALLOW       Anywhere (v6)" \
-         "22/tcp                     ALLOW IN    203.0.113.4"; do
+         "22/tcp                     ALLOW IN    203.0.113.4" \
+         "22/tcp                     LIMIT       203.0.113.9" \
+         "22/tcp                     LIMIT IN    Anywhere" \
+         "22/tcp (v6)                LIMIT       Anywhere (v6)"; do
   STATUS="$s"
   ssh_already_allowed
-  chk "detected: ${s%% *}${s##*ALLOW}" 0 "$?"
+  chk "detected: $s" 0 "$?"
 done
 
-echo "20. a narrowed SSH rule survives the re-run that finds it"
+echo "23. a narrowed SSH rule survives the re-run that finds it"
 # The rule an operator most plausibly tightens by hand. Re-adding the blanket
 # `allow OpenSSH` on top would reopen 22 to the internet and look like a no-op.
-STATUS="22/tcp                     ALLOW IN    203.0.113.4"
-UFW_CALLS=""
-ensure_ssh_rule
-chk "blanket rule not added" "" "$UFW_CALLS"
+#
+# LIMIT is here because it is what ufw's own documentation recommends for SSH:
+# reading only ALLOW meant a rate-limited, source-restricted rule was reported
+# as "nothing authorizes SSH", and the blanket rule went in beside it.
+for s in "22/tcp                     ALLOW IN    203.0.113.4" \
+         "22/tcp                     LIMIT       203.0.113.9"; do
+  STATUS="$s"
+  UFW_CALLS=""
+  ensure_ssh_rule
+  chk "blanket rule not added over [${s#22/tcp                     }]" "" "$UFW_CALLS"
+done
 
-echo "21. no SSH rule at all means one is added, never assumed"
+echo "24. no SSH rule at all means one is added, never assumed"
 # Failing the other way enables a deny-by-default firewall on a host with no
 # way back in, so every uncertain status must land here.
 for s in "Status: inactive" \
@@ -299,7 +376,7 @@ for s in "Status: inactive" \
   chk "rule added for [${s:-empty status}]" "|allow OpenSSH" "$UFW_CALLS"
 done
 
-echo "22. a missing OpenSSH profile falls back to the port, it does not give up"
+echo "25. a missing OpenSSH profile falls back to the port, it does not give up"
 # `ufw allow OpenSSH` exits 1 where openssh-server is not installed, and the
 # `ufw --force enable` that follows would then close 22 on a host reachable
 # only over 22.
@@ -382,12 +459,12 @@ STUB
   rm -rf "$work"
 }
 
-echo "23. a clean cutover cleans up and boots"
+echo "26. a clean cutover cleans up and boots"
 FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE='' run_cutover
 chk "staged file removed" 1 "$(grep -c RM_STAGED <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "app booted"          1 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 
-echo "24. a failed copy does not boot, and keeps the file the retry needs"
+echo "27. a failed copy does not boot, and keeps the file the retry needs"
 # MIGRATION_RUN_RESET drops the schema before loading, so a copy that dies
 # partway leaves the database empty or half-populated. Booting serves that.
 # The `sudo rm` is the other half: it destroys the staged SQLite file, so a
@@ -401,7 +478,7 @@ case "$RECIPE_OUT" in
   *) echo "  FAIL silent or partial: $RECIPE_OUT"; fail=1 ;;
 esac
 
-echo "25. a failed revoke does not boot the credential-bearing container"
+echo "28. a failed revoke does not boot the credential-bearing container"
 # collavre_user is the role in DATABASE_URL. Booting while it is still a
 # superuser hands every app container that privilege.
 FAIL_COPY='' FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' run_cutover
@@ -411,7 +488,7 @@ case "$RECIPE_OUT" in
   *) echo "  FAIL silent: $RECIPE_OUT"; fail=1 ;;
 esac
 
-echo "26. both failing reports both, not just the first"
+echo "29. both failing reports both, not just the first"
 FAIL_COPY=1 FAIL_REVOKE=1 FAIL_SCP='' FAIL_STAGE='' run_cutover
 chk "app NOT booted" 0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 case "$RECIPE_OUT" in
@@ -419,7 +496,7 @@ case "$RECIPE_OUT" in
   *) echo "  FAIL one masked the other: $RECIPE_OUT"; fail=1 ;;
 esac
 
-echo "27. a failed scp never converts, so a stale snapshot cannot be restored"
+echo "30. a failed scp never converts, so a stale snapshot cannot be restored"
 # The task loads from the file in the VOLUME, not from the one scp just sent.
 # Case 24 deliberately keeps the staged file so a retry need not re-copy — so
 # on a retry the volume holds the previous attempt's snapshot. Ungated, a
@@ -435,7 +512,7 @@ case "$RECIPE_OUT" in
   *) echo "  FAIL silent or vague: $RECIPE_OUT"; fail=1 ;;
 esac
 
-echo "28. a failed install into the volume is caught too, not just the scp"
+echo "31. a failed install into the volume is caught too, not just the scp"
 # scp can succeed to /tmp and the privileged install still fail — no space,
 # no docker group, volume gone.
 FAIL_COPY='' FAIL_REVOKE='' FAIL_SCP='' FAIL_STAGE=1 run_cutover
@@ -443,7 +520,7 @@ chk "no conversion ran"    0 "$(grep -cx 'kamal:app exec' <<<"${RECIPE_TRACE//|/
 chk "no superuser granted" 0 "$(grep -cx GRANT <<<"${RECIPE_TRACE//|/$'\n'}")"
 chk "app NOT booted"       0 "$(grep -cx 'kamal:app boot' <<<"${RECIPE_TRACE//|/$'\n'}")"
 
-echo "29. staging renames into place rather than writing the live path directly"
+echo "32. staging renames into place rather than writing the live path directly"
 # An interrupted copy must leave the previous file intact, not a truncated
 # database the next run would happily convert from.
 case "$recipe" in
@@ -478,12 +555,12 @@ STUB
   rm -rf "$work"
 }
 
-echo "30. a clean fresh install prints the admin password and boots"
+echo "33. a clean fresh install prints the admin password and boots"
 FAIL_LOAD='' run_fresh
 chk "app stopped first" 1 "$(grep -cx 'kamal:app stop' <<<"${FRESH_TRACE//|/$'\n'}")"
 chk "app booted"        1 "$(grep -cx 'kamal:app boot' <<<"${FRESH_TRACE//|/$'\n'}")"
 
-echo "31. a failed schema load does not boot the app onto a partial schema"
+echo "34. a failed schema load does not boot the app onto a partial schema"
 # db:schema:load drops and recreates every table, and db:seed is what creates
 # the first admin — so a load that resets the database but does not finish
 # leaves an app with no way to sign in and no owner on any record.
@@ -503,7 +580,7 @@ LOGGED=""
 # shellcheck disable=SC2329  # called by install_authorized_keys, eval'd from the script
 log() { LOGGED="$LOGGED $*"; }
 
-echo "32. the deploy user's own keys are not copied onto themselves"
+echo "35. the deploy user's own keys are not copied onto themselves"
 # APP_SSH_USER=ubuntu — src and dest are one file.
 h=$(mktemp -d); mkdir -p "$h/ubuntu/.ssh"
 printf 'ssh-ed25519 CLOUDKEY cloud\n' > "$h/ubuntu/.ssh/authorized_keys"
@@ -516,13 +593,13 @@ case "$LOGGED" in
   *) echo "  FAIL no explanation: $LOGGED"; fail=1 ;;
 esac
 
-echo "33. a separate deploy user still inherits the cloud user's keys"
+echo "36. a separate deploy user still inherits the cloud user's keys"
 mkdir -p "$h/collavre/.ssh"; : > "$h/collavre/.ssh/authorized_keys"
 SSH_PUBLIC_KEY="" LOGGED=""
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
 chk "cloud key copied" 1 "$(grep -c CLOUDKEY "$h/collavre/.ssh/authorized_keys")"
 
-echo "34. an explicit SSH_PUBLIC_KEY is added once, not once per run"
+echo "37. an explicit SSH_PUBLIC_KEY is added once, not once per run"
 # shellcheck disable=SC2034  # read by install_authorized_keys, eval'd from the script
 SSH_PUBLIC_KEY="ssh-ed25519 EXPLICIT me"
 install_authorized_keys "$h/collavre/.ssh/authorized_keys" "$h"
@@ -542,7 +619,7 @@ NEW="ssh-ed25519 NEWKEY current"
 OPERATOR="ssh-rsa OPKEY someone-else"
 st=$(mktemp -d)
 
-echo "35. rotating SSH_PUBLIC_KEY withdraws the key the last run installed"
+echo "38. rotating SSH_PUBLIC_KEY withdraws the key the last run installed"
 printf '%s\n%s\n' "$OLD" "$OPERATOR" > "$AK"
 printf '%s\n' "$OLD" > "$st/ssh_public_key"
 SSH_PUBLIC_KEY="$NEW" LOGGED=""
@@ -553,18 +630,18 @@ chk "the retired key is gone"      0 "$(grep -cxF "$OLD" "$AK")"
 chk "an operator's own key stays"  1 "$(grep -cxF "$OPERATOR" "$AK")"
 chk "state advanced to the new key" "$NEW" "$(cat "$st/ssh_public_key")"
 
-echo "36. an unchanged SSH_PUBLIC_KEY withdraws nothing"
+echo "39. an unchanged SSH_PUBLIC_KEY withdraws nothing"
 before="$(cat "$AK")"
 revoke_prior_ssh_key "$AK" "$st/ssh_public_key"
 chk "authorized_keys untouched" "$before" "$(cat "$AK")"
 
-echo "37. an empty SSH_PUBLIC_KEY means 'keep the cloud keys', not 'retire mine'"
+echo "40. an empty SSH_PUBLIC_KEY means 'keep the cloud keys', not 'retire mine'"
 # Dropping the variable from a re-run must not strand the operator.
 SSH_PUBLIC_KEY=""
 revoke_prior_ssh_key "$AK" "$st/ssh_public_key"
 chk "nothing withdrawn" "$before" "$(cat "$AK")"
 
-echo "38. the predecessor is never withdrawn before the successor is in place"
+echo "41. the predecessor is never withdrawn before the successor is in place"
 # An interrupted run must leave two usable keys, never zero.
 printf '%s\n' "$OLD" > "$AK"
 printf '%s\n' "$OLD" > "$st/ssh_public_key"
@@ -572,7 +649,7 @@ SSH_PUBLIC_KEY="$NEW"
 revoke_prior_ssh_key "$AK" "$st/ssh_public_key"     # successor not added yet
 chk "the old key still lets you in" 1 "$(grep -cxF "$OLD" "$AK")"
 
-echo "39. first run and an already-absent key are no-ops"
+echo "42. first run and an already-absent key are no-ops"
 st2=$(mktemp -d)
 printf '%s\n' "$NEW" > "$AK"
 # shellcheck disable=SC2034  # read by revoke_prior_ssh_key, eval'd from the script
@@ -584,7 +661,7 @@ printf '%s\n' "$OLD" > "$st2/ssh_public_key"        # recorded but already remov
 revoke_prior_ssh_key "$AK" "$st2/ssh_public_key"
 chk "still just the new key" "$NEW" "$(cat "$AK")"
 
-echo "40. a rewrite that cannot be completed keeps the old key instead of none"
+echo "43. a rewrite that cannot be completed keeps the old key instead of none"
 # The realistic trigger is a full disk: `grep -vxF > $tmp` writes nothing and
 # exits 2, the `|| true` hides it, and writing that empty result back would
 # leave authorized_keys with no keys at all — locking the deploy account out of
@@ -609,7 +686,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
 esac
 
-echo "41. a rewrite that stops PART WAY also keeps the old key instead of none"
+echo "44. a rewrite that stops PART WAY also keeps the old key instead of none"
 # Case 40 is the write that produces nothing. This is the write that produces
 # some of the file, which a size test cannot tell from a good one — and it is
 # the likelier shape on a nearly-full disk. It matters more than it looks:
@@ -642,7 +719,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent or reported as withdrawn: $LOGGED"; fail=1 ;;
 esac
 
-echo "42. the scratch file is staged beside authorized_keys, not in TMPDIR"
+echo "45. the scratch file is staged beside authorized_keys, not in TMPDIR"
 # Same filesystem, so the rewrite cannot fail for space the staging just
 # proved is available, and a full or unwritable /tmp is not on its own able to
 # break the file the operator logs in with.
@@ -698,7 +775,7 @@ psql_as_postgres() {
 log() { LOGGED="$LOGGED $*"; }
 rotate() { SQL=""; LOGGED=""; reassign_prior_db_role "$@"; }
 
-echo "43. rotating DB_USER moves the tables and retires the old credential"
+echo "46. rotating DB_USER moves the tables and retires the old credential"
 # ALTER DATABASE ... OWNER only moves the database. Every table and sequence
 # the app created stays with the old role, so the new one in DATABASE_URL gets
 # "permission denied" on its own data — while the old role keeps LOGIN and the
@@ -710,11 +787,11 @@ chk "ownership moved, then login revoked" \
     '|REASSIGN OWNED BY "collavre_user" TO "collavre_app"|ALTER ROLE "collavre_user" NOLOGIN' \
     "$SQL"
 
-echo "44. an unchanged DB_USER touches nothing"
+echo "47. an unchanged DB_USER touches nothing"
 rotate collavre_user "$d3/db_user"
 chk "no SQL" "" "$SQL$LOGGED"
 
-echo "45. a superuser predecessor is reported, never disabled"
+echo "48. a superuser predecessor is reported, never disabled"
 # DB_USER=postgres on a first run is legal. NOLOGIN on the cluster superuser
 # locks every operator out of administering it — peer auth needs LOGIN too, so
 # there is no way back in.
@@ -727,7 +804,7 @@ case "$LOGGED" in
   *) echo "  FAIL silent: $LOGGED"; fail=1 ;;
 esac
 
-echo "46. first run, emptied marker and a dropped role are all no-ops"
+echo "49. first run, emptied marker and a dropped role are all no-ops"
 d4=$(mktemp -d)
 ROLE_IS_SUPER=f
 rotate collavre_user "$d4/db_user"          # no marker yet
@@ -741,6 +818,62 @@ rotate collavre_app "$d4/db_user"
 chk "role is gone" "" "$SQL$LOGGED"
 
 unset -f psql_as_postgres log rotate
+
+# --------------------------------------------------------------------------
+# ensure_cluster_on_default_port reads `pg_lsclusters -h`, so a stub standing in
+# for it is passed by name. The layouts below are real output from ubuntu:24.04
+# with postgresql-16 installed and postgresql-17 added afterwards.
+# --------------------------------------------------------------------------
+DB_PORT=5432
+mk_lsclusters() {   # mk_lsclusters <name> <lines...>
+  local bin="$CLUSTER_BIN_DIR/$1"; shift
+  { echo '#!/bin/sh'; printf 'cat <<%s\n%s\n%s\n' EOF "$*" EOF; } > "$bin"
+  chmod +x "$bin"
+}
+CLUSTER_BIN_DIR="$(mktemp -d)"
+PATH="$CLUSTER_BIN_DIR:$PATH"
+
+echo "50. a bumped PG_MAJOR that would land on a second port is refused"
+# pg_createcluster allocates the first free port from 5432 up, so installing a
+# new major version beside an existing one puts it on 5433 — while psql, the
+# database, the backups and DATABASE_URL all keep using 5432. Provisioning would
+# report "PostgreSQL 17" with the app still on 16 and nothing failing.
+PG_MAJOR=17
+mk_lsclusters pg_ls_16only '16  main    5432 online postgres /var/lib/postgresql/16/main /var/log/x'
+out="$( (ensure_cluster_on_default_port pg_ls_16only) 2>&1 )"
+chk "exits non-zero" 1 "$?"
+case "$out" in
+  *"already serves 5432"*"pg_upgradecluster"*)
+    echo "  ok   names the version holding the port and how to migrate" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+
+echo "51. an existing cluster of the RIGHT version on the wrong port is refused too"
+# The other way in: the operator moved 17 to 5433 by hand, or a previous run
+# created it beside something since removed. Everything downstream names 5432.
+mk_lsclusters pg_ls_17_5433 '17  main    5433 online postgres /var/lib/postgresql/17/main /var/log/x'
+out="$( (ensure_cluster_on_default_port pg_ls_17_5433) 2>&1 )"
+chk "exits non-zero" 1 "$?"
+case "$out" in
+  *"listens on 5433, not 5432"*) echo "  ok   says which port it found" ;;
+  *) echo "  FAIL unhelpful message: $out"; fail=1 ;;
+esac
+
+echo "52. the supported layouts are allowed through"
+# A bare host (no postgresql-common yet) and the ordinary re-run must not be
+# refused — this guard exists to catch a silent miss, not to block convergence.
+out="$( (ensure_cluster_on_default_port pg_ls_absent) 2>&1 )"
+chk "no clusters at all: proceeds" 0 "$?"
+chk "and says nothing"             "" "$out"
+mk_lsclusters pg_ls_17ok '17  main    5432 online postgres /var/lib/postgresql/17/main /var/log/x'
+out="$( (ensure_cluster_on_default_port pg_ls_17ok) 2>&1 )"
+chk "the ordinary re-run: proceeds" 0 "$?"
+chk "and says nothing"              "" "$out"
+# A leftover cluster parked off the default port is not ours to adjudicate, so
+# long as PG_MAJOR is the one actually serving the app.
+mk_lsclusters pg_ls_both "$(printf '17  main    5432 online postgres /a /b\n16  main    5433 online postgres /c /d')"
+out="$( (ensure_cluster_on_default_port pg_ls_both) 2>&1 )"
+chk "ours on 5432 beside an idle old one: proceeds" 0 "$?"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

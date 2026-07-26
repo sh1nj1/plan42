@@ -50,7 +50,7 @@ Common overrides:
 | --- | --- | --- |
 | `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys`. [Changing it on a re-run](#rotating-ssh_public_key-on-a-re-run) withdraws the key it replaces |
 | `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt. [Changing it on a re-run](#changing-app_ssh_user-on-a-re-run) disarms the account it replaces |
-| `PG_MAJOR` | `17` | Match the source database when restoring a dump |
+| `PG_MAJOR` | `17` | Match the source database when restoring a dump. [Changing it on a re-run](#changing-pg_major-on-a-re-run) is refused, not converged |
 | `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
 | `DB_USER` | `collavre_user` | [Changing it on a re-run](#changing-db_user-on-a-re-run) moves table ownership to the new role and takes `LOGIN` from the old one |
 | `SWAP_SIZE_MB` | `2048` | `0` disables |
@@ -71,7 +71,9 @@ worth knowing before you re-run:
 
 - If you have narrowed SSH — `ufw allow from <your-ip> to any port 22` with the
   blanket rule deleted — the script leaves it alone rather than re-opening 22.
-  It only adds its own SSH rule when nothing else allows the port.
+  It only adds its own SSH rule when nothing else allows the port. `ufw limit`
+  counts as allowing it: rate-limiting SSH is what ufw's own documentation
+  recommends, and a `LIMIT` rule is an allow rule with a throttle on it.
 - It does reassert `default deny incoming` and `default allow outgoing`. That
   is the only setting a re-run tightens on you, and a service reachable solely
   because the default policy was loosened will stop being reachable.
@@ -128,6 +130,43 @@ rotation by hand once you have confirmed you can reach the host as the new user:
 ```bash
 ssh <new-user>@<instance-ip> 'sudo deluser --remove-home <old-user>'
 ```
+
+### Changing `PG_MAJOR` on a re-run
+
+This is the one setting a re-run refuses instead of converging, and the reason
+is that converging it would look like it worked.
+
+The script assumes a single cluster on port 5432 — `DATABASE_URL`, the ufw rule
+and the nightly `pg_dump` all name it. Ubuntu's `postgresql-common` makes no
+such assumption: `pg_createcluster` takes the first free port from 5432 upward,
+so installing a second major version puts it on 5433. The run would then tune
+and configure `/etc/postgresql/<new>/main` while `psql` — and therefore the
+database, the role, the backups and the URL you paste into `.env.production` —
+went on talking to whatever answers on 5432. Nothing fails. The log says the new
+version, the app keeps running on the old cluster, and the new one sits empty
+holding a quarter of the instance's RAM in `shared_buffers`.
+
+So a re-run whose `PG_MAJOR` is not the version already serving 5432 aborts
+before `apt` can create the second cluster, and names both versions. A real
+major upgrade is a deliberate, app-down operation:
+
+```bash
+./kamal.sh app stop
+sudo apt-get install -y postgresql-<new>       # the script will not install it while 5432 is taken
+sudo pg_dropcluster --stop <new> main          # apt just created an EMPTY one; it is not the upgrade
+sudo pg_upgradecluster <old> main              # copies the data, and gives the new cluster 5432
+sudo pg_dropcluster --stop <old> main
+sudo FORCE=1 PG_MAJOR=<new> bash script/lightsail_launch.sh
+./kamal.sh app boot
+```
+
+The second line is the one that is easy to skip and expensive to skip. Installing
+the package auto-creates an empty `<new>/main` on the next free port, and
+`pg_upgradecluster` then stops with `target cluster <new>/main already exists`
+rather than upgrading into it. `pg_upgradecluster` itself moves the old cluster
+aside and hands 5432 to the new one, so the re-run at the end passes the check
+above; verify with `sudo pg_lsclusters` before booting — exactly one cluster, on
+5432, at the new version.
 
 ### Rotating `SSH_PUBLIC_KEY` on a re-run
 

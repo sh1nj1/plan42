@@ -42,6 +42,12 @@ set -euo pipefail
 # PostgreSQL major version (from the PGDG apt repository).
 : "${PG_MAJOR:=17}"
 
+# The port the cluster serves. Not really configurable: it is what DATABASE_URL,
+# the ufw rule and the nightly backup all name, and a host with a second cluster
+# on it is refused rather than half-provisioned (ensure_cluster_on_default_port).
+# A constant with a name, so those four places cannot drift apart.
+: "${DB_PORT:=5432}"
+
 # Database and role. Defaults match db/setup_postgres_databases.sql.
 : "${DB_NAME:=collavre_production}"
 : "${DB_USER:=collavre_user}"
@@ -230,32 +236,114 @@ ensure_sudoers() {
 # and `deluser` on the wrong guess (APP_SSH_USER=ubuntu on the first run, say)
 # is unrecoverable. With both groups gone the keys reach an ordinary account,
 # which is a job for a human who can see the host.
+in_group() {
+  # id -nG rather than `getent group`: it reports the primary group too, and
+  # the membership that matters is the effective one either way.
+  id -nG "$1" 2>/dev/null | tr ' ' '\n' | grep -qxF "$2"
+}
+
 revoke_prior_deploy_user() {
-  local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}" prior group
-  [ -f "$prior_file" ] || return 0
+  local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}" prior group held
+  [ -f "$prior_file" ] || { printf '%s\n' "$current" > "$prior_file"; return 0; }
   prior="$(cat "$prior_file")"
-  [ -n "$prior" ] && [ "$prior" != "$current" ] || return 0
-  id -u "$prior" >/dev/null 2>&1 || return 0
+  if [ -z "$prior" ] || [ "$prior" = "$current" ] ||
+     ! id -u "$prior" >/dev/null 2>&1; then
+    printf '%s\n' "$current" > "$prior_file"
+    return 0
+  fi
 
   for group in docker sudo; do
-    # id -nG rather than `getent group`: it reports the primary group too, and
-    # the membership that matters is the effective one either way.
-    if id -nG "$prior" 2>/dev/null | tr ' ' '\n' | grep -qxF "$group"; then
-      gpasswd -d "$prior" "$group" >/dev/null 2>&1 &&
-        log "revoked '$group' from the replaced deploy user '$prior'"
+    in_group "$prior" "$group" || continue
+    if [ "$(id -gn "$prior" 2>/dev/null)" = "$group" ]; then
+      # gpasswd edits /etc/group only, so it cannot touch a PRIMARY group: it
+      # exits 3 with "user is not a member" while `id -nG` goes on reporting
+      # the membership. Giving the account a primary group named after itself
+      # is what useradd would have done by default, and is the only way to take
+      # docker back from one an operator made with `useradd -g docker`.
+      groupadd -f "$prior" >/dev/null 2>&1 || true
+      usermod -g "$prior" "$prior" >/dev/null 2>&1 || true
+    else
+      gpasswd -d "$prior" "$group" >/dev/null 2>&1 || true
     fi
+    # Verify rather than trust an exit status. This is what decides whether the
+    # message below is true, and a rotation that merely *claims* to have taken
+    # root back is worse than one that admits it could not.
+    in_group "$prior" "$group" ||
+      log "revoked '$group' from the replaced deploy user '$prior'"
   done
+
+  held=""
+  for group in docker sudo; do
+    in_group "$prior" "$group" && held="$held $group"
+  done
+  if [ -n "$held" ]; then
+    log "WARNING: could NOT revoke$held from the replaced deploy user '$prior';" \
+        "it still has root-equivalent access to this host. Take it back by hand:" \
+        "usermod -g $prior $prior   # when the group is its primary one"
+    # Deliberately leave the marker naming the user that still holds the group,
+    # so the next run retries the revocation instead of forgetting it.
+    return 0
+  fi
+
   log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
       "remove it by hand once you can reach the host as '$current':" \
       "deluser --remove-home $prior"
+  printf '%s\n' "$current" > "$prior_file"
 }
 
 # psql_as_postgres <database> <sql>
 #
 # One place to reach the cluster as the superuser, so the rotation below can be
 # exercised in tests by stubbing a single command.
+#
+# The port is explicit even though 5432 is also the default. Everything this
+# script hands out — DATABASE_URL, the ufw rule, the backup timer — names 5432,
+# so this is the one place that would otherwise silently disagree with them.
 psql_as_postgres() {
-  runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qtA -d "$1" -c "$2"
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 -qtA -p "$DB_PORT" -d "$1" -c "$2"
+}
+
+# Refuse to provision when $PG_MAJOR's cluster is not the one on $DB_PORT.
+#
+# This script assumes one cluster, on the default port: DATABASE_URL, the ufw
+# rule and the nightly pg_dump all hard-code 5432. Ubuntu's postgresql-common
+# does not share that assumption — pg_createcluster allocates the first free
+# port starting at 5432, so installing a second major version puts it on 5433.
+#
+# The run would then edit /etc/postgresql/$PG_MAJOR/main (tuning, listen_addresses,
+# the pg_hba rule for the docker bridge) while `psql` — and therefore the database,
+# the role, the backups and the DATABASE_URL — kept talking to whatever answers on
+# 5432. A FORCE=1 re-run with a bumped PG_MAJOR is the case that hurts: the app and
+# its backups stay on the old cluster, the log says the new version, and the new
+# cluster sits empty holding a quarter of RAM in shared_buffers. Nothing fails.
+#
+# Migrating between clusters is pg_upgradecluster's job and needs a human to
+# decide when the app stops, so this aborts and says so rather than guessing.
+ensure_cluster_on_default_port() {
+  local lsclusters="${1:-pg_lsclusters}" ver port owner_of_default=""
+  command -v "$lsclusters" >/dev/null 2>&1 || return 0
+
+  while read -r ver _cluster port _rest; do
+    [ -n "$ver" ] || continue
+    [ "$port" = "$DB_PORT" ] && owner_of_default="$ver"
+    if [ "$ver" = "$PG_MAJOR" ] && [ "$port" != "$DB_PORT" ]; then
+      die "PostgreSQL $PG_MAJOR is installed but its 'main' cluster listens on $port, not $DB_PORT." \
+          "This script only supports a single cluster on $DB_PORT — DATABASE_URL, the ufw rule" \
+          "and the nightly backup all name it. Move it with 'pg_ctlcluster' /" \
+          "'/etc/postgresql/$PG_MAJOR/main/postgresql.conf', or set PG_MAJOR to the version" \
+          "already serving $DB_PORT."
+    fi
+  done <<EOF
+$("$lsclusters" -h 2>/dev/null)
+EOF
+
+  if [ -n "$owner_of_default" ] && [ "$owner_of_default" != "$PG_MAJOR" ]; then
+    die "PostgreSQL $owner_of_default already serves $DB_PORT on this host, and PG_MAJOR is $PG_MAJOR." \
+        "Installing $PG_MAJOR now would create its cluster on the next free port while the app," \
+        "the backups and DATABASE_URL kept using $DB_PORT — a version bump that silently does not" \
+        "happen. Either set PG_MAJOR=$owner_of_default, or migrate deliberately with" \
+        "'pg_upgradecluster $owner_of_default main' and drop the old cluster before re-running."
+  fi
 }
 
 # reassign_prior_db_role <current> [state file]
@@ -326,12 +414,19 @@ ensure_ufw_rule() {
 # OpenSSH` renders as either "22/tcp" or "OpenSSH" depending on whether the app
 # profile is installed, and IPv6 duplicates append " (v6)".
 #
+# LIMIT counts as authorization, not just ALLOW. `ufw limit` is the rate-limited
+# form of an allow rule — it is what ufw's own documentation recommends for SSH
+# — and it renders in the Action column as "LIMIT" (some versions "LIMIT IN").
+# Reading only ALLOW means an operator who wrote `ufw limit from <ip> to any
+# port 22` is told nothing authorizes SSH, and gets a blanket rule added beside
+# their restriction, opening 22 to every source they excluded.
+#
 # Deliberately positive: it answers "is 22 open?", never "is 22 closed?". An
 # empty or unparseable `ufw status` therefore means we add the rule, because
 # guessing wrong in that direction only re-opens SSH, while guessing wrong in
 # the other enables a deny-by-default firewall on a host with no way in.
 ssh_already_allowed() {
-  ufw status 2>/dev/null | grep -qE '^(22|OpenSSH)([/[:space:]]).*ALLOW'
+  ufw status 2>/dev/null | grep -qE '^(22|OpenSSH)([/[:space:]]).*(ALLOW|LIMIT)'
 }
 
 # Authorize SSH, but only if nothing else already does. An operator who
@@ -561,11 +656,14 @@ usermod -aG docker "$APP_SSH_USER"
 # Only once the replacement can reach Docker, so an interrupted run never
 # leaves the host with no account that can deploy.
 revoke_prior_deploy_user "$APP_SSH_USER"
-printf '%s\n' "$APP_SSH_USER" > "$STATE_DIR/deploy_user"
 
 # --------------------------------------------------------------------------
 log "5/9 PostgreSQL $PG_MAJOR"
 # --------------------------------------------------------------------------
+# Before the apt install, not after: once a second cluster exists it has already
+# taken a port, and the only way back is pg_upgradecluster or a delete.
+ensure_cluster_on_default_port
+
 if ! [ -d "/etc/postgresql/$PG_MAJOR/main" ]; then
   install -d -m 0755 /usr/share/postgresql-common/pgdg
   curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
@@ -683,7 +781,7 @@ ufw allow 443/tcp
 # PostgreSQL is only listening on localhost and the docker bridge, so this rule
 # is defence in depth rather than the only thing keeping it private.
 ensure_ufw_rule postgres \
-  "allow from $DOCKER_SUBNETS to $DB_BIND_ADDRESS port 5432 proto tcp"
+  "allow from $DOCKER_SUBNETS to $DB_BIND_ADDRESS port $DB_PORT proto tcp"
 ufw --force enable
 ufw status verbose
 
@@ -730,7 +828,7 @@ STAMP="\$(date +%Y%m%d-%H%M%S)"
 FILE="\$DEST/\${DB_NAME}-\${STAMP}.dump"
 
 trap 'rm -f "\$FILE"' ERR
-runuser -u postgres -- pg_dump --format=custom --compress=6 \\
+runuser -u postgres -- pg_dump --format=custom --compress=6 --port=$DB_PORT \\
   --dbname="\$DB_NAME" --file="\$FILE"
 trap - ERR
 chmod 0600 "\$FILE"
@@ -792,10 +890,10 @@ PRIVATE_IP="$(hostname -I | awk '{print $1}')"
 URL_USER="$(urlencode "$DB_USER")"
 URL_PASSWORD="$(urlencode "$DB_PASSWORD")"
 URL_DB_NAME="$(urlencode "$DB_NAME")"
-DATABASE_URL="postgresql://$URL_USER:$URL_PASSWORD@$DB_BIND_ADDRESS:5432/$URL_DB_NAME"
+DATABASE_URL="postgresql://$URL_USER:$URL_PASSWORD@$DB_BIND_ADDRESS:$DB_PORT/$URL_DB_NAME"
 # Angle brackets, not a $(...) that a reader might paste into .env.production
 # and watch dotenv store verbatim.
-REDACTED_URL="postgresql://$URL_USER:<see $SUMMARY>@$DB_BIND_ADDRESS:5432/$URL_DB_NAME"
+REDACTED_URL="postgresql://$URL_USER:<see $SUMMARY>@$DB_BIND_ADDRESS:$DB_PORT/$URL_DB_NAME"
 # Only worth saying when the two actually differ, which they never do for the
 # generated password.
 PASSWORD_NOTE=''
