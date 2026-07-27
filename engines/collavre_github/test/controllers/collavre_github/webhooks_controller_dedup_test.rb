@@ -148,6 +148,42 @@ module CollavreGithub
       assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
         post_comment_event(guid: guid, comment_id: 9)
       end
+
+      # Asserted directly, not just via the comment: `dispatch_to_channels`
+      # swallows per-channel failures, so a comment count that did not move
+      # says nothing about whether the takeover happened. `processed_at` is
+      # set only on the path that claimed the delivery.
+      assert_not_nil CollavreGithub::WebhookDelivery.find_by(delivery_guid: guid).processed_at,
+        "the stale claim should have been taken over and run to completion"
+    end
+
+    test "a delivery released mid-race is processed rather than dropped" do
+      # The request holding the claim failed and released it in the window
+      # between this request's INSERT and its takeover check. Reporting a
+      # duplicate here would lose the event for good: the other request has
+      # already given up, so nobody would process it.
+      #
+      # The race is injected rather than sampled — driving two real requests
+      # into this window is timing-dependent and would flake.
+      guid = "released-mid-race"
+      CollavreGithub::WebhookDelivery.create!(
+        delivery_guid: guid, event: "issue_comment", created_at: Time.current
+      )
+
+      raced = false
+      releasing_reclaim = lambda do |claimed_guid, **|
+        raced = true
+        CollavreGithub::WebhookDelivery.where(delivery_guid: claimed_guid).delete_all
+        false
+      end
+
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        CollavreGithub::WebhookDelivery.stub(:reclaim_stale, releasing_reclaim) do
+          post_comment_event(guid: guid, comment_id: 11)
+        end
+      end
+      assert raced, "the injected release must actually have been exercised"
+      assert_response :ok
     end
 
     test "a fresh claim still in flight is not taken over" do

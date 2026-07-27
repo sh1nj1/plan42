@@ -37,11 +37,33 @@ module CollavreGithub
     def self.claim(delivery_guid, event: nil)
       return true if delivery_guid.blank?
 
+      insert_claim(delivery_guid, event)
+    end
+
+    # Resolves a collision on the UNIQUE index. Three things can be true of the
+    # row that beat us to it:
+    #
+    #   - it is stale, and `reclaim_stale` takes it over;
+    #   - it is live, so this delivery genuinely is a duplicate;
+    #   - it is GONE, because the request holding it failed and called
+    #     `release` between our INSERT and this lookup. Reporting a duplicate
+    #     then would lose the event outright — that request has already given
+    #     up, so nobody would process it — which is the very outcome the
+    #     ledger exists to prevent. The insert is retried instead.
+    #
+    # One retry suffices: it only has to cover the window opened by that single
+    # release, and bounding it keeps a pathological loop of releases from
+    # spinning here forever.
+    def self.insert_claim(delivery_guid, event, retried: false)
       create!(delivery_guid: delivery_guid, event: event, created_at: Time.current)
       true
     rescue ActiveRecord::RecordNotUnique
-      reclaim_stale(delivery_guid, event: event)
+      return true if reclaim_stale(delivery_guid, event: event)
+      return false if retried || exists?(delivery_guid: delivery_guid)
+
+      insert_claim(delivery_guid, event, retried: true)
     end
+    private_class_method :insert_claim
 
     # Takes over an abandoned claim. A row on its own does not prove the
     # delivery was handled — only `processed_at` does — so an unprocessed row
