@@ -259,7 +259,14 @@ module Collavre
       # while the task waited (CommentMoveService#perform_move reassigns
       # creative_id) is no longer part of it, and adopting it as the anchor would
       # point the reply at a creative the agent may have no share on.
-      in_scope = Comment.where(id: merged, creative_id: creative_id, topic_id: topic_id)
+      #
+      # The turn is the TASK's scope, not this comment's. cancel_pending_tasks
+      # looks tasks up with no creative scoping precisely because a move rewrites
+      # the comment without touching the task it triggered — so an anchor moved
+      # away and then deleted would be searching the creative it was moved *to*,
+      # find nothing there, and cancel a turn whose absorbed comments are all
+      # still sitting in the creative the task belongs to.
+      in_scope = Comment.where(id: merged, creative_id: task.creative_id, topic_id: task.topic_id)
                         .order(:id).to_a
       replacement = in_scope.last
       return false unless replacement

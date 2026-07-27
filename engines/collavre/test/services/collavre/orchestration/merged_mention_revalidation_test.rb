@@ -61,6 +61,24 @@ module Collavre
         assert_includes Array(task.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]), mention.id
       end
 
+      # The merged ids are a snapshot of the fold, not a standing claim on those
+      # rows. A mention moved out of the creative while the waiter sat in the
+      # queue is deliberately excluded from the delivered trigger
+      # (MergedTriggerComments#turn_scope), so honouring it here lets a
+      # non-primary agent answer an ambient anchor with no in-scope mention
+      # anywhere in the turn.
+      test "a merged mention moved out of the turn no longer outranks the assignment" do
+        mention = comment("@#{@agent.name}: please handle this one")
+        task = waiter_for(comment("ambient anchor"), merged: [ mention.id ])
+        elsewhere = Creative.create!(description: "Elsewhere", user: @user)
+        mention.update!(creative: elsewhere, topic_id: nil)
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal "cancelled", task.reload.status,
+          "a mention the agent will never be shown cannot license the turn"
+      end
+
       test "a waiter with no mention anywhere is still cancelled" do
         task = waiter_for(comment("ambient one"), merged: [ comment("ambient two").id ])
         comment("ambient three")

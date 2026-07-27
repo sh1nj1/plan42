@@ -19,6 +19,12 @@ module Collavre
     class TaskCoalescer
       PAYLOAD_KEY = "merged_comment_ids"
 
+      # The statuses a survivor may still be in when a fold runs: both enqueue
+      # doors hand over a `queued` row and both start-of-turn doors a `pending`
+      # one. Anything else means it lost its turn between the caller reading it
+      # and this transaction.
+      UNSTARTED_STATUSES = %w[queued pending].freeze
+
       # Cancel un-started siblings of `keep_task` and absorb their trigger
       # comments into it.
       #
@@ -58,7 +64,28 @@ module Collavre
         absorbed_ids = []
 
         Task.transaction do
-          siblings = reject_review_triggers(superseded_scope.lock.to_a)
+          # Lock the survivor together with its siblings, and re-read its status
+          # from the locked row. The survivor is the caller's snapshot: deleting
+          # its anchor cancels it through Comment#cancel_pending_tasks, which
+          # holds no lock this method waits on. Folding on a stale object would
+          # cancel every still-valid sibling and merge the whole burst onto a
+          # task AiAgentJob abandons on sight — and those siblings have no task
+          # of their own left to answer them.
+          #
+          # One id-ordered statement rather than locking @keep first: in the
+          # :older scope the survivor's id is above every sibling's, so taking it
+          # first would descend where a concurrent fold ascends, which is the
+          # shape a deadlock needs.
+          locked = Task.where(id: superseded_scope.pluck(:id) + [ @keep.id ])
+                       .order(:id).lock.index_by(&:id)
+          keep = locked[@keep.id]
+          next unless keep && UNSTARTED_STATUSES.include?(keep.status)
+
+          # Status is re-checked against the locked rows too: a sibling promoted
+          # or cancelled since the id read above is no longer ours to supersede.
+          siblings = reject_review_triggers(
+            locked.values.select { |t| t.id != keep.id && t.status == "queued" }
+          )
           comment_ids = siblings.flat_map { |t| trigger_comment_ids(t) }
 
           siblings.each do |task|
@@ -72,7 +99,11 @@ module Collavre
           end
 
           if siblings.any?
-            payload = self.class.absorb_into_payload(@keep.trigger_event_payload || {}, comment_ids)
+            # Merge onto the locked row's payload, but write through the
+            # caller's own object: dequeue_next_for_topic hands that same
+            # instance to refresh_deferred_context! immediately after this, and
+            # it has to see the ids merged here rather than its pre-fold copy.
+            payload = self.class.absorb_into_payload(keep.trigger_event_payload || {}, comment_ids)
             @keep.update!(trigger_event_payload: payload)
           end
         end

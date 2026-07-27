@@ -219,6 +219,25 @@ module Collavre
                         "the surviving block must be trimmed to the budget"
       end
 
+      # "Shrink instead of drop" is the whole point of the session-backed branch:
+      # the trigger is that agent's only channel, so a block it does not carry is
+      # a user comment with no delivery path. Collapsing to the newest block when
+      # the per-block share gets small breaks exactly that promise — and takes
+      # every other block's image attachments with it, which the text budget does
+      # not even measure.
+      test "a session-backed agent keeps every merged comment when the share is tiny" do
+        @agent.update!(agent_conf: "session:\n  enabled: true\ncontext:\n  chat_history_size: 60")
+        merged = 5.times.map { |i| comment("point #{i} " * 10) }
+        anchor = comment("anchor")
+
+        blocks = MergedTriggerComments.for(context_with(anchor, merged), agent: @agent)
+
+        assert_equal merged.map(&:id), blocks.filter_map { |b| b.comment&.id },
+                     "a tiny share is a reason to compact every block, not to drop four of them"
+        assert_operator blocks.sum { |b| b.text.length }, :<=, 60,
+                        "compacting still has to respect the budget"
+      end
+
       # The merged set is read by id alone. A comment moved to another creative
       # while the task waited (CommentMoveService#perform_move reassigns
       # creative_id) would still be rendered into this turn's trigger, handing

@@ -36,7 +36,12 @@ module Collavre
         merged_ids = Array(context[TaskCoalescer::PAYLOAD_KEY]).compact
         return false if merged_ids.empty?
 
-        Comment.where(id: merged_ids).pluck(:content).any? do |content|
+        # Scoped to the turn, through the same predicate that decides what is
+        # delivered. A merged mention moved to another creative while the task
+        # waited is deliberately kept out of the trigger, so it cannot also be
+        # the reason the turn is permitted: that would let a non-primary agent
+        # answer an ambient anchor with no in-scope mention anywhere.
+        AiAgent::MergedTriggerComments.in_turn(merged_ids, context).pluck(:content).any? do |content|
           probe = context.merge("chat" => { "content" => content })
           new(SystemEvents::ContextBuilder.new(probe).build).assignment_permits?(agent)
         end

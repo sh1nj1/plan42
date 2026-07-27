@@ -154,6 +154,34 @@ module Collavre
         assert_equal [ 12 ], promoted.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
       end
 
+      # The survivor is read once by the caller and then trusted. Deleting its
+      # anchor cancels it through Comment#cancel_pending_tasks, which holds no
+      # lock this method waits on — so a fold running against a stale object
+      # cancels every still-valid sibling and merges the whole burst onto a task
+      # AiAgentJob abandons on sight. Nothing else is left to answer them.
+      test "does not supersede siblings when the survivor is no longer un-started" do
+        first = create_waiter(comment_id: 11)
+        second = create_waiter(comment_id: 12)
+        keep = create_waiter(comment_id: 13)
+        Task.where(id: keep.id).update_all(status: "cancelled")
+
+        assert_empty TaskCoalescer.coalesce!(keep)
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status,
+                     "a dead survivor must not take the burst down with it"
+      end
+
+      # Control: revalidating the survivor must not stop ordinary folds. The
+      # promotion path hands over a `pending` task, which is un-started and
+      # therefore still a valid survivor.
+      test "still folds for a pending survivor" do
+        newer = create_waiter(comment_id: 12)
+        promoted = create_waiter(comment_id: 11, status: "pending")
+
+        assert_equal [ newer.id ], TaskCoalescer.coalesce!(promoted, scope: :all)
+        assert_equal "cancelled", newer.reload.status
+      end
+
       test "records a superseded task action for each absorbed task" do
         first = create_waiter(comment_id: 11)
         newest = create_waiter(comment_id: 12)

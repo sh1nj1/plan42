@@ -201,6 +201,32 @@ module Collavre
                         "a comment in another creative must not stay merged into this turn"
       end
 
+      # The task's scope is the task's own, not the deleted comment's. cancel_
+      # pending_tasks looks tasks up without any creative scoping precisely
+      # because CommentMoveService can move a comment without touching the task
+      # it triggered — so a moved-then-deleted anchor searched for replacements
+      # in the creative it was moved *to*, found none, and cancelled a turn whose
+      # absorbed comments were all still sitting in the original creative.
+      test "re-anchoring searches the task's creative, not the moved anchor's" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: second")
+        third = dispatch_comment("@#{@agent.name}: third")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        elsewhere = Creative.create!(description: "Elsewhere", user: @user)
+        third.update!(creative: elsewhere, topic_id: nil)
+
+        third.destroy!
+
+        waiter.reload
+        assert_equal "queued", waiter.status,
+                     "the absorbed comments are still in this creative and still unanswered"
+        payload = waiter.trigger_event_payload
+        assert_equal second.id, payload.dig("comment", "id")
+        assert_equal [ first.id ], payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
       test "deleting the anchor still cancels a waiter with nothing absorbed" do
         block_topic!
         only = dispatch_comment("@#{@agent.name}: only")

@@ -24,6 +24,29 @@ module Collavre
         new(context, agent: agent).blocks
       end
 
+      # The comments a payload's merged ids still refer to *in this turn*.
+      #
+      # The merged ids were captured when the burst was folded; they are not a
+      # standing claim on those rows. CommentMoveService#perform_move reassigns
+      # creative_id, so a comment moved away while the task waited is no longer
+      # part of the turn — rendering it would hand the agent text and image
+      # attachments from a creative it may have no share on.
+      #
+      # Public because two doors ask the same question and must not diverge:
+      # this class decides what is delivered, and Matcher.permits_assignment?
+      # decides whether a merged @mention still licenses the turn. A mention
+      # excluded from the trigger cannot be the reason the turn is allowed.
+      def self.in_turn(ids, context)
+        context ||= {}
+        relation = Comment.public_only.without_approval_action.where(id: ids)
+        creative_id = context.dig("creative", "id")
+        relation = relation.where(creative_id: creative_id) if creative_id
+        # topic_id nil is a real scope (a creative's Main topic), so key? rather
+        # than presence decides whether the turn is topic-scoped at all.
+        relation = relation.where(topic_id: context.dig("topic", "id")) if context.key?("topic")
+        relation
+      end
+
       # Prefix `content` with the merged comments, oldest first.
       def self.prepend_to(content, context, agent:)
         blocks = self.for(context, agent: agent)
@@ -60,7 +83,7 @@ module Collavre
         # single monotonic causal sequence (CommentsController orders by id for
         # the same reason).
         @blocks ||= within_budget(
-          turn_scope(Comment.public_only.without_approval_action.where(id: comment_ids))
+          self.class.in_turn(comment_ids, @context)
             .includes(:user)
             .order(:id)
             .map { |c| Block.new(comment: c, text: label(c), images: image_blobs(c)) }
@@ -68,21 +91,6 @@ module Collavre
       end
 
       private
-
-      # The merged ids were captured when the burst was folded; they are not a
-      # standing claim on those rows. CommentMoveService#perform_move reassigns
-      # creative_id, so a comment moved away while the task waited would still be
-      # rendered into this trigger — handing the agent text and image attachments
-      # from a creative it may have no share on. refresh_deferred_context! already
-      # scopes its lookup this way; the merged set has to ask the same question.
-      def turn_scope(relation)
-        creative_id = @context.dig("creative", "id")
-        relation = relation.where(creative_id: creative_id) if creative_id
-        # topic_id nil is a real scope (a creative's Main topic), so key? rather
-        # than presence decides whether the turn is topic-scoped at all.
-        relation = relation.where(topic_id: @context.dig("topic", "id")) if @context.key?("topic")
-        relation
-      end
 
       # Coalescing turns a burst into one indivisible message, so an oversized
       # burst does not degrade — the whole turn fails. MessageBuilder budgets
@@ -133,11 +141,14 @@ module Collavre
       # Fit every block, none dropped: each gets an equal share of the budget.
       # Used when the trigger is the only channel, where "which comments to keep"
       # is not a choice we are allowed to make.
+      #
+      # No floor under the share. A budget too small to say much per comment is
+      # still not a reason to delete the other comments outright: keeping them
+      # preserves their order, their speakers and — the part the text budget
+      # never measures — their image attachments, which are delivered as
+      # separate parts and cost nothing here.
       def shrunk_to_fit(blocks, budget)
-        share = budget / blocks.size
-        return [ truncate_block(blocks.last, budget) ] if share <= TRUNCATION_SUFFIX.length
-
-        blocks.map { |b| truncate_block(b, share) }
+        blocks.map { |b| truncate_block(b, budget / blocks.size) }
       end
 
       def truncate_block(block, limit)
