@@ -111,6 +111,26 @@ module Collavre
                .exists?
       end
 
+      # Check-then-insert the one waiting notice a topic is allowed, as a single
+      # step. Both defer paths run for a *burst* — the case where every worker
+      # reads "no notice yet" before any of them inserts — so an unserialized
+      # check leaves N dead-end notices pointing at one blocker, and deleting one
+      # of them cancels the waiters while the others linger.
+      #
+      # Serialize on the same row admission locks (TopicSlot.lock!): the workers
+      # that compete for a notice are exactly the ones that competed for the
+      # slot, so the loser reads the winner's committed notice.
+      #
+      # Yields only when no notice exists yet; returns nil otherwise.
+      def self.with_deduped_topic_notice(creative_id, topic_id)
+        Comment.transaction do
+          TopicSlot.lock!(topic_id, creative_id)
+          next nil if topic_concurrency_notice_exists?(creative_id, topic_id)
+
+          yield
+        end
+      end
+
       def self.coalesce_promoted!(task)
         return unless PolicyResolver.new(task.trigger_event_payload || {}).coalesce_pending_tasks?
 
@@ -124,20 +144,21 @@ module Collavre
       # No-op when a notice for this creative/topic is already up.
       def self.post_topic_concurrency_notice(creative_id, topic_id)
         return if creative_id.nil?
-        return if topic_concurrency_notice_exists?(creative_id, topic_id)
 
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
         reason_text = waiting_reason_text(:topic_concurrency, topic_id, creative_id)
 
-        creative.comments.create!(
-          content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
-          topic_id: topic_id,
-          private: false,
-          skip_default_user: true,
-          topic_concurrency_defer: true
-        )
+        with_deduped_topic_notice(creative_id, topic_id) do
+          creative.comments.create!(
+            content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
+            topic_id: topic_id,
+            private: false,
+            skip_default_user: true,
+            topic_concurrency_defer: true
+          )
+        end
       end
 
       # Remove waiting notice comments (system messages) for this task's creative/topic.
@@ -333,15 +354,24 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
+        reason_text = waiting_reason_text(decision[:reason] || :unknown, topic_id, creative_id)
+        deferred = decision[:timing] == :deferred
+
         # Coalescing collapses a burst of deferrals into one waiter, so a notice
         # per deferral would leave N-1 dead ends pointing at the same blocker.
-        # Keep exactly one topic-concurrency notice per creative/topic.
-        return if decision[:timing] == :deferred &&
-                  policy_resolver.coalesce_pending_tasks? &&
-                  self.class.topic_concurrency_notice_exists?(creative_id, topic_id)
+        # Keep exactly one topic-concurrency notice per creative/topic — and take
+        # the check and the insert under one lock, since a burst is precisely
+        # when an unserialized check reads stale.
+        if deferred && policy_resolver.coalesce_pending_tasks?
+          self.class.with_deduped_topic_notice(creative_id, topic_id) do
+            create_waiting_notice(creative, topic_id, reason_text, deferred: deferred)
+          end
+        else
+          create_waiting_notice(creative, topic_id, reason_text, deferred: deferred)
+        end
+      end
 
-        reason_text = waiting_reason_text(decision[:reason] || :unknown, topic_id, creative_id)
-
+      def create_waiting_notice(creative, topic_id, reason_text, deferred:)
         creative.comments.create!(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
@@ -349,7 +379,7 @@ module Collavre
           skip_default_user: true,
           # Only :deferred queues a topic waiter; mark it so its stop button can
           # target the blocker. :delayed (busy / rate_limited) notices stay false.
-          topic_concurrency_defer: decision[:timing] == :deferred
+          topic_concurrency_defer: deferred
         )
       end
 

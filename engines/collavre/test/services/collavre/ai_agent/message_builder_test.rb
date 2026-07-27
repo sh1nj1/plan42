@@ -404,6 +404,72 @@ module Collavre
           "an image posted in a coalesced comment must still reach the agent"
       end
 
+      # The history limit counts *delivered* history. Merged comments move into
+      # the trigger, so letting them occupy history slots hands the agent a burst
+      # with no conversation behind it — and, when they fill the limit outright,
+      # flags the turn as first_message.
+      test "coalesced comments do not crowd older messages out of chat history" do
+        older = @creative.comments.create!(
+          content: "older context worth keeping", user: @user, topic_id: @comment.topic_id
+        )
+        burst = 3.times.map do |i|
+          @creative.comments.create!(
+            content: "burst message #{i}", user: @user, topic_id: @comment.topic_id
+          )
+        end
+        anchor = burst.last
+
+        context = {
+          "comment" => { "id" => anchor.id, "content" => anchor.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => burst.map(&:id)
+        }
+
+        result = @agent.stub(:chat_history_limit, 3) do
+          MessageBuilder.new(agent: @agent, context: context, original_comment: anchor).build
+        end
+        history = result[:messages]
+          .select { |m| m[:kind] == :chat_history }
+          .map { |m| m[:parts].first[:text] }
+          .join("\n")
+
+        assert_includes history, "older context worth keeping",
+          "eligible older messages must backfill the slots merged comments vacate"
+        assert_not result[:first_message],
+          "a burst that fills the limit must not make the turn look like a first message"
+        assert_not_includes history, "burst message",
+          "merged comments still belong in the trigger, not in history"
+      end
+
+      # An absorbed comment's creative links have to be resolved too: the merged
+      # text reaches the agent, so the subtree it points at must reach it as well.
+      test "creative links in coalesced comments are injected as referenced context" do
+        other_creative = Creative.create!(
+          description: "<p>Linked Project</p>", user: @user, progress: 0.0
+        )
+        merged = @creative.comments.create!(
+          content: "look at [Linked Project](/creatives/#{other_creative.id})",
+          user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        messages = MessageBuilder.new(
+          agent: @agent, context: context, original_comment: @comment
+        ).build[:messages]
+
+        referenced = messages.find do |m|
+          m[:kind] == :referenced_creative &&
+            m[:parts].first[:text].include?("id: #{other_creative.id}")
+        end
+        assert_not_nil referenced,
+          "a creative referenced only by an absorbed comment must still be injected"
+        assert_includes referenced[:parts].first[:text], "Linked Project"
+      end
+
       test "no merged ids leaves the trigger message unchanged" do
         context = {
           "comment" => { "id" => @comment.id, "content" => @comment.content },

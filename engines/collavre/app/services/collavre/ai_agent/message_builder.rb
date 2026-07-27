@@ -106,14 +106,20 @@ module Collavre
       end
 
       def append_referenced_creative_contexts(messages)
-        content = @context.dig("comment", "content")
-        return unless content
+        # Comments coalesced into this turn are delivered with the trigger, so
+        # their links point at creatives the agent is about to be asked about.
+        # Scanning only the surviving anchor would drop the subtree that the
+        # absorbed comment's own dispatch would have supplied.
+        contents = [ @context.dig("comment", "content") ] + merged_trigger.blocks.map(&:text)
+        contents = contents.compact
+        return if contents.empty?
 
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
         # Extract creative IDs from markdown links like [title](/creatives/123)
-        referenced_ids = content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.map(&:to_i).uniq
+        referenced_ids = contents.flat_map { |c| c.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}) }
+                                 .flatten.map(&:to_i).uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
 
@@ -146,18 +152,23 @@ module Collavre
         history_chars = 0
         count = 0
 
-        Comment.public_only.without_approval_action.where(creative_id: creative_id)
-               .where(topic_id: topic_id)
-               .where.not(user_id: nil)
-               .includes(:user)
-               .order(created_at: :desc)
-               .limit(history_limit)
-               .reverse
-               .each do |c|
-          next if c.id == trigger_comment&.id
-          # Already folded into the trigger message by append_trigger_message.
-          next if merged_comment_ids.include?(c.id)
+        scope = Comment.public_only.without_approval_action.where(creative_id: creative_id)
+                       .where(topic_id: topic_id)
+                       .where.not(user_id: nil)
+                       .includes(:user)
 
+        # Exclude before limiting, not after. The trigger and the comments folded
+        # into it are delivered by append_trigger_message, so leaving them in the
+        # limited window lets a burst eat every history slot — a burst as large as
+        # the limit would leave no conversation at all and mark the turn
+        # first_message. Dropping them first lets older messages backfill.
+        excluded_ids = (merged_comment_ids + [ @context.dig("comment", "id") ]).compact.map(&:to_i)
+        scope = scope.where.not(id: excluded_ids) if excluded_ids.any?
+
+        scope.order(created_at: :desc)
+             .limit(history_limit)
+             .reverse
+             .each do |c|
           role = (c.user_id == @agent.id) ? "model" : "user"
           content = c.content.to_s
 

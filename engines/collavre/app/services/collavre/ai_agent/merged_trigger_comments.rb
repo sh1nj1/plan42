@@ -49,11 +49,13 @@ module Collavre
       def blocks
         return [] if comment_ids.empty?
 
-        Comment.public_only.without_approval_action
-               .where(id: comment_ids)
-               .includes(:user)
-               .order(:created_at)
-               .map { |c| Block.new(comment: c, text: label(c), images: image_blobs(c)) }
+        # Memoized: MessageBuilder renders these into the trigger and also scans
+        # them for creative references, and one build should not re-query.
+        @blocks ||= Comment.public_only.without_approval_action
+                           .where(id: comment_ids)
+                           .includes(:user)
+                           .order(:created_at)
+                           .map { |c| Block.new(comment: c, text: label(c), images: image_blobs(c)) }
       end
 
       private
