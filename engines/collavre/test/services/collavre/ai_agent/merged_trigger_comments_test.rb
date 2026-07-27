@@ -138,6 +138,45 @@ module Collavre
         assert_includes content, "earlier point"
         assert_includes content, "later point"
       end
+
+      # MessageBuilder budgets chat history by chat_history_size, but the merged
+      # blocks go into the trigger, which had no budget at all. A burst is
+      # exactly the input that makes that asymmetry bite: coalescing turns N
+      # comments into one indivisible message, so an oversized burst does not
+      # degrade — the whole turn fails.
+      test "drops the oldest merged blocks once they exceed the agent's size budget" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
+        oldest = comment("O" * 150)
+        middle = comment("M" * 150)
+        newest = comment("N" * 150)
+        anchor = comment("anchor")
+
+        blocks = MergedTriggerComments.for(
+          context_with(anchor, [ oldest, middle, newest ]), agent: @agent
+        )
+
+        rendered = blocks.map(&:text).join("\n\n")
+        assert_includes rendered, "N" * 150, "the newest merged comment must survive"
+        refute_includes rendered, "O" * 150, "the oldest must be dropped once over budget"
+        assert_match(/omitted/, rendered, "a silent drop reads as if nothing was cut")
+      end
+
+      # Control: the budget must not fire on ordinary bursts. Under the limit,
+      # every merged comment is still rendered in full.
+      test "renders every merged comment when the burst fits the budget" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 100000")
+        older = comment("first point")
+        newer = comment("second point")
+        anchor = comment("anchor")
+
+        blocks = MergedTriggerComments.for(context_with(anchor, [ older, newer ]), agent: @agent)
+
+        assert_equal 2, blocks.size
+        rendered = blocks.map(&:text).join("\n\n")
+        assert_includes rendered, "first point"
+        assert_includes rendered, "second point"
+        refute_match(/omitted/, rendered)
+      end
     end
   end
 end

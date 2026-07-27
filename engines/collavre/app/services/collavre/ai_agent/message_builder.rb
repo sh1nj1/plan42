@@ -229,9 +229,14 @@ module Collavre
         @merged_trigger ||= MergedTriggerComments.new(@context, agent: @agent)
       end
 
-      # Ids of comments coalesced into this task (anchor excluded).
+      # Ids of the coalesced comments this turn actually renders into the
+      # trigger (anchor excluded). Deliberately the rendered blocks rather than
+      # every merged id: MergedTriggerComments drops the oldest of an oversized
+      # burst, and excluding a comment that no longer appears in the trigger
+      # would delete it from the turn outright. Leaving it in the history scope
+      # lets that separately budgeted window carry it instead.
       def merged_comment_ids
-        merged_trigger.comment_ids
+        merged_trigger.blocks.filter_map { |b| b.comment&.id }
       end
 
       def trigger_comment

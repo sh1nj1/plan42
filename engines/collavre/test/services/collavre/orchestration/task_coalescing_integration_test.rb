@@ -271,6 +271,50 @@ module Collavre
         assert_equal before, waiter.reload.trigger_event_payload["sender"]
       end
 
+      # TaskCoalescer supersedes by `id < keep.id`, which only means "everything
+      # already parked" while id order and commit order agree. An unserialized
+      # insert breaks that: the higher-id waiter can commit and fold first,
+      # seeing nothing, and the lower-id one then folds nothing either because
+      # the survivor is newer than its guard allows. AiAgentJob#admit_or_defer!
+      # already creates its waiter under the topic lock; this door must too.
+      test "a deferred dispatch creates and folds its waiter inside one locked transaction" do
+        block_topic!
+        dispatch_comment("@#{@agent.name}: first")
+
+        baseline_depth = Task.connection.open_transactions
+        locked = []
+        locked_before_fold = nil
+        fold_depth = nil
+
+        TopicSlot.stub(:lock!, ->(topic_id, _creative_id = nil) { locked << topic_id; nil }) do
+          TaskCoalescer.stub(:coalesce!, ->(_task, **_opts) {
+            locked_before_fold ||= locked.dup
+            fold_depth ||= Task.connection.open_transactions
+            []
+          }) do
+            dispatch_comment("@#{@agent.name}: second")
+          end
+        end
+
+        assert_equal [ @topic.id ], Array(locked_before_fold).uniq,
+                     "the waiter must be created under the topic lock before folding"
+        assert_operator fold_depth, :>, baseline_depth,
+                        "creating the waiter and folding its siblings must be one transaction"
+      end
+
+      # Control: serializing the door must not change what it produces. A burst
+      # arriving through the normal (unstubbed) path still collapses to one
+      # waiter carrying the others.
+      test "serializing the deferred door still folds an ordinary burst" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: alpha")
+        second = dispatch_comment("@#{@agent.name}: beta")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        assert_equal second.id, waiter.trigger_event_payload.dig("comment", "id")
+        assert_equal [ first.id ], waiter.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
       def expected_sender_for(user)
         SystemEvents::ContextBuilder.new(
           "comment" => { "user_id" => user.id }

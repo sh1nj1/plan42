@@ -228,7 +228,7 @@ module Collavre
         return unless creative_id
 
         Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil)
-               .where("content LIKE ?", "⏳%")
+               .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
                .find_each do |notice|
           # System promotion, not user abandonment: do not let the destroy
           # callback cancel other still-queued waiters in this topic.
@@ -391,20 +391,7 @@ module Collavre
             AiAgentJob.perform_later(agent.id, @event_name, @context)
             agent
           when :deferred
-            waiter = Task.create!(
-              name: "Response to #{@event_name}",
-              status: "queued",
-              trigger_event_name: @event_name,
-              trigger_event_payload: @context,
-              agent: agent,
-              topic_id: @context.dig("topic", "id"),
-              creative_id: @context.dig("creative", "id")
-            )
-            # A burst of comments queues one waiter each, and every one of them
-            # would answer the same latest comment on promotion. Fold the
-            # earlier ones into this newest waiter — merged, not dropped, so a
-            # session-backed agent still receives their content.
-            TaskCoalescer.coalesce!(waiter) if policy_resolver.coalesce_pending_tasks?
+            park_waiter(agent)
             post_waiting_notice(agent, decision)
             agent
           when :delayed
@@ -417,6 +404,45 @@ module Collavre
             nil
           end
         end
+      end
+
+      # Park this dispatch as a queued waiter and fold the earlier ones into it.
+      #
+      # A burst of comments queues one waiter each, and every one of them would
+      # answer the same latest comment on promotion. Fold them — merged, not
+      # dropped, so a session-backed agent still receives their content.
+      #
+      # Creating the row and folding its predecessors is ONE step, under the
+      # lock AiAgentJob#admit_or_defer! already takes for the other enqueue
+      # door. TaskCoalescer supersedes by `id < keep.id`, which reads as
+      # "everything already parked" only while id order and commit order agree.
+      # An unserialized insert lets them diverge: the higher-id waiter can
+      # commit and fold first, seeing nothing, and the lower-id one then folds
+      # nothing either because the survivor is newer than its guard allows.
+      # Both are still folded at promotion (scope: :all) and again at execution
+      # (coalesce_at_start!), so this is not a duplicate turn — but two doors
+      # onto one queue should not disagree about when a burst becomes one
+      # waiter, and only the serialized one holds without those later passes.
+      def park_waiter(agent)
+        topic_id = @context.dig("topic", "id")
+        creative_id = @context.dig("creative", "id")
+        waiter = nil
+
+        Task.transaction do
+          TopicSlot.lock!(topic_id, creative_id)
+          waiter = Task.create!(
+            name: "Response to #{@event_name}",
+            status: "queued",
+            trigger_event_name: @event_name,
+            trigger_event_payload: @context,
+            agent: agent,
+            topic_id: topic_id,
+            creative_id: creative_id
+          )
+          TaskCoalescer.coalesce!(waiter) if policy_resolver.coalesce_pending_tasks?
+        end
+
+        waiter
       end
 
       def log_decision(decision)

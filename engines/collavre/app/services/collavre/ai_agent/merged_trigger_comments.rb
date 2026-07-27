@@ -57,14 +57,48 @@ module Collavre
         # "ignore that" ahead of the instruction it retracts. Ids are the app's
         # single monotonic causal sequence (CommentsController orders by id for
         # the same reason).
-        @blocks ||= Comment.public_only.without_approval_action
-                           .where(id: comment_ids)
-                           .includes(:user)
-                           .order(:id)
-                           .map { |c| Block.new(comment: c, text: label(c), images: image_blobs(c)) }
+        @blocks ||= within_budget(
+          Comment.public_only.without_approval_action
+                 .where(id: comment_ids)
+                 .includes(:user)
+                 .order(:id)
+                 .map { |c| Block.new(comment: c, text: label(c), images: image_blobs(c)) }
+        )
       end
 
       private
+
+      # Coalescing turns a burst into one indivisible message, so an oversized
+      # burst does not degrade — the whole turn fails. MessageBuilder budgets
+      # chat history by the same setting; the trigger these blocks go into had
+      # no budget at all, which is the asymmetry a burst is most likely to hit.
+      #
+      # Drop from the oldest end: the newest comments are the ones the anchor
+      # replies to, and a retraction ("ignore that") is worthless without being
+      # newer than what it retracts. Say what was cut — a silent truncation
+      # reads to the agent as if the burst were complete.
+      def within_budget(blocks)
+        budget = size_limit
+        return blocks if budget.nil? || blocks.sum { |b| b.text.length } <= budget
+
+        kept = []
+        used = 0
+        blocks.reverse_each do |block|
+          break if used + block.text.length > budget
+
+          used += block.text.length
+          kept.unshift(block)
+        end
+
+        dropped = blocks.size - kept.size
+        return kept if dropped.zero?
+
+        kept.unshift(Block.new(comment: nil, text: "[#{dropped} earlier message(s) omitted]", images: []))
+      end
+
+      def size_limit
+        @agent.respond_to?(:chat_history_size_limit) ? @agent.chat_history_size_limit : nil
+      end
 
       def label(comment)
         text = comment.content.to_s

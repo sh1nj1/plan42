@@ -384,6 +384,38 @@ module Collavre
           "a comment already inlined in the trigger must not be sent twice"
       end
 
+      # The exclusion above pairs with the trigger actually carrying the comment.
+      # An oversized burst drops its oldest blocks (MergedTriggerComments budgets
+      # by chat_history_size), and excluding a comment the trigger no longer
+      # renders would delete it from the turn entirely — history is separately
+      # budgeted and can still carry it.
+      test "a merged comment dropped from the trigger falls back to chat history" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
+        dropped = @creative.comments.create!(
+          content: "D" * 150, user: @user, topic_id: @comment.topic_id
+        )
+        kept = @creative.comments.create!(
+          content: "K" * 150, user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ dropped.id, kept.id ]
+        }
+
+        messages = MessageBuilder.new(
+          agent: @agent, context: context, original_comment: @comment
+        ).build[:messages]
+        trigger = messages.find { |m| m[:kind] == :trigger }[:parts].first[:text]
+        history = messages.select { |m| m[:kind] == :chat_history }
+                          .map { |m| m[:parts].first[:text] }.join("\n")
+
+        assert_includes trigger, "K" * 150, "the newest merged comment stays in the trigger"
+        assert_not_includes trigger, "D" * 150
+        assert_includes history, "D" * 150,
+          "a comment cut from the trigger must not vanish from the turn"
+      end
+
       test "merged comments carry their image attachments into the trigger" do
         merged = @creative.comments.create!(
           content: "with a picture", user: @user, topic_id: @comment.topic_id
