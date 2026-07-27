@@ -1380,6 +1380,16 @@ chk "the retired key is gone"      0 "$(grep -cxF "$OLD" "$AK")"
 chk "an operator's own key stays"  1 "$(grep -cxF "$OPERATOR" "$AK")"
 chk "state advanced to the new key" "$NEW" "$(cat "$st/ssh_public_key")"
 
+echo "39a. rotating an SSH key preserves queue whitespace while matching it"
+SPACED_OLD="  ssh-ed25519 SPACEKEY retired  "
+st_spaced=$(mktemp -d)
+printf '%s\n%s\n' "$SPACED_OLD" "$NEW" > "$AK"
+printf '%s\n' "$SPACED_OLD" > "$st_spaced/ssh_public_key"
+SSH_PUBLIC_KEY="$NEW"
+revoke_prior_ssh_key "$AK" "$st_spaced/ssh_public_key"
+chk "the whitespace-prefixed key is gone" 0 "$(grep -cxF "$SPACED_OLD" "$AK")"
+chk "the current key still lets you in"   1 "$(grep -cxF "$NEW" "$AK")"
+
 echo "40. an unchanged SSH_PUBLIC_KEY withdraws nothing"
 before="$(cat "$AK")"
 revoke_prior_ssh_key "$AK" "$st/ssh_public_key"

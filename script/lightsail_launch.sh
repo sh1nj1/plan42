@@ -3269,7 +3269,7 @@ revoke_prior_ssh_key() {
     return 0
   }
 
-  while read -r prior; do
+  while IFS= read -r prior; do
     [ -n "$prior" ] || continue
     # The key this run deploys with stays: it is what the *next* rotation
     # withdraws.
