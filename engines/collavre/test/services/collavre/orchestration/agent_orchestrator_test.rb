@@ -156,6 +156,10 @@ module Collavre
       # of them inserts, and the topic collects N dead ends for one blocker.
       test "the late-defer notice checks and inserts under the admission lock" do
         topic = Topic.create!(name: "Notice lock topic", creative: @creative, user: @user)
+        # A notice describes a waiter; the same lock also decides whether one is
+        # still waiting, so the queue has to be non-empty for the insert to run.
+        Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
         locked_topic_ids = []
         lock_relation = Struct.new(:sink) do
           def find_by(id:)
@@ -185,6 +189,8 @@ module Collavre
       test "a second late-defer for the same topic adds no second notice" do
         topic = Topic.create!(name: "Notice dedup topic", creative: @creative, user: @user)
         Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
                      agent: @ai_agent, topic_id: topic.id, creative: @creative)
 
         2.times { AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id) }

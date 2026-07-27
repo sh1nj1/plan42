@@ -121,10 +121,21 @@ module Collavre
       # that compete for a notice are exactly the ones that competed for the
       # slot, so the loser reads the winner's committed notice.
       #
-      # Yields only when no notice exists yet; returns nil otherwise.
+      # The same lock also decides whether a notice is still warranted at all.
+      # The waiter commits before its notice goes up, so the blocker can finish
+      # in between, promote it, and run cleanup_waiting_notices! before any
+      # notice exists. A notice posted after that cleanup describes a wait that
+      # is already over, and nothing will ever take it down: removal only
+      # happens when a promotion drains a *queued* waiter, and there is none
+      # left. Promotion takes this same row, so "still queued" read here is the
+      # promotion's own before-or-after, not a guess.
+      #
+      # Yields only when a waiter is still queued and no notice exists yet;
+      # returns nil otherwise.
       def self.with_deduped_topic_notice(creative_id, topic_id)
         Comment.transaction do
           TopicSlot.lock!(topic_id, creative_id)
+          next nil unless Task.queued_for_topic(topic_id, creative_id).exists?
           next nil if topic_concurrency_notice_exists?(creative_id, topic_id)
 
           yield
@@ -188,6 +199,12 @@ module Collavre
         creative_id = context&.dig("creative", "id")
         return unless creative_id && context&.key?("topic")
 
+        # Keeping a review out of TaskCoalescer is only half the boundary: the
+        # refresh is the other door onto the anchor, and moving it forward turns
+        # the in-place revision into a plain reply just as surely. A review
+        # answers the comment it quotes or nothing at all, so leave it alone.
+        return if review_anchor?(context)
+
         topic_id = context.dig("topic", "id")
         scope = Comment.public_only.without_approval_action
           .where(creative_id: creative_id, topic_id: topic_id)
@@ -218,6 +235,12 @@ module Collavre
       end
       private_class_method :refresh_deferred_context!
 
+      def self.review_anchor?(context)
+        anchor_id = context.dig("comment", "id")
+        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+      end
+      private_class_method :review_anchor?
+
       # Cancel a promoted waiter whose agent the topic's primary-agent assignment
       # now excludes. A queued task keeps the agent chosen when it was dispatched,
       # so a pin created or moved while it waited would otherwise be bypassed by
@@ -234,8 +257,7 @@ module Collavre
 
         agent = task.agent
         return unless agent
-        return if Matcher.new(SystemEvents::ContextBuilder.new(context).build)
-                         .assignment_permits?(agent)
+        return if Matcher.permits_assignment?(context, agent)
 
         Rails.logger.info(
           "[AgentOrchestrator] Cancelling queued task #{task.id}: topic #{task.topic_id} " \

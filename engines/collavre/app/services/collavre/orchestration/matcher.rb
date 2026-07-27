@@ -17,6 +17,31 @@ module Collavre
     # - searchable only affects discoverability, not response permission
     #
     class Matcher
+      # The one entry point for "may this agent answer, given the topic's
+      # primary-agent assignment?", taking a raw trigger payload.
+      #
+      # Three paths re-ask this question about a waiting task — promotion
+      # (AgentOrchestrator.revalidate_assignment!), the resumed AiAgentJob, and
+      # approval resumption through it — and each one cancels the task on a
+      # "no". They must ask the same question, because a direct @mention
+      # outranks the assignment and coalescing moves that mention out of the
+      # anchor and into "merged_comment_ids": judging the anchor alone cancels a
+      # task that WAS explicitly addressed, and discards every comment it had
+      # absorbed along with it. The mention still reaches the agent
+      # (MergedTriggerComments folds it into the trigger), so it still counts.
+      def self.permits_assignment?(context, agent)
+        return true if new(SystemEvents::ContextBuilder.new(context).build)
+                       .assignment_permits?(agent)
+
+        merged_ids = Array(context[TaskCoalescer::PAYLOAD_KEY]).compact
+        return false if merged_ids.empty?
+
+        Comment.where(id: merged_ids).pluck(:content).any? do |content|
+          probe = context.merge("chat" => { "content" => content })
+          new(SystemEvents::ContextBuilder.new(probe).build).assignment_permits?(agent)
+        end
+      end
+
       def initialize(context)
         @context = context
       end

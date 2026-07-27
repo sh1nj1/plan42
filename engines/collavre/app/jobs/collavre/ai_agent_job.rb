@@ -57,9 +57,7 @@ module Collavre
         # exclusively someone else's.
         resumed_context = task.trigger_event_payload
         if resumed_context&.key?("topic") &&
-           !Orchestration::Matcher.new(
-             SystemEvents::ContextBuilder.new(resumed_context).build
-           ).assignment_permits?(agent)
+           !Orchestration::Matcher.permits_assignment?(resumed_context, agent)
           Rails.logger.info(
             "[AiAgentJob] Cancelling resumed task #{task.id}: topic #{task.topic_id} " \
             "is now assigned to another agent (agent=#{agent.id})"

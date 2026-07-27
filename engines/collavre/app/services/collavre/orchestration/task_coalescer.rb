@@ -53,10 +53,12 @@ module Collavre
       end
 
       def coalesce!
+        return [] if review_trigger?(@keep)
+
         absorbed_ids = []
 
         Task.transaction do
-          siblings = superseded_scope.lock.to_a
+          siblings = reject_review_triggers(superseded_scope.lock.to_a)
           comment_ids = siblings.flat_map { |t| trigger_comment_ids(t) }
 
           siblings.each do |task|
@@ -103,6 +105,30 @@ module Collavre
         ).where.not(id: @keep.id)
         rel = rel.where("id < ?", @keep.id) if @scope == :older
         rel.order(:id)
+      end
+
+      # A Review request is an action bound to one comment, not one more message
+      # in the burst. AiAgentService and ResponseFinalizer read review behaviour
+      # off the surviving anchor alone (Comment#review_message? plus its
+      # quoted_comment), so folding across that boundary breaks both ways: an
+      # absorbed review silently degrades into a normal reply, and a surviving
+      # review overwrites the quoted comment with text that also answers an
+      # unrelated message. Reviews therefore neither absorb nor get absorbed —
+      # they keep their own turn, which is the only shape ReviewHandler can run.
+      def review_trigger?(task)
+        anchor_id = (task.trigger_event_payload || {}).dig("comment", "id")
+        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+      end
+
+      # One query for the whole burst rather than review_trigger? per sibling.
+      def reject_review_triggers(siblings)
+        anchors = siblings.filter_map { |t| (t.trigger_event_payload || {}).dig("comment", "id") }
+        review_ids = Comment.review_message_ids(anchors).to_set
+        return siblings if review_ids.empty?
+
+        siblings.reject do |task|
+          review_ids.include?((task.trigger_event_payload || {}).dig("comment", "id").to_i)
+        end
       end
 
       # The comment a task was going to answer, plus anything it had already

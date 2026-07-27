@@ -104,6 +104,31 @@ module Collavre
       assert_equal 1, notices.count
     end
 
+    # The notice is only ever removed by the promotion that drains this topic's
+    # queue. If the blocker finishes between the waiter's commit and this call,
+    # that promotion has already run its cleanup — a notice posted afterwards
+    # explains a wait nobody is doing and nothing will ever take it down.
+    test "posts no waiting notice once the queue has already drained" do
+      notices = -> {
+        Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil)
+               .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%").count
+      }
+
+      assert_no_difference notices do
+        Orchestration::AgentOrchestrator.post_topic_concurrency_notice(@creative.id, @topic.id)
+      end
+    end
+
+    test "posts the waiting notice while a waiter is still queued" do
+      occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("m")))
+
+      assert Task.queued_for_topic(@topic.id, @creative.id).exists?
+      assert Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil)
+                    .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%").exists?,
+             "a real wait must still be explained"
+    end
+
     test "runs normally when the topic slot is free" do
       c = comment("first in topic")
 

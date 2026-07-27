@@ -125,6 +125,23 @@ module Collavre
       quoted_comment_id.present? && !review_type_question?
     end
 
+    # Which of `ids` are review requests, in one query. The orchestration paths
+    # that decide whether a trigger may be folded away or moved forward hold
+    # comment *ids*, not records, and run over a whole burst at once.
+    #
+    # `review_type: [nil, review]` rather than `where.not(question)`: the column
+    # is NULL for an ordinary review (only /compress-style questions set it), and
+    # SQL's `review_type != 1` drops NULL rows — which is every real review.
+    def self.review_message_ids(ids)
+      ids = Array(ids).compact.map(&:to_i).uniq
+      return [] if ids.empty?
+
+      where(id: ids)
+        .where.not(quoted_comment_id: nil)
+        .where(review_type: [ nil, review_types[:review] ])
+        .pluck(:id)
+    end
+
     # public for db migration
     def creative_snippet
       creative.creative_snippet
