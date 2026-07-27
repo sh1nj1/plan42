@@ -2901,10 +2901,22 @@ install_authorized_keys() {
       # append_state_line dedupes, so the retry after the disk is freed records
       # nothing twice. Installed-but-not-recorded is the finding.
       #
-      # Aborting is the safe end here rather than a lesser one: this returns
-      # non-zero, which the call site treats as fatal *before* the sudo and
-      # docker grants, so the host is left exactly as it was and the operator
-      # still reaches it as the cloud user.
+      # Aborting is the safe end here rather than a lesser one, though not
+      # because the host is untouched — checked against the call order rather
+      # than assumed, and only half of it is true:
+      #
+      #   usermod -aG sudo / ensure_sudoers   step 3, BEFORE this
+      #   install_authorized_keys             <- here
+      #   usermod -aG docker                  step 6, after
+      #
+      # So the account already holds passwordless sudo when this returns
+      # non-zero. What makes that the safe end anyway is that nothing was
+      # installed: an account with sudo and an empty authorized_keys cannot be
+      # logged into at all, and the docker grant is never reached. That is
+      # exactly the state the `die` at the call site already names, down to
+      # telling the operator the grant is recorded in $STATE_DIR/deploy_users
+      # so a later run takes it back. The operator still reaches the host as
+      # the cloud user, whose own keys this script never writes.
       # Guarded on the two state variables the same way install_staged_authorized_keys
       # guards its chown on APP_SSH_USER: this function is called directly by a
       # dozen fixtures that have no state directory and no deploy account, and
