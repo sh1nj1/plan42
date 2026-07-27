@@ -296,6 +296,62 @@ module CollavreGithub
         assert_includes result[:webhook_warning], "webhook provisioning failed"
       end
 
+      test "does not warn when a sibling instance's hook was successfully re-patched" do
+        # :shared no longer means "no GitHub call was made". The provisioner
+        # patches the registered hook's events and secret and only reports
+        # :shared once that succeeds, so warning here told the MCP caller
+        # provisioning had a problem after it had in fact done its job.
+        account = CollavreGithub::Account.create!(
+          user: @user,
+          github_uid: "pr-monitor-prov-sibling",
+          login: "owner",
+          name: @user.name,
+          token: "ghp-test-token-sibling"
+        )
+        sibling_hook_id = 60606060
+        CollavreGithub::RepositoryLink.create!(
+          creative: @creative,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          webhook_secret: "secret-sibling-1234",
+          # Registered in this database: written by the sibling instance that
+          # created the hook, which is what proves the two share state.
+          webhook_hook_id: sibling_hook_id
+        )
+
+        sibling_url = "https://local.collavre.com/github/webhooks"
+        stub_request(:get, %r{https://api\.github\.com/repos/owner/repo/hooks})
+          .to_return(
+            status: 200,
+            body: [ { id: sibling_hook_id, config: { url: sibling_url }, events: [ "pull_request" ] } ].to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+        patched_body = nil
+        edit_stub = stub_request(:patch, "https://api.github.com/repos/owner/repo/hooks/#{sibling_hook_id}")
+          .with do |req|
+            patched_body = JSON.parse(req.body)
+            true
+          end
+          .to_return(
+            status: 200,
+            body: { id: sibling_hook_id, active: true }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        result = PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        assert result[:ok]
+        assert_nil result[:webhook_warning],
+          "expected no warning after a successful shared-hook patch, got: #{result.inspect}"
+        assert_requested(edit_stub)
+        assert_includes patched_body["events"], "issue_comment"
+        assert_equal sibling_url, patched_body["config"]["url"],
+          "the sibling's URL must survive the patch"
+      end
+
       test "provisions through the global primary link when topic's scoped link is non-primary" do
         # When the same repo is linked from multiple creatives,
         # WebhookProvisioner only PATCHes hook events for the lowest-id
