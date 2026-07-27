@@ -582,11 +582,11 @@ refuse_unparsable_ssh_key() {
 # they are the forms the guard above exists to keep working, and each of them
 # runs the client's command.
 #
-# The options are the words before the key blob. Every SSH public key encodes a
-# length-prefixed algorithm name, so the blob always begins "AAAA" — cutting
-# there keeps a `command=` that appears in the *comment* out of this, where it
-# is text rather than an option and refusing it would refuse a key sshd is
-# perfectly happy with.
+# The options are the first whitespace-delimited field before the key type and
+# blob. Whitespace inside a quoted option value does not end that field, and an
+# escaped quote does not end the value. Parse that boundary rather than looking
+# for base64 text: an option value is allowed to contain the same `AAAA` with
+# which an SSH key blob begins.
 #
 # Refused rather than checked after the install, for the reason the guard above
 # gives: revoke_prior_ssh_key withdraws the predecessor as soon as `grep -qxF`
@@ -617,7 +617,34 @@ refuse_forced_command_ssh_key() {
   # well as 5.2 on the host, and the parameter expansion is a 4.0 syntax error
   # there — the same platform split that made a `head -c 0` fixture pass here
   # and fail in CI.
-  options="$(printf '%s' "${SSH_PUBLIC_KEY%%AAAA*}" | tr '[:upper:]' '[:lower:]')"
+  options="$(
+    printf '%s\n' "$SSH_PUBLIC_KEY" |
+      awk '
+	{
+	  start = 1
+	  while (start <= length($0) &&
+		 substr($0, start, 1) ~ /[[:space:]]/) {
+	    start++
+	  }
+	  quoted = 0
+	  escaped = 0
+	  for (i = start; i <= length($0); i++) {
+	    char = substr($0, i, 1)
+	    if (escaped) {
+	      escaped = 0
+	    } else if (quoted && char == "\\") {
+	      escaped = 1
+	    } else if (char == "\"") {
+	      quoted = !quoted
+	    } else if (!quoted && char ~ /[[:space:]]/) {
+	      print substr($0, start, i - start)
+	      exit
+	    }
+	  }
+	}
+      ' |
+      tr '[:upper:]' '[:lower:]'
+  )"
   case "$options" in
     *command=*) ;;
     *) return 0 ;;

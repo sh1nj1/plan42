@@ -5443,11 +5443,23 @@ else
   chk "and a mixed-case one"                           1 "$fc_rc"
   fcguard "no-pty,COMMAND=\"/usr/bin/true\" $FC_KEY"
   chk "and an uppercase one behind another option"     1 "$fc_rc"
+  # The options field has to be found from authorized_keys quoting, not from
+  # base64-looking text. `AAAA` is valid inside an option value, and ssh-keygen
+  # accepts this exact line; cutting at that value used to hide the forced
+  # command that follows it.
+  FC_COLLISION="from=\"203.0.113.4,AAAA\",command=\"/usr/bin/true\" $FC_KEY"
+  printf '%s\n' "$FC_COLLISION" > "$fcd/collision.pub"
+  chk "the delimiter-collision fixture is a real key line" 0 \
+    "$(ssh-keygen -l -f "$fcd/collision.pub" >/dev/null 2>&1; echo $?)"
+  fcguard "$FC_COLLISION"
+  chk "AAAA in an option cannot hide a later command"  1 "$fc_rc"
 
   fcguard "$FC_KEY"
   chk "a plain key still goes through"                 0 "$fc_rc"
   fcguard "from=\"127.0.0.1\" $FC_KEY"
   chk "and one behind a from= restriction"             0 "$fc_rc"
+  fcguard "from=\"AAAA.example\" $FC_KEY"
+  chk "and AAAA in a benign option is not itself refused" 0 "$fc_rc"
   fcguard "restrict $FC_KEY"
   chk "and one behind restrict, which runs the command" 0 "$fc_rc"
   # The control that keeps the fold on the *question* rather than on the guard:
