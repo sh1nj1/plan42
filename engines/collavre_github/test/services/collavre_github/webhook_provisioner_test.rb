@@ -194,6 +194,40 @@ module CollavreGithub
       assert_equal 8, other.reload.webhook_hook_id
     end
 
+    test "fills in the registration on a link added after the hook was registered" do
+      # The registration is already correct, so the compare-and-set has nothing
+      # to write and returns early — which used to leave the newcomer null. The
+      # older link is then the only carrier: delete it and the live hook becomes
+      # unrecognisable, so a sibling host creates a second one.
+      @link.update!(webhook_hook_id: 8)
+      newcomer = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name
+      )
+
+      provision(FakeClient.new(hooks: [ Hook.new(8, { "url" => OWN_URL }) ]))
+
+      assert_equal 8, newcomer.reload.webhook_hook_id
+    end
+
+    test "filling in a registration does not overwrite a link naming another hook" do
+      # Only null registrations are the backfill's to write. A link pointing at
+      # a different hook is the stale-vs-live question the CAS answers, and
+      # silently rewriting it here would decide that question the wrong way.
+      @link.update!(webhook_hook_id: 8)
+      dissenting = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name,
+        webhook_hook_id: 99
+      )
+
+      provision(FakeClient.new(hooks: [ Hook.new(8, { "url" => OWN_URL }) ]))
+
+      assert_equal 99, dissenting.reload.webhook_hook_id
+    end
+
     test "prefers its own hook over a sibling when both exist" do
       client = FakeClient.new(hooks: [
         Hook.new(2, { "url" => SIBLING_URL }),

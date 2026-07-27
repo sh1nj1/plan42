@@ -285,7 +285,10 @@ module CollavreGithub
       return false if hook_id.blank?
 
       registered = registered_hook_id(repository_full_name)
-      return true if registered.to_s == hook_id.to_s
+      if registered.to_s == hook_id.to_s
+        backfill_registration(repository_full_name, hook_id)
+        return true
+      end
       return false if registered.present? && hook_live?(repository_full_name, registered, hooks)
 
       links_for(repository_full_name)
@@ -295,6 +298,24 @@ module CollavreGithub
       # Re-read rather than trust the affected-row count: the rows are only
       # "ours" if the registration now reads back as this hook.
       registered_hook_id(repository_full_name).to_s == hook_id.to_s
+    end
+
+    # A link created after the hook was registered starts with a null
+    # webhook_hook_id, and the compare-and-set above returns before writing
+    # anything — the value it compares against is already correct, so there is
+    # nothing to set. That leaves the registration on the older links only.
+    # Removing those links then takes the last copy of it with them, and the
+    # live hook becomes unrecognisable: `find_shared_hook` requires a recorded
+    # id, so the next run from a sibling host reads it as foreign and adds a
+    # second hook — the proliferation this registry exists to stop.
+    #
+    # Only null registrations are filled. A link naming a different hook is not
+    # this run's to overwrite; that case is the stale-vs-live question the CAS
+    # above already answers.
+    def backfill_registration(repository_full_name, hook_id)
+      links_for(repository_full_name)
+        .where(webhook_hook_id: nil)
+        .update_all(webhook_hook_id: hook_id)
     end
 
     # Is the registered hook still on GitHub?
