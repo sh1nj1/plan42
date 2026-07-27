@@ -1152,7 +1152,42 @@ write_state_file() {
     rm -f "$tmp"
     return 1
   fi
-  mv -f "$tmp" "$target"
+  if ! mv -f "$tmp" "$target"; then
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+# A failed atomic replacement is recoverable only when the file it left behind
+# can still answer every setting. An absent or short record is not a previous
+# configuration: refuse the success marker rather than let the next bare
+# FORCE=1 run silently reset an override that has no other state file, such as
+# BACKUP_S3_URI.
+launch_record_is_complete() {
+  local env_file="$1" name
+  [ -f "$env_file" ] || return 1
+  for name in $LAUNCH_SETTINGS; do
+    [ "$(grep -c "^$name=" "$env_file" 2>/dev/null)" -eq 1 ] || return 1
+  done
+}
+
+record_launch_settings() {
+  local state_dir="${1:-$STATE_DIR}" record name
+  record="$(for name in $LAUNCH_SETTINGS; do
+    printf '%s=%s\n' "$name" "${!name}"
+  done)"
+  if write_state_file "$state_dir/launch.env" "$record"$'\n'; then
+    return 0
+  fi
+  if launch_record_is_complete "$state_dir/launch.env"; then
+    log "WARNING: could not replace this run's settings in $state_dir/launch.env;" \
+	"the complete previous record is intact, so the next run still compares" \
+	"against it — repeat this run's overrides on that run too"
+    return 0
+  fi
+  die "could not record this run's settings in $state_dir/launch.env, and no" \
+      "complete previous record remains. Refusing to create the success marker:" \
+      "a later bare FORCE=1 run could otherwise silently reset an override."
 }
 
 # append_state_line <set file> <line>
@@ -3329,9 +3364,9 @@ if [ -n "$DOCKER_WANT" ]; then
   chmod a+r /etc/apt/keyrings/docker.asc
   # shellcheck disable=SC1091
   . /etc/os-release
-  cat > /etc/apt/sources.list.d/docker.list <<EOF
-deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable
-EOF
+  install_managed_config 'the Docker apt source' \
+    /etc/apt/sources.list.d/docker.list \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable"
   apt_get update -y
   # shellcheck disable=SC2086  # a package list, deliberately word-split
   apt_install $DOCKER_WANT
@@ -3924,18 +3959,11 @@ TXT
 # because the answers in it ("which deploy user?", "which database?") are what
 # the runbook sends operators here to read.
 #
-# Through write_state_file rather than a redirection, because the reader treats
-# a line that is not here as a setting it has nothing to say about: a run that
-# truncated this file and then died leaves refuse_defaulted_config_change with
-# nothing to compare, and the next bare FORCE=1 rotates the deploy account and
-# the database role unchallenged. Failing to record the settings must not be
-# the same event as recording that there were none.
-_launch_record="$(for _s in $LAUNCH_SETTINGS; do printf '%s=%s\n' "$_s" "${!_s}"; done)"
-write_state_file "$STATE_DIR/launch.env" "$_launch_record"$'\n' ||
-  log "WARNING: could not record this run's settings in $STATE_DIR/launch.env;" \
-      "the previous record is intact, so the next run still compares against it —" \
-      "repeat this run's overrides on that run too"
-unset _s _launch_record
+# Through an atomic write, and fatal unless a complete prior record survives:
+# the reader treats a missing line as a setting it has nothing to say about, so
+# a later bare FORCE=1 could otherwise reset an unrecorded BACKUP_S3_URI while
+# this run still created the success marker.
+record_launch_settings
 
 touch "$SUMMARY"
 chmod 0600 "$SUMMARY"

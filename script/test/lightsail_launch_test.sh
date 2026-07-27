@@ -21,12 +21,13 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
 for fn in die ensure_block ensure_sudoers in_group write_state_file \
+	  launch_record_is_complete record_launch_settings \
           revoke_prior_deploy_user \
           record_deploy_user_grant revoke_deploy_user_access \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
@@ -4341,7 +4342,7 @@ chk "and silent about the rotation"   0 "$(grep -c APP_SSH_USER <<<"$prev_out")"
 echo "120b. launch.env is replaced in one step rather than truncated in place"
 # The assertion is on the write, not on the wording: a redirection here is the
 # defect, whatever the comment above it says.
-lenv_line="$(grep -c 'write_state_file "\$STATE_DIR/launch.env"' "$SRC")"
+lenv_line="$(grep -c 'write_state_file "\$state_dir/launch.env"' "$SRC")"
 chk "written through write_state_file" 1 "$lenv_line"
 chk "and not by a redirection"         0 \
   "$(grep -c '> *"\$STATE_DIR/launch.env"' "$SRC")"
@@ -5154,6 +5155,7 @@ docker_step() {  # DOCKER_PRESENT / BUILDX_OK / COMPOSE_OK are read from the env
   ( set +u
     log(){ printf 'LOG: %s\n' "$*"; }
     install(){ :; }; curl(){ :; }; chmod(){ :; }; apt_get(){ :; }
+    install_managed_config(){ :; }
     dpkg(){ echo amd64; }; VERSION_CODENAME=noble
     apt_install(){ printf 'INSTALL:%s\n' "$*"; }
     command(){
@@ -6020,6 +6022,73 @@ chk "and passes it to disk verification"              1 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"' "$SRC")"
 chk "rather than discarding the status"               0 \
   "$(grep -c '^systemctl reload ssh .*|| true$' "$SRC")"
+
+echo "151. the Docker apt source is installed atomically"
+docker_source_block="$(
+  awk '
+    /^if \[ -n "\$DOCKER_WANT" \]; then$/ { f = 1 }
+    f { print }
+    f && /^fi$/ { exit }
+  ' "$SRC"
+)"
+chk "the live source is written through the staging helper" 1 \
+  "$(grep -c "install_managed_config 'the Docker apt source'" <<<"$docker_source_block")"
+chk "and never truncated by a heredoc redirection"           0 \
+  "$(grep -c 'cat > /etc/apt/sources.list.d/docker.list' <<<"$docker_source_block")"
+chk "the staged source is installed before apt reads it"     1 \
+  "$(awk '
+      /install_managed_config .*Docker apt source/ { installed = NR }
+      /apt_get update -y/ { updated = NR }
+      END {
+	if (installed && updated && installed < updated) print 1
+	else print 0
+      }
+    ' <<<"$docker_source_block")"
+
+echo "152. a missing or incomplete launch record cannot accompany success"
+saved_launch_settings="$LAUNCH_SETTINGS"
+LAUNCH_SETTINGS='APP_SSH_USER DB_USER BACKUP_S3_URI'
+APP_SSH_USER=collavre
+DB_USER=collavre_user
+BACKUP_S3_URI=s3://collavre-backups/pg
+record_dir="$(mktemp -d)"
+record_launch_settings "$record_dir" >/dev/null 2>&1
+chk "a successful write records every setting"              0 \
+  "$(launch_record_is_complete "$record_dir/launch.env"; echo $?)"
+
+saved_write_state_file="$(declare -f write_state_file)"
+saved_log="$(declare -f log)"
+log() { printf '%s\n' "$*"; }
+write_state_file() { return 1; }
+record_out="$(record_launch_settings "$record_dir" 2>&1)"
+chk "a failed replacement with a complete prior record warns" 0 "$?"
+chk "and identifies that record as complete"                  1 \
+  "$(grep -c 'complete previous record is intact' <<<"$record_out")"
+
+rm -f "$record_dir/launch.env"
+record_status=0
+record_out="$(record_launch_settings "$record_dir" 2>&1)" || record_status=$?
+chk "a failed first record stops the run"                     1 "$record_status"
+chk "and names the missing complete record"                   1 \
+  "$(grep -c 'no complete previous record remains' <<<"$record_out")"
+
+printf 'APP_SSH_USER=collavre\nDB_USER=collavre_user\n' > "$record_dir/launch.env"
+record_status=0
+record_out="$(record_launch_settings "$record_dir" 2>&1)" || record_status=$?
+chk "an incomplete prior record also stops the run"           1 "$record_status"
+chk "so the success marker is created only after recording"   1 \
+  "$(awk '
+      /^record_launch_settings$/ { recorded = NR }
+      /^touch "\$MARKER"$/ { marked = NR }
+      END {
+	if (recorded && marked && recorded < marked) print 1
+	else print 0
+      }
+    ' "$SRC")"
+eval "$saved_write_state_file"
+eval "$saved_log"
+LAUNCH_SETTINGS="$saved_launch_settings"
+rm -rf "$record_dir"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
