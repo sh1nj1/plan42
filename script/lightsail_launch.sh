@@ -4037,6 +4037,42 @@ Never open 5432 there.
 TXT
 }
 
+# Render the credential-bearing summary into a root-only sibling and install it
+# only after the complete output can be read back. A FORCE re-run may already
+# have rotated the database credential, so truncating the live summary would
+# destroy the only ready-to-copy, percent-encoded DATABASE_URL for that state.
+install_credential_summary() { # $1 = DATABASE_URL to display
+  local database_url="$1" target_real tmp rc=0
+  target_real="$(resolve_symlink_chain "$SUMMARY")" || exit 1
+  tmp="$(stage_beside "$target_real" 0600)" || rc=$?
+  [ "$rc" -eq 0 ] || {
+    die "could not stage the credential summary at $target_real" \
+	"(stage_beside exited $rc). The live summary is left exactly as it was."
+  }
+  if ! chmod 0600 "$tmp"; then
+    rm -f "$tmp"
+    die "could not make the staged credential summary root-only." \
+	"$target_real is left exactly as it was."
+  fi
+  if ! render_summary "$database_url" > "$tmp"; then
+    rm -f "$tmp"
+    die "could not render the staged credential summary — is the instance out" \
+	"of disk? $target_real is left exactly as it was."
+  fi
+  if ! grep -qxF "  KAMAL_SSH_USER=$APP_SSH_USER" "$tmp" ||
+     ! grep -qxF "  DATABASE_URL=$database_url" "$tmp" ||
+     ! grep -qxF 'Never open 5432 there.' "$tmp"; then
+    rm -f "$tmp"
+    die "the staged credential summary is incomplete. Refusing to install it" \
+	"over $target_real, which is left exactly as it was."
+  fi
+  mv -f "$tmp" "$target_real" || {
+    rm -f "$tmp"
+    die "could not install the staged credential summary over $target_real," \
+	"which is left exactly as it was."
+  }
+}
+
 # What this run was configured with, so the next one can tell an omitted
 # override from a deliberate default (refuse_defaulted_config_change). Written
 # only here, after every step has succeeded: a run that died halfway must not
@@ -4051,9 +4087,7 @@ TXT
 # this run still created the success marker.
 record_launch_settings
 
-touch "$SUMMARY"
-chmod 0600 "$SUMMARY"
-render_summary "$DATABASE_URL" > "$SUMMARY"
+install_credential_summary "$DATABASE_URL"
 
 touch "$MARKER"
 render_summary "$REDACTED_URL"

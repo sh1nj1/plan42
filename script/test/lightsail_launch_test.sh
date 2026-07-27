@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -47,7 +47,8 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           resolve_symlink_chain stage_beside stage_authorized_keys \
           verify_ssh_hardening refuse_unusable_retention \
 	  refuse_unusable_backup_calendar \
-	  install_managed_config install_downloaded_file reload_ssh_daemon \
+	  install_managed_config install_downloaded_file \
+	  install_credential_summary reload_ssh_daemon \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -2513,7 +2514,12 @@ deploy_env="$(awk '/^```dotenv$/{f=1;next} f&&/^```$/{exit} f' "$DOC")"
 chk "there is a dotenv block"  1 "$([ -n "$deploy_env" ] && echo 1 || echo 0)"
 chk "no password placeholder"  0 "$(grep -c '<password>' <<<"$deploy_env")"
 chk "no hand-built URI"        0 "$(grep -c 'postgres\(ql\)\?://' <<<"$deploy_env")"
-chk "names the summary file"   1 "$(grep -c 'summary file' <<<"$deploy_env")"
+chk "takes DATABASE_URL from the summary file" 1 \
+  "$(grep -c '^DATABASE_URL=<.*summary file.*>$' <<<"$deploy_env")"
+chk "does not hard-code the default deploy user" 0 \
+  "$(grep -c '^KAMAL_SSH_USER=collavre$' <<<"$deploy_env")"
+chk "takes the deploy user from the generated summary" 1 \
+  "$(grep -c '^KAMAL_SSH_USER=<.*summary.*>$' <<<"$deploy_env")"
 # And the corrected claim has to stay corrected: the two silent cases are what
 # make copying the summary file load-bearing rather than merely tidy. Scoped to
 # the Rails block — `pa%41ss` is also measured against libpq further down the
@@ -6283,6 +6289,57 @@ chk "the validated expression is the one installed"         1 \
   "$(grep -c '"OnCalendar=$BACKUP_CALENDAR"' "$SRC")"
 unset -f systemd-analyze
 rm -rf "$calendar_probe_dir"
+
+echo "157. the credential summary is installed atomically"
+chk "the live summary is never the rendering target" 0 \
+  "$(grep -cE '^render_summary "\$DATABASE_URL" > "\$SUMMARY"$' "$SRC")"
+chk "the rendered summary goes through its staging installer" 1 \
+  "$(grep -c '^install_credential_summary "\$DATABASE_URL"$' "$SRC")"
+summary_dir="$(mktemp -d)"
+SUMMARY="$summary_dir/summary"
+APP_SSH_USER=deploybot
+printf 'previous complete summary\n' > "$SUMMARY"
+chmod 0644 "$SUMMARY"
+summary_inode="$(inode "$SUMMARY")"
+render_summary() {
+  printf '  KAMAL_SSH_USER=%s\n' "$APP_SSH_USER"
+  case "${SUMMARY_RENDER_MODE:-whole}" in
+    fail) return 1 ;;
+  esac
+  printf '  DATABASE_URL=%s\n' "$1"
+  [ "${SUMMARY_RENDER_MODE:-whole}" != short ] || return 0
+  printf 'Never open 5432 there.\n'
+}
+SUMMARY_RENDER_MODE=fail
+( install_credential_summary 'postgresql://new' ) >/dev/null 2>&1
+chk "a failed render leaves the prior summary intact" \
+  "previous complete summary" "$(cat "$SUMMARY")"
+chk "and removes the partial sibling" 0 \
+  "$(find "$summary_dir" -name 'summary.collavre.*' | wc -l | tr -d ' ')"
+SUMMARY_RENDER_MODE=short
+( install_credential_summary 'postgresql://new' ) >/dev/null 2>&1
+chk "a short successful write is still refused" \
+  "previous complete summary" "$(cat "$SUMMARY")"
+SUMMARY_RENDER_MODE=whole
+install_credential_summary 'postgresql://new'
+chk "a complete render replaces the summary" 1 \
+  "$(grep -c '^  DATABASE_URL=postgresql://new$' "$SUMMARY")"
+chk "the installed summary is root-only" 600 "$(file_mode "$SUMMARY")"
+if [ "$summary_inode" = "$(inode "$SUMMARY")" ]; then
+  echo "  FAIL rendered through the live inode rather than renamed into place"; fail=1
+else
+  echo "  ok   renamed into place, so the live summary is never partial"
+fi
+mkdir "$summary_dir/backing"
+printf 'previous linked summary\n' > "$summary_dir/backing/summary"
+rm -f "$SUMMARY"
+ln -s backing/summary "$SUMMARY"
+install_credential_summary 'postgresql://linked'
+chk "a symlinked summary remains a symlink" yes \
+  "$([ -L "$SUMMARY" ] && echo yes || echo no)"
+chk "and its backing file receives the complete render" 1 \
+  "$(grep -c '^  DATABASE_URL=postgresql://linked$' "$summary_dir/backing/summary")"
+rm -rf "$summary_dir"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

@@ -559,7 +559,7 @@ On your workstation, in `.env.production`:
 
 ```dotenv
 COLLAVRE_SERVER=<instance public IP>
-KAMAL_SSH_USER=collavre
+KAMAL_SSH_USER=<the KAMAL_SSH_USER value from the summary file>
 KAMAL_SSH_KEY_PATH=~/.ssh/<key matching the instance>
 KAMAL_REGISTRY_USER=<docker hub user>
 KAMAL_REGISTRY_PASSWORD=<docker hub access token>
@@ -567,6 +567,10 @@ DATABASE_URL=<the DATABASE_URL line from the summary file, copied verbatim>
 PORT=80
 SOLID_QUEUE_IN_PUMA=true
 ```
+
+Copy the generated `KAMAL_SSH_USER=...` line from the summary file rather than
+assuming the default `collavre` account. It reflects the `APP_SSH_USER` that
+actually received the SSH key, Docker access and passwordless sudo.
 
 `DATABASE_URL` is the one value here you must not compose yourself: the script
 already wrote it, [percent-encoded](#a-custom-db_password-is-percent-encoded-in-database_url),
