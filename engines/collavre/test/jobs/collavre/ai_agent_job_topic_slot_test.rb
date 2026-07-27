@@ -36,6 +36,18 @@ module Collavre
       )
     end
 
+    # A second, independent agent — the shape topic_max > 1 actually serves.
+    def second_agent
+      @second_agent ||= Collavre::User.create!(
+        name: "slot-agent-2",
+        email: "slot2-#{SecureRandom.hex(4)}@agent.test",
+        password: "password123",
+        llm_vendor: "openai",
+        llm_model: "gpt-4",
+        system_prompt: "You are a second agent."
+      )
+    end
+
     def occupy_slot!(status: "running")
       Task.create!(
         name: "Holder", status: status, trigger_event_name: "comment_created",
@@ -115,18 +127,98 @@ module Collavre
       assert_equal 0, Task.where(agent: @agent, status: "queued").count
     end
 
-    test "policy can disable the late slot check" do
+    # coalesce_pending_tasks governs whether waiters are FOLDED, not whether
+    # topic_max_concurrent_jobs is enforced. Turning it off must still keep the
+    # topic to one turn at a time — otherwise a burst dispatched before the first
+    # job materializes a task starts one concurrent turn per comment.
+    test "policy disables folding but not topic admission" do
       OrchestratorPolicy.create!(
         policy_type: "scheduling", scope_type: nil,
         config: { "coalesce_pending_tasks" => false }
       )
       occupy_slot!
-      c = comment("late arrival")
+      first = comment("first")
+      second = comment("second")
+
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(first))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(second))
+
+      waiters = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").order(:id)
+      assert_equal 2, waiters.count, "with coalescing off each comment keeps its own waiter"
+      assert_equal 1, Task.where(agent: @agent, topic_id: @topic.id, status: "running").count,
+                   "the holder must still be the only running task"
+      assert_nil waiters.first.trigger_event_payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]
+    end
+
+    # topic_max > 1 exists to run *different* agents in parallel. An agent that
+    # already has a turn in flight must not take a second slot: TaskCoalescer
+    # only folds `queued` rows, so two concurrent turns can never be merged.
+    test "defers an agent that already holds a slot even when the topic has room" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "topic_max_concurrent_jobs" => 2 }
+      )
+      occupy_slot!
+      c = comment("same agent again")
 
       AiAgentJob.new.perform(@agent.id, "comment_created", context_for(c))
 
-      assert_equal 0, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count,
-                   "with coalescing off the previous immediate behaviour returns"
+      assert_equal 1, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count,
+                   "the agent's second turn must queue behind its own running one"
+      assert_equal 1, Task.where(agent: @agent, topic_id: @topic.id, status: "running").count
+    end
+
+    test "a second agent still takes the free slot when the topic has room" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "topic_max_concurrent_jobs" => 2 }
+      )
+      occupy_slot!
+      other = second_agent
+      Orchestration::ResourceTracker.for(other).reset!
+      c = comment("different agent")
+
+      AiAgentJob.new.perform(other.id, "comment_created", context_for(c))
+
+      assert_equal 0, Task.where(agent: other, topic_id: @topic.id, status: "queued").count,
+                   "the parallelism topic_max > 1 buys must survive the same-agent guard"
+      assert Task.where(agent: other, topic_id: @topic.id).exists?
+    ensure
+      Orchestration::ResourceTracker.for(other).reset! if other
+    end
+
+    # The occupancy count and the row that claims the slot have to be one step.
+    # Two workers starting in the same millisecond otherwise both read a free
+    # slot before either inserts — the TOCTOU race this check exists to close.
+    test "admission counts and claims the slot inside one locked transaction" do
+      locked_topic_ids = []
+      lock_relation = Struct.new(:sink) do
+        def find_by(id:)
+          sink << id
+          nil
+        end
+      end.new(locked_topic_ids)
+
+      # The suite already runs inside a transaction, so `transaction_open?` is
+      # always true — compare the nesting depth against the ambient one instead.
+      baseline_depth = Task.connection.open_transactions
+      check_depth = nil
+      counting_scope = Task.occupying_topic_slot(@topic.id, @creative.id)
+      c = comment("first in topic")
+
+      Topic.stub(:lock, lock_relation) do
+        Task.stub(:occupying_topic_slot, ->(*) {
+          check_depth ||= Task.connection.open_transactions
+          counting_scope
+        }) do
+          AiAgentJob.new.perform(@agent.id, "comment_created", context_for(c))
+        end
+      end
+
+      assert_equal [ @topic.id ], locked_topic_ids,
+                   "admission must serialize on the topic row"
+      assert_operator check_depth, :>, baseline_depth,
+                      "the occupancy check must run inside the claiming transaction"
     end
   end
 end

@@ -171,6 +171,15 @@ module Collavre
       Task.where(status: %w[pending running queued delegated]).find_each do |task|
         next unless task.trigger_event_payload&.dig("comment", "id") == id
 
+        # An un-started task can be the survivor of a coalesced burst, answering
+        # several comments at once. Cancelling it because its anchor was deleted
+        # would throw away the absorbed comments too — they have no task of their
+        # own left (TaskCoalescer cancelled those) and no other delivery path
+        # (session-backed agents receive only the trigger). Re-anchor onto the
+        # newest surviving merged comment instead; only a task with nothing left
+        # to say is cancelled.
+        next if reanchor_coalesced_task(task)
+
         was_delegated = task.status == "delegated"
         task.update!(status: "cancelled")
 
@@ -207,6 +216,45 @@ module Collavre
       if waiting_notice? && topic_concurrency_defer? && !suppress_waiter_cancellation
         cancel_queued_tasks_for_waiting_notice
       end
+    end
+
+    # Move a coalesced task off this (deleted) comment and onto the newest of
+    # the comments it had absorbed. Returns true when the task was rescued, so
+    # the caller skips cancellation.
+    #
+    # Only un-started tasks: a `running`/`delegated` task has already been handed
+    # its payload, so re-anchoring changes nothing and deleting the prompt must
+    # still stop the turn.
+    def reanchor_coalesced_task(task)
+      return false unless %w[queued pending].include?(task.status)
+
+      payload = task.trigger_event_payload || {}
+      merged = Array(payload[Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY])
+                 .compact.map(&:to_i).uniq - [ id ]
+      return false if merged.empty?
+
+      # Anything else in the merge window may have been deleted too.
+      replacement = Comment.where(id: merged).order(:created_at, :id).last
+      return false unless replacement
+
+      payload = payload.merge(
+        "comment" => {
+          "id" => replacement.id,
+          "content" => replacement.content,
+          "user_id" => replacement.user_id
+        },
+        "chat" => { "content" => replacement.content }
+      )
+      # absorb_into_payload drops the new anchor from the merged list so the
+      # promoted comment is not delivered twice.
+      payload = Collavre::Orchestration::TaskCoalescer.absorb_into_payload(payload, merged)
+      task.update!(trigger_event_payload: payload)
+
+      Rails.logger.info(
+        "[Comment#cancel_pending_tasks] Re-anchored coalesced task #{task.id} from deleted " \
+        "comment #{id} to comment #{replacement.id}"
+      )
+      true
     end
 
     def cancel_queued_tasks_for_waiting_notice

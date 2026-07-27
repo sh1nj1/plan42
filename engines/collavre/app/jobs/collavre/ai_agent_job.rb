@@ -137,19 +137,8 @@ module Collavre
         # empty topic and are all judged :immediate — several turns run at once
         # in a topic limited to one. Re-check at the moment the row is created,
         # where the answer is authoritative, and defer into the queue instead.
-        if defer_for_topic_slot?(context)
-          return defer_into_topic_queue(agent, event_name, context)
-        end
-
-        task = Task.create!(
-          name: "Response to #{event_name}",
-          status: "running",
-          trigger_event_name: event_name,
-          trigger_event_payload: context,
-          agent: agent,
-          topic_id: context&.dig("topic", "id"),
-          creative_id: context&.dig("creative", "id")
-        )
+        task = admit_or_defer!(agent, event_name, context)
+        return if task.nil?
 
         # Record task for loop breaker tracking (per-topic, skip user-initiated)
         creative_id = context&.dig("creative", "id")
@@ -259,43 +248,92 @@ module Collavre
 
     private
 
+    # Create this dispatch's Task row, either admitted (`running`) or parked as
+    # a `queued` waiter when the topic's concurrency slot is already taken.
+    #
+    # Returns the admitted task, or nil when the dispatch was deferred.
+    def admit_or_defer!(agent, event_name, context)
+      attrs = {
+        name: "Response to #{event_name}",
+        trigger_event_name: event_name,
+        trigger_event_payload: context,
+        agent: agent,
+        topic_id: context&.dig("topic", "id"),
+        creative_id: context&.dig("creative", "id")
+      }
+      return Task.create!(attrs.merge(status: "running")) unless topic_admission_scoped?(context)
+
+      topic_id = context.dig("topic", "id")
+      creative_id = context.dig("creative", "id")
+      admitted = false
+      task = nil
+
+      # Counting occupants and claiming the slot must be ONE step. Two workers
+      # starting within the same millisecond — the exact burst this job defends
+      # against — otherwise both read an occupancy below the limit before either
+      # inserts its `running` row, and the re-check reproduces the very TOCTOU
+      # race it exists to close. Serialize admission on the topic row: every
+      # admission for a topic takes the same lock, so the loser reads the
+      # winner's committed row.
+      Task.transaction do
+        lock_topic_for_admission(topic_id)
+        admitted = !topic_slot_taken?(agent, context, topic_id, creative_id)
+        task = Task.create!(attrs.merge(status: admitted ? "running" : "queued"))
+      end
+
+      return task if admitted
+
+      park_deferred_waiter(task, agent, event_name, context, topic_id, creative_id)
+      nil
+    end
+
+    # Is this dispatch subject to the topic concurrency limit at all? Workflow
+    # subtasks and other topic-less dispatches are not.
+    def topic_admission_scoped?(context)
+      context.is_a?(Hash) && context.key?("topic")
+    end
+
+    # Take the per-topic admission lock. SELECT ... FOR UPDATE on Postgres; the
+    # SQLite visitor drops the lock clause, where writes are serialized anyway.
+    def lock_topic_for_admission(topic_id)
+      return unless topic_id
+
+      Topic.lock.find_by(id: topic_id)
+    end
+
     # Does another task already hold this topic's concurrency slot?
     #
     # Uses occupying_topic_slot rather than running_for_topic: `pending` (a
     # claimed-but-not-started waiter) and `pending_approval` (paused, keeps its
     # resource, does not drain the queue) both hold the slot, and treating them
     # as free is exactly how a second turn slips in.
-    def defer_for_topic_slot?(context)
-      return false unless context.is_a?(Hash) && context.key?("topic")
-
-      resolver = Orchestration::PolicyResolver.new(context)
-      return false unless resolver.coalesce_pending_tasks?
-
-      topic_max = resolver.topic_max_concurrent_jobs
+    #
+    # Deliberately NOT gated on coalesce_pending_tasks?: that switch governs
+    # whether waiters are folded together, not whether topic_max_concurrent_jobs
+    # is enforced. Skipping admission when it is off would let a burst start one
+    # concurrent turn per comment in a topic limited to one.
+    def topic_slot_taken?(agent, context, topic_id, creative_id)
+      topic_max = Orchestration::PolicyResolver.new(context).topic_max_concurrent_jobs
       return false unless topic_max
 
-      Task.occupying_topic_slot(
-        context.dig("topic", "id"), context.dig("creative", "id")
-      ).count >= topic_max
+      occupying = Task.occupying_topic_slot(topic_id, creative_id)
+      return true if occupying.count >= topic_max
+
+      # A free slot is not automatically THIS agent's to take. topic_max > 1
+      # exists to run *different* agents in parallel, so an agent that already
+      # has a turn in flight here must wait rather than answer itself twice —
+      # TaskCoalescer only folds `queued` rows and could never merge two
+      # concurrent turns after the fact.
+      occupying.where(agent_id: agent.id).exists?
     end
 
-    # Park this dispatch as a queued waiter instead of starting a second
-    # concurrent turn, then fold it together with any waiters already parked
-    # for the same agent/topic/creative.
-    def defer_into_topic_queue(agent, event_name, context)
-      topic_id = context.dig("topic", "id")
-      creative_id = context.dig("creative", "id")
-
-      waiter = Task.create!(
-        name: "Response to #{event_name}",
-        status: "queued",
-        trigger_event_name: event_name,
-        trigger_event_payload: context,
-        agent: agent,
-        topic_id: topic_id,
-        creative_id: creative_id
-      )
-      Orchestration::TaskCoalescer.coalesce!(waiter)
+    # Finish parking a waiter created by #admit_or_defer!: fold it together with
+    # any waiters already parked for the same agent/topic/creative, and surface
+    # one "⏳" notice for the topic.
+    def park_deferred_waiter(waiter, agent, event_name, context, topic_id, creative_id)
+      if Orchestration::PolicyResolver.new(context).coalesce_pending_tasks?
+        Orchestration::TaskCoalescer.coalesce!(waiter)
+      end
       Orchestration::AgentOrchestrator.post_topic_concurrency_notice(creative_id, topic_id)
 
       Rails.logger.info(
@@ -303,7 +341,7 @@ module Collavre
         "#{waiter.id}: slot already occupied (event=#{event_name})"
       )
 
-      # The holder may have finished between the check above and this create,
+      # The holder may have finished between the admission check and this point,
       # which would leave the waiter with nobody left to drain it (its
       # dequeue_next_for_topic already ran). Re-check and drain here.
       unless Task.occupying_topic_slot(topic_id, creative_id).exists?

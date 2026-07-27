@@ -152,6 +152,64 @@ module Collavre
                         "a replaced anchor must survive as a merged comment — a " \
                         "session agent only ever sees the trigger"
       end
+
+      # Coalescing makes one task carry several comments, so cancelling it when
+      # its anchor is deleted would discard the absorbed ones as well — and they
+      # have no task of their own left to fall back to.
+      test "deleting a coalesced waiter's anchor re-anchors instead of dropping the turn" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: second")
+        third = dispatch_comment("@#{@agent.name}: third")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        assert_equal third.id, waiter.trigger_event_payload.dig("comment", "id")
+
+        third.destroy!
+
+        waiter.reload
+        assert_equal "queued", waiter.status,
+                     "the turn still has the first two comments to answer"
+        payload = waiter.trigger_event_payload
+        assert_equal second.id, payload.dig("comment", "id"),
+                     "the newest surviving absorbed comment becomes the anchor"
+        assert_equal second.content, payload.dig("chat", "content")
+        assert_equal [ first.id ], payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "deleting the anchor still cancels a waiter with nothing absorbed" do
+        block_topic!
+        only = dispatch_comment("@#{@agent.name}: only")
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+
+        only.destroy!
+
+        assert_equal "cancelled", waiter.reload.status
+      end
+
+      # A running task has already been handed its payload: deleting the prompt
+      # must still stop the turn rather than silently re-target it.
+      test "deleting the anchor of a running coalesced task still cancels it" do
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = Comment.create!(
+          creative: @creative, user: @user, topic: @topic,
+          content: "@#{@agent.name}: second", skip_dispatch: true
+        )
+        task = Task.create!(
+          name: "In flight", status: "running", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => @topic.id },
+            "comment" => { "id" => second.id, "content" => second.content },
+            TaskCoalescer::PAYLOAD_KEY => [ first.id ]
+          }
+        )
+
+        second.destroy!
+
+        assert_equal "cancelled", task.reload.status
+      end
     end
   end
 end
