@@ -97,57 +97,35 @@ module Collavre
       # chat history by the same setting; the trigger these blocks go into had
       # no budget at all, which is the asymmetry a burst is most likely to hit.
       #
-      # Drop from the oldest end: the newest comments are the ones the anchor
-      # replies to, and a retraction ("ignore that") is worthless without being
-      # newer than what it retracts. Say what was cut — a silent truncation
-      # reads to the agent as if the burst were complete.
-      def within_budget(blocks)
-        budget = size_limit
-        return blocks if budget.nil? || blocks.sum { |b| b.text.length } <= budget
-
-        # Dropping blocks rests on MessageBuilder leaving them in the separately
-        # budgeted history window instead. A session-backed agent never receives
-        # that window — SessionContextResolver#incremental_payload keeps only the
-        # :trigger message — so for them a dropped block is a user comment with no
-        # delivery path left, which is the loss coalescing exists to prevent.
-        # Shrink every block instead, so an oversized burst degrades.
-        return shrunk_to_fit(blocks, budget) if trigger_is_only_channel?
-
-        # Reserve room for the omission marker. Added after budgeting, it pushed
-        # the trigger back over the limit it had just been trimmed to.
-        room = [ budget - omission_marker(blocks.size).length, 0 ].max
-
-        kept = []
-        used = 0
-        blocks.reverse_each do |block|
-          break if used + block.text.length > room
-
-          used += block.text.length
-          kept.unshift(block)
-        end
-
-        # The newest merged comment is the one the anchor replies to. When it
-        # alone exceeds the budget the loop keeps nothing and the method returned
-        # the marker by itself — the whole burst gone, newest included. Trim it
-        # rather than drop it.
-        kept = [ truncate_block(blocks.last, room) ] if kept.empty? && room.positive?
-
-        dropped = blocks.size - kept.size
-        return kept if dropped.zero?
-
-        kept.unshift(Block.new(comment: nil, text: omission_marker(dropped), images: []))
-      end
-
-      # Fit every block, none dropped: each gets an equal share of the budget.
-      # Used when the trigger is the only channel, where "which comments to keep"
-      # is not a choice we are allowed to make.
+      # Shrink, never drop. Dropping the oldest blocks would rest on the history
+      # window carrying them instead, and no delivery path guarantees that:
+      #
+      # - A session-backed agent has no history window at all
+      #   (SessionContextResolver#incremental_payload keeps only :trigger), and
+      #   ClaudeChannelAdapter sends only the comment content.
+      # - Even with history, MessageBuilder#append_chat_history caps it by
+      #   chat_history_limit and by *this same* size budget spread across the
+      #   whole preceding conversation, cutting from its newest end — which is
+      #   exactly where a just-dropped burst comment sits.
+      # - History carries text only. A dropped block's image attachments reach
+      #   the agent through nothing, whatever the budgets say.
+      #
+      # So the trigger is the only channel that can promise a merged comment
+      # arrives, and "which of the user's comments to delete" is not a choice
+      # this class is in a position to make. Every block is kept and truncated to
+      # an equal share instead: an oversized burst then degrades in fidelity
+      # rather than losing whole messages, and the truncation is visible in the
+      # text where a silent drop was not.
       #
       # No floor under the share. A budget too small to say much per comment is
       # still not a reason to delete the other comments outright: keeping them
       # preserves their order, their speakers and — the part the text budget
       # never measures — their image attachments, which are delivered as
       # separate parts and cost nothing here.
-      def shrunk_to_fit(blocks, budget)
+      def within_budget(blocks)
+        budget = size_limit
+        return blocks if budget.nil? || blocks.sum { |b| b.text.length } <= budget
+
         blocks.map { |b| truncate_block(b, budget / blocks.size) }
       end
 
@@ -160,15 +138,6 @@ module Collavre
                  block.text[0, limit]
         end
         Block.new(comment: block.comment, text: text, images: block.images)
-      end
-
-      def omission_marker(count)
-        "[#{count} earlier message(s) omitted]"
-      end
-
-      # Does this agent receive anything other than the trigger?
-      def trigger_is_only_channel?
-        @agent.respond_to?(:supports_session?) && @agent.supports_session?
       end
 
       def size_limit

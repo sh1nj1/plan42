@@ -295,11 +295,25 @@ module Collavre
       true
     end
 
+    # Cancel *every* queued waiter this notice speaks for, not just the newest.
+    #
+    # Cancelling one was right while each deferral posted its own notice: the
+    # newest queued task was the one that notice belonged to. A topic now gets
+    # exactly one deduplicated notice
+    # (Orchestration::AgentOrchestrator.with_deduped_topic_notice), and with
+    # topic_max_concurrent_jobs > 1 it can stand for waiters from several agents
+    # — coalescing folds same-agent siblings only. Deleting it while cancelling
+    # one of them leaves the rest queued with nothing on screen representing
+    # them and no stop control, and nothing reposts a notice until the next
+    # deferral happens by.
+    #
+    # Queued only. A task holding the topic slot (pending/running/…) is not
+    # waiting on anything; the notice surfaces it separately as
+    # topic_blocking_task, with its own stop button.
     def cancel_queued_tasks_for_waiting_notice
       scope = Task.where(status: "queued", creative_id: creative_id)
       scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
-      task = scope.order(created_at: :desc).first
-      task&.update!(status: "cancelled")
+      scope.order(created_at: :desc).each { |task| task.update!(status: "cancelled") }
     end
 
     def dispatch_to_orchestration

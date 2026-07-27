@@ -144,7 +144,14 @@ module Collavre
       # exactly the input that makes that asymmetry bite: coalescing turns N
       # comments into one indivisible message, so an oversized burst does not
       # degrade — the whole turn fails.
-      test "drops the oldest merged blocks once they exceed the agent's size budget" do
+      # Dropping the oldest blocks rested on "the history window carries them
+      # instead". It does not: MessageBuilder#append_chat_history applies its own
+      # chat_history_limit *and* the same size budget over the whole preceding
+      # conversation, and it never carries attachments at all. So a dropped block
+      # is a user comment that may reach the agent through no channel — and its
+      # images through none, ever. Keep every block and shrink instead; the
+      # trigger is the only path with a guarantee.
+      test "keeps every merged comment in the trigger once over the size budget" do
         @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
         oldest = comment("O" * 150)
         middle = comment("M" * 150)
@@ -155,10 +162,13 @@ module Collavre
           context_with(anchor, [ oldest, middle, newest ]), agent: @agent
         )
 
-        rendered = blocks.map(&:text).join("\n\n")
-        assert_includes rendered, "N" * 150, "the newest merged comment must survive"
-        refute_includes rendered, "O" * 150, "the oldest must be dropped once over budget"
-        assert_match(/omitted/, rendered, "a silent drop reads as if nothing was cut")
+        assert_equal [ oldest.id, middle.id, newest.id ], blocks.filter_map { |b| b.comment&.id },
+                     "no merged comment may be dropped onto a channel that does not guarantee it"
+        assert_operator blocks.sum { |b| b.text.length }, :<=, 200,
+                        "shrinking still has to respect the budget"
+        assert_match(/#{Regexp.escape(MergedTriggerComments::TRUNCATION_SUFFIX)}/,
+                     blocks.map(&:text).join("\n\n"),
+                     "a silent truncation reads to the agent as if nothing was cut")
       end
 
       # Control: the budget must not fire on ordinary bursts. Under the limit,

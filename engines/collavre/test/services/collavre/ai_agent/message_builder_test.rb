@@ -385,22 +385,24 @@ module Collavre
       end
 
       # The exclusion above pairs with the trigger actually carrying the comment.
-      # An oversized burst drops its oldest blocks (MergedTriggerComments budgets
-      # by chat_history_size), and excluding a comment the trigger no longer
-      # renders would delete it from the turn entirely — history is separately
-      # budgeted and can still carry it.
-      test "a merged comment dropped from the trigger falls back to chat history" do
+      # It used to be the other way round for an oversized burst: the trigger
+      # dropped its oldest blocks and history was expected to carry them. It
+      # cannot be relied on to — history applies the same size budget across the
+      # whole conversation and never carries attachments — so the trigger keeps
+      # every merged comment and shrinks them, and the exclusion covers all of
+      # them with none left to double-send.
+      test "an oversized burst keeps every merged comment in the trigger, none in history" do
         @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
-        dropped = @creative.comments.create!(
-          content: "D" * 150, user: @user, topic_id: @comment.topic_id
+        older = @creative.comments.create!(
+          content: "OLDER #{'D' * 150}", user: @user, topic_id: @comment.topic_id
         )
-        kept = @creative.comments.create!(
-          content: "K" * 150, user: @user, topic_id: @comment.topic_id
+        newer = @creative.comments.create!(
+          content: "NEWER #{'K' * 150}", user: @user, topic_id: @comment.topic_id
         )
         context = {
           "comment" => { "id" => @comment.id, "content" => @comment.content },
           "creative" => { "id" => @creative.id },
-          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ dropped.id, kept.id ]
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ older.id, newer.id ]
         }
 
         messages = MessageBuilder.new(
@@ -410,10 +412,11 @@ module Collavre
         history = messages.select { |m| m[:kind] == :chat_history }
                           .map { |m| m[:parts].first[:text] }.join("\n")
 
-        assert_includes trigger, "K" * 150, "the newest merged comment stays in the trigger"
-        assert_not_includes trigger, "D" * 150
-        assert_includes history, "D" * 150,
-          "a comment cut from the trigger must not vanish from the turn"
+        assert_includes trigger, "NEWER", "the newest merged comment stays in the trigger"
+        assert_includes trigger, "OLDER",
+          "a comment cut from the trigger reaches the agent through no channel at all"
+        assert_not_includes history, "OLDER",
+          "a comment inlined in the trigger must not be sent twice"
       end
 
       test "merged comments carry their image attachments into the trigger" do
@@ -500,6 +503,42 @@ module Collavre
         assert_not_nil referenced,
           "a creative referenced only by an absorbed comment must still be injected"
         assert_includes referenced[:parts].first[:text], "Linked Project"
+      end
+
+      # The whole-turn version of the trigger budget: dropping a merged block was
+      # justified by the history window carrying it instead, but history applies
+      # the *same* size budget across the preceding conversation and cuts from its
+      # newest end — which is exactly where a just-dropped burst comment sits. So
+      # a block dropped from the trigger can reach the agent through no channel at
+      # all. Asserted end to end over the built messages, because neither
+      # component is wrong on its own; the loss only exists between them.
+      test "a merged comment cut from the trigger is not lost from the turn as well" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
+        topic = @creative.topics.create!(name: "Budget burst", user: @user)
+        bodies = %w[OLDEST MIDDLE NEWEST].map { |tag| "#{tag} #{tag[0] * 150}" }
+        merged = bodies.map do |body|
+          @creative.comments.create!(content: body, user: @user, topic: topic, skip_dispatch: true)
+        end
+        anchor = @creative.comments.create!(
+          content: "anchor", user: @user, topic: topic, skip_dispatch: true
+        )
+
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "id" => anchor.id, "content" => anchor.content },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => merged.map(&:id)
+        }
+
+        messages = MessageBuilder.new(
+          agent: @agent, context: context, original_comment: anchor
+        ).build[:messages]
+        delivered = messages.flat_map { |m| Array(m[:parts]).filter_map { |p| p[:text] } }.join("\n")
+
+        %w[OLDEST MIDDLE NEWEST].each do |tag|
+          assert_includes delivered, tag,
+                          "#{tag} reached the agent through neither the trigger nor history"
+        end
       end
 
       test "no merged ids leaves the trigger message unchanged" do
