@@ -71,6 +71,14 @@ module CollavreGithub
       []
     end
 
+    # The same listing, with the failure reported instead of swallowed. A
+    # caller asking whether a specific hook still exists cannot use the form
+    # above: an empty array would mean "GitHub says it is gone" and "GitHub did
+    # not answer" alike, and those two demand opposite actions.
+    def repository_hooks!(repo_full_name)
+      client.hooks(repo_full_name)
+    end
+
     def create_repository_webhook(repo_full_name, url:, secret:, events:, content_type: "json")
       client.create_hook(
         repo_full_name,

@@ -22,6 +22,10 @@ module CollavreGithub
         @hooks
       end
 
+      def repository_hooks!(_repo)
+        @hooks
+      end
+
       # Mirrors Octokit, which answers with the created hook. The id is what the
       # provisioner records so sibling instances can recognise the hook.
       def create_repository_webhook(repo, url:, secret:, events:, content_type: "json")
@@ -59,6 +63,16 @@ module CollavreGithub
           .where(repository_full_name: repo)
           .update_all(webhook_hook_id: @sibling_hook.id)
         created
+      end
+    end
+
+    # GitHub serves the opening listing but fails the one that verifies whether
+    # the registered hook still exists. The production Client swallows that
+    # error and answers `[]`, which reads exactly like GitHub confirming the
+    # hook is gone.
+    class UnverifiableClient < FakeClient
+      def repository_hooks!(_repo)
+        raise Octokit::Error
       end
     end
 
@@ -429,6 +443,34 @@ module CollavreGithub
       assert_equal [ [ @link, :created ] ], provision(client)
       assert_equal 1, client.created.size
       assert_equal 101, @link.reload.webhook_hook_id
+    end
+
+    test "a registration GitHub could not vouch for is left alone" do
+      # The sibling's hook is live but absent from the opening listing, so the
+      # decision falls to the verification fetch — and that fetch fails. An
+      # empty answer and no answer are the same value out of the swallowing
+      # client, so this used to overwrite the registration with the hook just
+      # created. The sibling's hook stays live and its id is then recorded
+      # nowhere, which puts it beyond the reach of every later run.
+      @link.update!(webhook_hook_id: 42)
+      client = UnverifiableClient.new
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_equal 42, @link.reload.webhook_hook_id,
+        "an unanswered listing must not be read as confirmation the hook is gone"
+    end
+
+    test "a hook created while the registration could not be verified is kept" do
+      # The counterpart to the assertion above, and the reason deferring is not
+      # enough on its own: discarding the new hook would leave the repository
+      # with nothing at all if the registration turns out to be stale, whereas
+      # keeping it costs at most a duplicate delivery the ledger collapses.
+      @link.update!(webhook_hook_id: 42)
+      client = UnverifiableClient.new
+
+      provision(client)
+      assert_equal [ OWN_URL ], client.created.map { |c| c[:url] }
+      assert_empty client.deleted, "the hook just created must not be undone on a guess"
     end
 
     test "recognises a registered hook through a link stored with different casing" do

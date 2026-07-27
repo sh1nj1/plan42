@@ -169,7 +169,12 @@ module CollavreGithub
         # may well exist, so registration is deferred to the next run, which
         # finds it by URL. Nothing to undo either way.
         return :created if created_id.blank?
-        return :created if register_hook(repository_full_name, created_id, hooks)
+        # Only a positively established sibling registration may undo the hook
+        # just created. `:unverified` means GitHub did not answer, and deleting
+        # a working hook on a guess would leave the repository with none at
+        # all — strictly worse than the duplicate delivery that keeping it may
+        # cost, which the GUID ledger collapses anyway.
+        return :created unless register_hook(repository_full_name, created_id, hooks) == :superseded
 
         # A sibling instance created and registered its own hook while this one
         # was creating its own. Both feed this database, so keeping both would
@@ -302,7 +307,14 @@ module CollavreGithub
     # and bring the proliferation straight back. A registration whose hook has
     # since been deleted is stale and gets replaced.
     #
-    # Returns whether this database's registration ends up naming `hook_id`.
+    # Returns what became of the registration, which is what tells the caller
+    # whether the hook it just created may stay:
+    #   :recorded   - this database's registration names `hook_id`
+    #   :superseded - a sibling's registration stands; `hook_id` is redundant
+    #   :unverified - GitHub could not confirm what the registration names, so
+    #                 nothing was written and nothing may be undone on the
+    #                 strength of it
+    #
     # The caller needs that answer because the read above and the write below
     # are not one operation: two instances provisioning the same repository at
     # once both list no hooks, both create one, and both arrive here. The write
@@ -311,19 +323,21 @@ module CollavreGithub
     # testing against has already moved. Without it the two writes were plain
     # last-writer-wins and both hooks stayed live forever.
     def register_hook(repository_full_name, hook_id, hooks)
-      return false if hook_id.blank?
+      return :unverified if hook_id.blank?
 
       registered = registered_hook_id(repository_full_name)
       if registered.to_s == hook_id.to_s
         backfill_registration(repository_full_name, hook_id)
-        return true
+        return :recorded
       end
       live = live_registered_hook(repository_full_name, registered, hooks)
+      return :unverified if live == :unknown
+
       # A live registration naming a LEGACY hook is not a competitor to defer
       # to: this run is replacing that hook, not racing a sibling for it.
       # Deferring would discard the replacement just created and then delete the
       # legacy hook, leaving the repository with none at all.
-      return false if live && !legacy_hook?(live)
+      return :superseded if live && !legacy_hook?(live)
 
       links_for(repository_full_name)
         .where(webhook_hook_id: [ nil, registered ].uniq)
@@ -331,7 +345,11 @@ module CollavreGithub
 
       # Re-read rather than trust the affected-row count: the rows are only
       # "ours" if the registration now reads back as this hook.
-      registered_hook_id(repository_full_name).to_s == hook_id.to_s
+      if registered_hook_id(repository_full_name).to_s == hook_id.to_s
+        :recorded
+      else
+        :superseded
+      end
     end
 
     # A link created after the hook was registered starts with a null
@@ -352,7 +370,9 @@ module CollavreGithub
         .update_all(webhook_hook_id: hook_id)
     end
 
-    # The registered hook as it exists on GitHub, or nil if it is gone.
+    # The registered hook as it exists on GitHub: the hook itself if it is
+    # live, nil if GitHub says it is gone, `:unknown` if GitHub could not be
+    # asked.
     #
     # `hooks` was listed before this run started creating anything, so a
     # registration missing from it is NOT proof the hook is gone — a sibling
@@ -373,7 +393,28 @@ module CollavreGithub
       found = hooks.find { |hook| hook.id.to_s == registered.to_s }
       return found if found
 
-      repository_hooks(repository_full_name).find { |hook| hook.id.to_s == registered.to_s }
+      verify_registered_hook(repository_full_name, registered)
+    end
+
+    # Deliberately NOT `repository_hooks`, which is the error-swallowing form
+    # and answers `[]` for a request GitHub never served. Here that empty list
+    # would be read as "the registered hook is gone" and the registration
+    # overwritten with this run's hook while the original stays live — and
+    # since the original's id is then recorded nowhere, no later run can even
+    # see it: `find_shared_hook` needs a registered id and `find_own_hook`
+    # matches only this instance's URL. The repository keeps delivering twice
+    # for good, with nothing left to report it. This is the one caller that
+    # must tell an empty answer from no answer.
+    def verify_registered_hook(repository_full_name, registered)
+      Array(client.repository_hooks!(repository_full_name))
+        .find { |hook| hook.id.to_s == registered.to_s }
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn(
+        "[CollavreGithub] could not verify registered hook #{registered} on " \
+        "#{repository_full_name}: #{e.message}; leaving the registration alone. " \
+        "The next provisioning run decides it with a listing that answered"
+      )
+      :unknown
     end
 
     # Undoes a hook this run created after losing the registration race above.
