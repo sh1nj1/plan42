@@ -307,5 +307,34 @@ module Collavre
       assert_equal 1, Task.where(agent: @agent, topic_id: nil, creative_id: @creative.id,
                                  status: "queued").count
     end
+
+    # The promoted task holds the slot as `pending` until this job starts, and a
+    # comment arriving in that gap parks a waiter that enqueue-time coalescing
+    # cannot fold into a non-`queued` sibling. Execution is the last moment both
+    # turns are still un-started, so the fold has to run here.
+    test "folds a waiter parked between promotion and execution" do
+      claimed = Task.create!(
+        name: "Response to comment_created", status: "pending",
+        trigger_event_name: "comment_created", agent: @agent,
+        topic_id: @topic.id, creative_id: @creative.id,
+        trigger_event_payload: context_for(comment("@#{@agent.name}: first"))
+      )
+      late = comment("@#{@agent.name}: and also this")
+      late_waiter = Task.create!(
+        name: "Response to comment_created", status: "queued",
+        trigger_event_name: "comment_created", agent: @agent,
+        topic_id: @topic.id, creative_id: @creative.id,
+        trigger_event_payload: context_for(late)
+      )
+
+      fake_service = -> { "" }
+      AiAgentService.stub :new, ->(_task) { fake_service } do
+        AiAgentJob.new.perform(claimed)
+      end
+
+      assert_equal "cancelled", late_waiter.reload.status,
+                   "both comments were un-started — they belong to one turn"
+      assert_equal late.id, claimed.reload.trigger_event_payload.dig("comment", "id")
+    end
   end
 end

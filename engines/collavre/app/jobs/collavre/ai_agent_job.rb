@@ -46,6 +46,21 @@ module Collavre
           return
         end
 
+        # A claimed task holds the topic slot as `pending` from promotion until
+        # this line, and a comment arriving in that window parks a waiter that
+        # enqueue-time coalescing cannot fold into a non-`queued` sibling. Both
+        # turns are still un-started here, so this is the last place the fold
+        # can happen — and it must run before the assignment guard below, which
+        # reads the payload this may re-anchor.
+        Orchestration::AgentOrchestrator.coalesce_at_start!(task)
+        if task.reload.status == "cancelled"
+          # The fold's re-anchor found no comment left to answer. A `pending`
+          # task holds no ResourceTracker reservation yet (reserve! is below),
+          # but it does hold the topic slot — drain or the queue stalls.
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          return
+        end
+
         # Guard: an exclusive primary-agent assignment can also land after a task
         # has already been cleared for execution, so checking at enqueue time is
         # not sufficient. AgentOrchestrator.dequeue_next_for_topic revalidates and

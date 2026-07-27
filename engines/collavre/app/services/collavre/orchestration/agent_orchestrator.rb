@@ -149,6 +149,54 @@ module Collavre
       end
       private_class_method :coalesce_promoted!
 
+      # Fold one last time, at the moment execution actually begins.
+      #
+      # Promotion claims the slot (queued -> pending) and folds the waiters that
+      # exist at that instant, but the task then sits `pending` until its
+      # AiAgentJob runs. A comment arriving in that gap parks a waiter that
+      # enqueue-time coalescing cannot reach: TaskCoalescer supersedes only
+      # `queued` rows, and the claimed task has already left that status. Both
+      # turns were still un-started — which is the invariant coalescing is
+      # defined over, not "present when the slot was claimed" — so the last
+      # un-started moment has to fold too.
+      #
+      # Serialized on the row admission locks. A concurrent dispatch either
+      # commits its waiter before this reads the siblings, and is folded, or
+      # after, and keeps its own turn against a task that is by then executing.
+      # The re-anchor runs inside the same lock for the same reason: outside it,
+      # the refresh could move the anchor onto a comment whose waiter is still
+      # queued, and that comment would be answered twice.
+      #
+      # Only a `pending` task qualifies. That is the claimed-but-not-started
+      # status; a resumed pending_approval task has already delivered its
+      # trigger and run part of its turn, so folding new comments into it would
+      # swallow them rather than answer them.
+      def self.coalesce_at_start!(task)
+        return unless task.status == "pending"
+
+        context = task.trigger_event_payload || {}
+        return unless context.key?("topic")
+        return unless PolicyResolver.new(context).coalesce_pending_tasks?
+
+        absorbed = []
+        Task.transaction do
+          TopicSlot.lock!(task.topic_id, task.creative_id)
+          absorbed = TaskCoalescer.coalesce!(task, scope: :all)
+          refresh_deferred_context!(task) if absorbed.any?
+        end
+        return if absorbed.empty?
+
+        # The folded waiters may have been everything the topic's "⏳" notice
+        # described, and nothing else will take it down: removal happens when a
+        # promotion drains a *queued* waiter, and this fold left none. Scope the
+        # cleanup to "nobody is waiting any more" rather than "a fold happened"
+        # — another agent's waiter is not this agent's sibling and its wait is
+        # still real.
+        return if Task.queued_for_topic(task.topic_id, task.creative_id).exists?
+
+        cleanup_waiting_notices!(task)
+      end
+
       # Post the "⏳ waiting on the topic slot" notice for a deferral raised
       # outside #enqueue_jobs — AiAgentJob's late slot check, which catches
       # dispatches that passed the Scheduler before any Task row existed.
