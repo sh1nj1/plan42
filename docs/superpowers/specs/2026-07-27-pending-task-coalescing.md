@@ -276,13 +276,26 @@ be N dead ends pointing at one blocker.
   per-deferral notice speaks for one waiter, so letting it answer would leave a
   coalescing agent's waiters with no notice whenever an opted-out agent deferred
   into the topic first.
-- Cleanup is `cleanup_waiting_notices_if_drained!`: promotion removes the
-  *shared* notice only after confirming under the topic lock that no `queued`
-  waiter remains. With `topic_max > 1`, promoting one agent can leave another
-  agent's waiter behind, and `coalesce_promoted!` folds same-agent siblings only.
-  A per-deferral notice is not subject to that question — `cleanup_waiter_notice!`
-  takes down the promoted waiter's own notice unconditionally, or it would keep
-  offering a stop button for a turn that is already running.
+- **A notice is on screen exactly as long as it represents a queued waiter.**
+  What it represents is `Comment#represented_queued_waiters` — the same statement
+  its stop button cancels through, so "what this notice is for" has one answer:
+  its own waiter for a `"task"` notice, every unclaimed queued waiter for a
+  shared one, the single newest waiter for a legacy one. Asked per notice, never
+  per topic: "is anything queued here?" is nobody's question, and a promotion
+  that leaves only *claimed* waiters behind reads as "still busy" while the
+  shared notice it kept up speaks for none of them — a second "⏳" line whose
+  stop button selects nothing.
+- Cleanup is `Comment.remove_stranded_waiting_notices!`, under the topic lock,
+  from every door that takes a waiter out of `queued` without promoting it:
+  promotion (`cleanup_waiting_notices_if_drained!`), a deleted anchor
+  (`Comment#cancel_pending_tasks`), the user's own stop button
+  (`TasksController#cancel`) and a dismissed notice
+  (`#cancel_queued_tasks_for_waiting_notice`). With `topic_max > 1`, promoting
+  one agent can leave another agent's waiter behind, and `coalesce_promoted!`
+  folds same-agent siblings only — an unclaimed survivor keeps the shared notice
+  up, which is what it is for. A per-deferral notice is additionally taken down
+  unconditionally by `cleanup_waiter_notice!` on the promotion of its own waiter,
+  or it would keep offering a stop button for a turn that is already running.
 - **A `"task"` notice lives exactly as long as its waiter is queued**, so it
   comes down at every door that takes that waiter out of the queue — promotion,
   the fold, a deleted anchor, and the user's own stop button. `TaskCoalescer`
@@ -304,12 +317,10 @@ be N dead ends pointing at one blocker.
   notice still speaks for; for a `"task"` notice, exactly its own waiter; and for
   a legacy one, the single newest waiter. `queued` only: a `pending`/`running`
   task is the blocker, not a waiter, and is surfaced separately with its own stop
-  control. It then asks `Comment.remove_stranded_waiting_notices!`: cancelling is
-  the other way a topic queue empties, and unlike a promotion it runs no drained
-  check, so a *shared* notice — the only kind that check ever removes — would be
-  left describing a wait that is over. Scoped to `topic_concurrency_defer`
-  notices, since a `:delayed` one shares the prefix but explains a dispatch that
-  is still going to run.
+  control. It then asks `Comment.remove_stranded_waiting_notices!`, as every
+  cancellation door does. Scoped to `topic_concurrency_defer` notices, since a
+  `:delayed` one shares the prefix but explains a dispatch that is still going to
+  run and so represents no waiter by design.
 
 ### Message assembly
 

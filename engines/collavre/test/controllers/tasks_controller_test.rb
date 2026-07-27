@@ -199,4 +199,54 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       "Expected a still-queued waiter's notice to be untouched by another waiter's cancellation"
     assert_equal "queued", sibling.reload.status
   end
+
+  test "cancel takes down a shared notice its last waiter leaves behind" do
+    # Same door, the other kind of notice. With coalescing on the waiter has no
+    # notice of its own — the topic's single shared one speaks for it — so
+    # remove_waiter_notices! finds nothing to take down and the "⏳" line stays
+    # on screen with a stop button that now selects nothing.
+    sign_in_as(@user, password: "password")
+    topic = Collavre::Topic.create!(name: "Cancel topic", creative: @creative, user: @user)
+    @task.update!(status: "queued", topic_id: topic.id, creative_id: @creative.id)
+
+    shared = @creative.comments.create!(
+      content: "⏳ waiting", topic_id: topic.id, private: false, skip_default_user: true,
+      topic_concurrency_defer: true,
+      waiting_notice_scope: Collavre::Comment::WAITING_NOTICE_TOPIC
+    )
+
+    post cancel_task_path(@task)
+
+    assert_response :ok
+    assert_equal "cancelled", @task.reload.status
+    assert_nil Collavre::Comment.find_by(id: shared.id),
+      "Expected the shared notice to come down once nothing it speaks for is queued"
+  end
+
+  test "cancel keeps a shared notice that still speaks for a queued waiter" do
+    # The control: "take the shared notice down whenever a waiter is cancelled"
+    # would pass the test above while disarming a wait that is still real.
+    sign_in_as(@user, password: "password")
+    topic = Collavre::Topic.create!(name: "Cancel topic", creative: @creative, user: @user)
+    @task.update!(status: "queued", topic_id: topic.id, creative_id: @creative.id)
+
+    sibling = Collavre::Task.create!(
+      name: "Sibling waiter", status: "queued",
+      trigger_event_name: "comment_created",
+      trigger_event_payload: { "creative" => { "id" => @creative.id } },
+      agent: @agent, topic_id: topic.id, creative_id: @creative.id
+    )
+    shared = @creative.comments.create!(
+      content: "⏳ waiting", topic_id: topic.id, private: false, skip_default_user: true,
+      topic_concurrency_defer: true,
+      waiting_notice_scope: Collavre::Comment::WAITING_NOTICE_TOPIC
+    )
+
+    post cancel_task_path(@task)
+
+    assert_response :ok
+    assert_equal "queued", sibling.reload.status
+    assert Collavre::Comment.exists?(id: shared.id),
+      "Expected the shared notice to stay up for the waiter it still speaks for"
+  end
 end

@@ -797,19 +797,90 @@ module Collavre
       end
       assert_equal "pending", mine.reload.status, "premise: the shared notice's waiter was promoted"
       assert_equal "queued", theirs.reload.status, "premise: the opted-out waiter is still parked"
-      assert Comment.exists?(shared.id),
-             "premise: the promotion kept the shared notice up for the waiter still queued"
       [ shared, mine, theirs, theirs_notice ]
     end
 
-    test "cancelling the last waiter takes down the shared notice left behind" do
+    # Two agents that both coalesce share one notice, so the survivor of a
+    # promotion is a waiter the shared notice really does speak for.
+    def coalescing_pair!
+      holder = occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("mine")))
+      AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("theirs")))
+
+      mine = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      theirs = Task.where(agent: second_agent, topic_id: @topic.id, status: "queued").sole
+      shared = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                             waiting_notice_scope: Comment::WAITING_NOTICE_TOPIC).sole
+      assert_empty Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                                 waiting_notice_scope: Comment::WAITING_NOTICE_TASK),
+                   "premise: neither deferral posted a per-deferral notice"
+      [ holder, shared, mine, theirs ]
+    end
+
+    # The shared notice is dismissable, and dismissing it cancels the waiters it
+    # speaks for — which is every queued waiter *except* those a per-deferral
+    # notice claims. Once the promotion leaves nothing but claimed waiters
+    # behind, that set is empty: the notice is a second "⏳" line on screen whose
+    # stop button selects nothing, and the drained sweep will not collect it
+    # because the claimed waiter keeps the topic queue non-empty.
+    test "promotion takes down a shared notice left speaking for nobody" do
       shared, _mine, theirs, theirs_notice = stranded_shared_notice!
 
-      theirs_notice.destroy!
-
-      assert_equal "cancelled", theirs.reload.status, "premise: the stop button ended that wait"
+      assert_equal "queued", theirs.reload.status, "premise: a waiter is still parked"
+      assert Comment.exists?(theirs_notice.id),
+             "the waiter still queued keeps its own notice and its own stop button"
       assert_not Comment.exists?(shared.id),
-                 "nothing is queued, so the shared notice describes a wait that is over"
+                 "every waiter left is claimed by its own notice, so this one stops nothing"
+    end
+
+    # The control: a survivor that no per-deferral notice claims is exactly what
+    # the shared notice is for. "Take it down on every promotion" would pass the
+    # test above while stripping the wait/stop signal off a wait that is real.
+    test "promotion keeps the shared notice for a waiter no other notice claims" do
+      holder, shared, mine, theirs = coalescing_pair!
+
+      holder.update!(status: "done")
+      AiAgentJob.stub :perform_later, ->(*) { nil } do
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+      end
+
+      assert_equal "pending", mine.reload.status, "premise: one waiter was promoted"
+      assert_equal "queued", theirs.reload.status, "premise: the other is still parked"
+      assert Comment.exists?(shared.id),
+             "this notice is the only wait/stop signal the queued waiter has"
+    end
+
+    # Deleting a trigger cancels the waiter that answers it, and that waiter
+    # never reaches a promotion — so nothing runs the drained check. With
+    # coalescing on, the notice it leaves behind is the *shared* one, which
+    # remove_waiter_notices! does not touch.
+    test "deleting the last waiter's anchor takes down the shared notice" do
+      occupy_slot!
+      anchor = comment("mine")
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(anchor))
+      waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      shared = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                             waiting_notice_scope: Comment::WAITING_NOTICE_TOPIC).sole
+
+      anchor.destroy!
+
+      assert_equal "cancelled", waiter.reload.status, "premise: deleting the prompt ended the wait"
+      assert_not Comment.exists?(shared.id),
+                 "nothing is queued behind it, so the notice describes a wait that is over"
+    end
+
+    # The control: the same deletion with another waiter still parked must leave
+    # the notice alone — it speaks for that one too.
+    test "deleting one anchor keeps the shared notice while another waiter is queued" do
+      _holder, shared, mine, theirs = coalescing_pair!
+      anchor = Comment.find(mine.trigger_event_payload.dig("comment", "id"))
+
+      anchor.destroy!
+
+      assert_equal "cancelled", mine.reload.status, "premise: that waiter's prompt is gone"
+      assert_equal "queued", theirs.reload.status, "premise: the other is still parked"
+      assert Comment.exists?(shared.id),
+             "a wait that is still real keeps its notice and its stop button"
     end
 
     # The control: cancelling one waiter while another is still queued must not
@@ -841,6 +912,8 @@ module Collavre
 
       theirs_notice.destroy!
 
+      assert_equal 0, Task.where(topic_id: @topic.id, status: "queued").count,
+                   "premise: the topic queue is empty"
       assert_not Comment.exists?(shared.id), "premise: the stranded shared notice came down"
       assert Comment.exists?(delayed.id),
              "a delayed dispatch is still going to run — an empty queue is not its question"

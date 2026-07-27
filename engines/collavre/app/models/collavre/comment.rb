@@ -48,19 +48,25 @@ module Collavre
       end
     end
 
-    # Take the topic's remaining "⏳" defer notices down once nothing is queued
-    # behind them.
+    # Take down every "⏳" defer notice in the topic that no longer speaks for a
+    # queued waiter.
     #
-    # A promotion asks this through
-    # AgentOrchestrator.cleanup_waiting_notices_if_drained!, which is the only
-    # thing that ever removes a *shared* notice. Cancelling a waiter is the
-    # other way the queue can empty and it runs no such check, so a shared
-    # notice can outlive every waiter it spoke for: its stop button then selects
-    # nothing, and no later promotion will come along to collect it.
+    # Asked per notice, not per topic. "Is anything queued here?" is a topic-wide
+    # question and no notice asks it: a "task" notice speaks for the one waiter
+    # it names, and a shared one for every queued waiter *except* those a
+    # surviving "task" notice claims — see #represented_queued_waiters, which
+    # this and the stop button both go through so the two cannot drift. A topic
+    # can therefore hold waiters while a notice standing in it represents none
+    # of them, and that notice is a "⏳" line whose stop button selects nothing.
+    #
+    # Nothing else collects it. A cancelled waiter is never promoted, so the
+    # promotion's cleanup never runs for it, and a promotion that leaves only
+    # claimed waiters behind is exactly the case a topic-wide drain check reads
+    # as "still busy".
     #
     # Scoped to topic_concurrency_defer notices. A :delayed notice shares the
     # prefix but explains a rate-limited or busy dispatch that is still going to
-    # run, so an empty queue is not the question that governs it.
+    # run, so it speaks for no waiter by design and is not this sweep's to take.
     #
     # Asked under the same lock the notice doors take, so "nobody is queued" is
     # a deferral's own before-or-after rather than a guess: it either commits
@@ -69,10 +75,11 @@ module Collavre
     def self.remove_stranded_waiting_notices!(creative_id:, topic_id:)
       transaction do
         Collavre::Orchestration::TopicSlot.lock!(topic_id, creative_id)
-        next if Task.queued_for_topic(topic_id, creative_id).exists?
 
         where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
               topic_concurrency_defer: true).find_each do |notice|
+          next if notice.represented_queued_waiters.any?
+
           notice.suppress_waiter_cancellation = true
           notice.destroy
         end
@@ -251,6 +258,8 @@ module Collavre
     end
 
     def cancel_pending_tasks
+      stranded_scopes = []
+
       # Cancel tasks triggered by this comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
       # existing tasks, so scoping would miss moved-comment tasks).
@@ -282,6 +291,13 @@ module Collavre
           creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id
         )
 
+        # …and with coalescing on there is no per-deferral notice to take down:
+        # the waiter's signal is the topic's *shared* one, which the call above
+        # deliberately leaves alone. If this cancellation was the last thing that
+        # notice spoke for, nothing else will ever collect it. Swept after the
+        # loop, once every task this deletion cancels has left the queue.
+        stranded_scopes << [ task.creative_id, task.topic_id ]
+
         # Delegated tasks live past their job: the AiAgentJob already returned,
         # holding the agent slot under task.id and counting against the per-topic
         # serializer. Mirror the cancel path used elsewhere to free both.
@@ -312,6 +328,14 @@ module Collavre
       # waiter is being advanced, not abandoned, and cancelling other still-queued
       # waiters would drop their work (multi-slot orphan recovery must not cancel
       # the rest).
+      stranded_scopes.uniq.each do |cancelled_creative_id, cancelled_topic_id|
+        next unless cancelled_creative_id
+
+        Comment.remove_stranded_waiting_notices!(
+          creative_id: cancelled_creative_id, topic_id: cancelled_topic_id
+        )
+      end
+
       if waiting_notice? && topic_concurrency_defer? && !suppress_waiter_cancellation
         cancel_queued_tasks_for_waiting_notice
       end
@@ -441,27 +465,7 @@ module Collavre
     # waiting on anything; the notice surfaces it separately as
     # topic_blocking_task, with its own stop button.
     def cancel_queued_tasks_for_waiting_notice
-      waiters =
-        case waiting_notice_scope
-        when WAITING_NOTICE_TASK
-          # Speaks for exactly the waiter it was posted with — and for nothing at
-          # all once that waiter has been folded away or promoted.
-          queued_topic_waiters.select { |task| task.id == waiting_notice_task_id }
-        when WAITING_NOTICE_TOPIC
-          # Every queued waiter in the topic except those a surviving
-          # per-deferral notice still speaks for: the shared notice was never
-          # their signal, and their own stop control is still on screen.
-          claimed = sibling_notice_waiter_ids
-          queued_topic_waiters.reject { |task| claimed.include?(task.id) }
-        else
-          # Posted before this was recorded. Nothing on the row says which kind
-          # it was, so keep the behaviour those notices were created under rather
-          # than guess: widening it would discard work, narrowing it would disarm
-          # the only stop control an in-flight wait has.
-          queued_topic_waiters.first(1)
-        end
-
-      waiters.each { |task| task.update!(status: "cancelled") }
+      represented_queued_waiters.each { |task| task.update!(status: "cancelled") }
 
       # Cancelling is the other way a topic queue empties, and it has no
       # promotion behind it to run the drained check. The notices that spoke for
@@ -470,6 +474,33 @@ module Collavre
       # *shared* notice is only ever taken down by that check, so without this
       # it is left on screen describing a wait that is over.
       Comment.remove_stranded_waiting_notices!(creative_id: creative_id, topic_id: topic_id)
+    end
+
+    # The queued waiters this notice speaks for — what its stop button cancels,
+    # and equally what keeps it on screen. Public because
+    # .remove_stranded_waiting_notices! asks the same question from the other
+    # side: a notice representing nobody is a stop control for work that can no
+    # longer be stopped. Two answers to one question is how the button and the
+    # sweep would come to disagree about what a notice is for.
+    public def represented_queued_waiters
+      case waiting_notice_scope
+      when WAITING_NOTICE_TASK
+        # Speaks for exactly the waiter it was posted with — and for nothing at
+        # all once that waiter has been folded away or promoted.
+        queued_topic_waiters.select { |task| task.id == waiting_notice_task_id }
+      when WAITING_NOTICE_TOPIC
+        # Every queued waiter in the topic except those a surviving per-deferral
+        # notice still speaks for: the shared notice was never their signal, and
+        # their own stop control is still on screen.
+        claimed = sibling_notice_waiter_ids
+        queued_topic_waiters.reject { |task| claimed.include?(task.id) }
+      else
+        # Posted before this was recorded. Nothing on the row says which kind it
+        # was, so keep the behaviour those notices were created under rather than
+        # guess: widening it would discard work, narrowing it would disarm the
+        # only stop control an in-flight wait has.
+        queued_topic_waiters.first(1)
+      end
     end
 
     def queued_topic_waiters

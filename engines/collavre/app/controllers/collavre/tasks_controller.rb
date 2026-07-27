@@ -40,6 +40,15 @@ module Collavre
         creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id
       )
 
+      # With coalescing on this waiter had no notice of its own — the topic's
+      # shared one spoke for it, and the call above deliberately does not touch
+      # that kind. Same stranding, one row over.
+      if task.creative_id
+        Comment.remove_stranded_waiting_notices!(
+          creative_id: task.creative_id, topic_id: task.topic_id
+        )
+      end
+
       if held_slot_without_worker && task.agent
         Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)

@@ -289,6 +289,16 @@ module Collavre
         Comment.transaction do
           TopicSlot.lock!(task.topic_id, task.creative_id)
           cleanup_waiter_notice!(task)
+
+          # "Is anyone queued?" is the topic's question, not any one notice's.
+          # A shared notice speaks for the queued waiters no per-deferral notice
+          # claims, so a promotion that leaves only claimed waiters behind
+          # leaves it representing nobody — a second "⏳" line whose stop button
+          # selects nothing, kept up by the very waiter that is not its to
+          # speak for. Ask each notice what it still stands for.
+          Comment.remove_stranded_waiting_notices!(
+            creative_id: task.creative_id, topic_id: task.topic_id
+          )
           next if Task.queued_for_topic(task.topic_id, task.creative_id).exists?
 
           cleanup_waiting_notices!(task)
