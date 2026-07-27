@@ -1147,6 +1147,7 @@ in_group() {
 # umask right.
 write_state_file() {
   local target="$1" content="$2" mode="${3:-0644}" tmp
+  [ ! -d "$target" ] || return 1
   tmp="$(mktemp "$target.XXXXXX")" || return 1
   if ! chmod "$mode" "$tmp" || ! printf '%s' "$content" > "$tmp"; then
     rm -f "$tmp"
@@ -1164,10 +1165,11 @@ write_state_file() {
 # FORCE=1 run silently reset an override that has no other state file, such as
 # BACKUP_S3_URI.
 launch_record_is_complete() {
-  local env_file="$1" name
+  local env_file="$1" name count
   [ -f "$env_file" ] || return 1
   for name in $LAUNCH_SETTINGS; do
-    [ "$(grep -c "^$name=" "$env_file" 2>/dev/null)" -eq 1 ] || return 1
+    count="$(grep -c "^$name=" "$env_file" 2>/dev/null || true)"
+    [ "$count" = 1 ] || return 1
   done
 }
 

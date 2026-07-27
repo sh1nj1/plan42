@@ -6076,6 +6076,15 @@ printf 'APP_SSH_USER=collavre\nDB_USER=collavre_user\n' > "$record_dir/launch.en
 record_status=0
 record_out="$(record_launch_settings "$record_dir" 2>&1)" || record_status=$?
 chk "an incomplete prior record also stops the run"           1 "$record_status"
+
+eval "$saved_write_state_file"
+rm -f "$record_dir/launch.env"
+mkdir "$record_dir/launch.env"
+record_status=0
+record_out="$(record_launch_settings "$record_dir" 2>&1)" || record_status=$?
+chk "a directory at the record path is not mistaken for a write" 1 "$record_status"
+chk "and no staging file is moved inside it"                       0 \
+  "$(find "$record_dir/launch.env" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')"
 chk "so the success marker is created only after recording"   1 \
   "$(awk '
       /^record_launch_settings$/ { recorded = NR }
@@ -6085,7 +6094,6 @@ chk "so the success marker is created only after recording"   1 \
 	else print 0
       }
     ' "$SRC")"
-eval "$saved_write_state_file"
 eval "$saved_log"
 LAUNCH_SETTINGS="$saved_launch_settings"
 rm -rf "$record_dir"
