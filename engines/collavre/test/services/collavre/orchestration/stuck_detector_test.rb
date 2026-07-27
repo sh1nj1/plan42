@@ -370,10 +370,11 @@ module Collavre
 
       # --- Orphaned queued waiter detection & self-heal ---
 
-      def create_queued_task(comment_id:, creative_id: @creative.id, topic_id: @topic.id, age: 30.minutes)
+      def create_queued_task(comment_id:, creative_id: @creative.id, topic_id: @topic.id,
+                            age: 30.minutes, agent: @ai_agent)
         task = Collavre::Task.create!(
           name: "Queued waiter",
-          agent: @ai_agent,
+          agent: agent,
           status: "queued",
           trigger_event_name: "comment_created",
           trigger_event_payload: {
@@ -532,8 +533,12 @@ module Collavre
           user: @human_user, skip_dispatch: true
         )
 
+        # Two DIFFERENT agents: two waiters for the same agent in the same topic
+        # are one conversation turn and Orchestration::TaskCoalescer folds them
+        # together on promotion. Distinct agents are what topic_max=2 actually
+        # buys, and they are what must both survive the notice cleanup.
         w1 = create_queued_task(comment_id: 2030)
-        w2 = create_queued_task(comment_id: 2031)
+        w2 = create_queued_task(comment_id: 2031, agent: second_agent)
         2.times do
           @creative.comments.create!(
             content: "⏳ waiting on the topic", topic_id: @topic.id,
@@ -551,6 +556,47 @@ module Collavre
       ensure
         sched&.destroy
         policy&.destroy
+      end
+
+      test "self-heal folds same-agent orphans into the promoted turn" do
+        # Same agent + same topic = one conversation turn. Promoting both would
+        # answer the same latest comment twice (refresh_deferred_context! points
+        # every waiter at it), so the straggler is absorbed instead.
+        policy = create_policy_with_stuck_detection(enabled: true, queued_orphan_threshold: 5)
+        sched = create_scheduling_policy(topic_max: 2)
+
+        @creative.comments.create!(
+          content: "please respond", topic_id: @topic.id,
+          user: @human_user, skip_dispatch: true
+        )
+
+        w1 = create_queued_task(comment_id: 2040)
+        w2 = create_queued_task(comment_id: 2041)
+
+        Collavre::AiAgentJob.stub(:perform_later, ->(*) { nil }) do
+          StuckDetector.new.detect_and_escalate
+        end
+
+        assert_equal "pending", w1.reload.status
+        assert_equal "cancelled", w2.reload.status,
+                     "a same-agent straggler must be absorbed, not answered separately"
+        assert_includes w1.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY], 2041,
+                        "the absorbed waiter's comment must still reach the agent"
+      ensure
+        sched&.destroy
+        policy&.destroy
+      end
+
+      # A second, independent agent — the shape topic_max > 1 actually serves.
+      def second_agent
+        @second_agent ||= Collavre::User.create!(
+          name: "dev-agent-2",
+          email: "dev2-#{SecureRandom.hex(4)}@agent.test",
+          password: "password123",
+          llm_vendor: "openai",
+          llm_model: "gpt-4",
+          system_prompt: "You are a second developer agent."
+        )
       end
 
       def create_scheduling_policy(topic_max:)

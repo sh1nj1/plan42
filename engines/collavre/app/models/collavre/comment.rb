@@ -8,6 +8,84 @@ module Collavre
     # matches the same prefix to remove them once the waiter is dequeued.
     WAITING_NOTICE_PREFIX = "⏳"
 
+    # What a waiting notice speaks for, written by the door that posted it.
+    # "topic" is the deduplicated notice coalescing allows a topic exactly one
+    # of; "task" is the per-deferral notice the opt-out posts, which names its
+    # waiter in waiting_notice_task_id. nil is a notice from before this was
+    # recorded — see #cancel_queued_tasks_for_waiting_notice.
+    WAITING_NOTICE_TOPIC = "topic"
+    WAITING_NOTICE_TASK = "task"
+
+    # Take down the per-deferral notice that speaks for this waiter, if it had
+    # one.
+    #
+    # A "task" notice is on screen for exactly as long as its waiter is queued:
+    # it names that waiter in waiting_notice_task_id and
+    # #cancel_queued_tasks_for_waiting_notice stops that waiter and nothing
+    # else. So the moment the waiter leaves the queue the notice is a stop
+    # button for work that cannot be stopped — and no sweep will collect it,
+    # since the drained sweep only runs when the topic queue empties and the
+    # waiter itself will never be promoted again.
+    #
+    # It therefore comes down wherever the waiter leaves, which is why this
+    # lives here beside the columns rather than in one of those callers: the
+    # promotion (AgentOrchestrator.cleanup_waiter_notice!) and the fold
+    # (Orchestration::TaskCoalescer) are two doors onto the same rule, and a
+    # third would otherwise write its own copy or forget.
+    #
+    # The destroy is marked as a system removal: the waiter is being promoted or
+    # folded, not abandoned by the user, so the cancellation callback must not
+    # fire on top of it.
+    def self.remove_waiter_notices!(creative_id:, topic_id:, task_ids:)
+      task_ids = Array(task_ids).compact
+      return if task_ids.empty?
+
+      where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+            waiting_notice_scope: WAITING_NOTICE_TASK,
+            waiting_notice_task_id: task_ids).find_each do |notice|
+        notice.suppress_waiter_cancellation = true
+        notice.destroy
+      end
+    end
+
+    # Take down every "⏳" defer notice in the topic that no longer speaks for a
+    # queued waiter.
+    #
+    # Asked per notice, not per topic. "Is anything queued here?" is a topic-wide
+    # question and no notice asks it: a "task" notice speaks for the one waiter
+    # it names, and a shared one for every queued waiter *except* those a
+    # surviving "task" notice claims — see #represented_queued_waiters, which
+    # this and the stop button both go through so the two cannot drift. A topic
+    # can therefore hold waiters while a notice standing in it represents none
+    # of them, and that notice is a "⏳" line whose stop button selects nothing.
+    #
+    # Nothing else collects it. A cancelled waiter is never promoted, so the
+    # promotion's cleanup never runs for it, and a promotion that leaves only
+    # claimed waiters behind is exactly the case a topic-wide drain check reads
+    # as "still busy".
+    #
+    # Scoped to topic_concurrency_defer notices. A :delayed notice shares the
+    # prefix but explains a rate-limited or busy dispatch that is still going to
+    # run, so it speaks for no waiter by design and is not this sweep's to take.
+    #
+    # Asked under the same lock the notice doors take, so "nobody is queued" is
+    # a deferral's own before-or-after rather than a guess: it either commits
+    # its waiter before this reads, and keeps its notice, or after, and posts
+    # one of its own.
+    def self.remove_stranded_waiting_notices!(creative_id:, topic_id:)
+      transaction do
+        Collavre::Orchestration::TopicSlot.lock!(topic_id, creative_id)
+
+        where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+              topic_concurrency_defer: true).find_each do |notice|
+          next if notice.represented_queued_waiters.any?
+
+          notice.suppress_waiter_cancellation = true
+          notice.destroy
+        end
+      end
+    end
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
@@ -125,6 +203,24 @@ module Collavre
       quoted_comment_id.present? && !review_type_question?
     end
 
+    # Which of `ids` are review requests, in one query. The orchestration paths
+    # that decide whether a trigger may be folded away or moved forward hold
+    # comment *ids*, not records, and run over a whole burst at once.
+    #
+    # `review_type: [nil, review]` rather than `where.not(question)`: the column
+    # is NULL for an ordinary review (only /compress-style questions set it), and
+    # SQL's `review_type != 1` drops NULL rows — which is every real review.
+    def self.review_message_ids(ids)
+      ids = Array(ids).compact.map(&:to_i).uniq
+      return [] if ids.empty?
+
+      review_messages.where(id: ids).pluck(:id)
+    end
+
+    scope :review_messages, -> {
+      where.not(quoted_comment_id: nil).where(review_type: [ nil, review_types[:review] ])
+    }
+
     # public for db migration
     def creative_snippet
       creative.creative_snippet
@@ -162,6 +258,8 @@ module Collavre
     end
 
     def cancel_pending_tasks
+      stranded_scopes = []
+
       # Cancel tasks triggered by this comment (no creative_id scoping —
       # CommentMoveService can change comment.creative_id without updating
       # existing tasks, so scoping would miss moved-comment tasks).
@@ -171,8 +269,34 @@ module Collavre
       Task.where(status: %w[pending running queued delegated]).find_each do |task|
         next unless task.trigger_event_payload&.dig("comment", "id") == id
 
+        # An un-started task can be the survivor of a coalesced burst, answering
+        # several comments at once. Cancelling it because its anchor was deleted
+        # would throw away the absorbed comments too — they have no task of their
+        # own left (TaskCoalescer cancelled those) and no other delivery path
+        # (session-backed agents receive only the trigger). Re-anchor onto the
+        # newest surviving merged comment instead; only a task with nothing left
+        # to say is cancelled.
+        next if reanchor_coalesced_task(task)
+
         was_delegated = task.status == "delegated"
         task.update!(status: "cancelled")
+
+        # A waiter cancelled here leaves the queue without ever being promoted,
+        # exactly as a folded one does — so the notice that spoke for it is left
+        # naming a task no longer queued, and its stop button cancels nothing.
+        # This door needs no policy change at all: the opt-out posts the notice,
+        # deleting the prompt cancels the waiter, and a sibling still parked
+        # keeps the drained sweep from ever running.
+        Comment.remove_waiter_notices!(
+          creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id
+        )
+
+        # …and with coalescing on there is no per-deferral notice to take down:
+        # the waiter's signal is the topic's *shared* one, which the call above
+        # deliberately leaves alone. If this cancellation was the last thing that
+        # notice spoke for, nothing else will ever collect it. Swept after the
+        # loop, once every task this deletion cancels has left the queue.
+        stranded_scopes << [ task.creative_id, task.topic_id ]
 
         # Delegated tasks live past their job: the AiAgentJob already returned,
         # holding the agent slot under task.id and counting against the per-topic
@@ -204,16 +328,193 @@ module Collavre
       # waiter is being advanced, not abandoned, and cancelling other still-queued
       # waiters would drop their work (multi-slot orphan recovery must not cancel
       # the rest).
+      stranded_scopes.uniq.each do |cancelled_creative_id, cancelled_topic_id|
+        next unless cancelled_creative_id
+
+        Comment.remove_stranded_waiting_notices!(
+          creative_id: cancelled_creative_id, topic_id: cancelled_topic_id
+        )
+      end
+
       if waiting_notice? && topic_concurrency_defer? && !suppress_waiter_cancellation
         cancel_queued_tasks_for_waiting_notice
       end
     end
 
+    # Move a coalesced task off this (deleted) comment and onto the newest of
+    # the comments it had absorbed. Returns true when the task was rescued, so
+    # the caller skips cancellation.
+    #
+    # Only un-started tasks: a `running`/`delegated` task has already been handed
+    # its payload, so re-anchoring changes nothing and deleting the prompt must
+    # still stop the turn.
+    def reanchor_coalesced_task(task)
+      return false unless %w[queued pending].include?(task.status)
+
+      Task.transaction { reanchor_locked_task(task) }
+    rescue ActiveRecord::RecordNotFound
+      # The task went away between the scan and the lock (a cascading delete).
+      # Nothing to rescue, and nothing left to cancel either.
+      false
+    end
+
+    # The lock body. `task` is the object cancel_pending_tasks' scan loaded, and
+    # everything derived here has to come from the row as it stands *now*:
+    # TaskCoalescer folds a sibling into this same task under a lock this path
+    # never took, so a fold committing between that scan and the write below
+    # would be overwritten by the pre-fold payload — and the absorbed sibling is
+    # already cancelled, so its comment has no task left to answer it.
+    #
+    # lock! reloads in place rather than into a second object: the caller keeps
+    # using this instance (it cancels the task when we return false), so swapping
+    # identity here would hand it stale attributes.
+    #
+    # Status is re-read for the same reason. A snapshot that said `queued` may
+    # have been promoted and started since, and a started turn has already been
+    # handed its payload — deleting the prompt must stop it, not re-target it.
+    def reanchor_locked_task(task)
+      task.lock!
+      return false unless %w[queued pending].include?(task.status)
+
+      payload = task.trigger_event_payload || {}
+      merged = Array(payload[Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY])
+                 .compact.map(&:to_i).uniq - [ id ]
+      return false if merged.empty?
+
+      # Anything else in the merge window may have been deleted too. Newest by id:
+      # created_at is stamped per writing process, so a burst can carry skewed or
+      # tied timestamps (same reason MergedTriggerComments orders by id).
+      #
+      # Scoped to this turn's creative/topic: a merged comment moved elsewhere
+      # while the task waited (CommentMoveService#perform_move reassigns
+      # creative_id) is no longer part of it, and adopting it as the anchor would
+      # point the reply at a creative the agent may have no share on.
+      #
+      # The turn is the TASK's scope, not this comment's. cancel_pending_tasks
+      # looks tasks up with no creative scoping precisely because a move rewrites
+      # the comment without touching the task it triggered — so an anchor moved
+      # away and then deleted would be searching the creative it was moved *to*,
+      # find nothing there, and cancel a turn whose absorbed comments are all
+      # still sitting in the creative the task belongs to.
+      #
+      # Asked through MergedTriggerComments.in_turn, the same predicate that
+      # decides what the turn delivers. Eligibility is not only about *where* a
+      # comment is: a comment made private (or turned into an approval surface)
+      # after it was absorbed is one dispatch_to_orchestration would refuse to
+      # trigger on, and in_turn already drops it from the merged blocks. The
+      # anchor is delivered as the trigger itself, with no filter in front of
+      # it, so a lookup of its own here is how withdrawn content reaches the
+      # agent through the one door that never filters.
+      in_scope = Collavre::AiAgent::MergedTriggerComments
+                   .in_turn(merged, "creative" => { "id" => task.creative_id },
+                                    "topic" => { "id" => task.topic_id })
+                   .order(:id).to_a
+      replacement = in_scope.last
+      return false unless replacement
+
+      # Through the same door the refresh uses, so the promotion is recorded as
+      # an acquired anchor either way: this task was created to answer the
+      # comment being deleted, not this one.
+      payload = Collavre::Orchestration::TaskCoalescer.reanchor_payload(payload, replacement)
+      payload = payload.merge(
+        # Rebuilt from the in-scope ids rather than merged through
+        # absorb_into_payload, which would fold the out-of-scope ones straight
+        # back in from the payload it starts from. The new anchor is excluded so
+        # the promoted comment is not delivered twice.
+        Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY =>
+          (in_scope.map(&:id) - [ replacement.id ]).sort
+      )
+      task.update!(trigger_event_payload: payload)
+
+      Rails.logger.info(
+        "[Comment#cancel_pending_tasks] Re-anchored coalesced task #{task.id} from deleted " \
+        "comment #{id} to comment #{replacement.id}"
+      )
+      true
+    end
+
+    # Cancel *every* queued waiter this notice speaks for, not just the newest.
+    #
+    # Cancelling one was right while each deferral posted its own notice: the
+    # newest queued task was the one that notice belonged to. A topic now gets
+    # exactly one deduplicated notice
+    # (Orchestration::AgentOrchestrator.with_deduped_topic_notice), and with
+    # topic_max_concurrent_jobs > 1 it can stand for waiters from several agents
+    # — coalescing folds same-agent siblings only. Deleting it while cancelling
+    # one of them leaves the rest queued with nothing on screen representing
+    # them and no stop control, and nothing reposts a notice until the next
+    # deferral happens by.
+    #
+    # …but only a notice that actually *was* deduplicated. With
+    # coalesce_pending_tasks off, post_waiting_notice deliberately skips the
+    # dedup path and posts one notice per deferral: there the 1:1 still holds and
+    # cancelling every queued task would let a user discard unrelated waiters by
+    # dismissing one notice, defeating the opt-out.
+    #
+    # Which kind this is comes off the row (waiting_notice_scope), written by
+    # whichever door posted it. It used to be inferred from whether a sibling
+    # notice still stood, on the reasoning that the dedup path allows a topic
+    # exactly one — but the two kinds coexist as soon as the policy differs
+    # between agents or changes while a topic still has waiters, and then the
+    # inference inverts: the shared notice reads as a per-deferral one and takes
+    # down the newest queued waiter, which is very likely the one the *other*
+    # notice speaks for. A row cannot be classified by its neighbours when the
+    # neighbours are a different kind.
+    #
+    # Queued only. A task holding the topic slot (pending/running/…) is not
+    # waiting on anything; the notice surfaces it separately as
+    # topic_blocking_task, with its own stop button.
     def cancel_queued_tasks_for_waiting_notice
+      represented_queued_waiters.each { |task| task.update!(status: "cancelled") }
+
+      # Cancelling is the other way a topic queue empties, and it has no
+      # promotion behind it to run the drained check. The notices that spoke for
+      # the waiters just cancelled went with them — this one is being destroyed,
+      # and a per-deferral sibling names a task that is now cancelled — but a
+      # *shared* notice is only ever taken down by that check, so without this
+      # it is left on screen describing a wait that is over.
+      Comment.remove_stranded_waiting_notices!(creative_id: creative_id, topic_id: topic_id)
+    end
+
+    # The queued waiters this notice speaks for — what its stop button cancels,
+    # and equally what keeps it on screen. Public because
+    # .remove_stranded_waiting_notices! asks the same question from the other
+    # side: a notice representing nobody is a stop control for work that can no
+    # longer be stopped. Two answers to one question is how the button and the
+    # sweep would come to disagree about what a notice is for.
+    public def represented_queued_waiters
+      case waiting_notice_scope
+      when WAITING_NOTICE_TASK
+        # Speaks for exactly the waiter it was posted with — and for nothing at
+        # all once that waiter has been folded away or promoted.
+        queued_topic_waiters.select { |task| task.id == waiting_notice_task_id }
+      when WAITING_NOTICE_TOPIC
+        # Every queued waiter in the topic except those a surviving per-deferral
+        # notice still speaks for: the shared notice was never their signal, and
+        # their own stop control is still on screen.
+        claimed = sibling_notice_waiter_ids
+        queued_topic_waiters.reject { |task| claimed.include?(task.id) }
+      else
+        # Posted before this was recorded. Nothing on the row says which kind it
+        # was, so keep the behaviour those notices were created under rather than
+        # guess: widening it would discard work, narrowing it would disarm the
+        # only stop control an in-flight wait has.
+        queued_topic_waiters.first(1)
+      end
+    end
+
+    def queued_topic_waiters
       scope = Task.where(status: "queued", creative_id: creative_id)
       scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
-      task = scope.order(created_at: :desc).first
-      task&.update!(status: "cancelled")
+      scope.order(created_at: :desc).to_a
+    end
+
+    # Waiter ids a still-standing per-deferral notice represents. Runs
+    # after_destroy_commit, so this notice is already out of the query.
+    def sibling_notice_waiter_ids
+      Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+                    waiting_notice_scope: WAITING_NOTICE_TASK)
+             .pluck(:waiting_notice_task_id).compact
     end
 
     def dispatch_to_orchestration

@@ -41,6 +41,15 @@ module Collavre
 
       # Dispatch system event to trigger agent orchestration pipeline
       # (manual because cron-initiated AI messages intentionally need dispatch)
+      #
+      # The topic comes from the persisted row, not from `topic` above. A cron
+      # scheduled against Main passes `topic_id: nil`, but Comment#assign_main_topic
+      # files the comment under the creative's real Main topic — so nil describes
+      # the *argument*, never where the comment ended up. Everything downstream
+      # believes this payload: the task's topic_id, the slot it is admitted into,
+      # and the scope AgentOrchestrator.refresh_deferred_context! re-selects an
+      # anchor from on promotion. A payload naming a topic its own comment is not
+      # in makes all three answer for an empty topic.
       SystemEvents::Dispatcher.dispatch("comment_created", {
         comment: {
           id: comment.id,
@@ -52,7 +61,7 @@ module Collavre
           description: creative.description
         },
         topic: {
-          id: topic&.id
+          id: comment.topic_id
         },
         chat: {
           content: comment.content
