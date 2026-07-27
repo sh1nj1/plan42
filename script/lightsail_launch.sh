@@ -2552,6 +2552,7 @@ sysctl --system >/dev/null
 
 # verify_ssh_hardening [effective config file] [sshd config dir]
 #                      [reload state: 0=reloaded, 2=no active daemon]
+#                      [deploy user]
 #
 # Read back what sshd actually resolved the three hardened keywords to, and
 # refuse a run that reported hardening it did not perform.
@@ -2573,25 +2574,28 @@ sysctl --system >/dev/null
 # daemon has just accepted the reload, and is warned about instead. With no
 # active daemon it is the only gate: the next socket-activated connection will
 # start sshd from those files, so an unreadable answer is fatal in reload state
-# 2. `sshd -T` needs host keys and a parseable configuration; Match blocks do
-# not make it unreadable — without `-C` it prints the global block and exits 0,
-# measured on both OpenSSH builds this was checked against.
+# 2. `sshd -T` needs host keys and a parseable configuration. `-C user=...` is
+# load-bearing: without it sshd prints only the global block, so a later
+# `Match User <deploy-user>` can turn password authentication back on while
+# this verifier reports the global `no`.
 verify_ssh_hardening() {
   local src="${1:-}" conf_dir="${2:-/etc/ssh}" reload_state="${3:-0}"
+  local deploy_user="${4:-${APP_SSH_USER:-collavre}}"
   local effective key value offender
   if [ -n "$src" ]; then
     effective="$(cat "$src")"
-  elif ! effective="$(sshd -T 2>/dev/null)"; then
+  elif ! effective="$(sshd -T -C "user=$deploy_user" 2>/dev/null)"; then
     [ "$reload_state" -ne 2 ] || die \
       "SSH hardening could not be verified: there is no active sshd to reload" \
-      "and 'sshd -T' rejected or could not read the configuration on disk." \
+      "and 'sshd -T -C user=$deploy_user' rejected or could not read the" \
+      "configuration on disk." \
       "The next socket-activated connection or reboot would start sshd from" \
       "that unverified configuration. Nothing has been granted. Run 'sshd -t'" \
       "to find the error, fix it, and re-run."
     log "WARNING: could not read the effective SSH configuration on this host" \
-        "(\`sshd -T\` failed), so the hardening above is unverified. Check it" \
-        "by hand: sshd -T | grep -E" \
-        "'^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication)'"
+	"(\`sshd -T -C user=$deploy_user\` failed), so the hardening above is" \
+	"unverified. Check it by hand: sshd -T -C user=$deploy_user | grep -E" \
+	"'^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication)'"
     return 0
   fi
   for key in passwordauthentication permitrootlogin kbdinteractiveauthentication; do
@@ -2605,19 +2609,19 @@ verify_ssh_hardening() {
     if [ "$value" = "no" ]; then
       continue
     fi
-    # Name the file rather than leave the operator to find it: with the drop-in
-    # sorting first, something above the Include or an earlier prefix is the
-    # only way to get here, and both are one grep away.
+    # Name the file rather than leave the operator to find it. A directive
+    # above the Include, an earlier drop-in or a matching Match block can get
+    # here, and all three are one grep away.
     offender="$(grep -ilE "^[[:space:]]*$key[[:space:]]" \
                   "$conf_dir"/sshd_config.d/*.conf "$conf_dir"/sshd_config \
                   2>/dev/null | grep -v '01-collavre.conf' | head -1)" || true
     die "SSH hardening did not take effect: sshd resolves '$key' to '$value'," \
-        "not 'no', even though $conf_dir/sshd_config.d/01-collavre.conf sets" \
-        "it. sshd uses the FIRST value it obtains for a keyword, so something" \
-        "read earlier is setting it${offender:+ — ${offender}}. Stopping here" \
-        "rather than finishing: nothing has been granted yet and SSH is" \
-        "unchanged, so the host stays reachable. Remove or correct that" \
-        "setting and re-run."
+	"not 'no', even though $conf_dir/sshd_config.d/01-collavre.conf sets" \
+	"it. An earlier global directive or a Match block for '$deploy_user'" \
+	"is overriding it${offender:+ — ${offender}}. Stopping here rather" \
+	"than finishing: nothing has been granted yet and SSH is unchanged," \
+	"so the host stays reachable. Remove or correct that setting and" \
+	"re-run."
   done
 }
 
@@ -2748,7 +2752,7 @@ reload_ssh_daemon || SSH_RELOAD_STATE=$?
   "rejected configuration at the next boot, where no old process survives to" \
   "keep the host reachable. Nothing has been granted and SSH is unchanged." \
   "Find the offending directive with 'sshd -t', fix it, and re-run."
-verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"
+verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"
 
 # install_deploy_ssh_dir <user> <home> — create <home>/.ssh owned by the
 # account, and echo the group it was given.
@@ -3814,10 +3818,12 @@ log "7/9 firewall"
 # No `ufw reset`: this script is re-runnable, and a reset months later would
 # take a VPN, monitoring or IP-allowlist rule with it. Only the rules below are
 # ours to converge.
+# `default deny incoming` changes an already-active firewall immediately, so
+# port 22 must be authorized before that live policy is tightened.
+ensure_ssh_rule
 ufw default deny incoming
 ufw default allow outgoing
 
-ensure_ssh_rule
 ufw allow 80/tcp
 ufw allow 443/tcp
 # PostgreSQL is only listening on localhost and the docker bridge, so this rule

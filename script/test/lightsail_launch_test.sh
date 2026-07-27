@@ -823,6 +823,28 @@ esac
 
 unset -f ufw log
 
+echo "26a. SSH is authorized before the live incoming policy is tightened"
+# On an existing active firewall, `ufw default deny incoming` changes the live
+# policy immediately. The allow rule must therefore already exist when that
+# command runs; placing it only before `ufw --force enable` still leaves an
+# interruption window that can lock out the operator running this over SSH.
+fw_step="$(awk '
+  /^log "7\/9 firewall"/ { f = 1 }
+  f { print }
+  f && /^log "8\/9 nightly backups"/ { exit }
+' "$SRC")"
+fw_ssh_line="$(printf '%s\n' "$fw_step" |
+		 grep -n '^ensure_ssh_rule$' | cut -d: -f1)"
+fw_deny_line="$(printf '%s\n' "$fw_step" |
+		  grep -n '^ufw default deny incoming$' | cut -d: -f1)"
+if [ -n "$fw_ssh_line" ] && [ -n "$fw_deny_line" ] &&
+   [ "$fw_ssh_line" -lt "$fw_deny_line" ]; then
+  echo "  ok   the SSH allow rule precedes default deny incoming"
+else
+  echo "  FAIL default deny incoming can take effect before SSH is authorized"
+  fail=1
+fi
+
 # --- docs/deploy_to_lightsail.md, the SQLite cutover ------------------------
 #
 # This recipe hands the app role SUPERUSER, resets and reloads the production
@@ -5691,6 +5713,31 @@ chk "but an inactive daemon with no valid disk config stops" 1 \
 chk "and names the socket activation risk"                  1 \
   "$(printf '%s' "$vh_inactive_unread" | grep -c 'socket-activated connection')"
 
+# A global-only probe misses Match overrides. This stub gives the safe global
+# answer unless sshd is asked about deploybot, for whom password login remains
+# enabled. The reviewed implementation therefore passes this check; a
+# contextual verifier must stop.
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf "%s\n" "$*" > "$SSHD_ARGS_FILE"' \
+  'case " $* " in' \
+  '  *" -C user=deploybot "*) password=yes ;;' \
+  '  *) password=no ;;' \
+  'esac' \
+  'printf "passwordauthentication %s\npermitrootlogin no\nkbdinteractiveauthentication no\n" "$password"' \
+  > "$vshd/bin/sshd"
+chmod +x "$vshd/bin/sshd"
+SSHD_ARGS_FILE="$vshd/sshd.args"
+export SSHD_ARGS_FILE
+vh_match="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) >/dev/null 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "a deploy-user Match override stops the run"          1 \
+  "$(printf '%s' "$vh_match" | grep -c '^rc=1$')"
+chk "and sshd was given the deploy-user context"          1 \
+  "$(grep -c -- '-C user=deploybot' "$SSHD_ARGS_FILE")"
+unset SSHD_ARGS_FILE
+
 # Source level, because every row above passes on a revision that writes the
 # drop-in under the losing name and never reads anything back.
 chk "the drop-in is written where it sorts first"         1 \
@@ -5707,7 +5754,7 @@ chk "the sysctl drop-in is staged too"                    1 \
 chk "and the inert 99- file it replaces is removed"       1 \
   "$(grep -c '^rm -f /etc/ssh/sshd_config\.d/99-collavre\.conf$' "$SRC")"
 chk "and the run reads back what sshd resolved"           1 \
-  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"' "$SRC")"
+  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' "$SRC")"
 
 # The claim is about what sshd does with two files, so sshd is asked. The name
 # and the body both come from the script: a harness that wrote its own 01- file
