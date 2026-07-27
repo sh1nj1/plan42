@@ -246,6 +246,31 @@ module Collavre
     def reanchor_coalesced_task(task)
       return false unless %w[queued pending].include?(task.status)
 
+      Task.transaction { reanchor_locked_task(task) }
+    rescue ActiveRecord::RecordNotFound
+      # The task went away between the scan and the lock (a cascading delete).
+      # Nothing to rescue, and nothing left to cancel either.
+      false
+    end
+
+    # The lock body. `task` is the object cancel_pending_tasks' scan loaded, and
+    # everything derived here has to come from the row as it stands *now*:
+    # TaskCoalescer folds a sibling into this same task under a lock this path
+    # never took, so a fold committing between that scan and the write below
+    # would be overwritten by the pre-fold payload — and the absorbed sibling is
+    # already cancelled, so its comment has no task left to answer it.
+    #
+    # lock! reloads in place rather than into a second object: the caller keeps
+    # using this instance (it cancels the task when we return false), so swapping
+    # identity here would hand it stale attributes.
+    #
+    # Status is re-read for the same reason. A snapshot that said `queued` may
+    # have been promoted and started since, and a started turn has already been
+    # handed its payload — deleting the prompt must stop it, not re-target it.
+    def reanchor_locked_task(task)
+      task.lock!
+      return false unless %w[queued pending].include?(task.status)
+
       payload = task.trigger_event_payload || {}
       merged = Array(payload[Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY])
                  .compact.map(&:to_i).uniq - [ id ]
@@ -307,13 +332,35 @@ module Collavre
     # them and no stop control, and nothing reposts a notice until the next
     # deferral happens by.
     #
+    # …but only a notice that actually *was* deduplicated. With
+    # coalesce_pending_tasks off, post_waiting_notice deliberately skips the
+    # dedup path and posts one notice per deferral: there the 1:1 still holds and
+    # cancelling every queued task would let a user discard unrelated waiters by
+    # dismissing one notice, defeating the opt-out.
+    #
     # Queued only. A task holding the topic slot (pending/running/…) is not
     # waiting on anything; the notice surfaces it separately as
     # topic_blocking_task, with its own stop button.
     def cancel_queued_tasks_for_waiting_notice
       scope = Task.where(status: "queued", creative_id: creative_id)
       scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
-      scope.order(created_at: :desc).each { |task| task.update!(status: "cancelled") }
+      waiters = scope.order(created_at: :desc).to_a
+      waiters = waiters.first(1) unless deduplicated_waiting_notice?
+      waiters.each { |task| task.update!(status: "cancelled") }
+    end
+
+    # Was this notice the deduplicated one, standing for every waiter in the
+    # topic, or one of the per-deferral notices the opt-out posts?
+    #
+    # Read off the topic rather than stored on the row: the dedup path allows a
+    # topic exactly one deferred notice, so a sibling still standing here — this
+    # runs after_destroy_commit, with this notice already gone — means this one
+    # was never the topic's only signal. Asked through
+    # AgentOrchestrator.topic_concurrency_notice_exists?, the same predicate that
+    # decides whether to post one, so the two cannot drift apart.
+    def deduplicated_waiting_notice?
+      !Collavre::Orchestration::AgentOrchestrator
+        .topic_concurrency_notice_exists?(creative_id, topic_id)
     end
 
     def dispatch_to_orchestration

@@ -227,6 +227,84 @@ module Collavre
         assert_equal [ first.id ], payload[TaskCoalescer::PAYLOAD_KEY]
       end
 
+      # cancel_pending_tasks hands reanchor_coalesced_task the task object its own
+      # scan loaded, and the callback derives the replacement payload from that
+      # snapshot without ever locking the row. TaskCoalescer folds a sibling into
+      # the same task under a lock this path does not take, so the fold can commit
+      # inside that window and the re-anchor writes the pre-fold payload back over
+      # it. The absorbed sibling is cancelled by then, so its comment has no task
+      # left to answer it — here the whole turn is cancelled instead, because the
+      # snapshot's merged list is empty.
+      test "re-anchoring reads the payload the coalescer left, not the caller's snapshot" do
+        block_topic!
+        anchor = dispatch_comment("@#{@agent.name}: anchor")
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        snapshot = Task.find(waiter.id)
+
+        late = Comment.create!(
+          creative: @creative, user: @user, topic: @topic,
+          content: "@#{@agent.name}: late", skip_dispatch: true
+        )
+        sibling = queued_waiter_for(late)
+        TaskCoalescer.coalesce!(waiter, scope: :all)
+        assert_equal "cancelled", sibling.reload.status,
+                     "premise: the fold cancelled the late comment's own waiter"
+        assert_includes waiter.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY], late.id
+
+        assert anchor.send(:reanchor_coalesced_task, snapshot),
+               "the folded comment is still unanswered work — the turn must survive"
+
+        payload = waiter.reload.trigger_event_payload
+        assert_equal late.id, payload.dig("comment", "id"),
+                     "the comment the fold merged in becomes the anchor"
+      end
+
+      # The same window can flip the task's status: the caller's snapshot says
+      # `queued` while promotion has already claimed it and AiAgentJob has handed
+      # it its payload. Re-anchoring a started turn silently re-targets work the
+      # agent is already doing; deleting the prompt has to stop it instead.
+      test "re-anchoring revalidates the status against the locked row" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: second")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        assert_equal second.id, waiter.trigger_event_payload.dig("comment", "id")
+        snapshot = Task.find(waiter.id)
+        Task.where(id: waiter.id).update_all(status: "running")
+
+        assert_not second.send(:reanchor_coalesced_task, snapshot),
+                   "a turn that has already started is not ours to re-target"
+        assert_equal second.id, waiter.reload.trigger_event_payload.dig("comment", "id")
+        assert_includes waiter.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY], first.id
+      end
+
+      # With coalescing off, post_waiting_notice deliberately skips the dedup path
+      # and posts one notice per deferral — so a notice stands for exactly one
+      # waiter, and cancelling every queued task lets a user discard unrelated
+      # waiters by dismissing a single notice.
+      test "with coalescing off, deleting one notice cancels only its own waiter" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: nil,
+          config: { "coalesce_pending_tasks" => false }
+        )
+        block_topic!
+
+        3.times { |i| dispatch_comment("@#{@agent.name}: msg #{i}") }
+
+        notices = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                                topic_concurrency_defer: true)
+                         .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+                         .order(:id).to_a
+        assert_equal 3, notices.size, "premise: the opt-out posts one notice per deferral"
+        assert_equal 3, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count
+
+        notices.last.destroy!
+
+        assert_equal 2, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count,
+                     "a notice that was never deduplicated speaks for one waiter only"
+      end
+
       test "deleting the anchor still cancels a waiter with nothing absorbed" do
         block_topic!
         only = dispatch_comment("@#{@agent.name}: only")
