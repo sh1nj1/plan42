@@ -266,7 +266,67 @@ module CollavreGithub
       assert_response :ok
     end
 
+    # A lost claim answers 200 whether the owner has finished or is still
+    # running, because the response cannot wait to find out which. Answering a
+    # retryable status instead would mark one hook's delivery failed on nearly
+    # every fan-out event — the two hooks are delivered in parallel and overlap
+    # almost always — and drown the failed deliveries that actually need a
+    # Redeliver. The three tests below pin that the response never varies and
+    # that the distinction survives in the log instead.
+    test "a duplicate arriving while the owner is still running is answered 200" do
+      guid = "still-running-guid"
+      CollavreGithub::WebhookDelivery.create!(
+        delivery_guid: guid, event: "issue_comment", claim_token: "owner-token",
+        created_at: Time.current
+      )
+
+      log = capture_rails_log { post_comment_event(guid: guid, comment_id: 15) }
+
+      assert_response :ok
+      assert_includes log, "owner still in flight"
+    end
+
+    test "a duplicate of a completed delivery is logged as already processed" do
+      guid = "already-done-guid"
+      CollavreGithub::WebhookDelivery.create!(
+        delivery_guid: guid, event: "issue_comment", claim_token: "owner-token",
+        created_at: Time.current, processed_at: Time.current
+      )
+
+      log = capture_rails_log { post_comment_event(guid: guid, comment_id: 16) }
+
+      assert_response :ok
+      assert_includes log, "already processed"
+    end
+
+    test "a duplicate dismissed after its owner released the claim is logged as released" do
+      # The one state in which nobody is left holding the event: the owner
+      # failed and dropped the claim after this request had already lost it.
+      # Recovery rests on the owner's own 5xx, so the log is the only place
+      # this is visible from here.
+      guid = "owner-released-guid"
+
+      log = capture_rails_log do
+        CollavreGithub::WebhookDelivery.stub(:claim, ->(*, **) { nil }) do
+          post_comment_event(guid: guid, comment_id: 17)
+        end
+      end
+
+      assert_response :ok
+      assert_includes log, "released by a failed owner"
+    end
+
     private
+
+    def capture_rails_log
+      io = StringIO.new
+      original = Rails.logger
+      Rails.logger = ActiveSupport::Logger.new(io)
+      yield
+      io.string
+    ensure
+      Rails.logger = original
+    end
 
     def push_payload
       {

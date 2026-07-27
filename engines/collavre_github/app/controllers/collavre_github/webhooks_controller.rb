@@ -22,9 +22,38 @@ module CollavreGithub
       # The token, not the GUID, is this run's proof of ownership. Ownership can
       # be taken away mid-run (see WebhookDelivery::STALE_CLAIM_AFTER), so both
       # the release below and the mark_processed! at the end are scoped to it.
+      #
+      # The claim is lost in two states that this request cannot tell apart at
+      # the moment it answers: the owner has finished, or the owner is still
+      # running and may yet fail. Both answer 200, i.e. this branch ASSUMES the
+      # owner succeeds. That assumption is deliberate, and it is safe because it
+      # does not consume the owner's own recovery: a failing owner answers 5xx
+      # on ITS delivery, and each hook (and each Redeliver press) is a separate
+      # delivery with a separate response. So a lost claim never reduces
+      # recoverability below that of any other failed delivery.
+      #
+      # Answering a retryable status here instead would be strictly worse. Two
+      # hooks are fanned out in parallel and a delivery takes well under a
+      # second, so the loser overlaps the owner on essentially every event: one
+      # hook would show a permanent stream of failed deliveries for events that
+      # were handled correctly — destroying the very signal (a red delivery
+      # means look at me) that the release-and-redeliver recovery depends on.
+      # Waiting for processed_at fares no better: it holds the connection open
+      # against GitHub's ~10s delivery timeout while a different request works,
+      # and cannot separate a slow owner from a dead one — only
+      # STALE_CLAIM_AFTER does that, and it is far longer than the timeout.
+      #
+      # What the assumption does cost is diagnosability, so the two states are
+      # distinguished in the log: a Redeliver pressed while the owner is still
+      # running is answered 200 and, if that owner then fails, the event is left
+      # for the owner's 5xx to recover. Only the log says which of the two
+      # happened.
       claim_token = CollavreGithub::WebhookDelivery.claim(delivery_guid, event: event)
       unless claim_token
-        Rails.logger.info("[CollavreGithub] duplicate delivery #{delivery_guid} (#{event}); skipping")
+        Rails.logger.info(
+          "[CollavreGithub] duplicate delivery #{delivery_guid} (#{event}); skipping " \
+          "(#{claim_state_for_log})"
+        )
         return head :ok
       end
 
@@ -60,6 +89,22 @@ module CollavreGithub
     end
 
     private
+
+    # Why the claim was lost, for the log line only — never for the response,
+    # which is 200 in every case. Read separately from `claim` because the
+    # answer is advisory: the owner can finish between the failed claim and
+    # this read, and a state that is already stale is still the closest thing
+    # to an answer available to a request that owns nothing.
+    #
+    # `released` is the state worth grepping for. It means the owner failed and
+    # dropped the claim, so this delivery was dismissed with nobody left
+    # holding the event — recovery rests entirely on the owner's own 5xx.
+    def claim_state_for_log
+      delivery = CollavreGithub::WebhookDelivery.find_by(delivery_guid: delivery_guid)
+      return "released by a failed owner" if delivery.nil?
+
+      delivery.processed_at ? "already processed" : "owner still in flight"
+    end
 
     # Bounded because the ledger write is a single UPDATE on a row this run
     # already owns: it either goes through on a retry or the database is gone,
