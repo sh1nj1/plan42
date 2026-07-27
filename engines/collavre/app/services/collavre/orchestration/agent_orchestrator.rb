@@ -286,14 +286,9 @@ module Collavre
       # had one. A shared notice is left alone — it is not this task's to take
       # down, and the drained check above is the question that governs it.
       def self.cleanup_waiter_notice!(task)
-        Comment.where(creative_id: task.creative_id, topic_id: task.topic_id, user_id: nil,
-                      waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
-                      waiting_notice_task_id: task.id)
-               .find_each do |notice|
-          # System promotion, not user abandonment.
-          notice.suppress_waiter_cancellation = true
-          notice.destroy
-        end
+        Comment.remove_waiter_notices!(
+          creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id
+        )
       end
       private_class_method :cleanup_waiter_notice!
 

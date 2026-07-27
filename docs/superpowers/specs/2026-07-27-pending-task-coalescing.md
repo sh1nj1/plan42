@@ -249,6 +249,16 @@ be N dead ends pointing at one blocker.
   A per-deferral notice is not subject to that question — `cleanup_waiter_notice!`
   takes down the promoted waiter's own notice unconditionally, or it would keep
   offering a stop button for a turn that is already running.
+- **A `"task"` notice lives exactly as long as its waiter is queued**, so it
+  comes down at every door that takes that waiter out of the queue — promotion
+  *and* the fold. `TaskCoalescer` removes the notices naming the tasks it
+  absorbs, in the same transaction as the cancellation. Nothing else would:
+  the cancelled task is never promoted, so `cleanup_waiter_notice!` never runs
+  for it, and the drained sweep needs the topic queue to empty — which the
+  survivor of that very fold prevents. Reachable whenever the policy is off
+  when a waiter defers and on by the time the next one folds it. Both callers
+  go through `Comment.remove_waiter_notices!` rather than each spelling the
+  query out.
 - `Comment#cancel_queued_tasks_for_waiting_notice` cancels, for a `"topic"`
   notice, every queued waiter in the scope except those a surviving `"task"`
   notice still speaks for; for a `"task"` notice, exactly its own waiter; and for

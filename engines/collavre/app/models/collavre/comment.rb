@@ -16,6 +16,38 @@ module Collavre
     WAITING_NOTICE_TOPIC = "topic"
     WAITING_NOTICE_TASK = "task"
 
+    # Take down the per-deferral notice that speaks for this waiter, if it had
+    # one.
+    #
+    # A "task" notice is on screen for exactly as long as its waiter is queued:
+    # it names that waiter in waiting_notice_task_id and
+    # #cancel_queued_tasks_for_waiting_notice stops that waiter and nothing
+    # else. So the moment the waiter leaves the queue the notice is a stop
+    # button for work that cannot be stopped — and no sweep will collect it,
+    # since the drained sweep only runs when the topic queue empties and the
+    # waiter itself will never be promoted again.
+    #
+    # It therefore comes down wherever the waiter leaves, which is why this
+    # lives here beside the columns rather than in one of those callers: the
+    # promotion (AgentOrchestrator.cleanup_waiter_notice!) and the fold
+    # (Orchestration::TaskCoalescer) are two doors onto the same rule, and a
+    # third would otherwise write its own copy or forget.
+    #
+    # The destroy is marked as a system removal: the waiter is being promoted or
+    # folded, not abandoned by the user, so the cancellation callback must not
+    # fire on top of it.
+    def self.remove_waiter_notices!(creative_id:, topic_id:, task_ids:)
+      task_ids = Array(task_ids).compact
+      return if task_ids.empty?
+
+      where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+            waiting_notice_scope: WAITING_NOTICE_TASK,
+            waiting_notice_task_id: task_ids).find_each do |notice|
+        notice.suppress_waiter_cancellation = true
+        notice.destroy
+      end
+    end
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"

@@ -147,6 +147,21 @@ module Collavre
             absorbed_ids << task.id
           end
 
+          # A waiter absorbed here may have parked with a per-deferral notice of
+          # its own — the policy only has to have been off when it deferred and
+          # on by the time this fold runs. That notice speaks for this one
+          # waiter, so with the waiter cancelled it is a stop button that
+          # selects a task no longer in the queue and cancels nothing at all.
+          #
+          # Nothing else would collect it either: the cancelled task will never
+          # be promoted through cleanup_waiter_notice!, and the drained sweep
+          # needs the topic queue to empty — which the survivor of this very
+          # fold prevents. Same transaction as the cancellation, so the two
+          # cannot come apart.
+          Comment.remove_waiter_notices!(
+            creative_id: @keep.creative_id, topic_id: @keep.topic_id, task_ids: absorbed_ids
+          )
+
           if siblings.any?
             # Merge onto the locked row's payload, but write through the
             # caller's own object: dequeue_next_for_topic hands that same

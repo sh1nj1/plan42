@@ -623,5 +623,89 @@ module Collavre
         orchestrator.send(:post_waiting_notice, @agent, { timing: :delayed, reason: :busy })
       end
     end
+
+    # A per-deferral notice speaks for one waiter, and coalescing removes
+    # waiters. Turning the policy on between two deferrals is enough: the first
+    # parks with a notice of its own, the second folds it away, and nothing on
+    # any path is left that would take that notice down — the fold does not, the
+    # cancelled task will never be promoted through cleanup_waiter_notice!, and
+    # the survivor keeps the topic queue non-empty so the drained sweep never
+    # runs either.
+    def folded_opt_out_waiter!
+      policy = OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("first")))
+      first = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      notice = Comment.find_by(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                               waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                               waiting_notice_task_id: first.id)
+      assert notice, "premise: the opt-out door posts a notice naming this waiter"
+
+      policy.update!(config: { "coalesce_pending_tasks" => true })
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("second")))
+
+      survivor = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      assert_equal "cancelled", first.reload.status, "premise: the fold absorbed the first waiter"
+      [ first, notice, survivor ]
+    end
+
+    test "folding a waiter takes down the per-deferral notice that spoke for it" do
+      _first, notice, _survivor = folded_opt_out_waiter!
+
+      assert_not Comment.exists?(notice.id),
+                 "a notice for a folded waiter is a stop button nothing can take down"
+    end
+
+    # Stated as the invariant rather than as "this one row is gone", because
+    # what makes the leftover worse than a duplicate line on screen is that its
+    # stop button selects its own waiter by id and that waiter is no longer
+    # queued — pressing it does nothing at all.
+    test "no per-deferral notice outlives the waiter it speaks for" do
+      folded_opt_out_waiter!
+
+      stale = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                            waiting_notice_scope: Comment::WAITING_NOTICE_TASK)
+                     .where.not(waiting_notice_task_id: Task.where(status: "queued").select(:id))
+      assert_empty stale.to_a,
+                   "a notice naming a waiter that has left the queue is a dead stop button"
+    end
+
+    # The controls the two above need. "Delete every notice in the fold" would
+    # pass them both while stripping the survivor's own signal off the screen.
+    test "folding leaves the surviving waiter's own notice standing" do
+      _first, _notice, survivor = folded_opt_out_waiter!
+
+      shared = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                             topic_concurrency_defer: true,
+                             waiting_notice_scope: Comment::WAITING_NOTICE_TOPIC)
+                      .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+                      .sole
+      shared.destroy!
+      assert_equal "cancelled", survivor.reload.status,
+                   "the survivor keeps a notice that still stops it"
+    end
+
+    # …and it must reach only the waiters it actually folded. Another agent's
+    # per-deferral notice is not this fold's to take down.
+    test "folding does not touch another agent's per-deferral notice" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("theirs")))
+      theirs = Task.where(agent: second_agent, topic_id: @topic.id, status: "queued").sole
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("a")))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("b")))
+
+      assert_equal "queued", theirs.reload.status, "premise: only same-agent siblings fold"
+      assert Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                           waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                           waiting_notice_task_id: theirs.id).exists?,
+             "the opt-out agent's notice speaks for a waiter that is still queued"
+    end
   end
 end
