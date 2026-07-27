@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -33,7 +33,8 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation role_owns_app_objects revoke_prior_ssh_key \
           ensure_cluster_on_default_port ensure_swapfile allocate_swapfile \
-          ensure_docker_log_caps dedupe_authorized_keys \
+	  ensure_docker_log_caps warn_existing_containers_keep_log_config \
+	  dedupe_authorized_keys \
           install_staged_authorized_keys postgresql_conf_includes_confd \
           refuse_db_name_change refuse_defaulted_config_change \
           refuse_unusable_db_identifier refuse_unparsable_ssh_key \
@@ -2141,6 +2142,15 @@ ensure_docker_log_caps "$f"
 chk "reports no change" 0 "$DAEMON_JSON_CHANGED"
 chk "byte-identical"    "$before" "$(cat "$f")"
 
+echo "67a. Docker's unlimited max-size is repaired rather than accepted as a cap"
+d=$(mktemp -d); f="$d/daemon.json"; LOGGED=""
+printf '{"log-driver":"json-file","log-opts":{"max-size":"-1","max-file":"9"},"live-restore":true}\n' > "$f"
+ensure_docker_log_caps "$f"
+chk "reports it changed the file" 1 "$DAEMON_JSON_CHANGED"
+chk "unlimited size replaced"     '10m' "$(jq -r '."log-opts"."max-size"' "$f")"
+chk "rotation count set"          '3' "$(jq -r '."log-opts"."max-file"' "$f")"
+chk "operator's other keys kept"  'true' "$(jq -r '."live-restore"' "$f")"
+
 echo "68. a non-json-file driver is reported, not overridden"
 # journald and local rotate on their own; forcing json-file would redirect an
 # operator's logs rather than cap them.
@@ -2179,6 +2189,35 @@ after_first="$(cat "$f")"
 ensure_docker_log_caps "$f"
 chk "second run changes nothing" 0 "$DAEMON_JSON_CHANGED"
 chk "byte-identical"             "$after_first" "$(cat "$f")"
+
+echo "70a. existing containers are told when changed defaults take effect"
+# This section needs the warning text on stdout; the next section restores the
+# accumulator form used by the UFW tests.
+log() { printf '%s\n' "$*"; }
+docker() {
+  [ "${1:-}" = ps ] || return 1
+  case "${DOCKER_PS_RESULT:-}" in
+    existing) printf 'container-id\n' ;;
+    failure) return 1 ;;
+  esac
+}
+out="$(DOCKER_PS_RESULT=existing warn_existing_containers_keep_log_config 2>&1)"
+chk "existing containers are warned" 1 \
+  "$(grep -c 'only after the next.*kamal.sh deploy.*recreates them' <<<"$out")"
+out="$(DOCKER_PS_RESULT=empty warn_existing_containers_keep_log_config 2>&1)"
+chk "a fresh host gets no warning" "" "$out"
+out="$(DOCKER_PS_RESULT=failure warn_existing_containers_keep_log_config 2>&1)"
+chk "an inspection failure is not read as no containers" 1 \
+  "$(grep -c 'could.*not be inspected' <<<"$out")"
+unset -f docker
+unset DOCKER_PS_RESULT
+restart_block="$(awk '
+  index($0, "if [ \"$DAEMON_JSON_CHANGED\" -eq 1 ]; then") { p=1 }
+  p { print }
+  p && /^else$/ { exit }
+' "$SRC")"
+chk "the warning follows the Docker restart" 1 \
+  "$(grep -c 'warn_existing_containers_keep_log_config' <<<"$restart_block")"
 
 # --------------------------------------------------------------------------
 # ensure_ufw_rule, revisited: a delete that FAILS must not advance the marker.

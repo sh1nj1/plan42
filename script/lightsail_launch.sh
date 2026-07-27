@@ -1498,7 +1498,7 @@ allocate_swapfile() {
 # not rotate at all, so sustained Rails output fills a Lightsail SSD, which is
 # the specific failure this block exists to prevent.
 ensure_docker_log_caps() {
-  local file="${1:-/etc/docker/daemon.json}" tmp driver wrote
+  local file="${1:-/etc/docker/daemon.json}" tmp driver max_size wrote
   DAEMON_JSON_CHANGED=0
   # Before either branch, so the create path and the rewrite path name one file
   # even when /etc/docker/daemon.json is a link — and so the rename below cannot
@@ -1612,7 +1612,11 @@ JSON
     return 0
   fi
 
-  if [ "$(jq -r '."log-opts"."max-size" // empty' "$file")" != "" ]; then
+  # Docker treats max-size=-1 as unlimited, so it is not a cap even though it
+  # is a nonempty operator setting. Repair it through the same merge path as a
+  # missing max-size; every other explicit size remains the operator's choice.
+  max_size="$(jq -r '."log-opts"."max-size" // empty' "$file")"
+  if [ -n "$max_size" ] && [ "$max_size" != "-1" ]; then
     return 0
   fi
 
@@ -1656,6 +1660,23 @@ JSON
   mv -f "$tmp" "$file"
   log "added container log caps to the existing $file"
   DAEMON_JSON_CHANGED=1
+}
+
+# Docker daemon logging options are defaults captured when each container is
+# created. Restarting the daemon makes a new default available but does not
+# retrofit containers that already exist.
+warn_existing_containers_keep_log_config() {
+  local containers
+  if ! containers="$(docker ps -aq 2>/dev/null)"; then
+    log "WARNING: Docker's log defaults changed, but existing containers could" \
+	"not be inspected. Any existing container keeps its previous logging" \
+	"configuration until it is recreated."
+    return 0
+  fi
+  [ -n "$containers" ] || return 0
+  log "WARNING: Docker's log cap is a default for newly created containers only." \
+      "Existing containers keep their previous logging configuration. The caps" \
+      "apply to them only after the next './kamal.sh deploy' recreates them."
 }
 
 # Refuse to provision when $PG_MAJOR's cluster is not the one on $DB_PORT.
@@ -3330,6 +3351,7 @@ if [ "$DAEMON_JSON_CHANGED" -eq 1 ]; then
   # they come back under their restart policy, and an uncapped log filling the
   # disk takes the whole host down rather than one container.
   systemctl restart docker
+  warn_existing_containers_keep_log_config
 else
   systemctl start docker
 fi

@@ -73,6 +73,11 @@ sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." bash script/lightsail_launch.sh
 sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." FORCE=1 bash script/lightsail_launch.sh
 ```
 
+If a re-run adds or changes Docker's default log caps, it restarts Docker but
+cannot retrofit those defaults onto existing containers. Recreate them with
+`./kamal.sh deploy` from your workstation; until that deployment, their
+previous logging configuration remains in effect.
+
 **A re-run applies every setting in the table, not only the ones you name.** An
 override you used the first time and did not repeat is applied as its default,
 and three of those defaults do not converge the host — they rotate it.
