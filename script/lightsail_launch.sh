@@ -594,7 +594,7 @@ refuse_unparsable_ssh_key() {
 # command can be run through it. There is no client here to prove that with, so
 # the only place the question can be answered is before anything is appended.
 refuse_forced_command_ssh_key() {
-  local options
+  local has_forced_command
   [ -n "$SSH_PUBLIC_KEY" ] || return 0
   # Folded, because sshd matches the option *name* without regard to case and a
   # case-sensitive test here is a bypass rather than a narrower guard. Measured
@@ -613,11 +613,11 @@ refuse_forced_command_ssh_key() {
   # its own a reason to refuse a key sshd is happy to run the client's command
   # through.
   #
-  # `tr` rather than `${options,,}`: this suite runs under bash 3.2 on macOS as
-  # well as 5.2 on the host, and the parameter expansion is a 4.0 syntax error
-  # there — the same platform split that made a `head -c 0` fixture pass here
-  # and fail in CI.
-  options="$(
+  # Parse the comma-separated option names rather than searching the whole
+  # field: `environment="NOTE=command=value"` carries those bytes as data and
+  # does not replace the client command. awk's tolower() keeps this compatible
+  # with bash 3.2 on macOS while matching sshd's case-insensitive option names.
+  has_forced_command="$(
     printf '%s\n' "$SSH_PUBLIC_KEY" |
       awk '
 	{
@@ -628,6 +628,8 @@ refuse_forced_command_ssh_key() {
 	  }
 	  quoted = 0
 	  escaped = 0
+	  option_start = start
+	  seen_equals = 0
 	  for (i = start; i <= length($0); i++) {
 	    char = substr($0, i, 1)
 	    if (escaped) {
@@ -637,18 +639,22 @@ refuse_forced_command_ssh_key() {
 	    } else if (char == "\"") {
 	      quoted = !quoted
 	    } else if (!quoted && char ~ /[[:space:]]/) {
-	      print substr($0, start, i - start)
 	      exit
+	    } else if (!quoted && char == ",") {
+	      option_start = i + 1
+	      seen_equals = 0
+	    } else if (!quoted && char == "=" && !seen_equals) {
+	      if (tolower(substr($0, option_start, i - option_start)) == "command") {
+		print "yes"
+		exit
+	      }
+	      seen_equals = 1
 	    }
 	  }
 	}
-      ' |
-      tr '[:upper:]' '[:lower:]'
+      '
   )"
-  case "$options" in
-    *command=*) ;;
-    *) return 0 ;;
-  esac
+  [ "$has_forced_command" = yes ] || return 0
   die "REFUSING: SSH_PUBLIC_KEY carries a forced command. sshd reads the key" \
       "fine, and then runs that command in place of whatever the client asks" \
       "for — so 'kamal deploy' would connect, run the forced command, and" \

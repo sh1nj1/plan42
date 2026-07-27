@@ -5454,6 +5454,18 @@ else
   fcguard "$FC_COLLISION"
   chk "AAAA in an option cannot hide a later command"  1 "$fc_rc"
 
+  # `command=` in a quoted value is data, not an option name. sshd only
+  # replaces the client command when the comma-separated option itself is
+  # named command.
+  FC_VALUE_COLLISION="environment=\"NOTE=command=value\" $FC_KEY"
+  printf '%s\n' "$FC_VALUE_COLLISION" > "$fcd/value-collision.pub"
+  chk "the option-value fixture is a real key line"    0 \
+    "$(ssh-keygen -l -f "$fcd/value-collision.pub" >/dev/null 2>&1; echo $?)"
+  fcguard "$FC_VALUE_COLLISION"
+  chk "command= inside an option value is accepted"    0 "$fc_rc"
+  fcguard "environment=\"NOTE=command=value\",command=\"/usr/bin/true\" $FC_KEY"
+  chk "but a later command option is still refused"    1 "$fc_rc"
+
   fcguard "$FC_KEY"
   chk "a plain key still goes through"                 0 "$fc_rc"
   fcguard "from=\"127.0.0.1\" $FC_KEY"
