@@ -400,7 +400,19 @@ ipv4_dotted_quad() {
 # restart to trigger it.
 refuse_unusable_bind_address() {
   local setting="$1" value="$2"
-  ipv4_dotted_quad "$value" && return 0
+  if ipv4_dotted_quad "$value"; then
+    case "$value" in
+      127.*)
+	die "REFUSING: $setting='$value' is a loopback address. PostgreSQL would" \
+	    "listen successfully on the host, but DATABASE_URL is used inside" \
+	    "the application container, where 127.0.0.0/8 names the container" \
+	    "itself rather than the host database. Nothing has been changed." \
+	    "Set $setting to the gateway address of the bridge your containers" \
+	    "are on — 'ip -4 addr show docker0'."
+	;;
+    esac
+    return 0
+  fi
   die "REFUSING: $setting='$value' is not an IPv4 address. It is written into" \
       "PostgreSQL's listen_addresses, into a ufw rule and into DATABASE_URL," \
       "and PostgreSQL does not refuse it: an address it cannot bind is a" \
@@ -2666,7 +2678,7 @@ scan_ssh_config_file() {
     if [ "${SSH_CONFIG_SCAN_CONTEXTUAL:-0}" -eq 1 ]; then
       value="${fields[1]:-}"
       value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-      if [[ "$key" =~ ^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin)$ ]] &&
+      if [[ "$key" =~ ^(passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication|permitrootlogin)$ ]] &&
 	 [ "$value" != no ]; then
 	SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no:${line#"${line%%[![:space:]]*}"}"
 	break

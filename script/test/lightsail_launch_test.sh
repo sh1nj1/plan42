@@ -5666,6 +5666,10 @@ bindguard 10.0.0.5
 chk "and any other dotted quad"                        0 "$bind_rc"
 bindguard 1.2.3.4
 chk "including one this host does not hold"            0 "$bind_rc"
+bindguard 127.0.0.1
+chk "a loopback address unusable from the container is refused" 1 "$bind_rc"
+bindguard 127.255.255.254
+chk "and the whole IPv4 loopback range is refused"     1 "$bind_rc"
 bindguard 172.17.0.999
 chk "an octet over 255 is refused"                     1 "$bind_rc"
 bindguard bogus.invalid
@@ -5867,6 +5871,20 @@ chk "an address-scoped password override stops the run"  1 \
   "$(printf '%s' "$vh_address" | grep -c '^rc=1$')"
 chk "and the refusal names the untestable Match context" 1 \
   "$(printf '%s' "$vh_address" | grep -ci 'Match.*Address')"
+
+# ChallengeResponseAuthentication is OpenSSH's deprecated alias for
+# KbdInteractiveAuthentication. A contextual scanner that recognizes only the
+# canonical spelling leaves PAM password authentication enabled in the same
+# address scope that the user-only sshd probe cannot evaluate.
+printf 'Include %s/sshd_config.d/*.conf\nMatch Address 203.0.113.0/24\n  ChallengeResponseAuthentication yes\n' \
+  "$vshd" > "$vshd/sshd_config"
+vh_challenge_alias="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "the contextual keyboard-interactive alias stops the run" 1 \
+  "$(printf '%s' "$vh_challenge_alias" | grep -c '^rc=1$')"
+chk "and the refusal identifies the alias directive" 1 \
+  "$(printf '%s' "$vh_challenge_alias" |
+       grep -ci 'ChallengeResponseAuthentication')"
 
 # Include is textual and may point anywhere. The Match begins in the main file,
 # the weakening directive is in a nonstandard included file, and Match All
