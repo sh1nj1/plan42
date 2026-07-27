@@ -36,16 +36,16 @@ module Collavre
         )
       end
 
-      def dispatch_comment(body)
+      def dispatch_comment(body, user: @user)
         comment = Comment.create!(
-          creative: @creative, user: @user, topic: @topic, content: body, skip_dispatch: true
+          creative: @creative, user: user, topic: @topic, content: body, skip_dispatch: true
         )
         AgentOrchestrator.dispatch("comment_created", {
           "creative" => { "id" => @creative.id },
           "topic" => { "id" => @topic.id },
-          "sender" => { "id" => @user.id, "name" => @user.name },
+          "sender" => { "id" => user.id, "name" => user.name },
           "chat" => { "content" => body },
-          "comment" => { "id" => comment.id, "content" => body, "user_id" => @user.id }
+          "comment" => { "id" => comment.id, "content" => body, "user_id" => user.id }
         })
         comment
       end
@@ -209,6 +209,72 @@ module Collavre
         second.destroy!
 
         assert_equal "cancelled", task.reload.status
+      end
+
+      # Both doors onto the anchor replace "comment" but the payload also carries
+      # a "sender" block, and SystemEvents::ContextBuilder only fills it in with
+      # `||=` — it is never rebuilt on a promotion path. A stale sender labels the
+      # new anchor's text with the wrong speaker in MessageBuilder and ships the
+      # wrong author_id/author_name over ClaudeChannelAdapter.
+      test "deleting the anchor rebuilds the sender from the surviving comment" do
+        block_topic!
+        other = users(:two)
+        first = dispatch_comment("@#{@agent.name}: from other", user: other)
+        second = dispatch_comment("@#{@agent.name}: from one")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        assert_equal @user.id, waiter.trigger_event_payload.dig("sender", "id")
+
+        second.destroy!
+
+        payload = waiter.reload.trigger_event_payload
+        assert_equal first.id, payload.dig("comment", "id")
+        assert_equal other.id, payload.dig("sender", "id"),
+                     "the turn now answers #{other.name}'s comment and must say so"
+        assert_equal expected_sender_for(other), payload["sender"],
+                     "the rebuilt sender must carry the same shape the builder does — " \
+                     "a two-key stub silently flips the is_a2a gate"
+      end
+
+      test "refresh rebuilds the sender when it moves onto another user's comment" do
+        other = users(:two)
+        stale = dispatch_comment("@#{@agent.name}: stale")
+        task = queued_waiter_for(stale)
+        task.update!(trigger_event_payload: task.trigger_event_payload.merge(
+          "sender" => expected_sender_for(@user)
+        ))
+        newer = Comment.create!(
+          creative: @creative, user: other, topic: @topic,
+          content: "@#{@agent.name}: newer", skip_dispatch: true
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        payload = task.reload.trigger_event_payload
+        assert_equal newer.id, payload.dig("comment", "id")
+        assert_equal expected_sender_for(other), payload["sender"],
+                     "refreshing onto another user's comment must move the sender with it"
+      end
+
+      # Control: the rebuild must not fire blind. Re-anchoring within one user's
+      # own burst leaves the sender exactly as it was.
+      test "re-anchoring inside one user's burst leaves the sender untouched" do
+        block_topic!
+        dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: second")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        before = waiter.trigger_event_payload["sender"]
+
+        second.destroy!
+
+        assert_equal before, waiter.reload.trigger_event_payload["sender"]
+      end
+
+      def expected_sender_for(user)
+        SystemEvents::ContextBuilder.new(
+          "comment" => { "user_id" => user.id }
+        ).build["sender"]
       end
     end
   end

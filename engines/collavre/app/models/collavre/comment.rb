@@ -251,8 +251,10 @@ module Collavre
                  .compact.map(&:to_i).uniq - [ id ]
       return false if merged.empty?
 
-      # Anything else in the merge window may have been deleted too.
-      replacement = Comment.where(id: merged).order(:created_at, :id).last
+      # Anything else in the merge window may have been deleted too. Newest by id:
+      # created_at is stamped per writing process, so a burst can carry skewed or
+      # tied timestamps (same reason MergedTriggerComments orders by id).
+      replacement = Comment.where(id: merged).order(:id).last
       return false unless replacement
 
       payload = payload.merge(
@@ -263,6 +265,7 @@ module Collavre
         },
         "chat" => { "content" => replacement.content }
       )
+      payload = Collavre::SystemEvents::ContextBuilder.reanchor_sender(payload, replacement)
       # absorb_into_payload drops the new anchor from the merged list so the
       # promoted comment is not delivered twice.
       payload = Collavre::Orchestration::TaskCoalescer.absorb_into_payload(payload, merged)

@@ -217,7 +217,7 @@ module Collavre
           .where(creative_id: creative_id, topic_id: topic_id)
           .where.not(user_id: [ task.agent_id, nil ])
           .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
-          .order(created_at: :desc)
+          .order(id: :desc)
         latest_comment = scope.first
 
         unless latest_comment
@@ -236,6 +236,12 @@ module Collavre
           "user_id" => latest_comment.user_id
         }
         context["chat"] = { "content" => latest_comment.content }
+        # The payload's "sender" is what labels the trigger and what
+        # ClaudeChannelAdapter sends as author_id/author_name, and
+        # SystemEvents::ContextBuilder only ever fills it in with `||=` — it does
+        # not run again here. A burst spanning two people would otherwise put the
+        # first speaker's name on the second's words.
+        context = SystemEvents::ContextBuilder.reanchor_sender(context, latest_comment)
         # absorb_into_payload also drops the new anchor from the merged list, so
         # a comment promoted from "merged" back to "trigger" is not sent twice.
         context = TaskCoalescer.absorb_into_payload(context, [ previous_anchor_id ].compact)

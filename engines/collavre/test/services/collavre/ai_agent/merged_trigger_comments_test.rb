@@ -39,6 +39,36 @@ module Collavre
         assert_equal [ "[#{@user.name}]: first", "[#{@user.name}]: second" ], blocks.map(&:text)
       end
 
+      # Comment ids are the app's causal sequence (see CommentsController: created_at
+      # is stamped by whichever process wrote the row, so a burst inserted by
+      # concurrent workers can be backdated out of order). Ordering the merged
+      # prompt by created_at can therefore hand the agent "ignore that" before the
+      # instruction it retracts.
+      test "orders merged comments by id when created_at is skewed" do
+        first = comment("do X", created_at: 1.minute.ago)
+        second = comment("ignore that", created_at: 5.minutes.ago)
+        assert_operator first.id, :<, second.id
+        anchor = comment("and now Y")
+
+        blocks = MergedTriggerComments.for(context_with(anchor, [ first, second ]), agent: @agent)
+
+        assert_equal [ "[#{@user.name}]: do X", "[#{@user.name}]: ignore that" ],
+                     blocks.map(&:text),
+                     "insertion order is the causal order, not the stamped timestamp"
+      end
+
+      test "orders merged comments by id when created_at ties" do
+        same = 2.minutes.ago
+        first = comment("do X", created_at: same)
+        second = comment("ignore that", created_at: same)
+        anchor = comment("and now Y")
+
+        blocks = MergedTriggerComments.for(context_with(anchor, [ second, first ]), agent: @agent)
+
+        assert_equal [ "[#{@user.name}]: do X", "[#{@user.name}]: ignore that" ],
+                     blocks.map(&:text)
+      end
+
       test "excludes the anchor comment from the merged blocks" do
         anchor = comment("only")
 

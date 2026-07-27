@@ -51,10 +51,16 @@ module Collavre
 
         # Memoized: MessageBuilder renders these into the trigger and also scans
         # them for creative references, and one build should not re-query.
+        # Ordered by id, not created_at. A burst is exactly the case where the
+        # rows are written by different processes, and created_at is stamped by
+        # whichever one wrote it — clock skew or a tie can hand the agent
+        # "ignore that" ahead of the instruction it retracts. Ids are the app's
+        # single monotonic causal sequence (CommentsController orders by id for
+        # the same reason).
         @blocks ||= Comment.public_only.without_approval_action
                            .where(id: comment_ids)
                            .includes(:user)
-                           .order(:created_at)
+                           .order(:id)
                            .map { |c| Block.new(comment: c, text: label(c), images: image_blobs(c)) }
       end
 
