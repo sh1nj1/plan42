@@ -4,8 +4,14 @@ module CollavreGithub
   #
   # Two independent duplicate sources exist and both reuse the same GUID:
   #   1. Multiple hooks on one repo (e.g. one per deployed instance sharing this
-  #      database) — GitHub fans the same delivery out to every hook URL.
-  #      Redelivery of a failed delivery. Never automatic: GitHub does not
+  #      database) — GitHub fans the same delivery out to every hook URL. This
+  #      is what makes two hooks a bandwidth cost rather than the duplicate
+  #      processing this ledger exists to stop, so it is load-bearing, and the
+  #      reference docs do not state it: they only say a *redelivery* reuses the
+  #      GUID. The header identifies the event, not the delivery, and separate
+  #      webhooks receiving one event see the same value — `X-GitHub-Hook-ID` is
+  #      what differs. https://github.com/github/docs/issues/32822
+  #   2. Redelivery of a failed delivery. Never automatic: GitHub does not
   #      retry a 4xx, a 5xx or a >10s timeout, it only records the failure.
   #      Recovery is an operator pressing Redeliver or a script polling the
   #      deliveries API, within GitHub's 3-day window — and either way the
