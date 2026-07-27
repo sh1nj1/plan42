@@ -286,6 +286,38 @@ module CollavreGithub
 
       provision(client)
       assert_equal [ 8 ], client.deleted.map { |d| d[:hook_id] }
+      # Asserting the deletion alone is what let the bug below hide: the repo
+      # was left with no hook at all and this test still passed.
+      assert_equal 1, client.created.size, "the deleted hook must have been replaced first"
+    end
+
+    test "replaces a registered legacy hook instead of reusing it" do
+      # Registration made the legacy hook look like a reusable sibling, so
+      # provisioning patched it, reported `:shared`, created nothing — and then
+      # deleted it as a legacy hook, leaving the repository with no webhook at
+      # all. Reuse and migration cannot both claim the same hook.
+      @link.update!(webhook_hook_id: 8)
+      client = FakeClient.new(hooks: [ Hook.new(8, { "url" => LEGACY_URL }) ])
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_equal [ OWN_URL ], client.created.map { |c| c[:url] }
+      assert_equal [ 8 ], client.deleted.map { |d| d[:hook_id] }
+    end
+
+    test "the replacement takes over the registration from the legacy hook" do
+      # The legacy hook is still live on GitHub while the replacement is being
+      # registered, so the live-registration check would read it as a sibling
+      # to defer to — discarding the registration of the hook just created and
+      # then deleting the hook that registration named.
+      @link.update!(webhook_hook_id: 8)
+      client = FakeClient.new(hooks: [ Hook.new(8, { "url" => LEGACY_URL }) ])
+
+      provision(client)
+
+      registered = @link.reload.webhook_hook_id
+      assert_predicate registered, :present?, "the replacement must be registered"
+      refute_equal "8", registered.to_s,
+        "the registration must name the replacement, not the hook that was deleted"
     end
 
     test "keeps the legacy hook when the replacement could not be created" do

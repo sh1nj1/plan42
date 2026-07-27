@@ -79,6 +79,11 @@ module CollavreGithub
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
       hooks = repository_hooks(repository_full_name)
+      # Read before provisioning, because registering the replacement overwrites
+      # it — and for a legacy hook under another host it is the only evidence
+      # that the hook belongs to a deployment sharing this database, which is
+      # what makes it ours to migrate.
+      prior_registration = registered_hook_id(repository_full_name)
       hook = find_own_hook(hooks)
       shared = find_shared_hook(hooks, repository_full_name, hook)
 
@@ -103,7 +108,7 @@ module CollavreGithub
       # regardless, so events stopped until provisioning happened to run again.
       # Keeping the legacy hook on failure costs at most a duplicate delivery,
       # which the GUID ledger already collapses.
-      delete_legacy_hooks(repository_full_name, hooks) unless status == :failed
+      delete_legacy_hooks(repository_full_name, hooks, prior_registration) unless status == :failed
 
       status
     rescue Octokit::Error => e
@@ -222,13 +227,30 @@ module CollavreGithub
     #
     # `own_hook` is excluded so callers can distinguish "mine" from "theirs"
     # when this instance is itself the registered owner.
+    #
+    # A hook on the legacy path is excluded too, however it came to be
+    # registered. This run deletes it, so reusing it as the replacement means
+    # patching it, reporting success, and then deleting the only hook the
+    # repository had — no replacement was ever created because this branch
+    # said one already existed.
     def find_shared_hook(hooks, repository_full_name, own_hook)
       registered = registered_hook_id(repository_full_name)
       return nil if registered.blank?
 
       hooks.find do |hook|
-        hook.id.to_s == registered.to_s && (own_hook.nil? || hook.id != own_hook.id)
+        hook.id.to_s == registered.to_s &&
+          (own_hook.nil? || hook.id != own_hook.id) &&
+          !legacy_hook?(hook)
       end
+    end
+
+    # Hooks this run will migrate off the deprecated singular path. Blank
+    # `legacy_webhook_path` (an unexpected `webhook_url`) matches nothing, so
+    # no hook is ever reclassified on a guess.
+    def legacy_hook?(hook)
+      return false if legacy_webhook_path.blank?
+
+      url_path(hook_url(hook)) == legacy_webhook_path
     end
 
     # Reporting only — never a reuse decision. See `remove_webhook`.
@@ -289,7 +311,12 @@ module CollavreGithub
         backfill_registration(repository_full_name, hook_id)
         return true
       end
-      return false if registered.present? && hook_live?(repository_full_name, registered, hooks)
+      live = live_registered_hook(repository_full_name, registered, hooks)
+      # A live registration naming a LEGACY hook is not a competitor to defer
+      # to: this run is replacing that hook, not racing a sibling for it.
+      # Deferring would discard the replacement just created and then delete the
+      # legacy hook, leaving the repository with none at all.
+      return false if live && !legacy_hook?(live)
 
       links_for(repository_full_name)
         .where(webhook_hook_id: [ nil, registered ].uniq)
@@ -318,7 +345,7 @@ module CollavreGithub
         .update_all(webhook_hook_id: hook_id)
     end
 
-    # Is the registered hook still on GitHub?
+    # The registered hook as it exists on GitHub, or nil if it is gone.
     #
     # `hooks` was listed before this run started creating anything, so a
     # registration missing from it is NOT proof the hook is gone — a sibling
@@ -326,10 +353,14 @@ module CollavreGithub
     # opposite actions (replace a stale registration; defer to a live one) and
     # getting either wrong puts a second hook on the repository, so when the
     # cached listing cannot vouch for it the question is put to GitHub.
-    def hook_live?(repository_full_name, registered, hooks)
-      return true if hooks.any? { |hook| hook.id.to_s == registered.to_s }
+    #
+    # The hook itself is returned rather than a boolean: the caller also has to
+    # know whether it sits on the legacy path, which only its URL can say.
+    def live_registered_hook(repository_full_name, registered, hooks)
+      found = hooks.find { |hook| hook.id.to_s == registered.to_s }
+      return found if found
 
-      repository_hooks(repository_full_name).any? { |hook| hook.id.to_s == registered.to_s }
+      repository_hooks(repository_full_name).find { |hook| hook.id.to_s == registered.to_s }
     end
 
     # Undoes a hook this run created after losing the registration race above.
@@ -365,11 +396,13 @@ module CollavreGithub
     # Migrates the repository off the deprecated singular `/github/webhook`
     # path: alongside the plural hook it only produces a duplicate delivery,
     # and removing it here is what eventually makes the alias route droppable.
-    def delete_legacy_hooks(repository_full_name, hooks)
+    def delete_legacy_hooks(repository_full_name, hooks, prior_registration = nil)
       return if legacy_webhook_path.blank?
 
-      registered = registered_hook_id(repository_full_name)
-      legacy = hooks.select { |hook| url_path(hook_url(hook)) == legacy_webhook_path }
+      registered = [ prior_registration, registered_hook_id(repository_full_name) ]
+        .compact_blank
+        .map(&:to_s)
+      legacy = hooks.select { |hook| legacy_hook?(hook) }
       mine, theirs = legacy.partition { |hook| own_legacy_hook?(hook, registered) }
 
       theirs.each do |hook|
@@ -394,8 +427,8 @@ module CollavreGithub
     # deliveries offline. Ownership is therefore positive: either the hook
     # carries this instance's own host, or its id is registered in this
     # database, which only an instance sharing this database could have written.
-    def own_legacy_hook?(hook, registered)
-      return true if registered.present? && hook.id.to_s == registered.to_s
+    def own_legacy_hook?(hook, registered_ids)
+      return true if registered_ids.include?(hook.id.to_s)
 
       same_origin?(hook_url(hook), webhook_url)
     end
