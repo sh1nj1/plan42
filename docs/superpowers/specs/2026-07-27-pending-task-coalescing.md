@@ -131,7 +131,12 @@ cache and still drive an in-place revision.
    what makes `id < keep.id` read as "everything already parked".
 2. `AiAgentJob#admit_or_defer!` — the late-admission door. `TopicSlot.lock!`,
    `TopicSlot.available_for?`, and `Task.create!` (as `running` or `queued`) are
-   one transaction, so the decision and the insert cannot be separated.
+   one transaction, so the decision and the insert cannot be separated. The
+   loop breaker is recorded around this call rather than after it: the turn is
+   counted where its row is created, so losing the admission race parks the
+   dispatch without hiding it from the creative-retry threshold. The promotion
+   that later runs it enters the resumed-`Task` branch, which records nothing —
+   counting there instead would double-count every `pending_approval` resume.
 3. `AgentOrchestrator.coalesce_promoted!` — after a waiter is promoted
    (`scope: :all`).
 4. `AgentOrchestrator.coalesce_at_start!` — under the topic lock immediately
@@ -270,7 +275,12 @@ be N dead ends pointing at one blocker.
   notice still speaks for; for a `"task"` notice, exactly its own waiter; and for
   a legacy one, the single newest waiter. `queued` only: a `pending`/`running`
   task is the blocker, not a waiter, and is surfaced separately with its own stop
-  control.
+  control. It then asks `Comment.remove_stranded_waiting_notices!`: cancelling is
+  the other way a topic queue empties, and unlike a promotion it runs no drained
+  check, so a *shared* notice — the only kind that check ever removes — would be
+  left describing a wait that is over. Scoped to `topic_concurrency_defer`
+  notices, since a `:delayed` one shares the prefix but explains a dispatch that
+  is still going to run.
 
 ### Message assembly
 

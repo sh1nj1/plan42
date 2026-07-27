@@ -761,5 +761,138 @@ module Collavre
       assert Comment.exists?(notice.id),
              "a waiter still in the queue keeps the notice that stops it"
     end
+
+    # A shared notice and a per-deferral one coexist as soon as the agents in a
+    # topic resolve the coalescing policy differently. Promoting the shared
+    # notice's waiter deliberately keeps that notice up, because the opted-out
+    # waiter still makes the topic queue non-empty — so when *that* waiter is
+    # the one cancelled, the shared notice is left describing a wait that is
+    # over, and no promotion will ever run the drained check for it.
+    def stranded_shared_notice!(promote: true)
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      holder = occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("mine")))
+      AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("theirs")))
+
+      mine = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      theirs = Task.where(agent: second_agent, topic_id: @topic.id, status: "queued").sole
+      shared = Comment.find_by(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                               waiting_notice_scope: Comment::WAITING_NOTICE_TOPIC)
+      theirs_notice = Comment.find_by(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                                      waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                                      waiting_notice_task_id: theirs.id)
+      assert shared, "premise: the coalescing agent's deferral posts a shared notice"
+      assert theirs_notice, "premise: the opted-out agent's deferral posts its own"
+      return [ shared, mine, theirs, theirs_notice ] unless promote
+
+      holder.update!(status: "done")
+      # Stubbed so the promoted turn does not run inline and drain the queue for
+      # an ordinary reason — the state under test is one task promoted, one
+      # still queued.
+      AiAgentJob.stub :perform_later, ->(*) { nil } do
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+      end
+      assert_equal "pending", mine.reload.status, "premise: the shared notice's waiter was promoted"
+      assert_equal "queued", theirs.reload.status, "premise: the opted-out waiter is still parked"
+      assert Comment.exists?(shared.id),
+             "premise: the promotion kept the shared notice up for the waiter still queued"
+      [ shared, mine, theirs, theirs_notice ]
+    end
+
+    test "cancelling the last waiter takes down the shared notice left behind" do
+      shared, _mine, theirs, theirs_notice = stranded_shared_notice!
+
+      theirs_notice.destroy!
+
+      assert_equal "cancelled", theirs.reload.status, "premise: the stop button ended that wait"
+      assert_not Comment.exists?(shared.id),
+                 "nothing is queued, so the shared notice describes a wait that is over"
+    end
+
+    # The control: cancelling one waiter while another is still queued must not
+    # take the shared notice down — that notice is still the only wait/stop
+    # signal the remaining waiter has.
+    test "cancelling one waiter keeps the shared notice while another is queued" do
+      shared, mine, theirs, theirs_notice = stranded_shared_notice!(promote: false)
+
+      theirs_notice.destroy!
+
+      assert_equal "cancelled", theirs.reload.status
+      assert_equal "queued", mine.reload.status, "premise: the shared notice still speaks for this"
+      assert Comment.exists?(shared.id),
+             "a wait that is still real keeps its notice and its stop button"
+    end
+
+    # …and it must not reach a :delayed notice. That one shares the "⏳" prefix
+    # but explains a rate-limited or busy dispatch that is still going to run,
+    # so an empty topic queue says nothing about whether it is still true.
+    test "cancelling the last waiter leaves a delayed notice standing" do
+      shared, _mine, _theirs, theirs_notice = stranded_shared_notice!
+      orchestrator = Orchestration::AgentOrchestrator.new(
+        event_name: "comment_created", context: context_for(comment("busy"))
+      )
+      orchestrator.send(:post_waiting_notice, @agent, { timing: :delayed, reason: :busy })
+      delayed = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                              topic_concurrency_defer: false)
+                       .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%").sole
+
+      theirs_notice.destroy!
+
+      assert_not Comment.exists?(shared.id), "premise: the stranded shared notice came down"
+      assert Comment.exists?(delayed.id),
+             "a delayed dispatch is still going to run — an empty queue is not its question"
+    end
+
+    # The loop breaker counts the turns an agent takes for itself. A dispatch
+    # the Scheduler judged :immediate can still lose the admission race here and
+    # be parked instead — same turn, same burst — and the promotion that later
+    # runs it enters the existing-Task branch, which records nothing either.
+    test "records a deferred turn in the loop breaker" do
+      Rails.cache.clear
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "creative_retry_threshold" => 2 }
+      )
+      occupy_slot!
+      context = nil
+      2.times do |i|
+        context = agent_authored_context(comment("agent burst #{i}"))
+        AiAgentJob.new.perform(@agent.id, "comment_created", context)
+      end
+
+      result = Orchestration::LoopBreaker.new(context).check
+
+      assert result.should_break?,
+             "two agent-authored turns were created here, so the threshold has been reached"
+      assert_equal :creative_retry_exceeded, result.reason
+    end
+
+    # The control: LoopBreaker deliberately ignores user-initiated messages, and
+    # deferring one must not start counting it. "Record every dispatch" would
+    # pass the test above on its own.
+    test "does not record a user-initiated deferred turn in the loop breaker" do
+      Rails.cache.clear
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "creative_retry_threshold" => 2 }
+      )
+      occupy_slot!
+      context = nil
+      2.times do |i|
+        context = context_for(comment("user burst #{i}"))
+        AiAgentJob.new.perform(@agent.id, "comment_created", context)
+      end
+
+      assert Orchestration::LoopBreaker.new(context).check.safe?,
+             "a person typing twice is not a loop"
+    end
+
+    def agent_authored_context(comment)
+      context = context_for(comment)
+      context.merge("comment" => context["comment"].merge("from_ai" => true))
+    end
   end
 end

@@ -151,17 +151,16 @@ module Collavre
         # in a topic limited to one. Re-check at the moment the row is created,
         # where the answer is authoritative, and defer into the queue instead.
         task = admit_or_defer!(agent, event_name, context)
-        return if task.nil?
 
-        # Record task for loop breaker tracking (per-topic, skip user-initiated)
-        creative_id = context&.dig("creative", "id")
-        if creative_id
-          from_ai = context&.dig("comment", "from_ai") == true
-          topic_id = context&.dig("topic", "id")
-          Orchestration::LoopBreaker.new(context).record_task(
-            creative_id, agent.id, topic_id: topic_id, triggered_by_user: !from_ai
-          )
-        end
+        # Counted where the row is created, not where the turn starts — and so
+        # before the deferral returns. Losing the admission race does not make
+        # this a different turn: the same dispatch, from the same burst, is
+        # parked instead of admitted, and the promotion that later runs it
+        # enters the resumed-Task branch above, which records nothing either. A
+        # count taken only on the winning side of a race is exactly blind to the
+        # bursts the threshold exists to catch.
+        record_loop_breaker_turn(agent, context)
+        return if task.nil?
       end
 
       # Reserve resources before starting work
@@ -298,6 +297,20 @@ module Collavre
 
       park_deferred_waiter(task, agent, event_name, context, topic_id, creative_id)
       nil
+    end
+
+    # Record a created turn for the loop breaker's creative-retry count.
+    # User-initiated messages are not loop material — a person typing twice is
+    # not a runaway — and LoopBreaker skips those itself.
+    def record_loop_breaker_turn(agent, context)
+      creative_id = context&.dig("creative", "id")
+      return unless creative_id
+
+      Orchestration::LoopBreaker.new(context).record_task(
+        creative_id, agent.id,
+        topic_id: context&.dig("topic", "id"),
+        triggered_by_user: context&.dig("comment", "from_ai") != true
+      )
     end
 
     # Is this dispatch subject to the topic concurrency limit at all? Workflow

@@ -48,6 +48,37 @@ module Collavre
       end
     end
 
+    # Take the topic's remaining "⏳" defer notices down once nothing is queued
+    # behind them.
+    #
+    # A promotion asks this through
+    # AgentOrchestrator.cleanup_waiting_notices_if_drained!, which is the only
+    # thing that ever removes a *shared* notice. Cancelling a waiter is the
+    # other way the queue can empty and it runs no such check, so a shared
+    # notice can outlive every waiter it spoke for: its stop button then selects
+    # nothing, and no later promotion will come along to collect it.
+    #
+    # Scoped to topic_concurrency_defer notices. A :delayed notice shares the
+    # prefix but explains a rate-limited or busy dispatch that is still going to
+    # run, so an empty queue is not the question that governs it.
+    #
+    # Asked under the same lock the notice doors take, so "nobody is queued" is
+    # a deferral's own before-or-after rather than a guess: it either commits
+    # its waiter before this reads, and keeps its notice, or after, and posts
+    # one of its own.
+    def self.remove_stranded_waiting_notices!(creative_id:, topic_id:)
+      transaction do
+        Collavre::Orchestration::TopicSlot.lock!(topic_id, creative_id)
+        next if Task.queued_for_topic(topic_id, creative_id).exists?
+
+        where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+              topic_concurrency_defer: true).find_each do |notice|
+          notice.suppress_waiter_cancellation = true
+          notice.destroy
+        end
+      end
+    end
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
@@ -431,6 +462,14 @@ module Collavre
         end
 
       waiters.each { |task| task.update!(status: "cancelled") }
+
+      # Cancelling is the other way a topic queue empties, and it has no
+      # promotion behind it to run the drained check. The notices that spoke for
+      # the waiters just cancelled went with them — this one is being destroyed,
+      # and a per-deferral sibling names a task that is now cancelled — but a
+      # *shared* notice is only ever taken down by that check, so without this
+      # it is left on screen describing a wait that is over.
+      Comment.remove_stranded_waiting_notices!(creative_id: creative_id, topic_id: topic_id)
     end
 
     def queued_topic_waiters
