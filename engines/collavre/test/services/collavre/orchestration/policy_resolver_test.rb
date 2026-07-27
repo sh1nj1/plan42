@@ -178,6 +178,19 @@ module Collavre
 
         assert_equal "round_robin", resolver.arbitration_strategy
       end
+
+      test "coalescing of un-started tasks is on by default" do
+        assert PolicyResolver.new(@context).coalesce_pending_tasks?
+      end
+
+      test "coalescing can be turned off by policy" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          config: { "coalesce_pending_tasks" => false }
+        )
+
+        assert_not PolicyResolver.new(@context).coalesce_pending_tasks?
+      end
     end
   end
 end

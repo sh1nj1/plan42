@@ -342,6 +342,87 @@ module Collavre
         assert_not_includes history, "secret-payload",
           "approval-action comment content must never enter chat history"
       end
+
+      # Comments folded into this turn by Orchestration::TaskCoalescer belong in
+      # the trigger, not in chat history: a session-backed agent receives only
+      # the :trigger message (SessionContextResolver#incremental_payload).
+      test "merged comments are folded into the trigger message" do
+        merged = @creative.comments.create!(
+          content: "earlier burst message", user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build[:messages]
+
+        trigger = messages.find { |m| m[:kind] == :trigger }
+        assert_includes trigger[:parts].first[:text], "earlier burst message"
+        assert_includes trigger[:parts].first[:text], @comment.content
+      end
+
+      test "merged comments are not repeated in chat history" do
+        merged = @creative.comments.create!(
+          content: "earlier burst message", user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        history = builder.build[:messages]
+          .select { |m| m[:kind] == :chat_history }
+          .map { |m| m[:parts].first[:text] }
+          .join("\n")
+
+        assert_not_includes history, "earlier burst message",
+          "a comment already inlined in the trigger must not be sent twice"
+      end
+
+      test "merged comments carry their image attachments into the trigger" do
+        merged = @creative.comments.create!(
+          content: "with a picture", user: @user, topic_id: @comment.topic_id
+        )
+        merged.images.attach(
+          io: StringIO.new(one_pixel_png), filename: "pixel.png", content_type: "image/png"
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        trigger = builder.build[:messages].find { |m| m[:kind] == :trigger }
+
+        assert_equal 1, trigger[:parts].count { |p| p.key?(:image) },
+          "an image posted in a coalesced comment must still reach the agent"
+      end
+
+      test "no merged ids leaves the trigger message unchanged" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        trigger = builder.build[:messages].find { |m| m[:kind] == :trigger }
+
+        assert_equal @comment.content, trigger[:parts].first[:text]
+      end
+
+      private
+
+      def one_pixel_png
+        Base64.decode64(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+      end
     end
   end
 end

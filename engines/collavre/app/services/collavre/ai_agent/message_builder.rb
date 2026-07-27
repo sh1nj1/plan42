@@ -155,6 +155,8 @@ module Collavre
                .reverse
                .each do |c|
           next if c.id == trigger_comment&.id
+          # Already folded into the trigger message by append_trigger_message.
+          next if merged_comment_ids.include?(c.id)
 
           role = (c.user_id == @agent.id) ? "model" : "user"
           content = c.content.to_s
@@ -192,7 +194,16 @@ module Collavre
           payload_text = "[#{sender_name}]: #{payload_text}"
         end
 
+        # Comments that were folded into this task by Orchestration::TaskCoalescer
+        # (a burst of messages answered as one turn). They belong *in* the
+        # trigger, not in chat history: a session-backed agent receives only the
+        # :trigger message, so history-only placement would lose them entirely.
+        merged_blocks = merged_trigger.blocks
+        payload_text = (merged_blocks.map(&:text) + [ payload_text ]).join("\n\n") if merged_blocks.any?
+
         trigger_parts = [ { text: payload_text } ]
+
+        merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
         if @original_comment&.images&.attached?
           @original_comment.images.each do |image|
@@ -201,6 +212,15 @@ module Collavre
         end
 
         messages << { role: "user", kind: :trigger, parts: trigger_parts }
+      end
+
+      def merged_trigger
+        @merged_trigger ||= MergedTriggerComments.new(@context, agent: @agent)
+      end
+
+      # Ids of comments coalesced into this task (anchor excluded).
+      def merged_comment_ids
+        merged_trigger.comment_ids
       end
 
       def trigger_comment

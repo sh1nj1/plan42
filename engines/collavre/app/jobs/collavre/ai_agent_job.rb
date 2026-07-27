@@ -131,6 +131,16 @@ module Collavre
           return
         end
 
+        # Guard: the Scheduler's topic-concurrency check counts Task rows, but
+        # the row for an :immediate decision is only created *here*. A burst of
+        # comments dispatched before the first job runs therefore all see an
+        # empty topic and are all judged :immediate — several turns run at once
+        # in a topic limited to one. Re-check at the moment the row is created,
+        # where the answer is authoritative, and defer into the queue instead.
+        if defer_for_topic_slot?(context)
+          return defer_into_topic_queue(agent, event_name, context)
+        end
+
         task = Task.create!(
           name: "Response to #{event_name}",
           status: "running",
@@ -245,6 +255,62 @@ module Collavre
           Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
         end
       end
+    end
+
+    private
+
+    # Does another task already hold this topic's concurrency slot?
+    #
+    # Uses occupying_topic_slot rather than running_for_topic: `pending` (a
+    # claimed-but-not-started waiter) and `pending_approval` (paused, keeps its
+    # resource, does not drain the queue) both hold the slot, and treating them
+    # as free is exactly how a second turn slips in.
+    def defer_for_topic_slot?(context)
+      return false unless context.is_a?(Hash) && context.key?("topic")
+
+      resolver = Orchestration::PolicyResolver.new(context)
+      return false unless resolver.coalesce_pending_tasks?
+
+      topic_max = resolver.topic_max_concurrent_jobs
+      return false unless topic_max
+
+      Task.occupying_topic_slot(
+        context.dig("topic", "id"), context.dig("creative", "id")
+      ).count >= topic_max
+    end
+
+    # Park this dispatch as a queued waiter instead of starting a second
+    # concurrent turn, then fold it together with any waiters already parked
+    # for the same agent/topic/creative.
+    def defer_into_topic_queue(agent, event_name, context)
+      topic_id = context.dig("topic", "id")
+      creative_id = context.dig("creative", "id")
+
+      waiter = Task.create!(
+        name: "Response to #{event_name}",
+        status: "queued",
+        trigger_event_name: event_name,
+        trigger_event_payload: context,
+        agent: agent,
+        topic_id: topic_id,
+        creative_id: creative_id
+      )
+      Orchestration::TaskCoalescer.coalesce!(waiter)
+      Orchestration::AgentOrchestrator.post_topic_concurrency_notice(creative_id, topic_id)
+
+      Rails.logger.info(
+        "[AiAgentJob] Deferred agent #{agent.id} into topic #{topic_id} queue as task " \
+        "#{waiter.id}: slot already occupied (event=#{event_name})"
+      )
+
+      # The holder may have finished between the check above and this create,
+      # which would leave the waiter with nobody left to drain it (its
+      # dequeue_next_for_topic already ran). Re-check and drain here.
+      unless Task.occupying_topic_slot(topic_id, creative_id).exists?
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
+      end
+
+      nil
     end
   end
 end

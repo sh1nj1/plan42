@@ -23,6 +23,14 @@ module Collavre
         updated = Task.where(id: task.id, status: "queued").update_all(status: "pending")
         if updated > 0
           task.reload
+          # Fold the waiters left behind this one into it. dequeue promotes the
+          # OLDEST queued task, so its same-agent siblings are all newer — they
+          # would each be promoted in turn and, because
+          # refresh_deferred_context! points every one of them at the same
+          # latest comment, replay the same answer. Absorb them here instead;
+          # the refresh below then moves the anchor forward and keeps the
+          # absorbed triggers in "merged_comment_ids".
+          coalesce_promoted!(task)
           cleanup_waiting_notices!(task)
           refresh_deferred_context!(task)
           revalidate_assignment!(task) unless task.status == "cancelled"
@@ -36,6 +44,67 @@ module Collavre
             AiAgentJob.perform_later(task)
           end
         end
+      end
+
+      # Human-readable reason for the "⏳" waiting notice. For topic-concurrency
+      # deferrals, name the agent(s) actually holding the topic's running slot so
+      # a waiting user can see *who* is blocking them (and reach that task's stop
+      # button) rather than an anonymous "another task is running" dead end.
+      def self.waiting_reason_text(reason_key, topic_id, creative_id)
+        if reason_key == :topic_concurrency && topic_id
+          names = Task.running_for_topic(topic_id, creative_id)
+                      .includes(:agent).filter_map { |t| t.agent&.name }.uniq
+          if names.any?
+            return I18n.t(
+              "collavre.orchestration.waiting_reasons.topic_concurrency_with_agent",
+              agent: names.join(", ")
+            )
+          end
+        end
+
+        I18n.t(
+          "collavre.orchestration.waiting_reasons.#{reason_key}",
+          default: reason_key.to_s.humanize
+        )
+      end
+
+      # Is there already a "⏳" topic-concurrency waiting notice on this
+      # creative/topic? Shared with AiAgentJob's late slot check so both defer
+      # paths post at most one notice per topic.
+      def self.topic_concurrency_notice_exists?(creative_id, topic_id)
+        Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+                      topic_concurrency_defer: true)
+               .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+               .exists?
+      end
+
+      def self.coalesce_promoted!(task)
+        return unless PolicyResolver.new(task.trigger_event_payload || {}).coalesce_pending_tasks?
+
+        TaskCoalescer.coalesce!(task, scope: :all)
+      end
+      private_class_method :coalesce_promoted!
+
+      # Post the "⏳ waiting on the topic slot" notice for a deferral raised
+      # outside #enqueue_jobs — AiAgentJob's late slot check, which catches
+      # dispatches that passed the Scheduler before any Task row existed.
+      # No-op when a notice for this creative/topic is already up.
+      def self.post_topic_concurrency_notice(creative_id, topic_id)
+        return if creative_id.nil?
+        return if topic_concurrency_notice_exists?(creative_id, topic_id)
+
+        creative = Creative.find_by(id: creative_id)
+        return unless creative
+
+        reason_text = waiting_reason_text(:topic_concurrency, topic_id, creative_id)
+
+        creative.comments.create!(
+          content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
+          topic_id: topic_id,
+          private: false,
+          skip_default_user: true,
+          topic_concurrency_defer: true
+        )
       end
 
       # Remove waiting notice comments (system messages) for this task's creative/topic.
@@ -77,12 +146,20 @@ module Collavre
           return
         end
 
+        # Moving the anchor forward must not drop what the task was originally
+        # going to answer. A session-backed agent only receives the :trigger
+        # message (SessionContextResolver#incremental_payload), so a silently
+        # replaced anchor is a comment the agent never sees at all.
+        previous_anchor_id = context.dig("comment", "id")
         context["comment"] = {
           "id" => latest_comment.id,
           "content" => latest_comment.content,
           "user_id" => latest_comment.user_id
         }
         context["chat"] = { "content" => latest_comment.content }
+        # absorb_into_payload also drops the new anchor from the merged list, so
+        # a comment promoted from "merged" back to "trigger" is not sent twice.
+        context = TaskCoalescer.absorb_into_payload(context, [ previous_anchor_id ].compact)
         task.update!(trigger_event_payload: context)
       end
       private_class_method :refresh_deferred_context!
@@ -176,7 +253,7 @@ module Collavre
             AiAgentJob.perform_later(agent.id, @event_name, @context)
             agent
           when :deferred
-            Task.create!(
+            waiter = Task.create!(
               name: "Response to #{@event_name}",
               status: "queued",
               trigger_event_name: @event_name,
@@ -185,6 +262,11 @@ module Collavre
               topic_id: @context.dig("topic", "id"),
               creative_id: @context.dig("creative", "id")
             )
+            # A burst of comments queues one waiter each, and every one of them
+            # would answer the same latest comment on promotion. Fold the
+            # earlier ones into this newest waiter — merged, not dropped, so a
+            # session-backed agent still receives their content.
+            TaskCoalescer.coalesce!(waiter) if policy_resolver.coalesce_pending_tasks?
             post_waiting_notice(agent, decision)
             agent
           when :delayed
@@ -218,6 +300,13 @@ module Collavre
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
+        # Coalescing collapses a burst of deferrals into one waiter, so a notice
+        # per deferral would leave N-1 dead ends pointing at the same blocker.
+        # Keep exactly one topic-concurrency notice per creative/topic.
+        return if decision[:timing] == :deferred &&
+                  policy_resolver.coalesce_pending_tasks? &&
+                  self.class.topic_concurrency_notice_exists?(creative_id, topic_id)
+
         reason_text = waiting_reason_text(decision[:reason] || :unknown, topic_id, creative_id)
 
         creative.comments.create!(
@@ -236,21 +325,7 @@ module Collavre
       # a waiting user can see *who* is blocking them (and reach that task's stop
       # button) rather than an anonymous "another task is running" dead end.
       def waiting_reason_text(reason_key, topic_id, creative_id)
-        if reason_key == :topic_concurrency && topic_id
-          names = Task.running_for_topic(topic_id, creative_id)
-                      .includes(:agent).filter_map { |t| t.agent&.name }.uniq
-          if names.any?
-            return I18n.t(
-              "collavre.orchestration.waiting_reasons.topic_concurrency_with_agent",
-              agent: names.join(", ")
-            )
-          end
-        end
-
-        I18n.t(
-          "collavre.orchestration.waiting_reasons.#{reason_key}",
-          default: reason_key.to_s.humanize
-        )
+        self.class.waiting_reason_text(reason_key, topic_id, creative_id)
       end
     end
   end

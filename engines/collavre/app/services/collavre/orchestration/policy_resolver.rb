@@ -28,6 +28,9 @@ module Collavre
           "rate_limit_per_minute" => 20,
           "backoff_strategy" => "exponential",
           "topic_max_concurrent_jobs" => 1,
+          # Fold un-started tasks for the same agent/topic/creative into one so a
+          # burst of comments produces one answer instead of one per comment.
+          "coalesce_pending_tasks" => true,
           # Loop breaker settings
           "loop_breaker_enabled" => true,
           "ping_pong_threshold" => 5,           # Max back-and-forth between same agents
@@ -85,6 +88,12 @@ module Collavre
       # Topic-level concurrency limit
       def topic_max_concurrent_jobs
         scheduling_config["topic_max_concurrent_jobs"]
+      end
+
+      # Whether un-started tasks for the same agent/topic/creative are folded
+      # into a single one (see Orchestration::TaskCoalescer).
+      def coalesce_pending_tasks?
+        scheduling_config["coalesce_pending_tasks"] != false
       end
 
       # Convenience methods
