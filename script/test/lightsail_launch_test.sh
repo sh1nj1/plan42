@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|install_downloaded_file|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -46,6 +46,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
           resolve_symlink_chain stage_beside stage_authorized_keys \
           verify_ssh_hardening refuse_unusable_retention \
+	  refuse_unusable_backup_calendar \
 	  install_managed_config install_downloaded_file reload_ssh_daemon \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
@@ -6236,6 +6237,52 @@ chk "both staged units are installed before systemd reloads them" 1 \
 	else print 0
       }
     ' <<<"$backup_unit_block")"
+
+echo "156. BACKUP_AT is validated before replacing the live timer"
+calendar_probe_dir="$(mktemp -d)"
+CALENDAR_PROBE="$calendar_probe_dir/probe"
+systemd-analyze() {
+  printf '%s\n' "$*" > "$CALENDAR_PROBE"
+  case "$2" in
+    '*-*-* 03:30:00'|'*-*-* 23:59:00') return 0 ;;
+    *) return 1 ;;
+  esac
+}
+calendar_rc() {
+  ( refuse_unusable_backup_calendar BACKUP_AT "$1" "*-*-* $1:00" ) \
+    >/dev/null 2>&1
+  echo $?
+}
+chk "the default calendar is accepted"                     0 \
+  "$(calendar_rc 03:30)"
+chk "and the end of the valid daily range"                  0 \
+  "$(calendar_rc 23:59)"
+chk "an impossible hour is refused"                         1 \
+  "$(calendar_rc 25:00)"
+chk "and arbitrary text cannot become a unit directive"     1 \
+  "$(calendar_rc '03:30
+OnFailure=attacker.service')"
+calendar_rc 25:00 >/dev/null
+chk "the exact composed calendar is sent to systemd" '*-*-* 25:00:00' \
+  "$(sed -n 's/^calendar //p' "$CALENDAR_PROBE")"
+calendar_msg="$(
+  ( refuse_unusable_backup_calendar BACKUP_AT 25:00 '*-*-* 25:00:00' ) 2>&1
+)"
+chk "the refusal says the live timer is unchanged"          1 \
+  "$(printf '%s' "$calendar_msg" | grep -c 'left unchanged')"
+chk "the run validates before installing the timer"         1 \
+  "$(awk '
+      /refuse_unusable_backup_calendar BACKUP_AT/ { checked = NR }
+      /install_managed_config .*backup timer unit/ { installed = NR }
+      END {
+	if (checked && installed && checked < installed) print 1
+	else print 0
+      }
+    ' "$SRC")"
+chk "the validated expression is the one installed"         1 \
+  "$(grep -c '"OnCalendar=$BACKUP_CALENDAR"' "$SRC")"
+unset -f systemd-analyze
+rm -rf "$calendar_probe_dir"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

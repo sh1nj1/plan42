@@ -96,6 +96,7 @@ unset _s
 : "${BACKUP_RETENTION_DAYS:=7}"
 : "${BACKUP_S3_URI:=}"
 : "${BACKUP_AT:=03:30}"
+BACKUP_CALENDAR="*-*-* $BACKUP_AT:00"
 
 # --------------------------------------------------------------------------
 # Internals
@@ -481,6 +482,23 @@ refuse_unusable_retention() {
       "reports 'backup complete'. Nothing has been changed. The default is 7."
 }
 
+# refuse_unusable_backup_calendar <setting name> <configured value> <calendar>
+#
+# Validate the exact expression installed below, before the staged timer can
+# replace a working live unit. systemctl only parses OnCalendar after the
+# replacement, which is too late to preserve the prior schedule on failure.
+refuse_unusable_backup_calendar() {
+  local setting="$1" value="$2" calendar="$3"
+  if command -v systemd-analyze >/dev/null 2>&1 &&
+     systemd-analyze calendar "$calendar" >/dev/null 2>&1
+  then
+    return 0
+  fi
+  die "REFUSING: $setting='$value' does not produce a valid systemd calendar" \
+      "expression ('$calendar'). The existing PostgreSQL backup timer is left" \
+      "unchanged. Use a 24-hour HH:MM time; the default is 03:30."
+}
+
 # refuse_unparsable_ssh_key
 #
 # SSH_PUBLIC_KEY is appended to authorized_keys verbatim, and its own presence
@@ -807,6 +825,7 @@ refuse_unusable_db_identifier DB_USER "$DB_USER"
 refuse_unusable_bind_address DB_BIND_ADDRESS "$DB_BIND_ADDRESS"
 refuse_unusable_subnet DOCKER_SUBNETS "$DOCKER_SUBNETS"
 refuse_unusable_retention BACKUP_RETENTION_DAYS "$BACKUP_RETENTION_DAYS"
+refuse_unusable_backup_calendar BACKUP_AT "$BACKUP_AT" "$BACKUP_CALENDAR"
 refuse_unparsable_ssh_key
 refuse_forced_command_ssh_key
 refuse_root_deploy_user "$APP_SSH_USER"
@@ -3953,7 +3972,7 @@ install_managed_config 'the PostgreSQL backup timer unit' \
   'Description=Nightly Collavre PostgreSQL dump' \
   '' \
   '[Timer]' \
-  "OnCalendar=*-*-* $BACKUP_AT:00" \
+  "OnCalendar=$BACKUP_CALENDAR" \
   'Persistent=true' \
   '' \
   '[Install]' \
