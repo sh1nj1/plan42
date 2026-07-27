@@ -151,6 +151,27 @@ cache and still drive an in-place revision.
    before execution (`scope: :all`), for waiters parked between the claim and the
    start of the turn.
 
+### Handing the slot on
+
+Promotion moves a waiter `queued -> pending`, which *is* the slot claim, and the
+task then holds it until its `AiAgentJob` runs. A task that leaves that window
+without running must hand the slot on, or the waiters behind it sit `queued`
+until orphan recovery — nothing else re-drains a topic whose occupant is gone.
+
+The whole gap is one a user can reach: `Comment#cancel_pending_tasks` covers
+`pending`, so deleting the comment a promoted task answers cancels it, and it
+takes no lock either door waits on. So the status a caller is holding can be
+stale at any point after `claim_next_waiter` returns:
+
+- `dequeue_next_for_topic` re-reads the row once, after `coalesce_promoted!`.
+  `TaskCoalescer` re-reads the survivor under its own lock and declines to fold
+  onto a cancelled one, but declining leaves the caller's object saying
+  `pending` — the refresh would then write a payload onto a dead row and the
+  status check below would enqueue it instead of recursing.
+- `AiAgentJob`'s first guard drains before returning, for the same cancellation
+  arriving after that re-read or while the job sat in the queue. Only when the
+  payload carries a topic: a workflow subtask cancelled here never held one.
+
 ### Re-anchoring
 
 `refresh_deferred_context!` is merge-aware: when the refreshed anchor is a
@@ -359,7 +380,10 @@ with its own reasoning.
   the ambient transaction depth; the notice survives a promotion that leaves
   another agent queued, and is removed once nothing is queued; a promoted waiter
   does not re-answer a comment an earlier turn delivered, and still advances onto
-  an unanswered newer one.
+  an unanswered newer one; a survivor cancelled between the claim and the fold
+  drains the queue behind it instead of being enqueued, and so does one
+  abandoned at job start — with the controls that a healthy survivor still keeps
+  the slot it claimed, and that a cancelled task with no topic drains nothing.
 - Re-anchoring: an anchor deleted mid-wait re-anchors onto the newest absorbed
   comment in the *task's* creative; a moved, privated, or already-delivered
   comment is not adopted; a stale snapshot cannot overwrite a concurrent fold; a

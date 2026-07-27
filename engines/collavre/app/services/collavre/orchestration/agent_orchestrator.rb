@@ -27,14 +27,28 @@ module Collavre
           # the refresh below then moves the anchor forward and keeps the
           # absorbed triggers in "merged_comment_ids".
           coalesce_promoted!(task)
-          cleanup_waiting_notices_if_drained!(task)
-          refresh_deferred_context!(task)
-          revalidate_assignment!(task) unless task.status == "cancelled"
+
+          # `task` is the snapshot claim_next_waiter took, and the row can be
+          # cancelled from outside between that claim and here: deleting the
+          # comment it answers cancels a `pending` task through
+          # Comment#cancel_pending_tasks, which holds no lock this path waits
+          # on. TaskCoalescer re-reads the survivor under its own lock and
+          # declines to fold onto a cancelled row — but declining leaves this
+          # object still saying `pending`, and everything below reads it: the
+          # refresh would write a payload onto a dead row and the check at the
+          # bottom would enqueue it, where AiAgentJob reloads and returns
+          # without draining. Re-read once, here, rather than at each of them.
+          unless task.reload.status == "cancelled"
+            cleanup_waiting_notices_if_drained!(task)
+            refresh_deferred_context!(task)
+            revalidate_assignment!(task) unless task.status == "cancelled"
+          end
 
           if task.status == "cancelled"
-            # refresh_deferred_context! found no eligible comment, or
-            # revalidate_assignment! found the topic now assigned to another
-            # agent. Either way this waiter is dead — try the next queued task.
+            # The anchor was deleted under it, refresh_deferred_context! found
+            # no eligible comment, or revalidate_assignment! found the topic now
+            # assigned to another agent. Either way this waiter is dead — try
+            # the next queued task.
             dequeue_next_for_topic(topic_id, creative_id)
           else
             AiAgentJob.perform_later(task)

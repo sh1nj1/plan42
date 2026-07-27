@@ -269,6 +269,84 @@ module Collavre
         assert_equal [ @topic.id ], locked_topics
         assert_empty locked_creatives, "an existing topic must not widen the lock to the creative"
       end
+
+      # A promoted task holds the topic slot as `pending`, and deleting the
+      # comment it answers cancels it right there — Comment#cancel_pending_tasks
+      # takes no lock this path waits on. The coalescer re-reads the survivor
+      # under its own lock and correctly declines to fold onto a cancelled row,
+      # but it leaves the caller's object saying `pending`. Everything after it
+      # reads that stale copy: the refresh writes a payload onto a cancelled
+      # row, the status check passes, and the job is enqueued for a task that
+      # returns on sight without draining. The waiters behind it are stranded
+      # until orphan recovery.
+      test "re-reads the promoted task after the fold before enqueueing it" do
+        first = comment("@#{@agent.name}: first")
+        survivor = task_for(@agent, status: "queued", comment: first)
+        waiter = task_for(@agent, status: "queued", comment: comment("@#{@agent.name}: second"))
+
+        # The documented window: after claim_next_waiter has promoted the
+        # survivor, before the fold takes the task lock.
+        fold = TaskCoalescer.method(:coalesce!)
+        injected = false
+        inject_delete = lambda do |task, scope: :older|
+          unless injected
+            injected = true
+            first.destroy!
+          end
+          fold.call(task, scope: scope)
+        end
+
+        TaskCoalescer.stub(:coalesce!, inject_delete) do
+          AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+        end
+
+        assert_equal "cancelled", survivor.reload.status,
+                     "deleting the anchor cancels the promoted task — the premise of this test"
+        assert_promoted waiter,
+                        "the survivor lost its turn, so the queue behind it must be drained " \
+                        "rather than left waiting on a task that will never run"
+      end
+
+      # Control: an ordinary promotion still enqueues the survivor. "Always
+      # recurse after folding" would pass the test above while re-promoting
+      # every turn and answering nothing.
+      test "a promoted task that survives the fold is still the one enqueued" do
+        survivor = task_for(@agent, status: "queued")
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_promoted survivor, "a healthy survivor must keep the slot it claimed"
+      end
+
+      # The same window does not close at the fold: the anchor can be deleted
+      # after the recheck, or while the job sits in the queue. The job's own
+      # first guard then returns without draining — the identical stranding,
+      # reached by the identical user action a moment later.
+      test "a cancelled task abandoned at job start still drains the topic" do
+        cancelled = task_for(@agent, status: "pending")
+        cancelled.update!(status: "cancelled")
+        waiter = task_for(@agent, status: "queued")
+
+        AiAgentJob.perform_now(cancelled)
+
+        assert_promoted waiter,
+                        "a task that leaves without running has to hand the topic slot on"
+      end
+
+      # Control: a cancelled task with no topic (a workflow subtask) has no
+      # queue to drain, and must not fall into topic promotion at all.
+      test "a cancelled task without a topic drains nothing" do
+        orphan = Task.create!(
+          name: "Subtask", status: "cancelled", trigger_event_name: "comment_created",
+          agent: @agent, trigger_event_payload: { "creative" => { "id" => @creative.id } }
+        )
+        waiter = task_for(@agent, status: "queued")
+
+        AiAgentJob.perform_now(orphan)
+
+        assert_equal "queued", waiter.reload.status,
+                     "a task that never held this topic's slot must not hand it out"
+      end
     end
   end
 end

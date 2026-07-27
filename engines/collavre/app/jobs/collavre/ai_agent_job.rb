@@ -7,7 +7,19 @@ module Collavre
       if agent_id_or_task.is_a?(Task)
         # Resume existing task
         task = agent_id_or_task
-        return if task.reload.status == "cancelled"
+        if task.reload.status == "cancelled"
+          # A cancelled task can still be holding the topic slot. Promotion moves
+          # a waiter queued -> pending and enqueues this job, and the whole gap
+          # from that claim until this line is one where deleting the comment it
+          # answers cancels it (Comment#cancel_pending_tasks covers `pending`).
+          # Returning bare hands the slot to nobody, so the waiters behind it sit
+          # queued until orphan recovery. Same reason the fold's own cancelled
+          # branch below drains — this is the earlier door onto it.
+          if task.trigger_event_payload&.key?("topic")
+            Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+          end
+          return
+        end
 
         agent = task.agent
 
