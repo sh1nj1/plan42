@@ -212,6 +212,60 @@ module CollavreGithub
       end
     end
 
+    # The ledger write completes the delivery. Stranded unprocessed after the
+    # side effects had already run, the claim was reclaimable once it went
+    # stale, and the redelivery repeated every one of them.
+    test "a transient failure of the ledger write is retried rather than stranding the claim" do
+      guid = "flaky-mark-guid"
+      calls = 0
+      original = CollavreGithub::WebhookDelivery.method(:mark_processed!)
+
+      CollavreGithub::WebhookDelivery.stub(:mark_processed!, lambda { |*args|
+        calls += 1
+        raise ActiveRecord::StatementInvalid, "connection reset" if calls == 1
+
+        original.call(*args)
+      }) do
+        post_comment_event(guid: guid, comment_id: 12)
+      end
+
+      assert_response :ok
+      assert_equal 2, calls, "the failed ledger write should have been retried"
+      assert_not_nil CollavreGithub::WebhookDelivery.find_by(delivery_guid: guid).processed_at
+    end
+
+    test "a ledger write that keeps failing still answers 200 and keeps its claim" do
+      # 200, not 5xx: the delivery itself succeeded and only the bookkeeping
+      # did not, so a 5xx would invite the redelivery whose side effects must
+      # not run twice. Keeping the claim is what dismisses one if it comes.
+      guid = "doomed-mark-guid"
+
+      CollavreGithub::WebhookDelivery.stub(:mark_processed!, ->(*) { raise ActiveRecord::StatementInvalid, "down" }) do
+        post_comment_event(guid: guid, comment_id: 13)
+      end
+
+      assert_response :ok
+      delivery = CollavreGithub::WebhookDelivery.find_by(delivery_guid: guid)
+      assert_not_nil delivery, "the claim must survive a failed ledger write"
+      assert_nil delivery.processed_at
+    end
+
+    test "a redelivery after a failed ledger write is not processed twice" do
+      # Guards the choice of keeping the claim over releasing it: releasing
+      # would give this redelivery a clean slate and duplicate the comment the
+      # first delivery already created.
+      guid = "doomed-mark-redelivery"
+
+      CollavreGithub::WebhookDelivery.stub(:mark_processed!, ->(*) { raise ActiveRecord::StatementInvalid, "down" }) do
+        post_comment_event(guid: guid, comment_id: 14)
+      end
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
+        post_comment_event(guid: guid, comment_id: 14)
+      end
+      assert_response :ok
+    end
+
     private
 
     def push_payload

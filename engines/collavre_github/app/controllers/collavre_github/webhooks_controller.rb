@@ -53,13 +53,50 @@ module CollavreGithub
         raise
       end
 
-      CollavreGithub::WebhookDelivery.mark_processed!(delivery_guid, claim_token)
+      complete_delivery(event, claim_token)
       head :ok
     rescue JSON::ParserError
       head :bad_request
     end
 
     private
+
+    # Bounded because the ledger write is a single UPDATE on a row this run
+    # already owns: it either goes through on a retry or the database is gone,
+    # and spinning would only hold the request open while GitHub times out.
+    MARK_PROCESSED_ATTEMPTS = 3
+
+    # Stamping the ledger is part of completing the delivery, not an epilogue
+    # to it. Left outside the failure handling, a transient database error here
+    # stranded the claim unprocessed *after* every side effect had already run,
+    # and a redelivery arriving past STALE_CLAIM_AFTER took the row over and
+    # repeated all of them.
+    #
+    # A failure that outlives the retries does NOT release the claim, which is
+    # where this parts from the rescue around `process_delivery`. There the
+    # event was never handled, so freeing the GUID is what saves it. Here the
+    # event *was* handled: releasing would hand the next redelivery a clean
+    # slate and guarantee the repeat this is meant to avoid, while keeping the
+    # claim leaves a redelivery inside the stale window correctly dismissed.
+    #
+    # For the same reason the request still answers 200. Processing succeeded —
+    # only our bookkeeping did not — and a 5xx here would invite the very
+    # redelivery whose side effects we cannot afford to run twice.
+    def complete_delivery(event, claim_token)
+      attempts = 0
+      begin
+        attempts += 1
+        CollavreGithub::WebhookDelivery.mark_processed!(delivery_guid, claim_token)
+      rescue => e
+        retry if attempts < MARK_PROCESSED_ATTEMPTS
+
+        Rails.logger.error(
+          "[CollavreGithub] delivery #{delivery_guid} (#{event}) was processed but could not be " \
+          "marked processed after #{attempts} attempts; claim kept to keep a redelivery inside " \
+          "#{CollavreGithub::WebhookDelivery::STALE_CLAIM_AFTER.inspect} deduplicated: #{e.class}: #{e.message}"
+        )
+      end
+    end
 
     def process_delivery(event, payload)
       payload = payload.presence || {}
