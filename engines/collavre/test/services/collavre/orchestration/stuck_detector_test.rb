@@ -165,6 +165,63 @@ module Collavre
         policy&.destroy
       end
 
+      test "detects stalled creative that also has a public share" do
+        policy = create_policy_with_stuck_detection(enabled: true, creative_threshold: 60)
+
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: @ai_agent,
+          permission: :write
+        )
+
+        # A public share carries no user (see CreativeShare: user is optional)
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: nil,
+          permission: :read
+        )
+
+        @creative.update_columns(updated_at: 3.hours.ago)
+
+        detector = StuckDetector.new
+        stuck_items = detector.detect
+
+        creative_stuck = stuck_items.find { |item| item.type == :creative && item.item.id == @creative.id }
+        assert_not_nil creative_stuck
+        assert_equal :stalled, creative_stuck.reason
+      ensure
+        policy&.destroy
+      end
+
+      test "escalates stuck task on a creative that has a public admin share" do
+        policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
+
+        # A public share may hold admin permission and still carry no user
+        Collavre::CreativeShare.create!(
+          creative: @creative,
+          user: nil,
+          permission: :admin
+        )
+
+        task = Collavre::Task.create!(
+          name: "Stuck task",
+          agent: @ai_agent,
+          status: "running",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          topic_id: @topic.id
+        )
+        task.update_columns(created_at: 1.hour.ago, updated_at: 1.hour.ago)
+
+        detector = StuckDetector.new
+        result = detector.detect_and_escalate
+
+        assert_equal 1, result.escalated_count
+        task_stuck = result.stuck_items.find { |item| item.type == :task }
+        assert_equal [ @human_user.id ], task_stuck.escalation_targets.map(&:id)
+      ensure
+        policy&.destroy
+      end
+
       test "escalates and creates inbox item" do
         policy = create_policy_with_stuck_detection(enabled: true, task_threshold: 30)
 
