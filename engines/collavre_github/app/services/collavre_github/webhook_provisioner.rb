@@ -38,11 +38,11 @@ module CollavreGithub
     #   :secret_aligned  - non-primary link with existing hook; only the local
     #                      RepositoryLink secret was aligned. No GitHub call.
     #   :shared          - a hook registered in THIS database already exists, so
-    #                      another instance of this app owns it. Nothing was
-    #                      created or edited: creating a second hook would make
-    #                      GitHub deliver every event twice, and rewriting the
-    #                      sibling's URL would break that instance (and start a
-    #                      rewrite war between the two).
+    #                      another instance of this app owns it. No hook was
+    #                      created: a second one would make GitHub deliver every
+    #                      event twice. Its events and secret are refreshed, but
+    #                      its URL is left alone — rewriting that would break the
+    #                      sibling and start a rewrite war between the two.
     #   :failed          - Octokit/Faraday error OR Client returned nil
     def ensure_for_links(links)
       links.map { |link| [ link, ensure_webhook(link) ] }
@@ -71,7 +71,6 @@ module CollavreGithub
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
       hooks = repository_hooks(repository_full_name)
-      delete_legacy_hooks(repository_full_name, hooks)
       hook = find_own_hook(hooks)
       shared = find_shared_hook(hooks, repository_full_name, hook)
 
@@ -88,6 +87,25 @@ module CollavreGithub
         )
       end
 
+      status = provision_hook(link, repository_full_name, primary_link, hooks, hook, shared)
+
+      # Deliberately AFTER a replacement is in place. Deleting first left the
+      # repository with no hook at all whenever the create that followed failed
+      # — a transient GitHub error was enough — and callers report success
+      # regardless, so events stopped until provisioning happened to run again.
+      # Keeping the legacy hook on failure costs at most a duplicate delivery,
+      # which the GUID ledger already collapses.
+      delete_legacy_hooks(repository_full_name, hooks) unless status == :failed
+
+      status
+    rescue Octokit::Error => e
+      Rails.logger.warn(
+        "GitHub webhook provisioning failed for #{repository_full_name}: #{e.message}"
+      )
+      :failed
+    end
+
+    def provision_hook(link, repository_full_name, primary_link, hooks, hook, shared)
       if hook
         register_hook(repository_full_name, hook.id, hooks)
 
@@ -110,11 +128,19 @@ module CollavreGithub
           # the same RepositoryLink rows: same signing secret, same event list
           # (`events_for` queries those rows). Reusing it is safe and is the
           # only way to keep exactly one hook per repo.
+          #
+          # Its subscriptions are still refreshed. `events_for` widens to
+          # include `push` the moment any link enables markdown sync, and the
+          # sibling that owns the hook has no reason to reprovision — leaving
+          # it on the old list would let the initial sync run and then silently
+          # miss every later push. Only the URL is preserved: rewriting that to
+          # this host would break the sibling and start the two instances
+          # flipping it back and forth.
           Rails.logger.info(
             "[CollavreGithub] reusing registered hook #{hook_url(shared)} " \
             "for #{repository_full_name}; not creating #{webhook_url}"
           )
-          return :shared
+          return update_shared_webhook(repository_full_name, shared, secret) ? :shared : :failed
         end
 
         created = create_webhook(repository_full_name, secret)
@@ -123,11 +149,6 @@ module CollavreGithub
         register_hook(repository_full_name, created_hook_id(created), hooks)
         :created
       end
-    rescue Octokit::Error => e
-      Rails.logger.warn(
-        "GitHub webhook provisioning failed for #{repository_full_name}: #{e.message}"
-      )
-      :failed
     end
 
     def remove_webhook(repository_full_name)
@@ -241,12 +262,44 @@ module CollavreGithub
     def delete_legacy_hooks(repository_full_name, hooks)
       return if legacy_webhook_path.blank?
 
-      hooks.select { |hook| url_path(hook_url(hook)) == legacy_webhook_path }.each do |hook|
+      registered = registered_hook_id(repository_full_name)
+      legacy = hooks.select { |hook| url_path(hook_url(hook)) == legacy_webhook_path }
+      mine, theirs = legacy.partition { |hook| own_legacy_hook?(hook, registered) }
+
+      theirs.each do |hook|
+        Rails.logger.info(
+          "[CollavreGithub] leaving legacy hook #{hook_url(hook)} on #{repository_full_name} " \
+          "in place: it is not registered here and sits under another host, so it may belong " \
+          "to an independent deployment still served by that route"
+        )
+      end
+
+      mine.each do |hook|
         Rails.logger.info(
           "[CollavreGithub] deleting legacy hook #{hook_url(hook)} on #{repository_full_name}"
         )
         client.delete_repository_webhook(repository_full_name, hook.id)
       end
+    end
+
+    # Deletion must rest on stronger evidence than reuse, not weaker. Matching
+    # the legacy PATH alone would delete the hook of an independent deployment
+    # that still serves `/github/webhook` — a supported route — and take its
+    # deliveries offline. Ownership is therefore positive: either the hook
+    # carries this instance's own host, or its id is registered in this
+    # database, which only an instance sharing this database could have written.
+    def own_legacy_hook?(hook, registered)
+      return true if registered.present? && hook.id.to_s == registered.to_s
+
+      same_origin?(hook_url(hook), webhook_url)
+    end
+
+    def same_origin?(url, other)
+      a = URI.parse(url)
+      b = URI.parse(other)
+      a.host.present? && a.host == b.host && a.port == b.port
+    rescue URI::InvalidURIError
+      false
     end
 
     def webhook_path
@@ -294,6 +347,19 @@ module CollavreGithub
         repository_full_name,
         hook_id,
         url: webhook_url,
+        secret: secret,
+        events: events_for(repository_full_name),
+        content_type: CONTENT_TYPE
+      )
+    end
+
+    # Refreshes a sibling instance's hook while leaving its URL alone, so the
+    # deliveries keep flowing to whichever host created it.
+    def update_shared_webhook(repository_full_name, hook, secret)
+      client.update_repository_webhook(
+        repository_full_name,
+        hook.id,
+        url: hook_url(hook),
         secret: secret,
         events: events_for(repository_full_name),
         content_type: CONTENT_TYPE

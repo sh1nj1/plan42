@@ -93,8 +93,22 @@ module CollavreGithub
       client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
       provision(client)
 
-      assert_empty client.updated
+      assert_equal [ SIBLING_URL ], client.updated.map { |u| u[:url] }
       assert_empty client.deleted
+    end
+
+    test "refreshes the event list on a sibling's hook" do
+      # `events_for` widens to include `push` as soon as any link enables
+      # markdown sync, and the sibling that owns the hook has no reason to
+      # reprovision. Skipping the patch let the initial sync run and then
+      # silently miss every later push.
+      @link.update!(webhook_hook_id: 2, markdown_sync_enabled: true)
+      client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
+
+      assert_equal [ [ @link, :shared ] ], provision(client)
+      assert_includes client.updated.first[:events], "push"
+      assert_equal SIBLING_URL, client.updated.first[:url], "the sibling's URL must survive"
+      assert_empty client.created
     end
 
     # A separate deployment can serve the very same path. It has its own
@@ -196,12 +210,39 @@ module CollavreGithub
       assert_equal [ 12 ], client.deleted.map { |d| d[:hook_id] }
     end
 
-    test "deletes a legacy hook belonging to another host too" do
+    test "leaves an unregistered legacy hook under another host in place" do
+      # The singular route is still served, so that hook may well be an
+      # independent deployment's only way of receiving events. Deleting it on
+      # nothing but a path match would take that deployment offline — deletion
+      # has to rest on stronger evidence than reuse does, not weaker.
       client = FakeClient.new(hooks: [ Hook.new(8, { "url" => "https://other.example.com/github/webhook" }) ])
 
       provision(client)
-      assert_equal [ { repo: "owner/repo", hook_id: 8 } ], client.deleted
+      assert_empty client.deleted
       assert_equal 1, client.created.size, "legacy hook must not count as a reusable sibling"
+    end
+
+    test "deletes a legacy hook under another host once it is registered here" do
+      # Registration is written only by an instance sharing this database, so
+      # it is positive evidence the hook is ours to migrate.
+      @link.update!(webhook_hook_id: 8)
+      client = FakeClient.new(hooks: [ Hook.new(8, { "url" => "https://local.collavre.com/github/webhook" }) ])
+
+      provision(client)
+      assert_equal [ 8 ], client.deleted.map { |d| d[:hook_id] }
+    end
+
+    test "keeps the legacy hook when the replacement could not be created" do
+      # Deleting first left the repo with no hook at all on a transient GitHub
+      # error, and callers report success regardless, so events stopped until
+      # provisioning happened to run again.
+      client = FakeClient.new(hooks: [ Hook.new(6, { "url" => LEGACY_URL }) ])
+      def client.create_repository_webhook(*, **)
+        nil
+      end
+
+      assert_equal [ [ @link, :failed ] ], provision(client)
+      assert_empty client.deleted, "the only working hook must survive a failed replacement"
     end
 
     test "removal deletes its own hook but leaves a sibling in place" do
