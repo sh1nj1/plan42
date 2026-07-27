@@ -6209,6 +6209,34 @@ chk "and installs the key before publishing its source"      1 \
       }
     ' <<<"$docker_source_block")"
 
+echo "155. the backup systemd units are installed atomically"
+backup_unit_block="$(
+  awk '
+    /install_managed_config .*PostgreSQL backup service unit/ { f = 1 }
+    f { print }
+    f && /^systemctl daemon-reload$/ { exit }
+  ' "$SRC"
+)"
+chk "the service unit is written through the staging helper" 1 \
+  "$(grep -c "install_managed_config 'the PostgreSQL backup service unit'" \
+      <<<"$backup_unit_block")"
+chk "and the timer unit is written through the staging helper" 1 \
+  "$(grep -c "install_managed_config 'the PostgreSQL backup timer unit'" \
+      <<<"$backup_unit_block")"
+chk "neither live unit is truncated by a heredoc redirection" 0 \
+  "$(grep -Ec 'cat > /etc/systemd/system/collavre-pg-backup\.(service|timer)' \
+      <<<"$backup_unit_block")"
+chk "both staged units are installed before systemd reloads them" 1 \
+  "$(awk '
+      /install_managed_config .*backup service unit/ { service = NR }
+      /install_managed_config .*backup timer unit/ { timer = NR }
+      /^systemctl daemon-reload$/ { reload = NR }
+      END {
+	if (service && timer && reload && service < timer && timer < reload) print 1
+	else print 0
+      }
+    ' <<<"$backup_unit_block")"
+
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
 exit "$fail"

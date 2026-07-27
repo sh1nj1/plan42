@@ -3937,27 +3937,27 @@ fi
 chmod 0755 "$BACKUP_TMP"
 mv -f "$BACKUP_TMP" /usr/local/bin/collavre-pg-backup
 
-cat > /etc/systemd/system/collavre-pg-backup.service <<'UNIT'
-[Unit]
-Description=Collavre PostgreSQL dump
-After=postgresql.service
+install_managed_config 'the PostgreSQL backup service unit' \
+  /etc/systemd/system/collavre-pg-backup.service \
+  '[Unit]' \
+  'Description=Collavre PostgreSQL dump' \
+  'After=postgresql.service' \
+  '' \
+  '[Service]' \
+  'Type=oneshot' \
+  'ExecStart=/usr/local/bin/collavre-pg-backup'
 
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/collavre-pg-backup
-UNIT
-
-cat > /etc/systemd/system/collavre-pg-backup.timer <<UNIT
-[Unit]
-Description=Nightly Collavre PostgreSQL dump
-
-[Timer]
-OnCalendar=*-*-* $BACKUP_AT:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
+install_managed_config 'the PostgreSQL backup timer unit' \
+  /etc/systemd/system/collavre-pg-backup.timer \
+  '[Unit]' \
+  'Description=Nightly Collavre PostgreSQL dump' \
+  '' \
+  '[Timer]' \
+  "OnCalendar=*-*-* $BACKUP_AT:00" \
+  'Persistent=true' \
+  '' \
+  '[Install]' \
+  'WantedBy=timers.target'
 
 systemctl daemon-reload
 systemctl enable --now collavre-pg-backup.timer
