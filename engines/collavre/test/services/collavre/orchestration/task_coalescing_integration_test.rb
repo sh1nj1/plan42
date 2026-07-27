@@ -201,6 +201,52 @@ module Collavre
                         "a comment in another creative must not stay merged into this turn"
       end
 
+      # A comment made private after it was absorbed is one the user withdrew
+      # from the agent: dispatch_to_orchestration refuses to trigger on it and
+      # MergedTriggerComments.in_turn drops it from the delivered blocks. The
+      # anchor, though, is delivered as the trigger itself with no filter in
+      # front of it — so promoting a privated comment to anchor hands the agent
+      # exactly the content the user hid.
+      test "re-anchoring skips absorbed comments made private while queued" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: secret salary figures")
+        third = dispatch_comment("@#{@agent.name}: third")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        second.update!(private: true)
+
+        third.destroy!
+
+        waiter.reload
+        assert_equal "queued", waiter.status,
+                     "the first comment is still public and still unanswered"
+        payload = waiter.trigger_event_payload
+        assert_equal first.id, payload.dig("comment", "id"),
+                     "a privated comment is not an eligible anchor"
+        refute_includes payload.dig("comment", "content").to_s, "secret salary",
+                        "the withdrawn content must not reach the trigger"
+        refute_equal second.content, payload.dig("chat", "content")
+        refute_includes Array(payload[TaskCoalescer::PAYLOAD_KEY]), second.id,
+                        "a privated comment must not stay merged into this turn either"
+      end
+
+      # The control for the two exclusions above: an ordinary absorbed comment
+      # is still eligible. Without it, "select nothing" would pass them both.
+      test "re-anchoring still adopts an absorbed comment that is public and in scope" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: second")
+        third = dispatch_comment("@#{@agent.name}: third")
+
+        third.destroy!
+
+        payload = Task.where(agent: @agent, topic_id: @topic.id, status: "queued")
+                      .sole.reload.trigger_event_payload
+        assert_equal second.id, payload.dig("comment", "id")
+        assert_equal [ first.id ], payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
       # The task's scope is the task's own, not the deleted comment's. cancel_
       # pending_tasks looks tasks up without any creative scoping precisely
       # because CommentMoveService can move a comment without touching the task

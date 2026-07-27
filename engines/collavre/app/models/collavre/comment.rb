@@ -291,8 +291,19 @@ module Collavre
       # away and then deleted would be searching the creative it was moved *to*,
       # find nothing there, and cancel a turn whose absorbed comments are all
       # still sitting in the creative the task belongs to.
-      in_scope = Comment.where(id: merged, creative_id: task.creative_id, topic_id: task.topic_id)
-                        .order(:id).to_a
+      #
+      # Asked through MergedTriggerComments.in_turn, the same predicate that
+      # decides what the turn delivers. Eligibility is not only about *where* a
+      # comment is: a comment made private (or turned into an approval surface)
+      # after it was absorbed is one dispatch_to_orchestration would refuse to
+      # trigger on, and in_turn already drops it from the merged blocks. The
+      # anchor is delivered as the trigger itself, with no filter in front of
+      # it, so a lookup of its own here is how withdrawn content reaches the
+      # agent through the one door that never filters.
+      in_scope = Collavre::AiAgent::MergedTriggerComments
+                   .in_turn(merged, "creative" => { "id" => task.creative_id },
+                                    "topic" => { "id" => task.topic_id })
+                   .order(:id).to_a
       replacement = in_scope.last
       return false unless replacement
 
