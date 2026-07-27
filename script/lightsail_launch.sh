@@ -2410,6 +2410,7 @@ install_managed_config 'the sysctl drop-in' /etc/sysctl.d/99-collavre.conf \
 sysctl --system >/dev/null
 
 # verify_ssh_hardening [effective config file] [sshd config dir]
+#                      [reload state: 0=reloaded, 2=no active daemon]
 #
 # Read back what sshd actually resolved the three hardened keywords to, and
 # refuse a run that reported hardening it did not perform.
@@ -2427,17 +2428,25 @@ sysctl --system >/dev/null
 # it, so nobody is locked out by the refusal. The alternative is a run that
 # prints its summary over a host still accepting passwords and root logins.
 #
-# An answer that cannot be read is not the same as a wrong one, and is warned
-# about instead. `sshd -T` needs host keys and a parseable configuration; a host
-# where it will not run has told us nothing, and dying over a question we could
-# not ask would stop provisioning on a host that may well be fine. Match blocks
-# do not cause that — `sshd -T` without `-C` prints the global block and exits 0,
+# An answer that cannot be read is not the same as a wrong one when a running
+# daemon has just accepted the reload, and is warned about instead. With no
+# active daemon it is the only gate: the next socket-activated connection will
+# start sshd from those files, so an unreadable answer is fatal in reload state
+# 2. `sshd -T` needs host keys and a parseable configuration; Match blocks do
+# not make it unreadable — without `-C` it prints the global block and exits 0,
 # measured on both OpenSSH builds this was checked against.
 verify_ssh_hardening() {
-  local src="${1:-}" conf_dir="${2:-/etc/ssh}" effective key value offender
+  local src="${1:-}" conf_dir="${2:-/etc/ssh}" reload_state="${3:-0}"
+  local effective key value offender
   if [ -n "$src" ]; then
     effective="$(cat "$src")"
   elif ! effective="$(sshd -T 2>/dev/null)"; then
+    [ "$reload_state" -ne 2 ] || die \
+      "SSH hardening could not be verified: there is no active sshd to reload" \
+      "and 'sshd -T' rejected or could not read the configuration on disk." \
+      "The next socket-activated connection or reboot would start sshd from" \
+      "that unverified configuration. Nothing has been granted. Run 'sshd -t'" \
+      "to find the error, fix it, and re-run."
     log "WARNING: could not read the effective SSH configuration on this host" \
         "(\`sshd -T\` failed), so the hardening above is unverified. Check it" \
         "by hand: sshd -T | grep -E" \
@@ -2537,8 +2546,10 @@ rm -f /etc/ssh/sshd_config.d/99-collavre.conf
 # sshd_config; without it the drop-in above is silently ignored.
 grep -q '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config 2>/dev/null || \
   log "WARNING: sshd_config has no Include for sshd_config.d — harden SSH by hand"
-# reload_ssh_daemon — reload whichever unit carries sshd; non-zero only when a
-# *running* daemon refused the configuration.
+# reload_ssh_daemon — reload whichever unit carries sshd.
+#
+# Returns 0 when a unit adopted the configuration, 1 when a running daemon
+# refused it, and 2 when neither unit is active and there was nothing to reload.
 #
 # `|| true` here used to swallow the status, and the status means two different
 # things. Measured under systemd 252, one unit state per row, with ExecReload
@@ -2569,7 +2580,7 @@ reload_ssh_daemon() {
     systemctl reload "$unit" >/dev/null 2>&1 && return 0
     [ "$(systemctl is-active "$unit" 2>/dev/null)" = active ] && return 1
   done
-  return 0
+  return 2
 }
 # Fatal, and *before* verify_ssh_hardening rather than folded into it, because
 # on this path that function is answering the wrong question. `sshd -T` re-reads
@@ -2587,14 +2598,16 @@ reload_ssh_daemon() {
 # does not exist yet, nothing has been granted, and SSH is left exactly as the
 # operator had it, so the refusal locks nobody out. That is the same reason
 # verify_ssh_hardening's own die() sits here rather than after the grants.
-reload_ssh_daemon || die \
+SSH_RELOAD_STATE=0
+reload_ssh_daemon || SSH_RELOAD_STATE=$?
+[ "$SSH_RELOAD_STATE" -ne 1 ] || die \
   "SSH hardening was written but the running sshd refused to reload it." \
   "The live daemon is still using the configuration it started with, so the" \
   "hardening above is NOT in effect — and sshd will be handed the same" \
   "rejected configuration at the next boot, where no old process survives to" \
   "keep the host reachable. Nothing has been granted and SSH is unchanged." \
   "Find the offending directive with 'sshd -t', fix it, and re-run."
-verify_ssh_hardening
+verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"
 
 # install_deploy_ssh_dir <user> <home> — create <home>/.ssh owned by the
 # account, and echo the group it was given.

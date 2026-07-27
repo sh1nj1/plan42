@@ -5610,6 +5610,13 @@ chk "an sshd -T that will not run warns instead of stopping" 1 \
   "$(printf '%s' "$vh_unread" | grep -c '^rc=0$')"
 chk "and says the hardening is unverified"                1 \
   "$(printf '%s' "$vh_unread" | grep -c 'unverified')"
+vh_inactive_unread="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 2 ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "but an inactive daemon with no valid disk config stops" 1 \
+  "$(printf '%s' "$vh_inactive_unread" | grep -c '^rc=1$')"
+chk "and names the socket activation risk"                  1 \
+  "$(printf '%s' "$vh_inactive_unread" | grep -c 'socket-activated connection')"
 
 # Source level, because every row above passes on a revision that writes the
 # drop-in under the losing name and never reads anything back.
@@ -5627,7 +5634,7 @@ chk "the sysctl drop-in is staged too"                    1 \
 chk "and the inert 99- file it replaces is removed"       1 \
   "$(grep -c '^rm -f /etc/ssh/sshd_config\.d/99-collavre\.conf$' "$SRC")"
 chk "and the run reads back what sshd resolved"           1 \
-  "$(grep -c '^verify_ssh_hardening$' "$SRC")"
+  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"' "$SRC")"
 
 # The claim is about what sshd does with two files, so sshd is asked. The name
 # and the body both come from the script: a harness that wrote its own 01- file
@@ -5944,16 +5951,17 @@ systemctl() { # <verb> <unit>
   esac
   return 1
 }
-rsd() { # <ok unit> <failing unit> <active unit> -> rc
+rsd() { # <ok unit> <failing unit> <active unit> -> 0=adopted, 1=refused, 2=inactive
   RELOAD_OK="${1:-@none}" RELOAD_BAD="${2:-@none}" ACTIVE="${3:-@none}"
   reload_ssh_daemon >/dev/null 2>&1; echo $?
 }
 chk "an ssh.service that adopts it proceeds"          0 "$(rsd ssh '' ssh)"
 chk "and an sshd.service that adopts it"              0 "$(rsd sshd '' sshd)"
-# The controls, and the reason this is not a guard on the reload status. Both
-# of these are healthy hosts on which BOTH reloads fail.
-chk "a socket-activated host with nothing connected"  0 "$(rsd '' ssh '')"
-chk "and a host carrying neither unit"                0 "$(rsd '' '' '')"
+# The controls, and the reason this is not a binary status. Both are healthy
+# hosts on which BOTH reloads fail; status 2 tells the caller it must rely on
+# the configuration on disk before allowing socket activation to start sshd.
+chk "a socket-activated host with nothing connected"  2 "$(rsd '' ssh '')"
+chk "and a host carrying neither unit"                2 "$(rsd '' '' '')"
 # The finding. Same rc as the row above it, opposite meaning.
 chk "a running daemon that refuses it stops the run"  1 "$(rsd '' ssh ssh)"
 # ssh is absent here and sshd is the one running and refusing, so this also
@@ -5967,8 +5975,10 @@ unset -f systemctl
 unset RELOAD_OK RELOAD_BAD ACTIVE
 # Source level: the behavioural rows above all pass on a revision that defines
 # the function and still swallows its status with `|| true`.
-chk "and the run treats that as fatal"                1 \
-  "$(grep -c '^reload_ssh_daemon || die \\$' "$SRC")"
+chk "and the run preserves the reload state"          1 \
+  "$(grep -cF 'reload_ssh_daemon || SSH_RELOAD_STATE=$?' "$SRC")"
+chk "and passes it to disk verification"              1 \
+  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"' "$SRC")"
 chk "rather than discarding the status"               0 \
   "$(grep -c '^systemctl reload ssh .*|| true$' "$SRC")"
 
