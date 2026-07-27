@@ -5666,6 +5666,8 @@ bindguard 10.0.0.5
 chk "and any other dotted quad"                        0 "$bind_rc"
 bindguard 1.2.3.4
 chk "including one this host does not hold"            0 "$bind_rc"
+bindguard 0.0.0.0
+chk "the unspecified address unusable from the container is refused" 1 "$bind_rc"
 bindguard 127.0.0.1
 chk "a loopback address unusable from the container is refused" 1 "$bind_rc"
 bindguard 127.255.255.254

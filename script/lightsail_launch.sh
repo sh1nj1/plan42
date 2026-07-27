@@ -402,6 +402,14 @@ refuse_unusable_bind_address() {
   local setting="$1" value="$2"
   if ipv4_dotted_quad "$value"; then
     case "$value" in
+      0.0.0.0)
+	die "REFUSING: $setting='$value' is the unspecified address. PostgreSQL" \
+	    "may listen successfully on the host, but DATABASE_URL is used" \
+	    "inside the application container, where 0.0.0.0 names the" \
+	    "container rather than the host database. Nothing has been changed." \
+	    "Set $setting to the gateway address of the bridge your containers" \
+	    "are on — 'ip -4 addr show docker0'."
+	;;
       127.*)
 	die "REFUSING: $setting='$value' is a loopback address. PostgreSQL would" \
 	    "listen successfully on the host, but DATABASE_URL is used inside" \
