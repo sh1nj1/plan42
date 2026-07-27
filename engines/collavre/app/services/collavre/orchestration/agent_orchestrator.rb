@@ -182,7 +182,7 @@ module Collavre
         Task.transaction do
           TopicSlot.lock!(task.topic_id, task.creative_id)
           absorbed = TaskCoalescer.coalesce!(task, scope: :all)
-          refresh_deferred_context!(task) if absorbed.any?
+          refresh_deferred_context!(task, absorbed_only: true) if absorbed.any?
         end
         return if absorbed.empty?
 
@@ -261,7 +261,21 @@ module Collavre
       # conversation state instead of the stale snapshot from enqueue time.
       # Skips AI agent's own comments to prevent self-response loops.
       # Cancels the task if no eligible comment remains.
-      def self.refresh_deferred_context!(task)
+      #
+      # `absorbed_only` narrows the destination to the comments this turn is
+      # actually answering — its anchor plus what coalescing folded into it.
+      # A comment commits in its own transaction and its AiAgentJob creates the
+      # queued task afterwards, so a comment can be visible here with no task
+      # behind it yet: the topic lock orders task creation, not comment
+      # visibility. Moving the anchor onto one of those has this turn answer a
+      # comment it never absorbed, and when that job does run it parks a waiter
+      # against the now-claimed task — the same comment answered twice.
+      #
+      # Only coalesce_at_start! passes it. Promotion's refresh has always taken
+      # the newest comment in the topic ("the latest state, not the enqueue-time
+      # snapshot" is the whole reason it exists) and that is a wider question
+      # than this call site.
+      def self.refresh_deferred_context!(task, absorbed_only: false)
         context = task.trigger_event_payload
         creative_id = context&.dig("creative", "id")
         return unless creative_id && context&.key?("topic")
@@ -273,6 +287,7 @@ module Collavre
         return if review_anchor?(context)
 
         topic_id = context.dig("topic", "id")
+
         # ...and a review is no better as a *destination* than as an anchor. The
         # coalescer leaves a queued review alone, so an ordinary waiter promoted
         # first would re-anchor onto it and run ReviewHandler over a comment it
@@ -285,6 +300,15 @@ module Collavre
           .where.not(user_id: [ task.agent_id, nil ])
           .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
           .order(id: :desc)
+
+        if absorbed_only
+          candidate_ids = (Array(context[TaskCoalescer::PAYLOAD_KEY]) + [ context.dig("comment", "id") ])
+            .compact.map(&:to_i).uniq
+          return if candidate_ids.empty?
+
+          scope = scope.where(id: candidate_ids)
+        end
+
         latest_comment = scope.first
 
         unless latest_comment

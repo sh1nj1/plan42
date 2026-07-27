@@ -91,6 +91,30 @@ module Collavre
                         "anchor has to survive as a merged comment"
       end
 
+      # The topic lock orders *task creation*, not comment visibility. A comment
+      # commits in its own transaction and its AiAgentJob creates the queued task
+      # afterwards, so there is a window where the comment is on screen with no
+      # task behind it yet. Re-anchoring onto it would have this turn answer a
+      # comment it never absorbed — and once that job does run, it parks a waiter
+      # against the now-claimed task and the same comment is answered twice.
+      test "does not re-anchor onto a comment whose waiter has not materialised" do
+        first = comment("@#{@agent.name}: first")
+        claimed = task_for(first, status: "pending")
+        folded = comment("@#{@agent.name}: and also this")
+        task_for(folded, status: "queued")
+        # Committed, dispatched, but its AiAgentJob has not created a task yet.
+        unclaimed = comment("@#{@agent.name}: still being dispatched")
+
+        AgentOrchestrator.coalesce_at_start!(claimed)
+
+        payload = claimed.reload.trigger_event_payload
+        assert_equal folded.id, payload.dig("comment", "id"),
+                     "the anchor may only move to a comment this turn actually absorbed"
+        refute_equal unclaimed.id, payload.dig("comment", "id")
+        refute_includes Array(payload[TaskCoalescer::PAYLOAD_KEY]), unclaimed.id,
+                        "a comment with a turn still coming must not be swallowed by this one"
+      end
+
       test "the sender moves with the anchor when the fold crosses users" do
         claimed = task_for(comment("@#{@agent.name}: first"), status: "pending")
         other = users(:two)
