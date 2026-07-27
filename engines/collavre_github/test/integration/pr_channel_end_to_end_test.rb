@@ -40,7 +40,7 @@ module CollavreGithub
       dispatched_events = []
       Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(event, _ctx) { dispatched_events << event; [] }) do
         assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
-          post "/github/webhook",
+          post "/github/webhooks",
             params: payload,
             headers: {
               "Content-Type" => "application/json",
@@ -74,7 +74,7 @@ module CollavreGithub
         # delivery must short-circuit (row lock + state re-check) instead of
         # injecting another "PR #321 was merged" comment into the topic.
         assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
-          2.times { post "/github/webhook", params: payload, headers: headers }
+          2.times { post "/github/webhooks", params: payload, headers: headers }
         end
       end
 

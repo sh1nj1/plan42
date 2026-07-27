@@ -109,6 +109,15 @@ module CollavreGithub
         # CollavreGithub::Client). Surface that to the MCP caller so they know
         # webhook events were not actually patched.
         return "webhook provisioning failed: GitHub API rejected the hook request (see logs)" if status == :failed
+        # :shared is NOT a warning. It means a hook registered in this database
+        # already exists, so this instance reused it instead of adding a second
+        # one, and its events and secret have been patched from here — a patch
+        # that fails comes back as :failed and is reported above. (The other
+        # route to :shared is losing the creation race to a sibling, whose hook
+        # was just built from these same RepositoryLink rows, so its
+        # subscriptions are current by construction.) Only the hook's URL is
+        # left pointing at the sibling, which pr_monitor does not depend on.
+        # Warning here reported a provisioning problem where there is none.
         nil
       rescue => e
         Rails.logger.warn("[pr_monitor] webhook provisioning failed for #{repo}: #{e.class}: #{e.message}")

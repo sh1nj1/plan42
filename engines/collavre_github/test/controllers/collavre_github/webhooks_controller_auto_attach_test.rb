@@ -30,7 +30,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { GithubPrChannel.count }, 1 do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",
@@ -53,7 +53,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_no_difference -> { GithubPrChannel.count } do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
     end
@@ -75,7 +75,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_no_difference -> { GithubPrChannel.count } do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
     end
@@ -95,7 +95,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { GithubPrChannel.count }, 1 do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
       channel = GithubPrChannel.last
@@ -123,7 +123,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_no_difference -> { GithubPrChannel.count } do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
       assert detached.reload.detached?
@@ -149,7 +149,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_no_difference -> { @topic.comments.count } do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
       dismissed.reload
@@ -189,7 +189,7 @@ module CollavreGithub
       # reopen announcement. The announcement is the one we care about here.
       assert_difference -> { @topic.comments.count }, 1 do
         assert_no_difference -> { GithubPrChannel.count } do
-          post "/github/webhook", params: payload,
+          post "/github/webhooks", params: payload,
             headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
         end
       end
@@ -218,7 +218,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_no_difference -> { @topic.comments.count } do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
       assert active.reload.active?
@@ -260,7 +260,7 @@ module CollavreGithub
         }.to_json
         sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       ensure
         GithubPrChannel.define_method(:with_lock, original_with_lock)
@@ -299,7 +299,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { @topic.comments.count }, 1 do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
       dismissed.reload
@@ -335,7 +335,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_no_difference -> { foreign_topic.comments.count } do
-        post "/github/webhook", params: payload,
+        post "/github/webhooks", params: payload,
           headers: { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request", "X-Hub-Signature-256" => sig }
       end
       stale.reload
