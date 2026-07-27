@@ -215,10 +215,72 @@ module Collavre
         end
       end
 
-      assert_equal [ @topic.id ], locked_topic_ids,
+      # The admitted task drains the topic queue as it finishes, and that claim
+      # takes the same lock — one entry per claim attempt, none skipping it.
+      assert_equal [ @topic.id ], locked_topic_ids.uniq,
                    "admission must serialize on the topic row"
+      assert_predicate locked_topic_ids, :any?
       assert_operator check_depth, :>, baseline_depth,
                       "the occupancy check must run inside the claiming transaction"
+    end
+
+    # A creative's Main topic carries topic.id == nil (Scheduler covers this
+    # shape). It is still subject to topic_max_concurrent_jobs — occupancy is
+    # counted with topic_id: nil scoped to the creative — so it needs a lock too.
+    # Without one there is no shared row to serialize on and concurrent workers
+    # both read a free slot before either inserts.
+    test "admission on the Main topic serializes on the creative row" do
+      locked_creative_ids = []
+      lock_relation = Struct.new(:sink) do
+        def find_by(id:)
+          sink << id
+          nil
+        end
+      end.new(locked_creative_ids)
+
+      baseline_depth = Task.connection.open_transactions
+      check_depth = nil
+      counting_scope = Task.occupying_topic_slot(nil, @creative.id)
+      c = Comment.create!(creative: @creative, user: @user, content: "main topic", skip_dispatch: true)
+      main_context = {
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => nil },
+        "comment" => { "id" => c.id, "content" => c.content, "user_id" => @user.id }
+      }
+
+      Creative.stub(:lock, lock_relation) do
+        Task.stub(:occupying_topic_slot, ->(*) {
+          check_depth ||= Task.connection.open_transactions
+          counting_scope
+        }) do
+          AiAgentJob.new.perform(@agent.id, "comment_created", main_context)
+        end
+      end
+
+      assert_equal [ @creative.id ], locked_creative_ids.uniq,
+                   "Main-topic admission must serialize on a stable creative-scoped row"
+      assert_predicate locked_creative_ids, :any?
+      assert_operator check_depth, :>, baseline_depth,
+                      "the occupancy check must run inside the claiming transaction"
+    end
+
+    test "defers a Main-topic dispatch when the creative's Main slot is taken" do
+      Task.create!(
+        name: "Main holder", status: "running", trigger_event_name: "comment_created",
+        agent: @agent, topic_id: nil, creative_id: @creative.id,
+        trigger_event_payload: { "topic" => { "id" => nil } }
+      )
+      c = Comment.create!(creative: @creative, user: @user, content: "main late", skip_dispatch: true)
+      main_context = {
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => nil },
+        "comment" => { "id" => c.id, "content" => c.content, "user_id" => @user.id }
+      }
+
+      AiAgentJob.new.perform(@agent.id, "comment_created", main_context)
+
+      assert_equal 1, Task.where(agent: @agent, topic_id: nil, creative_id: @creative.id,
+                                 status: "queued").count
     end
   end
 end

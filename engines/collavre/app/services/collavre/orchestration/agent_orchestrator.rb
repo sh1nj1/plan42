@@ -17,15 +17,11 @@ module Collavre
       end
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
-        task = Task.queued_for_topic(topic_id, creative_id).first
-        return unless task
-
-        updated = Task.where(id: task.id, status: "queued").update_all(status: "pending")
-        if updated > 0
-          task.reload
+        task = claim_next_waiter(topic_id, creative_id)
+        if task
           # Fold the waiters left behind this one into it. dequeue promotes the
-          # OLDEST queued task, so its same-agent siblings are all newer — they
-          # would each be promoted in turn and, because
+          # oldest *eligible* queued task, so its same-agent siblings are all
+          # newer — they would each be promoted in turn and, because
           # refresh_deferred_context! points every one of them at the same
           # latest comment, replay the same answer. Absorb them here instead;
           # the refresh below then moves the anchor forward and keeps the
@@ -45,6 +41,43 @@ module Collavre
           end
         end
       end
+
+      # Promote the oldest waiter this topic can actually run, moving it
+      # queued -> pending (a status that occupies the slot) so the claim is
+      # visible to every other admission the moment it commits.
+      #
+      # Promotion is a slot hand-out just like AiAgentJob's admission, so it
+      # takes the same lock and asks the same question. Without that, a caller
+      # that merely observed *a* task finish would promote into a topic that is
+      # still full (every terminal task in the topic calls here, including ones
+      # that never held this slot), or hand a second concurrent turn to an agent
+      # that is already running one — which TaskCoalescer, folding only `queued`
+      # rows, could never merge after the fact.
+      #
+      # The oldest waiter is not always eligible: with topic_max > 1 the head of
+      # the queue may belong to a busy agent while a later waiter can run now.
+      # Stopping at the queue head would strand the whole queue behind it, so
+      # scan in order for the first waiter that fits.
+      def self.claim_next_waiter(topic_id, creative_id)
+        claimed = nil
+
+        Task.transaction do
+          TopicSlot.lock!(topic_id, creative_id)
+
+          candidate = Task.queued_for_topic(topic_id, creative_id).find do |waiter|
+            TopicSlot.available_for?(
+              waiter.agent_id, topic_id, creative_id, waiter.trigger_event_payload
+            )
+          end
+          next if candidate.nil?
+
+          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending")
+          claimed = candidate.reload if updated > 0
+        end
+
+        claimed
+      end
+      private_class_method :claim_next_waiter
 
       # Human-readable reason for the "⏳" waiting notice. For topic-concurrency
       # deferrals, name the agent(s) actually holding the topic's running slot so

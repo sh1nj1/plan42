@@ -276,8 +276,8 @@ module Collavre
       # admission for a topic takes the same lock, so the loser reads the
       # winner's committed row.
       Task.transaction do
-        lock_topic_for_admission(topic_id)
-        admitted = !topic_slot_taken?(agent, context, topic_id, creative_id)
+        Orchestration::TopicSlot.lock!(topic_id, creative_id)
+        admitted = Orchestration::TopicSlot.available_for?(agent.id, topic_id, creative_id, context)
         task = Task.create!(attrs.merge(status: admitted ? "running" : "queued"))
       end
 
@@ -291,40 +291,6 @@ module Collavre
     # subtasks and other topic-less dispatches are not.
     def topic_admission_scoped?(context)
       context.is_a?(Hash) && context.key?("topic")
-    end
-
-    # Take the per-topic admission lock. SELECT ... FOR UPDATE on Postgres; the
-    # SQLite visitor drops the lock clause, where writes are serialized anyway.
-    def lock_topic_for_admission(topic_id)
-      return unless topic_id
-
-      Topic.lock.find_by(id: topic_id)
-    end
-
-    # Does another task already hold this topic's concurrency slot?
-    #
-    # Uses occupying_topic_slot rather than running_for_topic: `pending` (a
-    # claimed-but-not-started waiter) and `pending_approval` (paused, keeps its
-    # resource, does not drain the queue) both hold the slot, and treating them
-    # as free is exactly how a second turn slips in.
-    #
-    # Deliberately NOT gated on coalesce_pending_tasks?: that switch governs
-    # whether waiters are folded together, not whether topic_max_concurrent_jobs
-    # is enforced. Skipping admission when it is off would let a burst start one
-    # concurrent turn per comment in a topic limited to one.
-    def topic_slot_taken?(agent, context, topic_id, creative_id)
-      topic_max = Orchestration::PolicyResolver.new(context).topic_max_concurrent_jobs
-      return false unless topic_max
-
-      occupying = Task.occupying_topic_slot(topic_id, creative_id)
-      return true if occupying.count >= topic_max
-
-      # A free slot is not automatically THIS agent's to take. topic_max > 1
-      # exists to run *different* agents in parallel, so an agent that already
-      # has a turn in flight here must wait rather than answer itself twice —
-      # TaskCoalescer only folds `queued` rows and could never merge two
-      # concurrent turns after the fact.
-      occupying.where(agent_id: agent.id).exists?
     end
 
     # Finish parking a waiter created by #admit_or_defer!: fold it together with
@@ -341,12 +307,15 @@ module Collavre
         "#{waiter.id}: slot already occupied (event=#{event_name})"
       )
 
-      # The holder may have finished between the admission check and this point,
-      # which would leave the waiter with nobody left to drain it (its
-      # dequeue_next_for_topic already ran). Re-check and drain here.
-      unless Task.occupying_topic_slot(topic_id, creative_id).exists?
-        Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
-      end
+      # A holder may have finished between the admission check and this point,
+      # leaving a waiter with nobody left to drain it (its
+      # dequeue_next_for_topic already ran). Drain unconditionally: this
+      # deferral is not proof the topic is full — with topic_max > 1 an agent
+      # defers because *it* is busy while a slot sits free for someone else, and
+      # gating on "no occupants at all" would strand that waiter until the
+      # unrelated holder finishes. dequeue_next_for_topic re-checks capacity and
+      # eligibility under the admission lock, so an over-eager call is a no-op.
+      Orchestration::AgentOrchestrator.dequeue_next_for_topic(topic_id, creative_id)
 
       nil
     end
