@@ -358,18 +358,11 @@ module Collavre
         # going to answer. A session-backed agent only receives the :trigger
         # message (SessionContextResolver#incremental_payload), so a silently
         # replaced anchor is a comment the agent never sees at all.
-        context["comment"] = {
-          "id" => latest_comment.id,
-          "content" => latest_comment.content,
-          "user_id" => latest_comment.user_id
-        }
-        context["chat"] = { "content" => latest_comment.content }
-        # The payload's "sender" is what labels the trigger and what
-        # ClaudeChannelAdapter sends as author_id/author_name, and
-        # SystemEvents::ContextBuilder only ever fills it in with `||=` — it does
-        # not run again here. A burst spanning two people would otherwise put the
-        # first speaker's name on the second's words.
-        context = SystemEvents::ContextBuilder.reanchor_sender(context, latest_comment)
+        #
+        # reanchor_payload also records the move when it is one, which is what
+        # delivered_comment_ids reads below: a comment this turn was handed
+        # without having been created for it.
+        context = TaskCoalescer.reanchor_payload(context, latest_comment)
         # absorb_into_payload also drops the new anchor from the merged list, so
         # a comment promoted from "merged" back to "trigger" is not sent twice.
         context = TaskCoalescer.absorb_into_payload(context, [ previous_anchor_id ].compact)
@@ -407,11 +400,13 @@ module Collavre
       #
       # - it sits in the turn's merged list — coalescing put it there, and the
       #   task it belonged to was superseded, so this turn is its only delivery;
-      # - it is the anchor but was posted *after* the turn was created — the
-      #   refresh moved the turn onto it, which is the window this closes.
+      # - it is the anchor, and the payload records that the anchor was moved
+      #   onto it — the refresh acquired it, which is the window this closes.
       #
-      # An anchor older than its own task is that task's original trigger and is
-      # deliberately not counted.
+      # An anchor a task was created for is that task's original trigger and is
+      # deliberately not counted. Which of the two it is comes from the payload
+      # (TaskCoalescer::ACQUIRED_ANCHOR_KEY, written by whichever door moved it)
+      # rather than from comparing the comment's clock with the task's.
       #
       # Scoped by topic and creative, which also keeps workflow subtasks out:
       # Comments::WorkflowExecutor mints its own trigger comment in the child
@@ -426,15 +421,9 @@ module Collavre
           creative_id: context.dig("creative", "id"),
           trigger_event_name: task.trigger_event_name,
           status: DELIVERED_STATUSES
-        ).where.not(id: task.id).select(:id, :created_at, :trigger_event_payload)
+        ).where.not(id: task.id).select(:id, :trigger_event_payload)
 
-        anchors = others.filter_map { |other| [ other, anchor_id_in(other) ] }
-                        .reject { |_, anchor_id| anchor_id.nil? }
-        posted_at = Comment.where(id: anchors.map(&:last)).pluck(:id, :created_at).to_h
-
-        acquired_anchors = anchors.filter_map { |other, anchor_id|
-          anchor_id if posted_at[anchor_id] && posted_at[anchor_id] > other.created_at
-        }
+        acquired_anchors = others.filter_map { |other| acquired_anchor_id_in(other) }
         merged = others.flat_map { |other|
           Array(other.trigger_event_payload&.dig(TaskCoalescer::PAYLOAD_KEY)).compact.map(&:to_i)
         }
@@ -443,11 +432,19 @@ module Collavre
       end
       private_class_method :delivered_comment_ids
 
-      def self.anchor_id_in(other)
-        id = other.trigger_event_payload&.dig("comment", "id")
-        id&.to_i
+      # The anchor of `other`, but only when `other` acquired it rather than
+      # being created for it. The recorded id is compared against the anchor as
+      # it stands now: a payload moved on again since carries the older id in
+      # its merged list, which is counted separately.
+      def self.acquired_anchor_id_in(other)
+        payload = other.trigger_event_payload
+        acquired = payload&.dig(TaskCoalescer::ACQUIRED_ANCHOR_KEY)
+        anchor = payload&.dig("comment", "id")
+        return nil if acquired.nil? || anchor.nil?
+
+        anchor.to_i if acquired.to_i == anchor.to_i
       end
-      private_class_method :anchor_id_in
+      private_class_method :acquired_anchor_id_in
 
       def self.review_anchor?(context)
         anchor_id = context.dig("comment", "id")

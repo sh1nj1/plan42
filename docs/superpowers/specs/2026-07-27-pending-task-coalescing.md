@@ -138,6 +138,13 @@ into `merged_comment_ids` instead of being dropped, and the payload's `"sender"`
 block is rebuilt with it (`ContextBuilder` fills that with `||=` and never re-runs
 on this path).
 
+Both doors that move an anchor — this one and `Comment#reanchor_coalesced_task` —
+write it through `TaskCoalescer.reanchor_payload`, which also records the move
+under `acquired_comment_id`. A payload therefore *says* whether its anchor is the
+comment the task was created for, rather than leaving a later reader to infer it
+from timestamps (see `delivered_comment_ids` below). The mark is written only when
+the id actually changes, and never cleared.
+
 Two restrictions on the destination:
 
 - `absorbed_only:` — `coalesce_at_start!` (the call site this branch added)
@@ -150,9 +157,14 @@ Two restrictions on the destination:
 - `delivered_comment_ids` — a comment another turn of the same agent has already
   delivered is excluded from both the destination and the merged list. A comment
   counts as delivered by another turn only if it is in that turn's merged list,
-  or was created *after* that turn was (i.e. the turn acquired it by re-anchor);
-  a comment older than its own turn is that turn's own trigger, and counting it
-  would cancel every waiter standing behind an answered comment. Judged at
+  or is that turn's anchor *and* recorded as acquired (`acquired_comment_id`);
+  an anchor the turn was created for is its own trigger, and counting it would
+  cancel every waiter standing behind an answered comment. The distinction comes
+  from the payload rather than from `comment.created_at` against
+  `task.created_at` — those are stamped by whichever process wrote each row, so a
+  tie or a skew reads an acquired anchor as an original one (answering it twice)
+  or an original one as acquired (cancelling a waiter with no candidate left).
+  It is the same reason ordering here is by `id`. Judged at
   promotion rather than at dispatch, so a turn that dies without delivering
   (`failed`/`cancelled`) leaves its comments answerable — rejecting the second
   dispatch instead would turn a duplicate into a loss.

@@ -52,15 +52,52 @@ module Collavre
       # A turn parked for `anchor` before `acquired` existed, then re-anchored
       # onto it by the refresh — the shape the promotion door produces, and the
       # only shape where a second task for the same comment can still be queued.
+      #
+      # Built through the same two calls refresh_deferred_context! makes rather
+      # than by hand, so the fixture cannot assert a premise the production path
+      # does not actually produce.
       def turn_that_acquired(status, anchor, acquired, agent: @agent)
         turn = task_for(status, anchor, agent: agent)
-        turn.update_columns(created_at: 2.minutes.ago)
-        turn.update!(trigger_event_payload: payload_for(acquired, merged: [ anchor ]))
+        moved = TaskCoalescer.reanchor_payload(turn.trigger_event_payload, acquired)
+        turn.update!(trigger_event_payload: TaskCoalescer.absorb_into_payload(moved, [ anchor.id ]))
         turn
       end
 
       def merged_ids(task)
         Array(task.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY])
+      end
+
+      # Comments and tasks are stamped by whichever process writes them, so
+      # `comment.created_at > task.created_at` is not the causal order it looks
+      # like — two app hosts with tied or skewed clocks put an acquired anchor
+      # on the wrong side of it. Both directions of that error are reachable,
+      # and they fail differently: reading an acquired anchor as an original one
+      # answers a comment twice, and reading an original one as acquired leaves
+      # a promoted waiter with no candidate at all and cancels it.
+      test "an acquired anchor is still recognised when its comment does not outrank the turn's clock" do
+        b = comment("do X")
+        c = comment("actually do Y")
+        turn = turn_that_acquired("done", b, c)
+        c.update_columns(created_at: turn.created_at)
+        late = task_for("queued", c)
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal "cancelled", late.reload.status,
+                     "a tied clock must not turn an acquired anchor back into an unanswered comment"
+      end
+
+      test "a turn's own trigger is not read as acquired when its comment outranks the turn's clock" do
+        c = comment("do X")
+        own = task_for("done", c)
+        c.update_columns(created_at: own.created_at + 1.second)
+        late = task_for("queued", c)
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_not_equal "cancelled", late.reload.status,
+                         "a skewed clock must not silence a comment whose own turn answered it"
+        assert_equal c.id, late.reload.trigger_event_payload.dig("comment", "id")
       end
 
       # The reported path, through the door the absorbed_only narrowing leaves

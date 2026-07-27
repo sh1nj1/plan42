@@ -307,13 +307,11 @@ module Collavre
       replacement = in_scope.last
       return false unless replacement
 
+      # Through the same door the refresh uses, so the promotion is recorded as
+      # an acquired anchor either way: this task was created to answer the
+      # comment being deleted, not this one.
+      payload = Collavre::Orchestration::TaskCoalescer.reanchor_payload(payload, replacement)
       payload = payload.merge(
-        "comment" => {
-          "id" => replacement.id,
-          "content" => replacement.content,
-          "user_id" => replacement.user_id
-        },
-        "chat" => { "content" => replacement.content },
         # Rebuilt from the in-scope ids rather than merged through
         # absorb_into_payload, which would fold the out-of-scope ones straight
         # back in from the payload it starts from. The new anchor is excluded so
@@ -321,7 +319,6 @@ module Collavre
         Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY =>
           (in_scope.map(&:id) - [ replacement.id ]).sort
       )
-      payload = Collavre::SystemEvents::ContextBuilder.reanchor_sender(payload, replacement)
       task.update!(trigger_event_payload: payload)
 
       Rails.logger.info(

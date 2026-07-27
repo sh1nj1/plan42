@@ -19,6 +19,17 @@ module Collavre
     class TaskCoalescer
       PAYLOAD_KEY = "merged_comment_ids"
 
+      # Set when a payload's anchor is moved onto a comment the task was not
+      # created for. AgentOrchestrator.delivered_comment_ids has to tell that
+      # apart from a task answering its own trigger, and the only evidence
+      # otherwise was comment.created_at against task.created_at — two rows
+      # stamped by whichever process wrote them, which is why nothing else in
+      # this turn's machinery orders by time either. A tie or a skew reads an
+      # acquired anchor as an original one and the comment is answered twice,
+      # or an original one as acquired and a promoted waiter is left with no
+      # candidate and cancelled.
+      ACQUIRED_ANCHOR_KEY = "acquired_comment_id"
+
       # The statuses a survivor may still be in when a fold runs: both enqueue
       # doors hand over a `queued` row and both start-of-turn doors a `pending`
       # one. Anything else means it lost its turn between the caller reading it
@@ -38,6 +49,44 @@ module Collavre
       # @return [Array<Integer>] ids of the tasks that were absorbed
       def self.coalesce!(keep_task, scope: :older)
         new(keep_task, scope: scope).coalesce!
+      end
+
+      # Point a payload at a new trigger comment, recording the move.
+      #
+      # Both doors that move an anchor go through this — the refresh carrying a
+      # waiter forward, and the re-anchor rescuing a task whose anchor was
+      # deleted. They differ only in how they rebuild the merged list, and
+      # keeping the anchor write itself in one place is what makes "this turn
+      # acquired that comment" a fact the payload carries rather than one a
+      # later reader has to reconstruct.
+      #
+      # A refresh that lands back on the anchor it started from is a documented
+      # no-op, so the mark is written only when the id actually changes, and
+      # never cleared: an anchor moved twice is still not the turn's own.
+      #
+      # A payload with no anchor at all is left unmarked. There is no move to
+      # record, and this whole record is read to decide whether a *waiter* may
+      # keep its turn — so where the payload cannot say, the side that cannot
+      # discard someone's work is the one to take.
+      #
+      # @return [Hash] the updated payload (not saved)
+      def self.reanchor_payload(payload, comment)
+        previous_id = payload.dig("comment", "id")
+        moved = payload.merge(
+          "comment" => {
+            "id" => comment.id,
+            "content" => comment.content,
+            "user_id" => comment.user_id
+          },
+          "chat" => { "content" => comment.content }
+        )
+        moved[ACQUIRED_ANCHOR_KEY] = comment.id if previous_id && previous_id.to_i != comment.id
+        # The payload's "sender" labels the trigger and is what
+        # ClaudeChannelAdapter sends as author_id/author_name, and
+        # SystemEvents::ContextBuilder only ever fills it in with `||=` — it does
+        # not run again on either of these paths. A burst spanning two people
+        # would otherwise put the first speaker's name on the second's words.
+        SystemEvents::ContextBuilder.reanchor_sender(moved, comment)
       end
 
       # Merge extra comment ids into a task payload without touching siblings.
