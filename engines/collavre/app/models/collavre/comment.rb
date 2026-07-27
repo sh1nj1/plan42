@@ -241,6 +241,16 @@ module Collavre
         was_delegated = task.status == "delegated"
         task.update!(status: "cancelled")
 
+        # A waiter cancelled here leaves the queue without ever being promoted,
+        # exactly as a folded one does — so the notice that spoke for it is left
+        # naming a task no longer queued, and its stop button cancels nothing.
+        # This door needs no policy change at all: the opt-out posts the notice,
+        # deleting the prompt cancels the waiter, and a sibling still parked
+        # keeps the drained sweep from ever running.
+        Comment.remove_waiter_notices!(
+          creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id
+        )
+
         # Delegated tasks live past their job: the AiAgentJob already returned,
         # holding the agent slot under task.id and counting against the per-topic
         # serializer. Mirror the cancel path used elsewhere to free both.

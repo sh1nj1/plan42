@@ -707,5 +707,59 @@ module Collavre
                            waiting_notice_task_id: theirs.id).exists?,
              "the opt-out agent's notice speaks for a waiter that is still queued"
     end
+
+    # The fold is not the only way a waiter leaves the queue without ever being
+    # promoted. Deleting the comment it answers cancels it through
+    # Comment#cancel_pending_tasks, and that needs no policy change at all — the
+    # opt-out on its own is enough.
+    test "cancelling a waiter with its deleted anchor takes its notice down" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      anchor = comment("mine")
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(anchor))
+      waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      notice = Comment.find_by(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                               waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                               waiting_notice_task_id: waiter.id)
+      assert notice, "premise: the opt-out door posts a notice naming this waiter"
+
+      anchor.destroy!
+
+      assert_equal "cancelled", waiter.reload.status, "premise: the deleted prompt ended the turn"
+      assert_not Comment.exists?(notice.id),
+                 "the wait is over however it ended, so its dead stop button goes with it"
+    end
+
+    # The control: a waiter that survives the deletion keeps its notice. A
+    # re-anchored task is still queued, so its stop button still stops something.
+    test "re-anchoring a waiter onto an absorbed comment keeps its notice" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      absorbed = comment("first")
+      anchor = comment("second")
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(anchor))
+      waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+      waiter.update!(
+        trigger_event_payload: waiter.trigger_event_payload.merge(
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ absorbed.id ]
+        )
+      )
+      notice = Comment.find_by(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                               waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                               waiting_notice_task_id: waiter.id)
+      assert notice, "premise: the opt-out door posts a notice naming this waiter"
+
+      anchor.destroy!
+
+      assert_equal "queued", waiter.reload.status, "premise: it re-anchored rather than cancelling"
+      assert Comment.exists?(notice.id),
+             "a waiter still in the queue keeps the notice that stops it"
+    end
   end
 end
