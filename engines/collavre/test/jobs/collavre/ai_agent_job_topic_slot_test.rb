@@ -104,6 +104,32 @@ module Collavre
       assert_equal 1, notices.count
     end
 
+    # With coalescing off there is no survivor to speak for the burst: every
+    # deferral keeps its own waiter. A single deduplicated notice over N
+    # independent waiters is then a stop button that cancels other people's
+    # work — Comment#cancel_queued_tasks_for_waiting_notice reads "no sibling
+    # notice left" as "this one stood for the whole topic".
+    test "the late admission door keeps one notice per waiter when coalescing is off" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      3.times { |i| AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("m#{i}"))) }
+
+      notices = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                              topic_concurrency_defer: true)
+                       .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+                       .order(:id).to_a
+      assert_equal 3, notices.size, "the opt-out posts one notice per deferral on this door too"
+      assert_equal 3, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count
+
+      notices.last.destroy!
+
+      assert_equal 2, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count,
+                   "a notice that was never deduplicated speaks for one waiter only"
+    end
+
     # The notice is only ever removed by the promotion that drains this topic's
     # queue. If the blocker finishes between the waiter's commit and this call,
     # that promotion has already run its cleanup — a notice posted afterwards

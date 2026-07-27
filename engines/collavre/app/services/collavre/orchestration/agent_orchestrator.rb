@@ -133,10 +133,27 @@ module Collavre
       # Yields only when a waiter is still queued and no notice exists yet;
       # returns nil otherwise.
       def self.with_deduped_topic_notice(creative_id, topic_id)
+        with_live_topic_wait(creative_id, topic_id) do
+          next nil if topic_concurrency_notice_exists?(creative_id, topic_id)
+
+          yield
+        end
+      end
+
+      # The "is anyone still waiting?" half on its own, without the "only one
+      # notice per topic" half.
+      #
+      # With coalesce_pending_tasks off, each deferral keeps its own waiter, so
+      # each one needs its own notice: a single notice standing for N
+      # independent waiters turns its stop button into "cancel everyone's work"
+      # (Comment#cancel_queued_tasks_for_waiting_notice reads "no sibling notice
+      # left" as "this notice spoke for the topic"). The drain guard still
+      # applies either way — a notice explaining a wait that is already over is
+      # never removed by anything.
+      def self.with_live_topic_wait(creative_id, topic_id)
         Comment.transaction do
           TopicSlot.lock!(topic_id, creative_id)
           next nil unless Task.queued_for_topic(topic_id, creative_id).exists?
-          next nil if topic_concurrency_notice_exists?(creative_id, topic_id)
 
           yield
         end
@@ -219,16 +236,19 @@ module Collavre
       # Post the "⏳ waiting on the topic slot" notice for a deferral raised
       # outside #enqueue_jobs — AiAgentJob's late slot check, which catches
       # dispatches that passed the Scheduler before any Task row existed.
-      # No-op when a notice for this creative/topic is already up.
-      def self.post_topic_concurrency_notice(creative_id, topic_id)
+      # No-op when a notice for this creative/topic is already up — unless
+      # coalescing is off for this dispatch, in which case its waiter is nobody
+      # else's to speak for and gets a notice of its own, exactly as
+      # #post_waiting_notice does on the enqueue door. Leaving one door
+      # deduplicated and the other not is what breaks the opt-out's 1:1.
+      def self.post_topic_concurrency_notice(creative_id, topic_id, context = nil)
         return if creative_id.nil?
 
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
         reason_text = waiting_reason_text(:topic_concurrency, topic_id, creative_id)
-
-        with_deduped_topic_notice(creative_id, topic_id) do
+        post = lambda do
           creative.comments.create!(
             content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
             topic_id: topic_id,
@@ -236,6 +256,12 @@ module Collavre
             skip_default_user: true,
             topic_concurrency_defer: true
           )
+        end
+
+        if PolicyResolver.new(context || {}).coalesce_pending_tasks?
+          with_deduped_topic_notice(creative_id, topic_id, &post)
+        else
+          with_live_topic_wait(creative_id, topic_id, &post)
         end
       end
 

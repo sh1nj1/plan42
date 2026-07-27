@@ -313,7 +313,7 @@ module Collavre
       if Orchestration::PolicyResolver.new(context).coalesce_pending_tasks?
         Orchestration::TaskCoalescer.coalesce!(waiter)
       end
-      Orchestration::AgentOrchestrator.post_topic_concurrency_notice(creative_id, topic_id)
+      Orchestration::AgentOrchestrator.post_topic_concurrency_notice(creative_id, topic_id, context)
 
       Rails.logger.info(
         "[AiAgentJob] Deferred agent #{agent.id} into topic #{topic_id} queue as task " \
