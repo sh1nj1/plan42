@@ -28,6 +28,18 @@ module Collavre
       held_slot_without_worker = %w[pending delegated pending_approval].include?(task.status)
       task.update!(status: "cancelled")
 
+      # The third door a waiter leaves the queue through without ever being
+      # promoted — "queued" is in the whitelist above, so the user's own stop
+      # button is one of them. Its "task" notice names this task, and a notice
+      # naming a task that is no longer queued cancels nothing when dismissed:
+      # a stop button for work that can no longer be stopped. Nothing else
+      # collects it either — the task is never promoted, so
+      # cleanup_waiter_notice! never runs for it, and the drained sweep needs
+      # the topic queue to empty, which any sibling waiter prevents.
+      Comment.remove_waiter_notices!(
+        creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id
+      )
+
       if held_slot_without_worker && task.agent
         Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         Collavre::Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)

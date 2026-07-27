@@ -251,18 +251,20 @@ be N dead ends pointing at one blocker.
   offering a stop button for a turn that is already running.
 - **A `"task"` notice lives exactly as long as its waiter is queued**, so it
   comes down at every door that takes that waiter out of the queue — promotion,
-  the fold, and a deleted anchor. `TaskCoalescer` removes the notices naming the
-  tasks it absorbs, in the same transaction as the cancellation. Nothing else
-  would: the cancelled task is never promoted, so `cleanup_waiter_notice!` never
-  runs for it, and the drained sweep needs the topic queue to empty — which the
-  survivor of that very fold prevents. Reachable whenever the policy is off
-  when a waiter defers and on by the time the next one folds it.
-  `Comment#cancel_pending_tasks` is the third door and needs no policy change at
-  all: with the opt-out alone, deleting the comment a waiter answers cancels it
-  the same way, and a sibling still parked keeps the sweep from running. It only
-  applies once the task is actually cancelled — a re-anchored waiter is still
-  queued and keeps its notice. All three callers go through
-  `Comment.remove_waiter_notices!` rather than each spelling the query out.
+  the fold, a deleted anchor, and the user's own stop button. `TaskCoalescer`
+  removes the notices naming the tasks it absorbs, in the same transaction as
+  the cancellation. Nothing else would: the cancelled task is never promoted, so
+  `cleanup_waiter_notice!` never runs for it, and the drained sweep needs the
+  topic queue to empty — which the survivor of that very fold prevents.
+  Reachable whenever the policy is off when a waiter defers and on by the time
+  the next one folds it. The remaining doors need no policy change at all: with
+  the opt-out alone, `Comment#cancel_pending_tasks` (deleting the comment a
+  waiter answers) and `TasksController#cancel` (which whitelists `queued`) each
+  cancel a waiter the same way, and a sibling still parked keeps the sweep from
+  running. The anchor door applies only once the task is actually cancelled — a
+  re-anchored waiter is still queued and keeps its notice. All four callers go
+  through `Comment.remove_waiter_notices!` rather than each spelling the query
+  out.
 - `Comment#cancel_queued_tasks_for_waiting_notice` cancels, for a `"topic"`
   notice, every queued waiter in the scope except those a surviving `"task"`
   notice still speaks for; for a `"task"` notice, exactly its own waiter; and for
