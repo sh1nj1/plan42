@@ -35,8 +35,13 @@ module CollavreGithub
     # rejections. status is one of:
     #   :created         - new hook created
     #   :updated         - existing hook patched (events/url/secret)
-    #   :secret_aligned  - non-primary link with existing hook; only the local
-    #                      RepositoryLink secret was aligned. No GitHub call.
+    #   :secret_aligned  - non-primary link with existing hook; the local
+    #                      RepositoryLink secret was aligned and the hook itself
+    #                      was neither created nor patched. NOT a local-only
+    #                      operation: registration and legacy-hook cleanup still
+    #                      run, so GitHub may be called and a hook deleted. In
+    #                      particular the hook's event list is left untouched —
+    #                      see `provision_hook`.
     #   :shared          - a hook registered in THIS database already exists, so
     #                      another instance of this app owns it. No hook of this
     #                      instance's own remains: a second one would make GitHub
@@ -261,7 +266,9 @@ module CollavreGithub
       end
     end
 
-    # Every link lookup in this class goes through here. GitHub treats
+    # Every single-repository link lookup in this class goes through here
+    # (`remove_for_repositories` batches many names and normalizes them the same
+    # way inline). GitHub treats
     # `owner/repo` case-insensitively and serves one repository — and one set of
     # hooks — regardless of the spelling used, but `repository_full_name` is
     # stored verbatim from whatever the caller supplied. Two creatives linking
@@ -357,6 +364,12 @@ module CollavreGithub
     # The hook itself is returned rather than a boolean: the caller also has to
     # know whether it sits on the legacy path, which only its URL can say.
     def live_registered_hook(repository_full_name, registered, hooks)
+      # Nothing registered, so there is no hook to vouch for and the re-listing
+      # below could only ever come back empty. Skipping it matters because this
+      # is the ordinary first provision of a repository, where paying for a
+      # second GitHub round trip buys nothing.
+      return nil if registered.blank?
+
       found = hooks.find { |hook| hook.id.to_s == registered.to_s }
       return found if found
 
@@ -417,8 +430,31 @@ module CollavreGithub
         Rails.logger.info(
           "[CollavreGithub] deleting legacy hook #{hook_url(hook)} on #{repository_full_name}"
         )
-        client.delete_repository_webhook(repository_full_name, hook.id)
+        delete_legacy_hook(repository_full_name, hook)
       end
+    end
+
+    # Rescued for the same reason `discard_duplicate_hook` is: by the time this
+    # runs the replacement hook is already in place, so a failure to remove the
+    # deprecated one costs a duplicate delivery that the GUID ledger collapses.
+    # Letting it escape reaches `ensure_webhook`'s `rescue Octokit::Error` and
+    # turns a provision that actually succeeded into `:failed`, which
+    # `pr_monitor` reports as "GitHub API rejected the hook request" — a false
+    # alarm about the very hook that was just provisioned correctly.
+    #
+    # Defence in depth rather than a live bug: the injected production client
+    # (`CollavreGithub::Client`) rescues Octokit and Faraday itself and answers
+    # nil, so nothing raises this far today. That also makes the outer rescue
+    # unreachable in production, which is precisely why the cost of an
+    # unrescued raise here is invisible until a client that does raise is used.
+    def delete_legacy_hook(repository_full_name, hook)
+      client.delete_repository_webhook(repository_full_name, hook.id)
+    rescue Octokit::Error => e
+      Rails.logger.warn(
+        "[CollavreGithub] could not delete legacy hook #{hook_url(hook)} on " \
+        "#{repository_full_name}: #{e.message}. It is redundant with the plural-path " \
+        "hook; delete it manually to stop GitHub sending every delivery twice"
+      )
     end
 
     # Deletion must rest on stronger evidence than reuse, not weaker. Matching

@@ -17,8 +17,16 @@ module CollavreGithub
       # caller must not be able to pre-claim a GUID and have GitHub's real
       # delivery dropped as a duplicate.
       #
-      # `head :ok` on a lost claim (not an error status) — GitHub must not
-      # retry a delivery that another hook already processed successfully.
+      # `head :ok` on a lost claim (not an error status). An error status would
+      # mark a delivery failed that was in fact handled, and a failed delivery
+      # is the one thing an operator is asked to act on.
+      #
+      # Worth stating plainly, because several decisions below turn on it:
+      # GitHub NEVER redelivers automatically. A 4xx, a 5xx or a timeout is
+      # simply recorded as failed. Recovery is a human pressing Redeliver or a
+      # scheduled script walking the deliveries API, and only inside GitHub's
+      # 3-day window. So an error status here buys no automatic retry — it only
+      # spends the one signal that recovery depends on.
       # The token, not the GUID, is this run's proof of ownership. Ownership can
       # be taken away mid-run (see WebhookDelivery::STALE_CLAIM_AFTER), so both
       # the release below and the mark_processed! at the end are scoped to it.
@@ -50,19 +58,22 @@ module CollavreGithub
       # happened.
       claim_token = CollavreGithub::WebhookDelivery.claim(delivery_guid, event: event)
       unless claim_token
-        Rails.logger.info(
+        # Block form: `claim_state_for_log` costs a query, and this branch is
+        # taken on nearly every event once a repository carries two hooks, so it
+        # must not run when info logging is off.
+        Rails.logger.info do
           "[CollavreGithub] duplicate delivery #{delivery_guid} (#{event}); skipping " \
-          "(#{claim_state_for_log})"
-        )
+            "(#{claim_state_for_log})"
+        end
         return head :ok
       end
 
       begin
         process_delivery(event, payload)
       rescue => e
-        # The claim must not outlive a failed run. This request answers 5xx and
-        # the delivery that follows — GitHub's redelivery, or an operator
-        # pressing Redeliver — carries the SAME GUID. With the row still in
+        # The claim must not outlive a failed run. This request answers 5xx,
+        # and any redelivery that follows — always operator- or script-driven,
+        # never automatic — carries the SAME GUID. With the row still in
         # place that redelivery would take the duplicate branch above, answer
         # 200 and drop the event permanently, which is strictly worse than the
         # duplicate this ledger exists to prevent.

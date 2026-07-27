@@ -5,7 +5,11 @@ module CollavreGithub
   # Two independent duplicate sources exist and both reuse the same GUID:
   #   1. Multiple hooks on one repo (e.g. one per deployed instance sharing this
   #      database) — GitHub fans the same delivery out to every hook URL.
-  #   2. GitHub redelivery after a 5xx/timeout.
+  #      Redelivery of a failed delivery. Never automatic: GitHub does not
+  #      retry a 4xx, a 5xx or a >10s timeout, it only records the failure.
+  #      Recovery is an operator pressing Redeliver or a script polling the
+  #      deliveries API, within GitHub's 3-day window — and either way the
+  #      original GUID comes back, which is what brings it here.
   # A single UNIQUE claim on the GUID collapses both.
   class WebhookDelivery < ApplicationRecord
     self.table_name = "github_webhook_deliveries"
@@ -14,6 +18,12 @@ module CollavreGithub
     # would never be written.
     self.record_timestamps = false
 
+    # Sized against GitHub's redelivery window, which is 3 days: a delivery
+    # older than that can no longer be redelivered at all, so its row can never
+    # be consulted again. 7 days keeps better than 2x margin. Pruning EARLIER
+    # than the window would be the dangerous direction — the GUID would be
+    # claimed as new and every side effect would run a second time.
+    # https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks
     RETENTION = 7.days
 
     # How long a claim may sit unprocessed before another delivery of the same
@@ -130,9 +140,9 @@ module CollavreGithub
       where(delivery_guid: delivery_guid, claim_token: token, processed_at: nil).delete_all
     end
 
-    # Called from the recurring prune job. Deliveries older than RETENTION can
-    # no longer be redelivered by GitHub (its redelivery window is far shorter),
-    # so keeping them only grows the table.
+    # Called from the recurring prune job. Past RETENTION the delivery has aged
+    # out of GitHub's 3-day Redeliver window, so nothing can reuse the GUID and
+    # the row only grows the table.
     def self.prune!(older_than: RETENTION.ago)
       where(created_at: ...older_than).delete_all
     end

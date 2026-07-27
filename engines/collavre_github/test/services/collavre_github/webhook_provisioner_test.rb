@@ -62,6 +62,14 @@ module CollavreGithub
       end
     end
 
+    # GitHub refuses the cleanup DELETE while accepting everything else, so the
+    # only thing that failed is removing a hook the repository no longer needs.
+    class UndeletableClient < FakeClient
+      def delete_repository_webhook(_repo, _hook_id)
+        raise Octokit::Error
+      end
+    end
+
     OWN_URL = "https://collavre.com/github/webhooks".freeze
     SIBLING_URL = "https://local.collavre.com/github/webhooks".freeze
     LEGACY_URL = "https://collavre.com/github/webhook".freeze
@@ -246,8 +254,9 @@ module CollavreGithub
     end
 
     test "deletes the legacy singular-path hook during provisioning" do
-      # The singular route was removed, so this hook can only 404 — and until
-      # GitHub disables it, it doubles pull_request deliveries.
+      # The singular route is still served, so this hook still delivers — which
+      # is the problem: alongside the plural hook it doubles every delivery.
+      # Removing it is what will eventually let the alias route go.
       client = FakeClient.new(hooks: [
         Hook.new(6, { "url" => LEGACY_URL }),
         Hook.new(7, { "url" => OWN_URL })
@@ -257,6 +266,23 @@ module CollavreGithub
       assert_equal [ { repo: "owner/repo", hook_id: 6 } ], client.deleted
     end
 
+    test "failing to delete the legacy hook does not fail an otherwise good provision" do
+      # The cleanup runs after the replacement is already in place, so losing it
+      # costs one duplicate delivery — which the GUID ledger collapses. Letting
+      # the error escape reaches ensure_webhook's rescue and reports :failed,
+      # which pr_monitor surfaces as "GitHub API rejected the hook request":
+      # an alarm about the very hook that had just been provisioned correctly.
+      #
+      # The production client swallows Octokit errors and returns nil, so this
+      # raising client is the only thing that exercises the path — which is the
+      # point: without it, the day a raising client is injected the failure mode
+      # arrives silently.
+      client = UndeletableClient.new(hooks: [ Hook.new(6, { "url" => LEGACY_URL }) ])
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_equal [ OWN_URL ], client.created.map { |c| c[:url] }
+    end
+
     test "a trailing slash does not hide a legacy hook" do
       # Insignificant to Rails routing, so it must be insignificant here too —
       # otherwise the repo keeps a duplicate hook forever.
@@ -264,6 +290,11 @@ module CollavreGithub
 
       provision(client)
       assert_equal [ 12 ], client.deleted.map { |d| d[:hook_id] }
+      # This fixture has no plural hook, so asserting the deletion alone would
+      # pass just as happily with the repository left holding none at all —
+      # the same vacuity that hid the bug two tests below.
+      assert_equal [ OWN_URL ], client.created.map { |c| c[:url] },
+        "the deleted hook must have been replaced first"
     end
 
     test "leaves an unregistered legacy hook under another host in place" do
