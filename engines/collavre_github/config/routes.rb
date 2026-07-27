@@ -1,7 +1,9 @@
 CollavreGithub::Engine.routes.draw do
-  # Webhook endpoint (public, no auth)
-  # Both singular and plural for backward compatibility
-  post "webhook", to: "webhooks#create", as: :webhook
+  # Webhook endpoint (public, no auth).
+  #
+  # The singular `webhook` alias was removed: repos accumulated a hook on each
+  # spelling, and GitHub delivered every event to both. WebhookProvisioner now
+  # deletes any leftover hook still pointing at the singular path.
   post "webhooks", to: "webhooks#create"
 
   # OAuth setup flow (popup wizard after callback)

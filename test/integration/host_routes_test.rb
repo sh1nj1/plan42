@@ -35,9 +35,16 @@ class HostRoutesTest < ActionDispatch::IntegrationTest
   end
 
   test "github webhook endpoint resolves" do
-    post "/github/webhook", params: {}, as: :json
+    post "/github/webhooks", params: {}, as: :json
     # GitHub webhook requires valid payload, returns bad request without one
     assert_response :bad_request
+  end
+
+  test "legacy singular github webhook route no longer resolves" do
+    # Repos accumulated a hook on each spelling and GitHub delivered every event
+    # to both. Keeping the alias around would let the duplicate hook come back.
+    post "/github/webhook", params: {}, as: :json
+    assert_response :not_found
   end
 
   test "oauth protected resource discovery endpoint resolves" do

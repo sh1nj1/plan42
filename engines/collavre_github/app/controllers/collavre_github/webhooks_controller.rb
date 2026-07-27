@@ -12,6 +12,18 @@ module CollavreGithub
       @repository_link = find_repository_link(payload)
       return head :unauthorized unless valid_signature?(raw_body)
 
+      # Idempotency claim. Deliberately AFTER signature verification: the claim
+      # writes a row keyed by an attacker-supplied header, so an unauthenticated
+      # caller must not be able to pre-claim a GUID and have GitHub's real
+      # delivery dropped as a duplicate.
+      #
+      # `head :ok` on a lost claim (not an error status) — GitHub must not
+      # retry a delivery that another hook already processed successfully.
+      unless CollavreGithub::WebhookDelivery.claim(delivery_guid, event: event)
+        Rails.logger.info("[CollavreGithub] duplicate delivery #{delivery_guid} (#{event}); skipping")
+        return head :ok
+      end
+
       payload = payload.presence || {}
 
       # Process all links for this repo (same repo can be linked to multiple creatives)
@@ -501,6 +513,11 @@ module CollavreGithub
     def github_event_header
       request.headers["X-GitHub-Event"].presence ||
         request.get_header("HTTP_X_GITHUB_EVENT").presence
+    end
+
+    def delivery_guid
+      request.headers["X-GitHub-Delivery"].presence ||
+        request.get_header("HTTP_X_GITHUB_DELIVERY").presence
     end
   end
 end

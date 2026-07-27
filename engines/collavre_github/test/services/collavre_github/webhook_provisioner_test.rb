@@ -1,0 +1,170 @@
+require_relative "../../test_helper"
+
+module CollavreGithub
+  class WebhookProvisionerTest < ActiveSupport::TestCase
+    Hook = Struct.new(:id, :config)
+
+    # Records every call so tests can assert on what did NOT happen — the whole
+    # point of the fix is that a second hook is never created.
+    class FakeClient
+      attr_reader :created, :updated, :deleted
+      attr_accessor :hooks
+
+      def initialize(hooks: [])
+        @hooks = hooks
+        @created = []
+        @updated = []
+        @deleted = []
+      end
+
+      def repository_hooks(_repo)
+        @hooks
+      end
+
+      def create_repository_webhook(repo, url:, secret:, events:, content_type: "json")
+        @created << { repo: repo, url: url, secret: secret, events: events }
+        true
+      end
+
+      def update_repository_webhook(repo, hook_id, url:, secret:, events:, content_type: "json")
+        @updated << { repo: repo, hook_id: hook_id, url: url, secret: secret, events: events }
+        true
+      end
+
+      def delete_repository_webhook(repo, hook_id)
+        @deleted << { repo: repo, hook_id: hook_id }
+        true
+      end
+    end
+
+    OWN_URL = "https://collavre.com/github/webhooks".freeze
+    SIBLING_URL = "https://local.collavre.com/github/webhooks".freeze
+    LEGACY_URL = "https://collavre.com/github/webhook".freeze
+
+    setup do
+      @user = users(:one)
+      @creative = creatives(:tshirt)
+      @account = CollavreGithub::Account.create!(
+        user: @user,
+        github_uid: "9001",
+        login: "prov",
+        name: "Prov",
+        token: "t"
+      )
+      @link = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: "owner/repo"
+      )
+    end
+
+    test "creates a hook when the repo has none" do
+      client = FakeClient.new
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_equal 1, client.created.size
+      assert_equal OWN_URL, client.created.first[:url]
+    end
+
+    test "updates its own hook when the URL matches exactly" do
+      client = FakeClient.new(hooks: [ Hook.new(1, { "url" => OWN_URL }) ])
+      assert_equal [ [ @link, :updated ] ], provision(client)
+      assert_empty client.created
+      assert_equal 1, client.updated.first[:hook_id]
+    end
+
+    # The regression this PR fixes. Before the change, a hook under a different
+    # host was invisible to this instance, so it created its own — leaving the
+    # repo with two hooks and GitHub delivering every event twice.
+    test "does not create a second hook when a sibling instance already owns one" do
+      client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
+
+      assert_equal [ [ @link, :shared ] ], provision(client)
+      assert_empty client.created, "must not add a second hook on the same path"
+    end
+
+    test "does not rewrite a sibling hook's URL to its own" do
+      # Rewriting would break the sibling instance and start a rewrite war: each
+      # side would keep patching the URL back to itself on every provision.
+      client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
+      provision(client)
+
+      assert_empty client.updated
+      assert_empty client.deleted
+    end
+
+    test "prefers its own hook over a sibling when both exist" do
+      client = FakeClient.new(hooks: [
+        Hook.new(2, { "url" => SIBLING_URL }),
+        Hook.new(3, { "url" => OWN_URL })
+      ])
+
+      assert_equal [ [ @link, :updated ] ], provision(client)
+      assert_equal 3, client.updated.first[:hook_id]
+    end
+
+    test "trailing slashes do not make a sibling look foreign" do
+      client = FakeClient.new(hooks: [ Hook.new(4, { "url" => "#{SIBLING_URL}/" }) ])
+      assert_equal [ [ @link, :shared ] ], provision(client)
+      assert_empty client.created
+    end
+
+    test "an unrelated hook on the same host is neither reused nor deleted" do
+      client = FakeClient.new(hooks: [ Hook.new(5, { "url" => "https://ci.example.com/build" }) ])
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_empty client.deleted
+    end
+
+    test "deletes the legacy singular-path hook during provisioning" do
+      # The singular route was removed, so this hook can only 404 — and until
+      # GitHub disables it, it doubles pull_request deliveries.
+      client = FakeClient.new(hooks: [
+        Hook.new(6, { "url" => LEGACY_URL }),
+        Hook.new(7, { "url" => OWN_URL })
+      ])
+
+      provision(client)
+      assert_equal [ { repo: "owner/repo", hook_id: 6 } ], client.deleted
+    end
+
+    test "deletes a legacy hook belonging to another host too" do
+      client = FakeClient.new(hooks: [ Hook.new(8, { "url" => "https://other.example.com/github/webhook" }) ])
+
+      provision(client)
+      assert_equal [ { repo: "owner/repo", hook_id: 8 } ], client.deleted
+      assert_equal 1, client.created.size, "legacy hook must not count as a reusable sibling"
+    end
+
+    test "removal deletes its own hook but leaves a sibling in place" do
+      client = FakeClient.new(hooks: [
+        Hook.new(9, { "url" => OWN_URL }),
+        Hook.new(10, { "url" => SIBLING_URL })
+      ])
+      @link.destroy!
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_repositories([ "owner/repo" ])
+
+      assert_equal [ 9 ], client.deleted.map { |d| d[:hook_id] }
+    end
+
+    test "removal does not delete any hook while a link still exists" do
+      client = FakeClient.new(hooks: [ Hook.new(11, { "url" => OWN_URL }) ])
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_repositories([ "owner/repo" ])
+
+      assert_empty client.deleted
+    end
+
+    private
+
+    def provision(client, webhook_url: OWN_URL, links: nil)
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: webhook_url, client: client
+      ).ensure_for_links(Array(links || @link))
+    end
+  end
+end

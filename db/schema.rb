@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_24_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_27_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -322,6 +322,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_090000) do
     t.index ["markdown_root_creative_id"], name: "index_github_repository_links_on_markdown_root_creative_id", where: "markdown_root_creative_id IS NOT NULL"
     t.index ["markdown_sync_enabled"], name: "index_github_repository_links_on_markdown_sync_enabled"
     t.index ["repository_full_name"], name: "index_github_repository_links_on_repository_full_name"
+  end
+
+  create_table "github_webhook_deliveries", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "delivery_guid", null: false
+    t.string "event"
+    t.index ["created_at"], name: "index_github_webhook_deliveries_on_created_at"
+    t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
   end
 
   create_table "inbox_items", force: :cascade do |t|

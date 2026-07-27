@@ -10,6 +10,13 @@ module CollavreGithub
     EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS).freeze
     CONTENT_TYPE = "json".freeze
 
+    # Last path segment of the removed singular `post "webhook"` route. Any hook
+    # still pointing at it is dead and only amplifies deliveries, so it is
+    # deleted during provisioning. Derived from `webhook_url` at runtime so the
+    # engine's mount point stays the single source of truth.
+    LEGACY_ROUTE_SEGMENT = "webhook".freeze
+    ROUTE_SEGMENT = "webhooks".freeze
+
     def self.ensure_for_links(account:, links:, webhook_url:)
       new(account: account, webhook_url: webhook_url).ensure_for_links(Array(links))
     end
@@ -29,6 +36,12 @@ module CollavreGithub
     #   :updated         - existing hook patched (events/url/secret)
     #   :secret_aligned  - non-primary link with existing hook; only the local
     #                      RepositoryLink secret was aligned. No GitHub call.
+    #   :shared          - another instance of this app already owns a hook on
+    #                      the webhook path under a different host. Nothing was
+    #                      created or edited: creating a second hook would make
+    #                      GitHub deliver every event twice, and rewriting the
+    #                      sibling's URL would break that instance (and start a
+    #                      rewrite war between the two).
     #   :failed          - Octokit/Faraday error OR Client returned nil
     def ensure_for_links(links)
       links.map { |link| [ link, ensure_webhook(link) ] }
@@ -56,7 +69,9 @@ module CollavreGithub
     def ensure_webhook(link)
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
-      hook = find_existing_hook(repository_full_name)
+      hooks = repository_hooks(repository_full_name)
+      delete_legacy_hooks(repository_full_name, hooks)
+      hook = find_own_hook(hooks)
 
       if hook
         if primary_link && primary_link != link
@@ -73,6 +88,19 @@ module CollavreGithub
           align_link_secret(link, secret)
         end
 
+        sibling = find_sibling_hook(hooks)
+        if sibling
+          # The sibling was created by an instance sharing this database, so it
+          # signs with the same RepositoryLink secret and subscribes to the same
+          # event list (`events_for` reads the same rows). Reusing it is safe and
+          # is the only way to keep exactly one hook per repo.
+          Rails.logger.info(
+            "[CollavreGithub] reusing existing #{webhook_path} hook #{hook_url(sibling)} " \
+            "for #{repository_full_name}; not creating #{webhook_url}"
+          )
+          return :shared
+        end
+
         create_webhook(repository_full_name, secret) ? :created : :failed
       end
     rescue Octokit::Error => e
@@ -83,21 +111,96 @@ module CollavreGithub
     end
 
     def remove_webhook(repository_full_name)
-      hook = find_existing_hook(repository_full_name)
-      return unless hook
+      hooks = repository_hooks(repository_full_name)
+      delete_legacy_hooks(repository_full_name, hooks)
 
-      client.delete_repository_webhook(repository_full_name, hook.id)
+      hook = find_own_hook(hooks)
+      if hook
+        client.delete_repository_webhook(repository_full_name, hook.id)
+      end
+
+      # Siblings are NOT deleted. A hook on the same path under a different host
+      # usually belongs to another instance of this app — but it may belong to a
+      # separate deployment with its own database, for which this unlink says
+      # nothing. Deleting it would silently break that deployment, so log it
+      # instead of guessing.
+      sibling = find_sibling_hook(hooks)
+      if sibling
+        Rails.logger.info(
+          "[CollavreGithub] left sibling hook #{hook_url(sibling)} on #{repository_full_name} " \
+          "in place after unlink; delete it manually if it is no longer in use"
+        )
+      end
     rescue Octokit::Error => e
       Rails.logger.warn(
         "GitHub webhook removal failed for #{repository_full_name}: #{e.message}"
       )
     end
 
-    def find_existing_hook(repository_full_name)
-      client.repository_hooks(repository_full_name).find do |hook|
-        config = normalize_config(hook.config)
-        config["url"] == webhook_url
+    def repository_hooks(repository_full_name)
+      Array(client.repository_hooks(repository_full_name))
+    end
+
+    def find_own_hook(hooks)
+      hooks.find { |hook| hook_url(hook) == webhook_url }
+    end
+
+    # A hook on the webhook path under some other host: another instance of this
+    # app. Excludes our own URL so callers can distinguish "mine" from "theirs".
+    #
+    # Matching on PATH rather than full URL is the fix for hook proliferation:
+    # full-URL matching made every instance sharing a database see its siblings'
+    # hooks as foreign and create its own, so N instances meant N hooks and
+    # GitHub fanned every delivery out N times.
+    def find_sibling_hook(hooks)
+      hooks.find do |hook|
+        url = hook_url(hook)
+        url != webhook_url && url_path(url) == webhook_path
       end
+    end
+
+    # The singular `/github/webhook` route no longer exists, so these hooks can
+    # only produce 404s — and, until GitHub disables them, duplicate deliveries
+    # alongside the plural hook. Removing them is the point of the cleanup.
+    def delete_legacy_hooks(repository_full_name, hooks)
+      return if legacy_webhook_path.blank?
+
+      hooks.select { |hook| url_path(hook_url(hook)) == legacy_webhook_path }.each do |hook|
+        Rails.logger.info(
+          "[CollavreGithub] deleting legacy hook #{hook_url(hook)} on #{repository_full_name}"
+        )
+        client.delete_repository_webhook(repository_full_name, hook.id)
+      end
+    end
+
+    def webhook_path
+      @webhook_path ||= url_path(webhook_url)
+    end
+
+    # `/github/webhooks` -> `/github/webhook`. Blank when `webhook_url` does not
+    # end in the expected segment, so an unexpected URL never causes an
+    # unrelated hook to be deleted.
+    def legacy_webhook_path
+      return @legacy_webhook_path if defined?(@legacy_webhook_path)
+
+      @legacy_webhook_path =
+        if webhook_path.end_with?("/#{ROUTE_SEGMENT}")
+          webhook_path.sub(/#{Regexp.escape(ROUTE_SEGMENT)}\z/, LEGACY_ROUTE_SEGMENT)
+        end
+    end
+
+    def hook_url(hook)
+      normalize_config(hook.config)["url"].to_s
+    end
+
+    # Trailing slashes are insignificant to Rails routing but not to string
+    # comparison, so normalize them away before matching.
+    def url_path(url)
+      path = URI.parse(url).path.to_s
+      path = path.chomp("/") if path.length > 1
+      path
+    rescue URI::InvalidURIError
+      ""
     end
 
     def create_webhook(repository_full_name, secret)

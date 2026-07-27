@@ -109,6 +109,13 @@ module CollavreGithub
         # CollavreGithub::Client). Surface that to the MCP caller so they know
         # webhook events were not actually patched.
         return "webhook provisioning failed: GitHub API rejected the hook request (see logs)" if status == :failed
+        # :shared means another instance of this app already owns the hook, so
+        # this instance deliberately made no GitHub call. Deliveries still
+        # arrive (one hook, one delivery) but the event list was set by that
+        # instance — surface it so a missing event is traceable.
+        if status == :shared
+          return "webhook already owned by another instance of this app; events were not re-patched from here"
+        end
         nil
       rescue => e
         Rails.logger.warn("[pr_monitor] webhook provisioning failed for #{repo}: #{e.class}: #{e.message}")

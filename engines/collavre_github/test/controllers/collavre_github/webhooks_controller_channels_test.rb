@@ -39,7 +39,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",
@@ -86,7 +86,7 @@ module CollavreGithub
       before_sibling = Collavre::Comment.where(topic_id: sibling_topic.id).count
       before_original = Collavre::Comment.where(topic_id: @topic.id).count
 
-      post "/github/webhook",
+      post "/github/webhooks",
         params: payload,
         headers: {
           "Content-Type" => "application/json",
@@ -131,7 +131,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { Collavre::Comment.where(topic_id: legacy_topic.id).count }, 1 do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",
@@ -171,7 +171,7 @@ module CollavreGithub
       before_outside = Collavre::Comment.where(topic_id: outside_topic.id).count
       before_inside = Collavre::Comment.where(topic_id: @topic.id).count
 
-      post "/github/webhook",
+      post "/github/webhooks",
         params: payload,
         headers: {
           "Content-Type" => "application/json",
@@ -210,7 +210,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", ENV["GITHUB_WEBHOOK_SECRET"], payload)
 
       assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",
@@ -250,7 +250,7 @@ module CollavreGithub
       before_main = Collavre::Comment.where(topic_id: main_topic.id).count
 
       assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",
@@ -282,7 +282,7 @@ module CollavreGithub
 
       before_any = Collavre::Comment.where(creative_id: @creative.id).count
 
-      post "/github/webhook",
+      post "/github/webhooks",
         params: payload,
         headers: {
           "Content-Type" => "application/json",
@@ -316,7 +316,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { Collavre::Comment.where(topic_id: main_topic.id).count }, 1 do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",
@@ -340,7 +340,7 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
-        post "/github/webhook",
+        post "/github/webhooks",
           params: payload,
           headers: {
             "Content-Type" => "application/json",

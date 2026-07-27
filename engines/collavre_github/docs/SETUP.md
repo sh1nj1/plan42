@@ -101,7 +101,19 @@ export GITHUB_WEBHOOK_SECRET=your_webhook_secret  # optional
 
 ### Automatic Setup
 
-When you link a repository in the integration modal, Collavre automatically creates a webhook via the GitHub API pointing to `/github/webhook` with a per-repository secret. No manual setup required.
+When you link a repository in the integration modal, Collavre automatically creates a webhook via the GitHub API pointing to `/github/webhooks` with a per-repository secret. No manual setup required.
+
+### One Hook Per Repository
+
+`WebhookProvisioner` matches existing hooks on the URL **path**, not the full URL. Several instances of this app (for example a server deployment and a local one) frequently share a database while serving different hostnames; matching on the full URL made each instance treat the others' hooks as foreign and add its own, so GitHub delivered every event once per instance and each PR comment landed in the topic N times.
+
+Consequences of path matching:
+
+- An instance that finds a hook on `/github/webhooks` under a different host **reuses** it — no new hook, no URL rewrite (rewriting would break the other instance and start a rewrite war). `pr_monitor` surfaces this as a `webhook_warning`, because the event list on that hook was set by the other instance.
+- Hooks still pointing at the removed singular `/github/webhook` path are **deleted** during provisioning. That route no longer exists, so they can only 404 — and until GitHub disables them they double `pull_request` deliveries.
+- Unlinking a repository deletes only this instance's own hook. A hook belonging to another host is left in place and logged, since it may belong to a separate deployment with its own database.
+
+Inbound deliveries are additionally deduplicated on the `X-GitHub-Delivery` GUID (`github_webhook_deliveries`), which also covers GitHub's redelivery after a 5xx or timeout. The ledger is trimmed daily by `CollavreGithub::WebhookDeliveryPruneJob`.
 
 ### Manual Setup (Fallback)
 
@@ -109,7 +121,7 @@ If automatic webhook creation fails:
 
 1. Go to your repository → **Settings → Webhooks → Add webhook**
 2. Configure:
-   - **Payload URL**: `https://your-collavre-domain.com/github/webhook`
+   - **Payload URL**: `https://your-collavre-domain.com/github/webhooks`
    - **Content type**: `application/json`
    - **Secret**: Use the per-repository secret shown in the integration modal
    - **Events**: Select **Let me select individual events** → check **Pull requests**
@@ -124,7 +136,7 @@ GitHub must reach a public URL. Use a tunnel:
 ngrok http http://localhost:3000
 
 # GitHub CLI
-gh webhook forward --url http://localhost:3000/github/webhook
+gh webhook forward --url http://localhost:3000/github/webhooks
 
 # Smee.io
 # Create a channel at smee.io and run the relay client
@@ -144,7 +156,7 @@ Options:
 - `--repo` — repository (optional if a `GithubRepositoryLink` exists)
 - `--number` — PR number
 - `--action` — webhook action (default: `opened`)
-- `--url` — target URL (default: `http://localhost:3000/github/webhook`)
+- `--url` — target URL (default: `http://localhost:3000/github/webhooks`)
 
 The script generates a valid `X-Hub-Signature-256` header.
 
