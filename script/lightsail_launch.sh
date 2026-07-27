@@ -3470,8 +3470,9 @@ ensure_cluster_on_default_port
 
 if ! [ -d "/etc/postgresql/$PG_MAJOR/main" ]; then
   install -d -m 0755 /usr/share/postgresql-common/pgdg
-  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+  install_downloaded_file 'the PostgreSQL signing key' \
+    https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
   # shellcheck disable=SC1091
   . /etc/os-release
   install_managed_config 'the PostgreSQL apt source' \

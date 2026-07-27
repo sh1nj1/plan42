@@ -6144,6 +6144,19 @@ chk "the staged source is installed before apt reads it"     1 \
 	else print 0
       }
     ' <<<"$postgres_source_block")"
+chk "the PostgreSQL key is written through the staging helper" 1 \
+  "$(grep -c "install_downloaded_file 'the PostgreSQL signing key'" <<<"$postgres_source_block")"
+chk "and is never downloaded into the live key"              0 \
+  "$(grep -c -- '-o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc' <<<"$postgres_source_block")"
+chk "the staged key is installed before publishing its source" 1 \
+  "$(awk '
+      /install_downloaded_file .*PostgreSQL signing key/ { installed = NR }
+      /install_managed_config .*PostgreSQL apt source/ { published = NR }
+      END {
+	if (installed && published && installed < published) print 1
+	else print 0
+      }
+    ' <<<"$postgres_source_block")"
 
 echo "154. the Docker signing key is installed atomically"
 download_dir="$(mktemp -d)"
