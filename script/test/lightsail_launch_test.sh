@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|install_downloaded_file|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -46,7 +46,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
           resolve_symlink_chain stage_beside stage_authorized_keys \
           verify_ssh_hardening refuse_unusable_retention \
-          install_managed_config reload_ssh_daemon \
+	  install_managed_config install_downloaded_file reload_ssh_daemon \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -5154,8 +5154,9 @@ echo "136. the Docker plugins are installed on a host that already has docker"
 docker_step() {  # DOCKER_PRESENT / BUILDX_OK / COMPOSE_OK are read from the env
   ( set +u
     log(){ printf 'LOG: %s\n' "$*"; }
-    install(){ :; }; curl(){ :; }; chmod(){ :; }; apt_get(){ :; }
-    install_managed_config(){ :; }
+    install(){ :; }; apt_get(){ :; }
+    # shellcheck disable=SC2329  # called by the extracted Docker step
+    install_managed_config(){ :; }; install_downloaded_file(){ :; }
     dpkg(){ echo amd64; }; VERSION_CODENAME=noble
     apt_install(){ printf 'INSTALL:%s\n' "$*"; }
     command(){
@@ -6143,6 +6144,57 @@ chk "the staged source is installed before apt reads it"     1 \
 	else print 0
       }
     ' <<<"$postgres_source_block")"
+
+echo "154. the Docker signing key is installed atomically"
+download_dir="$(mktemp -d)"
+printf 'old-key\n' > "$download_dir/docker.asc"
+ln -s "$download_dir/docker.asc" "$download_dir/docker-link.asc"
+DOWNLOAD_RESULT=fail
+# shellcheck disable=SC2329  # called by extracted install_downloaded_file
+curl() {
+  local output=''
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = -o ]; then
+      output="$2"
+      shift 2
+    else
+      shift
+    fi
+  done
+  printf '%s\n' "${DOWNLOAD_RESULT}-key" > "$output"
+  [ "$DOWNLOAD_RESULT" = complete ]
+}
+download_status=0
+( install_downloaded_file 'the Docker signing key' \
+    https://example.invalid/docker.asc "$download_dir/docker-link.asc" \
+  ) >/dev/null 2>&1 || download_status=$?
+chk "a failed download leaves the live key intact"           old-key \
+  "$(cat "$download_dir/docker.asc")"
+chk "and reports failure"                                    1 "$download_status"
+chk "and removes its incomplete sibling"                     0 \
+  "$(find "$download_dir" -name 'docker.asc.collavre.*' | wc -l | tr -d ' ')"
+
+DOWNLOAD_RESULT=complete
+install_downloaded_file 'the Docker signing key' \
+  https://example.invalid/docker.asc "$download_dir/docker-link.asc"
+chk "a complete download replaces the key"                   complete-key \
+  "$(cat "$download_dir/docker.asc")"
+chk "and preserves a symlinked target"                        symlink \
+  "$([ -L "$download_dir/docker-link.asc" ] && echo symlink || echo regular-file)"
+unset -f curl
+rm -rf "$download_dir"
+
+chk "the Docker step never downloads into the live key"      0 \
+  "$(grep -c -- '-o /etc/apt/keyrings/docker.asc' <<<"$docker_source_block")"
+chk "and installs the key before publishing its source"      1 \
+  "$(awk '
+      /install_downloaded_file .*Docker signing key/ { installed = NR }
+      /install_managed_config .*Docker apt source/ { published = NR }
+      END {
+	if (installed && published && installed < published) print 1
+	else print 0
+      }
+    ' <<<"$docker_source_block")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

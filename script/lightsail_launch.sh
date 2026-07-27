@@ -986,6 +986,37 @@ install_managed_config() {
   }
 }
 
+# install_downloaded_file <label> <url> <target>
+#
+# Download into a sibling of the resolved target and rename only after curl has
+# completed successfully. A package source may already refer to the target on a
+# FORCE re-run, so truncating it in place can make the next apt update fail
+# before this step gets another chance to repair it.
+install_downloaded_file() {
+  local label="$1" url="$2" target="$3" target_real tmp rc=0
+  target_real="$(resolve_symlink_chain "$target")" || exit 1
+  tmp="$(stage_beside "$target_real" 0644)" || rc=$?
+  [ "$rc" -eq 0 ] || {
+    die "could not stage $label at $target_real (stage_beside exited $rc)." \
+	"The live file is left exactly as it was."
+  }
+  if ! curl -fsSL "$url" -o "$tmp"; then
+    rm -f "$tmp"
+    die "could not download the staged $label. $target_real is left exactly" \
+	"as it was."
+  fi
+  if ! chmod a+r "$tmp"; then
+    rm -f "$tmp"
+    die "could not make the staged $label readable. $target_real is left" \
+	"exactly as it was."
+  fi
+  mv -f "$tmp" "$target_real" || {
+    rm -f "$tmp"
+    die "could not install the staged $label over $target_real, which is" \
+	"left exactly as it was."
+  }
+}
+
 # Keep a managed block in a config file equal to $content, keyed by a marker.
 # Added on the first run; on later runs the body is replaced in place, so a
 # FORCE=1 re-run with a changed DOCKER_SUBNETS or INSTANCE_HOSTNAME converges
@@ -3394,9 +3425,9 @@ fi
 
 if [ -n "$DOCKER_WANT" ]; then
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-    -o /etc/apt/keyrings/docker.asc
-  chmod a+r /etc/apt/keyrings/docker.asc
+  install_downloaded_file 'the Docker signing key' \
+    https://download.docker.com/linux/ubuntu/gpg \
+    /etc/apt/keyrings/docker.asc
   # shellcheck disable=SC1091
   . /etc/os-release
   install_managed_config 'the Docker apt source' \
