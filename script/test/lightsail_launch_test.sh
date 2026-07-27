@@ -3527,6 +3527,74 @@ chk "names the other account"    1 "$(grep -c "authorized for 'deploybot'" <<<"$
 chk "and the way out"            1 "$(grep -c 'ACK_UNATTRIBUTED_SSH_KEYS=1' <<<"$OUT")"
 rm -rf "$W"
 
+echo "98a. a legacy key shared by deploy accounts is tracked for every account"
+ssh_world
+printf '%s\n' "$KB" > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/home/deploybot/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "the current account can still withdraw the shared key" 1 \
+  "$(grep -cxF "$KB" "$W/state/ssh_public_keys.collavre")"
+chk "and the previous account can withdraw the same key later" 1 \
+  "$(grep -cxF "$KB" "$W/state/ssh_public_keys.deploybot")"
+chk "the single legacy marker leaves only after both are recorded" 0 \
+  "$([ -f "$W/state/ssh_public_key" ] && echo 1 || echo 0)"
+KC='ssh-ed25519 AAAAKEY-C operator-C'
+printf '%s\n' "$KC" >> "$W/home/deploybot/.ssh/authorized_keys"
+APP_SSH_USER=deploybot SSH_PUBLIC_KEY="$KC" \
+  revoke_prior_ssh_key "$W/home/deploybot/.ssh/authorized_keys" \
+  "$W/state/ssh_public_key.deploybot" \
+  "$W/state/ssh_public_keys.deploybot" >/dev/null 2>&1
+chk "a later rotation on the previous account withdraws the shared key" 0 \
+  "$(grep -cxF "$KB" "$W/home/deploybot/.ssh/authorized_keys")"
+rm -rf "$W"
+
+echo "98b. legacy adoption preserves an existing per-account predecessor"
+ssh_world
+printf '%s\n' "$KB" > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n%s\n' "$KA" "$KB" > "$W/home/deploybot/.ssh/authorized_keys"
+printf '%s\n' "$KA" > "$W/state/ssh_public_key.deploybot"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+adopt_legacy_ssh_key_marker collavre "$W/state" "$W/passwd" >/dev/null 2>&1
+chk "the existing predecessor seeds the previous account's queue" 1 \
+  "$(grep -cxF "$KA" "$W/state/ssh_public_keys.deploybot")"
+chk "and the shared legacy key is added without replacing it" 1 \
+  "$(grep -cxF "$KB" "$W/state/ssh_public_keys.deploybot")"
+chk "the queue helper is defined before legacy adoption runs" 1 \
+  "$(awk '
+      /^record_ssh_key_grant\(\) \{/ { defined = NR }
+      /^adopt_legacy_ssh_key_marker "\$APP_SSH_USER"$/ { called = NR }
+      END {
+	if (defined && called && defined < called) print 1
+	else print 0
+      }
+    ' "$SRC")"
+rm -rf "$W"
+
+echo "98c. an incomplete passwd snapshot cannot retire the host-wide marker"
+ssh_world
+printf '%s\n' "$KB" > "$W/home/collavre/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/home/deploybot/.ssh/authorized_keys"
+printf '%s\n' "$KB" > "$W/state/ssh_public_key"
+getent() {
+  if [ "$#" -eq 2 ] && [ "$2" = collavre ]; then
+    head -1 "$W/passwd"
+    return 0
+  fi
+  head -1 "$W/passwd"
+  return 1
+}
+OUT="$( adopt_legacy_ssh_key_marker collavre "$W/state" 2>&1 )"
+chk "the partial account listing stops adoption" 1 "$?"
+chk "the sole marker remains available for a complete retry" 1 \
+  "$([ -f "$W/state/ssh_public_key" ] && echo 1 || echo 0)"
+chk "and no partial per-account queue is published" 0 \
+  "$(find "$W/state" -name 'ssh_public_keys.*' | wc -l | tr -d ' ')"
+chk "the refusal identifies the incomplete inspection" 1 \
+  "$(grep -c 'could not inspect every account' <<<"$OUT")"
+unset -f getent
+rm -rf "$W"
+
 echo "99. the shapes that must still go through, still do"
 # The refusal is only worth having if it is narrow. Each of these is a host the
 # adoption exists to serve, and stopping any of them would be worse than the
@@ -3587,7 +3655,12 @@ rm -rf "$W"
 # names as supported.
 echo "99a. a missing account is an answer on the production path, not a failure"
 ssh_world
-getent() { return 2; }   # Ubuntu: nothing on stdout, exit 2
+getent() {
+  # Ubuntu returns 2 for a missing named account, while the complete passwd
+  # enumeration still succeeds with an empty result in this fixture.
+  [ "$#" -eq 2 ] && return 2
+  return 0
+}
 ( set -e; passwd_home ghost >/dev/null )
 chk "passwd_home does not fail for an account that does not exist" 0 "$?"
 out="$( passwd_home ghost )"
@@ -6273,10 +6346,31 @@ saved_write_state_file="$(declare -f write_state_file)"
 saved_log="$(declare -f log)"
 log() { printf '%s\n' "$*"; }
 write_state_file() { return 1; }
+
+BACKUP_S3_URI=s3://collavre-backups/new-prefix
+record_status=0
+record_out="$(record_launch_settings "$record_dir" 2>&1)" || record_status=$?
+chk "a failed replacement rejects a complete but stale record" 1 "$record_status"
+chk "and explains that the surviving settings differ"         1 \
+  "$(grep -c 'complete previous record does not match this run' <<<"$record_out")"
+
+BACKUP_S3_URI=s3://collavre-backups/pg
 record_out="$(record_launch_settings "$record_dir" 2>&1)"
 chk "a failed replacement with a complete prior record warns" 0 "$?"
-chk "and identifies that record as complete"                  1 \
-  "$(grep -c 'complete previous record is intact' <<<"$record_out")"
+chk "and identifies that matching record as intact"           1 \
+  "$(grep -c 'matching previous record is intact' <<<"$record_out")"
+
+eval "$saved_write_state_file"
+BACKUP_S3_URI=$'s3://collavre-backups/pg\nold-suffix'
+record_launch_settings "$record_dir" >/dev/null 2>&1
+write_state_file() { return 1; }
+BACKUP_S3_URI=$'s3://collavre-backups/pg\nnew-suffix'
+record_status=0
+record_out="$(record_launch_settings "$record_dir" 2>&1)" || record_status=$?
+chk "a multiline stale value cannot match one shared line" 1 "$record_status"
+BACKUP_S3_URI=$'s3://collavre-backups/pg\nold-suffix'
+record_out="$(record_launch_settings "$record_dir" 2>&1)"
+chk "the exact multiline record still permits recovery" 0 "$?"
 
 rm -f "$record_dir/launch.env"
 record_status=0

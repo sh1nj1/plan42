@@ -1243,10 +1243,10 @@ write_state_file() {
 }
 
 # A failed atomic replacement is recoverable only when the file it left behind
-# can still answer every setting. An absent or short record is not a previous
-# configuration: refuse the success marker rather than let the next bare
-# FORCE=1 run silently reset an override that has no other state file, such as
-# BACKUP_S3_URI.
+# can still answer every setting with the values this run applied. An absent,
+# short or stale record is not this configuration: refuse the success marker
+# rather than let the next bare FORCE=1 run silently reset an override that has
+# no other state file, such as BACKUP_S3_URI.
 launch_record_is_complete() {
   local env_file="$1" name count
   [ -f "$env_file" ] || return 1
@@ -1265,10 +1265,16 @@ record_launch_settings() {
     return 0
   fi
   if launch_record_is_complete "$state_dir/launch.env"; then
-    log "WARNING: could not replace this run's settings in $state_dir/launch.env;" \
-	"the complete previous record is intact, so the next run still compares" \
-	"against it — repeat this run's overrides on that run too"
-    return 0
+    if cmp -s <(printf '%s\n' "$record") "$state_dir/launch.env"; then
+      log "WARNING: could not replace this run's settings in $state_dir/launch.env;" \
+	  "the matching previous record is intact, so the next run still compares" \
+	  "against it"
+      return 0
+    fi
+    die "could not replace this run's settings in $state_dir/launch.env, and" \
+	"the complete previous record does not match this run. Refusing to" \
+	"create the success marker: a later bare FORCE=1 run would otherwise" \
+	"restore settings this run changed."
   fi
   die "could not record this run's settings in $state_dir/launch.env, and no" \
       "complete previous record remains. Refusing to create the success marker:" \
@@ -2915,23 +2921,74 @@ passwd_home() {
 
 # ssh_key_holder <key> [passwd table]
 #
-# The first account whose authorized_keys contains this key byte-for-byte, or
-# nothing. This is the only surviving evidence of who a key belongs to, which
-# is what the caller below needs and does not otherwise have.
+# Every account whose authorized_keys contains this key byte-for-byte, one per
+# line, or nothing. This is the only surviving evidence of which accounts a
+# legacy host-wide marker belongs to, which the caller below needs and does not
+# otherwise have.
 ssh_key_holder() {
-  local key="$1" src="${2:-}" user home tbl rc=1
-  tbl="$(mktemp)"
-  if [ -n "$src" ]; then cat "$src" > "$tbl"; else getent passwd > "$tbl"; fi
+  local key="$1" src="${2:-}" user home tbl rc=1 grep_rc
+  tbl="$(mktemp)" || return 2
+  if [ -n "$src" ]; then
+    if ! cat "$src" > "$tbl"; then rm -f "$tbl"; return 2; fi
+  else
+    if ! getent passwd > "$tbl"; then rm -f "$tbl"; return 2; fi
+  fi
   while IFS=: read -r user _ _ _ _ home _; do
     [ -n "$home" ] && [ -f "$home/.ssh/authorized_keys" ] || continue
     if grep -qxF "$key" "$home/.ssh/authorized_keys" 2>/dev/null; then
       printf '%s\n' "$user"
       rc=0
-      break
+    else
+      grep_rc=$?
+      [ "$grep_rc" -eq 1 ] || { rm -f "$tbl"; return 2; }
     fi
   done < "$tbl"
   rm -f "$tbl"
   return "$rc"
+}
+
+# record_ssh_key_grant <key> [set file] [legacy single marker]
+#
+# The third instance of the same separation, after deploy_users and db_users:
+# ssh_public_key.<user> is the key this host is *currently* deployed with, and
+# this file is the set of managed keys no run has confirmed withdrawn. One
+# marker cannot be both, and the A -> B -> C sequence is where it shows.
+#
+# install_authorized_keys appends the successor and revoke_prior_ssh_key
+# advances the marker afterwards, so a run that dies between them leaves B in
+# authorized_keys with the marker still naming A. A later run rotating to C
+# withdraws A — the only key the marker knows — records C, and B stays
+# authorized with nothing on the host naming it. Measured against 07365195:
+#
+#   control  A -> B -> C                       keys=[C]    marker=C
+#   run2 interrupted before the marker write:
+#            A -> B(interrupted) -> C          keys=[B C]  marker=C
+#
+# B is not a stale entry in a file: this account holds passwordless sudo and the
+# docker socket, so an untracked key on it is permanent root on the host, and it
+# is untracked precisely because the rotation that was supposed to retire it is
+# the thing that lost the record.
+#
+# Called before the key is appended, not after — the same ordering as
+# record_deploy_user_grant, and for the same reason: a key in this file that
+# turns out not to be in authorized_keys costs one grep, and a key missing from
+# it is root access nobody is looking for.
+record_ssh_key_grant() {
+  local key="$1" set_file="${2:-$STATE_DIR/ssh_public_keys.$APP_SSH_USER}"
+  local prior_file="${3:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}"
+  [ -n "$key" ] || return 0
+  # Upgrade path, guarded on `! -f` so it runs once per host: seed from the
+  # single marker the earlier revision kept, which names the predecessor most
+  # likely to still be authorized. A failed seed leaves the file absent — the
+  # state a retry starts from — rather than empty and authoritative.
+  if [ ! -f "$set_file" ] && [ -s "$prior_file" ]; then
+    local seed
+    seed="$(grep -v '^[[:space:]]*$' "$prior_file")" || seed=''
+    if [ -n "$seed" ]; then
+      write_state_file "$set_file" "$seed"$'\n' || return 1
+    fi
+  fi
+  append_state_line "$set_file" "$key"
 }
 
 # adopt_legacy_ssh_key_marker <user> [state dir] [passwd table]
@@ -2961,10 +3018,10 @@ ssh_key_holder() {
 # between an old key sitting in a file and an old key holding root.
 adopt_legacy_ssh_key_marker() {
   local user="$1" state_dir="${2:-$STATE_DIR}" src="${3:-}"
-  local legacy mine key owner home auth_keys=""
+  local legacy key owners owner first_owner home auth_keys="" set_file marker
+  local holder_status=0
   legacy="$state_dir/ssh_public_key"
-  mine="$state_dir/ssh_public_key.$user"
-  [ -f "$legacy" ] && [ ! -f "$mine" ] || return 0
+  [ -f "$legacy" ] || return 0
 
   key="$(cat "$legacy")"
   # A marker with nothing in it names no key and can strand the branch forever.
@@ -2973,20 +3030,18 @@ adopt_legacy_ssh_key_marker() {
   home="$(passwd_home "$user" "$src")"
   [ -z "$home" ] || auth_keys="$home/.ssh/authorized_keys"
 
-  # Verifiably this account's — the ordinary upgrade, and the case the adoption
-  # exists for. Checked directly rather than through the search below so the
-  # common path does not depend on reading every account on the host.
-  if [ -n "$auth_keys" ] && grep -qxF "$key" "$auth_keys" 2>/dev/null; then
-    mv "$legacy" "$mine"
-    return 0
+  owners="$(ssh_key_holder "$key" "$src")" || holder_status=$?
+  if [ "$holder_status" -gt 1 ]; then
+    die "could not inspect every account for the SSH key recorded in $legacy." \
+	"The host-wide marker is intact and no key was re-filed. Check that the" \
+	"account database and authorized_keys files are readable, then re-run."
   fi
-
-  owner="$(ssh_key_holder "$key" "$src")" || owner=""
+  [ "$holder_status" -eq 0 ] || owners=""
 
   # Authorized for nobody: the key it names is already gone, so the record
   # describes nothing and assigning it to an account would invent a predecessor
   # that no longer exists.
-  if [ -z "$owner" ]; then
+  if [ -z "$owners" ]; then
     rm -f "$legacy"
     log "the SSH key recorded by an earlier revision is no longer authorized for" \
         "any account on this host, so the record was dropped rather than filed" \
@@ -2994,35 +3049,59 @@ adopt_legacy_ssh_key_marker() {
     return 0
   fi
 
-  # Verifiably another account's. File it there, so that account's own key stays
-  # withdrawable by a later run naming it.
-  #
-  # An account with no keys of its own cannot be hiding a managed one, so there
-  # is nothing to stop the run for; this is also the first-run-creates-the-user
-  # path, where the account does not exist yet.
-  if [ -z "$auth_keys" ] || [ ! -s "$auth_keys" ]; then
-    mv "$legacy" "$state_dir/ssh_public_key.$owner"
-    log "the SSH key recorded by an earlier revision belongs to '$owner', not to" \
-        "'$user'; filed it against '$owner'"
-    return 0
+  # If this account does not hold the recorded key but does hold other keys, an
+  # earlier rotation may have installed one of them and then advanced the sole
+  # host-wide marker to another account. Nothing can identify that predecessor,
+  # so stop before recording or granting anything unless the operator accepts
+  # responsibility for those unattributed keys.
+  if ! grep -qxF -- "$user" <<<"$owners" &&
+     [ -n "$auth_keys" ] && [ -s "$auth_keys" ] &&
+     [ -z "${ACK_UNATTRIBUTED_SSH_KEYS:-}" ]; then
+    first_owner="${owners%%$'\n'*}"
+    die "this host rotated deploy accounts under an earlier revision of this" \
+	"script: the key it recorded is authorized for '$first_owner', not for" \
+	"'$user', which this run names. That revision kept only one record per" \
+	"host, so if it ever installed a key for '$user' there is nothing left" \
+	"that says which of the keys in $auth_keys it was — and this run is" \
+	"about to give '$user' passwordless sudo and the docker socket again." \
+	"Nothing has been changed. Read $auth_keys, remove any key you do not" \
+	"recognise, then re-run with ACK_UNATTRIBUTED_SSH_KEYS=1 to continue."
   fi
 
-  if [ -n "${ACK_UNATTRIBUTED_SSH_KEYS:-}" ]; then
-    mv "$legacy" "$state_dir/ssh_public_key.$owner"
-    log "ACK_UNATTRIBUTED_SSH_KEYS is set: filed the earlier revision's record" \
-        "against '$owner', and proceeding with '$user' unchecked — the keys in" \
-        "$auth_keys are the operator's responsibility"
-    return 0
-  fi
+  # The old marker was host-wide, so the same managed key may have been copied
+  # into more than one deploy account. Queue it for every exact holder before
+  # deleting the sole record; otherwise whichever account was not chosen can be
+  # re-armed by a later APP_SSH_USER rotation with an untracked root key.
+  while IFS= read -r owner; do
+    [ -n "$owner" ] || continue
+    set_file="$state_dir/ssh_public_keys.$owner"
+    marker="$state_dir/ssh_public_key.$owner"
+    record_ssh_key_grant "$key" "$set_file" "$marker" ||
+      die "could not record the legacy SSH key for '$owner' in $set_file." \
+	  "The host-wide marker is intact; check that $state_dir is writable" \
+	  "and has space, then re-run."
+    if [ ! -f "$marker" ]; then
+      write_state_file "$marker" "$key"$'\n' ||
+	die "could not create the per-account SSH key marker $marker." \
+	    "The withdrawal queue and host-wide marker are intact; check that" \
+	    "$state_dir is writable and has space, then re-run."
+    fi
+  done <<<"$owners"
+  rm -f "$legacy"
 
-  die "this host rotated deploy accounts under an earlier revision of this" \
-      "script: the key it recorded is authorized for '$owner', not for" \
-      "'$user', which this run names. That revision kept only one record per" \
-      "host, so if it ever installed a key for '$user' there is nothing left" \
-      "that says which of the keys in $auth_keys it was — and this run is" \
-      "about to give '$user' passwordless sudo and the docker socket again." \
-      "Nothing has been changed. Read $auth_keys, remove any key you do not" \
-      "recognise, then re-run with ACK_UNATTRIBUTED_SSH_KEYS=1 to continue."
+  if ! grep -qxF -- "$user" <<<"$owners"; then
+    first_owner="${owners%%$'\n'*}"
+    if [ -n "${ACK_UNATTRIBUTED_SSH_KEYS:-}" ]; then
+      log "ACK_UNATTRIBUTED_SSH_KEYS is set: filed the earlier revision's record" \
+	  "against every account that holds it, including '$first_owner', and" \
+	  "proceeding with '$user' unchecked — the keys in $auth_keys are the" \
+	  "operator's responsibility"
+    else
+      log "the SSH key recorded by an earlier revision belongs to" \
+	  "'$first_owner', not to '$user'; filed it against every account that" \
+	  "holds it"
+    fi
+  fi
 }
 
 adopt_legacy_ssh_key_marker "$APP_SSH_USER"
@@ -3335,50 +3414,6 @@ install_staged_authorized_keys() {
   fi
   chmod 0600 "$tmp"
   mv -f "$tmp" "$auth_keys"
-}
-
-# record_ssh_key_grant <key> [set file] [legacy single marker]
-#
-# The third instance of the same separation, after deploy_users and db_users:
-# ssh_public_key.<user> is the key this host is *currently* deployed with, and
-# this file is the set of managed keys no run has confirmed withdrawn. One
-# marker cannot be both, and the A -> B -> C sequence is where it shows.
-#
-# install_authorized_keys appends the successor and revoke_prior_ssh_key
-# advances the marker afterwards, so a run that dies between them leaves B in
-# authorized_keys with the marker still naming A. A later run rotating to C
-# withdraws A — the only key the marker knows — records C, and B stays
-# authorized with nothing on the host naming it. Measured against 07365195:
-#
-#   control  A -> B -> C                       keys=[C]    marker=C
-#   run2 interrupted before the marker write:
-#            A -> B(interrupted) -> C          keys=[B C]  marker=C
-#
-# B is not a stale entry in a file: this account holds passwordless sudo and the
-# docker socket, so an untracked key on it is permanent root on the host, and it
-# is untracked precisely because the rotation that was supposed to retire it is
-# the thing that lost the record.
-#
-# Called before the key is appended, not after — the same ordering as
-# record_deploy_user_grant, and for the same reason: a key in this file that
-# turns out not to be in authorized_keys costs one grep, and a key missing from
-# it is root access nobody is looking for.
-record_ssh_key_grant() {
-  local key="$1" set_file="${2:-$STATE_DIR/ssh_public_keys.$APP_SSH_USER}"
-  local prior_file="${3:-$STATE_DIR/ssh_public_key.$APP_SSH_USER}"
-  [ -n "$key" ] || return 0
-  # Upgrade path, guarded on `! -f` so it runs once per host: seed from the
-  # single marker the earlier revision kept, which names the predecessor most
-  # likely to still be authorized. A failed seed leaves the file absent — the
-  # state a retry starts from — rather than empty and authoritative.
-  if [ ! -f "$set_file" ] && [ -s "$prior_file" ]; then
-    local seed
-    seed="$(grep -v '^[[:space:]]*$' "$prior_file")" || seed=''
-    if [ -n "$seed" ]; then
-      write_state_file "$set_file" "$seed"$'\n' || return 1
-    fi
-  fi
-  append_state_line "$set_file" "$key"
 }
 
 revoke_prior_ssh_key() {
