@@ -83,6 +83,32 @@ module Collavre
         assert_equal "cancelled", first.reload.status
       end
 
+      test "promotion does not move an ordinary waiter onto a review request" do
+        ordinary = comment("summarise the thread")
+        task = waiter_for(ordinary)
+        review_request
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        payload = task.reload.trigger_event_payload
+        assert_equal ordinary.id, payload.dig("comment", "id"),
+          "re-anchoring an ordinary turn onto a review makes it overwrite the quoted comment"
+        assert_empty merged_ids(task)
+        refute_equal "cancelled", task.status,
+          "excluding reviews as destinations must not strand a waiter with a live anchor"
+      end
+
+      test "an ordinary waiter still refreshes forward onto a newer ordinary comment" do
+        task = waiter_for(comment("stale trigger"))
+        review_request
+        newest = comment("the message actually worth answering")
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal newest.id, task.reload.trigger_event_payload.dig("comment", "id"),
+          "the exclusion must skip reviews, not freeze the refresh"
+      end
+
       test "promotion keeps a review request pointed at the comment it reviews" do
         review = review_request
         task = waiter_for(review)

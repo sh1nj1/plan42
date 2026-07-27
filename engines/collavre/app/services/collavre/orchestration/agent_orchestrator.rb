@@ -206,9 +206,17 @@ module Collavre
         return if review_anchor?(context)
 
         topic_id = context.dig("topic", "id")
+        # ...and a review is no better as a *destination* than as an anchor. The
+        # coalescer leaves a queued review alone, so an ordinary waiter promoted
+        # first would re-anchor onto it and run ReviewHandler over a comment it
+        # was never asked to revise — then the real review task repeats the
+        # revision later. Skip reviews and take the newest ordinary comment,
+        # which in the worst case is the waiter's own anchor (a no-op refresh)
+        # rather than nothing, so this cannot strand a live waiter.
         scope = Comment.public_only.without_approval_action
           .where(creative_id: creative_id, topic_id: topic_id)
           .where.not(user_id: [ task.agent_id, nil ])
+          .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
           .order(created_at: :desc)
         latest_comment = scope.first
 

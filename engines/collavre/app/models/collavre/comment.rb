@@ -136,11 +136,12 @@ module Collavre
       ids = Array(ids).compact.map(&:to_i).uniq
       return [] if ids.empty?
 
-      where(id: ids)
-        .where.not(quoted_comment_id: nil)
-        .where(review_type: [ nil, review_types[:review] ])
-        .pluck(:id)
+      review_messages.where(id: ids).pluck(:id)
     end
+
+    scope :review_messages, -> {
+      where.not(quoted_comment_id: nil).where(review_type: [ nil, review_types[:review] ])
+    }
 
     # public for db migration
     def creative_snippet
