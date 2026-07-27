@@ -2577,25 +2577,147 @@ sysctl --system >/dev/null
 # load-bearing: without it sshd prints only the global block, so a later
 # `Match User <deploy-user>` can turn password authentication back on while
 # this verifier reports the global `no`.
+#
+# scan_ssh_config_file <file> <relative-include root>
+#
+# Follow Include directives in the order sshd reads them while carrying Match
+# state across file boundaries. A flat grep cannot do that: Include is textual,
+# so an address-scoped Match before an Include also scopes authentication
+# directives inside the included file, and Match All after it ends the scope.
+scan_ssh_config_file() {
+  local file="$1" include_root="$2" canonical old_stack line raw_line key value
+  local pattern included line_no=0 i
+  local -a fields=()
+  [ -f "$file" ] || return 0
+
+  canonical="$(realpath "$file" 2>/dev/null || printf '%s' "$file")"
+  case $'\n'"${SSH_CONFIG_SCAN_STACK:-}"$'\n' in
+    *$'\n'"$canonical"$'\n'*)
+      SSH_CONFIG_SCAN_UNSAFE="$canonical: recursive Include"
+      return 0
+      ;;
+  esac
+  old_stack="${SSH_CONFIG_SCAN_STACK:-}"
+  SSH_CONFIG_SCAN_STACK="${SSH_CONFIG_SCAN_STACK:-}${SSH_CONFIG_SCAN_STACK:+$'\n'}$canonical"
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_no=$(( line_no + 1 ))
+    raw_line="$line"
+    # OpenSSH accepts quoting and backslash escapes in Include paths. Reusing
+    # shell parsing here would be wrong (and eval would execute the config), so
+    # fail closed on those uncommon forms rather than split them into the wrong
+    # paths and silently skip a contextual authentication override.
+    if [[ "$raw_line" =~ ^[[:space:]]*[Ii][Nn][Cc][Ll][Uu][Dd][Ee][[:space:]] ]] &&
+       { [[ "$raw_line" = *\"* ]] || [[ "$raw_line" = *\\* ]]; }; then
+      SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no: quoted or escaped Include cannot be verified"
+      break
+    fi
+    line="${line%%#*}"
+    read -ra fields <<<"$line"
+    [ "${#fields[@]}" -gt 0 ] || continue
+    key="$(printf '%s' "${fields[0]}" | tr '[:upper:]' '[:lower:]')"
+
+    if [ "$key" = include ]; then
+      for pattern in "${fields[@]:1}"; do
+	pattern="${pattern#\"}"
+	pattern="${pattern%\"}"
+	[[ "$pattern" = /* ]] || pattern="$include_root/$pattern"
+	while IFS= read -r included; do
+	  scan_ssh_config_file "$included" "$include_root"
+	  [ -z "${SSH_CONFIG_SCAN_UNSAFE:-}" ] || break 3
+	done < <(compgen -G "$pattern" | LC_ALL=C sort)
+      done
+      continue
+    fi
+
+    if [ "$key" = match ]; then
+      SSH_CONFIG_SCAN_CONTEXTUAL=0
+      i=1
+      while [ "$i" -lt "${#fields[@]}" ]; do
+	key="$(printf '%s' "${fields[$i]}" | tr '[:upper:]' '[:lower:]')"
+	case "$key" in
+	  all)
+	    i=$(( i + 1 ))
+	    ;;
+	  user|group)
+	    i=$(( i + 2 ))
+	    ;;
+	  address|host|localaddress|localnetwork|localport|rdomain)
+	    SSH_CONFIG_SCAN_CONTEXTUAL=1
+	    i=$(( i + 2 ))
+	    ;;
+	  *)
+	    # A newer or malformed criterion is not something a user-only probe
+	    # can prove safe. sshd -T below still supplies the syntax verdict.
+	    SSH_CONFIG_SCAN_CONTEXTUAL=1
+	    i=$(( i + 1 ))
+	    ;;
+	esac
+      done
+      continue
+    fi
+
+    if [ "${SSH_CONFIG_SCAN_CONTEXTUAL:-0}" -eq 1 ]; then
+      value="${fields[1]:-}"
+      value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$key" =~ ^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin)$ ]] &&
+	 [ "$value" != no ]; then
+	SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no:${line#"${line%%[![:space:]]*}"}"
+	break
+      fi
+    fi
+  done < "$file"
+
+  SSH_CONFIG_SCAN_STACK="$old_stack"
+}
+
+find_unsafe_ssh_match() {
+  local conf_dir="${1:-/etc/ssh}"
+  SSH_CONFIG_SCAN_CONTEXTUAL=0
+  SSH_CONFIG_SCAN_UNSAFE=""
+  SSH_CONFIG_SCAN_STACK=""
+  scan_ssh_config_file "$conf_dir/sshd_config" "$conf_dir"
+  printf '%s\n' "$SSH_CONFIG_SCAN_UNSAFE"
+  unset SSH_CONFIG_SCAN_CONTEXTUAL SSH_CONFIG_SCAN_UNSAFE SSH_CONFIG_SCAN_STACK
+}
+
 verify_ssh_hardening() {
   local src="${1:-}" conf_dir="${2:-/etc/ssh}" reload_state="${3:-0}"
   local deploy_user="${4:-${APP_SSH_USER:-collavre}}"
-  local effective key value offender
+  local effective key value offender unsafe_match
   if [ -n "$src" ]; then
     effective="$(cat "$src")"
-  elif ! effective="$(sshd -T -C "user=$deploy_user" 2>/dev/null)"; then
-    [ "$reload_state" -ne 2 ] || die \
-      "SSH hardening could not be verified: there is no active sshd to reload" \
-      "and 'sshd -T -C user=$deploy_user' rejected or could not read the" \
-      "configuration on disk." \
-      "The next socket-activated connection or reboot would start sshd from" \
-      "that unverified configuration. Provisioning will not continue. Run" \
-      "'sshd -t' to find the error, fix it, and re-run."
-    log "WARNING: could not read the effective SSH configuration on this host" \
+  else
+    # A user-only connection context covers Match User, Match Group and
+    # Match All, including group membership changes made later in this run.
+    # It cannot answer for source/destination addresses, host names, listener
+    # ports or routing domains: probing one invented connection would merely
+    # leave every other connection untested. Refuse a weakening directive in
+    # one of those contexts rather than report the privileged deploy account
+    # hardened on incomplete evidence.
+    unsafe_match="$(find_unsafe_ssh_match "$conf_dir")"
+    [ -z "$unsafe_match" ] ||
+      die "SSH hardening cannot be verified for every connection: a Match" \
+	"Address/Host/LocalAddress/LocalPort/RDomain block weakens" \
+	"authentication at $unsafe_match." \
+	"The user-only sshd test below cannot evaluate that context. Remove" \
+	"or harden the directive and re-run before granting '$deploy_user'" \
+	"sudo or Docker access."
+
+    if ! effective="$(sshd -T -C "user=$deploy_user" 2>/dev/null)"; then
+      [ "$reload_state" -ne 2 ] || die \
+	"SSH hardening could not be verified: there is no active sshd to reload" \
+	"and 'sshd -T -C user=$deploy_user' rejected or could not read the" \
+	"configuration on disk." \
+	"The next socket-activated connection or reboot would start sshd from" \
+	"that unverified configuration. Provisioning will not continue. Run" \
+	"'sshd -t' to find the error, fix it, and re-run."
+      log "WARNING: could not read the effective SSH configuration on this host" \
 	"(\`sshd -T -C user=$deploy_user\` failed), so the hardening above is" \
 	"unverified. Check it by hand: sshd -T -C user=$deploy_user | grep -E" \
 	"'^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication)'"
-    return 0
+      return 0
+    fi
   fi
   for key in passwordauthentication permitrootlogin kbdinteractiveauthentication; do
     value="$(printf '%s\n' "$effective" |
@@ -2917,10 +3039,26 @@ record_deploy_user_grant "$APP_SSH_USER" ||
       "cannot promise that a later one could find the account again. Nothing" \
       "has been granted. Check that $STATE_DIR is writable and has space, then" \
       "re-run."
+SUDO_GROUP_WAS_PRESENT=0
+in_group "$APP_SSH_USER" sudo && SUDO_GROUP_WAS_PRESENT=1
 usermod -aG sudo "$APP_SSH_USER"
 # Match Group is resolved from the account's current memberships, so the check
 # before user creation cannot see an override that starts applying here.
-verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"
+if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" ); then
+  if [ "$SUDO_GROUP_WAS_PRESENT" -eq 0 ]; then
+    gpasswd -d "$APP_SSH_USER" sudo >/dev/null 2>&1 ||
+      die "SSH hardening failed after '$APP_SSH_USER' joined sudo, and the" \
+	"new membership could not be rolled back. Remove it immediately with" \
+	"'gpasswd -d $APP_SSH_USER sudo'."
+    in_group "$APP_SSH_USER" sudo &&
+      die "SSH hardening failed after '$APP_SSH_USER' joined sudo. The rollback" \
+	"reported success but the membership is still active; remove it" \
+	"immediately with 'gpasswd -d $APP_SSH_USER sudo'."
+    log "rolled back the new sudo membership after SSH hardening verification failed"
+  fi
+  die "SSH hardening failed after the sudo group change. Any membership added" \
+    "by this run was rolled back; correct the Match override and re-run."
+fi
 install -d -m 0755 /etc/sudoers.d
 ensure_sudoers "$APP_SSH_USER"
 
@@ -3083,7 +3221,7 @@ install_authorized_keys() {
       # real call site always has both — it is the line below that sets
       # AUTH_KEYS — so the production path is the one that records.
       if [ -n "${STATE_DIR:-}" ] && [ -n "${APP_SSH_USER:-}" ]; then
-        while read -r _copied; do
+	while IFS= read -r _copied; do
           case "$_copied" in ''|'#'*) continue ;; esac
           record_ssh_key_grant "$_copied" || {
             rm -f "$tmp"
@@ -3480,10 +3618,26 @@ if [ "$DAEMON_JSON_CHANGED" -eq 1 ]; then
 else
   systemctl start docker
 fi
+DOCKER_GROUP_WAS_PRESENT=0
+in_group "$APP_SSH_USER" docker && DOCKER_GROUP_WAS_PRESENT=1
 usermod -aG docker "$APP_SSH_USER"
 # Recheck for the same reason as the sudo grant above. An operator's
 # `Match Group docker` block does not apply until this membership exists.
-verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"
+if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" ); then
+  if [ "$DOCKER_GROUP_WAS_PRESENT" -eq 0 ]; then
+    gpasswd -d "$APP_SSH_USER" docker >/dev/null 2>&1 ||
+      die "SSH hardening failed after '$APP_SSH_USER' joined docker, and the" \
+	"new membership could not be rolled back. Remove it immediately with" \
+	"'gpasswd -d $APP_SSH_USER docker'."
+    in_group "$APP_SSH_USER" docker &&
+      die "SSH hardening failed after '$APP_SSH_USER' joined docker. The rollback" \
+	"reported success but the membership is still active; remove it" \
+	"immediately with 'gpasswd -d $APP_SSH_USER docker'."
+    log "rolled back the new docker membership after SSH hardening verification failed"
+  fi
+  die "SSH hardening failed after the docker group change. Any membership added" \
+    "by this run was rolled back; correct the Match override and re-run."
+fi
 # Only once the replacement can reach Docker, so an interrupted run never
 # leaves the host with no account that can deploy.
 revoke_prior_deploy_user "$APP_SSH_USER"
@@ -3827,13 +3981,13 @@ log "7/9 firewall"
 ensure_ssh_rule
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw default deny incoming
-ufw default allow outgoing
 
 # PostgreSQL is only listening on localhost and the docker bridge, so this rule
 # is defence in depth rather than the only thing keeping it private.
 ensure_ufw_rule postgres \
   "allow from $DOCKER_SUBNETS to $DB_BIND_ADDRESS port $DB_PORT proto tcp"
+ufw default deny incoming
+ufw default allow outgoing
 ufw --force enable
 ufw status verbose
 

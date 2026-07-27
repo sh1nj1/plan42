@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -45,7 +45,8 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
           resolve_symlink_chain stage_beside stage_authorized_keys \
-          verify_ssh_hardening refuse_unusable_retention \
+	  scan_ssh_config_file find_unsafe_ssh_match verify_ssh_hardening \
+	  refuse_unusable_retention \
 	  refuse_unusable_backup_calendar \
 	  install_managed_config install_downloaded_file \
 	  install_credential_summary reload_ssh_daemon \
@@ -860,6 +861,17 @@ if [ -n "$fw_http_line" ] && [ -n "$fw_https_line" ] &&
   echo "  ok   the HTTP(S) allow rules precede default deny incoming"
 else
   echo "  FAIL default deny incoming can take effect before HTTP(S) is authorized"
+  fail=1
+fi
+
+echo "26c. PostgreSQL is authorized before the live incoming policy is tightened"
+fw_postgres_line="$(printf '%s\n' "$fw_step" |
+		      grep -n '^ensure_ufw_rule postgres' | cut -d: -f1)"
+if [ -n "$fw_postgres_line" ] && [ -n "$fw_deny_line" ] &&
+   [ "$fw_postgres_line" -lt "$fw_deny_line" ]; then
+  echo "  ok   the PostgreSQL allow rule precedes default deny incoming"
+else
+  echo "  FAIL default deny incoming can take effect before PostgreSQL is authorized"
   fail=1
 fi
 
@@ -5766,6 +5778,49 @@ chk "and sshd was given the deploy-user context"          1 \
   "$(grep -c -- '-C user=deploybot' "$SSHD_ARGS_FILE")"
 unset SSHD_ARGS_FILE
 
+# User and group contexts can be evaluated from the account name. Address,
+# host and listener contexts cannot: checking one invented connection would
+# merely leave every other matching connection untested.
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf "passwordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no\n"' \
+  > "$vshd/bin/sshd"
+chmod +x "$vshd/bin/sshd"
+printf 'Include %s/sshd_config.d/*.conf\nMatch Address 203.0.113.0/24\n  PasswordAuthentication yes\n' \
+  "$vshd" > "$vshd/sshd_config"
+vh_address="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "an address-scoped password override stops the run"  1 \
+  "$(printf '%s' "$vh_address" | grep -c '^rc=1$')"
+chk "and the refusal names the untestable Match context" 1 \
+  "$(printf '%s' "$vh_address" | grep -ci 'Match.*Address')"
+
+# Include is textual and may point anywhere. The Match begins in the main file,
+# the weakening directive is in a nonstandard included file, and Match All
+# ends it back in the caller. Scanning files independently or in a guessed
+# main-then-drop-ins order misses this exact shape.
+printf 'PasswordAuthentication yes\n' > "$vshd/address-auth.conf"
+printf 'Include %s/sshd_config.d/*.conf\nMatch Address 198.51.100.0/24\nInclude %s/address-auth.conf\nMatch All\n' \
+  "$vshd" "$vshd" > "$vshd/sshd_config"
+vh_address_include="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "an address override reached through Include stops the run" 1 \
+  "$(printf '%s' "$vh_address_include" | grep -c '^rc=1$')"
+chk "and the included file is named" 1 \
+  "$(printf '%s' "$vh_address_include" | grep -c 'address-auth\.conf')"
+
+mkdir -p "$vshd/custom configs"
+printf 'Match Address 192.0.2.0/24\nPasswordAuthentication yes\n' \
+  > "$vshd/custom configs/address-auth.conf"
+printf 'Include "%s/custom configs/*.conf"\n' "$vshd" > "$vshd/sshd_config"
+vh_quoted_include="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "a quoted Include cannot bypass the contextual scan" 1 \
+  "$(printf '%s' "$vh_quoted_include" | grep -c '^rc=1$')"
+chk "and the refusal identifies the unsupported Include form" 1 \
+  "$(printf '%s' "$vh_quoted_include" | grep -ci 'quoted or escaped Include')"
+printf 'Include %s/sshd_config.d/*.conf\n' "$vshd" > "$vshd/sshd_config"
+
 # Source level, because every row above passes on a revision that writes the
 # drop-in under the losing name and never reads anything back.
 chk "the drop-in is written where it sorts first"         1 \
@@ -5788,12 +5843,12 @@ chk "and the run reads back every relevant user context"  3 \
 # time. The pre-grant read-back above cannot see a sudo/docker override for an
 # existing account that does not join those groups until later in this run.
 vh_sudo_grant="$(awk '
-  /^usermod -aG sudo "\$APP_SSH_USER"$/ { f = 1 }
+  /^SUDO_GROUP_WAS_PRESENT=0$/ { f = 1 }
   f { print }
   f && /^ensure_sudoers "\$APP_SSH_USER"$/ { exit }
 ' "$SRC")"
 vh_docker_grant="$(awk '
-  /^usermod -aG docker "\$APP_SSH_USER"$/ { f = 1 }
+  /^DOCKER_GROUP_WAS_PRESENT=0$/ { f = 1 }
   f { print }
   f && /^revoke_prior_deploy_user "\$APP_SSH_USER"$/ { exit }
 ' "$SRC")"
@@ -5803,6 +5858,22 @@ chk "sudo-group context is rechecked before passwordless sudo" 1 \
 chk "docker-group context is rechecked before convergence continues" 1 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' \
       <<<"$vh_docker_grant")"
+
+# If the recheck is what discovers the override, the new group is already live.
+# A refusal must remove only the membership this run added. These assertions
+# stay at the call sites because that ordering is the safety property.
+chk "sudo membership is recorded before it is granted" 1 \
+  "$(grep -c '^SUDO_GROUP_WAS_PRESENT=0$' <<<"$vh_sudo_grant")"
+chk "a failed sudo recheck rolls back the new membership" 1 \
+  "$(grep -c '^    gpasswd -d "\$APP_SSH_USER" sudo ' <<<"$vh_sudo_grant")"
+chk "and checks the rollback actually took" 1 \
+  "$(grep -c '^    in_group "\$APP_SSH_USER" sudo ' <<<"$vh_sudo_grant")"
+chk "Docker membership is recorded before it is granted" 1 \
+  "$(grep -c '^DOCKER_GROUP_WAS_PRESENT=0$' <<<"$vh_docker_grant")"
+chk "a failed Docker recheck rolls back the new membership" 1 \
+  "$(grep -c '^    gpasswd -d "\$APP_SSH_USER" docker ' <<<"$vh_docker_grant")"
+chk "and checks that rollback actually took" 1 \
+  "$(grep -c '^    in_group "\$APP_SSH_USER" docker ' <<<"$vh_docker_grant")"
 
 # The claim is about what sshd does with two files, so sshd is asked. The name
 # and the body both come from the script: a harness that wrote its own 01- file
@@ -5900,6 +5971,21 @@ key_rotation() {   # <deploy account> -> "<authorized names>|<queue names>"
 }
 chk "a copied cloud key is withdrawn when SSH_PUBLIC_KEY is set" \
   "new | new" "$(key_rotation collavre)"
+
+SPACED_K1="  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAACLOUDKEYSPACE cloud-space  "
+ks="$kd/spaced"; mkdir -p "$ks/ubuntu/.ssh" "$ks/collavre/.ssh" "$kd/state.spaced"
+printf '%s\n' "$SPACED_K1" > "$ks/ubuntu/.ssh/authorized_keys"
+: > "$ks/collavre/.ssh/authorized_keys"
+STATE_DIR="$kd/state.spaced" APP_SSH_USER=collavre SSH_PUBLIC_KEY=''
+install_authorized_keys "$ks/collavre/.ssh/authorized_keys" "$ks" >/dev/null 2>&1
+chk "a copied key is recorded with its whitespace intact" 1 \
+  "$(grep -cxF "$SPACED_K1" "$kd/state.spaced/ssh_public_keys.collavre")"
+SSH_PUBLIC_KEY="$KN"
+record_ssh_key_grant "$SSH_PUBLIC_KEY" >/dev/null 2>&1
+install_authorized_keys "$ks/collavre/.ssh/authorized_keys" "$ks" >/dev/null 2>&1
+revoke_prior_ssh_key "$ks/collavre/.ssh/authorized_keys" >/dev/null 2>&1
+chk "so a later rotation withdraws that exact copied key" 0 \
+  "$(grep -cxF "$SPACED_K1" "$ks/collavre/.ssh/authorized_keys")"
 # The control that decides where the recording may go, and it is the one that
 # would be a lockout if it moved: when APP_SSH_USER *is* the cloud user, the
 # file is that account's own and this script never wrote it. Queueing it would
