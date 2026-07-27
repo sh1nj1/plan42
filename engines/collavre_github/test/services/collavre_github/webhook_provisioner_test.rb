@@ -10,20 +10,23 @@ module CollavreGithub
       attr_reader :created, :updated, :deleted
       attr_accessor :hooks
 
-      def initialize(hooks: [])
+      def initialize(hooks: [], next_id: 100)
         @hooks = hooks
         @created = []
         @updated = []
         @deleted = []
+        @next_id = next_id
       end
 
       def repository_hooks(_repo)
         @hooks
       end
 
+      # Mirrors Octokit, which answers with the created hook. The id is what the
+      # provisioner records so sibling instances can recognise the hook.
       def create_repository_webhook(repo, url:, secret:, events:, content_type: "json")
         @created << { repo: repo, url: url, secret: secret, events: events }
-        true
+        Hook.new(@next_id += 1, { "url" => url })
       end
 
       def update_repository_webhook(repo, hook_id, url:, secret:, events:, content_type: "json")
@@ -76,20 +79,83 @@ module CollavreGithub
     # host was invisible to this instance, so it created its own — leaving the
     # repo with two hooks and GitHub delivering every event twice.
     test "does not create a second hook when a sibling instance already owns one" do
+      @link.update!(webhook_hook_id: 2)
       client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
 
       assert_equal [ [ @link, :shared ] ], provision(client)
-      assert_empty client.created, "must not add a second hook on the same path"
+      assert_empty client.created, "must not add a second hook for the same database"
     end
 
     test "does not rewrite a sibling hook's URL to its own" do
       # Rewriting would break the sibling instance and start a rewrite war: each
       # side would keep patching the URL back to itself on every provision.
+      @link.update!(webhook_hook_id: 2)
       client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
       provision(client)
 
       assert_empty client.updated
       assert_empty client.deleted
+    end
+
+    # A separate deployment can serve the very same path. It has its own
+    # database and its own webhook secret, so its deliveries never reach this
+    # instance — treating its hook as reusable would leave this instance
+    # connected on paper and receiving nothing.
+    test "does not defer to a same-path hook this database never registered" do
+      client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_equal 1, client.created.size
+      assert_equal OWN_URL, client.created.first[:url]
+    end
+
+    test "records the created hook so a sibling instance can reuse it" do
+      client = FakeClient.new(hooks: [], next_id: 40)
+      provision(client)
+
+      assert_equal 41, @link.reload.webhook_hook_id
+    end
+
+    test "records its own hook when it was created before registration existed" do
+      client = FakeClient.new(hooks: [ Hook.new(7, { "url" => OWN_URL }) ])
+      provision(client)
+
+      assert_equal 7, @link.reload.webhook_hook_id
+    end
+
+    test "does not steal a registration while its hook is still live" do
+      # Otherwise two instances take turns claiming the slot, each sees the
+      # other's hook as unregistered on its next run, and the proliferation the
+      # registry exists to stop comes straight back.
+      @link.update!(webhook_hook_id: 2)
+      client = FakeClient.new(hooks: [
+        Hook.new(2, { "url" => SIBLING_URL }),
+        Hook.new(3, { "url" => OWN_URL })
+      ])
+
+      provision(client)
+      assert_equal 2, @link.reload.webhook_hook_id
+    end
+
+    test "replaces a registration whose hook no longer exists on GitHub" do
+      @link.update!(webhook_hook_id: 999)
+      client = FakeClient.new(hooks: [ Hook.new(3, { "url" => OWN_URL }) ])
+
+      provision(client)
+      assert_equal 3, @link.reload.webhook_hook_id
+    end
+
+    test "registers the hook on every link for the repository" do
+      # Registration must survive the deletion of any single link, or the next
+      # provisioning run would see an unregistered hook and create a duplicate.
+      other = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name
+      )
+      provision(FakeClient.new(hooks: [ Hook.new(8, { "url" => OWN_URL }) ]))
+
+      assert_equal 8, other.reload.webhook_hook_id
     end
 
     test "prefers its own hook over a sibling when both exist" do
@@ -100,12 +166,6 @@ module CollavreGithub
 
       assert_equal [ [ @link, :updated ] ], provision(client)
       assert_equal 3, client.updated.first[:hook_id]
-    end
-
-    test "trailing slashes do not make a sibling look foreign" do
-      client = FakeClient.new(hooks: [ Hook.new(4, { "url" => "#{SIBLING_URL}/" }) ])
-      assert_equal [ [ @link, :shared ] ], provision(client)
-      assert_empty client.created
     end
 
     test "an unrelated hook on the same host is neither reused nor deleted" do
@@ -125,6 +185,15 @@ module CollavreGithub
 
       provision(client)
       assert_equal [ { repo: "owner/repo", hook_id: 6 } ], client.deleted
+    end
+
+    test "a trailing slash does not hide a legacy hook" do
+      # Insignificant to Rails routing, so it must be insignificant here too —
+      # otherwise the repo keeps a duplicate hook forever.
+      client = FakeClient.new(hooks: [ Hook.new(12, { "url" => "#{LEGACY_URL}/" }) ])
+
+      provision(client)
+      assert_equal [ 12 ], client.deleted.map { |d| d[:hook_id] }
     end
 
     test "deletes a legacy hook belonging to another host too" do

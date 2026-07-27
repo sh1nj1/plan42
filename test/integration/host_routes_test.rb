@@ -40,11 +40,12 @@ class HostRoutesTest < ActionDispatch::IntegrationTest
     assert_response :bad_request
   end
 
-  test "legacy singular github webhook route no longer resolves" do
-    # Repos accumulated a hook on each spelling and GitHub delivered every event
-    # to both. Keeping the alias around would let the duplicate hook come back.
+  test "legacy singular github webhook route still resolves" do
+    # Hooks provisioned before the plural path existed still target this URL and
+    # nothing migrates them at deploy time. A 404 here would silently stop
+    # webhook events for every repository the provisioner has not touched since.
     post "/github/webhook", params: {}, as: :json
-    assert_response :not_found
+    assert_response :bad_request
   end
 
   test "oauth protected resource discovery endpoint resolves" do

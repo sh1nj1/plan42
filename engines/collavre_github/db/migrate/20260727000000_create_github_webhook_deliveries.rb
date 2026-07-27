@@ -5,11 +5,17 @@ class CreateGithubWebhookDeliveries < ActiveRecord::Migration[8.1]
   # UNIQUE index therefore collapses both duplicate sources into one processed
   # request. It must live in the DB, not in a process-local cache: multiple app
   # instances share this database and each one receives its own copy.
+  #
+  # `processed_at` is what actually suppresses a redelivery. The row alone only
+  # records that some request claimed the GUID; if that request then died, the
+  # claim must not outlive it, or the redelivery would be answered 200 and the
+  # event dropped for good.
   def change
     create_table :github_webhook_deliveries do |t|
       t.string :delivery_guid, null: false
       t.string :event
       t.datetime :created_at, null: false
+      t.datetime :processed_at
     end
 
     add_index :github_webhook_deliveries, :delivery_guid, unique: true

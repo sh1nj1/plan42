@@ -93,7 +93,111 @@ module CollavreGithub
       end
     end
 
+    # A claim that outlives a failed run is worse than the duplicate it
+    # prevents: the redelivery — GitHub's, or an operator pressing Redeliver —
+    # reuses the GUID, so it would take the duplicate branch, answer 200, and
+    # drop the event permanently.
+    test "a run that raises releases its claim" do
+      guid = "failing-guid"
+      @link.update!(markdown_sync_enabled: true)
+
+      assert_raises(RuntimeError) do
+        CollavreGithub::MarkdownSyncJob.stub(:perform_later, ->(*) { raise "boom" }) do
+          post_push_event(guid: guid)
+        end
+      end
+
+      assert_nil CollavreGithub::WebhookDelivery.find_by(delivery_guid: guid),
+        "a failed run must not leave the GUID claimed"
+    end
+
+    test "a redelivery after a failed run is processed instead of dismissed" do
+      guid = "retry-after-failure"
+      @link.update!(markdown_sync_enabled: true)
+
+      assert_raises(RuntimeError) do
+        CollavreGithub::MarkdownSyncJob.stub(:perform_later, ->(*) { raise "boom" }) do
+          post_push_event(guid: guid)
+        end
+      end
+
+      assert_difference -> { @creative.comments.count }, 1 do
+        post_push_event(guid: guid)
+      end
+      assert_response :ok
+    end
+
+    test "a successful run marks the delivery processed" do
+      post_comment_event(guid: "processed-guid", comment_id: 8)
+
+      delivery = CollavreGithub::WebhookDelivery.find_by(delivery_guid: "processed-guid")
+      assert_not_nil delivery.processed_at
+    end
+
+    test "an abandoned claim is taken over once it goes stale" do
+      # Covers the process that died without running its rescue — SIGKILL, OOM,
+      # worker timeout. Without takeover the GUID answers 200 forever and the
+      # Redeliver button silently does nothing.
+      guid = "abandoned-guid"
+      CollavreGithub::WebhookDelivery.create!(
+        delivery_guid: guid,
+        event: "issue_comment",
+        created_at: (CollavreGithub::WebhookDelivery::STALE_CLAIM_AFTER + 1.minute).ago
+      )
+
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        post_comment_event(guid: guid, comment_id: 9)
+      end
+    end
+
+    test "a fresh claim still in flight is not taken over" do
+      guid = "in-flight-guid"
+      CollavreGithub::WebhookDelivery.create!(
+        delivery_guid: guid, event: "issue_comment", created_at: Time.current
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
+        post_comment_event(guid: guid, comment_id: 10)
+      end
+      assert_response :ok
+    end
+
+    test "a processed delivery is never taken over however old it is" do
+      guid = "long-done-guid"
+      CollavreGithub::WebhookDelivery.create!(
+        delivery_guid: guid,
+        event: "issue_comment",
+        created_at: 30.days.ago,
+        processed_at: 30.days.ago
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
+        post_comment_event(guid: guid, comment_id: 11)
+      end
+    end
+
     private
+
+    def push_payload
+      {
+        ref: "refs/heads/main",
+        pusher: { name: "alice" },
+        commits: [ { id: "abc1234def", message: "work" } ],
+        repository: { full_name: @link.repository_full_name }
+      }.to_json
+    end
+
+    def post_push_event(guid:)
+      payload = push_payload
+      post "/github/webhooks",
+        params: payload,
+        headers: {
+          "Content-Type" => "application/json",
+          "X-GitHub-Event" => "push",
+          "X-GitHub-Delivery" => guid,
+          "X-Hub-Signature-256" => "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
+        }
+    end
 
     def comment_payload(comment_id)
       {

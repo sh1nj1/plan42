@@ -105,15 +105,20 @@ When you link a repository in the integration modal, Collavre automatically crea
 
 ### One Hook Per Repository
 
-`WebhookProvisioner` matches existing hooks on the URL **path**, not the full URL. Several instances of this app (for example a server deployment and a local one) frequently share a database while serving different hostnames; matching on the full URL made each instance treat the others' hooks as foreign and add its own, so GitHub delivered every event once per instance and each PR comment landed in the topic N times.
+When an instance creates a hook it records the GitHub hook id on every `RepositoryLink` for the repository (`webhook_hook_id`). Another instance recognises that hook as its own deployment's and reuses it instead of adding a second one.
 
-Consequences of path matching:
+Several instances of this app (for example a server deployment and a local one) frequently share a database while serving different hostnames. Matching hooks on the full URL made each instance treat the others' as foreign and add its own, so GitHub delivered every event once per instance and each PR comment landed in the topic N times. The recorded id is what identifies a hook as shared — the URL cannot, in either direction:
 
-- An instance that finds a hook on `/github/webhooks` under a different host **reuses** it — no new hook, no URL rewrite (rewriting would break the other instance and start a rewrite war). `pr_monitor` surfaces this as a `webhook_warning`, because the event list on that hook was set by the other instance.
-- Hooks still pointing at the removed singular `/github/webhook` path are **deleted** during provisioning. That route no longer exists, so they can only 404 — and until GitHub disables them they double `pull_request` deliveries.
-- Unlinking a repository deletes only this instance's own hook. A hook belonging to another host is left in place and logged, since it may belong to a separate deployment with its own database.
+- **Path alone is not enough.** A completely separate deployment serves the same `/github/webhooks` path with its own database and its own webhook secret. Deferring to its hook would leave this instance linked on paper and receiving nothing at all, so a hook this database never registered is never reused.
+- **The full URL is too strict.** It is instance-specific, which is what caused the proliferation in the first place.
 
-Inbound deliveries are additionally deduplicated on the `X-GitHub-Delivery` GUID (`github_webhook_deliveries`), which also covers GitHub's redelivery after a 5xx or timeout. The ledger is trimmed daily by `CollavreGithub::WebhookDeliveryPruneJob`.
+Consequences:
+
+- A registered hook under a different host is **reused** — no new hook, no URL rewrite (rewriting would break the other instance and start a rewrite war). `pr_monitor` surfaces this as a `webhook_warning`, because the event list on that hook was set by the other instance.
+- Hooks pointing at the deprecated singular `/github/webhook` path are **deleted** during provisioning. The route still answers so that repositories the provisioner has not touched keep working, but the hook is redundant with the plural one; removing them is what will eventually let the alias route go.
+- Unlinking a repository deletes only this instance's own hook. By then the links carrying the registration are gone, so any remaining hook's owner can no longer be established — it is logged rather than deleted, since it may belong to a separate deployment.
+
+Inbound deliveries are additionally deduplicated on the `X-GitHub-Delivery` GUID (`github_webhook_deliveries`), which also covers redelivery of the same GUID. A claim is released if processing raises, and an unprocessed claim is taken over after `STALE_CLAIM_AFTER` — otherwise a run that died would leave the GUID answering `200` forever and silently swallow every redelivery. The ledger is trimmed daily by `CollavreGithub::WebhookDeliveryPruneJob`.
 
 ### Manual Setup (Fallback)
 

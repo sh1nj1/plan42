@@ -10,10 +10,11 @@ module CollavreGithub
     EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS).freeze
     CONTENT_TYPE = "json".freeze
 
-    # Last path segment of the removed singular `post "webhook"` route. Any hook
-    # still pointing at it is dead and only amplifies deliveries, so it is
-    # deleted during provisioning. Derived from `webhook_url` at runtime so the
-    # engine's mount point stays the single source of truth.
+    # Last path segment of the deprecated singular `post "webhook"` route. The
+    # route still answers so that untouched repositories keep working, but a
+    # hook pointing at it is redundant with the plural one, so provisioning
+    # migrates the repository by deleting it. Derived from `webhook_url` at
+    # runtime so the engine's mount point stays the single source of truth.
     LEGACY_ROUTE_SEGMENT = "webhook".freeze
     ROUTE_SEGMENT = "webhooks".freeze
 
@@ -36,8 +37,8 @@ module CollavreGithub
     #   :updated         - existing hook patched (events/url/secret)
     #   :secret_aligned  - non-primary link with existing hook; only the local
     #                      RepositoryLink secret was aligned. No GitHub call.
-    #   :shared          - another instance of this app already owns a hook on
-    #                      the webhook path under a different host. Nothing was
+    #   :shared          - a hook registered in THIS database already exists, so
+    #                      another instance of this app owns it. Nothing was
     #                      created or edited: creating a second hook would make
     #                      GitHub deliver every event twice, and rewriting the
     #                      sibling's URL would break that instance (and start a
@@ -72,8 +73,24 @@ module CollavreGithub
       hooks = repository_hooks(repository_full_name)
       delete_legacy_hooks(repository_full_name, hooks)
       hook = find_own_hook(hooks)
+      shared = find_shared_hook(hooks, repository_full_name, hook)
+
+      if shared && hook
+        # A leftover from before hooks were registered: this instance owns one
+        # and a sibling owns another, both feeding this database. Inbound
+        # deliveries are already deduplicated by GUID, so the extra hook only
+        # wastes bandwidth — not enough to justify deleting a live hook out
+        # from under whoever created it, but worth surfacing.
+        Rails.logger.warn(
+          "[CollavreGithub] #{repository_full_name} carries both this instance's hook " \
+          "#{hook_url(hook)} and registered hook #{hook_url(shared)}; delete one to stop " \
+          "GitHub sending every delivery twice"
+        )
+      end
 
       if hook
+        register_hook(repository_full_name, hook.id, hooks)
+
         if primary_link && primary_link != link
           align_link_secret(link, primary_link.webhook_secret)
           :secret_aligned
@@ -88,20 +105,23 @@ module CollavreGithub
           align_link_secret(link, secret)
         end
 
-        sibling = find_sibling_hook(hooks)
-        if sibling
-          # The sibling was created by an instance sharing this database, so it
-          # signs with the same RepositoryLink secret and subscribes to the same
-          # event list (`events_for` reads the same rows). Reusing it is safe and
-          # is the only way to keep exactly one hook per repo.
+        if shared
+          # Registered in this database, so the instance that created it reads
+          # the same RepositoryLink rows: same signing secret, same event list
+          # (`events_for` queries those rows). Reusing it is safe and is the
+          # only way to keep exactly one hook per repo.
           Rails.logger.info(
-            "[CollavreGithub] reusing existing #{webhook_path} hook #{hook_url(sibling)} " \
+            "[CollavreGithub] reusing registered hook #{hook_url(shared)} " \
             "for #{repository_full_name}; not creating #{webhook_url}"
           )
           return :shared
         end
 
-        create_webhook(repository_full_name, secret) ? :created : :failed
+        created = create_webhook(repository_full_name, secret)
+        return :failed unless created
+
+        register_hook(repository_full_name, created_hook_id(created), hooks)
+        :created
       end
     rescue Octokit::Error => e
       Rails.logger.warn(
@@ -119,16 +139,20 @@ module CollavreGithub
         client.delete_repository_webhook(repository_full_name, hook.id)
       end
 
-      # Siblings are NOT deleted. A hook on the same path under a different host
-      # usually belongs to another instance of this app — but it may belong to a
-      # separate deployment with its own database, for which this unlink says
-      # nothing. Deleting it would silently break that deployment, so log it
-      # instead of guessing.
-      sibling = find_sibling_hook(hooks)
-      if sibling
+      # Only this instance's own hook is deleted. The registration that would
+      # identify a sibling lives on the repository's links, and this method
+      # only runs once the last of them is gone, so there is no longer any
+      # evidence of who created the remaining hooks. A hook on the same path
+      # under a different host may equally be a sibling instance or a separate
+      # deployment with its own database, for which this unlink says nothing —
+      # deleting it would silently break that deployment. It is reported, not
+      # removed.
+      leftover = find_same_path_hook(hooks)
+      if leftover
         Rails.logger.info(
-          "[CollavreGithub] left sibling hook #{hook_url(sibling)} on #{repository_full_name} " \
-          "in place after unlink; delete it manually if it is no longer in use"
+          "[CollavreGithub] hook #{hook_url(leftover)} on #{repository_full_name} was left in " \
+          "place after unlink: its owner cannot be determined once the links are gone. " \
+          "Delete it manually if no deployment still needs it"
         )
       end
     rescue Octokit::Error => e
@@ -145,23 +169,75 @@ module CollavreGithub
       hooks.find { |hook| hook_url(hook) == webhook_url }
     end
 
-    # A hook on the webhook path under some other host: another instance of this
-    # app. Excludes our own URL so callers can distinguish "mine" from "theirs".
+    # A hook another instance of this app created, identified by the id it
+    # recorded on this repository's links.
     #
-    # Matching on PATH rather than full URL is the fix for hook proliferation:
-    # full-URL matching made every instance sharing a database see its siblings'
-    # hooks as foreign and create its own, so N instances meant N hooks and
-    # GitHub fanned every delivery out N times.
-    def find_sibling_hook(hooks)
+    # Registration is the only positive evidence of shared state, and that is
+    # what makes reuse safe. Matching on the URL path instead would classify a
+    # completely separate deployment's hook as reusable merely because it
+    # serves the same path — that deployment has its own database and its own
+    # webhook secret, so deferring to it would leave this instance receiving no
+    # deliveries at all. Matching on the full URL is the opposite failure and is
+    # the proliferation this fix targets: every instance saw its siblings' hooks
+    # as foreign and created its own, so N instances meant N hooks.
+    #
+    # `own_hook` is excluded so callers can distinguish "mine" from "theirs"
+    # when this instance is itself the registered owner.
+    def find_shared_hook(hooks, repository_full_name, own_hook)
+      registered = registered_hook_id(repository_full_name)
+      return nil if registered.blank?
+
+      hooks.find do |hook|
+        hook.id.to_s == registered.to_s && (own_hook.nil? || hook.id != own_hook.id)
+      end
+    end
+
+    # Reporting only — never a reuse decision. See `remove_webhook`.
+    def find_same_path_hook(hooks)
       hooks.find do |hook|
         url = hook_url(hook)
         url != webhook_url && url_path(url) == webhook_path
       end
     end
 
-    # The singular `/github/webhook` route no longer exists, so these hooks can
-    # only produce 404s — and, until GitHub disables them, duplicate deliveries
-    # alongside the plural hook. Removing them is the point of the cleanup.
+    def registered_hook_id(repository_full_name)
+      CollavreGithub::RepositoryLink
+        .where(repository_full_name: repository_full_name)
+        .where.not(webhook_hook_id: nil)
+        .order(:id)
+        .pick(:webhook_hook_id)
+    end
+
+    # Records the hook so sibling instances can recognise it. Written to every
+    # link for the repository, not just the primary one, so that deleting a
+    # link cannot lose the registration and let the next run create a duplicate.
+    #
+    # Skipped while the registered hook is still live on GitHub: overwriting a
+    # sibling's registration would let the two instances take turns claiming it
+    # and bring the proliferation straight back. A registration whose hook has
+    # since been deleted is stale and gets replaced.
+    def register_hook(repository_full_name, hook_id, hooks)
+      return if hook_id.blank?
+
+      registered = registered_hook_id(repository_full_name)
+      return if registered.to_s == hook_id.to_s
+      return if registered.present? && hooks.any? { |hook| hook.id.to_s == registered.to_s }
+
+      CollavreGithub::RepositoryLink
+        .where(repository_full_name: repository_full_name)
+        .update_all(webhook_hook_id: hook_id)
+    end
+
+    # Octokit returns the created hook; a Client that swallowed the error
+    # returns something without an id, in which case registration is simply
+    # deferred to the next run, which finds the hook by URL.
+    def created_hook_id(created)
+      created.id if created.respond_to?(:id)
+    end
+
+    # Migrates the repository off the deprecated singular `/github/webhook`
+    # path: alongside the plural hook it only produces a duplicate delivery,
+    # and removing it here is what eventually makes the alias route droppable.
     def delete_legacy_hooks(repository_full_name, hooks)
       return if legacy_webhook_path.blank?
 

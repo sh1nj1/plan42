@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_27_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_27_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -315,6 +315,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_27_000000) do
     t.bigint "repository_id"
     t.string "sync_branch"
     t.datetime "updated_at", null: false
+    t.bigint "webhook_hook_id"
     t.string "webhook_secret", null: false
     t.index ["creative_id", "repository_full_name"], name: "index_github_links_on_creative_and_repo", unique: true
     t.index ["creative_id"], name: "index_github_repository_links_on_creative_id"
@@ -328,6 +329,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_27_000000) do
     t.datetime "created_at", null: false
     t.string "delivery_guid", null: false
     t.string "event"
+    t.datetime "processed_at"
     t.index ["created_at"], name: "index_github_webhook_deliveries_on_created_at"
     t.index ["delivery_guid"], name: "index_github_webhook_deliveries_on_delivery_guid", unique: true
   end

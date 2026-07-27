@@ -24,6 +24,40 @@ module CollavreGithub
         return head :ok
       end
 
+      begin
+        process_delivery(event, payload)
+      rescue => e
+        # The claim must not outlive a failed run. This request answers 5xx and
+        # the delivery that follows — GitHub's redelivery, or an operator
+        # pressing Redeliver — carries the SAME GUID. With the row still in
+        # place that redelivery would take the duplicate branch above, answer
+        # 200 and drop the event permanently, which is strictly worse than the
+        # duplicate this ledger exists to prevent.
+        #
+        # Processing is therefore at-least-once: a run that fails halfway can
+        # repeat the side effects it already performed. Wrapping the whole
+        # delivery in one transaction would make it exactly-once but would
+        # break `dispatch_to_channels`, which isolates a broken channel with a
+        # rescue — under Postgres a rescued statement error leaves the
+        # enclosing transaction aborted, so every sibling channel would fail
+        # too. Repeating a comment beats losing the event and taking every
+        # other channel down with it.
+        Rails.logger.error(
+          "[CollavreGithub] delivery #{delivery_guid} (#{event}) failed, releasing claim: #{e.class}: #{e.message}"
+        )
+        CollavreGithub::WebhookDelivery.release(delivery_guid)
+        raise
+      end
+
+      CollavreGithub::WebhookDelivery.mark_processed!(delivery_guid)
+      head :ok
+    rescue JSON::ParserError
+      head :bad_request
+    end
+
+    private
+
+    def process_delivery(event, payload)
       payload = payload.presence || {}
 
       # Process all links for this repo (same repo can be linked to multiple creatives)
@@ -35,13 +69,7 @@ module CollavreGithub
 
       maybe_auto_attach_channel(event, payload)
       dispatch_to_channels(event, payload)
-
-      head :ok
-    rescue JSON::ParserError
-      head :bad_request
     end
-
-    private
 
     # `WebhookProvisioner` auto-subscribes every repo webhook to the events
     # GithubPrChannel needs (`issue_comment`, `pull_request_review`,
