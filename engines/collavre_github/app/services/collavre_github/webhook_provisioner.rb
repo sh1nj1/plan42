@@ -154,10 +154,7 @@ module CollavreGithub
           # miss every later push. Only the URL is preserved: rewriting that to
           # this host would break the sibling and start the two instances
           # flipping it back and forth.
-          Rails.logger.info(
-            "[CollavreGithub] reusing registered hook #{hook_url(shared)} " \
-            "for #{repository_full_name}; not creating #{webhook_url}"
-          )
+          log_shared_hook_reuse(repository_full_name, shared)
           return update_shared_webhook(repository_full_name, shared, secret) ? :shared : :failed
         end
 
@@ -536,6 +533,49 @@ module CollavreGithub
 
     def hook_url(hook)
       normalize_config(hook.config)["url"].to_s
+    end
+
+    # Reuse leaves this instance with no hook of its own: every delivery for the
+    # repository goes to whichever host created it. The registry is claimed
+    # first-come, so that host can be a laptop or a tunnel — and when it goes
+    # away GitHub keeps delivering to a dead URL while no instance receives
+    # anything. Nothing else reports that state: the hook exists, the links are
+    # linked, and the repository simply goes quiet.
+    #
+    # Reusing a hook on this instance's own origin carries none of that (the
+    # deliveries arrive here), so only the cross-host case is raised to `warn`,
+    # together with GitHub's own record of the last delivery to that URL. The
+    # listing already carries it, so this costs no extra API call and turns a
+    # state the setup guide can currently only tell operators to check by hand
+    # on github.com into something greppable in the logs.
+    def log_shared_hook_reuse(repository_full_name, shared)
+      url = hook_url(shared)
+      message = "[CollavreGithub] reusing registered hook #{url} " \
+                "for #{repository_full_name}; not creating #{webhook_url}"
+
+      if same_origin?(url, webhook_url)
+        Rails.logger.info(message)
+        return
+      end
+
+      Rails.logger.warn(
+        "#{message}. This instance will receive no deliveries for that repository; " \
+        "if that host stops answering, none will. GitHub's last delivery to it: " \
+        "#{last_delivery_summary(shared)}"
+      )
+    end
+
+    # Present on every hook GitHub lists. Reported verbatim rather than
+    # interpreted: a failing last delivery is the signal an operator needs, but
+    # which shape GitHub records for an unreachable host is not something this
+    # code can establish, and acting on a guess would rewrite a sibling's URL.
+    def last_delivery_summary(hook)
+      response = hook.respond_to?(:last_response) ? hook.last_response : nil
+      response = normalize_config(response)
+      return "not reported" if response.blank?
+
+      summary = [ response["status"], response["code"] ].compact_blank.join(" ")
+      summary.presence || "not reported"
     end
 
     # Trailing slashes are insignificant to Rails routing but not to string

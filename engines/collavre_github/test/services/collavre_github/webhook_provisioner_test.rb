@@ -2,7 +2,10 @@ require_relative "../../test_helper"
 
 module CollavreGithub
   class WebhookProvisionerTest < ActiveSupport::TestCase
-    Hook = Struct.new(:id, :config)
+    # `last_response` is what GitHub reports for the most recent delivery to a
+    # hook. It rides along on every listing, so the provisioner has it without
+    # asking for it.
+    Hook = Struct.new(:id, :config, :last_response)
 
     # Records every call so tests can assert on what did NOT happen — the whole
     # point of the fix is that a second hook is never created.
@@ -153,6 +156,37 @@ module CollavreGithub
       assert_includes client.updated.first[:events], "push"
       assert_equal SIBLING_URL, client.updated.first[:url], "the sibling's URL must survive"
       assert_empty client.created
+    end
+
+    # Reuse leaves this instance with no hook of its own, so the repository's
+    # deliveries all go to a host this deployment does not control. Nothing else
+    # reports it: the hook exists and the links are linked, so a host that goes
+    # away simply makes the repository go quiet.
+    test "warns when the reused hook is on another host" do
+      @link.update!(webhook_hook_id: 2)
+      client = FakeClient.new(hooks: [
+        Hook.new(2, { "url" => SIBLING_URL }, { "status" => "misdirected_request", "code" => 502 })
+      ])
+
+      log = capture_rails_log(Logger::WARN) { provision(client) }
+
+      assert_includes log, SIBLING_URL
+      assert_includes log, "misdirected_request 502",
+        "GitHub's own record of the last delivery is what tells the two cases apart"
+    end
+
+    # Same host means the deliveries arrive here, so reuse costs nothing and
+    # must not spend a warning — one that fires on the healthy path trains
+    # operators to skip the field entirely.
+    test "does not warn when the reused hook is on this instance's own host" do
+      @link.update!(webhook_hook_id: 2)
+      same_host = "#{OWN_URL}/"
+      client = FakeClient.new(hooks: [ Hook.new(2, { "url" => same_host }) ])
+
+      log = capture_rails_log(Logger::WARN) { provision(client) }
+
+      assert_equal [ [ @link, :shared ] ], provision(client)
+      assert_not_includes log, same_host
     end
 
     # A separate deployment can serve the very same path. It has its own
@@ -506,6 +540,19 @@ module CollavreGithub
     end
 
     private
+
+    # Captured at WARN so the level itself is under test: an informational log
+    # of the same text would leave these assertions unmet.
+    def capture_rails_log(level)
+      io = StringIO.new
+      original = Rails.logger
+      Rails.logger = ActiveSupport::Logger.new(io)
+      Rails.logger.level = level
+      yield
+      io.string
+    ensure
+      Rails.logger = original
+    end
 
     def provision(client, webhook_url: OWN_URL, links: nil)
       CollavreGithub::WebhookProvisioner.new(
