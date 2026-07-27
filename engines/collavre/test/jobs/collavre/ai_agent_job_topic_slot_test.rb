@@ -894,5 +894,63 @@ module Collavre
       context = context_for(comment)
       context.merge("comment" => context["comment"].merge("from_ai" => true))
     end
+
+    # A cron scheduled against Main passes `topic_id: nil`, and the payload used
+    # to repeat that nil while assign_main_topic had already filed the comment
+    # under the real Main row. Before this branch that only made the dispatch
+    # inconsistent; with admission the waiter is *queued* under `topic_id: nil`,
+    # and promotion's refresh looks for comments in the task's own topic, finds
+    # none there, and cancels the scheduled turn without delivering it.
+    #
+    # Driven through the payload CronActionJob actually sends rather than a
+    # hand-built one, since the payload is where the two disagree.
+    #
+    # The occupancy bucket is keyed by that same nil, so the first cost is
+    # upstream of the cancellation: the cron turn does not see the ordinary Main
+    # turn holding the slot at all, and is admitted beside it.
+    def occupied_main_cron_dispatch!
+      main = @creative.main_topic(fallback_user: @user)
+      holder = Task.create!(
+        name: "Main holder", status: "running", trigger_event_name: "comment_created",
+        agent: @agent, topic_id: main.id, creative_id: @creative.id,
+        trigger_event_payload: { "topic" => { "id" => main.id } }
+      )
+
+      payload = nil
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+        CronActionJob.perform_now(
+          creative_id: @creative.id, topic_id: nil,
+          agent_id: @user.id, message: "@#{@agent.name}: scheduled check-in"
+        )
+      end
+
+      AiAgentJob.new.perform(@agent.id, "comment_created", payload.deep_stringify_keys)
+
+      cron_task = Task.where(agent: @agent, creative_id: @creative.id)
+                      .where.not(id: holder.id).sole
+      [ main, holder, cron_task ]
+    end
+
+    test "a Main-topic cron waits for the ordinary Main turn instead of running beside it" do
+      main, _holder, cron_task = occupied_main_cron_dispatch!
+
+      assert_equal "queued", cron_task.status,
+                   "a cron turn must contend for the slot the Main topic already holds"
+      assert_equal main.id, cron_task.topic_id,
+                   "and wait in the topic its trigger was actually filed under"
+    end
+
+    test "a Main-topic cron turn is delivered rather than dropped on promotion" do
+      _main, holder, waiter = occupied_main_cron_dispatch!
+      assert_equal "queued", waiter.status, "premise: the cron turn parked behind the Main turn"
+
+      holder.update!(status: "done")
+      AiAgentJob.stub :perform_later, ->(*) { nil } do
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(waiter.topic_id, @creative.id)
+      end
+
+      assert_not_equal "cancelled", waiter.reload.status,
+                       "the scheduled turn must be delivered, not silently dropped"
+    end
   end
 end

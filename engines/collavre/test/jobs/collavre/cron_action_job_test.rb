@@ -68,5 +68,44 @@ module Collavre
         )
       end
     end
+
+    # `topic_id: nil` describes the cron's *argument*, not the row: the comment
+    # goes through Comment#assign_main_topic, which files it under the
+    # creative's real Main topic. A payload that repeats the argument therefore
+    # names a topic its own comment is not in — and every consumer downstream
+    # (admission, the topic slot, the promotion refresh) believes the payload.
+    test "a Main-topic cron names the topic its comment was filed under" do
+      payload = nil
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+        CronActionJob.perform_now(
+          creative_id: @creative.id,
+          topic_id: nil,
+          agent_id: @agent.id,
+          message: "Main check-in"
+        )
+      end
+
+      comment = @creative.comments.order(:id).last
+      assert_not_nil comment.topic_id,
+                     "assign_main_topic files a topic-less comment under Main"
+      assert_equal comment.topic_id, payload.dig(:topic, :id),
+                   "the dispatch payload must name the topic the comment lives in"
+    end
+
+    # Control: an explicit topic still round-trips. "Always resolve Main" would
+    # pass the test above on its own while sending every cron to the wrong topic.
+    test "an explicit cron topic is dispatched unchanged" do
+      payload = nil
+      SystemEvents::Dispatcher.stub(:dispatch, ->(_event, sent) { payload = sent; [] }) do
+        CronActionJob.perform_now(
+          creative_id: @creative.id,
+          topic_id: @topic.id,
+          agent_id: @agent.id,
+          message: "Topic check-in"
+        )
+      end
+
+      assert_equal @topic.id, payload.dig(:topic, :id)
+    end
   end
 end

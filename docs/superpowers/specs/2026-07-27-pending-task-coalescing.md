@@ -50,12 +50,20 @@ hands one out. Two entry points:
 
 - `TopicSlot.lock!(topic_id, creative_id)` — `SELECT ... FOR UPDATE` on one
   stable row, so admission, promotion, folding and notice posting for one topic
-  scope all serialize against each other. `topic_id: nil` is a real scope (a
-  creative's Main topic) with no topic row, and tasks carry `topic_id` with no
-  foreign key, so a missing topic falls back to the **creative** row. Returning
-  `nil` there would run those paths with no serialization at all — silently the
-  one state the lock exists to prevent. The SQLite visitor drops the lock clause;
-  serialization is a Postgres property.
+  scope all serialize against each other. `topic_id: nil` is **not** the Main
+  topic: `Creative#main_topic` is a real `Topic` row and `Comment#assign_main_topic`
+  files every topic-less comment under it, so any dispatch derived from a comment
+  names a topic. A nil scope is a dispatch with no topic at all; tasks carry
+  `topic_id` with no foreign key, so it falls back to the **creative** row.
+  Returning `nil` there would run those paths with no serialization at all —
+  silently the one state the lock exists to prevent. The SQLite visitor drops the
+  lock clause; serialization is a Postgres property.
+
+  A payload that names `nil` for a comment that *does* have a topic is therefore
+  a bug in the producer, not a scope: it buckets the turn away from the topic's
+  real slot and leaves the promotion refresh re-selecting an anchor from an empty
+  topic. Producers build the topic from the persisted row — `Comment#dispatch_payload`
+  for the ordinary paths, `comment.topic_id` in `CronActionJob`.
 - `TopicSlot.available_for?(agent_id, topic_id, creative_id, context)` —
   occupancy counts `running`/`delegated` **plus** `pending` (claimed, job not
   started) and `pending_approval` (paused, still holding the resource). A free
