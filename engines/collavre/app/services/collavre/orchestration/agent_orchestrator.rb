@@ -287,6 +287,8 @@ module Collavre
         return if review_anchor?(context)
 
         topic_id = context.dig("topic", "id")
+        previous_anchor_id = context.dig("comment", "id")
+        delivered_ids = delivered_comment_ids(task, context)
 
         # ...and a review is no better as a *destination* than as an anchor. The
         # coalescer leaves a queued review alone, so an ordinary waiter promoted
@@ -301,8 +303,18 @@ module Collavre
           .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
           .order(id: :desc)
 
+        # Narrowing the destination closes the door this call site opens, but the
+        # promotion door still moves the anchor onto the newest comment in the
+        # topic — deliberately, since that is the reason the refresh exists. So
+        # ask the question from the delivery side as well: a comment already
+        # handed to this agent is not handed to it again, whichever door moved
+        # the anchor onto it. Asking here rather than at dispatch is what keeps
+        # it loss-free — by promotion time the covering turn's status says
+        # whether it actually delivered anything.
+        scope = scope.where.not(id: delivered_ids) if delivered_ids.any?
+
         if absorbed_only
-          candidate_ids = (Array(context[TaskCoalescer::PAYLOAD_KEY]) + [ context.dig("comment", "id") ])
+          candidate_ids = (Array(context[TaskCoalescer::PAYLOAD_KEY]) + [ previous_anchor_id ])
             .compact.map(&:to_i).uniq
           return if candidate_ids.empty?
 
@@ -320,7 +332,6 @@ module Collavre
         # going to answer. A session-backed agent only receives the :trigger
         # message (SessionContextResolver#incremental_payload), so a silently
         # replaced anchor is a comment the agent never sees at all.
-        previous_anchor_id = context.dig("comment", "id")
         context["comment"] = {
           "id" => latest_comment.id,
           "content" => latest_comment.content,
@@ -336,9 +347,81 @@ module Collavre
         # absorb_into_payload also drops the new anchor from the merged list, so
         # a comment promoted from "merged" back to "trigger" is not sent twice.
         context = TaskCoalescer.absorb_into_payload(context, [ previous_anchor_id ].compact)
+        # The merged list is rendered into the trigger exactly like the anchor, so
+        # keeping the anchor off a delivered comment is only half of it: the
+        # comment the refresh just displaced can itself be one an earlier turn
+        # already answered.
+        if delivered_ids.any?
+          context[TaskCoalescer::PAYLOAD_KEY] = Array(context[TaskCoalescer::PAYLOAD_KEY]) - delivered_ids
+        end
         task.update!(trigger_event_payload: context)
       end
       private_class_method :refresh_deferred_context!
+
+      # Statuses that mean this agent was actually handed the task's trigger.
+      #
+      # `queued` and `pending` are excluded because nothing has been delivered
+      # yet — those are the un-started rows TaskCoalescer folds, and treating a
+      # merely claimed task as an answer is what would make this lossy.
+      # `failed`, `cancelled` and `escalated` are excluded deliberately: a turn
+      # that died may never have delivered anything, so the comments it held
+      # stay answerable. That direction trades a possible duplicate after a
+      # failure for never silencing a comment no task is left to answer.
+      DELIVERED_STATUSES = %w[running delegated pending_approval done].freeze
+
+      # Comment ids this agent has already been given in this topic by a turn that
+      # was not created to answer them. MessageBuilder renders merged blocks into
+      # the trigger exactly like the anchor, so both count as delivery.
+      #
+      # The distinction matters more than the delivery: the ordinary history of a
+      # topic is one comment answered by its own turn, and *that* must silence
+      # nothing, or every waiter standing behind an answered comment would be
+      # cancelled. Two shapes say "this turn was not created for that comment",
+      # and neither needs anything new recorded:
+      #
+      # - it sits in the turn's merged list — coalescing put it there, and the
+      #   task it belonged to was superseded, so this turn is its only delivery;
+      # - it is the anchor but was posted *after* the turn was created — the
+      #   refresh moved the turn onto it, which is the window this closes.
+      #
+      # An anchor older than its own task is that task's original trigger and is
+      # deliberately not counted.
+      #
+      # Scoped by topic and creative, which also keeps workflow subtasks out:
+      # Comments::WorkflowExecutor mints its own trigger comment in the child
+      # creative with topic_id nil, so it can never be mistaken for a delivery of
+      # a comment in this topic. Same trigger_event_name for the same reason
+      # TaskCoalescer folds only within one — a different event over the same
+      # comment is a different question.
+      def self.delivered_comment_ids(task, context)
+        others = Task.where(
+          agent_id: task.agent_id,
+          topic_id: context.dig("topic", "id"),
+          creative_id: context.dig("creative", "id"),
+          trigger_event_name: task.trigger_event_name,
+          status: DELIVERED_STATUSES
+        ).where.not(id: task.id).select(:id, :created_at, :trigger_event_payload)
+
+        anchors = others.filter_map { |other| [ other, anchor_id_in(other) ] }
+                        .reject { |_, anchor_id| anchor_id.nil? }
+        posted_at = Comment.where(id: anchors.map(&:last)).pluck(:id, :created_at).to_h
+
+        acquired_anchors = anchors.filter_map { |other, anchor_id|
+          anchor_id if posted_at[anchor_id] && posted_at[anchor_id] > other.created_at
+        }
+        merged = others.flat_map { |other|
+          Array(other.trigger_event_payload&.dig(TaskCoalescer::PAYLOAD_KEY)).compact.map(&:to_i)
+        }
+
+        (acquired_anchors + merged).uniq
+      end
+      private_class_method :delivered_comment_ids
+
+      def self.anchor_id_in(other)
+        id = other.trigger_event_payload&.dig("comment", "id")
+        id&.to_i
+      end
+      private_class_method :anchor_id_in
 
       def self.review_anchor?(context)
         anchor_id = context.dig("comment", "id")
