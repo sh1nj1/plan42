@@ -114,7 +114,7 @@ Several instances of this app (for example a server deployment and a local one) 
 
 Consequences:
 
-- A registered hook under a different host is **reused** — no new hook, no URL rewrite (rewriting would break the other instance and start a rewrite war). `pr_monitor` surfaces this as a `webhook_warning`, because the event list on that hook was set by the other instance.
+- A registered hook under a different host is **reused** — no new hook, and its events and secret are patched from here. Only the URL is left alone: rewriting it would break the other instance and start the two of them flipping it back and forth. Reuse is not a `webhook_warning`; the hook ends up fully provisioned, and a patch that fails is reported as a provisioning failure instead.
 - Hooks pointing at the deprecated singular `/github/webhook` path are **deleted** during provisioning. The route still answers so that repositories the provisioner has not touched keep working, but the hook is redundant with the plural one; removing them is what will eventually let the alias route go.
 - Unlinking a repository deletes only this instance's own hook. By then the links carrying the registration are gone, so any remaining hook's owner can no longer be established — it is logged rather than deleted, since it may belong to a separate deployment.
 
