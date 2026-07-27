@@ -499,5 +499,129 @@ module Collavre
       assert_equal "queued", shared_waiter.reload.status,
                    "the opt-out's 1:1 must not reach across to the coalescing agent"
     end
+
+    # The waiter commits before its notice goes up, so the blocker can finish in
+    # between and promote it. The drain guard asks the *shared* notice's
+    # question — is anyone still waiting? — and another deferral parking in the
+    # same burst answers yes, so a per-deferral notice goes up for a task that is
+    # already running. Nothing removes it: cleanup_waiter_notice! ran during that
+    # promotion, before this notice existed, and it is the only path that would.
+    #
+    # The promotion is injected at waiting_reason_text, the call this door makes
+    # after its waiter has committed and before the guard takes the lock — the
+    # exact window the report names — and runs through the real
+    # dequeue_next_for_topic rather than flipping a status by hand.
+    test "the late admission door posts no notice once its own waiter has been promoted" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      holder = occupy_slot!
+      sibling = nil
+
+      promote_in_window = lambda do |*args|
+        # Another agent's deferral parks in the same burst, so the topic still
+        # has a queued waiter when the guard asks.
+        sibling ||= Task.create!(
+          name: "Sibling waiter", status: "queued", trigger_event_name: "comment_created",
+          agent: second_agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: context_for(comment("sibling"))
+        )
+        holder.update!(status: "done")
+        AiAgentJob.stub :perform_later, ->(*) { nil } do
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+        end
+        _reason_key, _topic_id, _creative_id = args
+        "another task is running"
+      end
+
+      Orchestration::AgentOrchestrator.stub :waiting_reason_text, promote_in_window do
+        AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("mine")))
+      end
+
+      waiter = Task.where(agent: @agent, topic_id: @topic.id).where.not(id: holder.id).sole
+      assert_equal "pending", waiter.status, "the promotion took this waiter mid-window"
+      assert_equal "queued", sibling.reload.status, "the sibling keeps the topic queue non-empty"
+      assert_not Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                               waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                               waiting_notice_task_id: waiter.id).exists?,
+                 "a notice for a promoted waiter is a stop button nothing can take down"
+    end
+
+    # …and the same question on the enqueue door, which posts its per-deferral
+    # notice after park_waiter has already committed the row.
+    test "the enqueue door posts no per-deferral notice for a waiter already promoted" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      c = comment("mine")
+      orchestrator = Orchestration::AgentOrchestrator.new(
+        event_name: "comment_created", context: context_for(c)
+      )
+      waiter = Task.create!(
+        name: "Waiter", status: "pending", trigger_event_name: "comment_created",
+        agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+        trigger_event_payload: context_for(c)
+      )
+      Task.create!(
+        name: "Sibling waiter", status: "queued", trigger_event_name: "comment_created",
+        agent: second_agent, topic_id: @topic.id, creative_id: @creative.id,
+        trigger_event_payload: context_for(comment("sibling"))
+      )
+
+      orchestrator.send(:post_waiting_notice, @agent,
+                        { timing: :deferred, reason: :topic_concurrency }, waiter: waiter)
+
+      assert_not Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                               waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                               waiting_notice_task_id: waiter.id).exists?,
+                 "the enqueue door has the same window between park_waiter and the notice"
+    end
+
+    # The control the two above need: a waiter that really is still queued gets
+    # its notice, so this is not "stop posting per-deferral notices".
+    test "the enqueue door still posts a per-deferral notice for a queued waiter" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      c = comment("mine")
+      orchestrator = Orchestration::AgentOrchestrator.new(
+        event_name: "comment_created", context: context_for(c)
+      )
+      waiter = Task.create!(
+        name: "Waiter", status: "queued", trigger_event_name: "comment_created",
+        agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+        trigger_event_payload: context_for(c)
+      )
+
+      orchestrator.send(:post_waiting_notice, @agent,
+                        { timing: :deferred, reason: :topic_concurrency }, waiter: waiter)
+
+      assert Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                           waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                           waiting_notice_task_id: waiter.id).exists?,
+             "a real wait still needs its own notice and stop button"
+    end
+
+    # A :delayed notice speaks for no waiter at all — it explains a rate-limited
+    # or busy dispatch that is still going to run — so the waiter guard must not
+    # be what decides whether it appears.
+    test "a delayed notice is posted with no waiter to check" do
+      c = comment("busy")
+      orchestrator = Orchestration::AgentOrchestrator.new(
+        event_name: "comment_created", context: context_for(c)
+      )
+
+      assert_difference -> {
+        Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil)
+               .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%").count
+      }, 1 do
+        orchestrator.send(:post_waiting_notice, @agent, { timing: :delayed, reason: :busy })
+      end
+    end
   end
 end

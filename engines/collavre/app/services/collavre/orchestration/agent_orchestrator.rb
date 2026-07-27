@@ -168,6 +168,38 @@ module Collavre
         end
       end
 
+      # The same guard for a notice that speaks for exactly one waiter.
+      #
+      # "Is anyone still waiting?" is the *shared* notice's question, and it
+      # stays true for as long as any waiter is queued. A per-deferral notice
+      # answers for one — and that one can be promoted between its row
+      # committing and this lock, since the waiter is created and the notice
+      # posted in two steps on both doors. With another deferral parked in the
+      # same burst the topic-wide question then says yes while this waiter's
+      # says no, and the notice goes up offering a stop button for a turn that
+      # is already running.
+      #
+      # Nothing takes it back down. cleanup_waiter_notice! is the only path that
+      # removes one, it runs during the promotion that just happened, and it
+      # matched nothing because the notice did not exist yet; deleting it by
+      # hand cancels nothing either, since a task-scoped notice selects its own
+      # waiter and that waiter is no longer queued.
+      #
+      # Asked under the admission lock, so "still queued" is the promotion's own
+      # before-or-after rather than a guess.
+      def self.with_live_waiter(waiter, creative_id, topic_id, &block)
+        # No waiter to speak for: the topic-wide question is all a caller
+        # without one can be asked.
+        return with_live_topic_wait(creative_id, topic_id, &block) if waiter.nil?
+
+        Comment.transaction do
+          TopicSlot.lock!(topic_id, creative_id)
+          next nil unless Task.where(id: waiter.id, status: "queued").exists?
+
+          yield
+        end
+      end
+
       def self.coalesce_promoted!(task)
         return unless PolicyResolver.new(task.trigger_event_payload || {})
                         .coalesce_pending_tasks_for?(task.agent)
@@ -299,7 +331,7 @@ module Collavre
         if shared
           with_deduped_topic_notice(creative_id, topic_id, &post)
         else
-          with_live_topic_wait(creative_id, topic_id, &post)
+          with_live_waiter(waiter, creative_id, topic_id, &post)
         end
       end
 
@@ -693,7 +725,17 @@ module Collavre
             create_waiting_notice(creative, topic_id, reason_text, deferred: deferred,
                                   shared: true, waiter: waiter)
           end
+        elsif deferred
+          # park_waiter commits the row and this posts its notice afterwards, so
+          # the same window with_live_waiter closes on the late-admission door is
+          # open here too — see that method.
+          self.class.with_live_waiter(waiter, creative_id, topic_id) do
+            create_waiting_notice(creative, topic_id, reason_text, deferred: deferred,
+                                  shared: false, waiter: waiter)
+          end
         else
+          # :delayed. The dispatch is still going to run, so there is no waiter
+          # for this notice to speak for and nothing for the guard to ask about.
           create_waiting_notice(creative, topic_id, reason_text, deferred: deferred,
                                 shared: false, waiter: waiter)
         end

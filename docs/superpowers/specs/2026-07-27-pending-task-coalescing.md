@@ -211,11 +211,20 @@ At most one "⏳" topic-concurrency notice per `(creative, topic)` **when
 coalescing is on**. Coalescing absorbs the waiters behind it, so N notices would
 be N dead ends pointing at one blocker.
 
-- `with_live_topic_wait` (both branches) holds `TopicSlot.lock!` and refuses to
-  post a notice once the queue has drained — removal only happens when a
-  promotion drains a `queued` waiter, so a notice posted after that cleanup
-  describes a wait that is over and nothing will ever take it down.
-- `with_deduped_topic_notice` is that plus the existence check, taken only when
+- `with_live_topic_wait` holds `TopicSlot.lock!` and refuses to post a notice
+  once the queue has drained — removal only happens when a promotion drains a
+  `queued` waiter, so a notice posted after that cleanup describes a wait that is
+  over and nothing will ever take it down.
+- `with_live_waiter` is the same guard asked of **one** waiter, and is what the
+  per-deferral branch of both doors takes. "Is anyone still waiting?" is the
+  shared notice's question; a per-deferral notice answers for the waiter it names,
+  and that waiter can be promoted between its row committing and the notice going
+  up (two steps on both doors). Another deferral parked in the same burst keeps
+  the topic-wide answer `true`, so the narrower question is the one that matches
+  what the notice claims — otherwise the notice offers a stop button for a turn
+  already running, `cleanup_waiter_notice!` has already run and matched nothing,
+  and deleting it by hand cancels nothing either.
+- `with_deduped_topic_notice` is `with_live_topic_wait` plus the existence check, taken only when
   `coalesce_pending_tasks_for?(agent)` is true. Both enqueue doors resolve the
   policy from the dispatch's own context *and its agent*, so a topic where one
   agent coalesces and another does not gets the right answer per dispatch.
