@@ -150,6 +150,56 @@ module Collavre
                         "waiting notice should name the running blocker agent"
       end
 
+      # "One notice per topic" only holds if the existence check and the insert
+      # are one step. The burst this path handles is exactly what breaks a
+      # read-then-write: every deferring worker reads "no notice yet" before any
+      # of them inserts, and the topic collects N dead ends for one blocker.
+      test "the late-defer notice checks and inserts under the admission lock" do
+        topic = Topic.create!(name: "Notice lock topic", creative: @creative, user: @user)
+        # A notice describes a waiter; the same lock also decides whether one is
+        # still waiting, so the queue has to be non-empty for the insert to run.
+        Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        locked_topic_ids = []
+        lock_relation = Struct.new(:sink) do
+          def find_by(id:)
+            sink << id
+            nil
+          end
+        end.new(locked_topic_ids)
+
+        baseline_depth = Comment.connection.open_transactions
+        check_depth = nil
+
+        Topic.stub(:lock, lock_relation) do
+          AgentOrchestrator.stub(:topic_concurrency_notice_exists?, ->(*) {
+            check_depth ||= Comment.connection.open_transactions
+            false
+          }) do
+            AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id)
+          end
+        end
+
+        assert_equal [ topic.id ], locked_topic_ids.uniq,
+                     "the notice must serialize on the same row admission locks"
+        assert_operator check_depth, :>, baseline_depth,
+                        "the existence check must run inside the inserting transaction"
+      end
+
+      test "a second late-defer for the same topic adds no second notice" do
+        topic = Topic.create!(name: "Notice dedup topic", creative: @creative, user: @user)
+        Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+
+        2.times { AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id) }
+
+        notices = @creative.comments.where(topic_id: topic.id, topic_concurrency_defer: true)
+                           .select { |c| c.content.start_with?(Comment::WAITING_NOTICE_PREFIX) }
+        assert_equal 1, notices.size, "one waiting notice per topic, not one per deferral"
+      end
+
       # The waiting notice must expose a stop button for the *blocker* so a user
       # can cancel a hung in-progress task and unstick their deferred waiter.
       # The button targets the running blocker resolved at render time, NOT the
