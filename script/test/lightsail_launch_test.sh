@@ -2670,7 +2670,23 @@ STUB
          RESTORE_ARGS="$work/restore_args" \
          APP_ROLE="${APP_ROLE-collavre_user}" APP_SUPER="${APP_SUPER-f}" \
          APP_DB="${APP_DB-collavre_production}"
-  R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  if [ -n "${RERUN:-}" ]; then
+    # The retry the failure path invites, driven the way it is instructed: the
+    # same shell, the block pasted a second time, with whatever failed the first
+    # time now fixed. Sourced rather than run, because a shell variable
+    # surviving between the two passes is the mechanism under test — the recipe
+    # holds no state anywhere else, so a subshell per pass would model a fresh
+    # shell and the assertion would be about a different instruction.
+    cat > "$work/driver.sh" <<'DRV'
+. ./recipe.sh
+echo "--- pasted again in the same shell ---"
+export FAIL_RESTORE='' FAIL_SHUT='' FAIL_PRIOR_READ='' FAIL_REOPEN='' FAIL_READBACK=''
+. ./recipe.sh
+DRV
+    R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./driver.sh 2>&1)"
+  else
+    R_OUT="$(cd "$work" && PATH="$work/bin:$PATH" bash ./recipe.sh 2>&1)"
+  fi
   R_TRACE="$(paste -sd'|' "$TRACE")"
   # What the database is left at, which is the thing the operator meets at boot
   # — asserted directly rather than inferred from the statements that ran.
@@ -2955,6 +2971,43 @@ chk "not re-opened"              0 "$(grep -cx 'limit:reopened' <<<"${R_TRACE//|
 chk "the cap is untouched"       25 "$R_LIMIT"
 chk "and the ALTER is blamed"    1 "$(grep -c 'did not take' <<<"$R_OUT")"
 unset PRIOR_LIMIT FAIL_SHUT
+
+echo "86o. the retry the failure path invites keeps the cap it printed"
+# The instruction under test is the block's own: "Re-running in THIS shell keeps
+# that value". It is honoured by ${prior_limit:-...} whenever the prior read
+# answered, which is this row.
+PRIOR_LIMIT=50 FAIL_RESTORE=1 RERUN=1 LIVE=0 KILLED=0 run_restore
+chk "first pass leaves it shut"     1 "$(grep -c 'RESTORE FAILED' <<<"$R_OUT")"
+chk "and prints the cap to carry"   1 "$(grep -cF 'prior_limit=50' <<<"$R_OUT")"
+chk "the retry restores the cap"    50 "$R_LIMIT"
+chk "and reports a plain success"   1 "$(grep -c 'app boot' <<<"$R_OUT")"
+unset PRIOR_LIMIT FAIL_RESTORE RERUN
+
+echo "86p. and keeps it when the prior read is the thing that failed"
+# `:-` treats an empty value as unset, so a prior read that failed while the
+# ALTER still took would be re-read on the retry — off a database this block has
+# since shut, which answers 0. The retry then "restores" 0 and reports it as the
+# limit the database carried, on the same paste the message above promised would
+# keep -1. Measured against the revision without the pin: this row ends at 0 and
+# the operator is told the cap is their own.
+PRIOR_LIMIT=50 FAIL_RESTORE=1 FAIL_PRIOR_READ=1 RERUN=1 LIVE=0 KILLED=0 run_restore
+chk "the value it promised"          1 "$(grep -cF 'prior_limit=-1' <<<"$R_OUT")"
+chk "is the value the retry uses"    -1 "$R_LIMIT"
+chk "not shut under a success"       0 "$(grep -c "back at 'CONNECTION LIMIT 0'" <<<"$R_OUT")"
+unset PRIOR_LIMIT FAIL_RESTORE FAIL_PRIOR_READ RERUN
+
+echo "86q. but a refusal that shut nothing still reads the cluster on the retry"
+# The control that shapes the pin, and the reason it is gated on the ALTER's
+# status rather than on "the read came back empty". Here the ALTER never took,
+# so the cap is still in the cluster and still the operator's — pinning -1 for
+# want of a read would lift it on the retry, which is the defect above pointing
+# the other way, and worse: it is reachable on a host where nothing went wrong
+# with the database at all.
+PRIOR_LIMIT=50 FAIL_SHUT=1 FAIL_PRIOR_READ=1 RERUN=1 LIVE=0 KILLED=0 run_restore
+chk "first pass refuses"             1 "$(grep -c 'REFUSING' <<<"$R_OUT")"
+chk "the retry finds the real cap"   50 "$R_LIMIT"
+chk "and needs no note about it"     0 "$(grep -c 'could not read' <<<"$R_OUT")"
+unset PRIOR_LIMIT FAIL_SHUT FAIL_PRIOR_READ RERUN
 
 # --- dedupe_authorized_keys -------------------------------------------------
 #

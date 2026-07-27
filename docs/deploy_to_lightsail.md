@@ -1478,7 +1478,21 @@ fi
 # is one that drifts, and on the failure path it would drift in the direction
 # that throws the value away — `reopen_status` is still its initial 0 there,
 # because nothing ran to change it.
-if [ "$reopen_ran" -eq 1 ] && [ "$reopen_status" -eq 0 ]; then unset prior_limit; fi
+#
+# And on the paths that leave the door shut, the value is pinned to the one the
+# message above printed. `${prior_limit:-...}` treats an empty value as unset,
+# so a prior read that failed while the ALTER still took would be re-read on the
+# retry — off a database this block has since shut, which answers 0. The retry
+# then "restores" 0 and reports it as the cap the database carried, while the
+# message that invited the retry had promised '-1'. Pinning it here keeps that
+# promise; a refusal that never shut anything is deliberately not pinned, since
+# there the cluster still holds the operator's own cap and re-reading it on the
+# retry is the right answer.
+if [ "$reopen_ran" -eq 1 ] && [ "$reopen_status" -eq 0 ]; then
+  unset prior_limit
+elif [ "$shut_applied" -eq 0 ]; then
+  prior_limit=$reopen_limit
+fi
 ```
 
 **`pg_restore --clean` drops every object before recreating it**, so this is the
