@@ -8,6 +8,14 @@ module Collavre
     # matches the same prefix to remove them once the waiter is dequeued.
     WAITING_NOTICE_PREFIX = "⏳"
 
+    # What a waiting notice speaks for, written by the door that posted it.
+    # "topic" is the deduplicated notice coalescing allows a topic exactly one
+    # of; "task" is the per-deferral notice the opt-out posts, which names its
+    # waiter in waiting_notice_task_id. nil is a notice from before this was
+    # recorded — see #cancel_queued_tasks_for_waiting_notice.
+    WAITING_NOTICE_TOPIC = "topic"
+    WAITING_NOTICE_TASK = "task"
+
     # Use non-namespaced partial path for backward compatibility
     def to_partial_path
       "comments/comment"
@@ -346,29 +354,55 @@ module Collavre
     # cancelling every queued task would let a user discard unrelated waiters by
     # dismissing one notice, defeating the opt-out.
     #
+    # Which kind this is comes off the row (waiting_notice_scope), written by
+    # whichever door posted it. It used to be inferred from whether a sibling
+    # notice still stood, on the reasoning that the dedup path allows a topic
+    # exactly one — but the two kinds coexist as soon as the policy differs
+    # between agents or changes while a topic still has waiters, and then the
+    # inference inverts: the shared notice reads as a per-deferral one and takes
+    # down the newest queued waiter, which is very likely the one the *other*
+    # notice speaks for. A row cannot be classified by its neighbours when the
+    # neighbours are a different kind.
+    #
     # Queued only. A task holding the topic slot (pending/running/…) is not
     # waiting on anything; the notice surfaces it separately as
     # topic_blocking_task, with its own stop button.
     def cancel_queued_tasks_for_waiting_notice
-      scope = Task.where(status: "queued", creative_id: creative_id)
-      scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
-      waiters = scope.order(created_at: :desc).to_a
-      waiters = waiters.first(1) unless deduplicated_waiting_notice?
+      waiters =
+        case waiting_notice_scope
+        when WAITING_NOTICE_TASK
+          # Speaks for exactly the waiter it was posted with — and for nothing at
+          # all once that waiter has been folded away or promoted.
+          queued_topic_waiters.select { |task| task.id == waiting_notice_task_id }
+        when WAITING_NOTICE_TOPIC
+          # Every queued waiter in the topic except those a surviving
+          # per-deferral notice still speaks for: the shared notice was never
+          # their signal, and their own stop control is still on screen.
+          claimed = sibling_notice_waiter_ids
+          queued_topic_waiters.reject { |task| claimed.include?(task.id) }
+        else
+          # Posted before this was recorded. Nothing on the row says which kind
+          # it was, so keep the behaviour those notices were created under rather
+          # than guess: widening it would discard work, narrowing it would disarm
+          # the only stop control an in-flight wait has.
+          queued_topic_waiters.first(1)
+        end
+
       waiters.each { |task| task.update!(status: "cancelled") }
     end
 
-    # Was this notice the deduplicated one, standing for every waiter in the
-    # topic, or one of the per-deferral notices the opt-out posts?
-    #
-    # Read off the topic rather than stored on the row: the dedup path allows a
-    # topic exactly one deferred notice, so a sibling still standing here — this
-    # runs after_destroy_commit, with this notice already gone — means this one
-    # was never the topic's only signal. Asked through
-    # AgentOrchestrator.topic_concurrency_notice_exists?, the same predicate that
-    # decides whether to post one, so the two cannot drift apart.
-    def deduplicated_waiting_notice?
-      !Collavre::Orchestration::AgentOrchestrator
-        .topic_concurrency_notice_exists?(creative_id, topic_id)
+    def queued_topic_waiters
+      scope = Task.where(status: "queued", creative_id: creative_id)
+      scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
+      scope.order(created_at: :desc).to_a
+    end
+
+    # Waiter ids a still-standing per-deferral notice represents. Runs
+    # after_destroy_commit, so this notice is already out of the query.
+    def sibling_notice_waiter_ids
+      Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
+                    waiting_notice_scope: WAITING_NOTICE_TASK)
+             .pluck(:waiting_notice_task_id).compact
     end
 
     def dispatch_to_orchestration

@@ -119,6 +119,36 @@ module Collavre
         assert_equal review.id, task.reload.trigger_event_payload.dig("comment", "id"),
           "refreshing the anchor forward turns the review into a plain reply"
         assert_empty merged_ids(task)
+        refute_equal "cancelled", task.status,
+          "revalidating the anchor must not cancel a review that is still deliverable"
+      end
+
+      # Not moving the anchor is not the same as not checking it. The review is
+      # delivered from trigger_event_payload — MessageBuilder renders the cached
+      # anchor content and never re-reads the row — and ReviewHandler#eligible?
+      # only asks whether the *quoted* comment is private, never the request. So
+      # a request withdrawn while it waited is caught on this door or nowhere.
+      test "a review request made private while queued is cancelled, not delivered from cache" do
+        review = review_request("rewrite this in half the words")
+        task = waiter_for(review)
+        review.update!(private: true)
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal "cancelled", task.reload.status,
+          "a withdrawn review request must not still drive an in-place revision"
+      end
+
+      test "a review request moved out of the turn's creative while queued is cancelled" do
+        review = review_request
+        task = waiter_for(review)
+        elsewhere = Creative.create!(description: "Another creative", user: @user)
+        review.update!(creative: elsewhere, topic_id: nil)
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal "cancelled", task.reload.status,
+          "a review that left this turn's scope is no more deliverable than a moved comment"
       end
     end
   end

@@ -113,7 +113,15 @@ to one comment, not one more message in the burst: `AiAgentService` and
 `ResponseFinalizer` read review behaviour off the surviving anchor alone, so
 folding across that boundary degrades an absorbed review into a normal reply and
 lets a surviving review overwrite its quoted comment with text answering an
-unrelated message.
+unrelated message. `refresh_deferred_context!` leaves a review anchor where it
+is for the same reason — but not moving it is not the same as not checking it.
+An ordinary anchor is revalidated by having to be re-selected through the
+eligibility scope, so the review branch asks the same question directly
+(`MergedTriggerComments.in_turn`) and cancels the turn when the answer is no.
+The anchor is the one part of the payload rendered without a filter and
+`ReviewHandler#eligible?` only inspects the *quoted* comment's privacy, so a
+review request withdrawn while it waited would otherwise still be delivered from
+cache and still drive an in-place revision.
 
 ### Call sites
 
@@ -208,21 +216,36 @@ be N dead ends pointing at one blocker.
   promotion drains a `queued` waiter, so a notice posted after that cleanup
   describes a wait that is over and nothing will ever take it down.
 - `with_deduped_topic_notice` is that plus the existence check, taken only when
-  `coalesce_pending_tasks?` is true. Both enqueue doors resolve the policy from
-  the dispatch's own context, so a topic where one agent coalesces and another
-  does not gets the right answer per dispatch.
-- Cleanup is `cleanup_waiting_notices_if_drained!`: promotion removes the notice
-  only after confirming under the topic lock that no `queued` waiter remains.
-  With `topic_max > 1`, promoting one agent can leave another agent's waiter
-  behind, and `coalesce_promoted!` folds same-agent siblings only.
-- `Comment#cancel_queued_tasks_for_waiting_notice` cancels **every** queued
-  waiter in the scope when the deleted notice was the deduplicated one, and
-  falls back to the single newest waiter otherwise. Which kind it was is read off
-  the topic (a sibling notice still standing means this one was never the only
-  signal) via `topic_concurrency_notice_exists?` — the same predicate that
-  decides whether to post one, so the two cannot drift. `queued` only: a
-  `pending`/`running` task is the blocker, not a waiter, and is surfaced
-  separately with its own stop control.
+  `coalesce_pending_tasks_for?(agent)` is true. Both enqueue doors resolve the
+  policy from the dispatch's own context *and its agent*, so a topic where one
+  agent coalesces and another does not gets the right answer per dispatch.
+- **The kind is recorded, not inferred.** `comments.waiting_notice_scope` is
+  `"topic"` for the deduplicated notice and `"task"` for a per-deferral one,
+  which also carries `waiting_notice_task_id`. Classifying by "is a sibling
+  notice still standing?" holds only while a topic has one kind at a time, and
+  the two coexist as soon as the policy differs between agents or changes
+  mid-wait: the shared notice then reads as a per-deferral one and takes down the
+  newest queued waiter — which is very likely the one the *other* notice speaks
+  for. `nil` is a notice posted before this was recorded and keeps the old
+  behaviour; widening it would discard work, narrowing it would disarm the only
+  stop control an in-flight wait has.
+- `topic_concurrency_notice_exists?` counts `"topic"` and legacy notices only. A
+  per-deferral notice speaks for one waiter, so letting it answer would leave a
+  coalescing agent's waiters with no notice whenever an opted-out agent deferred
+  into the topic first.
+- Cleanup is `cleanup_waiting_notices_if_drained!`: promotion removes the
+  *shared* notice only after confirming under the topic lock that no `queued`
+  waiter remains. With `topic_max > 1`, promoting one agent can leave another
+  agent's waiter behind, and `coalesce_promoted!` folds same-agent siblings only.
+  A per-deferral notice is not subject to that question — `cleanup_waiter_notice!`
+  takes down the promoted waiter's own notice unconditionally, or it would keep
+  offering a stop button for a turn that is already running.
+- `Comment#cancel_queued_tasks_for_waiting_notice` cancels, for a `"topic"`
+  notice, every queued waiter in the scope except those a surviving `"task"`
+  notice still speaks for; for a `"task"` notice, exactly its own waiter; and for
+  a legacy one, the single newest waiter. `queued` only: a `pending`/`running`
+  task is the blocker, not a waiter, and is surfaced separately with its own stop
+  control.
 
 ### Message assembly
 
@@ -252,7 +275,12 @@ the single `:trigger` message carries every merged comment.
 ### Policy
 
 `scheduling.coalesce_pending_tasks` (default `true`), reachable as
-`PolicyResolver#coalesce_pending_tasks?`, so a creative or topic can opt out.
+`PolicyResolver#coalesce_pending_tasks_for?(agent)`, so a creative, topic **or
+agent** can opt out. Agent scope is the granularity of the thing being switched —
+coalescing folds same-agent siblings — and `#scheduling_config` excludes agent
+policies by construction, so the agent-less predicate this replaces could only
+ever ignore a User-scoped opt-out. There is deliberately no agent-less variant
+left to fall back to.
 The opt-out is a real configuration with its own semantics, not "the feature
 off": each deferral keeps its own waiter *and* its own notice, and deleting one
 notice cancels one waiter. It does **not** disable `topic_max_concurrent_jobs`,

@@ -128,12 +128,17 @@ module Collavre
         trigger_event_payload: { "comment" => { "id" => 991 } }
       )
 
+      # Which kind of notice this is used to be inferred from whether a sibling
+      # notice survived; it is recorded on the row now, so a hand-built fixture
+      # has to say. The producers writing it is a separate question, and one this
+      # fixture cannot answer — AiAgentJobTopicSlotTest drives the real doors.
       notice = @creative.comments.create!(
         content: "⏳ 대기중",
         topic_id: @topic.id,
         private: false,
         skip_default_user: true,
-        topic_concurrency_defer: true
+        topic_concurrency_defer: true,
+        waiting_notice_scope: Comment::WAITING_NOTICE_TOPIC
       )
 
       notice.destroy!

@@ -362,5 +362,142 @@ module Collavre
                    "both comments were un-started — they belong to one turn"
       assert_equal late.id, claimed.reload.trigger_event_payload.dig("comment", "id")
     end
+
+    # Coalescing folds *same-agent* siblings, so a User-scoped scheduling policy
+    # is where an administrator turns it off for one agent without touching the
+    # others in the topic. PolicyResolver#scheduling_config excludes agent
+    # policies by construction, so asking it was the same as ignoring the opt-out.
+    test "a User-scoped policy turns folding off for that agent" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: @agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("first")))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("second")))
+
+      assert_equal 2, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count,
+                   "an agent-scoped opt-out must reach the folding decision"
+    end
+
+    # …and only for that agent. A fix that simply stopped folding would pass the
+    # test above on its own.
+    test "a User-scoped opt-out leaves the other agents in the topic folding" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("first")))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("second")))
+
+      assert_equal 1, Task.where(agent: @agent, topic_id: @topic.id, status: "queued").count,
+                   "another agent's opt-out must not switch folding off for this one"
+    end
+
+    # A mixed topic — one agent coalescing, one opted out — has both kinds of
+    # notice standing at once. Classifying a notice by whether a sibling survives
+    # then reads the shared one as a per-deferral one and cancels the newest
+    # queued waiter, which is the one the *other* notice speaks for.
+    def mixed_notice_topic!
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("a")))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("b")))
+      AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("c")))
+
+      notices = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                              topic_concurrency_defer: true)
+                       .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+                       .order(:id).to_a
+      assert_equal 2, notices.size,
+                   "the coalescing agent shares one notice; the opt-out posts its own"
+
+      [ notices.first, notices.last,
+        Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole,
+        Task.where(agent: second_agent, topic_id: @topic.id, status: "queued").sole ]
+    end
+
+    # The dedup guard asks whether the topic already has *its* one notice. An
+    # opt-out notice is not that notice, so letting it answer would leave the
+    # coalescing agent's waiter with nothing on screen whenever an opted-out
+    # agent happened to defer into the topic first.
+    test "a per-deferral notice does not suppress the topic's shared notice" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+
+      AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("opt-out first")))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("coalescing second")))
+
+      scopes = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                             topic_concurrency_defer: true)
+                      .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+                      .order(:id).pluck(:waiting_notice_scope)
+      assert_equal [ Comment::WAITING_NOTICE_TASK, Comment::WAITING_NOTICE_TOPIC ], scopes,
+                   "the coalescing agent's waiter needs a notice of the topic's own"
+    end
+
+    test "deleting the shared notice cancels the waiter it stood for, not the opt-out's" do
+      shared, _own_notice, shared_waiter, own_waiter = mixed_notice_topic!
+
+      shared.destroy!
+
+      assert_equal "cancelled", shared_waiter.reload.status,
+                   "the shared notice is the only stop control its waiter has"
+      assert_equal "queued", own_waiter.reload.status,
+                   "a waiter whose own notice is still on screen was never this one's to cancel"
+    end
+
+    # A per-deferral notice speaks for one waiter, so promoting that waiter ends
+    # what it describes. The drained guard is the *shared* notice's question: with
+    # the opt-out and a second waiter still parked, it keeps every notice up —
+    # including one offering a stop button for a task that is already running.
+    test "promoting an opt-out waiter takes its own notice down and leaves the others" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: nil,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      holder = occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("a")))
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("b")))
+      notices = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                              topic_concurrency_defer: true)
+                       .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
+                       .order(:id).to_a
+      waiters = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").order(:id).to_a
+      assert_equal [ 2, 2 ], [ notices.size, waiters.size ]
+
+      holder.update!(status: "done")
+      # Promotion only: without this the promoted job runs inline, finishes, and
+      # drains the queue, which is the case the drained guard already covers.
+      AiAgentJob.stub :perform_later, ->(*) { nil } do
+        Orchestration::AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+      end
+
+      assert_equal "pending", waiters.first.reload.status, "the oldest waiter is the promoted one"
+      assert_equal "queued", waiters.last.reload.status, "the second waiter is still waiting"
+      assert_not Comment.exists?(notices.first.id),
+                 "the promoted waiter's own notice describes a wait that is over"
+      assert Comment.exists?(notices.last.id),
+             "the waiter still queued keeps the notice that speaks for it"
+    end
+
+    test "deleting a per-deferral notice cancels only its own waiter" do
+      _shared, own_notice, shared_waiter, own_waiter = mixed_notice_topic!
+
+      own_notice.destroy!
+
+      assert_equal "cancelled", own_waiter.reload.status
+      assert_equal "queued", shared_waiter.reload.status,
+                   "the opt-out's 1:1 must not reach across to the coalescing agent"
+    end
   end
 end

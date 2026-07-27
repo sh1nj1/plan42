@@ -180,7 +180,7 @@ module Collavre
       end
 
       test "coalescing of un-started tasks is on by default" do
-        assert PolicyResolver.new(@context).coalesce_pending_tasks?
+        assert PolicyResolver.new(@context).coalesce_pending_tasks_for?(@ai_agent)
       end
 
       test "coalescing can be turned off by policy" do
@@ -189,7 +189,22 @@ module Collavre
           config: { "coalesce_pending_tasks" => false }
         )
 
-        assert_not PolicyResolver.new(@context).coalesce_pending_tasks?
+        assert_not PolicyResolver.new(@context).coalesce_pending_tasks_for?(@ai_agent)
+      end
+
+      # Coalescing folds same-agent siblings, so User scope is the granularity
+      # of the switch. scheduling_config excludes agent policies by
+      # construction — reading it here was the same as ignoring the opt-out.
+      test "coalescing can be turned off for one agent by a User-scoped policy" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: "User", scope_id: @ai_agent.id,
+          config: { "coalesce_pending_tasks" => false }
+        )
+        resolver = PolicyResolver.new(@context)
+
+        assert_not resolver.coalesce_pending_tasks_for?(@ai_agent)
+        assert resolver.coalesce_pending_tasks_for?(users(:channel_bot)),
+          "a User-scoped policy must not answer for a different agent"
       end
     end
   end

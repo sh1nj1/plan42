@@ -92,8 +92,21 @@ module Collavre
 
       # Whether un-started tasks for the same agent/topic/creative are folded
       # into a single one (see Orchestration::TaskCoalescer).
-      def coalesce_pending_tasks?
-        scheduling_config["coalesce_pending_tasks"] != false
+      #
+      # Resolved per agent, because that is the granularity of the thing being
+      # switched: coalescing folds *same-agent* siblings, and a User-scoped
+      # scheduling policy is how an administrator turns it off for one agent
+      # without touching the others in the topic. #scheduling_config excludes
+      # agent policies by construction, so asking it here silently ignored that
+      # opt-out on every enqueue, promotion, start and notice path.
+      #
+      # There is deliberately no agent-less variant to fall back to: a second
+      # door onto this question is how the two answers drift, and every caller
+      # has the agent to hand. `nil` is accepted only for a dispatch with no
+      # agent resolved yet, where the global answer is the only one there is.
+      def coalesce_pending_tasks_for?(agent)
+        config = agent ? scheduling_config_for(agent) : scheduling_config
+        config["coalesce_pending_tasks"] != false
       end
 
       # Convenience methods

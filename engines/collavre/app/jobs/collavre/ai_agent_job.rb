@@ -310,10 +310,12 @@ module Collavre
     # any waiters already parked for the same agent/topic/creative, and surface
     # one "⏳" notice for the topic.
     def park_deferred_waiter(waiter, agent, event_name, context, topic_id, creative_id)
-      if Orchestration::PolicyResolver.new(context).coalesce_pending_tasks?
+      if Orchestration::PolicyResolver.new(context).coalesce_pending_tasks_for?(agent)
         Orchestration::TaskCoalescer.coalesce!(waiter)
       end
-      Orchestration::AgentOrchestrator.post_topic_concurrency_notice(creative_id, topic_id, context)
+      Orchestration::AgentOrchestrator.post_topic_concurrency_notice(
+        creative_id, topic_id, context, agent: agent, waiter: waiter
+      )
 
       Rails.logger.info(
         "[AiAgentJob] Deferred agent #{agent.id} into topic #{topic_id} queue as task " \

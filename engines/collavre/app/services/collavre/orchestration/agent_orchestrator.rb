@@ -102,11 +102,20 @@ module Collavre
       end
 
       # Is there already a "⏳" topic-concurrency waiting notice on this
-      # creative/topic? Shared with AiAgentJob's late slot check so both defer
-      # paths post at most one notice per topic.
+      # creative/topic that stands for the topic as a whole? Shared with
+      # AiAgentJob's late slot check so both defer paths post at most one shared
+      # notice per topic.
+      #
+      # A per-deferral notice does not count. It speaks for one waiter, so
+      # letting it suppress the shared one would leave a coalescing agent's
+      # waiters with no notice at all whenever an opted-out agent happened to
+      # defer into the topic first. Notices from before the mode was recorded do
+      # count: they are the topic's only signal, and posting a second one beside
+      # them is the duplication this guard exists to prevent.
       def self.topic_concurrency_notice_exists?(creative_id, topic_id)
         Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: nil,
                       topic_concurrency_defer: true)
+               .where(waiting_notice_scope: [ nil, Comment::WAITING_NOTICE_TOPIC ])
                .where("content LIKE ?", "#{Comment::WAITING_NOTICE_PREFIX}%")
                .exists?
       end
@@ -160,7 +169,8 @@ module Collavre
       end
 
       def self.coalesce_promoted!(task)
-        return unless PolicyResolver.new(task.trigger_event_payload || {}).coalesce_pending_tasks?
+        return unless PolicyResolver.new(task.trigger_event_payload || {})
+                        .coalesce_pending_tasks_for?(task.agent)
 
         TaskCoalescer.coalesce!(task, scope: :all)
       end
@@ -193,7 +203,7 @@ module Collavre
 
         context = task.trigger_event_payload || {}
         return unless context.key?("topic")
-        return unless PolicyResolver.new(context).coalesce_pending_tasks?
+        return unless PolicyResolver.new(context).coalesce_pending_tasks_for?(task.agent)
 
         absorbed = []
         Task.transaction do
@@ -223,15 +233,37 @@ module Collavre
       # that path's own before-or-after rather than a guess: a deferral either
       # commits its waiter before this reads, and keeps its notice, or after, and
       # posts its own.
+      # …but that guard is about the *shared* notice, which is still describing a
+      # real wait for as long as anyone is queued. A per-deferral notice speaks
+      # for one waiter, so it comes down when that waiter leaves the queue and
+      # not a moment later: with the opt-out and two waiters, promoting one
+      # leaves the queue non-empty, and the notice for the task now running would
+      # stay on screen with a stop button for a wait that is over.
       def self.cleanup_waiting_notices_if_drained!(task)
         Comment.transaction do
           TopicSlot.lock!(task.topic_id, task.creative_id)
+          cleanup_waiter_notice!(task)
           next if Task.queued_for_topic(task.topic_id, task.creative_id).exists?
 
           cleanup_waiting_notices!(task)
         end
       end
       private_class_method :cleanup_waiting_notices_if_drained!
+
+      # Remove the per-deferral notice posted for this particular waiter, if it
+      # had one. A shared notice is left alone — it is not this task's to take
+      # down, and the drained check above is the question that governs it.
+      def self.cleanup_waiter_notice!(task)
+        Comment.where(creative_id: task.creative_id, topic_id: task.topic_id, user_id: nil,
+                      waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                      waiting_notice_task_id: task.id)
+               .find_each do |notice|
+          # System promotion, not user abandonment.
+          notice.suppress_waiter_cancellation = true
+          notice.destroy
+        end
+      end
+      private_class_method :cleanup_waiter_notice!
 
       # Post the "⏳ waiting on the topic slot" notice for a deferral raised
       # outside #enqueue_jobs — AiAgentJob's late slot check, which catches
@@ -241,24 +273,30 @@ module Collavre
       # else's to speak for and gets a notice of its own, exactly as
       # #post_waiting_notice does on the enqueue door. Leaving one door
       # deduplicated and the other not is what breaks the opt-out's 1:1.
-      def self.post_topic_concurrency_notice(creative_id, topic_id, context = nil)
+      def self.post_topic_concurrency_notice(creative_id, topic_id, context = nil, agent: nil, waiter: nil)
         return if creative_id.nil?
 
         creative = Creative.find_by(id: creative_id)
         return unless creative
 
         reason_text = waiting_reason_text(:topic_concurrency, topic_id, creative_id)
+        shared = PolicyResolver.new(context || {}).coalesce_pending_tasks_for?(agent)
         post = lambda do
           creative.comments.create!(
             content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
             topic_id: topic_id,
             private: false,
             skip_default_user: true,
-            topic_concurrency_defer: true
+            topic_concurrency_defer: true,
+            # What this notice speaks for, recorded rather than reconstructed
+            # later from whichever siblings survive. See
+            # Comment#cancel_queued_tasks_for_waiting_notice.
+            waiting_notice_scope: shared ? Comment::WAITING_NOTICE_TOPIC : Comment::WAITING_NOTICE_TASK,
+            waiting_notice_task_id: shared ? nil : waiter&.id
           )
         end
 
-        if PolicyResolver.new(context || {}).coalesce_pending_tasks?
+        if shared
           with_deduped_topic_notice(creative_id, topic_id, &post)
         else
           with_live_topic_wait(creative_id, topic_id, &post)
@@ -310,7 +348,20 @@ module Collavre
         # refresh is the other door onto the anchor, and moving it forward turns
         # the in-place revision into a plain reply just as surely. A review
         # answers the comment it quotes or nothing at all, so leave it alone.
-        return if review_anchor?(context)
+        #
+        # "Not moved" is not "not checked", though. An ordinary anchor is
+        # revalidated by having to be re-selected through the eligibility scope
+        # below; a review that skips straight past it keeps whatever
+        # trigger_event_payload cached, and the anchor is the one part of the
+        # payload MessageBuilder renders without a filter. ReviewHandler#eligible?
+        # only asks whether the *quoted* comment is private, so a review request
+        # the user withdrew — or that was moved out of this turn's scope — while
+        # it waited would still be delivered, and still drive an in-place
+        # revision of the agent's comment.
+        if review_anchor?(context)
+          task.update!(status: "cancelled") unless anchor_still_in_turn?(context)
+          return
+        end
 
         topic_id = context.dig("topic", "id")
         previous_anchor_id = context.dig("comment", "id")
@@ -446,6 +497,21 @@ module Collavre
       end
       private_class_method :acquired_anchor_id_in
 
+      # May this turn still deliver the comment it is anchored on?
+      #
+      # Asked through MergedTriggerComments.in_turn — the same predicate the
+      # renderer uses for the merged list and Matcher.permits_assignment? for the
+      # mention — so an anchor cannot be delivered under rules the rest of the
+      # payload is filtered by: public_only, no approval surface, and still in
+      # this turn's creative/topic.
+      def self.anchor_still_in_turn?(context)
+        anchor_id = context.dig("comment", "id")
+        return false if anchor_id.blank?
+
+        AiAgent::MergedTriggerComments.in_turn([ anchor_id ], context).exists?
+      end
+      private_class_method :anchor_still_in_turn?
+
       def self.review_anchor?(context)
         anchor_id = context.dig("comment", "id")
         anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
@@ -540,8 +606,8 @@ module Collavre
             AiAgentJob.perform_later(agent.id, @event_name, @context)
             agent
           when :deferred
-            park_waiter(agent)
-            post_waiting_notice(agent, decision)
+            waiter = park_waiter(agent)
+            post_waiting_notice(agent, decision, waiter: waiter)
             agent
           when :delayed
             AiAgentJob.set(wait: decision[:delay]).perform_later(
@@ -588,7 +654,7 @@ module Collavre
             topic_id: topic_id,
             creative_id: creative_id
           )
-          TaskCoalescer.coalesce!(waiter) if policy_resolver.coalesce_pending_tasks?
+          TaskCoalescer.coalesce!(waiter) if policy_resolver.coalesce_pending_tasks_for?(agent)
         end
 
         waiter
@@ -605,7 +671,7 @@ module Collavre
         )
       end
 
-      def post_waiting_notice(agent, decision)
+      def post_waiting_notice(agent, decision, waiter: nil)
         creative_id = @context.dig("creative", "id")
         topic_id = @context.dig("topic", "id")
         return unless creative_id
@@ -621,16 +687,19 @@ module Collavre
         # Keep exactly one topic-concurrency notice per creative/topic — and take
         # the check and the insert under one lock, since a burst is precisely
         # when an unserialized check reads stale.
-        if deferred && policy_resolver.coalesce_pending_tasks?
+        shared = deferred && policy_resolver.coalesce_pending_tasks_for?(agent)
+        if shared
           self.class.with_deduped_topic_notice(creative_id, topic_id) do
-            create_waiting_notice(creative, topic_id, reason_text, deferred: deferred)
+            create_waiting_notice(creative, topic_id, reason_text, deferred: deferred,
+                                  shared: true, waiter: waiter)
           end
         else
-          create_waiting_notice(creative, topic_id, reason_text, deferred: deferred)
+          create_waiting_notice(creative, topic_id, reason_text, deferred: deferred,
+                                shared: false, waiter: waiter)
         end
       end
 
-      def create_waiting_notice(creative, topic_id, reason_text, deferred:)
+      def create_waiting_notice(creative, topic_id, reason_text, deferred:, shared:, waiter:)
         creative.comments.create!(
           content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
           topic_id: topic_id,
@@ -638,7 +707,12 @@ module Collavre
           skip_default_user: true,
           # Only :deferred queues a topic waiter; mark it so its stop button can
           # target the blocker. :delayed (busy / rate_limited) notices stay false.
-          topic_concurrency_defer: deferred
+          topic_concurrency_defer: deferred,
+          # …and only a :deferred notice speaks for a waiter at all, so only that
+          # one records which. A :delayed notice never reaches
+          # Comment#cancel_queued_tasks_for_waiting_notice.
+          waiting_notice_scope: deferred ? (shared ? Comment::WAITING_NOTICE_TOPIC : Comment::WAITING_NOTICE_TASK) : nil,
+          waiting_notice_task_id: (waiter&.id unless shared)
         )
       end
 
