@@ -2563,12 +2563,11 @@ sysctl --system >/dev/null
 # about either. The only thing that answers is sshd's own resolution of the
 # whole configuration.
 #
-# Refusing rather than warning, and refusing here rather than later: this is the
-# top of step 3, before the deploy account is created, before sudo and docker
-# are granted and before any key is installed, so a run that stops here has
-# changed nothing but the drop-in — and SSH is left exactly as the operator had
-# it, so nobody is locked out by the refusal. The alternative is a run that
-# prints its summary over a host still accepting passwords and root logins.
+# Refusing rather than warning. The first call is at the top of step 3, before
+# the deploy account is created or armed; later calls repeat the same check
+# after each group grant because Match Group is evaluated against the account's
+# membership at connection time. The alternative is a run that prints its
+# summary over a privileged account still accepting passwords.
 #
 # An answer that cannot be read is not the same as a wrong one when a running
 # daemon has just accepted the reload, and is warned about instead. With no
@@ -2590,8 +2589,8 @@ verify_ssh_hardening() {
       "and 'sshd -T -C user=$deploy_user' rejected or could not read the" \
       "configuration on disk." \
       "The next socket-activated connection or reboot would start sshd from" \
-      "that unverified configuration. Nothing has been granted. Run 'sshd -t'" \
-      "to find the error, fix it, and re-run."
+      "that unverified configuration. Provisioning will not continue. Run" \
+      "'sshd -t' to find the error, fix it, and re-run."
     log "WARNING: could not read the effective SSH configuration on this host" \
 	"(\`sshd -T -C user=$deploy_user\` failed), so the hardening above is" \
 	"unverified. Check it by hand: sshd -T -C user=$deploy_user | grep -E" \
@@ -2618,10 +2617,8 @@ verify_ssh_hardening() {
     die "SSH hardening did not take effect: sshd resolves '$key' to '$value'," \
 	"not 'no', even though $conf_dir/sshd_config.d/01-collavre.conf sets" \
 	"it. An earlier global directive or a Match block for '$deploy_user'" \
-	"is overriding it${offender:+ — ${offender}}. Stopping here rather" \
-	"than finishing: nothing has been granted yet and SSH is unchanged," \
-	"so the host stays reachable. Remove or correct that setting and" \
-	"re-run."
+	"is overriding it${offender:+ — ${offender}}. Stopping before any" \
+	"further access is granted. Remove or correct that setting and re-run."
   done
 }
 
@@ -2739,10 +2736,11 @@ reload_ssh_daemon() {
 # refused is the one it will be handed at the next boot, where there is no old
 # process to keep running.
 #
-# Stopping here is the safe end. This is the top of step 3 — the deploy account
-# does not exist yet, nothing has been granted, and SSH is left exactly as the
-# operator had it, so the refusal locks nobody out. That is the same reason
-# verify_ssh_hardening's own die() sits here rather than after the grants.
+# Stopping here is the safe end. This first check is at the top of step 3 — the
+# deploy account does not exist yet, nothing has been granted, and SSH is left
+# exactly as the operator had it, so the refusal locks nobody out. The same
+# verifier runs again immediately after later group changes, when its answer can
+# differ because Match Group has begun to apply.
 SSH_RELOAD_STATE=0
 reload_ssh_daemon || SSH_RELOAD_STATE=$?
 [ "$SSH_RELOAD_STATE" -ne 1 ] || die \
@@ -2920,6 +2918,9 @@ record_deploy_user_grant "$APP_SSH_USER" ||
       "has been granted. Check that $STATE_DIR is writable and has space, then" \
       "re-run."
 usermod -aG sudo "$APP_SSH_USER"
+# Match Group is resolved from the account's current memberships, so the check
+# before user creation cannot see an override that starts applying here.
+verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"
 install -d -m 0755 /etc/sudoers.d
 ensure_sudoers "$APP_SSH_USER"
 
@@ -3480,6 +3481,9 @@ else
   systemctl start docker
 fi
 usermod -aG docker "$APP_SSH_USER"
+# Recheck for the same reason as the sudo grant above. An operator's
+# `Match Group docker` block does not apply until this membership exists.
+verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"
 # Only once the replacement can reach Docker, so an interrupted run never
 # leaves the host with no account that can deploy.
 revoke_prior_deploy_user "$APP_SSH_USER"
@@ -3819,13 +3823,13 @@ log "7/9 firewall"
 # take a VPN, monitoring or IP-allowlist rule with it. Only the rules below are
 # ours to converge.
 # `default deny incoming` changes an already-active firewall immediately, so
-# port 22 must be authorized before that live policy is tightened.
+# every public service must be authorized before that live policy is tightened.
 ensure_ssh_rule
+ufw allow 80/tcp
+ufw allow 443/tcp
 ufw default deny incoming
 ufw default allow outgoing
 
-ufw allow 80/tcp
-ufw allow 443/tcp
 # PostgreSQL is only listening on localhost and the docker bridge, so this rule
 # is defence in depth rather than the only thing keeping it private.
 ensure_ufw_rule postgres \

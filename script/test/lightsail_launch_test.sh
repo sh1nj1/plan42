@@ -845,6 +845,24 @@ else
   fail=1
 fi
 
+echo "26b. web ports are authorized before the live incoming policy is tightened"
+# Existing instances can be serving HTTP(S) only because their current default
+# policy is allow. Changing that live policy before explicit rules exist causes
+# an outage immediately, and an interrupted run leaves it in place.
+fw_http_line="$(printf '%s\n' "$fw_step" |
+		  grep -n '^ufw allow 80/tcp$' | cut -d: -f1)"
+fw_https_line="$(printf '%s\n' "$fw_step" |
+		   grep -n '^ufw allow 443/tcp$' | cut -d: -f1)"
+if [ -n "$fw_http_line" ] && [ -n "$fw_https_line" ] &&
+   [ -n "$fw_deny_line" ] &&
+   [ "$fw_http_line" -lt "$fw_deny_line" ] &&
+   [ "$fw_https_line" -lt "$fw_deny_line" ]; then
+  echo "  ok   the HTTP(S) allow rules precede default deny incoming"
+else
+  echo "  FAIL default deny incoming can take effect before HTTP(S) is authorized"
+  fail=1
+fi
+
 # --- docs/deploy_to_lightsail.md, the SQLite cutover ------------------------
 #
 # This recipe hands the app role SUPERUSER, resets and reloads the production
@@ -5763,8 +5781,28 @@ chk "the sysctl drop-in is staged too"                    1 \
   "$(grep -c "^install_managed_config 'the sysctl drop-in' /etc/sysctl\.d/" "$SRC")"
 chk "and the inert 99- file it replaces is removed"       1 \
   "$(grep -c '^rm -f /etc/ssh/sshd_config\.d/99-collavre\.conf$' "$SRC")"
-chk "and the run reads back what sshd resolved"           1 \
+chk "and the run reads back every relevant user context"  3 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' "$SRC")"
+
+# Match Group is evaluated against the account's memberships at connection
+# time. The pre-grant read-back above cannot see a sudo/docker override for an
+# existing account that does not join those groups until later in this run.
+vh_sudo_grant="$(awk '
+  /^usermod -aG sudo "\$APP_SSH_USER"$/ { f = 1 }
+  f { print }
+  f && /^ensure_sudoers "\$APP_SSH_USER"$/ { exit }
+' "$SRC")"
+vh_docker_grant="$(awk '
+  /^usermod -aG docker "\$APP_SSH_USER"$/ { f = 1 }
+  f { print }
+  f && /^revoke_prior_deploy_user "\$APP_SSH_USER"$/ { exit }
+' "$SRC")"
+chk "sudo-group context is rechecked before passwordless sudo" 1 \
+  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' \
+      <<<"$vh_sudo_grant")"
+chk "docker-group context is rechecked before convergence continues" 1 \
+  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' \
+      <<<"$vh_docker_grant")"
 
 # The claim is about what sshd does with two files, so sshd is asked. The name
 # and the body both come from the script: a harness that wrote its own 01- file
@@ -6107,7 +6145,7 @@ unset RELOAD_OK RELOAD_BAD ACTIVE
 # the function and still swallows its status with `|| true`.
 chk "and the run preserves the reload state"          1 \
   "$(grep -cF 'reload_ssh_daemon || SSH_RELOAD_STATE=$?' "$SRC")"
-chk "and passes it to disk verification"              1 \
+chk "and passes it to every disk verification"        3 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE"' "$SRC")"
 chk "rather than discarding the status"               0 \
   "$(grep -c '^systemctl reload ssh .*|| true$' "$SRC")"
