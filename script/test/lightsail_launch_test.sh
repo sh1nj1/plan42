@@ -6098,6 +6098,28 @@ eval "$saved_log"
 LAUNCH_SETTINGS="$saved_launch_settings"
 rm -rf "$record_dir"
 
+echo "153. the PostgreSQL apt source is installed atomically"
+postgres_source_block="$(
+  awk '
+    /^if ! \[ -d "\/etc\/postgresql\/\$PG_MAJOR\/main" \]; then$/ { f = 1 }
+    f { print }
+    f && /^fi$/ { exit }
+  ' "$SRC"
+)"
+chk "the live source is written through the staging helper" 1 \
+  "$(grep -c "install_managed_config 'the PostgreSQL apt source'" <<<"$postgres_source_block")"
+chk "and never truncated by a heredoc redirection"           0 \
+  "$(grep -c 'cat > /etc/apt/sources.list.d/pgdg.list' <<<"$postgres_source_block")"
+chk "the staged source is installed before apt reads it"     1 \
+  "$(awk '
+      /install_managed_config .*PostgreSQL apt source/ { installed = NR }
+      /apt_get update -y/ { updated = NR }
+      END {
+	if (installed && updated && installed < updated) print 1
+	else print 0
+      }
+    ' <<<"$postgres_source_block")"
+
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
 exit "$fail"

@@ -3410,9 +3410,9 @@ if ! [ -d "/etc/postgresql/$PG_MAJOR/main" ]; then
     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
   # shellcheck disable=SC1091
   . /etc/os-release
-  cat > /etc/apt/sources.list.d/pgdg.list <<EOF
-deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main
-EOF
+  install_managed_config 'the PostgreSQL apt source' \
+    /etc/apt/sources.list.d/pgdg.list \
+    "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main"
   apt_get update -y
   apt_install "postgresql-$PG_MAJOR" "postgresql-client-$PG_MAJOR"
 fi
