@@ -177,6 +177,30 @@ module Collavre
         assert_equal [ first.id ], payload[TaskCoalescer::PAYLOAD_KEY]
       end
 
+      # Re-anchoring picks the newest absorbed comment by id alone. A comment
+      # moved to another creative while the task waited is no longer part of this
+      # turn, but it was still eligible — so the waiter would adopt an anchor
+      # outside its own creative and the reply would be written there, into a
+      # creative the agent may have no share on.
+      test "re-anchoring skips absorbed comments moved out of the creative" do
+        block_topic!
+        first = dispatch_comment("@#{@agent.name}: first")
+        second = dispatch_comment("@#{@agent.name}: second")
+        third = dispatch_comment("@#{@agent.name}: third")
+
+        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+        elsewhere = Creative.create!(description: "Elsewhere", user: @user)
+        second.update!(creative: elsewhere, topic_id: nil)
+
+        third.destroy!
+
+        payload = waiter.reload.trigger_event_payload
+        assert_equal first.id, payload.dig("comment", "id"),
+                     "the moved comment is out of scope; fall back to one still in the creative"
+        refute_includes Array(payload[TaskCoalescer::PAYLOAD_KEY]), second.id,
+                        "a comment in another creative must not stay merged into this turn"
+      end
+
       test "deleting the anchor still cancels a waiter with nothing absorbed" do
         block_topic!
         only = dispatch_comment("@#{@agent.name}: only")

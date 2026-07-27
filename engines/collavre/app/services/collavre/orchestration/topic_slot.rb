@@ -19,8 +19,16 @@ module Collavre
       # (occupancy is counted as topic_id: nil within the creative) but has no
       # topic row to lock — fall back to the creative, which is just as stable
       # and is shared by exactly the dispatches that compete for that slot.
+      # Tasks carry topic_id with no foreign key, so a deleted topic leaves rows
+      # pointing at a row that is gone — and a delayed job can carry that id long
+      # after the fact. Returning the missing topic's nil without trying the
+      # creative would run admission, promotion and notice dedup with no
+      # serialization at all: silently the one state this lock exists to prevent.
       def self.lock!(topic_id, creative_id = nil)
-        return Topic.lock.find_by(id: topic_id) if topic_id
+        if topic_id
+          topic = Topic.lock.find_by(id: topic_id)
+          return topic if topic
+        end
         return Creative.lock.find_by(id: creative_id) if creative_id
 
         nil

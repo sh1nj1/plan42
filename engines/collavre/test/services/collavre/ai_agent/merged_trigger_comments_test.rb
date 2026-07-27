@@ -177,6 +177,66 @@ module Collavre
         assert_includes rendered, "second point"
         refute_match(/omitted/, rendered)
       end
+
+      # Dropping the oldest blocks rests on "the history window carries them
+      # instead" (MessageBuilder#merged_comment_ids). That fallback does not
+      # exist for a session-backed agent: SessionContextResolver
+      # #incremental_payload keeps only the :trigger message, so a block dropped
+      # here is a user comment with no remaining delivery path — the exact loss
+      # the spec built coalescing to prevent. Shrink the blocks instead.
+      test "a session-backed agent keeps every merged comment in the trigger" do
+        @agent.update!(agent_conf: "session:\n  enabled: true\ncontext:\n  chat_history_size: 200")
+        oldest = comment("O" * 150)
+        middle = comment("M" * 150)
+        newest = comment("N" * 150)
+        anchor = comment("anchor")
+
+        blocks = MergedTriggerComments.for(
+          context_with(anchor, [ oldest, middle, newest ]), agent: @agent
+        )
+
+        assert_equal [ oldest.id, middle.id, newest.id ], blocks.filter_map { |b| b.comment&.id },
+                     "no merged comment may be dropped when the trigger is the only channel"
+        assert_operator blocks.sum { |b| b.text.length }, :<=, 200,
+                        "shrinking still has to respect the budget"
+      end
+
+      # The budget loop breaks on the first block that does not fit, so a single
+      # oversized comment left `kept` empty and the method returned nothing but
+      # the omission marker — every merged comment gone, including the newest,
+      # which is the one the anchor is replying to.
+      test "keeps the newest merged comment even when it alone exceeds the budget" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 100")
+        older = comment("O" * 80)
+        newest = comment("N" * 500)
+        anchor = comment("anchor")
+
+        blocks = MergedTriggerComments.for(context_with(anchor, [ older, newest ]), agent: @agent)
+
+        assert_includes blocks.filter_map { |b| b.comment&.id }, newest.id,
+                        "a marker-only result deletes the newest merged comment too"
+        assert_operator blocks.sum { |b| b.text.length }, :<=, 100,
+                        "the surviving block must be trimmed to the budget"
+      end
+
+      # The merged set is read by id alone. A comment moved to another creative
+      # while the task waited (CommentMoveService#perform_move reassigns
+      # creative_id) would still be rendered into this turn's trigger, handing
+      # the agent content — and image attachments — from a creative it may have
+      # no share on. refresh_deferred_context! already scopes its lookup to the
+      # payload's creative/topic; this one has to ask the same question.
+      test "ignores merged comments that no longer belong to the turn's creative" do
+        stayed = comment("still here")
+        moved = comment("moved away")
+        anchor = comment("anchor")
+        other = Creative.create!(description: "Elsewhere", user: @user)
+        moved.update!(creative: other, topic_id: nil)
+
+        blocks = MergedTriggerComments.for(context_with(anchor, [ stayed, moved ]), agent: @agent)
+
+        assert_equal [ stayed.id ], blocks.filter_map { |b| b.comment&.id },
+                     "a comment moved out of the creative is no longer part of this turn"
+      end
     end
   end
 end

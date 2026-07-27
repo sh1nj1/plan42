@@ -254,7 +254,14 @@ module Collavre
       # Anything else in the merge window may have been deleted too. Newest by id:
       # created_at is stamped per writing process, so a burst can carry skewed or
       # tied timestamps (same reason MergedTriggerComments orders by id).
-      replacement = Comment.where(id: merged).order(:id).last
+      #
+      # Scoped to this turn's creative/topic: a merged comment moved elsewhere
+      # while the task waited (CommentMoveService#perform_move reassigns
+      # creative_id) is no longer part of it, and adopting it as the anchor would
+      # point the reply at a creative the agent may have no share on.
+      in_scope = Comment.where(id: merged, creative_id: creative_id, topic_id: topic_id)
+                        .order(:id).to_a
+      replacement = in_scope.last
       return false unless replacement
 
       payload = payload.merge(
@@ -263,12 +270,15 @@ module Collavre
           "content" => replacement.content,
           "user_id" => replacement.user_id
         },
-        "chat" => { "content" => replacement.content }
+        "chat" => { "content" => replacement.content },
+        # Rebuilt from the in-scope ids rather than merged through
+        # absorb_into_payload, which would fold the out-of-scope ones straight
+        # back in from the payload it starts from. The new anchor is excluded so
+        # the promoted comment is not delivered twice.
+        Collavre::Orchestration::TaskCoalescer::PAYLOAD_KEY =>
+          (in_scope.map(&:id) - [ replacement.id ]).sort
       )
       payload = Collavre::SystemEvents::ContextBuilder.reanchor_sender(payload, replacement)
-      # absorb_into_payload drops the new anchor from the merged list so the
-      # promoted comment is not delivered twice.
-      payload = Collavre::Orchestration::TaskCoalescer.absorb_into_payload(payload, merged)
       task.update!(trigger_event_payload: payload)
 
       Rails.logger.info(

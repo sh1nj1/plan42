@@ -169,6 +169,60 @@ module Collavre
         assert_operator check_depth, :>, baseline_depth,
                         "the occupancy check must run inside the claiming transaction"
       end
+
+      # Tasks carry topic_id with no foreign key, so a deleted topic leaves rows
+      # pointing at a row that is gone. `lock!` returned that nil and skipped the
+      # creative fallback entirely — admission, promotion and notice dedup then
+      # run with no serialization at all, which is the failure the lock exists to
+      # prevent rather than a missing niche.
+      test "falls back to the creative row when the topic no longer exists" do
+        missing_topic_id = Topic.maximum(:id).to_i + 1_000
+        locked = []
+        lock_relation = Struct.new(:sink) do
+          def find_by(id:)
+            sink << id
+            nil
+          end
+        end.new(locked)
+
+        Creative.stub(:lock, lock_relation) do
+          TopicSlot.lock!(missing_topic_id, @creative.id)
+        end
+
+        assert_equal [ @creative.id ], locked,
+                     "a stale topic id must still serialize on something stable"
+      end
+
+      # Control: a topic that does exist still locks the topic row, not the
+      # creative — falling back always would serialize unrelated topics against
+      # each other.
+      test "locks the topic row when the topic exists" do
+        locked_topics = []
+        locked_creatives = []
+        # The topic stub must *find* something: returning nil would be the
+        # missing-topic case above, and the fallback firing would be correct.
+        found = Struct.new(:sink, :row) do
+          def find_by(id:)
+            sink << id
+            row
+          end
+        end
+        absent = Struct.new(:sink) do
+          def find_by(id:)
+            sink << id
+            nil
+          end
+        end
+
+        Topic.stub(:lock, found.new(locked_topics, @topic)) do
+          Creative.stub(:lock, absent.new(locked_creatives)) do
+            assert_equal @topic, TopicSlot.lock!(@topic.id, @creative.id)
+          end
+        end
+
+        assert_equal [ @topic.id ], locked_topics
+        assert_empty locked_creatives, "an existing topic must not widen the lock to the creative"
+      end
     end
   end
 end
