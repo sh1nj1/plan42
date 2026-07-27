@@ -5956,10 +5956,13 @@ chk "a socket-activated host with nothing connected"  0 "$(rsd '' ssh '')"
 chk "and a host carrying neither unit"                0 "$(rsd '' '' '')"
 # The finding. Same rc as the row above it, opposite meaning.
 chk "a running daemon that refuses it stops the run"  1 "$(rsd '' ssh ssh)"
+# ssh is absent here and sshd is the one running and refusing, so this also
+# says the fallback does not read the first unit's absence as an all-clear for
+# the second.
 chk "and the same under the sshd name"                1 "$(rsd '' sshd sshd)"
-# ssh absent but sshd running and refusing — the fallback must not read the
-# first unit's absence as an all-clear for the second.
-chk "an absent ssh does not excuse a refusing sshd"   1 "$(rsd '' sshd sshd)"
+# An ssh.service that adopts it while a stale sshd.service sits there refusing:
+# the loop must stop at the first unit that took the reload rather than walk on.
+chk "a unit that adopted it ends the search"          0 "$(rsd ssh sshd ssh)"
 unset -f systemctl
 unset RELOAD_OK RELOAD_BAD ACTIVE
 # Source level: the behavioural rows above all pass on a revision that defines
