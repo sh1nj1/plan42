@@ -19,7 +19,11 @@ module CollavreGithub
       #
       # `head :ok` on a lost claim (not an error status) — GitHub must not
       # retry a delivery that another hook already processed successfully.
-      unless CollavreGithub::WebhookDelivery.claim(delivery_guid, event: event)
+      # The token, not the GUID, is this run's proof of ownership. Ownership can
+      # be taken away mid-run (see WebhookDelivery::STALE_CLAIM_AFTER), so both
+      # the release below and the mark_processed! at the end are scoped to it.
+      claim_token = CollavreGithub::WebhookDelivery.claim(delivery_guid, event: event)
+      unless claim_token
         Rails.logger.info("[CollavreGithub] duplicate delivery #{delivery_guid} (#{event}); skipping")
         return head :ok
       end
@@ -45,11 +49,11 @@ module CollavreGithub
         Rails.logger.error(
           "[CollavreGithub] delivery #{delivery_guid} (#{event}) failed, releasing claim: #{e.class}: #{e.message}"
         )
-        CollavreGithub::WebhookDelivery.release(delivery_guid)
+        CollavreGithub::WebhookDelivery.release(delivery_guid, claim_token)
         raise
       end
 
-      CollavreGithub::WebhookDelivery.mark_processed!(delivery_guid)
+      CollavreGithub::WebhookDelivery.mark_processed!(delivery_guid, claim_token)
       head :ok
     rescue JSON::ParserError
       head :bad_request

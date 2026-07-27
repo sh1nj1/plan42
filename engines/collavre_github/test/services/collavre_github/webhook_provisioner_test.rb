@@ -40,6 +40,28 @@ module CollavreGithub
       end
     end
 
+    # A sibling instance that creates AND registers its own hook in the window
+    # between this instance listing the repository's hooks and recording the one
+    # it just created. Injected rather than sampled: that window is far too
+    # narrow to hit reliably by racing two real provisioning runs.
+    class RacingClient < FakeClient
+      def initialize(sibling_hook:, **kwargs)
+        super(**kwargs)
+        @sibling_hook = sibling_hook
+      end
+
+      def create_repository_webhook(repo, **kwargs)
+        created = super
+        # The sibling's hook is now live on GitHub and registered in the shared
+        # database — neither of which this run's cached listing shows.
+        @hooks = @hooks + [ @sibling_hook ]
+        CollavreGithub::RepositoryLink
+          .where(repository_full_name: repo)
+          .update_all(webhook_hook_id: @sibling_hook.id)
+        created
+      end
+    end
+
     OWN_URL = "https://collavre.com/github/webhooks".freeze
     SIBLING_URL = "https://local.collavre.com/github/webhooks".freeze
     LEGACY_URL = "https://collavre.com/github/webhook".freeze
@@ -267,6 +289,81 @@ module CollavreGithub
       ).remove_for_repositories([ "owner/repo" ])
 
       assert_empty client.deleted
+    end
+
+    test "removal keeps the hook when the surviving link is stored with different casing" do
+      # The link that still needs the hook is spelled differently from the name
+      # being unlinked. Comparing exactly would conclude nothing links the repo
+      # any more and tear down a hook that is still in use.
+      @link.update!(repository_full_name: "Owner/Repo")
+      client = FakeClient.new(hooks: [ Hook.new(11, { "url" => OWN_URL }) ])
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_repositories([ "owner/repo" ])
+
+      assert_empty client.deleted
+    end
+
+    # Two instances provisioning the same repository at once both list no hooks,
+    # both see no registration, and both create one. The registration writes
+    # were plain last-writer-wins, so both hooks stayed live permanently and
+    # every later run could only warn about them.
+    test "deletes the hook it just created when a sibling wins the registration race" do
+      sibling_hook = Hook.new(555, { "url" => SIBLING_URL })
+      client = RacingClient.new(sibling_hook: sibling_hook)
+
+      assert_equal [ [ @link, :shared ] ], provision(client)
+
+      assert_equal 1, client.created.size, "the race is only interesting once both have created"
+      assert_equal [ 101 ], client.deleted.map { |d| d[:hook_id] },
+        "the instance that lost the race must remove the hook it created"
+      assert_equal 555, @link.reload.webhook_hook_id,
+        "the winner's registration must stand"
+    end
+
+    test "a registration whose hook is gone from GitHub is still replaced" do
+      # The counterpart to the race above, and the reason it cannot simply defer
+      # to any registration it finds: a registration left behind by a deleted
+      # hook must not block this instance from creating a working one.
+      @link.update!(webhook_hook_id: 999)
+      client = FakeClient.new
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_equal 1, client.created.size
+      assert_equal 101, @link.reload.webhook_hook_id
+    end
+
+    test "recognises a registered hook through a link stored with different casing" do
+      # GitHub serves one repository whatever the spelling, so both links
+      # describe the same hooks. `repository_full_name` is stored verbatim from
+      # whatever the caller supplied, so an exact match cannot see across them —
+      # it would miss the registration and create a second hook, which is the
+      # proliferation this class exists to prevent.
+      CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "Owner/Repo",
+        webhook_hook_id: 2
+      )
+      client = FakeClient.new(hooks: [ Hook.new(2, { "url" => SIBLING_URL }) ])
+
+      assert_equal [ [ @link, :shared ] ], provision(client)
+      assert_empty client.created, "the differently-cased link's registration must be honoured"
+    end
+
+    test "subscribes to push when a differently-cased link enables markdown sync" do
+      CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "Owner/Repo",
+        markdown_sync_enabled: true
+      )
+      client = FakeClient.new
+
+      provision(client)
+
+      assert_includes client.created.first[:events], "push"
     end
 
     private

@@ -38,26 +38,34 @@ module CollavreGithub
     #   :secret_aligned  - non-primary link with existing hook; only the local
     #                      RepositoryLink secret was aligned. No GitHub call.
     #   :shared          - a hook registered in THIS database already exists, so
-    #                      another instance of this app owns it. No hook was
-    #                      created: a second one would make GitHub deliver every
-    #                      event twice. Its events and secret are refreshed, but
-    #                      its URL is left alone — rewriting that would break the
-    #                      sibling and start a rewrite war between the two.
+    #                      another instance of this app owns it. No hook of this
+    #                      instance's own remains: a second one would make GitHub
+    #                      deliver every event twice. Its events and secret are
+    #                      refreshed, but its URL is left alone — rewriting that
+    #                      would break the sibling and start a rewrite war
+    #                      between the two. Also reported when this run created a
+    #                      hook, lost the registration race to a sibling doing
+    #                      the same concurrently, and deleted the hook it made.
     #   :failed          - Octokit/Faraday error OR Client returned nil
     def ensure_for_links(links)
       links.map { |link| [ link, ensure_webhook(link) ] }
     end
 
     def remove_for_repositories(repositories)
-      # Batch-query to avoid N+1: find all repo names that still have links
+      # Batch-query to avoid N+1: find all repo names that still have links.
+      # Compared case-insensitively — see `links_for`. Matching exactly would
+      # miss a surviving link stored under different casing and tear down a
+      # hook the repository still needs.
+      names = repositories.map { |name| normalize_repository_name(name) }
       linked_names = CollavreGithub::RepositoryLink
-        .where(repository_full_name: repositories)
+        .where("LOWER(repository_full_name) IN (?)", names)
         .distinct
         .pluck(:repository_full_name)
+        .map { |name| normalize_repository_name(name) }
         .to_set
 
       repositories.each do |repository_full_name|
-        next if linked_names.include?(repository_full_name)
+        next if linked_names.include?(normalize_repository_name(repository_full_name))
 
         remove_webhook(repository_full_name)
       end
@@ -146,8 +154,18 @@ module CollavreGithub
         created = create_webhook(repository_full_name, secret)
         return :failed unless created
 
-        register_hook(repository_full_name, created_hook_id(created), hooks)
-        :created
+        created_id = created_hook_id(created)
+        # No id to register with (a Client that swallowed the error): the hook
+        # may well exist, so registration is deferred to the next run, which
+        # finds it by URL. Nothing to undo either way.
+        return :created if created_id.blank?
+        return :created if register_hook(repository_full_name, created_id, hooks)
+
+        # A sibling instance created and registered its own hook while this one
+        # was creating its own. Both feed this database, so keeping both would
+        # double every delivery for good.
+        discard_duplicate_hook(repository_full_name, created_id)
+        :shared
       end
     end
 
@@ -221,9 +239,26 @@ module CollavreGithub
       end
     end
 
-    def registered_hook_id(repository_full_name)
+    # Every link lookup in this class goes through here. GitHub treats
+    # `owner/repo` case-insensitively and serves one repository — and one set of
+    # hooks — regardless of the spelling used, but `repository_full_name` is
+    # stored verbatim from whatever the caller supplied. Two creatives linking
+    # the same repository with different casing therefore produce link rows an
+    # exact match cannot see across, which would hide the registered hook id and
+    # let the next run create a second hook: precisely the proliferation this
+    # class exists to prevent. The webhook controller and pr_monitor already
+    # compare with `LOWER(repository_full_name)`; this matches them.
+    def links_for(repository_full_name)
       CollavreGithub::RepositoryLink
-        .where(repository_full_name: repository_full_name)
+        .where("LOWER(repository_full_name) = ?", normalize_repository_name(repository_full_name))
+    end
+
+    def normalize_repository_name(repository_full_name)
+      repository_full_name.to_s.downcase
+    end
+
+    def registered_hook_id(repository_full_name)
+      links_for(repository_full_name)
         .where.not(webhook_hook_id: nil)
         .order(:id)
         .pick(:webhook_hook_id)
@@ -237,16 +272,66 @@ module CollavreGithub
     # sibling's registration would let the two instances take turns claiming it
     # and bring the proliferation straight back. A registration whose hook has
     # since been deleted is stale and gets replaced.
+    #
+    # Returns whether this database's registration ends up naming `hook_id`.
+    # The caller needs that answer because the read above and the write below
+    # are not one operation: two instances provisioning the same repository at
+    # once both list no hooks, both create one, and both arrive here. The write
+    # is therefore a compare-and-set against the value just read, so only one
+    # can win — the loser's UPDATE matches nothing, because the row it is
+    # testing against has already moved. Without it the two writes were plain
+    # last-writer-wins and both hooks stayed live forever.
     def register_hook(repository_full_name, hook_id, hooks)
-      return if hook_id.blank?
+      return false if hook_id.blank?
 
       registered = registered_hook_id(repository_full_name)
-      return if registered.to_s == hook_id.to_s
-      return if registered.present? && hooks.any? { |hook| hook.id.to_s == registered.to_s }
+      return true if registered.to_s == hook_id.to_s
+      return false if registered.present? && hook_live?(repository_full_name, registered, hooks)
 
-      CollavreGithub::RepositoryLink
-        .where(repository_full_name: repository_full_name)
+      links_for(repository_full_name)
+        .where(webhook_hook_id: [ nil, registered ].uniq)
         .update_all(webhook_hook_id: hook_id)
+
+      # Re-read rather than trust the affected-row count: the rows are only
+      # "ours" if the registration now reads back as this hook.
+      registered_hook_id(repository_full_name).to_s == hook_id.to_s
+    end
+
+    # Is the registered hook still on GitHub?
+    #
+    # `hooks` was listed before this run started creating anything, so a
+    # registration missing from it is NOT proof the hook is gone — a sibling
+    # instance may have created and registered it since. The two cases demand
+    # opposite actions (replace a stale registration; defer to a live one) and
+    # getting either wrong puts a second hook on the repository, so when the
+    # cached listing cannot vouch for it the question is put to GitHub.
+    def hook_live?(repository_full_name, registered, hooks)
+      return true if hooks.any? { |hook| hook.id.to_s == registered.to_s }
+
+      repository_hooks(repository_full_name).any? { |hook| hook.id.to_s == registered.to_s }
+    end
+
+    # Undoes a hook this run created after losing the registration race above.
+    # Leaving it would put two live hooks on the repository permanently — the
+    # next run sees one registered hook and one of its own and can only warn,
+    # since deleting a hook it cannot prove it created is unsafe. Here that
+    # proof exists: this run created this hook seconds ago.
+    #
+    # A failure to delete is logged rather than raised. The hook is real and
+    # working, so the cost is a duplicate delivery, which the GUID ledger
+    # already collapses — not worth failing an otherwise successful provision.
+    def discard_duplicate_hook(repository_full_name, hook_id)
+      Rails.logger.info(
+        "[CollavreGithub] deleting hook #{hook_id} just created for #{repository_full_name}: " \
+        "another instance registered its own hook concurrently"
+      )
+      client.delete_repository_webhook(repository_full_name, hook_id)
+    rescue Octokit::Error => e
+      Rails.logger.warn(
+        "[CollavreGithub] could not delete redundant hook #{hook_id} on " \
+        "#{repository_full_name}: #{e.message}. Delete it manually to stop GitHub " \
+        "sending every delivery twice"
+      )
     end
 
     # Octokit returns the created hook; a Client that swallowed the error
@@ -367,17 +452,14 @@ module CollavreGithub
     end
 
     def events_for(repository_full_name)
-      has_markdown_sync = CollavreGithub::RepositoryLink
-        .where(repository_full_name: repository_full_name, markdown_sync_enabled: true)
+      has_markdown_sync = links_for(repository_full_name)
+        .where(markdown_sync_enabled: true)
         .exists?
       has_markdown_sync ? EVENTS_WITH_PUSH : EVENTS
     end
 
     def primary_link_for(repository_full_name)
-      CollavreGithub::RepositoryLink
-        .where(repository_full_name: repository_full_name)
-        .order(:id)
-        .first
+      links_for(repository_full_name).order(:id).first
     end
 
     def align_link_secret(link, secret)

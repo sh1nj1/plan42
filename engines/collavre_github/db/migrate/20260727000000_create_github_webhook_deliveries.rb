@@ -10,10 +10,16 @@ class CreateGithubWebhookDeliveries < ActiveRecord::Migration[8.1]
   # records that some request claimed the GUID; if that request then died, the
   # claim must not outlive it, or the redelivery would be answered 200 and the
   # event dropped for good.
+  #
+  # `claim_token` identifies WHICH run holds the claim. A run that outlives
+  # STALE_CLAIM_AFTER has its claim taken over by the next delivery of the same
+  # GUID, and without a token the original run's cleanup would act on the GUID
+  # alone and delete the replacement's claim.
   def change
     create_table :github_webhook_deliveries do |t|
       t.string :delivery_guid, null: false
       t.string :event
+      t.string :claim_token
       t.datetime :created_at, null: false
       t.datetime :processed_at
     end
