@@ -433,6 +433,54 @@ refuse_unusable_subnet() {
       "every Docker bridge network."
 }
 
+# refuse_unusable_retention <setting name> <value>
+#
+# BACKUP_RETENTION_DAYS is %q-quoted into the generated backup program and used
+# only there, as `find -mtime "+$RETENTION_DAYS"`. `bash -n` on the staged
+# program parses it fine and the timer is enabled, so nothing on this side of
+# provisioning says anything: the value is first read by GNU find at the hour
+# BACKUP_AT names — 03:30 by default — on a host the summary already reported
+# as converged, hours earlier. Measured by running the
+# generated program with each value, GNU findutils 4.8.0:
+#
+#   BACKUP_RETENTION_DAYS   rc   dumps left       the unit
+#   7                       0    the new dump     green, "backup complete: (4.0K)"
+#   seven                   1    new + the old    RED, invalid argument `+seven'
+#   ''                      1    new + the old    RED, invalid argument `+'
+#   -1                      0    NONE             green, "backup complete: ()"
+#
+# Two bands again, and the loud one is not the dangerous one. `seven` fails
+# every night with the unit red and dumps accumulating until the disk fills —
+# which is the finding, and it is at least visible in `systemctl list-units
+# --failed`. `-1` is the one worth this guard: find takes `+-1`, deletes every
+# dump *including the one just taken*, and the program still exits 0 and prints
+# "backup complete" for a file that is no longer there. A green nightly timer
+# and an empty backup directory is the worst reading of the four.
+#
+# Refused here, before the unit is installed, rather than checked in the
+# generated program: a program that validates its own retention has already
+# taken the dump by the time it can complain, and the only place "nothing has
+# been changed" is true is up here with the other value guards.
+#
+# Whole non-negative integers only. `7.5` happens to work on GNU find and is
+# refused anyway — one spelling, and a retention this script cannot restate as
+# a whole number of days is not one an operator should have to reason about.
+refuse_unusable_retention() {
+  local setting="$1" value="$2"
+  case "$value" in
+    ''|*[!0-9]*) ;;
+    *) return 0 ;;
+  esac
+  die "REFUSING: $setting='$value' is not a whole number of days. It is used" \
+      "as 'find -mtime +$value' in the nightly backup, which provisioning" \
+      "installs and enables without ever running — so this would first be" \
+      "read at $BACKUP_AT, on a host reported as converged. A value find" \
+      "rejects leaves the timer failing every night while dumps accumulate;" \
+      "a negative one is worse, because find accepts it and deletes every" \
+      "dump including the one just taken, while the run still exits 0 and" \
+      "reports 'backup complete'. Nothing has been changed. The default is 7."
+}
+
 # refuse_unparsable_ssh_key
 #
 # SSH_PUBLIC_KEY is appended to authorized_keys verbatim, and its own presence
@@ -548,7 +596,28 @@ refuse_unparsable_ssh_key() {
 refuse_forced_command_ssh_key() {
   local options
   [ -n "$SSH_PUBLIC_KEY" ] || return 0
-  options="${SSH_PUBLIC_KEY%%AAAA*}"
+  # Folded, because sshd matches the option *name* without regard to case and a
+  # case-sensitive test here is a bypass rather than a narrower guard. Measured
+  # against a real sshd, one authorized_keys line at a time, the client asking
+  # for `echo CLIENT-COMMAND-RAN`:
+  #
+  #   authorized_keys line              ssh rc   what actually ran
+  #   command="/usr/bin/true" <key>     0        nothing
+  #   COMMAND="/usr/bin/true" <key>     0        nothing
+  #   CoMmAnD="/usr/bin/true" <key>     0        nothing
+  #   no-pty,COMMAND="/usr/bin/true"    0        nothing
+  #   RESTRICT <key>                    0        the client's command
+  #
+  # The last row is the control and it is why only the name is folded and the
+  # question is still "is this a forced command": an uppercase option is not on
+  # its own a reason to refuse a key sshd is happy to run the client's command
+  # through.
+  #
+  # `tr` rather than `${options,,}`: this suite runs under bash 3.2 on macOS as
+  # well as 5.2 on the host, and the parameter expansion is a 4.0 syntax error
+  # there — the same platform split that made a `head -c 0` fixture pass here
+  # and fail in CI.
+  options="$(printf '%s' "${SSH_PUBLIC_KEY%%AAAA*}" | tr '[:upper:]' '[:lower:]')"
   case "$options" in
     *command=*) ;;
     *) return 0 ;;
@@ -704,6 +773,7 @@ refuse_unusable_db_identifier DB_NAME "$DB_NAME"
 refuse_unusable_db_identifier DB_USER "$DB_USER"
 refuse_unusable_bind_address DB_BIND_ADDRESS "$DB_BIND_ADDRESS"
 refuse_unusable_subnet DOCKER_SUBNETS "$DOCKER_SUBNETS"
+refuse_unusable_retention BACKUP_RETENTION_DAYS "$BACKUP_RETENTION_DAYS"
 refuse_unparsable_ssh_key
 refuse_forced_command_ssh_key
 refuse_root_deploy_user "$APP_SSH_USER"
@@ -813,6 +883,74 @@ stage_beside() {
     return 2
   fi
   printf '%s\n' "$tmp"
+}
+
+# install_managed_config <label> <target> <line>...
+#
+# Write a whole config file this script owns: every line is put in a staging
+# file beside the target, read back, and only then renamed over it, so the live
+# file is never the one being written to. Blank and comment lines are written
+# but not read back — they are not what the file is for.
+#
+# Reading the staged file back is the part that does not follow from "stage and
+# rename", and it is the part the quiet failures need. `printf` can report
+# success for a short write, and both of the states a truncated drop-in leaves —
+# zero bytes, or cut after the first directive — are files every validator
+# accepts. `sshd -t` answers rc=0 for an empty file; so does `jq empty`, which
+# is the same fact the daemon.json rewrite rests on. A validator can say the
+# staged file is a configuration. Only a read-back can say it is *this* one.
+install_managed_config() {
+  local label="$1" target="$2" tmp rc line
+  shift 2
+  # Resolved here, and the rename below goes to the resolved path — the same
+  # thing ensure_block does at its top and the 10-collavre.conf write spells
+  # out as PG_CONF_REAL. stage_beside resolves internally, so renaming onto the
+  # unresolved argument would put the staging file beside the *backing* file
+  # and the finished one beside the link. Two consequences, and the second is
+  # the one this function exists to prevent:
+  #
+  #   target                     after the install
+  #   /etc/plain.conf (control)  rewritten in place, no leftovers
+  #   /etc/link.conf -> /real/backing.conf
+  #                              /etc/link.conf is now a REGULAR FILE
+  #                              /real/backing.conf still holds the old content
+  #
+  # The operator's symlink is replaced, so the file they were editing stops
+  # taking effect. And because the staging file was made beside the resolved
+  # target, a link that crosses a filesystem turns the `mv` into a
+  # copy-then-unlink — the non-atomic write this whole function is here to
+  # avoid, reintroduced on exactly the hosts where the staging is doing
+  # something.
+  #
+  # `|| exit 1` rather than `|| return 1`: resolve_symlink_chain die()s inside
+  # a command substitution, so its exit kills only that subshell. Carrying on
+  # would rename onto an empty path — the same fault ensure_block's case 4b
+  # asserts the status for rather than the message.
+  target="$(resolve_symlink_chain "$target")" || exit 1
+  tmp="$(stage_beside "$target" 0644)"; rc=$?
+  [ "$rc" -eq 0 ] || {
+    die "could not stage $label at $target (stage_beside exited $rc). The" \
+        "live file is left exactly as it was and nothing has been granted."
+  }
+  if ! printf '%s\n' "$@" > "$tmp"; then
+    rm -f "$tmp"
+    die "could not write the staged $label — is the instance out of disk?" \
+        "$target is left as it was."
+  fi
+  for line in "$@"; do
+    case "$line" in ''|'#'*) continue ;; esac
+    grep -qxF "$line" "$tmp" && continue
+    rm -f "$tmp"
+    die "the staged $label came out without '$line' — refusing to install it" \
+        "over $target, which is left as it was. A file that parses is not one" \
+        "that does its job: an empty drop-in passes every validator there is" \
+        "and silently gives back whatever it was supposed to set."
+  done
+  mv -f "$tmp" "$target" || {
+    rm -f "$tmp"
+    die "could not install the staged $label over $target, which is left as" \
+        "it was."
+  }
 }
 
 # Keep a managed block in a config file equal to $content, keyed by a marker.
@@ -2254,14 +2392,21 @@ dpkg-reconfigure -f noninteractive unattended-upgrades
 log "2/9 swap (${SWAP_SIZE_MB}MiB)"
 # --------------------------------------------------------------------------
 ensure_swapfile
-cat > /etc/sysctl.d/99-collavre.conf <<'SYSCTL'
-# Prefer RAM, use swap only under real pressure.
-vm.swappiness = 10
-vm.vfs_cache_pressure = 50
-# Let PostgreSQL bind the docker0 gateway address even when the bridge has not
-# been created yet (PostgreSQL can start before dockerd after a reboot).
-net.ipv4.ip_nonlocal_bind = 1
-SYSCTL
+# Staged and renamed, for the same reason the SSH drop-in in step 3 is. A `>`
+# here truncates the live file before it writes, and a run killed between the
+# two leaves a sysctl drop-in that `sysctl --system` reads without complaint —
+# it applies whichever lines survived and says nothing about the ones that did
+# not. Losing net.ipv4.ip_nonlocal_bind that way is the quiet one: everything
+# works until the next reboot, and then PostgreSQL cannot bind the docker0
+# address if it starts before dockerd, which is the failure the whole
+# DB_BIND_ADDRESS thread on this file is about.
+install_managed_config 'the sysctl drop-in' /etc/sysctl.d/99-collavre.conf \
+  '# Prefer RAM, use swap only under real pressure.' \
+  'vm.swappiness = 10' \
+  'vm.vfs_cache_pressure = 50' \
+  '# Let PostgreSQL bind the docker0 gateway address even when the bridge has' \
+  '# not been created yet (PostgreSQL can start before dockerd after a reboot).' \
+  'net.ipv4.ip_nonlocal_bind = 1'
 sysctl --system >/dev/null
 
 # verify_ssh_hardening [effective config file] [sshd config dir]
@@ -2346,11 +2491,43 @@ install -d -m 0755 /etc/ssh/sshd_config.d
 # was being read the whole time. It lost only the keywords something else had
 # already set — which is every keyword that matters here, on exactly the hosts
 # the existing-instance path exists for.
-cat > /etc/ssh/sshd_config.d/01-collavre.conf <<'SSHD'
-PasswordAuthentication no
-PermitRootLogin no
-KbdInteractiveAuthentication no
-SSHD
+#
+# The drop-in below, and the sysctl one in step 2, go through
+# install_managed_config rather than a `cat >` heredoc, for the reason the
+# daemon.json rewrite and the managed-block append do: `>` truncates before it
+# writes, and a run killed between the two — an OOM kill or an ENOSPC on a
+# 512MB instance — leaves the live drop-in short. Measured against a real sshd,
+# with Ubuntu's 50-cloud-init.conf beside it turning both keywords back on:
+#
+#   01-collavre.conf state   bytes   sshd -t   passwordauth  permitrootlogin
+#   whole                    77      rc=0      no            no
+#   0 bytes (torn at open)    0      rc=0      yes           yes
+#   cut after line 1         26      rc=0      no            yes
+#   cut mid-directive        36      rc=255    -             -
+#   cut mid-value            43      rc=255    -             -
+#
+# Two bands, and only one of them is loud. The bottom rows stop sshd from
+# starting, which locks the host out at its next boot. The middle two are the
+# quiet ones: sshd reads them happily and the hardening is silently reduced or
+# gone entirely, on a host whose provisioning was killed rather than one that
+# reported success — so nothing ever says so.
+#
+# `sshd -t` is what the finding asks for and it cannot close the quiet band: it
+# answers rc=0 for the empty file, which is the state truncate-at-open leaves.
+# That is the same fact the `jq empty` fix two functions over rests on — a
+# validator that asks "is this a configuration" cannot tell a zero-length one
+# from a correct one. So the staged file is asked whether it *says* what it was
+# staged to say, and only then renamed.
+#
+# verify_ssh_hardening below is not a substitute for this and does not overlap
+# it. It reads back sshd's resolution on a run that got that far; the exposure
+# here is a run that did not, and for that the only answer is that the live file
+# was never opened for writing.
+install_managed_config 'the SSH hardening drop-in' \
+  /etc/ssh/sshd_config.d/01-collavre.conf \
+  'PasswordAuthentication no' \
+  'PermitRootLogin no' \
+  'KbdInteractiveAuthentication no'
 # A host provisioned by an earlier version of this script carries the 99- file.
 # It is inert now that 01- sets the same keywords first, and that is the reason
 # to remove it rather than leave it: a file whose every line is overridden is
@@ -2360,7 +2537,63 @@ rm -f /etc/ssh/sshd_config.d/99-collavre.conf
 # sshd_config; without it the drop-in above is silently ignored.
 grep -q '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config 2>/dev/null || \
   log "WARNING: sshd_config has no Include for sshd_config.d — harden SSH by hand"
-systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+# reload_ssh_daemon — reload whichever unit carries sshd; non-zero only when a
+# *running* daemon refused the configuration.
+#
+# `|| true` here used to swallow the status, and the status means two different
+# things. Measured under systemd 252, one unit state per row, with ExecReload
+# standing in for sshd's own accept-or-refuse:
+#
+#   unit state              reload rc   is-active   what it means
+#   inactive                1           inactive    nothing to reload
+#   not found at all        5           inactive    nothing to reload
+#   active, reload ok       0           active      adopted
+#   active, reload refused  1           active      still on the OLD config
+#
+# rc alone cannot separate rows 1 and 4 — both are 1 — and rc 1 on row 1 is the
+# stock state this runbook targets, not an edge case: Ubuntu 24.04's
+# openssh-server enables ssh.socket and leaves ssh.service disabled, so until
+# something connects both `reload ssh` and `reload sshd` fail on a host that is
+# entirely healthy. The next connection starts sshd fresh and the drop-in is
+# already in force. Dying on rc alone would refuse every correctly-provisioned
+# instance — the same over-refusal refuse_nologin_deploy_user and the
+# pg_lsclusters guard each had to be shaped around, and worse than the defect
+# because it fires on every invocation.
+#
+# So the discriminator is whether the unit was active, which is exactly the
+# question "was there a daemon to refuse this". Read from systemctl rather than
+# from the rc or the message: rc 1 is overloaded and the message is localised.
+reload_ssh_daemon() {
+  local unit
+  for unit in ssh sshd; do
+    systemctl reload "$unit" >/dev/null 2>&1 && return 0
+    [ "$(systemctl is-active "$unit" 2>/dev/null)" = active ] && return 1
+  done
+  return 0
+}
+# Fatal, and *before* verify_ssh_hardening rather than folded into it, because
+# on this path that function is answering the wrong question. `sshd -T` re-reads
+# the files on disk; it cannot report what the daemon currently in memory is
+# using. So on a refused reload it confirms the hardening from the very file the
+# daemon just rejected, and the run proceeds to grant docker, passwordless sudo
+# and keys while the live daemon is still on whatever PasswordAuthentication it
+# had. Nothing on the host says so.
+#
+# And the disk state is its own outage in waiting: the configuration sshd
+# refused is the one it will be handed at the next boot, where there is no old
+# process to keep running.
+#
+# Stopping here is the safe end. This is the top of step 3 — the deploy account
+# does not exist yet, nothing has been granted, and SSH is left exactly as the
+# operator had it, so the refusal locks nobody out. That is the same reason
+# verify_ssh_hardening's own die() sits here rather than after the grants.
+reload_ssh_daemon || die \
+  "SSH hardening was written but the running sshd refused to reload it." \
+  "The live daemon is still using the configuration it started with, so the" \
+  "hardening above is NOT in effect — and sshd will be handed the same" \
+  "rejected configuration at the next boot, where no old process survives to" \
+  "keep the host reachable. Nothing has been granted and SSH is unchanged." \
+  "Find the offending directive with 'sshd -t', fix it, and re-run."
 verify_ssh_hardening
 
 # install_deploy_ssh_dir <user> <home> — create <home>/.ssh owned by the
@@ -2626,7 +2859,6 @@ install_authorized_keys() {
       # be cut short, and it lands on the file the operator is logged in with.
       tmp="$(stage_authorized_keys "$auth_keys")" || return 1
       cat "$src" >> "$tmp" || { rm -f "$tmp"; return 1; }
-      install_staged_authorized_keys "$tmp" "$auth_keys" || return 1
       # Record what was copied, or the rotation this documents cannot undo it.
       # `record_ssh_key_grant "$SSH_PUBLIC_KEY"` at the call site is a no-op on
       # this path — the variable is empty, that is what put us here — so the
@@ -2647,9 +2879,32 @@ install_authorized_keys() {
       # the operator's Lightsail key from the account they log in as. Copied
       # keys are this script's to withdraw; a cloud account's own keys are not.
       #
-      # Warned rather than fatal, matching ensure_ufw_rule's marker: the keys
-      # are installed by the time we get here, so dying would leave exactly the
-      # same untracked keys with less said about them.
+      # Before the install, and fatal rather than warned. Recording afterwards
+      # cannot be made safe: by then the keys are authorized on an account this
+      # run is about to give docker and passwordless sudo, and a failed record
+      # leaves them there untracked with only a log line. Measured on the
+      # shipped functions with the state directory unwritable, which is what a
+      # full disk on a 512MB instance looks like from here:
+      #
+      #   record        run 1 rc   queued   authorized after the rotation
+      #   succeeds      0          2        new
+      #   fails         0          0        cloud-1 cloud-2 new
+      #
+      # The second row is the defect the fix above was written for, reached
+      # through its failure path — an rc of 0, a summary that reports a
+      # converged host, and two keys the documented rotation will never
+      # withdraw.
+      #
+      # Ordered this way the two failures are not symmetric, which is why this
+      # order and not the other. Recorded-but-not-installed is harmless: the
+      # revoke loop skips a queued key that is absent from authorized_keys, and
+      # append_state_line dedupes, so the retry after the disk is freed records
+      # nothing twice. Installed-but-not-recorded is the finding.
+      #
+      # Aborting is the safe end here rather than a lesser one: this returns
+      # non-zero, which the call site treats as fatal *before* the sudo and
+      # docker grants, so the host is left exactly as it was and the operator
+      # still reaches it as the cloud user.
       # Guarded on the two state variables the same way install_staged_authorized_keys
       # guards its chown on APP_SSH_USER: this function is called directly by a
       # dozen fixtures that have no state directory and no deploy account, and
@@ -2659,12 +2914,18 @@ install_authorized_keys() {
       if [ -n "${STATE_DIR:-}" ] && [ -n "${APP_SSH_USER:-}" ]; then
         while read -r _copied; do
           case "$_copied" in ''|'#'*) continue ;; esac
-          record_ssh_key_grant "$_copied" ||
-            log "WARNING: copied a key from $candidate but could not record it," \
-                "so a later SSH_PUBLIC_KEY rotation will not withdraw it:" \
-                "${_copied##* }"
+          record_ssh_key_grant "$_copied" || {
+            rm -f "$tmp"
+            log "could not record a key copied from $candidate in" \
+                "$STATE_DIR, so a later SSH_PUBLIC_KEY rotation would leave it" \
+                "authorized on '$APP_SSH_USER' for good: ${_copied##* }." \
+                "Nothing was installed and $auth_keys is untouched — is" \
+                "$STATE_DIR writable, and does the instance have disk left?"
+            return 1
+          }
         done < "$src"
       fi
+      install_staged_authorized_keys "$tmp" "$auth_keys" || return 1
     fi
     return 0
   done

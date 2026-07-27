@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|verify_ssh_hardening|refuse_unusable_retention|install_managed_config|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -43,7 +43,8 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
           resolve_symlink_chain stage_beside stage_authorized_keys \
-          verify_ssh_hardening \
+          verify_ssh_hardening refuse_unusable_retention \
+          install_managed_config reload_ssh_daemon \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -5387,6 +5388,20 @@ else
   # `command=`.
   fcguard "no-pty,command=\"/usr/bin/true\" $FC_KEY"
   chk "and one behind another option"                  1 "$fc_rc"
+  # sshd matches the option *name* without regard to case, so a case-sensitive
+  # test here is a bypass and not a narrower guard. Measured against the same
+  # scratch sshd as the table above, and every one of these suppressed the
+  # client's command while returning 0:
+  #
+  #   COMMAND="/usr/bin/true" <key>      ssh rc=0   nothing ran
+  #   CoMmAnD="/usr/bin/true" <key>      ssh rc=0   nothing ran
+  #   no-pty,COMMAND="/usr/bin/true"     ssh rc=0   nothing ran
+  fcguard "COMMAND=\"/usr/bin/true\" $FC_KEY"
+  chk "an uppercase option name is the same option"    1 "$fc_rc"
+  fcguard "CoMmAnD=\"/usr/bin/true\" $FC_KEY"
+  chk "and a mixed-case one"                           1 "$fc_rc"
+  fcguard "no-pty,COMMAND=\"/usr/bin/true\" $FC_KEY"
+  chk "and an uppercase one behind another option"     1 "$fc_rc"
 
   fcguard "$FC_KEY"
   chk "a plain key still goes through"                 0 "$fc_rc"
@@ -5394,6 +5409,11 @@ else
   chk "and one behind a from= restriction"             0 "$fc_rc"
   fcguard "restrict $FC_KEY"
   chk "and one behind restrict, which runs the command" 0 "$fc_rc"
+  # The control that keeps the fold on the *question* rather than on the guard:
+  # `RESTRICT` is accepted by sshd and runs the client's command, so an
+  # uppercase option is not on its own a reason to refuse anything.
+  fcguard "RESTRICT $FC_KEY"
+  chk "and behind an uppercase restrict, which also runs it" 0 "$fc_rc"
   fcguard ""
   chk "and no key at all"                              0 "$fc_rc"
   # The over-refusal control that decides where the options end. A comment is
@@ -5594,7 +5614,16 @@ chk "and says the hardening is unverified"                1 \
 # Source level, because every row above passes on a revision that writes the
 # drop-in under the losing name and never reads anything back.
 chk "the drop-in is written where it sorts first"         1 \
-  "$(grep -c '^cat > /etc/ssh/sshd_config\.d/01-collavre\.conf <<' "$SRC")"
+  "$(grep -c "^install_managed_config 'the SSH hardening drop-in' \\\\\$" "$SRC")"
+chk "and at the 01- path"                                 1 \
+  "$(grep -c '^  /etc/ssh/sshd_config\.d/01-collavre\.conf \\$' "$SRC")"
+# And that nothing on this path went back to a truncating write. Both drop-ins
+# this script owns are named, because the sysctl one carries
+# net.ipv4.ip_nonlocal_bind and loses it the same way.
+chk "and neither drop-in is written in place"             0 \
+  "$(grep -c '^cat > /etc/\(ssh/sshd_config\.d\|sysctl\.d\)/' "$SRC")"
+chk "the sysctl drop-in is staged too"                    1 \
+  "$(grep -c "^install_managed_config 'the sysctl drop-in' /etc/sysctl\.d/" "$SRC")"
 chk "and the inert 99- file it replaces is removed"       1 \
   "$(grep -c '^rm -f /etc/ssh/sshd_config\.d/99-collavre\.conf$' "$SRC")"
 chk "and the run reads back what sshd resolved"           1 \
@@ -5620,12 +5649,18 @@ else
   mkdir -p "$vhr/sshd_config.d"
   ssh-keygen -q -t ed25519 -N '' -f "$vhr/hk" >/dev/null 2>&1
   printf 'Include %s/sshd_config.d/*.conf\nHostKey %s/hk\n' "$vhr" "$vhr" > "$vhr/sshd_config"
-  # the shipped write, replayed: the file name off the `cat >` line, the body
-  # out of its heredoc
-  vh_name="$(awk '/^cat > \/etc\/ssh\/sshd_config\.d\// { sub(/.*sshd_config\.d\//, ""); sub(/ .*/, ""); print; exit }' "$SRC")"
-  awk '/^cat > \/etc\/ssh\/sshd_config\.d\// { f = 1; next }
-       f && /^SSHD$/ { exit }
-       f' "$SRC" > "$vhr/sshd_config.d/$vh_name"
+  # The shipped write, run rather than replayed: the whole install_managed_config
+  # call is lifted out of the script with only its directory redirected, so the
+  # file name, the body and the staging all come from the script. A harness that
+  # wrote its own 01- file would keep passing after the script went back to 99-.
+  vh_call="$(awk "/^install_managed_config 'the SSH hardening drop-in'/ { f = 1 }
+                  f { print }
+                  f && \$0 !~ /\\\\\$/ { exit }" "$SRC")"
+  eval "$(printf '%s\n' "$vh_call" |
+            sed "s#/etc/ssh/sshd_config\.d/#$vhr/sshd_config.d/#")"
+  vh_name="$(printf '%s\n' "$vh_call" |
+               awk '/\/etc\/ssh\/sshd_config\.d\// {
+                      sub(/.*sshd_config\.d\//, ""); sub(/[ \\].*/, ""); print; exit }')"
   if [ "$(vh_effective "$vhr")" != "no no" ]; then
     echo "  SKIP sshd -T is not usable here — it could not read even the drop-in alone"
   else
@@ -5698,8 +5733,241 @@ chk "a copied cloud key is withdrawn when SSH_PUBLIC_KEY is set" \
 # are not.
 chk "but the cloud user's own keys are left alone" \
   "cloud-1 cloud-2 new | new" "$(key_rotation ubuntu)"
-unset -f chown
+# A failed record must stop the run *before* the keys are authorized, which is
+# the ordering and not just the recording. Reached through record_ssh_key_grant's
+# own failure path, which on a real host is a state directory that cannot be
+# written — an ENOSPC on a 512MB instance:
+#
+#   record        run 1 rc   queued   authorized after the rotation
+#   succeeds      0          2        new
+#   fails         0          0        cloud-1 cloud-2 new     <- reviewed order
+#
+# The second row is the defect the fix above was written for, reached through
+# its failure path: rc 0, a summary reporting a converged host, and two keys the
+# documented rotation will never withdraw — on the account this run is about to
+# give docker and passwordless sudo.
+#
+# The two failures are not symmetric, which is why this order and not the other.
+# Recorded-but-not-installed is harmless: revoke_prior_ssh_key skips a queued key
+# that is absent from authorized_keys, and append_state_line dedupes, so the
+# retry after the disk is freed records nothing twice.
+# shellcheck disable=SC2329  # the failure seam, restored below
+record_ssh_key_grant() { return 1; }
+kf="$kd/failed"; mkdir -p "$kf/ubuntu/.ssh" "$kf/collavre/.ssh" "$kd/state.failed"
+printf '%s\n%s\n' "$K1" "$K2" > "$kf/ubuntu/.ssh/authorized_keys"
+: > "$kf/collavre/.ssh/authorized_keys"
+# shellcheck disable=SC2329  # called by install_staged_authorized_keys
+chown() { :; }
+STATE_DIR="$kd/state.failed" APP_SSH_USER=collavre SSH_PUBLIC_KEY=''
+( install_authorized_keys "$kf/collavre/.ssh/authorized_keys" "$kf" ) >/dev/null 2>&1
+chk "a record that fails installs nothing"  "0" \
+  "$(grep -c . "$kf/collavre/.ssh/authorized_keys")"
+chk "and leaves no staging file behind"     "0" \
+  "$(ls -A "$kf/collavre/.ssh" | grep -c collavre)"
+STATE_DIR="$kd/state.failed" APP_SSH_USER=collavre SSH_PUBLIC_KEY=''
+( install_authorized_keys "$kf/collavre/.ssh/authorized_keys" "$kf" ) >/dev/null 2>&1
+chk "and the run is told, rather than reporting a converged host" 1 "$?"
+unset -f record_ssh_key_grant chown
+eval "$(awk '/^record_ssh_key_grant\(\) \{/ { f = 1 } f { print } f && /^\}/ { f = 0 }' "$SRC")"
 rm -rf "$kd"
+
+echo "148. a torn write cannot reach a drop-in this script owns"
+# `cat > /etc/ssh/sshd_config.d/01-collavre.conf <<'SSHD'` truncates the live
+# file before it writes, so a run killed between the two — an OOM kill or an
+# ENOSPC on a 512MB instance — leaves the live drop-in short. Measured against a
+# real sshd, with Ubuntu's 50-cloud-init.conf beside it turning both keywords
+# back on:
+#
+#   01-collavre.conf state   bytes   sshd -t   passwordauth  permitrootlogin
+#   whole                    77      rc=0      no            no
+#   0 bytes (torn at open)    0      rc=0      yes           yes
+#   cut after line 1         26      rc=0      no            yes
+#   cut mid-directive        36      rc=255    -             -
+#
+# Two bands, and only the bottom one is loud: it stops sshd from starting, which
+# locks the host out at its next boot. The middle two are the quiet ones — sshd
+# reads them happily and the hardening is silently reduced or gone, on a host
+# whose provisioning was killed rather than one that reported success.
+#
+# `sshd -t` is what the finding asks for and it cannot close the quiet band: it
+# answers rc=0 for the empty file, which is exactly what truncate-at-open leaves.
+# So the staged file is asked whether it *says* what it was staged to say.
+imcd=$(mktemp -d)
+imc_mode=whole
+# Only the multi-line write is intercepted — stage_beside returns its path
+# through a one-argument printf, and swallowing that would model a failure that
+# is not the one under test.
+printf() {
+  if [ "$imc_mode" != whole ] && [ "$#" -gt 2 ]; then
+    case "$imc_mode" in
+      short) builtin printf '%s\n' "$2" ;;   # a short write that reported success
+      empty) : ;;                            # opened, then nothing landed
+      fail) return 1 ;;
+    esac
+    return 0
+  fi
+  builtin printf "$@"
+}
+imc_run() { # <mode> -> "<live lines> <hardened> <strays> <rc>"
+  imc_mode=whole
+  builtin printf 'PasswordAuthentication yes\n' > "$imcd/dropin"
+  imc_mode="$1"
+  ( install_managed_config 'the drop-in' "$imcd/dropin" \
+      'PasswordAuthentication no' 'PermitRootLogin no' ) >/dev/null 2>&1
+  local rc=$?
+  imc_mode=whole
+  echo "$(grep -c . "$imcd/dropin") $(grep -c '^PasswordAuthentication no$' "$imcd/dropin") $(ls -A "$imcd" | grep -c collavre) $rc"
+}
+chk "an uninterrupted write installs the whole drop-in"  "2 1 0 0" "$(imc_run whole)"
+# The quiet band. Both of these are files every validator accepts, and both are
+# refused here because the question asked is what the file says.
+chk "a write cut after the first line installs nothing"  "1 0 0 1" "$(imc_run short)"
+chk "and one that landed empty is refused too"           "1 0 0 1" "$(imc_run empty)"
+chk "and a write that fails outright"                    "1 0 0 1" "$(imc_run fail)"
+# Comment and blank lines are written but not read back — they are not what the
+# file is for. The sysctl drop-in carries both, so this is a control on it
+# rather than a hypothetical.
+imc_mode=whole
+: > "$imcd/dropin"
+( install_managed_config 'the drop-in' "$imcd/dropin" \
+    '# Prefer RAM' '' 'vm.swappiness = 10' ) >/dev/null 2>&1
+chk "a comment line is still written"                    1 \
+  "$(grep -c '^# Prefer RAM$' "$imcd/dropin")"
+chk "and the directive beside it"                        1 \
+  "$(grep -c '^vm\.swappiness = 10$' "$imcd/dropin")"
+unset -f printf
+# The rename has to go to the *resolved* path, the way ensure_block and the
+# 10-collavre.conf write both do. stage_beside resolves internally, so renaming
+# onto the unresolved argument puts the staging file beside the backing file
+# and the finished one beside the link:
+#
+#   /etc/link.conf -> /real/backing.conf
+#     link.conf   becomes a REGULAR FILE holding the new content
+#     backing.conf  still holds the old
+#
+# The operator's symlink is replaced, and — the reason this is in *this* case
+# rather than filed as tidiness — the staging file sits on the backing file's
+# filesystem, so a link that crosses one turns the `mv` into a copy-then-unlink.
+# That is the non-atomic write every assertion above is about, reintroduced on
+# exactly the hosts where the staging is doing any work.
+mkdir -p "$imcd/backing"
+builtin printf 'old\n' > "$imcd/backing/real.conf"
+ln -s "$imcd/backing/real.conf" "$imcd/link.conf"
+( install_managed_config 'the drop-in' "$imcd/link.conf" 'NEW yes' ) >/dev/null 2>&1
+chk "a symlinked target is written through, not replaced" "symlink" \
+  "$([ -L "$imcd/link.conf" ] && echo symlink || echo regular-file)"
+chk "and the backing file is the one that changed"        1 \
+  "$(grep -c '^NEW yes$' "$imcd/backing/real.conf")"
+# The control: a plain target is unaffected by the resolution, which is what
+# says the fix is the rename path and not a second behaviour.
+builtin printf 'old\n' > "$imcd/plain.conf"
+( install_managed_config 'the drop-in' "$imcd/plain.conf" 'NEW yes' ) >/dev/null 2>&1
+chk "a plain target is still rewritten in place"          "1 0" \
+  "$(builtin printf '%s %s' "$(grep -c '^NEW yes$' "$imcd/plain.conf")" \
+       "$(ls -A "$imcd" | grep -c collavre)")"
+rm -rf "$imcd"
+
+echo "149. a BACKUP_RETENTION_DAYS the nightly find cannot use is refused"
+# The value is %q-quoted into the generated backup program and used only there,
+# as `find -mtime "+$RETENTION_DAYS"`. `bash -n` on the staged program parses it
+# and the timer is enabled, so nothing on the provisioning side says anything:
+# the value is first read by GNU find, at 03:00, on a host the summary reported
+# as converged. Measured by running the generated program with each value,
+# GNU findutils 4.8.0:
+#
+#   BACKUP_RETENTION_DAYS   rc   dumps left      the unit
+#   7                       0    the new dump    green
+#   seven                   1    new + the old   RED, invalid argument `+seven'
+#   ''                      1    new + the old   RED, invalid argument `+'
+#   -1                      0    NONE            green, "backup complete: ()"
+#
+# Two bands again, and the loud one is not the dangerous one. `seven` fails
+# every night with the unit red and dumps accumulating until the disk fills —
+# the finding, and at least visible in `systemctl list-units --failed`. `-1` is
+# the one worth this guard: find takes `+-1`, deletes every dump *including the
+# one just taken*, and the program still exits 0 and reports "backup complete"
+# for a file that is no longer there.
+# BACKUP_AT, because the refusal names the hour the value would otherwise first
+# be read at. Without it every "refused" row below is a `set -u` abort on an
+# unbound variable rather than the guard answering — the rows go green and
+# measure nothing. The message assertion at the bottom is what caught that, and
+# is why it is here rather than only the return codes.
+ret_rc() {
+  ( BACKUP_AT=03:30; refuse_unusable_retention BACKUP_RETENTION_DAYS "$1" ) >/dev/null 2>&1
+  echo $?
+}
+chk "the default is accepted"                            0 "$(ret_rc 7)"
+chk "and any other whole number of days"                 0 "$(ret_rc 30)"
+# The control that keeps this a check on the spelling rather than on a range:
+# `-mtime +0` keeps the dump just taken and drops yesterday's, which is a
+# retention an operator may well have chosen.
+chk "and zero, which keeps one day"                      0 "$(ret_rc 0)"
+chk "a word find rejects is refused"                     1 "$(ret_rc seven)"
+chk "and an empty value, which find reads as '+'"        1 "$(ret_rc '')"
+chk "and a negative one, which takes the new dump with it" 1 "$(ret_rc -1)"
+chk "and a fraction, which has one spelling here"        1 "$(ret_rc 7.5)"
+chk "and trailing whitespace"                            1 "$(ret_rc '7 ')"
+# The message has to say the host is unchanged, because this refusal is the
+# operator's only signal — every other reading of the value happens at 03:00.
+ret_msg="$( ( BACKUP_AT=03:30; refuse_unusable_retention BACKUP_RETENTION_DAYS seven ) 2>&1 )"
+chk "and the refusal says nothing has been changed"      1 \
+  "$(printf '%s' "$ret_msg" | grep -c 'Nothing has been changed')"
+# Source level, because every row above passes on a revision that defines the
+# guard and never calls it — which is where the run has to refuse, before the
+# unit is installed and enabled.
+chk "and the run asks before installing the timer"       1 \
+  "$(grep -c '^refuse_unusable_retention BACKUP_RETENTION_DAYS "\$BACKUP_RETENTION_DAYS"$' "$SRC")"
+
+echo "150. a running sshd that refused the hardening stops the run"
+# `systemctl reload ssh || systemctl reload sshd || true` swallowed a status
+# that means two different things. Measured under systemd 252, one unit state
+# per row, with ExecReload standing in for sshd's own accept-or-refuse:
+#
+#   unit state              reload rc   is-active   what it means
+#   inactive                1           inactive    nothing to reload
+#   not found at all        5           inactive    nothing to reload
+#   active, reload ok       0           active      adopted
+#   active, reload refused  1           active      still on the OLD config
+#
+# Rows 1 and 4 share rc=1, so the rc cannot separate them — and row 1 is the
+# stock Ubuntu 24.04 state (ssh.socket enabled, ssh.service disabled until
+# something connects), not an edge case. A guard on the rc alone would refuse
+# every correctly-provisioned host. is-active is the discriminator, and it is
+# read from systemctl rather than from the message, which is localised.
+systemctl() { # <verb> <unit>
+  case "$1 $2" in
+    "reload $RELOAD_OK")  return 0 ;;
+    "reload $RELOAD_BAD") return 1 ;;
+    "reload "*)           return 5 ;;   # unit not found
+    "is-active $ACTIVE")  echo active; return 0 ;;
+    "is-active "*)        echo inactive; return 3 ;;
+  esac
+  return 1
+}
+rsd() { # <ok unit> <failing unit> <active unit> -> rc
+  RELOAD_OK="${1:-@none}" RELOAD_BAD="${2:-@none}" ACTIVE="${3:-@none}"
+  reload_ssh_daemon >/dev/null 2>&1; echo $?
+}
+chk "an ssh.service that adopts it proceeds"          0 "$(rsd ssh '' ssh)"
+chk "and an sshd.service that adopts it"              0 "$(rsd sshd '' sshd)"
+# The controls, and the reason this is not a guard on the reload status. Both
+# of these are healthy hosts on which BOTH reloads fail.
+chk "a socket-activated host with nothing connected"  0 "$(rsd '' ssh '')"
+chk "and a host carrying neither unit"                0 "$(rsd '' '' '')"
+# The finding. Same rc as the row above it, opposite meaning.
+chk "a running daemon that refuses it stops the run"  1 "$(rsd '' ssh ssh)"
+chk "and the same under the sshd name"                1 "$(rsd '' sshd sshd)"
+# ssh absent but sshd running and refusing — the fallback must not read the
+# first unit's absence as an all-clear for the second.
+chk "an absent ssh does not excuse a refusing sshd"   1 "$(rsd '' sshd sshd)"
+unset -f systemctl
+unset RELOAD_OK RELOAD_BAD ACTIVE
+# Source level: the behavioural rows above all pass on a revision that defines
+# the function and still swallows its status with `|| true`.
+chk "and the run treats that as fatal"                1 \
+  "$(grep -c '^reload_ssh_daemon || die \\$' "$SRC")"
+chk "rather than discarding the status"               0 \
+  "$(grep -c '^systemctl reload ssh .*|| true$' "$SRC")"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
