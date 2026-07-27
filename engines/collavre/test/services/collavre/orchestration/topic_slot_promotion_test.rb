@@ -170,6 +170,52 @@ module Collavre
                         "the occupancy check must run inside the claiming transaction"
       end
 
+      # Promotion deleted every "⏳" notice in the topic unconditionally. With
+      # topic_max > 1 it can leave other agents queued — coalesce_promoted!
+      # absorbs same-agent siblings only — and the topic is allowed just one
+      # deduplicated notice, so removing it strips the wait/stop signal from a
+      # wait that is still real, until some later deferral happens to repost it.
+      test "promotion keeps the waiting notice while another agent is still queued" do
+        # Codex's shape: topic_max 2, one slot held by B, waiters for busy B and
+        # for free A. Promoting A must not speak for B's wait, which continues.
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: nil,
+          config: { "topic_max_concurrent_jobs" => 2 }
+        )
+        stuck_agent = other_agent("still-waiting")
+        # Holds one of the two slots, which is also what makes its own waiter
+        # ineligible: an agent may not take a second concurrent turn.
+        task_for(stuck_agent, status: "running")
+        task_for(@agent, status: "queued")
+        task_for(stuck_agent, status: "queued")
+        notice = @creative.comments.create!(
+          content: "#{Comment::WAITING_NOTICE_PREFIX} Waiting (another task is running)",
+          topic_id: @topic.id, private: false, skip_default_user: true,
+          topic_concurrency_defer: true, skip_dispatch: true
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert Comment.exists?(notice.id),
+               "a waiter that is still queued still needs its notice"
+      end
+
+      # Control: once nothing is queued the notice must still go away, or the
+      # topic keeps a "⏳" describing a wait that is over.
+      test "promotion removes the waiting notice once the queue has drained" do
+        task_for(@agent, status: "queued")
+        notice = @creative.comments.create!(
+          content: "#{Comment::WAITING_NOTICE_PREFIX} Waiting (another task is running)",
+          topic_id: @topic.id, private: false, skip_default_user: true,
+          topic_concurrency_defer: true, skip_dispatch: true
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        refute Comment.exists?(notice.id),
+               "nothing is waiting any more, so the notice must be cleaned up"
+      end
+
       # Tasks carry topic_id with no foreign key, so a deleted topic leaves rows
       # pointing at a row that is gone. `lock!` returned that nil and skipped the
       # creative fallback entirely — admission, promotion and notice dedup then

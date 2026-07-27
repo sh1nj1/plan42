@@ -27,7 +27,7 @@ module Collavre
           # the refresh below then moves the anchor forward and keeps the
           # absorbed triggers in "merged_comment_ids".
           coalesce_promoted!(task)
-          cleanup_waiting_notices!(task)
+          cleanup_waiting_notices_if_drained!(task)
           refresh_deferred_context!(task)
           revalidate_assignment!(task) unless task.status == "cancelled"
 
@@ -188,14 +188,33 @@ module Collavre
 
         # The folded waiters may have been everything the topic's "⏳" notice
         # described, and nothing else will take it down: removal happens when a
-        # promotion drains a *queued* waiter, and this fold left none. Scope the
-        # cleanup to "nobody is waiting any more" rather than "a fold happened"
-        # — another agent's waiter is not this agent's sibling and its wait is
-        # still real.
-        return if Task.queued_for_topic(task.topic_id, task.creative_id).exists?
-
-        cleanup_waiting_notices!(task)
+        # promotion drains a *queued* waiter, and this fold left none.
+        cleanup_waiting_notices_if_drained!(task)
       end
+
+      # Take the topic's "⏳" notice down, but only once nothing is waiting on
+      # the slot any more.
+      #
+      # "A waiter left the queue" is not the same question. A topic gets exactly
+      # one deduplicated notice, and with topic_max > 1 a promotion can leave
+      # other agents queued — coalesce_promoted! absorbs same-agent siblings
+      # only, and the queue head may be ineligible while a later waiter runs. So
+      # an unconditional cleanup strips the wait/stop signal off a wait that is
+      # still real, and nothing reposts it until the next deferral happens by.
+      #
+      # Asked under the lock post_waiting_notice takes, so "nobody is queued" is
+      # that path's own before-or-after rather than a guess: a deferral either
+      # commits its waiter before this reads, and keeps its notice, or after, and
+      # posts its own.
+      def self.cleanup_waiting_notices_if_drained!(task)
+        Comment.transaction do
+          TopicSlot.lock!(task.topic_id, task.creative_id)
+          next if Task.queued_for_topic(task.topic_id, task.creative_id).exists?
+
+          cleanup_waiting_notices!(task)
+        end
+      end
+      private_class_method :cleanup_waiting_notices_if_drained!
 
       # Post the "⏳ waiting on the topic slot" notice for a deferral raised
       # outside #enqueue_jobs — AiAgentJob's late slot check, which catches
