@@ -30,6 +30,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       yield "Chunk 1 "
       yield "Chunk 2"
     end
+    def mock_client.last_handoff_failed? = false
 
     initial_comment_count = @creative.comments.count
 
@@ -56,6 +57,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.chat(messages, tools: [])
       yield "Response"
     end
+    def mock_client.last_handoff_failed? = false
 
     broadcasts = []
     creative_id = @creative.effective_origin.id
@@ -84,6 +86,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.chat(messages, tools: [])
       yield "AI Response"
     end
+    def mock_client.last_handoff_failed? = false
 
     activity_log = ActivityLog.create!(
       activity: "llm_query",
@@ -114,6 +117,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.chat(messages, tools: [])
       # No yield - empty response
     end
+    def mock_client.last_handoff_failed? = false
 
     initial_comment_count = @creative.comments.count
 
@@ -142,6 +146,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.chat(messages, tools: [])
       yield "@AgentB: 이 주제에 대해 어떻게 생각해?"
     end
+    def mock_client.last_handoff_failed? = false
 
     dispatched = false
     original_dispatch = Collavre::SystemEvents::Dispatcher.method(:dispatch)
@@ -164,6 +169,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.chat(messages, tools: [])
       yield "@One: 확인해 주세요"
     end
+    def mock_client.last_handoff_failed? = false
 
     dispatched = false
     Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(*) { dispatched = true } do
@@ -180,6 +186,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     def mock_client.chat(messages, tools: [])
       yield "Just a normal response without mentions"
     end
+    def mock_client.last_handoff_failed? = false
 
     dispatched = false
     Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(*) { dispatched = true } do
@@ -314,5 +321,40 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     reply = @creative.comments.where(user: @agent).order(:created_at).last
     assert reply.content.start_with?("Partial content")
     assert @task.task_actions.exists?(action_type: "cancelled")
+  end
+
+  # The service is the only place that sees both the delivery record it wrote
+  # and the client that failed to hand it over. AiClient#chat swallows the
+  # provider error and the job then marks the task `done`, so unless the
+  # failure is written down here the turn ends in a status every reader counts
+  # as delivery — and the dispatches it discarded never come back.
+  test "records a failed handoff when the client never reached the provider" do
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "\n\n⚠️ AI Error: [StandardError] connection refused"
+    end
+    def mock_client.last_handoff_failed? = true
+
+    AiClient.stub :new, mock_client do
+      AiAgentService.new(@task).call
+    end
+
+    assert Collavre::Orchestration::DeliveryRecord.handoff_failed?(@task.reload.trigger_event_payload)
+  end
+
+  # Control: an ordinary turn records nothing, so the flag cannot be what every
+  # completed turn carries.
+  test "records no failed handoff when the client answered" do
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "An answer"
+    end
+    def mock_client.last_handoff_failed? = false
+
+    AiClient.stub :new, mock_client do
+      AiAgentService.new(@task).call
+    end
+
+    assert_not Collavre::Orchestration::DeliveryRecord.handoff_failed?(@task.reload.trigger_event_payload)
   end
 end

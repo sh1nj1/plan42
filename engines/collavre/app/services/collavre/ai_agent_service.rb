@@ -96,6 +96,14 @@ module Collavre
       @client = build_ai_client(resolved[:system_prompt])
       stream_response(@client, resolved)
 
+      # ...and write down when the handing over did not happen. The record
+      # above licences discarding other dispatches on the strength of the agent
+      # having read their comments; a request that never reached the provider
+      # read nothing. AiAgentJob finishes this task `done` either way, so
+      # without this the delivered ending is the one it ends in. See
+      # Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY.
+      Orchestration::DeliveryRecord.mark_handoff_failed!(@task) if @client.last_handoff_failed?
+
       log_action("completion", { response: @streamer.content })
 
       finalized_comment = finalize_response

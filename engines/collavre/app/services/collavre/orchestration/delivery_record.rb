@@ -54,6 +54,22 @@ module Collavre
       # down instead of reconstructed.
       DROPPED_KEY = "dropped_dispatch_comment_ids"
 
+      # This turn asked the provider for an answer and the request never got
+      # there.
+      #
+      # Every other reader here decides off the turn's *status*, which works
+      # while the endings line up with what was delivered. This one does not:
+      # AiClient#chat catches the provider error, streams "⚠️ AI Error" into
+      # the reply and returns nil, and AiAgentJob marks an ordinary task `done`
+      # on that — the single status every reader counts as delivery. So a turn
+      # can end in the delivered ending having handed over nothing at all, and
+      # the comments it discarded were read by nobody.
+      #
+      # Recorded rather than inferred, because nothing else in the row says it:
+      # `done` with an error in the reply text looks exactly like `done`. The
+      # only place that knows is the service holding the client that failed.
+      HANDOFF_FAILED_KEY = "handoff_failed"
+
       # Statuses in which a turn is still the thing that will answer.
       #
       # Narrower than AgentOrchestrator::DELIVERED_STATUSES, which also counts
@@ -136,6 +152,32 @@ module Collavre
         Array(payload[KEY]).compact.map(&:to_i)
       end
 
+      # Write down that this turn's request never reached the provider.
+      #
+      # Under the same row lock as record! and claim_drop!, for the same
+      # reason: a dispatch refused in another process writes DROPPED_KEY into
+      # this JSON column while the turn runs, and a merge onto the caller's
+      # copy would erase it.
+      def self.mark_handoff_failed!(task)
+        return if task.nil?
+
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          payload = row&.trigger_event_payload
+          next unless payload.is_a?(Hash)
+          next if handoff_failed?(payload)
+
+          row.update!(trigger_event_payload: payload.merge(HANDOFF_FAILED_KEY => true))
+          task.reload unless task.equal?(row)
+        end
+      end
+
+      def self.handoff_failed?(payload)
+        return false unless payload.is_a?(Hash)
+
+        payload[HANDOFF_FAILED_KEY] == true
+      end
+
       def self.dropped_ids_in(payload)
         return [] unless payload.is_a?(Hash)
 
@@ -199,7 +241,13 @@ module Collavre
           trigger_event_name: trigger_event_name,
           status: IN_FLIGHT_STATUSES
         ).select(:id, :trigger_event_payload).find do |task|
-          ids_in(task.trigger_event_payload).include?(comment_id.to_i)
+          payload = task.trigger_event_payload
+          # A turn still `running` after its request failed is not going to
+          # answer anything, and dropping against it would record a drop after
+          # the restore that ends it has already looked.
+          next false if handoff_failed?(payload)
+
+          ids_in(payload).include?(comment_id.to_i)
         end
       end
 

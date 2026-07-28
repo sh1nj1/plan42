@@ -10,6 +10,22 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
+    # Did the last #chat end without the provider ever receiving the payload?
+    #
+    # #chat swallows a provider error: it streams "⚠️ AI Error" to the caller
+    # and returns nil — which an ordinary empty answer also returns — so the
+    # return value cannot tell the two apart. Orchestration::DeliveryRecord
+    # needs them apart, because a turn that handed the provider nothing
+    # delivered nothing, and AiAgentJob still marks such a turn `done`.
+    #
+    # An error *after* deltas have streamed is not one of these. The provider
+    # had the payload and answered part of it; the truncated reply and the
+    # retry beside it are the ordinary ending the product already shows, and
+    # the comments that turn swallowed did reach the agent.
+    def last_handoff_failed?
+      @last_handoff_failed
+    end
+
     # Vendor <select> options for AI-agent config. Core ships only its built-in
     # (stateless) providers; vendor engines append their own through
     # register_vendor_option, so core never names a vendor engine.
@@ -67,9 +83,11 @@ module Collavre
       @log_interactions = log_interactions
       @last_input_tokens = 0
       @last_output_tokens = 0
+      @last_handoff_failed = false
     end
 
     def chat(contents, tools: [], &block)
+      @last_handoff_failed = false
       response_content = +""
       error_message = nil
       input_tokens = nil
@@ -119,6 +137,8 @@ module Collavre
     rescue CancelledError
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
+      # Nothing streamed means nothing was handed over — see #last_handoff_failed?.
+      @last_handoff_failed = response_content.blank?
       error_message = "[#{e.class.name}] #{e.message}"
       # When log_interactions is false (inline typo correction runs on the user's
       # *unsubmitted* draft), the LLM error message can echo the request text. Log

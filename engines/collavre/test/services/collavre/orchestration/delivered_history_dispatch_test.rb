@@ -497,6 +497,111 @@ module Collavre
       # the turn that discarded it: it carries no delivery record, no merged list
       # and no acquired anchor. Without this a restored turn that fails again
       # would restore the same comments a second time.
+      # A provider error is not a failed task. AiClient#chat catches
+      # StandardError, streams "⚠️ AI Error" to the user and returns nil, and
+      # AiAgentJob marks an ordinary task `done` on that — so the turn ends in
+      # the one status DELIVERED_STATUSES counts as delivery, having handed the
+      # provider nothing at all. The comments it discarded on the strength of
+      # having read them were never read by anything.
+      test "a dropped dispatch comes back when the covering turn's request never reached the provider" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_empty tasks_for(@agent), "premise: the dispatch was dropped, leaving no row"
+
+        slot_holder(anchor)
+        DeliveryRecord.mark_handoff_failed!(turn)
+        turn.reload.update!(status: "done")
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "nothing was handed over, so the comment it silenced has a turn of its own again"
+      end
+
+      # The other half of the same failure: while the turn is still `running`
+      # after the error, it must stop covering anything further. Dropping
+      # against it would record a drop the restore has already run past.
+      test "a turn whose request never reached the provider stops covering later dispatches" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        assert_includes DeliveryRecord.ids_in(turn.trigger_event_payload), late.id,
+                        "premise: the window did sweep it up"
+
+        DeliveryRecord.mark_handoff_failed!(turn)
+        dispatch(late)
+
+        assert_equal 1, tasks_for(@agent).where(status: "queued").count,
+                     "a turn that delivered nothing cannot be the reason a dispatch is discarded"
+      end
+
+      # And the promotion door, which reads the same record through
+      # AgentOrchestrator.delivered_comment_ids and counts `done` as delivery.
+      # The mirror of "a waiter parked before the turn assembled is cancelled at
+      # promotion" above: that cancellation is right when the turn answered, and
+      # is the waiter losing its only turn when the turn handed over nothing.
+      test "a waiter is not cancelled at promotion by a turn that never handed anything over" do
+        anchor = comment("@#{@agent.name}: first")
+        holder = slot_holder(anchor)
+        late = comment("@#{@agent.name}: second")
+        dispatch(late)
+        waiter = tasks_for(@agent).where(status: "queued").sole
+        assert_equal late.id, waiter.trigger_event_payload.dig("comment", "id")
+
+        data = AiAgent::MessageBuilder.new(
+          agent: @agent, context: holder.trigger_event_payload, original_comment: anchor
+        ).build
+        resolved = AiAgent::SessionContextResolver.new(
+          agent: @agent, messages_data: data, system_prompt: "prompt"
+        ).resolve
+        DeliveryRecord.record!(holder, resolved)
+        assert_includes DeliveryRecord.ids_in(holder.reload.trigger_event_payload), late.id,
+                        "premise: the covering turn's window did carry the waiter's comment"
+
+        DeliveryRecord.mark_handoff_failed!(holder)
+        holder.reload.update!(status: "done")
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_not_equal "cancelled", waiter.reload.status,
+                         "nothing was handed over, so the waiter has not been answered"
+        assert_equal late.id, waiter.trigger_event_payload.dig("comment", "id"),
+                     "and it still answers the comment it was dispatched for"
+      end
+
+      # A dropped dispatch is handled, not unscheduled. AgentOrchestrator.dispatch
+      # returns the agents that will answer — a :deferred decision returns its
+      # agent although only a queued row exists — and a drop says this agent is
+      # already answering that comment inside an in-flight turn. Returning
+      # nothing instead makes DropTriggerJob#dispatch_trigger raise
+      # DispatchFailedError and retry a trigger that was correctly covered.
+      test "a dropped dispatch reports its agent rather than an empty result" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        running_turn(anchor)
+
+        assert_equal [ @agent.id ], dispatch(late).map(&:id)
+        assert_empty tasks_for(@agent), "premise: it really was dropped"
+      end
+
+      # Control: "handled" must not swallow the real empty result. A :rejected
+      # decision — the agent is out of quota, or the loop breaker stopped it —
+      # schedules nothing and answers nothing, and DropTriggerJob's retry is the
+      # right response to that.
+      test "a rejected decision still reports an empty result" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: "User", scope_id: @agent.id,
+          config: { "daily_token_limit" => 1000 }
+        )
+        tracker = ResourceTracker.for(@agent)
+        tracker.reserve!("spent")
+        tracker.release!("spent", tokens_used: 1500)
+
+        late = comment("@#{@agent.name}: anybody there")
+
+        assert_empty dispatch(late)
+        assert_empty tasks_for(@agent), "premise: the decision really was :rejected"
+      end
+
       test "the restored dispatch carries none of the dead turn's bookkeeping" do
         anchor = comment("@#{@agent.name}: first")
         late = comment("@#{@agent.name}: second")

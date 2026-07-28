@@ -28,6 +28,8 @@ class AiAgentJobTest < ActiveJob::TestCase
       block.call("AI Response") if block
       "AI Response"
     end
+
+    def last_handoff_failed? = false
   end
 
   test "creates task and executes service" do
@@ -71,6 +73,8 @@ class AiAgentJobTest < ActiveJob::TestCase
       # Do not yield any content
       ""
     end
+
+    def last_handoff_failed? = false
   end
 
   test "does not create reply if AI response is empty" do
@@ -105,6 +109,8 @@ class AiAgentJobTest < ActiveJob::TestCase
       block.call("AI Response") if block
       "AI Response"
     end
+
+    def last_handoff_failed? = false
   end
 
   test "renders system prompt with liquid context" do
@@ -131,6 +137,8 @@ class AiAgentJobTest < ActiveJob::TestCase
       block.call("AI Response") if block
       "AI Response"
     end
+
+    def last_handoff_failed? = false
 
     # Extract the messages array from the Hash (or return as-is for backward compat)
     def captured_messages

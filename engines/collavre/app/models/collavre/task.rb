@@ -120,9 +120,19 @@ module Collavre
     # A status callback rather than a call site: AiAgentJob's rescue and
     # StuckDetector both end a turn this way, and only one of them runs for a
     # process that was killed outright.
+    #
+    # `done` is an undelivered ending too when the turn recorded that its
+    # request never reached the provider: AiClient#chat catches the error and
+    # AiAgentJob finishes the task normally, so the status alone cannot say it.
+    # Read off this object rather than the row because the flag is written by
+    # this turn's own service, in this process, immediately before the status
+    # update that fires this callback — unlike DROPPED_KEY, which the refused
+    # dispatch writes from another process and restore! therefore re-reads.
     def ended_without_delivering?
-      saved_change_to_attribute?("status") &&
-        status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
+      return false unless saved_change_to_attribute?("status")
+      return true if status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
+
+      status == "done" && Orchestration::DeliveryRecord.handoff_failed?(trigger_event_payload)
     end
 
     def restore_undelivered_dispatches

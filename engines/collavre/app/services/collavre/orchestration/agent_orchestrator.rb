@@ -547,7 +547,14 @@ module Collavre
           creative_id: context.dig("creative", "id"),
           trigger_event_name: task.trigger_event_name,
           status: DELIVERED_STATUSES
-        ).where.not(id: task.id).select(:id, :trigger_event_payload)
+        ).where.not(id: task.id).select(:id, :trigger_event_payload).reject { |other|
+          # `done` is in DELIVERED_STATUSES because a finished turn delivered
+          # what it read — except when the request never reached the provider,
+          # which AiClient#chat swallows and AiAgentJob still finishes as
+          # `done`. Such a turn silences nothing, for the same reason `failed`
+          # is left out of the list; it just cannot be recognised by status.
+          DeliveryRecord.handoff_failed?(other.trigger_event_payload)
+        }
 
         acquired_anchors = others.filter_map { |other| acquired_anchor_id_in(other) }
         merged = others.flat_map { |other|
@@ -672,14 +679,16 @@ module Collavre
           agent = decision[:agent]
           log_decision(decision)
 
-          # Guard: skip if agent already has a running task for this comment
+          # Guard: skip if agent already has a running task for this comment.
+          # Handled, not unscheduled — see the drop guard below for why the two
+          # are different answers and what reads them apart.
           comment_id = @context.dig("comment", "id")
           if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
               "for comment #{comment_id}"
             )
-            next
+            next agent
           end
 
           # Guard: an in-flight turn has already been given this comment. It
@@ -696,13 +705,22 @@ module Collavre
           # claim_drop! re-reads that turn's status under a lock and refuses if
           # it has already ended, because a turn that has ended has already run
           # its restore and would leave this comment with nobody to answer it.
+          #
+          # The agent is still returned. What this method reports is who will
+          # answer, not how many turns it started — a :deferred decision
+          # returns its agent although all it created was a queued row — and a
+          # drop says this agent is answering that comment inside a turn
+          # already running. Reporting nothing is how a caller learns *no agent
+          # was scheduled*: DropTriggerJob#dispatch_trigger raises
+          # DispatchFailedError on an empty result and retries a trigger that
+          # was covered, three times, and calls the job failed at the end of it.
           covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name)
           if covering && DeliveryRecord.claim_drop!(covering, comment_id)
             Rails.logger.info(
               "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
               "delivered to agent #{agent.id} by in-flight task #{covering.id}"
             )
-            next
+            next agent
           end
 
           case decision[:timing]
