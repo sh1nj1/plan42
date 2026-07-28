@@ -17,9 +17,11 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       trigger_event_name: "comment_created",
       trigger_event_payload: {
         "comment" => { "id" => @comment.id, "content" => @comment.content },
-        "creative" => { "id" => @creative.id }
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => @comment.topic_id }
       },
-      agent: @agent
+      agent: @agent,
+      topic_id: @comment.topic_id
     )
   end
 
@@ -72,6 +74,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     statuses = agent_statuses.map { |b| b[:data][:agent_status][:status] }
     assert_includes statuses, "thinking"
     assert_includes statuses, "idle"
+    assert agent_statuses.all? { |broadcast| broadcast[:data][:agent_status][:topic_id] == @comment.topic_id }
 
     thinking_idx = statuses.index("thinking")
     idle_idx = statuses.rindex("idle")

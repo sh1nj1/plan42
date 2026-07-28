@@ -21,6 +21,8 @@ export default class extends Controller {
     this.typingTimeoutHandle = null
     this.hasPresenceConnected = false
     this.currentUserId = document.body.dataset.currentUserId
+    this.selectedTopicId = null
+    this.mainTopicId = null
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
@@ -44,6 +46,18 @@ export default class extends Controller {
 
   handleTopicChange(event) {
     const topicId = event.detail?.topicId
+    const nextSelectedTopicId = topicId || null
+    const nextMainTopicId = event.detail?.mainTopicId || this.mainTopicId
+    const selectionChanged = String(nextSelectedTopicId || '') !== String(this.selectedTopicId || '')
+
+    if (selectionChanged) {
+      this.stoppedTyping()
+      this.clearTopicIndicators()
+    }
+
+    this.selectedTopicId = nextSelectedTopicId
+    this.mainTopicId = nextMainTopicId
+
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -81,6 +95,8 @@ export default class extends Controller {
       this.element, 'comments--topics'
     )
     const topicId = topicsCtrl?.currentTopicId
+    this.selectedTopicId = topicId || null
+    this.mainTopicId = topicsCtrl?.mainTopicId || null
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -95,7 +111,7 @@ export default class extends Controller {
     this.typingUsers = {}
     this.activeAgentTasks = {}
     this.syncGlobalAgentTasks()
-    this.clearTypingTimers()
+    this.clearTopicTimers()
     this.clearManualTypingMessage()
     this.renderParticipants([])
     this.renderTypingIndicator()
@@ -116,13 +132,17 @@ export default class extends Controller {
 
   typing() {
     if (!this.presenceSubscription || this.privateCheckboxTarget?.checked) return
-    this.presenceSubscription.perform('typing')
+    const topicId = this.typingTopicId
+    if (!topicId) return
+
+    this.presenceSubscription.perform('typing', { topic_id: topicId })
     this.resetTypingTimeout()
   }
 
   stoppedTyping() {
-    if (this.presenceSubscription) {
-      this.presenceSubscription.perform('stopped_typing')
+    const topicId = this.typingTopicId
+    if (this.presenceSubscription && topicId) {
+      this.presenceSubscription.perform('stopped_typing', { topic_id: topicId })
     }
     if (this.typingTimeoutHandle) {
       clearTimeout(this.typingTimeoutHandle)
@@ -196,7 +216,9 @@ export default class extends Controller {
       this.updateReadReceiptPresence(this.currentPresentIds)
     }
     if (data.typing) {
-      const { id, name } = data.typing
+      const { id, name, topic_id: topicId } = data.typing
+      if (!this.isSelectedTopic(topicId)) return
+
       const isNewTyper = !(id in this.typingUsers)
       // The user always wants to see their OWN typing indicator the moment it
       // appears — they just started typing. Stick-to-end (which pauses while the
@@ -213,7 +235,9 @@ export default class extends Controller {
       }, TYPING_TIMEOUT)
     }
     if (data.stop_typing) {
-      const { id } = data.stop_typing
+      const { id, topic_id: topicId } = data.stop_typing
+      if (!this.isSelectedTopic(topicId)) return
+
       delete this.typingUsers[id]
       if (this.typingTimers[id]) {
         clearTimeout(this.typingTimers[id])
@@ -241,11 +265,13 @@ export default class extends Controller {
       this.refreshChannelChips(data.channel_chips.topic_id)
     }
     if (data.agent_status) {
-      const { id, name, status, task_id, creative_id: agentCreativeId } = data.agent_status
+      const { id, name, status, task_id, topic_id: topicId, creative_id: agentCreativeId } = data.agent_status
       // Only show typing indicator if agent is working on this specific creative
       if (agentCreativeId && String(agentCreativeId) !== String(this.creativeId)) {
         return
       }
+      if (!this.isSelectedTopic(topicId)) return
+
       const isNewAgent = (status === 'thinking' || status === 'streaming') && !(id in this.typingUsers)
       if (status === 'thinking' || status === 'streaming') {
         this.typingUsers[id] = name
@@ -554,6 +580,32 @@ export default class extends Controller {
   clearTypingTimers() {
     Object.values(this.typingTimers).forEach((timer) => clearTimeout(timer))
     this.typingTimers = {}
+  }
+
+  clearTopicTimers() {
+    this.clearTypingTimers()
+    Object.values(this.agentStatusTimers || {}).forEach((timer) => clearTimeout(timer))
+    this.agentStatusTimers = {}
+  }
+
+  clearTopicIndicators() {
+    this.typingUsers = {}
+    this.activeAgentTasks = {}
+    this.clearTopicTimers()
+    this.syncGlobalAgentTasks()
+    this.renderTypingIndicator()
+  }
+
+  get typingTopicId() {
+    return this.selectedTopicId || this.mainTopicId
+  }
+
+  isSelectedTopic(topicId) {
+    return Boolean(
+      this.selectedTopicId &&
+      topicId &&
+      String(topicId) === String(this.selectedTopicId)
+    )
   }
 
   handleInput() {
