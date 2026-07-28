@@ -72,19 +72,29 @@ module Collavre
       # @return [Hash] the updated payload (not saved)
       def self.reanchor_payload(payload, comment)
         previous_id = payload.dig("comment", "id")
+        # The anchor block is rebuilt from Comment#dispatch_payload rather than
+        # enumerated here. That method is the declared single source of truth
+        # for what a comment_created dispatch carries, and everything in it
+        # describes the anchor: "from_ai" is what AiAgentJob#record_loop_breaker_
+        # turn reads to decide whether a turn was agent-started, so a move that
+        # drops it exempts agent-to-agent work from the creative-retry breaker,
+        # and "quoted_comment_id" is what binds a review to the comment it
+        # quotes. Enumerating the keys here means the list falls behind the
+        # payload the ordinary door builds, silently, one key at a time.
+        #
+        # Rebuilt, never merged onto: a key absent for this comment must be
+        # absent afterwards. Carrying the previous anchor's "from_ai" or its
+        # quoted comment forward is the same defect pointing the other way.
         moved = payload.merge(
-          "comment" => {
-            "id" => comment.id,
-            "content" => comment.content,
-            "user_id" => comment.user_id
-          },
+          comment.dispatch_payload.slice(:comment).deep_stringify_keys,
           "chat" => SystemEvents::ContextBuilder.reanchor_chat(comment.content)
         )
         moved[ACQUIRED_ANCHOR_KEY] = comment.id if previous_id && previous_id.to_i != comment.id
-        # Both keys ContextBuilder derives from the anchor are rebuilt here,
-        # because it fills each one in with `||=` and does not run again on
-        # either of these paths. "chat"/"mentioned_user" moves with the anchor
-        # above (ContextBuilder.reanchor_chat); "sender" below.
+        # Both keys ContextBuilder *derives* from the anchor are rebuilt here
+        # too — dispatch_payload does not carry them, because ContextBuilder
+        # fills each one in with `||=` and does not run again on either of
+        # these paths. "chat"/"mentioned_user" moves with the anchor above
+        # (ContextBuilder.reanchor_chat); "sender" below.
         #
         # The payload's "sender" labels the trigger and is what
         # ClaudeChannelAdapter sends as author_id/author_name, and

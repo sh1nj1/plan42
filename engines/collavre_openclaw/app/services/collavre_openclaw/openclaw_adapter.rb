@@ -20,15 +20,36 @@ module CollavreOpenclaw
       @user = user
       @system_prompt = system_prompt
       @context = context
+      @last_handoff_failed = false
+    end
+
+    # Did the last #chat end without the gateway ever receiving the payload?
+    #
+    # The same question Collavre::AiClient#last_handoff_failed? answers for its
+    # own provider path, and it has to be answered here as well because
+    # AiClientExtension#chat routes past that method entirely: every failure
+    # below turns into a streamed error plus nil, and nil is also what an
+    # ordinary empty answer returns. Orchestration::DeliveryRecord needs the two
+    # apart, since a turn that handed the gateway nothing delivered nothing
+    # while AiAgentJob still marks it `done`.
+    #
+    # The proxy is the same one the base client uses: nothing streamed means
+    # nothing was handed over. An error *after* deltas is not one of these — the
+    # gateway had the payload and answered part of it, so the comments that turn
+    # swallowed did reach the agent.
+    def last_handoff_failed?
+      @last_handoff_failed
     end
 
     # @param messages_data [Hash] { messages:, first_message:, context_changed: }
     def chat(messages_data, &block)
+      @last_handoff_failed = false
       parse_messages_data!(messages_data)
 
       unless @user&.gateway_url.present?
         Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
         yield "Error: OpenClaw Gateway URL not configured" if block_given?
+        @last_handoff_failed = true
         return nil
       end
 
@@ -36,6 +57,7 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] No API key configured for user #{@user&.id}")
         yield "Error: OpenClaw API key not configured or decryption failed. " \
               "Please re-enter the API key in AI agent settings." if block_given?
+        @last_handoff_failed = true
         return nil
       end
 
@@ -96,6 +118,7 @@ module CollavreOpenclaw
 
     def chat_via_websocket(&block)
       response_content = +""
+      errored = false
 
       begin
         client = ConnectionManager.instance.connection_for(@user)
@@ -123,12 +146,18 @@ module CollavreOpenclaw
             end
           when "error"
             error_msg = event[:text] || "Unknown error"
+            errored = true
             yield "OpenClaw Error: #{error_msg}" if block_given?
           when "aborted"
             # User or system aborted
           end
         end
 
+        # The gateway answered with an error and nothing else: see
+        # #last_handoff_failed?. Decided after the stream rather than in the
+        # branch above, so a delta that arrives either side of the error still
+        # counts as the payload having got through.
+        @last_handoff_failed = true if errored && response_content.blank?
         response_content.presence
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
@@ -138,6 +167,7 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
         error_msg = "OpenClaw Error: #{e.message}"
         yield error_msg if block_given?
+        @last_handoff_failed = response_content.blank?
         nil
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
@@ -298,6 +328,7 @@ module CollavreOpenclaw
                            "#{e.backtrace.first(5).join("\n")}")
         error_msg = "OpenClaw Error: #{e.message}"
         yield error_msg if block_given?
+        @last_handoff_failed = response_content.blank?
         nil
       end
     end

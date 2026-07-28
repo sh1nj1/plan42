@@ -313,9 +313,49 @@ module Collavre
           .where.not(user_id: [ agent.id, nil ])
           .order(:id)
           .each do |comment|
-          AiAgentJob.perform_later(agent.id, task.trigger_event_name, restored_context(payload, comment))
+          enqueue_restored(agent, task.trigger_event_name, restored_context(payload, comment))
         end
       end
+
+      # Put the dispatch back the way the orchestrator would have, by asking the
+      # same Scheduler again.
+      #
+      # The decision the drop discarded was a decision about *then*. A dispatch
+      # refused while the agent was at its concurrency limit or rate-limited
+      # carried a backoff with it, and enqueuing it now would run it past the
+      # check that set that delay — while the dying turn's own ResourceTracker
+      # slot is very often still held, since this fires from its status
+      # callback. Replaying the delay recorded at drop time would be no better:
+      # by now it describes pressure that may be long gone or much worse.
+      #
+      # Asked again, not merely honoured: a quota exhausted or a loop breaker
+      # tripped between the drop and the restore refuses this dispatch exactly
+      # as it would refuse a fresh one. AgentOrchestrator's own guard keeps
+      # rejected work out of the record; this is the other end of the same
+      # question, and only the scheduler can answer it as of now.
+      #
+      # Enqueued through AiAgentJob rather than AgentOrchestrator#enqueue_jobs
+      # even for a :deferred decision, because the job door re-asks
+      # Matcher#assignment_permits? against the re-anchored payload before it
+      # parks anything — a restored dispatch has moved, and park_waiter would
+      # create the row without that question being asked.
+      def self.enqueue_restored(agent, event_name, context)
+        decision = Scheduler.new(context).schedule([ agent ]).first
+        return if decision.nil?
+
+        case decision[:timing]
+        when :rejected
+          Rails.logger.info(
+            "[DeliveryRecord] Not restoring dispatch for comment #{context.dig("comment", "id")}: " \
+            "scheduler rejected agent #{agent.id} (#{decision[:reason]})"
+          )
+        when :delayed
+          AiAgentJob.set(wait: decision[:delay]).perform_later(agent.id, event_name, context)
+        else
+          AiAgentJob.perform_later(agent.id, event_name, context)
+        end
+      end
+      private_class_method :enqueue_restored
 
       # The dispatch that was discarded — not a descendant of the turn that
       # discarded it. reanchor_payload is the single door for moving an anchor,

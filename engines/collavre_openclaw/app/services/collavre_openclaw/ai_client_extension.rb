@@ -15,6 +15,11 @@ module CollavreOpenclaw
     # @param messages_input [Hash, Array] Hash { messages:, first_message:, context_changed:, system_prompt: }
     #   from SessionContextResolver, or a plain Array from standalone callers (e.g., CompressJob).
     def chat(messages_input, tools: [], &block)
+      # Cleared on the way in, as the base #chat clears it — the flag describes
+      # the last request, and this branch never reaches `super`. A client is
+      # reused across a turn's calls, so a failure left standing would have
+      # every later one claiming it delivered nothing.
+      @last_handoff_failed = false
       normalized_vendor = vendor.to_s.downcase
       messages_data = normalize_messages_input(messages_input)
 
@@ -57,6 +62,15 @@ module CollavreOpenclaw
             )
           end
         end
+
+        # Whether the payload ever left the building. AiAgentService asks the
+        # *client*, not the adapter, and marks the turn's
+        # Orchestration::DeliveryRecord off the answer; the adapter converts
+        # missing credentials and transport failures into a streamed error plus
+        # nil, so without this an OpenClaw turn that reached nothing still ends
+        # `done` with the flag down and the dispatches dropped against it are
+        # never restored. See OpenclawAdapter#last_handoff_failed?.
+        @last_handoff_failed = adapter.last_handoff_failed?
 
         return response_content
       end

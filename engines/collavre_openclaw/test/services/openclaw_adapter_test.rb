@@ -691,6 +691,89 @@ module CollavreOpenclaw
       CollavreOpenclaw.config.transport = original_transport
     end
 
+    # Did the request ever reach the gateway? Collavre::AiClient answers this
+    # for its own provider path (#last_handoff_failed?) so DeliveryRecord can
+    # tell a turn that delivered nothing from one that answered; this adapter
+    # path bypasses that method entirely — it streams an error and returns nil
+    # just the same — so it has to answer for itself. The proxy is the same
+    # one: nothing streamed means nothing was handed over.
+    def http_adapter(user: nil)
+      user ||= build_test_user(gateway_url: "https://test-gateway.com", email: "test@example.com",
+                               llm_api_key: "test-key")
+      OpenclawAdapter.new(user: user, system_prompt: "Test", context: {})
+    end
+
+    def messages_data
+      { messages: [ { role: "user", kind: :trigger, parts: [ { text: "Hello" } ] } ],
+        first_message: true, context_changed: false }
+    end
+
+    def with_http_transport
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "http"
+      yield
+    ensure
+      CollavreOpenclaw.config.transport = original
+    end
+
+    test "a chat with no gateway configured never reached the provider" do
+      adapter = http_adapter(user: build_test_user(gateway_url: nil, llm_api_key: "test-key"))
+
+      assert_nil adapter.chat(messages_data)
+      assert_predicate adapter, :last_handoff_failed?
+    end
+
+    test "a chat with no API key never reached the provider" do
+      adapter = http_adapter(user: build_test_user(gateway_url: "https://test-gateway.com"))
+
+      assert_nil adapter.chat(messages_data)
+      assert_predicate adapter, :last_handoff_failed?
+    end
+
+    test "an error before anything streamed is a failed handoff" do
+      with_http_transport do
+        adapter = http_adapter
+        adapter.define_singleton_method(:stream_response) do |_payload, &_blk|
+          raise CollavreOpenclaw::ConnectionError, "gateway unreachable"
+        end
+
+        assert_nil adapter.chat(messages_data)
+        assert_predicate adapter, :last_handoff_failed?
+      end
+    end
+
+    # Control, and the boundary: the gateway had the payload and answered part
+    # of it. That is a truncated reply with the ordinary retry beside it, and
+    # the comments the turn swallowed did reach the agent.
+    test "an error after content streamed is not a failed handoff" do
+      with_http_transport do
+        adapter = http_adapter
+        adapter.define_singleton_method(:stream_response) do |_payload, &blk|
+          blk.call("half an ans")
+          raise CollavreOpenclaw::ConnectionError, "gateway went away"
+        end
+
+        streamed = +""
+        adapter.chat(messages_data) { |chunk| streamed << chunk }
+
+        assert_includes streamed, "half an ans", "premise: the gateway answered part of it"
+        assert_not adapter.last_handoff_failed?
+      end
+    end
+
+    # Control: an empty answer returns nil too, and nil is what the failure
+    # returns — which is why the return value cannot carry this and a flag has
+    # to. A gateway that took the payload and said nothing delivered it.
+    test "a chat that reached the gateway and answered nothing is not a failed handoff" do
+      with_http_transport do
+        adapter = http_adapter
+        adapter.define_singleton_method(:stream_response) { |_payload, &_blk| nil }
+
+        assert_nil adapter.chat(messages_data)
+        assert_not adapter.last_handoff_failed?
+      end
+    end
+
     private
 
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)

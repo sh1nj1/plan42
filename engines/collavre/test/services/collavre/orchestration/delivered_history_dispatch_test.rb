@@ -65,7 +65,7 @@ module Collavre
           "topic" => { "id" => @topic.id },
           "sender" => { "id" => @user.id, "name" => @user.name },
           "chat" => { "content" => target.content },
-          "comment" => { "id" => target.id, "content" => target.content, "user_id" => @user.id }
+          "comment" => { "id" => target.id, "content" => target.content, "user_id" => target.user_id }
         }
       end
 
@@ -806,6 +806,163 @@ module Collavre
 
         assert_empty restored_waiters,
                      "the topic belongs to another agent and nothing in the comment says otherwise"
+      end
+
+      # Everything that labels the trigger moves with the anchor too, not just
+      # the two keys ContextBuilder derives. Comment#dispatch_payload is the
+      # declared single source of truth for what a comment_created dispatch
+      # carries, and "from_ai" is the label AiAgentJob#record_loop_breaker_turn
+      # reads: a re-anchor that drops it makes agent-to-agent work look
+      # human-triggered, and the creative-retry breaker skips exactly that.
+      test "re-anchoring keeps the metadata that labels the comment it moves onto" do
+        anchor = comment("first")
+        late = Comment.create!(
+          creative: @creative, user: session_agent, topic: @topic,
+          content: "second", quoted_comment_id: anchor.id, skip_dispatch: true
+        )
+
+        payload = TaskCoalescer.reanchor_payload(context_for(anchor), late)
+
+        assert_equal true, payload.dig("comment", "from_ai"),
+                     "the comment it moved onto was written by an agent"
+        assert_equal anchor.id, payload.dig("comment", "quoted_comment_id")
+      end
+
+      # Control against carrying the old anchor's label across: the block is
+      # rebuilt from the new comment, not merged onto the old one. A person's
+      # comment must not inherit "from_ai" from the agent comment before it.
+      test "re-anchoring onto a person's comment records it as theirs" do
+        anchor = Comment.create!(
+          creative: @creative, user: session_agent, topic: @topic,
+          content: "first, from an agent", quoted_comment_id: comment("older").id, skip_dispatch: true
+        )
+        late = comment("second, from a person")
+        # Built the way the ordinary door builds it, so the block being moved
+        # off really does carry the label that must not survive the move.
+        anchored = anchor.dispatch_payload.deep_stringify_keys
+        assert_equal true, anchored.dig("comment", "from_ai"), "premise: the anchor was an agent's"
+
+        payload = TaskCoalescer.reanchor_payload(anchored, late)
+
+        assert_equal false, payload.dig("comment", "from_ai")
+        assert_nil payload.dig("comment", "quoted_comment_id")
+      end
+
+      # The consequence, at the reader that pays for it: a restored turn on
+      # another agent's comment is agent-to-agent work, and the loop breaker
+      # only counts what it is told is not user-initiated.
+      test "a restored agent-to-agent dispatch is counted by the loop breaker" do
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling",
+          config: { "loop_breaker_enabled" => true, "creative_retry_threshold" => 1 }
+        )
+        anchor = comment("@#{@agent.name}: first")
+        late = Comment.create!(
+          creative: @creative, user: session_agent, topic: @topic,
+          content: "@#{@agent.name}: second", skip_dispatch: true
+        )
+        restored = DeliveryRecord.send(:restored_context, context_for(anchor), late)
+
+        AiAgentJob.new.send(:record_loop_breaker_turn, @agent, restored)
+
+        assert LoopBreaker.new(restored).check.should_break?,
+               "the breaker counts a turn one agent started for another"
+      end
+
+      test "a restored dispatch is labelled with the author whose comment it answers" do
+        anchor = comment("@#{@agent.name}: first")
+        late = Comment.create!(
+          creative: @creative, user: session_agent, topic: @topic,
+          content: "@#{@agent.name}: second", skip_dispatch: true
+        )
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id,
+                        "premise: the dispatch was dropped, so only the restore can bring it back"
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_equal [ true ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "from_ai") }
+      end
+
+      def concurrency_saturated!
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: "User", scope_id: @agent.id,
+          config: { "max_concurrent_jobs" => 1 }
+        )
+        ResourceTracker.for(@agent).reserve!("held")
+      end
+
+      def with_test_queue
+        original = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+        yield
+      ensure
+        ActiveJob::Base.queue_adapter = original
+      end
+
+      def restored_jobs
+        ActiveJob::Base.queue_adapter.enqueued_jobs.select { |job| job[:job] == Collavre::AiAgentJob }
+      end
+
+      # The scheduler's decision is about now, and the restore happens a turn
+      # later. A dispatch dropped while the agent was at its concurrency limit
+      # carried a backoff; enqueuing it directly discards that, and the dying
+      # turn's own ResourceTracker slot is still held when the callback fires.
+      # So the restore asks the scheduler again rather than replaying a delay
+      # decided at drop time.
+      test "a restored dispatch takes the backoff the scheduler asks for" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id,
+                        "premise: the dispatch was dropped, so only the restore can bring it back"
+        concurrency_saturated!
+
+        with_test_queue do
+          turn.update!(status: "failed")
+
+          assert_equal 1, restored_jobs.size, "the dispatch still comes back"
+          assert restored_jobs.first[:at].present?,
+                 "and waits out the delay the scheduler asked for rather than running now"
+        end
+      end
+
+      # Control: with nothing to wait for, the restore is immediate — this is
+      # what holds the change to the scheduler's answer rather than making
+      # every restored dispatch wait.
+      test "a restored dispatch with no pressure on it runs immediately" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+
+        with_test_queue do
+          turn.update!(status: "failed")
+
+          assert_equal 1, restored_jobs.size
+          assert_nil restored_jobs.first[:at]
+        end
+      end
+
+      # The quota was fine when the dispatch was dropped and is exhausted by the
+      # time it comes back. The existing rejection guard is at the drop door and
+      # cannot see this one.
+      test "a restore the scheduler now rejects is not enqueued past it" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        quota_exhausted!
+
+        with_test_queue do
+          turn.update!(status: "failed")
+
+          assert_empty restored_jobs,
+                       "restoring it would run work the quota check refuses right now"
+        end
       end
     end
   end
