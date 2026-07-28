@@ -11,6 +11,10 @@ production: &production
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  restore_dropped_dispatches:
+    class: Collavre::RestoreDroppedDispatchesJob
+    queue: default
+    schedule: every 10 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
@@ -27,6 +31,10 @@ desktop:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  restore_dropped_dispatches:
+    class: Collavre::RestoreDroppedDispatchesJob
+    queue: default
+    schedule: every 10 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
@@ -45,6 +53,10 @@ development:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  restore_dropped_dispatches:
+    class: Collavre::RestoreDroppedDispatchesJob
+    queue: default
+    schedule: every 10 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default

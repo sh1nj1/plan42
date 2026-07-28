@@ -795,10 +795,13 @@ module CollavreOpenclaw
       assert_not adapter.last_handoff_failed?
     end
 
-    # Control: the same fallback with nothing streamed first really is a failed
-    # handoff, which is what holds the fix to what got through rather than to
-    # the fallback having happened.
-    test "a websocket that streamed nothing before a failing http fallback is a failed handoff" do
+    # The gateway answers chat.send with a run id before a single event is
+    # waited for, and that answer is the handoff: it has the whole payload and
+    # the run may already be calling tools. A run that is then quiet until the
+    # read timeout, behind an HTTP attempt that fails before yielding, has cost
+    # an answer — restoring the comments this turn swallowed would put them to
+    # an agent that already has them.
+    test "a websocket run the gateway accepted before a failing http fallback is not a failed handoff" do
       adapter = http_adapter
       adapter.define_singleton_method(:stream_response) do |_payload, &_blk|
         raise CollavreOpenclaw::ConnectionError, "gateway unreachable"
@@ -808,19 +811,42 @@ module CollavreOpenclaw
         assert_nil adapter.chat(messages_data)
       end
 
+      assert_not adapter.last_handoff_failed?
+    end
+
+    # Control: a gateway that never answered chat.send at all really is a failed
+    # handoff, which is what holds the fix to the acknowledgement rather than to
+    # the fallback having happened. send_rpc raises on a read timeout and on an
+    # RPC error, so this is the only shape in which the run id never arrives.
+    test "a websocket the gateway never acknowledged before a failing http fallback is a failed handoff" do
+      adapter = http_adapter
+      adapter.define_singleton_method(:stream_response) do |_payload, &_blk|
+        raise CollavreOpenclaw::ConnectionError, "gateway unreachable"
+      end
+
+      with_websocket_dropping_after(delta: nil, acknowledged: false) do
+        assert_nil adapter.chat(messages_data)
+      end
+
       assert_predicate adapter, :last_handoff_failed?
     end
 
     private
 
-    # Drive the real #chat_via_websocket: yield `delta` if given, then drop the
-    # connection so the adapter falls through to #chat_via_http.
-    def with_websocket_dropping_after(delta:)
+    # Drive the real #chat_via_websocket: surface a run id the way the real
+    # client does — WebsocketClient#chat_send calls on_run_id as soon as
+    # chat.send comes back, before it waits for any event — then yield `delta`
+    # if given, then drop the connection so the adapter falls through to
+    # #chat_via_http. `acknowledged: false` is the gateway never answering
+    # chat.send, which is where the real client raises before that callback.
+    def with_websocket_dropping_after(delta:, acknowledged: true)
       original = CollavreOpenclaw.config.transport
       CollavreOpenclaw.config.transport = "auto"
 
+      acked = acknowledged
       client = Object.new
       client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, &blk|
+        on_run_id&.call("run-#{SecureRandom.hex(4)}") if acked
         blk.call({ state: "delta", text: delta }) if delta
         raise CollavreOpenclaw::TimeoutError, "gateway went quiet"
       end

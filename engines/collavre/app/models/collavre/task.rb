@@ -78,6 +78,19 @@ module Collavre
       broadcast_stop_button_removal if terminal_status?
     end
 
+    # What a persisted row says about whether this turn ever handed anything
+    # over — ended_without_delivering? without the transition.
+    #
+    # Asked twice: by the callback of a status change, and by
+    # RestoreDroppedDispatchesJob of a row it finds afterwards. Written once,
+    # because a sweep deciding "terminal" where the callback decides this is how
+    # a backstop comes to re-answer comments the turn had already answered.
+    def ended_undelivered?
+      return true if status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
+
+      status == "done" && Orchestration::DeliveryRecord.handoff_failed?(trigger_event_payload)
+    end
+
     private
 
     def trigger_loop_candidate?
@@ -129,14 +142,22 @@ module Collavre
     # update that fires this callback — unlike DROPPED_KEY, which the refused
     # dispatch writes from another process and restore! therefore re-reads.
     def ended_without_delivering?
-      return false unless saved_change_to_attribute?("status")
-      return true if status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
-
-      status == "done" && Orchestration::DeliveryRecord.handoff_failed?(trigger_event_payload)
+      saved_change_to_attribute?("status") && ended_undelivered?
     end
 
+    # Best effort, deliberately: this runs after the turn's own status is
+    # committed, so an exception here propagates back into the update! that
+    # ended the turn — and AiAgentJob's rescue answers that by writing `failed`
+    # over a turn that had in fact finished and answered. The restore is
+    # reconstructible from the row it was given, and
+    # DeliveryRecord.restore_missed! is what asks again.
     def restore_undelivered_dispatches
       Orchestration::DeliveryRecord.restore!(self)
+    rescue StandardError => e
+      Rails.logger.error(
+        "[Task] Restore failed for task #{id}: #{e.class}: #{e.message} — " \
+        "leaving it to the restore sweep"
+      )
     end
 
     def terminal_status?

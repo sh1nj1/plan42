@@ -696,6 +696,172 @@ module Collavre
         assert_empty tasks_for(@agent), "premise: the decision really was :rejected"
       end
 
+      # ─────────────────────────────────────────────
+      # A restore that could not be made
+      # ─────────────────────────────────────────────
+
+      # Fail the enqueue for these comments and no others, the way a transient
+      # queue or database failure would.
+      def with_scheduler_failing_for(*comments, &block)
+        ids = comments.map(&:id)
+        real_new = Scheduler.method(:new)
+        Scheduler.stub(:new, lambda { |context|
+          raise ActiveRecord::ConnectionNotEstablished, "the queue is down" \
+            if ids.include?(context.dig("comment", "id"))
+
+          real_new.call(context)
+        }, &block)
+      end
+
+      # The restore walks the orphans one at a time, and each is a dispatch of
+      # its own. One that cannot be enqueued says nothing about the next.
+      test "a dispatch that could not be enqueued does not take the others down with it" do
+        anchor = comment("@#{@agent.name}: first")
+        first_late = comment("@#{@agent.name}: second")
+        second_late = comment("@#{@agent.name}: third")
+        turn = running_turn(anchor)
+        dispatch(first_late)
+        dispatch(second_late)
+        assert_equal [ first_late.id, second_late.id ],
+                     DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload).sort,
+                     "premise: both dispatches were dropped against this turn"
+
+        slot_holder(anchor)
+        with_scheduler_failing_for(first_late) { turn.update!(status: "failed") }
+
+        assert_equal [ second_late.id ],
+                     restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "one comment's failure is not the other comment's answer"
+      end
+
+      # And the turn's status is not the restore's to lose. The enqueues are
+      # walked one at a time above, but the reads that decide *what* to enqueue
+      # — re-reading the row, the sibling claims, the orphans' eligibility — are
+      # not, and this fires from after_update_commit: an exception propagates
+      # back into the update! that ended the turn, where AiAgentJob's rescue
+      # answers it by writing `failed` over a turn that had finished and
+      # answered.
+      test "a restore that raises does not fail the turn" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        raiser = ->(_task) { raise ActiveRecord::ConnectionNotEstablished, "the database is down" }
+        assert_nothing_raised do
+          DeliveryRecord.stub(:restore!, raiser) { turn.update!(status: "failed") }
+        end
+        assert_empty restored_waiters, "premise: the restore really did not get through"
+      end
+
+      # Which leaves the comment on nothing at all: the callback runs after the
+      # covering turn's status is committed, so there is no later transition
+      # that would ask again. What was lost is only the asking — the drop record
+      # is on the row and the orphan set is derived from it, so the restore is
+      # reconstructible from that row at any later time.
+      test "the sweep makes a restore the callback could not" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        with_scheduler_failing_for(late) { turn.update!(status: "failed") }
+        assert_empty restored_waiters, "premise: the callback's restore did not get through"
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "the record is still on the row; only the asking was lost"
+      end
+
+      # Including for the ending whose status says the opposite. A turn whose
+      # request never reached the provider finishes `done`, so the sweep has to
+      # scan that status too and decide with the callback's predicate rather
+      # than with the status alone.
+      test "the sweep makes a restore the callback could not after a caught provider failure" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        DeliveryRecord.mark_handoff_failed!(turn)
+
+        with_scheduler_failing_for(late) { turn.reload.update!(status: "done") }
+        assert_empty restored_waiters, "premise: the callback's restore did not get through"
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") }
+      end
+
+      # Control: the sweep decides with that same predicate and not with
+      # "terminal". A turn that delivered what it read owes nothing, and a sweep
+      # reading `done` as an undelivered ending would answer every comment
+      # dropped in its window a second time.
+      test "the sweep restores nothing for a turn that delivered" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        turn.update!(status: "done")
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_empty restored_waiters,
+                     "the agent read that comment and answered; there is nothing to restore"
+      end
+
+      # Every dispatch anchored on this comment, whatever became of it. Counting
+      # only the queued ones cannot see a second restore: the new waiter
+      # supersedes the first, which is cancelled on the way, so the queue holds
+      # one row either way and two turns have been created for one comment.
+      def dispatches_for(target)
+        Task.where(agent: @agent, topic_id: @topic.id, creative_id: @creative.id).select do |t|
+          t.trigger_event_payload.is_a?(Hash) &&
+            t.trigger_event_payload.dig("comment", "id") == target.id
+        end
+      end
+
+      # Control: the sweep runs over every undelivered ending in its window,
+      # including the ones whose callback worked. What it re-reads is the orphan
+      # set, and a dispatch that came back has a row of its own by then.
+      test "the sweep does not restore a dispatch a second time" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+        assert_equal 1, dispatches_for(late).count, "premise: the callback restored it"
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_equal 1, dispatches_for(late).count,
+                     "the orphan set is re-read, and this comment has a row of its own by now"
+      end
+
+      # Control: a backstop with a horizon rather than a permanent second
+      # opinion. A comment whose restore never got through and whose turn ended
+      # long ago has been overtaken by whatever the topic did since.
+      test "the sweep leaves a turn that ended before its window alone" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        with_scheduler_failing_for(late) { turn.update!(status: "failed") }
+        Task.where(id: turn.id)
+            .update_all(updated_at: (DeliveryRecord::RESTORE_SWEEP_WINDOW + 5.minutes).ago)
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_empty restored_waiters
+      end
+
       test "the restored dispatch carries none of the dead turn's bookkeeping" do
         anchor = comment("@#{@agent.name}: first")
         late = comment("@#{@agent.name}: second")

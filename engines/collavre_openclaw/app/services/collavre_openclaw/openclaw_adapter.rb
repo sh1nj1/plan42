@@ -137,7 +137,7 @@ module CollavreOpenclaw
           session_key: session_key,
           message: payload[:message],
           attachments: payload[:attachments],
-          on_run_id: method(:persist_run_id_on_comment)
+          on_run_id: method(:handle_run_id)
         ) do |event|
           case event[:state]
           when "delta"
@@ -166,6 +166,11 @@ module CollavreOpenclaw
         # #last_handoff_failed?. Decided after the stream rather than in the
         # branch above, so a delta that arrives either side of the error still
         # counts as the payload having got through.
+        #
+        # Inert behind a client that surfaces a run id, since #handle_run_id has
+        # already answered by the time any event arrives. Kept for one that does
+        # not: an error event is then the only evidence either way, and reading
+        # it as a delivery would be the losing mistake.
         @last_handoff_failed = true if errored && !@handed_off
         response_content.presence
       rescue CollavreOpenclaw::ConnectionError,
@@ -184,6 +189,21 @@ module CollavreOpenclaw
         Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
         chat_via_http(&block)
       end
+    end
+
+    # The gateway answered chat.send with a run id, which is the handoff: it has
+    # the whole payload and the run may already be calling tools. Everything
+    # after this — a run that goes quiet until the read timeout, an HTTP
+    # fallback that fails before yielding — costs an *answer*, not the delivery,
+    # and the comments this turn swallowed are with the agent either way.
+    #
+    # Reaching here at all is the acknowledgement: WebsocketClient#chat_send
+    # calls this straight after send_rpc returns, and send_rpc raises on a read
+    # timeout and on an RPC error. Set before persisting, because the handoff
+    # happened whether or not we can write the run id down.
+    def handle_run_id(run_id)
+      @handed_off = true
+      persist_run_id_on_comment(run_id)
     end
 
     # Claim the run for the solicited reply so the same run's final, re-delivered

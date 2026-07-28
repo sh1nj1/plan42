@@ -115,6 +115,20 @@ module Collavre
       # added to one list and not the other is how they drift apart.
       UNDELIVERED_TERMINAL_STATUSES = %w[failed cancelled escalated].freeze
 
+      # Statuses a row can be in and still owe a restore — the undelivered
+      # endings, plus the one that reads as delivered until the payload is
+      # consulted. Derived rather than listed so the sweep cannot come to scan
+      # for less than Task#ended_undelivered? decides on.
+      RESTORABLE_STATUSES = (UNDELIVERED_TERMINAL_STATUSES + %w[done]).freeze
+
+      # How far back restore_missed! looks.
+      #
+      # Comfortably more than its schedule, so a restore the callback lost gets
+      # several attempts, and finite because it is a backstop: a comment whose
+      # turn ended an hour ago has been overtaken by whatever the topic did
+      # since, and re-dispatching it then would be the more surprising answer.
+      RESTORE_SWEEP_WINDOW = 1.hour
+
       # Record what `resolved` carries as chat history.
       #
       # Measured off the *resolved* payload — the messages the adapter is handed
@@ -313,7 +327,49 @@ module Collavre
           .where.not(user_id: [ agent.id, nil ])
           .order(:id)
           .each do |comment|
-          enqueue_restored(agent, task.trigger_event_name, restored_context(payload, comment))
+          begin
+            enqueue_restored(agent, task.trigger_event_name, restored_context(payload, comment))
+          rescue StandardError => e
+            # Each orphan is a dispatch of its own; one that cannot be enqueued
+            # says nothing about the next. What it leaves behind is the absence
+            # of a row, which is exactly what restore_missed! reads.
+            Rails.logger.error(
+              "[DeliveryRecord] Failed to restore dispatch for comment #{comment.id} " \
+              "of task #{task.id}: #{e.class}: #{e.message}"
+            )
+          end
+        end
+      end
+
+      # Ask again for every turn whose restore may not have been made.
+      #
+      # restore! runs from an after_update_commit callback, which is to say
+      # after the covering turn's status is already committed: a transient
+      # failure there has nothing left to roll back and no later transition that
+      # would retry it, and the dropped dispatch is the one thing in this
+      # feature with no row of its own to fall back on.
+      #
+      # Nothing extra is persisted for it, because the orphan set already is:
+      # DROPPED_KEY is on the row and claimed_comment_ids subtracts whatever has
+      # since acquired a Task, so a comment stays orphaned exactly until its
+      # dispatch exists again and restore! is idempotent by construction. What
+      # was lost is only the asking.
+      #
+      # A dispatch the Scheduler refuses leaves no row either, so it is asked
+      # again on each pass through the window — which is the right answer for a
+      # quota that has since reset, and a bounded number of cheap refusals if it
+      # has not.
+      def self.restore_missed!(window: RESTORE_SWEEP_WINDOW)
+        Task.where(status: RESTORABLE_STATUSES)
+            .where(updated_at: window.ago..)
+            .find_each do |task|
+          next unless task.ended_undelivered?
+
+          restore!(task)
+        rescue StandardError => e
+          Rails.logger.error(
+            "[DeliveryRecord] Restore sweep failed for task #{task.id}: #{e.class}: #{e.message}"
+          )
         end
       end
 
