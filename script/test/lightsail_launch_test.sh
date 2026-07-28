@@ -373,6 +373,16 @@ usermod_host() {   # usermod -g <group> <user>
 usermod() { usermod_host "$@"; }
 groupadd() { :; }
 log() { LOGGED="$LOGGED $*"; }
+# The suite is unprivileged and must not depend on whether its host happens to
+# carry a real /etc/sudoers.d/90-collavre-* file. Production runs as root; the
+# explicit failure case at the end overrides this seam with a failing rm.
+rm() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in /etc/sudoers.d/90-collavre-*) return 0 ;; esac
+  done
+  command rm "$@"
+}
 revoke() { REVOKED=""; USERMOD=""; LOGGED=""; revoke_prior_deploy_user "$@"; }
 
 echo "11. the deploy user a re-run replaces loses its root-equivalent access"
@@ -482,7 +492,7 @@ chk "the retry revokes it"     0 "$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | g
 chk "and it leaves the queue" 0 "$(grep -cxF legacy "$d4/deploy_users")"
 chk "while the marker still names the account in use" "deploybot" "$(cat "$d4/deploy_user")"
 
-unset -f id gpasswd usermod usermod_host groupadd log revoke supp_holds drop_word
+unset -f id gpasswd usermod usermod_host groupadd log rm revoke supp_holds drop_word
 
 # --------------------------------------------------------------------------
 # One name cannot describe a host that has rotated twice, so the cases below
