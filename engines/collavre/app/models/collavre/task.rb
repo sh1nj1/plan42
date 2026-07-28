@@ -88,9 +88,10 @@ module Collavre
     def ended_undelivered?
       payload = trigger_event_payload
       # Asked first, so that a row carrying both records is read as undelivered.
-      # The two are written off one boundary and cannot both be true, but the
-      # cost of the two errors is not symmetric: restoring a turn that delivered
-      # answers a comment twice, and not restoring one that did not loses it.
+      # A resumed turn can legitimately carry both: an earlier attempt handed
+      # off, while a later one failed before doing so. DeliveryRecord restores
+      # that row but subtracts the comment ids the successful attempts carried,
+      # leaving only the later attempt's undelivered comments.
       return true if status == "done" && Orchestration::DeliveryRecord.handoff_failed?(payload)
 
       # An ending is undelivered because the payload never reached the provider,

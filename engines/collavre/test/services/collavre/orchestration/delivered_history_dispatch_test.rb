@@ -79,6 +79,12 @@ module Collavre
           agent: agent, topic_id: @topic.id, creative_id: @creative.id,
           trigger_event_payload: context_for(anchor)
         )
+        reassemble(turn, anchor, agent: agent)
+      end
+
+      # A turn assembling its payload — the first time, or again after a pause
+      # for tool approval, which re-runs AiAgentService over the same row.
+      def reassemble(turn, anchor, agent: @agent)
         data = AiAgent::MessageBuilder.new(
           agent: agent, context: turn.trigger_event_payload, original_comment: anchor
         ).build
@@ -1356,6 +1362,69 @@ module Collavre
 
         assert_empty restored_waiters,
                      "the provider had that comment; re-dispatching it answers it twice"
+      end
+
+      # ─────────────────────────────────────────────
+      # A turn that ran more than once
+      # ─────────────────────────────────────────────
+
+      # A tool approval pauses the turn and Comments::ActionExecutor resumes the
+      # *same* Task row, so AiAgentService runs over it a second time with a
+      # fresh client. The first pass reached its tools, which means the provider
+      # had that payload and everything the window swept into it; if the resumed
+      # request then never lands, the row carries both records and
+      # Task#ended_undelivered? reads the failure first. The turn-level flag
+      # cannot answer for a turn that had more than one attempt: what the first
+      # one handed over stays handed over.
+      test "a dispatch the first attempt handed over is not restored when a later attempt fails" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id,
+                        "premise: the dispatch was dropped against this turn"
+        slot_holder(anchor)
+
+        # Attempt one reached its tools and paused for approval: the payload got there.
+        DeliveryRecord.mark_handed_off!(turn.reload)
+        Task.find(turn.id).update!(status: "pending_approval")
+
+        # The approval resumes the same row, and this time the request never lands.
+        DeliveryRecord.mark_handoff_failed!(Task.find(turn.id))
+        Task.find(turn.id).update!(status: "done")
+
+        assert_empty restored_waiters,
+                     "the first attempt handed that comment over; re-dispatching it answers it twice"
+      end
+
+      # And the other half, which is why the exemption is per comment rather
+      # than "a turn that ever handed off restores nothing": the resumed attempt
+      # assembles again and reads comments that landed during the pause. Those
+      # the first handoff never carried, so a failed resume still owes them.
+      test "a dispatch only the failed attempt read is still restored" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        DeliveryRecord.mark_handed_off!(turn.reload)
+        Task.find(turn.id).update!(status: "pending_approval")
+
+        during_pause = comment("@#{@agent.name}: third")
+        Task.where(id: turn.id).update_all(status: "running")
+        reassemble(turn.reload, anchor)
+        dispatch(during_pause)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload),
+                        during_pause.id,
+                        "premise: only the resumed attempt read it, and its dispatch was dropped"
+
+        DeliveryRecord.mark_handoff_failed!(Task.find(turn.id))
+        Task.find(turn.id).update!(status: "done")
+
+        assert_equal [ during_pause.id ],
+                     restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "the attempt that read it never handed it over"
       end
 
       # And the sweep decides with the same predicate, or the backstop undoes

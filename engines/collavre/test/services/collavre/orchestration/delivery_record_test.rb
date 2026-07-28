@@ -441,10 +441,37 @@ module Collavre
                      DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES.sort
       end
 
+      # The turn-level flag cannot answer for a turn that ran twice, so the
+      # handoff also writes down what it carried. A resumed attempt reads
+      # comments that landed during the pause, and those the first handoff did
+      # not carry — the record has to grow with each attempt that lands, not be
+      # written once and left.
+      test "the handoff records the comments the attempt carried, and grows with a second one" do
+        anchor = comment("first")
+        turn = task_for(anchor)
+        late = comment("second")
+        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+        DeliveryRecord.mark_handed_off!(turn.reload)
+
+        assert_equal [ late.id ],
+                     DeliveryRecord.handed_off_ids_in(turn.reload.trigger_event_payload)
+
+        during_pause = comment("third")
+        DeliveryRecord.record!(turn.reload, resolved_for(turn.reload, @agent))
+        assert_equal [ late.id ],
+                     DeliveryRecord.handed_off_ids_in(turn.reload.trigger_event_payload),
+                     "reading it is not handing it over"
+
+        DeliveryRecord.mark_handed_off!(turn.reload)
+
+        assert_equal [ late.id, during_pause.id ].sort,
+                     DeliveryRecord.handed_off_ids_in(turn.reload.trigger_event_payload)
+      end
+
       # The same drift, on the other list. TURN_SCOPED_KEYS is what a restored
       # dispatch is stripped of, and it is right only while it names every key a
-      # turn writes onto its own payload. Driving all five writers over one
-      # payload is what makes a sixth added later show up here rather than as a
+      # turn writes onto its own payload. Driving every writer over one
+      # payload is what makes another one added later show up here rather than as a
       # restored dispatch quietly carrying it.
       test "the stripped keys are exactly the ones a turn writes onto its own payload" do
         anchor = comment("first")

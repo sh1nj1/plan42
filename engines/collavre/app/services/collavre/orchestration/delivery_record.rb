@@ -87,6 +87,26 @@ module Collavre
       # redundant turn. Only a turn that got far enough to say so is exempt.
       HANDED_OFF_KEY = "handed_off"
 
+      # The comment ids an attempt that handed off actually carried.
+      #
+      # HANDED_OFF_KEY answers for the *turn*, and that is enough while a turn
+      # is one attempt. It is not: a tool approval pauses the turn and
+      # Comments::ActionExecutor resumes the same Task row, so AiAgentService
+      # runs over it again with a fresh client. The first pass reached its tools,
+      # which means the provider had that payload; if the resumed request then
+      # never lands, the row carries both records, Task#ended_undelivered? reads
+      # the failure first, and the restore puts back every dispatch ever dropped
+      # against the turn — including the ones the first pass handed over.
+      #
+      # So the exemption is recorded per comment, which is the subject the
+      # restore actually has. KEY at the moment of the handoff is exactly what
+      # went over: record! writes it before the request, and a drop taken later
+      # against an id already in KEY was in that payload too. Accumulates across
+      # attempts for the same reason KEY does — what one pass delivered it still
+      # delivered — and a comment only the failed pass read is not in it, so it
+      # is still owed back.
+      HANDED_OFF_IDS_KEY = "handed_off_comment_ids"
+
       # Comments this turn's restore has already put back on their way.
       #
       # AiAgentJob creates the Task row when it *runs*, so between a restored
@@ -113,8 +133,8 @@ module Collavre
       # was added here long after restored_context had named the other four —
       # and the drift test on this constant is what will catch the sixth.
       TURN_SCOPED_KEYS = [
-        KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, RESTORED_KEY,
-        TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY
+        KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
+        RESTORED_KEY, TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY
       ].freeze
 
       # Statuses in which a turn is still the thing that will answer.
@@ -256,9 +276,16 @@ module Collavre
           row = Task.lock.find_by(id: task.id)
           payload = row&.trigger_event_payload
           next unless payload.is_a?(Hash)
-          next if handed_off?(payload)
 
-          row.update!(trigger_event_payload: payload.merge(HANDED_OFF_KEY => true))
+          # Not `next if handed_off?`: a resumed attempt records the handoff a
+          # second time, and what it carried this time is the point of asking.
+          recorded = handed_off_ids_in(payload)
+          covered = (recorded + ids_in(payload)).uniq.sort
+          next if handed_off?(payload) && covered == recorded
+
+          row.update!(trigger_event_payload: payload.merge(
+            HANDED_OFF_KEY => true, HANDED_OFF_IDS_KEY => covered
+          ))
           task.reload unless task.equal?(row)
         end
       end
@@ -267,6 +294,12 @@ module Collavre
         return false unless payload.is_a?(Hash)
 
         payload[HANDED_OFF_KEY] == true
+      end
+
+      def self.handed_off_ids_in(payload)
+        return [] unless payload.is_a?(Hash)
+
+        Array(payload[HANDED_OFF_IDS_KEY]).compact.map(&:to_i)
       end
 
       def self.restored_ids_in(payload)
@@ -410,6 +443,10 @@ module Collavre
       # braces: the record already excludes what was never dropped, and this
       # excludes what has since acquired a row of its own.
       #
+      # And once more by HANDED_OFF_IDS_KEY, for the turn that ran more than
+      # once: a comment an earlier attempt handed to the provider is not owed
+      # back by a later attempt's failure.
+      #
       # Each orphan is re-dispatched on its own, exactly as it would have been
       # had it never been dropped, and the ordinary admission path folds them
       # back together — rather than this method inventing a second merge rule
@@ -423,7 +460,8 @@ module Collavre
         payload = Task.find_by(id: task.id)&.trigger_event_payload
         return unless payload.is_a?(Hash) && payload.key?("topic")
 
-        orphaned = dropped_ids_in(payload) - claimed_comment_ids(task) - restored_ids_in(payload)
+        orphaned = dropped_ids_in(payload) - handed_off_ids_in(payload) -
+                   claimed_comment_ids(task) - restored_ids_in(payload)
         return if orphaned.empty?
 
         agent = task.agent
