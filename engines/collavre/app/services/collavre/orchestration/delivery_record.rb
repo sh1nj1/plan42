@@ -162,6 +162,10 @@ module Collavre
       # since, and re-dispatching it then would be the more surprising answer.
       RESTORE_SWEEP_WINDOW = 1.hour
 
+      # Slack added to the provider timeout when waiting for a stopped turn's
+      # worker to settle — see .cancel_settle_grace.
+      CANCEL_SETTLE_SLACK = 5.minutes
+
       # Record what `resolved` carries as chat history.
       #
       # Measured off the *resolved* payload — the messages the adapter is handed
@@ -465,10 +469,49 @@ module Collavre
       # again on each pass through the window — which is the right answer for a
       # quota that has since reset, and a bounded number of cheap refusals if it
       # has not.
+      # How long after a cancellation this sweep waits before deciding it.
+      #
+      # Task#stopped_mid_turn? explains why the status callback declines: Stop is
+      # committed from another process while the worker is inside AiClient#chat,
+      # and the worker's account of the handoff is written only on the way out.
+      # This door reads a settled row, so it cannot ask that question — and it
+      # cannot tell "still settling" from "nobody is coming" either. Without a
+      # wait it answers in the callback's place and re-dispatches everything the
+      # turn swallowed, minutes after the user asked for no more work.
+      #
+      # Derived from the configured provider timeout because that is what bounds
+      # the wait in the shape this is for: Stop pressed while the turn is still
+      # waiting for its first token, where AgentLifecycleManager#check_cancelled!
+      # cannot fire at all because it polls from inside the streaming block.
+      #
+      # It is not a bound on a conversation that keeps making requests without
+      # yielding content — a tool loop can outlast any grace, and for that one
+      # this sweep can still be early. What that costs is a duplicate reply;
+      # declining cancellations outright would cost the comment, and the
+      # cancellers with no worker behind them at all — an agent unregistering,
+      # an offline delegate, a worker killed before its own rescue — are exactly
+      # what this sweep is here for.
+      def self.cancel_settle_grace
+        SystemSetting.llm_request_timeout_seconds.seconds + CANCEL_SETTLE_SLACK
+      end
+
       def self.restore_missed!(window: RESTORE_SWEEP_WINDOW)
-        Task.where(status: RESTORABLE_STATUSES)
-            .where(updated_at: window.ago..)
-            .find_each { |task| restore_if_undelivered!(task) }
+        grace = cancel_settle_grace
+
+        [
+          # The endings whose status is written after the worker is out of the
+          # provider call, so the row is as settled as it will ever be.
+          Task.where(status: RESTORABLE_STATUSES - [ "cancelled" ])
+              .where(updated_at: window.ago..),
+          # And the one that is not. The window moves with the wait rather than
+          # being spent by it: subtracting the grace from a fixed horizon would
+          # leave a cancellation less backstop than every other ending gets, and
+          # at the default timeout almost none.
+          Task.where(status: "cancelled")
+              .where(updated_at: (window + grace).ago..grace.ago)
+        ].each do |scope|
+          scope.find_each { |task| restore_if_undelivered!(task) }
+        end
       end
 
       # Ask the restore question of a turn that has settled.

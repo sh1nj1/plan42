@@ -18,10 +18,12 @@ module Collavre
     # needs them apart, because a turn that handed the provider nothing
     # delivered nothing, and AiAgentJob still marks such a turn `done`.
     #
-    # An error *after* deltas have streamed is not one of these. The provider
-    # had the payload and answered part of it; the truncated reply and the
-    # retry beside it are the ordinary ending the product already shows, and
-    # the comments that turn swallowed did reach the agent.
+    # An error *after* the provider started answering is not one of these. It
+    # had the payload and acted on it; the truncated reply and the retry beside
+    # it are the ordinary ending the product already shows, and the comments
+    # that turn swallowed did reach the agent. "Started answering" is any chunk,
+    # not any *content* — see the stream block for why a tool-call chunk is the
+    # sharper case.
     def last_handoff_failed?
       @last_handoff_failed
     end
@@ -117,6 +119,17 @@ module Collavre
       add_messages(@conversation, contents)
 
       response = @conversation.complete do |chunk|
+        # A chunk at all is the provider having accepted the request and begun
+        # answering — the earliest acceptance observable from here, and the
+        # analogue of the gateway run id the OpenClaw adapter records.
+        #
+        # Set above the empty check, not below it: role-only and tool-call
+        # chunks carry no content, and a conversation that reached its tools has
+        # not merely been handed the payload, it has acted on it — this
+        # product's tools write creatives and post comments. A turn classified
+        # as a failed handoff has everything it swallowed dispatched again, and
+        # the restored turn runs those tools a second time.
+        @handed_off = true
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
         # break, which providers routinely emit as a token of its own — is
@@ -129,9 +142,6 @@ module Collavre
         next if delta.empty?
 
         response_content << delta
-        # Set where the content actually arrives, not where #chat returns: the
-        # caller's block raises CancelledError from inside it.
-        @handed_off = true
         yield delta if block_given?
       end
 
@@ -158,11 +168,12 @@ module Collavre
     rescue CancelledError
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
-      # Nothing streamed means nothing was handed over — see #last_handoff_failed?.
-      # Asked of @handed_off rather than of the buffer, and not `blank?`: a delta
-      # of exactly "\n\n" is content the branch above deliberately keeps, so
-      # `blank?` calls a stream that broke after a paragraph break a failed
-      # handoff while @handed_off calls it a handoff. The two are the same
+      # Nothing came back at all means nothing was handed over — see
+      # #last_handoff_failed?. Asked of @handed_off rather than of the buffer,
+      # and not `blank?`: a delta of exactly "\n\n" is content the branch above
+      # deliberately keeps, so `blank?` calls a stream that broke after a
+      # paragraph break a failed handoff, and the buffer either way says nothing
+      # about the content-less chunks. The two are the same
       # boundary asked two ways, and Task#ended_undelivered? reads a row carrying
       # both as undelivered — so it has to be impossible to record both.
       @last_handoff_failed = !@handed_off

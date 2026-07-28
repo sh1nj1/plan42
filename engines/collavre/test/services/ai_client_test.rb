@@ -812,15 +812,43 @@ class AiClientTest < ActiveSupport::TestCase
     assert_not client.last_handoff_failed?
   end
 
+  # A tool-call chunk carries no content — the delta branch says so, and skips
+  # it — but a conversation that reached its tools has had the payload and has
+  # already done things with it: this product's tools write creatives and post
+  # comments. Classifying that turn as a failed handoff re-dispatches every
+  # comment it swallowed, and the restored turn runs those tools again.
+  test "does not record a handoff failure when the error came after a content-less chunk" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      raise StandardError, "stream closed"
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    yielded = []
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |delta| yielded << delta }
+    end
+
+    assert_equal 1, yielded.size, "premise: the chunk carried no content, so only the error notice reached the caller"
+    assert_match(/AI Error/, yielded.first)
+    assert_predicate client, :handed_off?, "premise: the provider answered — with a chunk that is not text"
+    assert_not client.last_handoff_failed?
+  end
+
   # The invariant Task#ended_undelivered? is written on: the two records are one
   # boundary asked twice, so no ending can carry both. It reads the failure
   # first precisely because it cannot ask which of two contradictory records is
   # the true one — that has to be impossible here rather than resolved there.
   test "records the handoff and its failure as one boundary asked two ways" do
-    [ [ "nothing", nil ], [ "a paragraph break", "\n\n" ], [ "an answer", "half an answer" ] ].each do |what, streamed|
+    [ [ "nothing", [] ], [ "a content-less chunk", [ nil ] ],
+      [ "a paragraph break", [ "\n\n" ] ], [ "an answer", [ "half an answer" ] ] ].each do |what, streamed|
       conversation = FakeConversation.new
       conversation.define_singleton_method(:complete) do |&block|
-        block.call(OpenStruct.new(content: streamed)) if streamed
+        streamed.each { |content| block.call(OpenStruct.new(content: content)) }
         raise StandardError, "stream closed"
       end
 

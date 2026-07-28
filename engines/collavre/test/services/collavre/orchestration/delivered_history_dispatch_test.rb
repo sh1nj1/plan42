@@ -890,6 +890,73 @@ module Collavre
         assert_empty restored_waiters
       end
 
+      # A stopped turn is the one row Task#ended_undelivered? is asked too early
+      # of. The cancel is committed from another process — a web request, a
+      # deleted anchor — while the worker is still inside the provider call, so
+      # the row carries no account of the handoff yet and will not until the
+      # worker comes out. The status callback declines for exactly that reason
+      # (Task#stopped_mid_turn?); this door reads a settled row and cannot tell
+      # "still settling" from "nobody is coming", so without the wait it answers
+      # in the callback's place, minutes after the user pressed Stop.
+      test "the sweep leaves a cancellation its worker has not settled alone" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        Task.find(turn.id).update!(status: "cancelled")
+        assert_empty restored_waiters, "premise: the callback declined to decide"
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_empty restored_waiters,
+                     "the worker has not said yet whether the payload got there"
+      end
+
+      # Control, and the case this door is here for: a cancellation with no
+      # worker behind it settles nothing — an agent unregistering, an offline
+      # delegate, a worker killed before its own rescue — and the dispatches
+      # dropped against it are owed back. Declining cancellations outright would
+      # cost those comments; waiting only costs the delay.
+      test "the sweep restores a cancellation nothing came back to settle" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        Task.find(turn.id).update!(status: "cancelled")
+        Task.where(id: turn.id)
+            .update_all(updated_at: (DeliveryRecord.cancel_settle_grace + 5.minutes).ago)
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "nothing settled it, and the record is still on the row"
+      end
+
+      # Control: the horizon moves with the wait rather than being spent by it.
+      # A grace subtracted from a fixed window would leave a cancellation less
+      # backstop than every other ending gets, and at the default provider
+      # timeout it would leave it almost none.
+      test "the sweep leaves a cancellation older than its window alone" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        Task.find(turn.id).update!(status: "cancelled")
+        Task.where(id: turn.id).update_all(
+          updated_at: (DeliveryRecord::RESTORE_SWEEP_WINDOW + DeliveryRecord.cancel_settle_grace + 5.minutes).ago
+        )
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_empty restored_waiters
+      end
+
       test "the restored dispatch carries none of the dead turn's bookkeeping" do
         anchor = comment("@#{@agent.name}: first")
         late = comment("@#{@agent.name}: second")
