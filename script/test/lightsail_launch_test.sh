@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_cutover_has_sshd_ancestor|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_public_key_fingerprint|ssh_cutover_auth_info_file|ssh_cutover_authenticated_with_key|ssh_cutover_has_sshd_ancestor|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -31,6 +31,8 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           revoke_prior_deploy_user \
           record_deploy_user_grant revoke_deploy_user_access \
 	  stage_ssh_cutover ssh_cutover_has_sshd_ancestor finalize_ssh_cutover \
+	  ssh_public_key_fingerprint ssh_cutover_auth_info_file \
+	  ssh_cutover_authenticated_with_key \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation role_owns_app_objects revoke_prior_ssh_key \
@@ -6953,15 +6955,19 @@ chk "the finalizer requires the sudo origin to be the staged account" 1 \
   "$(grep -cF '[ "${SUDO_USER:-}" = "$user" ] ||' "$SRC")"
 chk "and requires an sshd process ancestor" 1 \
   "$(grep -c '^  ssh_cutover_has_sshd_ancestor "\$user" ||$' "$SRC")"
+chk "sshd exposes the key that authenticated the session" 1 \
+  "$(grep -c "^  'ExposeAuthInfo yes'$" "$SRC")"
 chk "the runbook changes KAMAL_SSH_USER only after finalization" 1 \
   "$(grep -c 'Change `KAMAL_SSH_USER` only after' "$DOC")"
 
 cutover_state="$(mktemp -d)"
 cutover_finalizer="$cutover_state/finalizer"
+ssh-keygen -q -t ed25519 -N '' -f "$cutover_state/staged" </dev/null
+cutover_key="$(cat "$cutover_state/staged.pub")"
 STATE_DIR="$cutover_state"
 SSH_CUTOVER_PENDING=0
 SSH_CUTOVER_NONCE=''
-stage_ssh_cutover deploybot 'ssh-ed25519 STAGED operator' \
+stage_ssh_cutover deploybot "$cutover_key" \
   "$cutover_finalizer" "$SRC"
 chk "staging creates a root-only pending record" 600 \
   "$(file_mode "$cutover_state/ssh_cutover.pending")"
@@ -6971,10 +6977,18 @@ chk "and installs the finalizer" 755 "$(file_mode "$cutover_finalizer")"
 chk "without committing the deploy user" 0 \
   "$([ -e "$cutover_state/deploy_user" ] && echo 1 || echo 0)"
 cutover_nonce="$SSH_CUTOVER_NONCE"
+cutover_fingerprint="$(ssh_public_key_fingerprint "$cutover_key")"
+printf 'publickey %s\n' "$cutover_key" > "$cutover_state/auth-info"
+ssh_cutover_auth_info_file() { printf '%s/auth-info\n' "$cutover_state"; }
+chk "the exposed authentication record identifies the staged key" 0 \
+  "$(ssh_cutover_authenticated_with_key deploybot "$cutover_fingerprint"; echo $?)"
+printf 'publickey ssh-ed25519 OLD predecessor\n' > "$cutover_state/auth-info"
+chk "and rejects a session authenticated by a different key" 1 \
+  "$(ssh_cutover_authenticated_with_key deploybot "$cutover_fingerprint"; echo $?)"
+unset -f ssh_cutover_auth_info_file
 
 mkdir -p "$cutover_state/home/.ssh"
-printf '%s\n' 'ssh-ed25519 STAGED operator' \
-  > "$cutover_state/home/.ssh/authorized_keys"
+printf '%s\n' "$cutover_key" > "$cutover_state/home/.ssh/authorized_keys"
 getent() { printf 'deploybot:x:1001:1001::%s/home:/bin/bash\n' "$cutover_state"; }
 id() {
   case "$1" in
@@ -6986,10 +7000,20 @@ in_group() { return 0; }
 ssh_cutover_has_sshd_ancestor() {
   [ "$1" = deploybot ] && [ "${SSH_PROOF:-0}" -eq 1 ]
 }
+ssh_cutover_authenticated_with_key() {
+  [ "$1" = deploybot ] && [ -n "$2" ] && [ "${KEY_PROOF:-0}" -eq 1 ]
+}
 revoke_prior_ssh_key() {
   TRACE="${TRACE}key "
   write_state_file "$STATE_DIR/ssh_public_key.deploybot" \
-    'ssh-ed25519 STAGED operator'$'\n'
+    "$cutover_key"$'\n'
+  if [ "${REVOKE_KEY_FAIL:-0}" -eq 1 ]; then
+    write_state_file "$STATE_DIR/ssh_public_keys.deploybot" \
+      "ssh-ed25519 OLD predecessor"$'\n'"$cutover_key"$'\n'
+  else
+    write_state_file "$STATE_DIR/ssh_public_keys.deploybot" \
+      "$cutover_key"$'\n'
+  fi
 }
 revoke_prior_deploy_user() {
   TRACE="${TRACE}account "
@@ -7004,13 +7028,38 @@ chk "and revokes nothing" "" "$TRACE"
     finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
 chk "a local or console shell is refused" 1 "$?"
 chk "and still revokes nothing" "" "$TRACE"
-SUDO_USER=deploybot SSH_PROOF=1 finalize_ssh_cutover "$cutover_nonce" >/dev/null
+( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=0 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "a session authenticated by the predecessor key is refused" 1 "$?"
+chk "and does not start withdrawal" "" "$TRACE"
+( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 REVOKE_KEY_FAIL=1 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "an incomplete predecessor-key withdrawal is refused" 1 "$?"
+chk "and does not commit the deploy account" 0 \
+  "$([ -e "$cutover_state/deploy_user" ] && echo 1 || echo 0)"
+chk "while retaining the pending challenge" 1 \
+  "$([ -e "$cutover_state/ssh_cutover.pending" ] && echo 1 || echo 0)"
+TRACE=''
+SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 \
+  finalize_ssh_cutover "$cutover_nonce" >/dev/null
 chk "an authenticated SSH proof commits key then account" "key account " "$TRACE"
 chk "and consumes the pending state" 0 \
   "$([ -e "$cutover_state/ssh_cutover.pending" ] && echo 1 || echo 0)"
 chk "and commits the staged account" deploybot \
   "$(cat "$cutover_state/deploy_user")"
+sudoers_failure="$(
+  (
+    in_group() { return 1; }
+    rm() { return 1; }
+    log() { :; }
+    revoke_deploy_user_access predecessor deploybot
+    printf 'rc=%s\n' "$?"
+  ) 2>/dev/null
+)"
+chk "a sudoers deletion failure keeps the predecessor queued" 0 \
+  "$(grep -c '^rc=0$' <<<"$sudoers_failure")"
 unset -f getent id in_group ssh_cutover_has_sshd_ancestor \
+  ssh_cutover_authenticated_with_key \
   revoke_prior_ssh_key revoke_prior_deploy_user
 rm -rf "$cutover_state"
 

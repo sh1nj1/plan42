@@ -1481,7 +1481,13 @@ revoke_deploy_user_access() {
   fi
 
   sudoers_name="90-collavre-${prior//[^A-Za-z0-9_-]/_}"
-  rm -f "/etc/sudoers.d/$sudoers_name"
+  if ! rm -f "/etc/sudoers.d/$sudoers_name" ||
+     [ -e "/etc/sudoers.d/$sudoers_name" ]; then
+    log "WARNING: could NOT remove /etc/sudoers.d/$sudoers_name; '$prior'" \
+	"still has this script's passwordless sudo grant, so the SSH cutover" \
+	"remains pending"
+    return 1
+  fi
 
   log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
       "remove it by hand once you can reach the host as '$current':" \
@@ -1566,7 +1572,7 @@ revoke_prior_deploy_user() {
 # predecessor managed keys all stay unchanged.
 stage_ssh_cutover() {
   local user="$1" key="$2" current='' prior_key='' need=0
-  local nonce nonce_hash pending="$STATE_DIR/ssh_cutover.pending"
+  local nonce nonce_hash key_fingerprint='' pending="$STATE_DIR/ssh_cutover.pending"
   local key_file="$STATE_DIR/ssh_cutover.key"
   local finalizer="${3:-/usr/local/sbin/collavre-finalize-ssh-cutover}"
   local source="${4:-${BASH_SOURCE[0]}}"
@@ -1601,11 +1607,16 @@ stage_ssh_cutover() {
   nonce="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
   [ "${#nonce}" -eq 64 ] || die "could not generate the SSH cutover challenge"
   nonce_hash="$(printf '%s' "$nonce" | sha256sum | awk '{print $1}')"
+  if [ -n "$key" ]; then
+    key_fingerprint="$(ssh_public_key_fingerprint "$key")" ||
+      die "could not fingerprint the staged SSH key"
+  fi
 
   write_state_file "$key_file" "$key"$'\n' 0600 ||
     die "could not stage the SSH cutover key in $key_file"
   write_state_file "$pending" \
-    "user=$user"$'\n'"nonce_sha256=$nonce_hash"$'\n' 0600 ||
+    "user=$user"$'\n'"nonce_sha256=$nonce_hash"$'\n'\
+"key_sha256=$key_fingerprint"$'\n' 0600 ||
     die "could not stage the SSH cutover challenge in $pending"
 
   [ -r "$source" ] ||
@@ -1617,6 +1628,52 @@ stage_ssh_cutover() {
   SSH_CUTOVER_NONCE="$nonce"
   log "SSH cutover to '$user' is staged. The predecessor remains privileged" \
       "until the nonce is finalized from an actual SSH session as '$user'."
+}
+
+ssh_public_key_fingerprint() {
+  local key="$1" tmp fingerprint
+  tmp="$(mktemp)" || return 1
+  printf '%s\n' "$key" > "$tmp" || { rm -f "$tmp"; return 1; }
+  fingerprint="$(ssh-keygen -lf "$tmp" -E sha256 2>/dev/null |
+    awk 'NR == 1 { print $2 }')"
+  rm -f "$tmp"
+  [ -n "$fingerprint" ] || return 1
+  printf '%s\n' "$fingerprint"
+}
+
+# Echo the authentication-info file from the target-owned session process
+# closest to sshd. ExposeAuthInfo creates this record from the authentication
+# exchange itself; reading SSH_USER_AUTH from the original session ancestry
+# avoids relying on what sudo happened to preserve.
+ssh_cutover_auth_info_file() {
+  local user="$1" pid="${2:-$PPID}" ppid real_uid target_uid candidate='' hops=0
+  local auth_info_file=''
+  target_uid="$(id -u "$user" 2>/dev/null)" || return 1
+  while [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
+    real_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    if [ "$real_uid" = "$target_uid" ]; then
+      candidate="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null |
+	sed -n 's/^SSH_USER_AUTH=//p' | head -1)"
+      [ -z "$candidate" ] || auth_info_file="$candidate"
+    fi
+    ppid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    case "$ppid" in ''|*[!0-9]*) break ;; esac
+    pid="$ppid"
+    hops=$((hops + 1))
+  done
+  [ -n "$auth_info_file" ] && [ -f "$auth_info_file" ] || return 1
+  printf '%s\n' "$auth_info_file"
+}
+
+ssh_cutover_authenticated_with_key() {
+  local user="$1" expected="$2" auth_file method key fingerprint
+  auth_file="$(ssh_cutover_auth_info_file "$user")" || return 1
+  while read -r method key; do
+    [ "$method" = publickey ] || continue
+    fingerprint="$(ssh_public_key_fingerprint "$key")" || continue
+    [ "$fingerprint" = "$expected" ] && return 0
+  done < "$auth_file"
+  return 1
 }
 
 ssh_cutover_has_sshd_ancestor() {
@@ -1638,11 +1695,12 @@ ssh_cutover_has_sshd_ancestor() {
 
 finalize_ssh_cutover() {
   local nonce="${1:-}" pending="$STATE_DIR/ssh_cutover.pending"
-  local key_file="$STATE_DIR/ssh_cutover.key" user expected actual
+  local key_file="$STATE_DIR/ssh_cutover.key" user expected key_fingerprint actual
 
   [ -s "$pending" ] || die "no SSH cutover is pending"
   user="$(sed -n 's/^user=//p' "$pending")"
   expected="$(sed -n 's/^nonce_sha256=//p' "$pending")"
+  key_fingerprint="$(sed -n 's/^key_sha256=//p' "$pending")"
   [ -n "$user" ] && [ -n "$expected" ] ||
     die "$pending is incomplete; predecessor access was not changed"
   [ "${SUDO_USER:-}" = "$user" ] ||
@@ -1668,6 +1726,10 @@ finalize_ssh_cutover() {
 
   SSH_PUBLIC_KEY="$(cat "$key_file" 2>/dev/null || true)"
   if [ -n "$SSH_PUBLIC_KEY" ]; then
+    [ -n "$key_fingerprint" ] &&
+      ssh_cutover_authenticated_with_key "$user" "$key_fingerprint" ||
+      die "this SSH session was not authenticated with the staged key. Reconnect" \
+	  "with that key and retry; predecessor access was not changed."
     grep -qxF "$SSH_PUBLIC_KEY" "$AUTH_KEYS" ||
       die "the staged key is no longer in $AUTH_KEYS; predecessor access was" \
 	  "not changed"
@@ -1675,6 +1737,15 @@ finalize_ssh_cutover() {
     [ "$(cat "$STATE_DIR/ssh_public_key.$user" 2>/dev/null || true)" = \
       "$SSH_PUBLIC_KEY" ] ||
       die "the staged key could not be committed; the cutover remains pending"
+    local queued_key queued_count=0 queue_clean=1
+    while IFS= read -r queued_key; do
+      [ -n "$queued_key" ] || continue
+      queued_count=$((queued_count + 1))
+      [ "$queued_key" = "$SSH_PUBLIC_KEY" ] || queue_clean=0
+    done < "$STATE_DIR/ssh_public_keys.$user"
+    [ "$queue_clean" -eq 1 ] && [ "$queued_count" -eq 1 ] ||
+      die "one or more predecessor SSH keys could not be withdrawn. The cutover" \
+	  "remains pending; repair $AUTH_KEYS or its filesystem and retry."
   fi
 
   revoke_prior_deploy_user "$user" ||
@@ -3238,7 +3309,8 @@ install_managed_config 'the SSH hardening drop-in' \
   'PasswordAuthentication no' \
   'PermitRootLogin no' \
   'KbdInteractiveAuthentication no' \
-  'PubkeyAuthentication yes'
+  'PubkeyAuthentication yes' \
+  'ExposeAuthInfo yes'
 # A host provisioned by an earlier version of this script carries the 99- file.
 # It is inert now that 01- sets the same keywords first, and that is the reason
 # to remove it rather than leave it: a file whose every line is overridden is

@@ -205,7 +205,10 @@ ssh -i ~/.ssh/<staged-key> <new-user>@<instance-ip> \
 Run that exact command from the workstation with the key Kamal will use. The
 finalizer checks that it is running through an `sshd` process tree containing
 the staged account's real UID, that `SUDO_USER` is that account, and that the
-nonce matches. Only then does it take `docker` and `sudo` from every predecessor,
+nonce matches. For an explicit key rotation it also reads the session's
+root-configured `ExposeAuthInfo` record and requires its public-key fingerprint
+to match the staged key; logging in with the predecessor key cannot finalize
+the rotation. Only then does it take `docker` and `sudo` from every predecessor,
 remove their script-managed
 `sudoers.d` grants, withdraw predecessor managed keys, and commit
 `/var/lib/collavre/deploy_user`. Change `KAMAL_SSH_USER` only after the command
