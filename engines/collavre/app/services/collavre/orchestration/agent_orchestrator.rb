@@ -679,6 +679,19 @@ module Collavre
           agent = decision[:agent]
           log_decision(decision)
 
+          # A rejected decision is not a dispatch, so neither guard below
+          # applies to it. Both ask "is this dispatch redundant?", which is only
+          # a question about work that was going to run: the scheduler has
+          # already refused this one, over an exhausted quota or a loop breaker
+          # that fired. Recording a drop against it would make
+          # DeliveryRecord.restore! owe a turn for work nothing scheduled, and
+          # the restore enqueues AiAgentJob directly — past the very check that
+          # did the refusing, so the quota is exceeded or the broken loop
+          # restarted. Reporting the agent would be the same mistake in the
+          # other direction: nothing is answering, and an empty result is how a
+          # caller learns that.
+          next nil if decision[:timing] == :rejected
+
           # Guard: skip if agent already has a running task for this comment.
           # Handled, not unscheduled — see the drop guard below for why the two
           # are different answers and what reads them apart.

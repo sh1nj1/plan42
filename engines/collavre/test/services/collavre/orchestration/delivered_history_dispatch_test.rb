@@ -619,6 +619,122 @@ module Collavre
         assert_equal late.content, payload.dig("chat", "content"),
                      "and it is anchored on the comment it was dispatched for"
       end
+
+      # A dispatch the scheduler has refused is not a dispatch. The drop asks
+      # "is this redundant?", which only makes sense about work that was going
+      # to run: recording one against a :rejected decision manufactures a
+      # restore obligation for a turn that was never scheduled, and restore!
+      # enqueues AiAgentJob directly — past the quota check that refused it.
+      def quota_exhausted!
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: "User", scope_id: @agent.id,
+          config: { "daily_token_limit" => 1000 }
+        )
+        tracker = ResourceTracker.for(@agent)
+        tracker.reserve!("spent")
+        tracker.release!("spent", tokens_used: 1500)
+      end
+
+      test "a dispatch the scheduler rejected is not recorded as a drop" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        assert_includes DeliveryRecord.ids_in(turn.trigger_event_payload), late.id,
+                        "premise: the covering turn did read it, so the drop door is live"
+        quota_exhausted!
+
+        assert_empty dispatch(late),
+                     "a rejected decision schedules nobody, drop door or not"
+        assert_empty DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload),
+                     "and refused work leaves nothing for the restore to owe"
+      end
+
+      test "a dispatch the scheduler rejected is not restored past the check that rejected it" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        quota_exhausted!
+        dispatch(late)
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "restoring it would run work the quota check refused"
+      end
+
+      # Control: the drop itself still happens for work that *was* going to be
+      # scheduled — this is what holds the rejection guard to :rejected rather
+      # than to "covered", which would turn the drop back into a plain skip.
+      test "a dispatch the scheduler admitted is still dropped and recorded" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+
+        assert_equal [ @agent.id ], dispatch(late).map(&:id)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id
+      end
+
+      # Re-anchoring moves the trigger onto a different comment, and everything
+      # the payload derives from the anchor has to move with it. ContextBuilder
+      # fills "chat"/"mentioned_user" with `||=` and does not run again on
+      # either of these paths — AiAgentJob asks Matcher#assignment_permits?
+      # against the raw payload — so a mention left behind reads as "no mention
+      # at all", and an explicit mention is exactly what outranks a topic
+      # assignment.
+      test "re-anchoring rebuilds the mention from the comment it moves onto" do
+        anchor = comment("first, to nobody")
+        late = comment("@#{@agent.name}: second")
+        payload = TaskCoalescer.reanchor_payload(context_for(anchor), late)
+
+        assert_equal @agent.id, payload.dig("chat", "mentioned_user", "id")
+      end
+
+      # Control against carrying the old anchor's mention across: a rebuild
+      # that finds nobody must leave the key absent, not stale. Matcher reads
+      # its presence as the mention that outranks the assignment.
+      test "re-anchoring onto a comment that mentions nobody leaves no mention behind" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("second, to nobody")
+        payload = TaskCoalescer.reanchor_payload(
+          SystemEvents::ContextBuilder.new(context_for(anchor)).build, late
+        )
+
+        assert_nil payload.dig("chat", "mentioned_user")
+      end
+
+      test "a restored dispatch that mentions this agent runs in a topic assigned to another" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id,
+                        "premise: the dispatch was dropped, so only the restore can bring it back"
+
+        @topic.update!(primary_agent_id: session_agent.id)
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "an explicit mention outranks the assignment, as it did at dispatch"
+      end
+
+      # Control: the assignment check is still doing its job. Without a mention
+      # of this agent there is nothing to outrank the reassignment, and the
+      # restored dispatch must stay refused.
+      test "a restored dispatch with no mention stays refused in a topic assigned to another" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("second, to nobody in particular")
+        turn = running_turn(anchor)
+        dispatch(late)
+
+        @topic.update!(primary_agent_id: session_agent.id)
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "the topic belongs to another agent and nothing in the comment says otherwise"
+      end
     end
   end
 end

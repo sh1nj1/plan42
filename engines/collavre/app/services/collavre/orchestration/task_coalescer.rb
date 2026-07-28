@@ -78,9 +78,14 @@ module Collavre
             "content" => comment.content,
             "user_id" => comment.user_id
           },
-          "chat" => { "content" => comment.content }
+          "chat" => SystemEvents::ContextBuilder.reanchor_chat(comment.content)
         )
         moved[ACQUIRED_ANCHOR_KEY] = comment.id if previous_id && previous_id.to_i != comment.id
+        # Both keys ContextBuilder derives from the anchor are rebuilt here,
+        # because it fills each one in with `||=` and does not run again on
+        # either of these paths. "chat"/"mentioned_user" moves with the anchor
+        # above (ContextBuilder.reanchor_chat); "sender" below.
+        #
         # The payload's "sender" labels the trigger and is what
         # ClaudeChannelAdapter sends as author_id/author_name, and
         # SystemEvents::ContextBuilder only ever fills it in with `||=` — it does
