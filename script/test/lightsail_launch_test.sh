@@ -5866,6 +5866,14 @@ chk "and keyboard-interactive still on"                   1 "$(vh "$(vh_eff no n
 chk "and public-key authentication off"                   1 "$(vh "$(vh_eff no no no no)")"
 chk "and a missing public-key result is not treated as verified" 1 \
   "$(vh "$(printf 'passwordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no')")"
+printf '%s\nexposeauthinfo no\n' "$(vh_eff no no no)" > "$vshd/eff"
+chk "an ineffective ExposeAuthInfo blocks explicit-key cutover" 1 \
+  "$( (verify_ssh_hardening "$vshd/eff" "$vshd" 0 deploybot 1 1) \
+      >/dev/null 2>&1; echo $?)"
+printf '%s\nexposeauthinfo yes\n' "$(vh_eff no no no)" > "$vshd/eff"
+chk "effective ExposeAuthInfo permits explicit-key cutover" 0 \
+  "$( (verify_ssh_hardening "$vshd/eff" "$vshd" 0 deploybot 1 1) \
+      >/dev/null 2>&1; echo $?)"
 
 printf '%s\n' "$(vh_eff yes no no)" > "$vshd/eff"
 vh_msg="$( ( verify_ssh_hardening "$vshd/eff" "$vshd" ) 2>&1 )"
@@ -6967,6 +6975,8 @@ chk "and requires an sshd process ancestor" 1 \
   "$(grep -c '^  ssh_cutover_has_sshd_ancestor "\$user" ||$' "$SRC")"
 chk "sshd exposes the key that authenticated the session" 1 \
   "$(grep -c "^  'ExposeAuthInfo yes'$" "$SRC")"
+chk "explicit-key staging verifies ExposeAuthInfo is effective" 1 \
+  "$(grep -c '^SSH_AUTH_INFO_REQUIRED=0$' "$SRC")"
 chk "the runbook changes KAMAL_SSH_USER only after finalization" 1 \
   "$(grep -c 'Change `KAMAL_SSH_USER` only after' "$DOC")"
 
@@ -6981,8 +6991,10 @@ stage_ssh_cutover deploybot "$cutover_key" \
   "$cutover_finalizer" "$SRC"
 chk "staging creates a root-only pending record" 600 \
   "$(file_mode "$cutover_state/ssh_cutover.pending")"
-chk "and a root-only exact key record" 600 \
-  "$(file_mode "$cutover_state/ssh_cutover.key")"
+chk "and stores the exact key in that atomic record" 1 \
+  "$(grep -cxF "key=$cutover_key" "$cutover_state/ssh_cutover.pending")"
+chk "without a separately replaceable key record" 0 \
+  "$([ -e "$cutover_state/ssh_cutover.key" ] && echo 1 || echo 0)"
 chk "and installs the finalizer" 755 "$(file_mode "$cutover_finalizer")"
 chk "without committing the deploy user" 0 \
   "$([ -e "$cutover_state/deploy_user" ] && echo 1 || echo 0)"
@@ -7042,6 +7054,24 @@ chk "and still revokes nothing" "" "$TRACE"
     finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
 chk "a session authenticated by the predecessor key is refused" 1 "$?"
 chk "and does not start withdrawal" "" "$TRACE"
+cp "$cutover_state/ssh_cutover.pending" \
+  "$cutover_state/ssh_cutover.pending.complete"
+sed -i.bak '/^key=/d' "$cutover_state/ssh_cutover.pending"
+( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "an older split-record challenge is refused" 1 "$?"
+chk "and cannot bypass staged-key proof" "" "$TRACE"
+mv "$cutover_state/ssh_cutover.pending.complete" \
+  "$cutover_state/ssh_cutover.pending"
+rm -f "$cutover_state/ssh_cutover.pending.bak"
+sed -i.bak "s|^key=.*|key=ssh-ed25519 OLD predecessor|" \
+  "$cutover_state/ssh_cutover.pending"
+( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "a key that differs from the pending fingerprint is refused" 1 "$?"
+chk "and cannot start predecessor withdrawal" "" "$TRACE"
+mv "$cutover_state/ssh_cutover.pending.bak" \
+  "$cutover_state/ssh_cutover.pending"
 ( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 REVOKE_KEY_FAIL=1 \
     finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
 chk "an incomplete predecessor-key withdrawal is refused" 1 "$?"
@@ -7057,17 +7087,39 @@ chk "and consumes the pending state" 0 \
   "$([ -e "$cutover_state/ssh_cutover.pending" ] && echo 1 || echo 0)"
 chk "and commits the staged account" deploybot \
   "$(cat "$cutover_state/deploy_user")"
+# Earlier queue fixtures replace this function with host models and then unset
+# it. Re-extract the production function for the finalizer failure boundaries
+# rather than letting a missing-command status masquerade as a refusal.
+eval "$(awk '
+  /^revoke_deploy_user_access\(\) \{/ { f = 1 }
+  f { print }
+  f && /^\}/ { exit }
+' "$SRC")"
+sudoers_failure_dir="$cutover_state/sudoers-failure"
+mkdir "$sudoers_failure_dir"
+printf 'predecessor ALL=(ALL:ALL) NOPASSWD:ALL\n' \
+  > "$sudoers_failure_dir/90-collavre-predecessor"
 sudoers_failure="$(
   (
     in_group() { return 1; }
     rm() { return 1; }
     log() { :; }
-    revoke_deploy_user_access predecessor deploybot
+    revoke_deploy_user_access predecessor deploybot "$sudoers_failure_dir"
     printf 'rc=%s\n' "$?"
   ) 2>/dev/null
 )"
-chk "a sudoers deletion failure keeps the predecessor queued" 0 \
-  "$(grep -c '^rc=0$' <<<"$sudoers_failure")"
+chk "a sudoers deletion failure keeps the predecessor queued" 1 \
+  "$(grep -c '^rc=1$' <<<"$sudoers_failure")"
+sudoers_collision="$cutover_state/sudoers"
+mkdir "$sudoers_collision"
+printf 'release_bot ALL=(ALL:ALL) NOPASSWD:ALL\n' \
+  > "$sudoers_collision/90-collavre-release_bot"
+in_group() { return 1; }
+log() { :; }
+revoke_deploy_user_access release.bot release_bot "$sudoers_collision"
+chk "a colliding successor sudoers grant is preserved" 1 \
+  "$(grep -cxF 'release_bot ALL=(ALL:ALL) NOPASSWD:ALL' \
+      "$sudoers_collision/90-collavre-release_bot")"
 unset -f getent id in_group ssh_cutover_has_sshd_ancestor \
   ssh_cutover_authenticated_with_key \
   revoke_prior_ssh_key revoke_prior_deploy_user rm

@@ -1437,7 +1437,8 @@ record_deploy_user_grant() {
 # the caller decides whether to keep retrying it, rather than this deciding by
 # where it writes a marker.
 revoke_deploy_user_access() {
-  local prior="$1" current="$2" group held sudoers_name
+  local prior="$1" current="$2" group held sudoers_name sudoers_path
+  local prior_sudoers current_sudoers sudoers_dir="${3:-/etc/sudoers.d}"
 
   for group in docker sudo; do
     in_group "$prior" "$group" || continue
@@ -1481,12 +1482,28 @@ revoke_deploy_user_access() {
   fi
 
   sudoers_name="90-collavre-${prior//[^A-Za-z0-9_-]/_}"
-  if ! rm -f "/etc/sudoers.d/$sudoers_name" ||
-     [ -e "/etc/sudoers.d/$sudoers_name" ]; then
-    log "WARNING: could NOT remove /etc/sudoers.d/$sudoers_name; '$prior'" \
-	"still has this script's passwordless sudo grant, so the SSH cutover" \
-	"remains pending"
-    return 1
+  sudoers_path="$sudoers_dir/$sudoers_name"
+  prior_sudoers="$prior ALL=(ALL:ALL) NOPASSWD:ALL"
+  current_sudoers="$current ALL=(ALL:ALL) NOPASSWD:ALL"
+  if [ -e "$sudoers_path" ]; then
+    if cmp -s <(printf '%s\n' "$prior_sudoers") "$sudoers_path"; then
+      if ! rm -f "$sudoers_path" || [ -e "$sudoers_path" ]; then
+	log "WARNING: could NOT remove $sudoers_path; '$prior' still has this" \
+	    "script's passwordless sudo grant, so the SSH cutover remains pending"
+	return 1
+      fi
+    elif cmp -s <(printf '%s\n' "$current_sudoers") "$sudoers_path"; then
+      # Linux usernames that differ only in punctuation can map to the same
+      # sudoers filename. ensure_sudoers has already replaced the predecessor
+      # rule with this exact successor rule; deleting by filename here would
+      # disarm the account that just proved the cutover.
+      log "preserved $sudoers_path because it belongs to successor '$current'"
+    elif grep -qxF "$prior_sudoers" "$sudoers_path" 2>/dev/null; then
+      log "WARNING: $sudoers_path contains '$prior''s grant plus other content;" \
+	  "refusing to delete a shared sudoers file. Remove only the predecessor" \
+	  "rule by hand, then retry the SSH cutover."
+      return 1
+    fi
   fi
 
   log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
@@ -1573,7 +1590,6 @@ revoke_prior_deploy_user() {
 stage_ssh_cutover() {
   local user="$1" key="$2" current='' prior_key='' need=0
   local nonce nonce_hash key_fingerprint='' pending="$STATE_DIR/ssh_cutover.pending"
-  local key_file="$STATE_DIR/ssh_cutover.key"
   local finalizer="${3:-/usr/local/sbin/collavre-finalize-ssh-cutover}"
   local source="${4:-${BASH_SOURCE[0]}}"
 
@@ -1612,11 +1628,13 @@ stage_ssh_cutover() {
       die "could not fingerprint the staged SSH key"
   fi
 
-  write_state_file "$key_file" "$key"$'\n' 0600 ||
-    die "could not stage the SSH cutover key in $key_file"
+  # The key, its fingerprint and the nonce hash are one atomic record. Keeping
+  # the key in a separately replaced file lets an interrupted same-user re-run
+  # pair an old challenge/fingerprint with a new key and later commit a key
+  # that the successful SSH session never proved.
   write_state_file "$pending" \
     "user=$user"$'\n'"nonce_sha256=$nonce_hash"$'\n'\
-"key_sha256=$key_fingerprint"$'\n' 0600 ||
+"key_sha256=$key_fingerprint"$'\n'"key=$key"$'\n' 0600 ||
     die "could not stage the SSH cutover challenge in $pending"
 
   [ -r "$source" ] ||
@@ -1695,12 +1713,19 @@ ssh_cutover_has_sshd_ancestor() {
 
 finalize_ssh_cutover() {
   local nonce="${1:-}" pending="$STATE_DIR/ssh_cutover.pending"
-  local key_file="$STATE_DIR/ssh_cutover.key" user expected key_fingerprint actual
+  local user expected key_fingerprint actual staged_fingerprint field
 
   [ -s "$pending" ] || die "no SSH cutover is pending"
+  for field in user nonce_sha256 key_sha256 key; do
+    [ "$(grep -c "^$field=" "$pending" 2>/dev/null || true)" -eq 1 ] ||
+      die "$pending is incomplete or ambiguous at '$field'; predecessor access" \
+	  "was not changed. Re-run provisioning to atomically replace the" \
+	  "pending cutover."
+  done
   user="$(sed -n 's/^user=//p' "$pending")"
   expected="$(sed -n 's/^nonce_sha256=//p' "$pending")"
   key_fingerprint="$(sed -n 's/^key_sha256=//p' "$pending")"
+  SSH_PUBLIC_KEY="$(sed -n 's/^key=//p' "$pending")"
   [ -n "$user" ] && [ -n "$expected" ] ||
     die "$pending is incomplete; predecessor access was not changed"
   [ "${SUDO_USER:-}" = "$user" ] ||
@@ -1724,8 +1749,13 @@ finalize_ssh_cutover() {
   [ -s "$AUTH_KEYS" ] ||
     die "$AUTH_KEYS is empty; predecessor access was not changed"
 
-  SSH_PUBLIC_KEY="$(cat "$key_file" 2>/dev/null || true)"
   if [ -n "$SSH_PUBLIC_KEY" ]; then
+    staged_fingerprint="$(ssh_public_key_fingerprint "$SSH_PUBLIC_KEY")" ||
+      die "the staged key in $pending is invalid; predecessor access was not changed"
+    [ "$staged_fingerprint" = "$key_fingerprint" ] ||
+      die "the staged key does not match its pending fingerprint; predecessor" \
+	  "access was not changed. Re-run provisioning to replace the pending" \
+	  "cutover atomically."
     [ -n "$key_fingerprint" ] &&
       ssh_cutover_authenticated_with_key "$user" "$key_fingerprint" ||
       die "this SSH session was not authenticated with the staged key. Reconnect" \
@@ -1752,7 +1782,7 @@ finalize_ssh_cutover() {
     die "one or more predecessor accounts could not be disarmed. The cutover" \
 	"remains pending; repair the reported account and run this command again."
 
-  rm -f "$pending" "$key_file"
+  rm -f "$pending"
   log "SSH cutover finalized from an authenticated session as '$user'." \
       "KAMAL_SSH_USER may now be changed to '$user'."
 }
@@ -3177,6 +3207,7 @@ verify_ssh_hardening() {
   local src="${1:-}" conf_dir="${2:-/etc/ssh}" reload_state="${3:-0}"
   local deploy_user="${4:-${APP_SSH_USER:-collavre}}"
   local require_readable="${5:-0}"
+  local require_auth_info="${6:-0}"
   local effective key value expected offender unsafe_match
   if [ -n "$src" ]; then
     effective="$(cat "$src")"
@@ -3220,17 +3251,28 @@ verify_ssh_hardening() {
     fi
   fi
   for key in passwordauthentication permitrootlogin kbdinteractiveauthentication \
-	     pubkeyauthentication; do
+	     pubkeyauthentication exposeauthinfo; do
+    [ "$key" != exposeauthinfo ] || [ "$require_auth_info" -eq 1 ] || continue
     expected=no
-    [ "$key" != pubkeyauthentication ] || expected=yes
+    case "$key" in pubkeyauthentication|exposeauthinfo) expected=yes ;; esac
     value="$(printf '%s\n' "$effective" |
              awk -v k="$key" 'tolower($1) == k { print $2; exit }')"
     [ -n "$value" ] || {
-      [ "$key" != pubkeyauthentication ] || die \
-	"SSH public-key authentication could not be verified for '$deploy_user':" \
-	"sshd did not report 'pubkeyauthentication'. The previous deploy user's" \
-	"privileged access will not be revoked until the replacement account is" \
-	"proven reachable by key. Correct the SSH configuration and re-run."
+      case "$key" in
+	pubkeyauthentication)
+	  die "SSH public-key authentication could not be verified for" \
+	      "'$deploy_user': sshd did not report 'pubkeyauthentication'. The" \
+	      "previous deploy user's privileged access will not be revoked until" \
+	      "the replacement account is proven reachable by key. Correct the SSH" \
+	      "configuration and re-run."
+	  ;;
+	exposeauthinfo)
+	  die "SSH authentication-key proof could not be enabled for" \
+	      "'$deploy_user': sshd did not report 'exposeauthinfo'. The previous" \
+	      "deploy user's access remains intact. Correct the SSH configuration" \
+	      "and re-run."
+	  ;;
+      esac
       log "WARNING: sshd did not report '$key', so that part of the hardening" \
           "above is unverified"
       continue
@@ -4171,10 +4213,13 @@ fi
 DOCKER_GROUP_WAS_PRESENT=0
 in_group "$APP_SSH_USER" docker && DOCKER_GROUP_WAS_PRESENT=1
 usermod -aG docker "$APP_SSH_USER"
+SSH_AUTH_INFO_REQUIRED=0
+[ -z "$SSH_PUBLIC_KEY" ] || SSH_AUTH_INFO_REQUIRED=1
 # Recheck for the same reason as the sudo grant above. An operator's
 # `Match Group docker` block does not apply until this membership exists.
 if ! (
-  verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 &&
+  verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 \
+    "$SSH_AUTH_INFO_REQUIRED" &&
   verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS" &&
   verify_ssh_admission_controls "" "$APP_SSH_USER"
 ); then

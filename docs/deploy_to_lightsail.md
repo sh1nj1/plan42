@@ -208,7 +208,10 @@ the staged account's real UID, that `SUDO_USER` is that account, and that the
 nonce matches. For an explicit key rotation it also reads the session's
 root-configured `ExposeAuthInfo` record and requires its public-key fingerprint
 to match the staged key; logging in with the predecessor key cannot finalize
-the rotation. Only then does it take `docker` and `sudo` from every predecessor,
+the rotation. Provisioning verifies that `ExposeAuthInfo yes` is effective
+before staging, and stores the nonce hash, fingerprint, and exact key in one
+atomic root-only pending record so an interrupted re-run cannot mix cutover
+generations. Only then does it take `docker` and `sudo` from every predecessor,
 remove their script-managed
 `sudoers.d` grants, withdraw predecessor managed keys, and commit
 `/var/lib/collavre/deploy_user`. Change `KAMAL_SSH_USER` only after the command
