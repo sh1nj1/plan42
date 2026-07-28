@@ -1224,6 +1224,129 @@ module Collavre
                        "restoring it would run work the quota check refuses right now"
         end
       end
+
+      # ─────────────────────────────────────────────
+      # A turn that was stopped after it handed over
+      # ─────────────────────────────────────────────
+
+      # `cancelled` is an undelivered ending only while the cancellation beat the
+      # handoff. A user who presses Stop mid-answer stops a turn whose payload
+      # the provider already has — AgentLifecycleManager keeps the partial reply
+      # — and the comments that turn swallowed were read along with it.
+      # Restoring them starts fresh agent work the moment the user asked for
+      # none, and answers those comments a second time.
+      test "a dispatch dropped against a turn stopped after the handoff is not restored" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id,
+                        "premise: the dispatch was dropped against this turn"
+        DeliveryRecord.mark_handed_off!(turn)
+
+        slot_holder(anchor)
+        turn.reload.update!(status: "cancelled")
+
+        assert_empty restored_waiters,
+                     "the provider had that comment; re-dispatching it answers it twice"
+      end
+
+      # And the sweep decides with the same predicate, or the backstop undoes
+      # what the callback correctly declined to do.
+      test "the sweep restores nothing for a turn stopped after the handoff" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        DeliveryRecord.mark_handed_off!(turn)
+        slot_holder(anchor)
+        turn.reload.update!(status: "cancelled")
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_empty restored_waiters
+      end
+
+      # ─────────────────────────────────────────────
+      # What the restore must ask again
+      # ─────────────────────────────────────────────
+
+      # The restore enqueues this agent by name, skipping Matcher#match — and
+      # every routing path in #match is gated on feedback permission for the
+      # creative. AiAgentJob re-asks the topic assignment and nothing else, so a
+      # permission revoked between the drop and the restore would not be seen by
+      # anybody.
+      test "a dispatch is not restored to an agent that has lost permission on the creative" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        revoke_creative_permission!
+
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "the agent may no longer read that creative, restore or not"
+      end
+
+      def revoke_creative_permission!
+        CreativeShare.where(creative: @creative, user: @agent).destroy_all
+        CreativeSharesCache.where(creative_id: @creative.id, user_id: @agent.id).destroy_all
+      end
+
+      # ─────────────────────────────────────────────
+      # The claim that keeps the sweep off its own restore
+      # ─────────────────────────────────────────────
+
+      # AiAgentJob creates the Task row when it *runs*, so a restored job sitting
+      # in the queue — a worker outage, a backlog longer than the sweep interval
+      # — leaves the comment looking orphaned. Eventual Task creation cannot be
+      # the idempotency marker for work that has not started yet.
+      test "a restored dispatch still waiting in the queue is not enqueued again" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+
+        with_test_queue do
+          turn.update!(status: "failed")
+          assert_equal 1, restored_jobs.size, "premise: the callback enqueued it"
+          assert_empty dispatches_for(late), "premise: and no Task exists for it yet"
+
+          RestoreDroppedDispatchesJob.perform_now
+
+          assert_equal 1, restored_jobs.size,
+                       "the dispatch is already on its way; a second one answers twice"
+        end
+      end
+
+      # Control: the claim is taken for a dispatch that was enqueued, and given
+      # back for one that was not. Otherwise this fix would be the previous
+      # finding pointing the other way — a comment claimed by an enqueue that
+      # never happened is a comment nobody ever comes back for.
+      test "a restore whose enqueue failed is asked again by the sweep" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        with_enqueue_failing { turn.update!(status: "failed") }
+        assert_empty restored_waiters, "premise: the enqueue really did not get through"
+
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "nothing was delivered, so nothing was claimed"
+      end
+
+      # Fail at the enqueue itself, past the scheduler — the transient queue
+      # failure the claim is written before.
+      def with_enqueue_failing(&block)
+        raiser = ->(*) { raise ActiveRecord::ConnectionNotEstablished, "the queue is down" }
+        Collavre::AiAgentJob.stub(:perform_later, raiser, &block)
+      end
     end
   end
 end

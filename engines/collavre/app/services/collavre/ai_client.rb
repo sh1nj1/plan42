@@ -26,6 +26,19 @@ module Collavre
       @last_handoff_failed
     end
 
+    # Whether the last #chat got its payload to the provider — the same
+    # boundary, asked positively, for the callers the flag above cannot serve.
+    #
+    # #last_handoff_failed? is only ever set from a rescue, so it says nothing
+    # about a #chat that left by exception past it: a user pressing Stop
+    # mid-answer raises CancelledError through here, and the turn ends in a
+    # status every reader counts as undelivered although the provider has the
+    # payload. Answering that needs the fact recorded as it happens rather than
+    # inferred from how the call ended.
+    def handed_off?
+      @handed_off
+    end
+
     # Vendor <select> options for AI-agent config. Core ships only its built-in
     # (stateless) providers; vendor engines append their own through
     # register_vendor_option, so core never names a vendor engine.
@@ -84,10 +97,12 @@ module Collavre
       @last_input_tokens = 0
       @last_output_tokens = 0
       @last_handoff_failed = false
+      @handed_off = false
     end
 
     def chat(contents, tools: [], &block)
       @last_handoff_failed = false
+      @handed_off = false
       response_content = +""
       error_message = nil
       input_tokens = nil
@@ -114,11 +129,17 @@ module Collavre
         next if delta.empty?
 
         response_content << delta
+        # Set where the content actually arrives, not where #chat returns: the
+        # caller's block raises CancelledError from inside it.
+        @handed_off = true
         yield delta if block_given?
       end
 
       if response
-        response_content = response.content.to_s if response.content.present?
+        if response.content.present?
+          response_content = response.content.to_s
+          @handed_off = true
+        end
 
         # Extract token usage directly from response object (RubyLLM style)
         if response.respond_to?(:input_tokens)

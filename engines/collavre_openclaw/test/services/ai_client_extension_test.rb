@@ -17,6 +17,7 @@ module CollavreOpenclaw
       end
 
       def last_handoff_failed? = false
+      def handed_off? = true
     end
 
     # The failures the adapter converts into a streamed error plus nil:
@@ -30,6 +31,7 @@ module CollavreOpenclaw
       end
 
       def last_handoff_failed? = true
+      def handed_off? = false
     end
 
     # The one path that skips the propagation: the extension re-raises.
@@ -41,6 +43,7 @@ module CollavreOpenclaw
       end
 
       def last_handoff_failed? = true
+      def handed_off? = false
     end
 
     setup do
@@ -106,6 +109,23 @@ module CollavreOpenclaw
 
       assert_equal "ok", client.chat(messages)
       assert_not client.last_handoff_failed?
+    end
+
+    # The same seam, positively: a turn the user stops mid-answer never reaches
+    # the line that sets the flag above, so the cancelled ending is read off
+    # this instead. It has to travel the same way, and be this chat's answer
+    # rather than the previous one's.
+    test "a handoff on the adapter path reaches the client" do
+      client = build_client(log_interactions: false)
+
+      assert_equal "ok", client.chat(messages)
+      assert_predicate client, :handed_off?, "premise: the chat before it did hand over"
+
+      # Same client, next chat: a client is reused across a turn's calls, so an
+      # answer left standing would exempt every later one.
+      Collavre::AiClient.register_adapter("faketest", FailingAdapter)
+      assert_nil client.chat(messages)
+      assert_not client.handed_off?
     end
 
     # Control: the flag describes the *last* chat, and a chat that raised did

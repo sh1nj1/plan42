@@ -86,9 +86,22 @@ module Collavre
     # because a sweep deciding "terminal" where the callback decides this is how
     # a backstop comes to re-answer comments the turn had already answered.
     def ended_undelivered?
-      return true if status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
+      payload = trigger_event_payload
+      # Asked first, so that a row carrying both records is read as undelivered.
+      # The two are written off one boundary and cannot both be true, but the
+      # cost of the two errors is not symmetric: restoring a turn that delivered
+      # answers a comment twice, and not restoring one that did not loses it.
+      return true if status == "done" && Orchestration::DeliveryRecord.handoff_failed?(payload)
 
-      status == "done" && Orchestration::DeliveryRecord.handoff_failed?(trigger_event_payload)
+      # An ending is undelivered because the payload never reached the provider,
+      # not because of the name of the ending. A turn stopped — or broken — after
+      # the handoff has been read by the agent along with everything it
+      # swallowed, and the product already shows that turn with its partial
+      # reply. Only a turn that got far enough to record the handoff is exempt;
+      # everything quieter than that still owes its dispatches back.
+      return false if Orchestration::DeliveryRecord.handed_off?(payload)
+
+      status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
     end
 
     private

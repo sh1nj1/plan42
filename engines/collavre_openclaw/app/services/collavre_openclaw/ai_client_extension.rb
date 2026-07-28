@@ -20,6 +20,7 @@ module CollavreOpenclaw
       # reused across a turn's calls, so a failure left standing would have
       # every later one claiming it delivered nothing.
       @last_handoff_failed = false
+      @handed_off = false
       normalized_vendor = vendor.to_s.downcase
       messages_data = normalize_messages_input(messages_input)
 
@@ -71,6 +72,9 @@ module CollavreOpenclaw
         # `done` with the flag down and the dispatches dropped against it are
         # never restored. See OpenclawAdapter#last_handoff_failed?.
         @last_handoff_failed = adapter.last_handoff_failed?
+        # And the positive form beside it, for the reader the flag above cannot
+        # serve: a turn stopped after the gateway had the payload.
+        @handed_off = adapter.handed_off?
 
         return response_content
       end

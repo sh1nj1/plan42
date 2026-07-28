@@ -713,4 +713,75 @@ class AiClientTest < ActiveSupport::TestCase
     assert_not client.last_handoff_failed?,
                "an empty answer is an answer; the provider had the payload"
   end
+
+  # The other half of the same question, asked positively. #last_handoff_failed?
+  # is only ever set from a rescue, so it cannot answer for a chat that raised
+  # past it — which is what a user pressing Stop mid-answer does. What the
+  # cancelled turn needs to know is whether the provider got the payload.
+  test "records the handoff once content has streamed" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: "half an answer"))
+      raise Collavre::CancelledError
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    assert_raises(Collavre::CancelledError) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |_delta| nil }
+      end
+    end
+
+    assert_predicate client, :handed_off?
+  end
+
+  # Deltas are not the only way an answer arrives: a provider that returns its
+  # whole reply at once yields nothing at all, and that turn handed over just as
+  # much. The delta branch alone would read it as never having reached anybody.
+  test "records the handoff for an answer that arrived without deltas" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      OpenStruct.new(content: "the whole answer")
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    result = client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+
+    assert_equal "the whole answer", result, "premise: nothing streamed, and yet it answered"
+    assert_predicate client, :handed_off?
+  end
+
+  # Control: nothing streamed means nothing was handed over — the same boundary
+  # #last_handoff_failed? draws — and the answer belongs to this chat alone, not
+  # to the one before it.
+  test "records no handoff for a chat that streamed nothing" do
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    client.stub(:build_conversation, FakeConversation.new) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+    assert_predicate client, :handed_off?, "premise: the chat before it did stream"
+
+    silent = FakeConversation.new
+    silent.define_singleton_method(:complete) do |&_block|
+      raise Collavre::CancelledError
+    end
+    assert_raises(Collavre::CancelledError) do
+      client.stub(:build_conversation, silent) do
+        client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+      end
+    end
+
+    assert_not client.handed_off?
+  end
 end

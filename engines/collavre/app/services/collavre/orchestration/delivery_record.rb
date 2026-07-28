@@ -70,6 +70,39 @@ module Collavre
       # only place that knows is the service holding the client that failed.
       HANDOFF_FAILED_KEY = "handoff_failed"
 
+      # This turn did hand its payload to the provider — the same question,
+      # asked positively, for the endings that never reach the line above.
+      #
+      # HANDOFF_FAILED_KEY is written after #chat returns, so a turn that leaves
+      # by exception never records anything: a user pressing Stop mid-answer
+      # ends `cancelled`, which every reader counts as undelivered outright,
+      # although the provider has the payload by then and AgentLifecycleManager
+      # keeps the partial reply. The comments that turn swallowed were read
+      # along with it, so restoring them starts fresh work the moment the user
+      # asked for none, and answers them twice.
+      #
+      # Positive rather than a second failure flag, because the absence of the
+      # record has to keep meaning "restore": most cancellations and every hard
+      # crash write nothing at all, and losing a comment costs more than a
+      # redundant turn. Only a turn that got far enough to say so is exempt.
+      HANDED_OFF_KEY = "handed_off"
+
+      # Comments this turn's restore has already put back on their way.
+      #
+      # AiAgentJob creates the Task row when it *runs*, so between a restored
+      # enqueue and its execution the comment has no row and reads as orphaned —
+      # a worker outage or a backlog longer than the sweep interval therefore
+      # had every pass enqueue another copy, and the copies that lose the
+      # admission race become independent waiters that answer the comment again.
+      # Eventual Task creation cannot be the idempotency marker for work that
+      # has not started.
+      #
+      # Written before the enqueue and given back if the enqueue raises, so the
+      # claim never outlives the dispatch it stands for: a comment claimed by an
+      # enqueue that never happened is the previous finding pointing the other
+      # way.
+      RESTORED_KEY = "restored_dispatch_comment_ids"
+
       # Everything a turn writes onto its own payload while it runs, as opposed
       # to what it was dispatched with.
       #
@@ -80,7 +113,7 @@ module Collavre
       # was added here long after restored_context had named the other four —
       # and the drift test on this constant is what will catch the sixth.
       TURN_SCOPED_KEYS = [
-        KEY, DROPPED_KEY, HANDOFF_FAILED_KEY,
+        KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, RESTORED_KEY,
         TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY
       ].freeze
 
@@ -206,6 +239,79 @@ module Collavre
         payload[HANDOFF_FAILED_KEY] == true
       end
 
+      # Write down that this turn's payload did reach the provider.
+      #
+      # Under the same row lock and for the same reason as its two siblings: a
+      # dispatch refused in another process writes DROPPED_KEY into this column
+      # while the turn runs, and this is written as the turn is being torn down
+      # by the very cancellation that dispatch is racing.
+      def self.mark_handed_off!(task)
+        return if task.nil?
+
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          payload = row&.trigger_event_payload
+          next unless payload.is_a?(Hash)
+          next if handed_off?(payload)
+
+          row.update!(trigger_event_payload: payload.merge(HANDED_OFF_KEY => true))
+          task.reload unless task.equal?(row)
+        end
+      end
+
+      def self.handed_off?(payload)
+        return false unless payload.is_a?(Hash)
+
+        payload[HANDED_OFF_KEY] == true
+      end
+
+      def self.restored_ids_in(payload)
+        return [] unless payload.is_a?(Hash)
+
+        Array(payload[RESTORED_KEY]).compact.map(&:to_i)
+      end
+
+      # Take responsibility for putting one dispatch back, or refuse it because
+      # somebody already has.
+      #
+      # The same shape as claim_drop!, and for the same reason: the callback and
+      # the sweep can be looking at this row at once, and the thing they would
+      # both act on leaves no trace until a worker picks it up.
+      #
+      # @return [Boolean] whether the caller may enqueue the dispatch
+      def self.claim_restore!(task, comment_id)
+        id = comment_id.to_i
+        return false if task.nil? || id.zero?
+
+        claimed = false
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          payload = row&.trigger_event_payload
+          next unless payload.is_a?(Hash)
+          next if restored_ids_in(payload).include?(id)
+
+          restored = (restored_ids_in(payload) + [ id ]).uniq.sort
+          row.update!(trigger_event_payload: payload.merge(RESTORED_KEY => restored))
+          claimed = true
+        end
+        claimed
+      end
+
+      # Give the claim back for a dispatch that was never enqueued after all.
+      def self.release_restore_claim!(task, comment_id)
+        id = comment_id.to_i
+        return if task.nil? || id.zero?
+
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          payload = row&.trigger_event_payload
+          next unless payload.is_a?(Hash)
+
+          restored = restored_ids_in(payload) - [ id ]
+          row.update!(trigger_event_payload: payload.merge(RESTORED_KEY => restored))
+        end
+      end
+
       def self.dropped_ids_in(payload)
         return [] unless payload.is_a?(Hash)
 
@@ -313,7 +419,7 @@ module Collavre
         payload = Task.find_by(id: task.id)&.trigger_event_payload
         return unless payload.is_a?(Hash) && payload.key?("topic")
 
-        orphaned = dropped_ids_in(payload) - claimed_comment_ids(task)
+        orphaned = dropped_ids_in(payload) - claimed_comment_ids(task) - restored_ids_in(payload)
         return if orphaned.empty?
 
         agent = task.agent
@@ -328,7 +434,7 @@ module Collavre
           .order(:id)
           .each do |comment|
           begin
-            enqueue_restored(agent, task.trigger_event_name, restored_context(payload, comment))
+            enqueue_restored(task, agent, task.trigger_event_name, restored_context(payload, comment))
           rescue StandardError => e
             # Each orphan is a dispatch of its own; one that cannot be enqueued
             # says nothing about the next. What it leaves behind is the absence
@@ -395,23 +501,58 @@ module Collavre
       # Matcher#assignment_permits? against the re-anchored payload before it
       # parks anything — a restored dispatch has moved, and park_waiter would
       # create the row without that question being asked.
-      def self.enqueue_restored(agent, event_name, context)
+      def self.enqueue_restored(task, agent, event_name, context)
+        # The one question no door on this path asks. Naming the agent skips
+        # Matcher#match, and every routing path in #match is gated on feedback
+        # permission for the creative; AiAgentJob re-asks the topic assignment
+        # and nothing else. A permission revoked between the drop and the
+        # restore would otherwise be seen by nobody, and this dispatch would
+        # answer a creative the agent may no longer read.
+        unless Matcher.permits_creative_access?(context, agent)
+          Rails.logger.info(
+            "[DeliveryRecord] Not restoring dispatch for comment #{context.dig("comment", "id")}: " \
+            "agent #{agent.id} no longer has feedback permission on creative " \
+            "#{context.dig("creative", "id")}"
+          )
+          return
+        end
+
         decision = Scheduler.new(context).schedule([ agent ]).first
         return if decision.nil?
 
+        comment_id = context.dig("comment", "id")
         case decision[:timing]
         when :rejected
           Rails.logger.info(
-            "[DeliveryRecord] Not restoring dispatch for comment #{context.dig("comment", "id")}: " \
+            "[DeliveryRecord] Not restoring dispatch for comment #{comment_id}: " \
             "scheduler rejected agent #{agent.id} (#{decision[:reason]})"
           )
         when :delayed
-          AiAgentJob.set(wait: decision[:delay]).perform_later(agent.id, event_name, context)
+          enqueue_claimed(task, comment_id) do
+            AiAgentJob.set(wait: decision[:delay]).perform_later(agent.id, event_name, context)
+          end
         else
-          AiAgentJob.perform_later(agent.id, event_name, context)
+          enqueue_claimed(task, comment_id) { AiAgentJob.perform_later(agent.id, event_name, context) }
         end
       end
       private_class_method :enqueue_restored
+
+      # Claim the comment, then enqueue — and only in that order. The job leaves
+      # no row until a worker runs it, so between the two the comment reads as
+      # orphaned to anyone else looking, and the sweep is looking every ten
+      # minutes. A claim released on failure is the whole difference between
+      # this and a dispatch nobody comes back for.
+      def self.enqueue_claimed(task, comment_id)
+        return unless claim_restore!(task, comment_id)
+
+        begin
+          yield
+        rescue StandardError
+          release_restore_claim!(task, comment_id)
+          raise
+        end
+      end
+      private_class_method :enqueue_claimed
 
       # The dispatch that was discarded — not a descendant of the turn that
       # discarded it. reanchor_payload is the single door for moving an anchor,

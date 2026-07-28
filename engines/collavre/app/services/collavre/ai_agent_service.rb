@@ -94,7 +94,18 @@ module Collavre
       @lifecycle_manager.broadcast_status("thinking")
 
       @client = build_ai_client(resolved[:system_prompt])
-      stream_response(@client, resolved)
+      begin
+        stream_response(@client, resolved)
+      ensure
+        # Write down that the payload got there, whatever became of the turn
+        # afterwards. In an `ensure` because the ending this is for leaves by
+        # exception: a user pressing Stop mid-answer raises CancelledError out
+        # of the block above, and the task ends `cancelled` — an undelivered
+        # ending to every reader, although the agent has read this turn's
+        # payload and every comment it swallowed. See
+        # Orchestration::DeliveryRecord::HANDED_OFF_KEY.
+        Orchestration::DeliveryRecord.mark_handed_off!(@task) if @client.handed_off?
+      end
 
       # ...and write down when the handing over did not happen. The record
       # above licences discarding other dispatches on the strength of the agent

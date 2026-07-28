@@ -456,6 +456,8 @@ module Collavre
         DeliveryRecord.record!(turn, resolved_for(turn, @agent))
         DeliveryRecord.claim_drop!(turn.reload, late.id)
         DeliveryRecord.mark_handoff_failed!(turn.reload)
+        DeliveryRecord.mark_handed_off!(turn.reload)
+        DeliveryRecord.claim_restore!(turn.reload, late.id)
         turn.update!(
           trigger_event_payload: TaskCoalescer.reanchor_payload(
             TaskCoalescer.absorb_into_payload(turn.reload.trigger_event_payload, [ folded.id ]),

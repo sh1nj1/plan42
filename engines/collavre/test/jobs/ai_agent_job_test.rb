@@ -30,6 +30,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     def last_handoff_failed? = false
+    def handed_off? = true
   end
 
   test "creates task and executes service" do
@@ -75,6 +76,9 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     def last_handoff_failed? = false
+    # An empty answer is an answer: the provider had the payload, as the real
+    # client reports for one.
+    def handed_off? = true
   end
 
   test "does not create reply if AI response is empty" do
@@ -111,6 +115,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     def last_handoff_failed? = false
+    def handed_off? = true
   end
 
   test "renders system prompt with liquid context" do
@@ -139,6 +144,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     end
 
     def last_handoff_failed? = false
+    def handed_off? = true
 
     # Extract the messages array from the Hash (or return as-is for backward compat)
     def captured_messages
@@ -224,6 +230,9 @@ class AiAgentJobTest < ActiveJob::TestCase
         block.call("chunk 1 ") if block
         "chunk 0 chunk 1 "
       end
+      define_method(:last_handoff_failed?) { false }
+      # Streamed before the stop, as the real client records.
+      define_method(:handed_off?) { true }
     end
 
     # Temporarily set cancel check interval to 0 so it checks on every chunk

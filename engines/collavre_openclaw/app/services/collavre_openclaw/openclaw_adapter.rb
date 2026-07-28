@@ -47,6 +47,12 @@ module CollavreOpenclaw
       @last_handoff_failed
     end
 
+    # The same fact, asked positively — see AiClient#handed_off?. A turn the
+    # user stops mid-answer never reaches the line that sets the flag above.
+    def handed_off?
+      @handed_off
+    end
+
     # @param messages_data [Hash] { messages:, first_message:, context_changed: }
     def chat(messages_data, &block)
       @last_handoff_failed = false
