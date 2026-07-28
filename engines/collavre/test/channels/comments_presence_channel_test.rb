@@ -48,6 +48,58 @@ module Collavre
       assert_equal @topic.id, status[:topic_id]
     end
 
+    test "broadcast_running_agents derives the workflow topic from its trigger comment" do
+      trigger_comment = @creative.comments.create!(
+        content: "Workflow request",
+        user: @owner,
+        topic_id: nil,
+        skip_dispatch: true
+      )
+      task = Task.create!(
+        name: "Workflow response",
+        status: "running",
+        trigger_event_name: "workflow",
+        trigger_event_payload: {
+          "comment" => { "id" => trigger_comment.id },
+          "creative" => { "id" => @creative.id }
+        },
+        agent: @agent
+      )
+
+      broadcasts = []
+      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
+        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
+      end
+
+      status = broadcasts.find { |broadcast| broadcast[:payload].key?(:agent_status) }[:payload][:agent_status]
+      assert_equal task.id, status[:task_id]
+      assert_equal @topic.id, status[:topic_id]
+    end
+
+    test "broadcast_running_agents filters snapshots by topic" do
+      other_topic = @creative.topics.create!(name: "Other", user: @owner)
+      [ @topic, other_topic ].each do |topic|
+        Task.create!(
+          name: "Response in #{topic.name}",
+          status: "running",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => topic.id }
+          },
+          agent: @agent
+        )
+      end
+
+      broadcasts = []
+      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
+        CommentsPresenceChannel.broadcast_running_agents(@creative.id, topic_id: other_topic.id)
+      end
+
+      statuses = broadcasts.filter_map { |broadcast| broadcast[:payload][:agent_status] }
+      assert_equal [ other_topic.id ], statuses.pluck(:topic_id)
+    end
+
     test "typing broadcasts the validated topic id" do
       stub_connection current_user: @owner
       subscribe creative_id: @creative.id
@@ -91,6 +143,20 @@ module Collavre
       assert_no_broadcasts("comments_presence:#{@creative.id}") do
         perform :stopped_typing
       end
+    end
+
+    test "running agents action requests a snapshot for a validated topic" do
+      requested = []
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+
+      CommentsPresenceChannel.stub :broadcast_running_agents, ->(creative_id, topic_id:) {
+        requested << [ creative_id, topic_id ]
+      } do
+        perform :running_agents, topic_id: @topic.id
+      end
+
+      assert_equal [ [ @creative.id, @topic.id ] ], requested
     end
 
     test "broadcast_running_agents ignores tasks for other creatives" do

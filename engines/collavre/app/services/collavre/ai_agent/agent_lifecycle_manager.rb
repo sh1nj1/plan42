@@ -12,6 +12,16 @@ module Collavre
       # Interval (in seconds) between agent_status heartbeats during streaming
       AGENT_STATUS_HEARTBEAT_INTERVAL = 3.0
 
+      def self.topic_id_for(task:, creative:)
+        task.topic_id ||
+          task.trigger_event_payload&.dig("topic", "id") ||
+          Comment.where(
+            id: task.trigger_event_payload&.dig("comment", "id"),
+            creative_id: creative.id
+          ).pick(:topic_id) ||
+          creative.main_topic.id
+      end
+
       def initialize(task:, agent:, creative:)
         @task = task
         @agent = agent
@@ -30,7 +40,7 @@ module Collavre
           agent_id: @agent.id,
           agent_name: @agent.display_name,
           task_id: @task.id,
-          topic_id: @task.topic_id || @task.trigger_event_payload&.dig("topic", "id"),
+          topic_id: self.class.topic_id_for(task: @task, creative: @creative),
           content: content,
           source_creative_id: @creative.id
         )

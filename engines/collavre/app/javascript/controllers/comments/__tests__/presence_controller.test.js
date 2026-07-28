@@ -156,6 +156,14 @@ describe('CommentsPresenceController', () => {
     expect(perform).toHaveBeenNthCalledWith(2, 'stopped_typing', { topic_id: '45' })
   })
 
+  test('does not request running agents without a presence subscription', () => {
+    controller.selectedTopicId = '45'
+
+    controller.requestRunningAgents()
+
+    expect(controller.presenceSubscription).toBeNull()
+  })
+
   test('sends All Messages input to Main but does not render topic indicators there', () => {
     const perform = jest.fn()
     controller.presenceSubscription = { perform }
@@ -191,7 +199,7 @@ describe('CommentsPresenceController', () => {
     expect(controller.typingUsers).toEqual({})
   })
 
-  test('ignores agent idle events from another topic', () => {
+  test('ignores agent idle events from another topic and mismatched legacy tasks', () => {
     controller.selectedTopicId = '10'
     const status = {
       id: 9,
@@ -208,8 +216,14 @@ describe('CommentsPresenceController', () => {
     })
     expect(controller.typingUsers).toEqual({ 9: 'Agent' })
 
+    const { topic_id: _topicId, ...legacyStatus } = status
     controller.handlePresenceMessage({
-      agent_status: { ...status, status: 'idle' },
+      agent_status: { ...legacyStatus, status: 'idle', task_id: 100 },
+    })
+    expect(controller.typingUsers).toEqual({ 9: 'Agent' })
+
+    controller.handlePresenceMessage({
+      agent_status: { ...legacyStatus, status: 'idle' },
     })
     expect(controller.typingUsers).toEqual({})
   })
@@ -228,11 +242,16 @@ describe('CommentsPresenceController', () => {
     controller.handleTopicChange({ detail: { topicId: '11', mainTopicId: '1' } })
 
     expect(perform).toHaveBeenCalledWith('stopped_typing', { topic_id: '10' })
+    expect(perform).toHaveBeenCalledWith('running_agents', { topic_id: '11' })
     expect(controller.selectedTopicId).toBe('11')
     expect(controller.typingUsers).toEqual({})
     expect(controller.activeAgentTasks).toEqual({})
     expect(controller.typingTimers).toEqual({})
     expect(controller.agentStatusTimers).toEqual({})
+
+    perform.mockClear()
+    controller.handleTopicChange({ detail: { topicId: '11', mainTopicId: '1' } })
+    expect(perform).not.toHaveBeenCalled()
   })
 })
 
