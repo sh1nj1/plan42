@@ -774,7 +774,63 @@ module CollavreOpenclaw
       end
     end
 
+    # One #chat, two transports. The WebSocket answered part of the payload and
+    # then dropped, and the HTTP attempt behind it failed before yielding
+    # anything of its own. Each transport keeps its own buffer, so neither one
+    # can answer "did anything get through this chat" — and the gateway did
+    # have the payload, so restoring the comments this turn swallowed would
+    # answer them a second time.
+    test "a websocket that streamed before a failing http fallback is not a failed handoff" do
+      adapter = http_adapter
+      adapter.define_singleton_method(:stream_response) do |_payload, &_blk|
+        raise CollavreOpenclaw::ConnectionError, "gateway unreachable"
+      end
+
+      streamed = +""
+      with_websocket_dropping_after(delta: "half an ans") do
+        adapter.chat(messages_data) { |chunk| streamed << chunk }
+      end
+
+      assert_includes streamed, "half an ans", "premise: the gateway answered part of it over the websocket"
+      assert_not adapter.last_handoff_failed?
+    end
+
+    # Control: the same fallback with nothing streamed first really is a failed
+    # handoff, which is what holds the fix to what got through rather than to
+    # the fallback having happened.
+    test "a websocket that streamed nothing before a failing http fallback is a failed handoff" do
+      adapter = http_adapter
+      adapter.define_singleton_method(:stream_response) do |_payload, &_blk|
+        raise CollavreOpenclaw::ConnectionError, "gateway unreachable"
+      end
+
+      with_websocket_dropping_after(delta: nil) do
+        assert_nil adapter.chat(messages_data)
+      end
+
+      assert_predicate adapter, :last_handoff_failed?
+    end
+
     private
+
+    # Drive the real #chat_via_websocket: yield `delta` if given, then drop the
+    # connection so the adapter falls through to #chat_via_http.
+    def with_websocket_dropping_after(delta:)
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+
+      client = Object.new
+      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, &blk|
+        blk.call({ state: "delta", text: delta }) if delta
+        raise CollavreOpenclaw::TimeoutError, "gateway went quiet"
+      end
+      manager = Object.new
+      manager.define_singleton_method(:connection_for) { |_user| client }
+
+      CollavreOpenclaw::ConnectionManager.stub(:instance, manager) { yield }
+    ensure
+      CollavreOpenclaw.config.transport = original
+    end
 
     def build_test_user(gateway_url: nil, email: "test@example.com", llm_api_key: nil)
       user = Object.new

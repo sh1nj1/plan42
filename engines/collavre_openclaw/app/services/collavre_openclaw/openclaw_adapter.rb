@@ -21,6 +21,7 @@ module CollavreOpenclaw
       @system_prompt = system_prompt
       @context = context
       @last_handoff_failed = false
+      @handed_off = false
     end
 
     # Did the last #chat end without the gateway ever receiving the payload?
@@ -37,6 +38,11 @@ module CollavreOpenclaw
     # nothing was handed over. An error *after* deltas is not one of these — the
     # gateway had the payload and answered part of it, so the comments that turn
     # swallowed did reach the agent.
+    #
+    # The question is asked of the whole #chat, not of a transport: one call can
+    # stream over the WebSocket and then fall back to HTTP, so each transport's
+    # own response buffer answers only for its own attempt. @handed_off spans
+    # both, and is reset once per #chat.
     def last_handoff_failed?
       @last_handoff_failed
     end
@@ -44,6 +50,7 @@ module CollavreOpenclaw
     # @param messages_data [Hash] { messages:, first_message:, context_changed: }
     def chat(messages_data, &block)
       @last_handoff_failed = false
+      @handed_off = false
       parse_messages_data!(messages_data)
 
       unless @user&.gateway_url.present?
@@ -136,12 +143,14 @@ module CollavreOpenclaw
           when "delta"
             if event[:text].present?
               response_content << event[:text]
+              @handed_off = true
               yield event[:text] if block_given?
             end
           when "final"
             # If no deltas were streamed, final contains the full text
             if response_content.blank? && event[:text].present?
               response_content << event[:text]
+              @handed_off = true
               yield event[:text] if block_given?
             end
           when "error"
@@ -157,7 +166,7 @@ module CollavreOpenclaw
         # #last_handoff_failed?. Decided after the stream rather than in the
         # branch above, so a delta that arrives either side of the error still
         # counts as the payload having got through.
-        @last_handoff_failed = true if errored && response_content.blank?
+        @last_handoff_failed = true if errored && !@handed_off
         response_content.presence
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
@@ -167,7 +176,7 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
         error_msg = "OpenClaw Error: #{e.message}"
         yield error_msg if block_given?
-        @last_handoff_failed = response_content.blank?
+        @last_handoff_failed = !@handed_off
         nil
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
@@ -319,6 +328,7 @@ module CollavreOpenclaw
 
         stream_response(payload) do |chunk|
           response_content << chunk
+          @handed_off = true
           yield chunk if block_given?
         end
 
@@ -328,7 +338,10 @@ module CollavreOpenclaw
                            "#{e.backtrace.first(5).join("\n")}")
         error_msg = "OpenClaw Error: #{e.message}"
         yield error_msg if block_given?
-        @last_handoff_failed = response_content.blank?
+        # Not `response_content.blank?`: this may be the fallback behind a
+        # WebSocket that already streamed, and that content is in the caller's
+        # hands even though this method's buffer is empty.
+        @last_handoff_failed = !@handed_off
         nil
       end
     end
