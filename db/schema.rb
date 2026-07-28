@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_27_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_27_010000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -868,6 +868,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_27_000002) do
     t.string "trigger_event_name"
     t.json "trigger_event_payload"
     t.datetime "updated_at", null: false
+    t.string "waiting_notice_scope"
     t.text "workflow_context"
     t.json "workflow_state"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"

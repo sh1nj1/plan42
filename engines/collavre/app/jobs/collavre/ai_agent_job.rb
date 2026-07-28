@@ -291,6 +291,13 @@ module Collavre
       creative_id = context.dig("creative", "id")
       admitted = false
       task = nil
+      # A queued row here is a waiter, and what speaks for it is settled now, with
+      # the row — not later, from whichever notices happen to be visible. Its
+      # notice is posted in a separate transaction below, so between the two this
+      # waiter is queued with nothing naming it, and a shared notice deleted in
+      # that window would read an opted-out waiter as one of its own and cancel a
+      # turn that was only deferred.
+      notice_scope = waiter_notice_scope(agent, context)
 
       # Counting occupants and claiming the slot must be ONE step. Two workers
       # starting within the same millisecond — the exact burst this job defends
@@ -302,7 +309,12 @@ module Collavre
       Task.transaction do
         Orchestration::TopicSlot.lock!(topic_id, creative_id)
         admitted = Orchestration::TopicSlot.available_for?(agent.id, topic_id, creative_id, context)
-        task = Task.create!(attrs.merge(status: admitted ? "running" : "queued"))
+        task = Task.create!(attrs.merge(
+          status: admitted ? "running" : "queued",
+          # Left nil on an admitted row: it is not waiting, so no notice speaks
+          # for it and there is nothing for a stop control to represent.
+          waiting_notice_scope: admitted ? nil : notice_scope
+        ))
       end
 
       return task if admitted
@@ -325,6 +337,18 @@ module Collavre
       )
     end
 
+    # Which notice will speak for a waiter parked by this dispatch: the topic's
+    # shared one when this agent coalesces, its own per-deferral one when it has
+    # opted out. Resolved once, at the moment the waiter is created, so the fold,
+    # the notice and the shared notice's stop button all read one answer.
+    def waiter_notice_scope(agent, context)
+      if Orchestration::PolicyResolver.new(context).coalesce_pending_tasks_for?(agent)
+        Comment::WAITING_NOTICE_TOPIC
+      else
+        Comment::WAITING_NOTICE_TASK
+      end
+    end
+
     # Is this dispatch subject to the topic concurrency limit at all? Workflow
     # subtasks and other topic-less dispatches are not.
     def topic_admission_scoped?(context)
@@ -335,7 +359,10 @@ module Collavre
     # any waiters already parked for the same agent/topic/creative, and surface
     # one "⏳" notice for the topic.
     def park_deferred_waiter(waiter, agent, event_name, context, topic_id, creative_id)
-      if Orchestration::PolicyResolver.new(context).coalesce_pending_tasks_for?(agent)
+      # Read off the waiter rather than resolved again: folding and the notice are
+      # the same policy answer, and asking twice is how they come to disagree
+      # about a wait whose policy changed in between.
+      if waiter.waiting_notice_scope == Comment::WAITING_NOTICE_TOPIC
         Orchestration::TaskCoalescer.coalesce!(waiter)
       end
       Orchestration::AgentOrchestrator.post_topic_concurrency_notice(

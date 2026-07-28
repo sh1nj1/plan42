@@ -272,6 +272,19 @@ be N dead ends pointing at one blocker.
   for. `nil` is a notice posted before this was recorded and keeps the old
   behaviour; widening it would discard work, narrowing it would disarm the only
   stop control an in-flight wait has.
+- **And it is recorded on the waiter too, not read off its neighbours.**
+  `tasks.waiting_notice_scope` says which notice speaks for a waiter, written by
+  the same statement that creates it — `park_waiter` on the enqueue door,
+  `#admit_or_defer!` on the admission door — under the admission lock. The waiter
+  and its notice commit in two steps, so asking "which notices name this waiter?"
+  has a window where the honest answer is "none yet": an opted-out waiter is
+  already `queued` while its own notice does not exist, and a shared notice
+  deleted in that window reads it as one of its own and cancels a turn that was
+  only deferred, leaving no notice behind to say a wait happened. Recording it on
+  the row also means the fold, the notice and the shared notice's stop button read
+  one answer rather than resolving the policy at three moments a mid-wait policy
+  change can fall between. `nil` is a waiter parked before this was recorded and
+  keeps the old sibling-notice answer, for the same reason as above.
 - `topic_concurrency_notice_exists?` counts `"topic"` and legacy notices only. A
   per-deferral notice speaks for one waiter, so letting it answer would leave a
   coalescing agent's waiters with no notice whenever an opted-out agent deferred
@@ -280,7 +293,9 @@ be N dead ends pointing at one blocker.
   What it represents is `Comment#represented_queued_waiters` — the same statement
   its stop button cancels through, so "what this notice is for" has one answer:
   its own waiter for a `"task"` notice, every unclaimed queued waiter for a
-  shared one, the single newest waiter for a legacy one. Asked per notice, never
+  shared one, the single newest waiter for a legacy one. "Unclaimed" is the
+  waiter's own `waiting_notice_scope`, falling back to the surviving sibling
+  notices only for waiters parked before it was recorded. Asked per notice, never
   per topic: "is anything queued here?" is nobody's question, and a promotion
   that leaves only *claimed* waiters behind reads as "still busy" while the
   shared notice it kept up speaks for none of them — a second "⏳" line whose

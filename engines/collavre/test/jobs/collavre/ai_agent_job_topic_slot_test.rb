@@ -456,6 +456,100 @@ module Collavre
                    "a waiter whose own notice is still on screen was never this one's to cancel"
     end
 
+    # The waiter and the notice that speaks for it commit in two steps —
+    # park_waiter commits the row, post_waiting_notice posts its notice after —
+    # so there is a window in which an opted-out waiter is queued with no
+    # per-deferral notice naming it yet. Reading ownership off the surviving
+    # notices inside that window classifies it as one the shared notice speaks
+    # for and cancels it: the opt-out's turn is not deferred, it is discarded,
+    # and no notice is left on screen to say a wait ever happened.
+    #
+    # Injected at waiting_reason_text — the call this door makes after its waiter
+    # has committed and before the notice row exists — with the deletion running
+    # through the real Comment#destroy rather than by calling the cancel path.
+    test "deleting the shared notice spares an opt-out waiter whose own notice has not committed" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("coalescing")))
+
+      shared = Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                             waiting_notice_scope: Comment::WAITING_NOTICE_TOPIC).sole
+      shared_waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
+
+      delete_shared_in_window = lambda do |*_args|
+        parked = Task.where(agent: second_agent, topic_id: @topic.id, status: "queued").first
+        if parked && Comment.exists?(shared.id)
+          assert_not Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                                   waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                                   waiting_notice_task_id: parked.id).exists?,
+                     "premise: the opt-out's own notice has not been posted yet"
+          shared.destroy!
+        end
+        "another task is running"
+      end
+
+      Orchestration::AgentOrchestrator.stub :waiting_reason_text, delete_shared_in_window do
+        AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(comment("opt-out")))
+      end
+
+      own_waiter = Task.where(agent: second_agent, topic_id: @topic.id).sole
+      assert_equal "cancelled", shared_waiter.reload.status,
+                   "premise: the shared notice did stop the waiter it stood for"
+      assert_equal "queued", own_waiter.reload.status,
+                   "the shared notice never spoke for an opted-out agent's waiter, committed notice or not"
+    end
+
+    # The other half of the same window: the waiter can be cancelled by a door
+    # this fix does not touch — its anchor being deleted — while its notice
+    # transaction is still open. What must not survive is a "task" notice naming a
+    # task that has left the queue: a stop button for work that can no longer be
+    # stopped, and one nothing collects, since a cancelled task is never promoted.
+    test "no per-deferral notice survives a waiter cancelled while its notice was being posted" do
+      OrchestratorPolicy.create!(
+        policy_type: "scheduling", scope_type: "User", scope_id: second_agent.id,
+        config: { "coalesce_pending_tasks" => false }
+      )
+      occupy_slot!
+      AiAgentJob.new.perform(@agent.id, "comment_created", context_for(comment("coalescing")))
+      anchor = comment("opt-out")
+
+      delete_anchor_in_window = lambda do |*_args|
+        anchor.destroy! if Comment.exists?(anchor.id)
+        "another task is running"
+      end
+
+      Orchestration::AgentOrchestrator.stub :waiting_reason_text, delete_anchor_in_window do
+        AiAgentJob.new.perform(second_agent.id, "comment_created", context_for(anchor))
+      end
+
+      own_waiter = Task.where(agent: second_agent, topic_id: @topic.id).sole
+      assert_equal "cancelled", own_waiter.reload.status,
+                   "premise: deleting the anchor cancelled the waiter mid-window"
+      left_queue = Task.where.not(status: "queued").pluck(:id)
+      assert_empty Comment.where(creative_id: @creative.id, topic_id: @topic.id, user_id: nil,
+                                 waiting_notice_scope: Comment::WAITING_NOTICE_TASK,
+                                 waiting_notice_task_id: left_queue).pluck(:id),
+                   "a per-deferral notice for a task that has left the queue stops nothing"
+    end
+
+    # A waiter parked before the scope was recorded says nothing about which kind
+    # of notice speaks for it. Keep those on the behaviour they were parked under
+    # rather than guess: excluding them would leave an in-flight wait with no
+    # stop control at all.
+    test "a shared notice still cancels a queued waiter that recorded no notice scope" do
+      shared, own_notice, _shared_waiter, own_waiter = mixed_notice_topic!
+      Comment.where(id: own_notice.id).delete_all
+      Task.where(id: own_waiter.id).update_all(waiting_notice_scope: nil)
+
+      shared.destroy!
+
+      assert_equal "cancelled", own_waiter.reload.status,
+                   "nothing on the row says otherwise, so the old behaviour stands"
+    end
+
     # A per-deferral notice speaks for one waiter, so promoting that waiter ends
     # what it describes. The drained guard is the *shared* notice's question: with
     # the opt-out and a second waiter still parked, it keeps every notice up —
