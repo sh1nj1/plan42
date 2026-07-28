@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -46,7 +46,9 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
 	  resolve_symlink_chain stage_beside restore_postgresql_bind_config \
 	  stage_authorized_keys \
-	  scan_ssh_config_file find_unsafe_ssh_match verify_ssh_hardening \
+	  scan_ssh_config_file find_unsafe_ssh_match \
+	  verify_ssh_key_destination ssh_pattern_list_matches \
+	  verify_ssh_admission_controls verify_ssh_hardening \
 	  refuse_unusable_retention \
 	  refuse_unusable_backup_calendar \
 	  install_managed_config install_downloaded_file \
@@ -107,6 +109,38 @@ ensure_block "$f" docker "NEW"
 chk "still above TRAILER" \
   "$(printf 'A\n\n# BEGIN collavre:docker (managed by script/lightsail_launch.sh)\nNEW\n# END collavre:docker\nTRAILER')" \
   "$(cat "$f")"
+
+echo "2a. a leading block stays ahead of pre-existing pg_hba rejects"
+# pg_hba.conf stops at the first matching record. On an existing host, appending
+# the Docker rule after a broad reject makes the managed rule unreachable even
+# though both records are syntactically valid.
+f=$(mktemp)
+printf 'local all postgres peer\nhost all all 0.0.0.0/0 reject\n' > "$f"
+ensure_block "$f" docker \
+  "host    all    all    172.16.0.0/12    scram-sha-256" leading
+chk "a first managed block precedes the broad reject" 1 \
+  "$(awk '
+      /# BEGIN collavre:docker/ { managed = NR }
+      /host all all 0\.0\.0\.0\/0 reject/ { rejected = NR }
+      END { print (managed > 0 && managed < rejected) }
+    ' "$f")"
+# A host already touched by the earlier append-only implementation must converge
+# too; merely fixing new installs leaves the documented FORCE re-run broken.
+f=$(mktemp)
+printf 'local all postgres peer\nhost all all 0.0.0.0/0 reject\n\n# BEGIN collavre:docker (managed by script/lightsail_launch.sh)\nOLD\n# END collavre:docker\n' > "$f"
+ensure_block "$f" docker \
+  "host    all    all    172.16.0.0/12    scram-sha-256" leading
+chk "an existing managed block moves ahead of the broad reject" 1 \
+  "$(awk '
+      /# BEGIN collavre:docker/ { managed = NR }
+      /host all all 0\.0\.0\.0\/0 reject/ { rejected = NR }
+      END { print (managed > 0 && managed < rejected) }
+    ' "$f")"
+before="$(cat "$f")"
+ensure_block "$f" docker \
+  "host    all    all    172.16.0.0/12    scram-sha-256" leading
+chk "and the leading layout is byte-identical on another re-run" \
+  "$before" "$(cat "$f")"
 
 echo "3. an unchanged value rewrites nothing"
 f=$(mktemp)
@@ -5826,6 +5860,79 @@ vh_msg="$( ( verify_ssh_hardening "$vshd/eff" "$vshd" ) 2>&1 )"
 chk "and the refusal names the file that won"             1 \
   "$(printf '%s' "$vh_msg" | grep -c '00-operator\.conf')"
 
+# Installing a key in ~/.ssh/authorized_keys proves nothing when sshd reads a
+# different AuthorizedKeysFile. The effective value must name the exact file
+# this script is about to populate before the account receives sudo or Docker.
+printf '%s\n' \
+  'authorizedkeysfile .ssh/authorized_keys .ssh/authorized_keys2' \
+  > "$vshd/eff"
+vh_keys_default="$( ( verify_ssh_key_destination "$vshd/eff" deploybot \
+  /home/deploybot /home/deploybot/.ssh/authorized_keys ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "the default effective AuthorizedKeysFile is supported" 1 \
+  "$(printf '%s' "$vh_keys_default" | grep -c '^rc=0$')"
+printf 'authorizedkeysfile /etc/ssh/authorized_keys/%%u\n' > "$vshd/eff"
+vh_keys_custom="$( ( verify_ssh_key_destination "$vshd/eff" deploybot \
+  /home/deploybot /home/deploybot/.ssh/authorized_keys ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "a different effective AuthorizedKeysFile is refused" 1 \
+  "$(printf '%s' "$vh_keys_custom" | grep -c '^rc=1$')"
+chk "and the refusal names AuthorizedKeysFile" 1 \
+  "$(printf '%s' "$vh_keys_custom" | grep -ci 'AuthorizedKeysFile')"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'if [ "$GROUP_CONTEXT" = docker ]; then' \
+  '  printf "authorizedkeysfile /etc/ssh/authorized_keys/%%u\n"' \
+  'else' \
+  '  printf "authorizedkeysfile .ssh/authorized_keys\n"' \
+  'fi' > "$vshd/bin/sshd"
+chmod +x "$vshd/bin/sshd"
+vh_keys_before_group="$( ( export GROUP_CONTEXT=base; PATH="$vshd/bin:$PATH"
+  verify_ssh_key_destination "" deploybot /home/deploybot \
+    /home/deploybot/.ssh/authorized_keys ) 2>&1; printf 'rc=%s\n' "$?" )"
+vh_keys_after_group="$( ( export GROUP_CONTEXT=docker; PATH="$vshd/bin:$PATH"
+  verify_ssh_key_destination "" deploybot /home/deploybot \
+    /home/deploybot/.ssh/authorized_keys ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "the key path can be safe before a group Match applies" 1 \
+  "$(printf '%s' "$vh_keys_before_group" | grep -c '^rc=0$')"
+chk "and is refused after the group changes its effective path" 1 \
+  "$(printf '%s' "$vh_keys_after_group" | grep -c '^rc=1$')"
+
+# sshd -T prints Allow*/Deny* lists but does not turn a rejected account into a
+# non-zero exit. Evaluate those controls explicitly before revoking the working
+# predecessor.
+printf '%s\n' 'allowusers ubuntu' > "$vshd/eff"
+vh_allow_user="$( ( verify_ssh_admission_controls "$vshd/eff" deploybot ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "AllowUsers that omits the deploy account is refused" 1 \
+  "$(printf '%s' "$vh_allow_user" | grep -c '^rc=1$')"
+printf '%s\n' 'denyusers deploy*' > "$vshd/eff"
+vh_deny_user="$( ( verify_ssh_admission_controls "$vshd/eff" deploybot ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "DenyUsers that matches the deploy account is refused" 1 \
+  "$(printf '%s' "$vh_deny_user" | grep -c '^rc=1$')"
+printf '%s\n' 'allowusers deploy*' > "$vshd/eff"
+vh_allow_match="$( ( verify_ssh_admission_controls "$vshd/eff" deploybot ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "a matching AllowUsers pattern is accepted" 1 \
+  "$(printf '%s' "$vh_allow_match" | grep -c '^rc=0$')"
+id() {
+  [ "$1" = -Gn ] && [ "$2" = deploybot ] &&
+    { printf 'deploybot sudo docker\n'; return 0; }
+  command id "$@"
+}
+printf '%s\n' 'allowgroups operators' > "$vshd/eff"
+vh_allow_group="$( ( verify_ssh_admission_controls "$vshd/eff" deploybot ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "AllowGroups that omits every deploy group is refused" 1 \
+  "$(printf '%s' "$vh_allow_group" | grep -c '^rc=1$')"
+printf '%s\n' 'denygroups docker' > "$vshd/eff"
+vh_deny_group="$( ( verify_ssh_admission_controls "$vshd/eff" deploybot ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "DenyGroups that matches Docker is refused" 1 \
+  "$(printf '%s' "$vh_deny_group" | grep -c '^rc=1$')"
+unset -f id
+
 # Unknown is not wrong. A host where `sshd -T` will not run has answered
 # nothing, and stopping over a question that could not be asked would refuse
 # hosts that are fine — so that branch warns and the run goes on.
@@ -5904,6 +6011,21 @@ chk "an address-scoped public-key override stops the run" 1 \
 chk "and the refusal identifies the public-key directive" 1 \
   "$(printf '%s' "$vh_address_pubkey" | grep -ci 'PubkeyAuthentication')"
 
+# A connection-scoped key path or admission rule is equally impossible to
+# prove with user-only -C input; neither may bypass the static scan.
+printf 'Include %s/sshd_config.d/*.conf\nMatch Address 203.0.113.0/24\n  AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\n' \
+  "$vshd" > "$vshd/sshd_config"
+vh_address_keys="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "an address-scoped key destination stops the run" 1 \
+  "$(printf '%s' "$vh_address_keys" | grep -c '^rc=1$')"
+printf 'Include %s/sshd_config.d/*.conf\nMatch Address 203.0.113.0/24\n  DenyUsers deploybot\n' \
+  "$vshd" > "$vshd/sshd_config"
+vh_address_admission="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "an address-scoped admission rule stops the run" 1 \
+  "$(printf '%s' "$vh_address_admission" | grep -c '^rc=1$')"
+
 # ChallengeResponseAuthentication is OpenSSH's deprecated alias for
 # KbdInteractiveAuthentication. A contextual scanner that recognizes only the
 # canonical spelling leaves PAM password authentication enabled in the same
@@ -5978,12 +6100,29 @@ vh_docker_grant="$(awk '
 chk "sudo-group context is rechecked before passwordless sudo" 1 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' \
       <<<"$vh_sudo_grant")"
+chk "sudo-group key destination is rechecked before passwordless sudo" 1 \
+  "$(grep -cF 'verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS"' \
+      <<<"$vh_sudo_grant")"
 chk "docker-group context is rechecked before convergence continues" 1 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' \
+      <<<"$vh_docker_grant")"
+chk "docker-group key destination is rechecked before revocation" 1 \
+  "$(grep -cF 'verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS"' \
       <<<"$vh_docker_grant")"
 chk "the check immediately before revocation requires a readable public-key result" 1 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1' \
       <<<"$vh_docker_grant")"
+chk "the final gate checks sshd admission before revocation" 1 \
+  "$(grep -cF 'verify_ssh_admission_controls "" "$APP_SSH_USER"' \
+      <<<"$vh_docker_grant")"
+vh_key_grant="$(awk '
+  /^if ! id -u "\$APP_SSH_USER"/ { f = 1 }
+  f { print }
+  f && /^usermod -aG sudo "\$APP_SSH_USER"$/ { exit }
+' "$SRC")"
+chk "the effective key destination is checked before privilege is granted" 1 \
+  "$(grep -cF 'verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS"' \
+      <<<"$vh_key_grant")"
 
 # If the recheck is what discovers the override, the new group is already live.
 # A refusal must remove only the membership this run added. These assertions

@@ -1086,11 +1086,12 @@ install_downloaded_file() {
 # Keep a managed block in a config file equal to $content, keyed by a marker.
 # Added on the first run; on later runs the body is replaced in place, so a
 # FORCE=1 re-run with a changed DOCKER_SUBNETS or INSTANCE_HOSTNAME converges
-# the host instead of leaving the previous value in force. In place, not
-# delete-and-append: pg_hba.conf is first-match-wins, and moving the rule to
-# the end of the file could park it behind one that already rejects.
+# the host instead of leaving the previous value in force. The optional fourth
+# argument `leading` moves the block ahead of every unmanaged line. PostgreSQL's
+# caller uses it because pg_hba.conf is first-match-wins and even an existing
+# managed block must move ahead of an operator's earlier broad reject.
 ensure_block() {
-  local file="$1" marker="$2" content="$3"
+  local file="$1" marker="$2" content="$3" placement="${4:-keep}"
   local begin="# BEGIN collavre:$marker" end="# END collavre:$marker"
 
   # Resolved before anything else, and not only for the rename below: the
@@ -1129,7 +1130,19 @@ ensure_block() {
              "file it replaces, so the collavre:$marker block was NOT added and" \
              "$file is untouched." ;;
     esac
-    if ! {
+    if [ "$placement" = leading ]; then
+      if ! {
+	printf '%s (managed by script/lightsail_launch.sh)\n' "$begin"
+	printf '%s\n' "$content"
+	printf '%s\n\n' "$end"
+	cat "$file"
+      } > "$tmp"; then
+	rm -f "$tmp"
+	die "$file: could not write the leading collavre:$marker block to a" \
+	    "staging file beside it — is $(dirname "$file") full? $file is" \
+	    "untouched."
+      fi
+    elif ! {
       printf '\n%s (managed by script/lightsail_launch.sh)\n' "$begin"
       printf '%s\n' "$content"
       printf '%s\n' "$end"
@@ -1159,17 +1172,38 @@ ensure_block() {
   # index() rather than an anchored match, so awk sees exactly the lines the
   # grep above found. END exits non-zero on an unterminated block (END marker
   # before BEGIN), which would otherwise swallow the rest of the file.
-  if ! BLOCK_BEGIN="$begin" BLOCK_END="$end" BLOCK_BODY="$content" awk '
+  if ! BLOCK_BEGIN="$begin" BLOCK_END="$end" BLOCK_BODY="$content" \
+       BLOCK_PLACEMENT="$placement" awk '
       BEGIN { b = ENVIRON["BLOCK_BEGIN"]; e = ENVIRON["BLOCK_END"] }
+      BEGIN {
+	leading = ENVIRON["BLOCK_PLACEMENT"] == "leading"
+	if (leading) {
+	  print b " (managed by script/lightsail_launch.sh)"
+	  print ENVIRON["BLOCK_BODY"]
+	  print e
+	  print ""
+	}
+      }
       !inside && index($0, b) {
         inside = 1
-        print b " (managed by script/lightsail_launch.sh)"
-        print ENVIRON["BLOCK_BODY"]
-        print e
+	if (!leading) {
+	  print b " (managed by script/lightsail_launch.sh)"
+	  print ENVIRON["BLOCK_BODY"]
+	  print e
+	}
         next
       }
-      inside && index($0, e) { inside = 0; next }
+      inside && index($0, e) {
+	inside = 0
+	if (leading) skip_old_separator = 1
+	next
+      }
       inside { next }
+      leading && skip_old_separator && $0 == "" {
+	skip_old_separator = 0
+	next
+      }
+      { skip_old_separator = 0 }
       { print }
       END { if (inside) exit 1 }
     ' "$file" > "$tmp"; then
@@ -2728,6 +2762,13 @@ scan_ssh_config_file() {
 	    break
 	  }
 	  ;;
+	authorizedkeysfile|allowusers|denyusers|allowgroups|denygroups)
+	  # The user-only effective probe below cannot evaluate a destination
+	  # path or admission rule that changes with Address/Host/listener
+	  # context. Refuse the ambiguity before the account receives privilege.
+	  SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no:${line#"${line%%[![:space:]]*}"}"
+	  break
+	  ;;
       esac
     fi
   done < "$file"
@@ -2743,6 +2784,168 @@ find_unsafe_ssh_match() {
   scan_ssh_config_file "$conf_dir/sshd_config" "$conf_dir"
   printf '%s\n' "$SSH_CONFIG_SCAN_UNSAFE"
   unset SSH_CONFIG_SCAN_CONTEXTUAL SSH_CONFIG_SCAN_UNSAFE SSH_CONFIG_SCAN_STACK
+}
+
+# verify_ssh_key_destination <effective config file> <user> <home> <target>
+#
+# Refuse to populate a hard-coded authorized_keys file unless sshd's effective
+# AuthorizedKeysFile list for the deploy account includes that exact path.
+# Relative paths are resolved below the account's home, matching sshd. The
+# common %h, %u and %U tokens are expanded; wildcard paths are deliberately not
+# guessed at because proving that a glob selects the target is not enough to
+# prove it is the file sshd will safely read under StrictModes.
+verify_ssh_key_destination() {
+  local src="$1" user="$2" home="$3" target="$4"
+  local effective paths path expanded uid sentinel=$'\001'
+  if [ -n "$src" ]; then
+    effective="$(cat "$src")" ||
+      die "SSH AuthorizedKeysFile could not be read for '$user'. Nothing has" \
+	  "been granted; correct the test input and re-run."
+  elif ! effective="$(sshd -T -C "user=$user" 2>/dev/null)"; then
+    die "SSH AuthorizedKeysFile could not be verified for '$user':" \
+	"'sshd -T -C user=$user' rejected or could not read the configuration." \
+	"Nothing has been granted. Run 'sshd -t', correct the configuration and" \
+	"re-run."
+  fi
+
+  paths="$(printf '%s\n' "$effective" |
+    awk 'tolower($1) == "authorizedkeysfile" {
+      for (i = 2; i <= NF; i++) print $i
+    }')"
+  [ -n "$paths" ] ||
+    die "SSH AuthorizedKeysFile could not be verified for '$user': sshd did" \
+	"not report the setting. Nothing has been granted. Correct the SSH" \
+	"configuration and re-run."
+
+  while IFS= read -r path; do
+    case "$path" in
+      *'*'*|*'?'*) continue ;;
+    esac
+    expanded="${path//%%/$sentinel}"
+    expanded="${expanded//%h/$home}"
+    expanded="${expanded//%u/$user}"
+    if [[ "$expanded" = *%U* ]]; then
+      uid="$(id -u "$user" 2>/dev/null)" || continue
+      expanded="${expanded//%U/$uid}"
+    fi
+    expanded="${expanded//$sentinel/%}"
+    [[ "$expanded" = /* ]] || expanded="${home%/}/$expanded"
+    [ "$expanded" = "$target" ] && return 0
+  done <<< "$paths"
+
+  die "SSH AuthorizedKeysFile for '$user' does not include '$target'." \
+      "Provisioning will not install a key in a file sshd does not read, or" \
+      "revoke the previous deploy user's access on that assumption. Restore" \
+      "'.ssh/authorized_keys' (or an equivalent %h/%u path) in sshd_config" \
+      "and re-run."
+}
+
+# ssh_pattern_list_matches <name> <newline-separated patterns> [user]
+#
+# Apply OpenSSH's positive/negated pattern-list rule for the * and ? forms used
+# by AllowUsers/DenyUsers/AllowGroups/DenyGroups. A relevant USER@HOST rule
+# other than USER@* cannot be proved from a user-only sshd -T probe and returns
+# 2 so the caller can fail closed.
+ssh_pattern_list_matches() {
+  local name="$1" patterns="$2" kind="${3:-group}"
+  local pattern candidate host negated matched=1
+  while IFS= read -r pattern; do
+    [ -n "$pattern" ] || continue
+    negated=0
+    case "$pattern" in
+      !*) negated=1; pattern="${pattern#!}" ;;
+    esac
+    candidate="$pattern"
+    if [ "$kind" = user ] && [[ "$pattern" = *@* ]]; then
+      candidate="${pattern%@*}"
+      host="${pattern##*@}"
+      [[ "$name" = $candidate ]] || continue
+      [ "$host" = '*' ] || return 2
+    fi
+    [[ "$name" = $candidate ]] || continue
+    [ "$negated" -eq 0 ] || return 1
+    matched=0
+  done <<< "$patterns"
+  return "$matched"
+}
+
+# verify_ssh_admission_controls <effective config file> <user>
+#
+# sshd -T exits successfully even when AllowUsers/DenyUsers or group controls
+# reject the supplied user. Evaluate the reported lists after the final Docker
+# group grant, before the working predecessor loses sudo and Docker access.
+verify_ssh_admission_controls() {
+  local src="$1" user="$2" effective patterns groups group rc allowed
+  local deny_groups allow_groups
+  if [ -n "$src" ]; then
+    effective="$(cat "$src")" ||
+      die "SSH admission controls could not be read for '$user'. The previous" \
+	  "deploy user's privileged access will not be revoked."
+  elif ! effective="$(sshd -T -C "user=$user" 2>/dev/null)"; then
+    die "SSH admission controls could not be verified for '$user':" \
+	"'sshd -T -C user=$user' failed. The previous deploy user's privileged" \
+	"access will not be revoked. Run 'sshd -t', correct the configuration" \
+	"and re-run."
+  fi
+
+  patterns="$(printf '%s\n' "$effective" |
+    awk 'tolower($1) == "denyusers" { print $2 }')"
+  if [ -n "$patterns" ]; then
+    ssh_pattern_list_matches "$user" "$patterns" user
+    rc=$?
+    [ "$rc" -ne 0 ] ||
+      die "SSH DenyUsers rejects '$user'. The previous deploy user's" \
+	  "privileged access will not be revoked. Correct the admission rule" \
+	  "and re-run."
+    [ "$rc" -ne 2 ] ||
+      die "SSH DenyUsers contains a host-scoped pattern for '$user' that a" \
+	  "user-only verification cannot prove reachable. The previous deploy" \
+	  "user's privileged access will not be revoked. Use an unconditional" \
+	  "rule or remove the restriction, then re-run."
+  fi
+
+  patterns="$(printf '%s\n' "$effective" |
+    awk 'tolower($1) == "allowusers" { print $2 }')"
+  if [ -n "$patterns" ]; then
+    ssh_pattern_list_matches "$user" "$patterns" user
+    rc=$?
+    [ "$rc" -eq 0 ] ||
+      die "SSH AllowUsers does not unconditionally admit '$user'. The previous" \
+	  "deploy user's privileged access will not be revoked. Add '$user' to" \
+	  "the rule without an unverified host restriction and re-run."
+  fi
+
+  deny_groups="$(printf '%s\n' "$effective" |
+    awk 'tolower($1) == "denygroups" { print $2 }')"
+  allow_groups="$(printf '%s\n' "$effective" |
+    awk 'tolower($1) == "allowgroups" { print $2 }')"
+  [ -n "$deny_groups$allow_groups" ] || return 0
+
+  groups="$(id -Gn "$user" 2>/dev/null)" ||
+    die "SSH group admission could not be verified because the groups for" \
+	"'$user' could not be read. The previous deploy user's privileged" \
+	"access will not be revoked."
+
+  if [ -n "$deny_groups" ]; then
+    for group in $groups; do
+      if ssh_pattern_list_matches "$group" "$deny_groups"; then
+	die "SSH DenyGroups rejects '$user' through group '$group'. The previous" \
+	    "deploy user's privileged access will not be revoked. Correct the" \
+	    "admission rule and re-run."
+      fi
+    done
+  fi
+
+  if [ -n "$allow_groups" ]; then
+    allowed=1
+    for group in $groups; do
+      ssh_pattern_list_matches "$group" "$allow_groups" && allowed=0
+    done
+    [ "$allowed" -eq 0 ] ||
+      die "SSH AllowGroups admits none of '$user''s groups ($groups). The" \
+	  "previous deploy user's privileged access will not be revoked. Add" \
+	  "one of those groups to the rule and re-run."
+  fi
 }
 
 verify_ssh_hardening() {
@@ -2763,8 +2966,8 @@ verify_ssh_hardening() {
     unsafe_match="$(find_unsafe_ssh_match "$conf_dir")"
     [ -z "$unsafe_match" ] ||
       die "SSH hardening cannot be verified for every connection: a Match" \
-	"Address/Host/LocalAddress/LocalPort/RDomain block weakens" \
-	"authentication at $unsafe_match." \
+	"Address/Host/LocalAddress/LocalPort/RDomain block changes" \
+	"authentication, key lookup or admission at $unsafe_match." \
 	"The user-only sshd test below cannot evaluate that context. Remove" \
 	"or harden the directive and re-run before granting '$deploy_user'" \
 	"sudo or Docker access."
@@ -3184,6 +3387,13 @@ adopt_legacy_ssh_key_marker "$APP_SSH_USER"
 if ! id -u "$APP_SSH_USER" >/dev/null 2>&1; then
   adduser --disabled-password --gecos "Collavre deploy" "$APP_SSH_USER"
 fi
+APP_HOME="$(getent passwd "$APP_SSH_USER" | cut -d: -f6)"
+AUTH_KEYS="$APP_HOME/.ssh/authorized_keys"
+# The file this script writes must be one sshd actually reads for this account.
+# Check after account creation (so %h/%u/%U can resolve) but before recording or
+# granting sudo. A custom AuthorizedKeysFile is supported only when it expands
+# to the same target; otherwise leave the host's access model untouched.
+verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS"
 # Before the grant, not after it. Everything from here to the revocation at the
 # end of step 4 — the whole Docker install — is a window in which an interrupted
 # run would otherwise leave this account holding sudo and docker with nothing on
@@ -3198,7 +3408,10 @@ in_group "$APP_SSH_USER" sudo && SUDO_GROUP_WAS_PRESENT=1
 usermod -aG sudo "$APP_SSH_USER"
 # Match Group is resolved from the account's current memberships, so the check
 # before user creation cannot see an override that starts applying here.
-if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 ); then
+if ! (
+  verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 &&
+  verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS"
+); then
   if [ "$SUDO_GROUP_WAS_PRESENT" -eq 0 ]; then
     gpasswd -d "$APP_SSH_USER" sudo >/dev/null 2>&1 ||
       die "SSH hardening failed after '$APP_SSH_USER' joined sudo, and the" \
@@ -3216,9 +3429,7 @@ fi
 install -d -m 0755 /etc/sudoers.d
 ensure_sudoers "$APP_SSH_USER"
 
-APP_HOME="$(getent passwd "$APP_SSH_USER" | cut -d: -f6)"
 APP_SSH_GROUP="$(install_deploy_ssh_dir "$APP_SSH_USER" "$APP_HOME")"
-AUTH_KEYS="$APP_HOME/.ssh/authorized_keys"
 touch "$AUTH_KEYS"
 
 # stage_authorized_keys <authorized_keys> — echo the path of a staging file
@@ -3733,7 +3944,11 @@ in_group "$APP_SSH_USER" docker && DOCKER_GROUP_WAS_PRESENT=1
 usermod -aG docker "$APP_SSH_USER"
 # Recheck for the same reason as the sudo grant above. An operator's
 # `Match Group docker` block does not apply until this membership exists.
-if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 ); then
+if ! (
+  verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 &&
+  verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS" &&
+  verify_ssh_admission_controls "" "$APP_SSH_USER"
+); then
   if [ "$DOCKER_GROUP_WAS_PRESENT" -eq 0 ]; then
     gpasswd -d "$APP_SSH_USER" docker >/dev/null 2>&1 ||
       die "SSH hardening failed after '$APP_SSH_USER' joined docker, and the" \
@@ -3900,7 +4115,7 @@ mv -f "$PG_CONF_TMP" "$PG_CONF_REAL"
 
 # Containers authenticate with a password over the docker bridge.
 ensure_block "$PG_CONF_DIR/pg_hba.conf" docker \
-  "host    all    all    $DOCKER_SUBNETS    scram-sha-256"
+  "host    all    all    $DOCKER_SUBNETS    scram-sha-256" leading
 
 systemctl enable postgresql
 systemctl restart postgresql
