@@ -1215,14 +1215,29 @@ ensure_block() {
 # group, which is root-equivalent — `docker run -v /:/host` is a root shell —
 # so an allowlist would withhold nothing it does not already have, while
 # breaking the next maintenance command someone documents.
+sudoers_file_name() {
+  local user="$1" safe digest
+  safe="${user//[^A-Za-z0-9_-]/_}"
+  digest="$(printf '%s' "$user" | sha256sum | awk '{print substr($1, 1, 16)}')"
+  [ "${#digest}" -eq 16 ] || return 1
+  printf '90-collavre-%s-%s\n' "$safe" "$digest"
+}
+
 ensure_sudoers() {
-  local user="$1" dir="${2:-/etc/sudoers.d}" tmp
+  local user="$1" dir="${2:-/etc/sudoers.d}" tmp legacy rule
   # sudo's includedir skips any filename that contains '.' or ends in '~', and
-  # a Linux username may legally contain a dot.
-  local name="90-collavre-${user//[^A-Za-z0-9_-]/_}"
+  # a Linux username may legally contain a dot. The digest is also required:
+  # two valid names such as release.bot and release_bot otherwise normalize to
+  # the same file, and staging the successor would overwrite the predecessor's
+  # proven sudo path before the authenticated cutover.
+  local name
+  name="$(sudoers_file_name "$user")" ||
+    die "could not derive a collision-free sudoers filename for '$user'"
+  legacy="$dir/90-collavre-${user//[^A-Za-z0-9_-]/_}"
+  rule="$user ALL=(ALL:ALL) NOPASSWD:ALL"
 
   tmp="$(mktemp)"
-  printf '%s ALL=(ALL:ALL) NOPASSWD:ALL\n' "$user" > "$tmp"
+  printf '%s\n' "$rule" > "$tmp"
   chmod 0440 "$tmp"
   # Validate before installing, never after. A syntax error anywhere under
   # sudoers.d makes sudo refuse to run for *every* user ("no valid sudoers
@@ -1235,6 +1250,14 @@ ensure_sudoers() {
   # Owned by root by construction: this script runs as root (checked above).
   install -m 0440 "$tmp" "$dir/$name"
   rm -f "$tmp"
+  # Migrate the pre-hash filename only when it is exactly this user's rule.
+  # When a colliding predecessor owns it, preserving that file is the two-phase
+  # guarantee; the authenticated finalizer removes it later.
+  if [ "$legacy" != "$dir/$name" ] &&
+     cmp -s <(printf '%s\n' "$rule") "$legacy"; then
+    rm -f "$legacy" ||
+      log "WARNING: could not remove the duplicate legacy sudoers file $legacy"
+  fi
 
   # Do not remove a predecessor here. A new account has not proved that it can
   # open an SSH session yet, and removing the old NOPASSWD grant before that
@@ -1245,10 +1268,10 @@ ensure_sudoers() {
 
 # Take the docker group back from the deploy user a FORCE=1 re-run replaced.
 #
-# ensure_sudoers above already drops the old NOPASSWD file, but on its own that
-# revokes the longer road to root and leaves the shorter one open: docker group
-# membership is root-equivalent, so an operator rotating APP_SSH_USER away from
-# a compromised account would still be handing it a root shell.
+# Removing the predecessor's NOPASSWD file alone would revoke the longer road to
+# root and leave the shorter one open: docker group membership is
+# root-equivalent, so an operator rotating APP_SSH_USER away from a compromised
+# account would still be handing it a root shell.
 #
 # The account itself and its authorized_keys are deliberately left alone. This
 # runs on a host whose only other way in is the user the same run just created,
@@ -1481,11 +1504,19 @@ revoke_deploy_user_access() {
     return 1
   fi
 
-  sudoers_name="90-collavre-${prior//[^A-Za-z0-9_-]/_}"
-  sudoers_path="$sudoers_dir/$sudoers_name"
   prior_sudoers="$prior ALL=(ALL:ALL) NOPASSWD:ALL"
   current_sudoers="$current ALL=(ALL:ALL) NOPASSWD:ALL"
-  if [ -e "$sudoers_path" ]; then
+  sudoers_name="$(sudoers_file_name "$prior")" || {
+    log "WARNING: could not derive the sudoers filename for '$prior'; the SSH" \
+	"cutover cleanup remains pending"
+    return 1
+  }
+  # The second path migrates revisions that used only the sanitized username.
+  # Exact-content checks prevent it from deleting a colliding successor rule.
+  for sudoers_path in \
+    "$sudoers_dir/$sudoers_name" \
+    "$sudoers_dir/90-collavre-${prior//[^A-Za-z0-9_-]/_}"; do
+    [ -e "$sudoers_path" ] || continue
     if cmp -s <(printf '%s\n' "$prior_sudoers") "$sudoers_path"; then
       if ! rm -f "$sudoers_path" || [ -e "$sudoers_path" ]; then
 	log "WARNING: could NOT remove $sudoers_path; '$prior' still has this" \
@@ -1504,7 +1535,7 @@ revoke_deploy_user_access() {
 	  "rule by hand, then retry the SSH cutover."
       return 1
     fi
-  fi
+  done
 
   log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
       "remove it by hand once you can reach the host as '$current':" \
@@ -1514,6 +1545,7 @@ revoke_deploy_user_access() {
 revoke_prior_deploy_user() {
   local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}"
   local set_file="${3:-${prior_file%/*}/deploy_users}" prior kept='' failed=0
+  local marker_committed="${4:-0}"
 
   # Not a no-op on the ordinary path: this is what seeds the set on a host the
   # earlier revision provisioned, and what puts $current in it on a first run,
@@ -1567,10 +1599,11 @@ revoke_prior_deploy_user() {
       failed=1
     }
   [ "$failed" -eq 0 ] || {
-    log "WARNING: the SSH cutover is still pending because at least one" \
-	"predecessor retains privileged access"
+    log "WARNING: predecessor cleanup is still pending because at least one" \
+	"account retains privileged access"
     return 1
   }
+  [ "$marker_committed" -eq 0 ] || return 0
   write_state_file "$prior_file" "$current"$'\n' ||
     {
       log "WARNING: could not record '$current' as the deploy user in '$prior_file';" \
@@ -1763,6 +1796,17 @@ finalize_ssh_cutover() {
     grep -qxF "$SSH_PUBLIC_KEY" "$AUTH_KEYS" ||
       die "the staged key is no longer in $AUTH_KEYS; predecessor access was" \
 	  "not changed"
+  fi
+
+  # This is the availability commit and the last state write allowed to fail
+  # while predecessor access is still the recovery path. Once the authenticated
+  # successor is durable, key/group/sudoers cleanup may be retried without
+  # risking lockout even if it is interrupted halfway through.
+  write_state_file "$STATE_DIR/deploy_user" "$user"$'\n' ||
+    die "could not commit '$user' as the proven deploy account; predecessor" \
+	"access was not changed and the cutover remains pending"
+
+  if [ -n "$SSH_PUBLIC_KEY" ]; then
     revoke_prior_ssh_key "$AUTH_KEYS"
     [ "$(cat "$STATE_DIR/ssh_public_key.$user" 2>/dev/null || true)" = \
       "$SSH_PUBLIC_KEY" ] ||
@@ -1778,9 +1822,11 @@ finalize_ssh_cutover() {
 	  "remains pending; repair $AUTH_KEYS or its filesystem and retry."
   fi
 
-  revoke_prior_deploy_user "$user" ||
+  revoke_prior_deploy_user "$user" "$STATE_DIR/deploy_user" \
+    "$STATE_DIR/deploy_users" 1 ||
     die "one or more predecessor accounts could not be disarmed. The cutover" \
-	"remains pending; repair the reported account and run this command again."
+	"cleanup remains pending, but the proven successor is committed. Repair" \
+	"the reported account and run this command again."
 
   rm -f "$pending"
   log "SSH cutover finalized from an authenticated session as '$user'." \

@@ -21,12 +21,12 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_public_key_fingerprint|ssh_cutover_auth_info_file|ssh_cutover_authenticated_with_key|ssh_cutover_has_sshd_ancestor|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|sudoers_file_name|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_public_key_fingerprint|ssh_cutover_auth_info_file|ssh_cutover_authenticated_with_key|ssh_cutover_has_sshd_ancestor|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
 
-for fn in die ensure_block ensure_sudoers in_group write_state_file \
+for fn in die ensure_block sudoers_file_name ensure_sudoers in_group write_state_file \
 	  launch_record_is_complete record_launch_settings \
           revoke_prior_deploy_user \
           record_deploy_user_grant revoke_deploy_user_access \
@@ -278,15 +278,17 @@ chk "file untouched"  "$before"  "$(cat "$f")"
 echo "8. the deploy user gets a sudoers grant sudo will actually read"
 d=$(mktemp -d)
 ensure_sudoers collavre "$d"
+collavre_sudoers="$(sudoers_file_name collavre)"
+deploy_dot_sudoers="$(sudoers_file_name deploy.bot)"
 chk "one file"        1        "$(ls "$d" | wc -l | tr -d ' ')"
-chk "readable name"   "90-collavre-collavre" "$(ls "$d")"
-chk "mode 0440"       "440"    "$(file_mode "$d/90-collavre-collavre")"
-chk "passwordless"    "collavre ALL=(ALL:ALL) NOPASSWD:ALL" "$(cat "$d/90-collavre-collavre")"
+chk "collision-free readable name" "$collavre_sudoers" "$(ls "$d")"
+chk "mode 0440"       "440"    "$(file_mode "$d/$collavre_sudoers")"
+chk "passwordless"    "collavre ALL=(ALL:ALL) NOPASSWD:ALL" "$(cat "$d/$collavre_sudoers")"
 # sudo's includedir ignores any filename containing a dot, so a grant written
 # for a dotted username would be silently skipped — the exact failure mode
 # this whole case exists to prevent.
 ensure_sudoers deploy.bot "$d"
-chk "dot sanitized"   "90-collavre-deploy_bot" \
+chk "dot sanitized"   "$deploy_dot_sudoers" \
   "$(ls "$d" | grep deploy)"
 chk "no dot in name"  0 "$(ls "$d" | grep -c '\.')"
 
@@ -295,6 +297,10 @@ echo "9. staging a changed APP_SSH_USER preserves the proven grant"
 # staged account's actual SSH session.
 chk "old user's grant remains" 1 "$(ls "$d" | grep -c 'collavre-collavre')"
 chk "both staged grants remain" 2 "$(ls "$d" | wc -l | tr -d ' ')"
+ensure_sudoers release.bot "$d"
+ensure_sudoers release_bot "$d"
+chk "normalization collisions keep both staged grants" 2 \
+  "$(grep -l '^release[._]bot ALL=' "$d"/* | wc -l | tr -d ' ')"
 # An operator's own file is not ours to delete.
 touch "$d/10-operator"
 ensure_sudoers collavre "$d"
@@ -7039,6 +7045,7 @@ revoke_prior_ssh_key() {
 }
 revoke_prior_deploy_user() {
   TRACE="${TRACE}account "
+  [ "${REVOKE_ACCOUNT_FAIL:-0}" -eq 0 ] || return 1
   write_state_file "$STATE_DIR/deploy_user" "deploybot"$'\n'
 }
 TRACE=''
@@ -7072,12 +7079,26 @@ chk "a key that differs from the pending fingerprint is refused" 1 "$?"
 chk "and cannot start predecessor withdrawal" "" "$TRACE"
 mv "$cutover_state/ssh_cutover.pending.bak" \
   "$cutover_state/ssh_cutover.pending"
+( mkdir "$cutover_state/deploy_user"
+  SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "a successor commit failure is refused before withdrawal" 1 "$?"
+chk "and leaves every predecessor path untouched" "" "$TRACE"
+rmdir "$cutover_state/deploy_user"
 ( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 REVOKE_KEY_FAIL=1 \
     finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
 chk "an incomplete predecessor-key withdrawal is refused" 1 "$?"
-chk "and does not commit the deploy account" 0 \
-  "$([ -e "$cutover_state/deploy_user" ] && echo 1 || echo 0)"
+chk "after authenticated proof the successor remains committed" deploybot \
+  "$(cat "$cutover_state/deploy_user")"
 chk "while retaining the pending challenge" 1 \
+  "$([ -e "$cutover_state/ssh_cutover.pending" ] && echo 1 || echo 0)"
+TRACE=''
+( SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 REVOKE_ACCOUNT_FAIL=1 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "a predecessor-account cleanup failure is retryable" 1 "$?"
+chk "with the proven successor still committed" deploybot \
+  "$(cat "$cutover_state/deploy_user")"
+chk "and the pending cleanup record retained" 1 \
   "$([ -e "$cutover_state/ssh_cutover.pending" ] && echo 1 || echo 0)"
 TRACE=''
 SUDO_USER=deploybot SSH_PROOF=1 KEY_PROOF=1 \

@@ -217,9 +217,12 @@ remove their script-managed
 `/var/lib/collavre/deploy_user`. Change `KAMAL_SSH_USER` only after the command
 prints `SSH cutover finalized`.
 
-If provisioning or finalization is interrupted,
-`/var/lib/collavre/ssh_cutover.pending` remains. The old account stays
-privileged, and the same finalize command is safe to retry. A different target
+If provisioning or proof fails before the successor marker is committed, the
+old account and managed keys remain unchanged. After successful proof, the
+successor marker is committed before any predecessor is disarmed. If later
+key/group/sudoers cleanup is interrupted, the proven successor remains the
+recovery path, `/var/lib/collavre/ssh_cutover.pending` remains, and the same
+finalize command safely retries the remaining cleanup. A different target
 cannot be staged over a pending cutover; finish the recorded transition first.
 This is intentional availability bias: a reported stale credential is safer
 than automatically removing the last proven way into the host.
