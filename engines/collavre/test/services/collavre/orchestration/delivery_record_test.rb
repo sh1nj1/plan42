@@ -252,6 +252,18 @@ module Collavre
                         "the record is evidence, and stays true whatever the switch says"
         assert_nil DeliveryRecord.covering_task(@agent, late.id, context_for(late), "comment_created")
       end
+
+      # The dispatch door and the promotion door have to mean the same thing by
+      # "this turn delivered nothing". Promotion expresses it by leaving a
+      # status out of DELIVERED_STATUSES; the dispatch door expresses it by
+      # restoring on that status. A status added to one list and not the other
+      # is how the two doors come to disagree.
+      test "the statuses that restore are exactly the terminal ones promotion calls undelivered" do
+        terminal = %w[done failed cancelled escalated]
+
+        assert_equal (terminal - AgentOrchestrator::DELIVERED_STATUSES).sort,
+                     DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES.sort
+      end
     end
   end
 end

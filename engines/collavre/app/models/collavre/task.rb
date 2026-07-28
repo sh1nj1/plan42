@@ -25,6 +25,7 @@ module Collavre
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
+    after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: %w[running delegated])
@@ -104,6 +105,24 @@ module Collavre
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    # This turn was dropping other agents' dispatches on the strength of having
+    # read their comments, and then died without answering anything. Those
+    # dispatches have to come back — see Orchestration::DeliveryRecord.restore!.
+    #
+    # A status callback rather than a call site: AiAgentJob's rescue and
+    # StuckDetector both end a turn this way, and only one of them runs for a
+    # process that was killed outright.
+    def ended_without_delivering?
+      return false unless saved_change_to_attribute?("status")
+      return false unless status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
+
+      Orchestration::DeliveryRecord.ids_in(trigger_event_payload).any?
+    end
+
+    def restore_undelivered_dispatches
+      Orchestration::DeliveryRecord.restore!(self)
     end
 
     def terminal_status?

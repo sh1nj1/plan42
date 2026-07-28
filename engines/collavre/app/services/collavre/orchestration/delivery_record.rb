@@ -48,6 +48,23 @@ module Collavre
       # `queued`/`pending` are excluded at both: nothing has been delivered yet.
       IN_FLIGHT_STATUSES = %w[running delegated pending_approval].freeze
 
+      # Terminal statuses in which the turn delivered nothing after all.
+      #
+      # The complement of AgentOrchestrator::DELIVERED_STATUSES over the
+      # terminal set, and that is the whole point: promotion says a dead turn
+      # silences nothing by leaving these statuses out of its list, and a parked
+      # waiter survives on that — it is still a row, and the refresh re-reads
+      # the covering turn's status before deciding anything.
+      #
+      # A *dropped* dispatch has no row to re-read anything. So the drop owes
+      # the same answer through the only means it has left: putting the
+      # discarded dispatch back. Without it the two doors disagree about what a
+      # failure means, and the disagreement costs a comment nobody answers.
+      #
+      # DeliveryRecordTest asserts this is exactly the complement; a status
+      # added to one list and not the other is how they drift apart.
+      UNDELIVERED_TERMINAL_STATUSES = %w[failed cancelled escalated].freeze
+
       # Record what `resolved` carries as chat history.
       #
       # Measured off the *resolved* payload — the messages the adapter is handed
@@ -118,6 +135,77 @@ module Collavre
           ids_in(task.trigger_event_payload).include?(comment_id.to_i)
         end
       end
+
+      # Put back the dispatches this turn's record caused to be discarded, now
+      # that the turn has ended without delivering them.
+      #
+      # Driven off Task's status callback rather than from AiAgentJob's rescue:
+      # the job is not the only door onto a failed turn — StuckDetector fails a
+      # task that never reached a rescue at all — and a restore wired to one of
+      # them is a restore that does not happen on the other.
+      #
+      # Restores only what nothing else is on the hook for. A comment swept into
+      # this turn's history may still have a waiter of its own (parked before
+      # the turn assembled, so never droppable), and promotion decides that
+      # waiter's fate by re-reading this turn's status. Restoring it as well
+      # would put two turns on one comment. "Has a row" is measured, not
+      # inferred from what the drop believes it dropped.
+      #
+      # Each orphan is re-dispatched on its own, exactly as it would have been
+      # had it never been dropped, and the ordinary admission path folds them
+      # back together — rather than this method inventing a second merge rule
+      # beside TaskCoalescer's.
+      def self.restore!(task)
+        payload = task.trigger_event_payload
+        return unless payload.is_a?(Hash) && payload.key?("topic")
+
+        orphaned = ids_in(payload) - claimed_comment_ids(task)
+        return if orphaned.empty?
+
+        agent = task.agent
+        return if agent.nil?
+
+        # Same eligibility the refresh applies when it moves an anchor: a
+        # comment that was deleted, made private, or turned into an approval
+        # action while the turn ran has nothing left to answer.
+        Comment.public_only.without_approval_action
+          .where(id: orphaned, topic_id: task.topic_id, creative_id: task.creative_id)
+          .where.not(user_id: [ agent.id, nil ])
+          .order(:id)
+          .each do |comment|
+          AiAgentJob.perform_later(agent.id, task.trigger_event_name, restored_context(payload, comment))
+        end
+      end
+
+      # The dispatch that was discarded — not a descendant of the turn that
+      # discarded it. reanchor_payload is the single door for moving an anchor,
+      # and the three bookkeeping keys are stripped after it because they
+      # describe the dead turn: its own record would make a restored turn that
+      # fails again restore the same comments a second time, its merged list
+      # would re-send comments it was created for, and its acquired anchor would
+      # label this turn's own trigger as borrowed.
+      def self.restored_context(payload, comment)
+        TaskCoalescer.reanchor_payload(payload, comment)
+          .except(KEY, TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY)
+      end
+      private_class_method :restored_context
+
+      # Comment ids some other task in this turn's scope is already on the hook
+      # for, as its trigger or as a merged block. Any status counts: what is
+      # being asked is whether a dispatch exists at all, since the only thing
+      # this restore undoes is a dispatch that was never allowed to become one.
+      def self.claimed_comment_ids(task)
+        Task.where(
+          agent_id: task.agent_id, topic_id: task.topic_id,
+          creative_id: task.creative_id, trigger_event_name: task.trigger_event_name
+        ).where.not(id: task.id).select(:id, :trigger_event_payload).flat_map { |other|
+          other_payload = other.trigger_event_payload
+          next [] unless other_payload.is_a?(Hash)
+
+          [ other_payload.dig("comment", "id") ] + Array(other_payload[TaskCoalescer::PAYLOAD_KEY])
+        }.compact.map(&:to_i)
+      end
+      private_class_method :claimed_comment_ids
 
       def self.history_comment_ids(resolved)
         messages = resolved.is_a?(Hash) ? Array(resolved[:messages] || resolved["messages"]) : Array(resolved)

@@ -236,6 +236,145 @@ module Collavre
         assert_empty waiting_notices,
                      "and the notice it was parked behind goes with it"
       end
+
+      # Hold the topic slot so a restored dispatch parks as a waiter here
+      # instead of being admitted and executed inline by the test adapter. What
+      # is under test is that the dispatch exists again, not what it says.
+      def slot_holder(anchor)
+        Task.create!(
+          name: "Holder", status: "running", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: context_for(anchor)
+        )
+      end
+
+      def restored_waiters
+        tasks_for(@agent).where(status: "queued")
+      end
+
+      # The drop is only sound while the covering turn is still going to answer.
+      # `failed` is kept out of DELIVERED_STATUSES precisely because a turn that
+      # died may never have delivered anything — a *waiter* survives that,
+      # because promotion re-reads the covering turn's status and refreshes it
+      # normally. A dropped dispatch has no row left to refresh, so the drop has
+      # to put back what it discarded.
+      test "a dropped dispatch comes back when the covering turn fails" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        assert_empty tasks_for(@agent), "premise: the dispatch was dropped, leaving no row"
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "the comment the failed turn silenced has a turn of its own again"
+      end
+
+      # Cancellation is the other undelivered ending: the turn's own anchor was
+      # deleted underneath it. The comments it swallowed were not deleted.
+      test "a dropped dispatch comes back when the covering turn is cancelled" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+
+        slot_holder(anchor)
+        turn.update!(status: "cancelled")
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") }
+      end
+
+      # Control: the whole point of the drop. A turn that finished delivered
+      # what it read, and putting the dispatch back would answer it twice.
+      test "a completed turn restores nothing" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+
+        slot_holder(anchor)
+        turn.update!(status: "done")
+
+        assert_empty restored_waiters,
+                     "the agent read that comment and answered; there is nothing to restore"
+      end
+
+      # Control against restoring what was never dropped. A waiter parked before
+      # the turn assembled still has its own row, and promotion — which reads the
+      # failed turn's status — is what decides its fate. Restoring it as well
+      # would put two turns on one comment.
+      test "a comment that still has a task of its own is not restored" do
+        anchor = comment("@#{@agent.name}: first")
+        holder = slot_holder(anchor)
+        late = comment("@#{@agent.name}: second")
+        dispatch(late)
+        waiter = restored_waiters.sole
+
+        data = AiAgent::MessageBuilder.new(
+          agent: @agent, context: holder.trigger_event_payload, original_comment: anchor
+        ).build
+        resolved = AiAgent::SessionContextResolver.new(
+          agent: @agent, messages_data: data, system_prompt: "prompt"
+        ).resolve
+        DeliveryRecord.record!(holder, resolved)
+        holder.update!(status: "failed")
+
+        assert_equal [ waiter.id ], restored_waiters.pluck(:id),
+                     "the dispatch was parked, not discarded — it needs no restoring"
+      end
+
+      # A comment deleted while the turn ran has nothing to answer.
+      test "a comment that no longer exists is not restored" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        late.destroy!
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters
+      end
+
+      # Nor has one the author took out of the turn while it ran. The restore
+      # re-asks eligibility rather than trusting the record, which was written
+      # when the comment was still eligible.
+      test "a comment made private while the turn ran is not restored" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        late.update!(private: true)
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters
+      end
+
+      # The restored dispatch is the one that was discarded, not a descendant of
+      # the turn that discarded it: it carries no delivery record, no merged list
+      # and no acquired anchor. Without this a restored turn that fails again
+      # would restore the same comments a second time.
+      test "the restored dispatch carries none of the dead turn's bookkeeping" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        payload = restored_waiters.sole.trigger_event_payload
+        assert_empty DeliveryRecord.ids_in(payload)
+        assert_empty Array(payload[TaskCoalescer::PAYLOAD_KEY])
+        assert_nil payload[TaskCoalescer::ACQUIRED_ANCHOR_KEY]
+        assert_equal late.content, payload.dig("chat", "content"),
+                     "and it is anchored on the comment it was dispatched for"
+      end
     end
   end
 end
