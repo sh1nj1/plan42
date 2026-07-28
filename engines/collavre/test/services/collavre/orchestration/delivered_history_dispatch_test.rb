@@ -325,6 +325,63 @@ module Collavre
                      "the dispatch was parked, not discarded — it needs no restoring"
       end
 
+      # The restore's subject is the dispatches this turn refused, and a comment
+      # routed away from this agent never produced one. Chat history is the
+      # whole topic — Matcher's exclusive routings do not filter it — so a
+      # comment addressed to somebody else is read by every agent in the topic.
+      # Treating "read it" as "dropped a dispatch for it" makes the failure of
+      # an unrelated turn dispatch this agent onto a message that was never
+      # meant for it, past Matcher entirely.
+      test "a comment routed to somebody else is not restored to this agent" do
+        anchor = comment("@#{@agent.name}: first")
+        addressed_elsewhere = comment("@#{users(:two).name}: second, for you")
+        turn = running_turn(anchor)
+        assert_includes DeliveryRecord.ids_in(turn.trigger_event_payload), addressed_elsewhere.id,
+                        "premise: the agent read it as history, as every agent in the topic does"
+
+        dispatch(addressed_elsewhere)
+        assert_empty tasks_for(@agent),
+                     "premise: an exclusive mention routes past this agent, so no dispatch was refused"
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "there was no dispatch to put back, and inventing one speaks out of turn"
+      end
+
+      # The other shape of the same inference. An :immediate decision enqueues
+      # its job at AgentOrchestrator#enqueue_jobs and the Task row is only
+      # created when that job runs, so between the two there is a live dispatch
+      # with nothing in the table to show for it. "No row" cannot mean "was
+      # dropped" while that window exists.
+      test "a dispatch still sitting in the queue is not restored underneath itself" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+
+        # The burst race the PR's own AiAgentJob guard describes: both comments
+        # are judged :immediate because neither has a row yet, and the second
+        # job is still queued when the first turn assembles and swallows it.
+        previous_adapter = ActiveJob::Base.queue_adapter
+        begin
+          ActiveJob::Base.queue_adapter = :test
+          dispatch(late)
+          assert_empty tasks_for(@agent), "premise: the dispatch is enqueued with no Task row yet"
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        turn = running_turn(anchor)
+        assert_includes DeliveryRecord.ids_in(turn.trigger_event_payload), late.id,
+                        "premise: and the turn read it anyway"
+
+        slot_holder(anchor)
+        turn.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "the dispatch is alive in the queue; a second one answers the comment twice"
+      end
+
       # A comment deleted while the turn ran has nothing to answer.
       test "a comment that no longer exists is not restored" do
         anchor = comment("@#{@agent.name}: first")
@@ -370,6 +427,7 @@ module Collavre
 
         payload = restored_waiters.sole.trigger_event_payload
         assert_empty DeliveryRecord.ids_in(payload)
+        assert_empty DeliveryRecord.dropped_ids_in(payload)
         assert_empty Array(payload[TaskCoalescer::PAYLOAD_KEY])
         assert_nil payload[TaskCoalescer::ACQUIRED_ANCHOR_KEY]
         assert_equal late.content, payload.dig("chat", "content"),

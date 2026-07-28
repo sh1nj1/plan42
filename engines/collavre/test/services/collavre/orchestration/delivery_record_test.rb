@@ -253,6 +253,50 @@ module Collavre
         assert_nil DeliveryRecord.covering_task(@agent, late.id, context_for(late), "comment_created")
       end
 
+      # Reading a comment and discarding a dispatch for it are different facts,
+      # and only the second one is a thing to put back. The history record
+      # answers "has the agent been given this?" — a question the topic's whole
+      # burst answers yes to, including comments this agent was never matched
+      # for. What the restore owes is narrower: the dispatches it actually
+      # refused.
+      test "reading a comment is not by itself a dropped dispatch" do
+        anchor = comment("first")
+        turn = task_for(anchor)
+        late = comment("second")
+        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+
+        assert_includes recorded(turn), late.id, "premise: the turn read it"
+        assert_empty DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload),
+                     "but no dispatch was ever refused, so there is nothing to restore"
+      end
+
+      test "a claimed drop is recorded against the covering turn" do
+        anchor = comment("first")
+        turn = task_for(anchor)
+        late = comment("second")
+        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+
+        assert DeliveryRecord.claim_drop!(turn, late.id), "the turn is in flight and may take the drop"
+        assert_equal [ late.id ], DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload)
+      end
+
+      # The drop and the record are one act. A turn that ends between the caller
+      # reading it and the drop being written has already run its restore, so a
+      # record written afterwards is a comment nobody ever comes back for. The
+      # caller is told no and dispatches normally instead.
+      test "a turn that has ended cannot take a drop" do
+        anchor = comment("first")
+        turn = task_for(anchor)
+        late = comment("second")
+        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+
+        Task.where(id: turn.id).update_all(status: "failed")
+
+        assert_not DeliveryRecord.claim_drop!(turn, late.id),
+                   "the caller's snapshot said running; the row says otherwise"
+        assert_empty DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload)
+      end
+
       # The dispatch door and the promotion door have to mean the same thing by
       # "this turn delivered nothing". Promotion expresses it by leaving a
       # status out of DELIVERED_STATUSES; the dispatch door expresses it by

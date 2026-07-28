@@ -161,8 +161,11 @@ module Collavre
         # while the covering turn assembles its payload, so a dispatch that was
         # not droppable at enqueue time can be droppable by the time it runs —
         # and the enqueue door alone would leave that window open.
+        #
+        # As at the enqueue door, the drop only happens if the covering turn
+        # records it — otherwise this dispatch has nobody to restore it.
         covering = Orchestration::DeliveryRecord.covering_task(agent, comment_id, context, event_name)
-        if covering
+        if covering && Orchestration::DeliveryRecord.claim_drop!(covering, comment_id)
           Rails.logger.info(
             "[AiAgentJob] Skipping dispatch: comment #{comment_id} was already delivered to " \
             "agent #{agent.id} by in-flight task #{covering.id} (event=#{event_name})"

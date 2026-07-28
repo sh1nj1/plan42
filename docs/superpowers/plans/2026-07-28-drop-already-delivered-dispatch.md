@@ -112,13 +112,48 @@ the same failure, and the comment is answered by nobody.
 | | |
 |---|---|
 | **Trigger** | `Task` `after_update_commit`, status ∈ `UNDELIVERED_TERMINAL_STATUSES` (= terminal − `DELIVERED_STATUSES`, asserted by a drift test). A callback rather than a call site because `AiAgentJob`'s rescue and `StuckDetector` are two doors onto a dead turn, and only one runs for a killed process. |
-| **What comes back** | Recorded ids **minus ids any sibling task already claims** as its anchor or merged block. A waiter parked before the turn assembled was never dropped, and promotion owns its fate; restoring it too would put two turns on one comment. Measured, not inferred from what the drop thinks it dropped. |
+| **What comes back** | `dropped_dispatch_comment_ids` — the drops this turn *took*, written at the moment it took them — minus ids any sibling task already claims. See "Which set the restore reads" below. |
 | **Eligibility re-asked** | `public_only.without_approval_action`, still in this topic/creative, not the agent's own. The record was written when the comment was eligible; it may not be now. |
-| **Shape** | One ordinary dispatch per orphan via `reanchor_payload`, with `history_delivered_comment_ids` / `merged_comment_ids` / `acquired_comment_id` stripped — the dispatch that was discarded, not a descendant of the turn that discarded it. Ordinary admission folds them back together rather than a second merge rule beside `TaskCoalescer`'s. |
+| **Shape** | One ordinary dispatch per orphan via `reanchor_payload`, with `dropped_dispatch_comment_ids` / `history_delivered_comment_ids` / `merged_comment_ids` / `acquired_comment_id` stripped — the dispatch that was discarded, not a descendant of the turn that discarded it. Ordinary admission folds them back together rather than a second merge rule beside `TaskCoalescer`'s. |
+| **Read off the row** | `restore!` re-reads the payload from the database. The drop record is written by the *refused dispatch*, in another process, onto a row the dying turn's own object was loaded before — so the in-memory payload reaching the callback predates every drop it is being asked about. |
 
 Stripping the record is also what bounds it: a restored turn is anchored at the
 newest orphan, so there is nothing above its anchor left to record, and a second
 failure restores nothing.
+
+### 3a. Which set the restore reads
+
+Two records, because the drop and the restore ask opposite questions.
+
+`history_delivered_comment_ids` answers "has the agent been given this comment?"
+Chat history is the whole topic — `Matcher`'s exclusive routings do not filter
+it — so every agent in a topic reads every public comment in it, including ones
+addressed to somebody else. That is the right predicate for the *drop*, which is
+only ever asked downstream of `Matcher` about a dispatch that already exists.
+
+It is the wrong predicate for the *restore*, which creates a dispatch per id it
+decides on. Two false positives follow from reading it there, and neither is
+visible as a missing `Task` row:
+
+- A comment routed past this agent (an exclusive `@mention` of someone else) is
+  in the history record but never produced a dispatch. Restoring it dispatches
+  the agent onto a message that was never meant for it, past `Matcher` entirely.
+- An `:immediate` decision enqueues its job at `enqueue_jobs` and its `Task` row
+  is created only when that job runs. In between there is a live dispatch with
+  nothing in the table to show for it, and restoring it puts a second turn on a
+  comment that already has one.
+
+So `dropped_dispatch_comment_ids` records the drops themselves.
+`DeliveryRecord.claim_drop!` writes it, and the drop is *conditional on that
+write succeeding*: it re-reads the covering turn's status under a row lock and
+returns `false` if the turn has already ended — a turn that has ended has
+already run its restore, so a record written afterwards would strand the
+comment. A caller told `false` dispatches normally. Refusing a sound drop costs
+a redundant turn; taking an unsound one costs the message.
+
+The sibling-claim subtraction stays as a second guard: the record already
+excludes what was never dropped, and this excludes what has since acquired a row
+of its own.
 
 ### 4. Exclusions
 
@@ -137,8 +172,9 @@ keeps the promotion filter honest) but the two dispatch doors do not drop.
 ## Evidence trail
 
 No ghost `cancelled` row is created for a dropped dispatch. The evidence lives
-on the covering task: "which turn ate comment N" is a query over
-`history_delivered_comment_ids`, the same shape as `merged_comment_ids`. The
+on the covering task: "which turn read comment N" is a query over
+`history_delivered_comment_ids` and "which turn refused a dispatch for it" over
+`dropped_dispatch_comment_ids`, both the same shape as `merged_comment_ids`. The
 drop is logged with the covering task id.
 
 ## Tests (each red before its fix)
@@ -164,3 +200,9 @@ drop is logged with the covering task id.
     restored payload carries none of the dead turn's bookkeeping.
 11. Drift guard: `UNDELIVERED_TERMINAL_STATUSES` is exactly the terminal
     statuses `DELIVERED_STATUSES` leaves out.
+12. Reading a comment is not by itself a dropped dispatch: with a history record
+    and no claimed drop, the drop record is empty. `claim_drop!` records against
+    an in-flight turn and refuses one that has ended.
+13. A comment routed to somebody else is **not** restored to this agent, and a
+    dispatch still sitting in the job queue is not restored underneath itself —
+    the two false positives of inferring drops from absent `Task` rows.

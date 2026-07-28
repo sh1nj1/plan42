@@ -691,7 +691,13 @@ module Collavre
           # Nothing is recorded for a session-backed agent (it is sent only its
           # :trigger), so nothing is dropped for one either — those bursts still
           # go through TaskCoalescer, which merges rather than discards.
-          if (covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name))
+          #
+          # Dropped only if the covering turn will take responsibility for it:
+          # claim_drop! re-reads that turn's status under a lock and refuses if
+          # it has already ended, because a turn that has ended has already run
+          # its restore and would leave this comment with nobody to answer it.
+          covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name)
+          if covering && DeliveryRecord.claim_drop!(covering, comment_id)
             Rails.logger.info(
               "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
               "delivered to agent #{agent.id} by in-flight task #{covering.id}"

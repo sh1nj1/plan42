@@ -107,18 +107,22 @@ module Collavre
       saved_change_to_attribute?("status") && terminal_status?
     end
 
-    # This turn was dropping other agents' dispatches on the strength of having
-    # read their comments, and then died without answering anything. Those
-    # dispatches have to come back — see Orchestration::DeliveryRecord.restore!.
+    # This turn refused other dispatches on the strength of having read their
+    # comments, and then died without answering anything. Those dispatches have
+    # to come back — see Orchestration::DeliveryRecord.restore!.
+    #
+    # Only the status transition is decided here. Whether anything was actually
+    # refused is asked inside restore!, off the persisted row: the drop record
+    # is written by the refused dispatch in another process, so this object's
+    # payload predates it and a check here would read `none` on every turn that
+    # dropped something.
     #
     # A status callback rather than a call site: AiAgentJob's rescue and
     # StuckDetector both end a turn this way, and only one of them runs for a
     # process that was killed outright.
     def ended_without_delivering?
-      return false unless saved_change_to_attribute?("status")
-      return false unless status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
-
-      Orchestration::DeliveryRecord.ids_in(trigger_event_payload).any?
+      saved_change_to_attribute?("status") &&
+        status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
     end
 
     def restore_undelivered_dispatches
