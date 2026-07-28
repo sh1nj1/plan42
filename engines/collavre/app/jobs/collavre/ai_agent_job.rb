@@ -270,6 +270,13 @@ module Collavre
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")
+        # Where a turn stopped mid-answer settles. The cancel was committed in
+        # another process while this worker was inside the provider call, so
+        # Task's status callback declined to decide (Task#stopped_mid_turn?) and
+        # this is the first moment either answer exists: AiAgentService's ensure
+        # has recorded whether the payload got there on the way up to here.
+        # Reloaded because the status was written to the row by somebody else.
+        Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
       rescue StandardError => e
         task.update!(status: "failed")
         # Fail workflow if this is a sub-task

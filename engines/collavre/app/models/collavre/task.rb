@@ -155,7 +155,30 @@ module Collavre
     # update that fires this callback — unlike DROPPED_KEY, which the refused
     # dispatch writes from another process and restore! therefore re-reads.
     def ended_without_delivering?
-      saved_change_to_attribute?("status") && ended_undelivered?
+      return false unless saved_change_to_attribute?("status")
+      return false if stopped_mid_turn?
+
+      ended_undelivered?
+    end
+
+    # A turn stopped while its worker is still inside the provider call, whose
+    # own account of the handoff does not exist yet.
+    #
+    # Stop is committed from a web request (TasksController#cancel) or from the
+    # anchor comment's deletion — in another process, while the worker is inside
+    # AiClient#chat. AgentLifecycleManager notices at the next poll, up to
+    # CANCEL_CHECK_INTERVAL later, and only then does AiAgentService's ensure
+    # write down whether the payload reached the provider. This callback fires
+    # before all of that: whichever way it decides, it decides without evidence,
+    # off a payload the canceller loaded before the turn began.
+    #
+    # So it declines, and the question is asked where the turn settles —
+    # AiAgentJob's CancelledError teardown, once the record is written. Behind
+    # that, DeliveryRecord.restore_missed! covers a cancellation with no live
+    # worker to settle anything (an agent unregistering, stuck recovery), and a
+    # worker killed before it reaches its own rescue.
+    def stopped_mid_turn?
+      status == "cancelled" && status_before_last_save == "running"
     end
 
     # Best effort, deliberately: this runs after the turn's own status is

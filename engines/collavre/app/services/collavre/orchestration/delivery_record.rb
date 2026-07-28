@@ -468,15 +468,33 @@ module Collavre
       def self.restore_missed!(window: RESTORE_SWEEP_WINDOW)
         Task.where(status: RESTORABLE_STATUSES)
             .where(updated_at: window.ago..)
-            .find_each do |task|
-          next unless task.ended_undelivered?
+            .find_each { |task| restore_if_undelivered!(task) }
+      end
 
-          restore!(task)
-        rescue StandardError => e
-          Rails.logger.error(
-            "[DeliveryRecord] Restore sweep failed for task #{task.id}: #{e.class}: #{e.message}"
-          )
-        end
+      # Ask the restore question of a turn that has settled.
+      #
+      # The one door for every caller that is not Task's status callback: this
+      # sweep, and AiAgentJob's cancellation teardown, which is where a turn
+      # stopped mid-answer settles — see Task#stopped_mid_turn? for why the
+      # cancel itself cannot decide. Gated on the same predicate the callback is,
+      # because a second door deciding "terminal" where the callback decides
+      # Task#ended_undelivered? is how one of them comes to re-answer comments
+      # the turn had already answered.
+      #
+      # Best effort, like the callback's: the teardown runs inside the job's last
+      # rescue, where an escaping exception would turn a cancelled turn into a
+      # failed job, and the sweep must not lose the rest of its pass to one row.
+      # Nothing is lost by swallowing — the orphan set is on the row, so the next
+      # pass asks again.
+      def self.restore_if_undelivered!(task)
+        return if task.nil? || !task.ended_undelivered?
+
+        restore!(task)
+      rescue StandardError => e
+        Rails.logger.error(
+          "[DeliveryRecord] Restore failed for task #{task.id}: #{e.class}: #{e.message} — " \
+          "leaving it to the restore sweep"
+        )
       end
 
       # Put the dispatch back the way the orchestrator would have, by asking the

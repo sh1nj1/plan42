@@ -253,6 +253,100 @@ class AiAgentJobTest < ActiveJob::TestCase
     lifecycle_klass.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
   end
 
+  # A turn stopped mid-answer settles here, in this rescue, and not where it was
+  # stopped: the user's Stop is committed from a web request while this worker is
+  # still inside the provider call, so Task's status callback is asked a poll
+  # interval before AiAgentService's ensure records whether the payload got
+  # there. These two drive the real ordering through the real job.
+  test "a dispatch dropped against a turn stopped after the handoff is not restored" do
+    topic, _swallowed, task = stopped_turn_fixture
+
+    with_zero_cancel_interval do
+      AiClient.stub :new, stopping_client(task, handed_off: true).new do
+        AiAgentJob.perform_now(task)
+      end
+    end
+
+    assert_equal "cancelled", task.reload.status, "premise: the user's Stop landed"
+    assert_empty dispatches_besides(task, topic),
+                 "the provider had that comment; re-dispatching it answers it twice"
+  end
+
+  # The mirror, and what keeps the settling from becoming "cancelled restores
+  # nothing": stopped before anything reached the provider, the comments this
+  # turn silenced are owed back.
+  test "a dispatch dropped against a turn stopped before the handoff is restored when it settles" do
+    topic, swallowed, task = stopped_turn_fixture
+
+    with_zero_cancel_interval do
+      AiClient.stub :new, stopping_client(task, handed_off: false).new do
+        AiAgentJob.perform_now(task)
+      end
+    end
+
+    assert_equal "cancelled", task.reload.status, "premise: the user's Stop landed"
+    assert_equal [ swallowed.id ],
+                 dispatches_besides(task, topic).map { |t| t.trigger_event_payload.dig("comment", "id") },
+                 "nothing read that comment; it has no turn unless this one gives it back"
+  end
+
+  # A running turn with one dispatch dropped against it, and the comment that
+  # dispatch was for.
+  def stopped_turn_fixture
+    topic = Topic.create!(name: "Stop topic", creative: @creative, user: @owner)
+    share = Collavre::CreativeShare.find_or_create_by!(creative: @creative, user: @agent)
+    share.update!(permission: "feedback")
+    Collavre::CreativeSharesCache.find_or_create_by!(
+      creative_id: @creative.id, user_id: @agent.id, permission: :feedback
+    )
+    swallowed = Comment.create!(
+      creative: @creative, user: @owner, topic: topic,
+      content: "@#{@agent.name}: swallowed", skip_dispatch: true
+    )
+    task = Task.create!(
+      name: "Turn", status: "running", trigger_event_name: "comment_created",
+      trigger_event_payload: @context.merge(
+        "topic" => { "id" => topic.id },
+        "sender" => { "id" => @owner.id, "name" => @owner.name }
+      ),
+      agent: @agent, topic_id: topic.id, creative_id: @creative.id
+    )
+    assert Collavre::Orchestration::DeliveryRecord.claim_drop!(task, swallowed.id),
+           "premise: a dispatch was dropped against this turn"
+    [ topic, swallowed, task.reload ]
+  end
+
+  # Streams, then has somebody else press Stop — a separately loaded row, as the
+  # controller has: the object this worker holds is not the one that is written.
+  def stopping_client(task, handed_off:)
+    Class.new do
+      define_method(:initialize) { |*args, **kwargs| }
+      define_method(:chat) do |contents, tools: [], &block|
+        block.call("partial ") if block && handed_off
+        Collavre::Task.find(task.id).update!(status: "cancelled")
+        block.call("more") if block
+        "partial more"
+      end
+      define_method(:last_handoff_failed?) { false }
+      define_method(:handed_off?) { handed_off }
+    end
+  end
+
+  def dispatches_besides(task, topic)
+    Task.where(agent: @agent, topic_id: topic.id).where.not(id: task.id)
+  end
+
+  def with_zero_cancel_interval
+    klass = Collavre::AiAgent::AgentLifecycleManager
+    original = klass::CANCEL_CHECK_INTERVAL
+    klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    klass.const_set(:CANCEL_CHECK_INTERVAL, 0)
+    yield
+  ensure
+    klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    klass.const_set(:CANCEL_CHECK_INTERVAL, original)
+  end
+
   test "triggers dequeue_next_for_topic on completion" do
     topic = Topic.create!(name: "Test Topic", creative: @creative, user: @owner)
     context_with_topic = @context.merge("topic" => { "id" => topic.id })

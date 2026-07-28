@@ -367,17 +367,45 @@ module Collavre
       end
 
       # Cancellation is the other undelivered ending: the turn's own anchor was
-      # deleted underneath it. The comments it swallowed were not deleted.
-      test "a dropped dispatch comes back when the covering turn is cancelled" do
+      # deleted underneath it, or the user pressed Stop. The comments it
+      # swallowed were not deleted.
+      #
+      # Decided where the turn settles rather than where it was stopped: the
+      # cancel is committed by another process while this turn is still inside
+      # the provider call, so it cannot yet know whether the payload got there.
+      test "a dropped dispatch comes back when the turn that was stopped settles" do
         anchor = comment("@#{@agent.name}: first")
         late = comment("@#{@agent.name}: second")
         turn = running_turn(anchor)
         dispatch(late)
 
         slot_holder(anchor)
-        turn.update!(status: "cancelled")
+        # The canceller: a request that loaded this row and wrote the status.
+        Task.find(turn.id).update!(status: "cancelled")
+        assert_empty restored_waiters,
+                     "premise: the cancel does not decide for a turn still running"
+
+        DeliveryRecord.restore_if_undelivered!(turn.reload)
 
         assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") }
+      end
+
+      # Control, and what scopes the declining to the turn it is about: a turn
+      # paused for tool approval has already returned from its job, so nothing is
+      # going to settle it later and everything it had to say is written. The
+      # cancel decides for that one, as it always did.
+      test "a dropped dispatch comes back when a paused turn is cancelled" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        turn.update!(status: "pending_approval")
+
+        Task.find(turn.id).update!(status: "cancelled")
+
+        assert_equal [ late.id ], restored_waiters.map { |t| t.trigger_event_payload.dig("comment", "id") },
+                     "no worker is coming back for this one; the cancel is where it settles"
       end
 
       # Control: the whole point of the drop. A turn that finished delivered
@@ -1235,6 +1263,12 @@ module Collavre
       # — and the comments that turn swallowed were read along with it.
       # Restoring them starts fresh agent work the moment the user asked for
       # none, and answers those comments a second time.
+      #
+      # And the record cannot be read by the cancel that stops the turn: Stop is
+      # committed from a web request while the worker is still inside the
+      # provider call, so the status callback fires a poll interval *before* the
+      # turn writes down whether its payload got there. Asked at the settling
+      # instead, which is the only moment either answer exists.
       test "a dispatch dropped against a turn stopped after the handoff is not restored" do
         anchor = comment("@#{@agent.name}: first")
         late = comment("@#{@agent.name}: second")
@@ -1242,10 +1276,16 @@ module Collavre
         dispatch(late)
         assert_includes DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload), late.id,
                         "premise: the dispatch was dropped against this turn"
-        DeliveryRecord.mark_handed_off!(turn)
 
         slot_holder(anchor)
-        turn.reload.update!(status: "cancelled")
+        # The canceller, first: it has nothing to read yet.
+        Task.find(turn.id).update!(status: "cancelled")
+        assert_empty restored_waiters,
+                     "the turn had not yet said whether its payload got there"
+
+        # ...and then the turn's own teardown, which is where it says so.
+        DeliveryRecord.mark_handed_off!(turn)
+        DeliveryRecord.restore_if_undelivered!(turn.reload)
 
         assert_empty restored_waiters,
                      "the provider had that comment; re-dispatching it answers it twice"
@@ -1258,9 +1298,9 @@ module Collavre
         late = comment("@#{@agent.name}: second")
         turn = running_turn(anchor)
         dispatch(late)
-        DeliveryRecord.mark_handed_off!(turn)
         slot_holder(anchor)
-        turn.reload.update!(status: "cancelled")
+        Task.find(turn.id).update!(status: "cancelled")
+        DeliveryRecord.mark_handed_off!(turn)
 
         RestoreDroppedDispatchesJob.perform_now
 
