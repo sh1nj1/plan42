@@ -492,7 +492,7 @@ chk "the retry revokes it"     0 "$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | g
 chk "and it leaves the queue" 0 "$(grep -cxF legacy "$d4/deploy_users")"
 chk "while the marker still names the account in use" "deploybot" "$(cat "$d4/deploy_user")"
 
-unset -f id gpasswd usermod usermod_host groupadd log rm revoke supp_holds drop_word
+unset -f id gpasswd usermod usermod_host groupadd log revoke supp_holds drop_word
 
 # --------------------------------------------------------------------------
 # One name cannot describe a host that has rotated twice, so the cases below
@@ -7070,7 +7070,7 @@ chk "a sudoers deletion failure keeps the predecessor queued" 0 \
   "$(grep -c '^rc=0$' <<<"$sudoers_failure")"
 unset -f getent id in_group ssh_cutover_has_sshd_ancestor \
   ssh_cutover_authenticated_with_key \
-  revoke_prior_ssh_key revoke_prior_deploy_user
+  revoke_prior_ssh_key revoke_prior_deploy_user rm
 rm -rf "$cutover_state"
 
 echo
