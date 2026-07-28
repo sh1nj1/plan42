@@ -204,14 +204,16 @@ ssh -i ~/.ssh/<staged-key> <new-user>@<instance-ip> \
 
 Run that exact command from the workstation with the key Kamal will use. The
 finalizer checks that it is running through an `sshd` process tree containing
-the staged account's real UID, that `SUDO_USER` is that account, and that the
-nonce matches. For an explicit key rotation it also reads the session's
-root-configured `ExposeAuthInfo` record and requires its public-key fingerprint
-to match the staged key; logging in with the predecessor key cannot finalize
-the rotation. Provisioning verifies that `ExposeAuthInfo yes` is effective
-before staging, and stores the nonce hash, fingerprint, and exact key in one
-atomic root-only pending record so an interrupted re-run cannot mix cutover
-generations. Only then does it take `docker` and `sudo` from every predecessor,
+an `sshd` session process owned by the staged account, that `SUDO_USER` is that
+account, that its `SSH_USER_AUTH` record is owned by the same account, and that
+the nonce matches. This rejects a nested `sudo -u <staged-user>` launched from
+the predecessor's SSH session. For an explicit key rotation it also requires
+the authentication record's public-key fingerprint to match the staged key;
+logging in with the predecessor key cannot finalize the rotation. Provisioning
+verifies that `ExposeAuthInfo yes` is effective before every cutover, and stores
+the nonce hash, fingerprint, and exact key in one atomic root-only pending
+record so an interrupted re-run cannot mix cutover generations. Only then does
+it take `docker` and `sudo` from every predecessor,
 remove their script-managed
 `sudoers.d` grants, withdraw predecessor managed keys, and commit
 `/var/lib/collavre/deploy_user`. Change `KAMAL_SSH_USER` only after the command

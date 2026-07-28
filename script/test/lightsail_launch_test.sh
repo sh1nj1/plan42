@@ -6981,8 +6981,8 @@ chk "and requires an sshd process ancestor" 1 \
   "$(grep -c '^  ssh_cutover_has_sshd_ancestor "\$user" ||$' "$SRC")"
 chk "sshd exposes the key that authenticated the session" 1 \
   "$(grep -c "^  'ExposeAuthInfo yes'$" "$SRC")"
-chk "explicit-key staging verifies ExposeAuthInfo is effective" 1 \
-  "$(grep -c '^SSH_AUTH_INFO_REQUIRED=0$' "$SRC")"
+chk "every cutover verifies ExposeAuthInfo is effective" 1 \
+  "$(grep -c '^SSH_AUTH_INFO_REQUIRED=1$' "$SRC")"
 chk "the runbook changes KAMAL_SSH_USER only after finalization" 1 \
   "$(grep -c 'Change `KAMAL_SSH_USER` only after' "$DOC")"
 
@@ -7006,6 +7006,33 @@ chk "without committing the deploy user" 0 \
   "$([ -e "$cutover_state/deploy_user" ] && echo 1 || echo 0)"
 cutover_nonce="$SSH_CUTOVER_NONCE"
 cutover_fingerprint="$(ssh_public_key_fingerprint "$cutover_key")"
+proof_proc="$cutover_state/proc"
+proof_uid="$(command id -u)"
+proof_user="$(command id -un)"
+mkdir -p "$proof_proc/500" "$proof_proc/400"
+: > "$cutover_state/auth-info"
+printf 'sudo\n' > "$proof_proc/500/comm"
+printf 'SSH_USER_AUTH=%s\0' "$cutover_state/auth-info" \
+  > "$proof_proc/500/environ"
+printf 'Uid:\t%s\t%s\t%s\t%s\nPPid:\t400\n' \
+  "$proof_uid" "$proof_uid" "$proof_uid" "$proof_uid" \
+  > "$proof_proc/500/status"
+printf 'sshd\n' > "$proof_proc/400/comm"
+: > "$proof_proc/400/environ"
+printf 'Uid:\t%s\t%s\t%s\t%s\nPPid:\t1\n' \
+  "$proof_uid" "$proof_uid" "$proof_uid" "$proof_uid" \
+  > "$proof_proc/400/status"
+chk "a user-owned sshd session process proves the staged UID" 0 \
+  "$(ssh_cutover_has_sshd_ancestor "$proof_user" 500 "$proof_proc"; echo $?)"
+chk "and its user-owned authentication record is accepted" \
+  "$cutover_state/auth-info" \
+  "$(ssh_cutover_auth_info_file "$proof_user" 500 "$proof_proc")"
+other_uid=$((proof_uid + 1))
+printf 'Uid:\t%s\t%s\t%s\t%s\nPPid:\t1\n' \
+  "$other_uid" "$other_uid" "$other_uid" "$other_uid" \
+  > "$proof_proc/400/status"
+chk "a nested sudo UID below another user's sshd is refused" 1 \
+  "$(ssh_cutover_has_sshd_ancestor "$proof_user" 500 "$proof_proc"; echo $?)"
 printf 'publickey %s\n' "$cutover_key" > "$cutover_state/auth-info"
 ssh_cutover_auth_info_file() { printf '%s/auth-info\n' "$cutover_state"; }
 chk "the exposed authentication record identifies the staged key" 0 \
@@ -7027,6 +7054,10 @@ id() {
 in_group() { return 0; }
 ssh_cutover_has_sshd_ancestor() {
   [ "$1" = deploybot ] && [ "${SSH_PROOF:-0}" -eq 1 ]
+}
+ssh_cutover_auth_info_file() {
+  [ "$1" = deploybot ] && [ "${SSH_PROOF:-0}" -eq 1 ] &&
+    printf '%s/auth-info\n' "$cutover_state"
 }
 ssh_cutover_authenticated_with_key() {
   [ "$1" = deploybot ] && [ -n "$2" ] && [ "${KEY_PROOF:-0}" -eq 1 ]
@@ -7142,7 +7173,7 @@ chk "a colliding successor sudoers grant is preserved" 1 \
   "$(grep -cxF 'release_bot ALL=(ALL:ALL) NOPASSWD:ALL' \
       "$sudoers_collision/90-collavre-release_bot")"
 unset -f getent id in_group ssh_cutover_has_sshd_ancestor \
-  ssh_cutover_authenticated_with_key \
+  ssh_cutover_auth_info_file ssh_cutover_authenticated_with_key \
   revoke_prior_ssh_key revoke_prior_deploy_user rm
 rm -rf "$cutover_state"
 

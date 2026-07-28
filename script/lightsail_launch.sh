@@ -1697,17 +1697,24 @@ ssh_public_key_fingerprint() {
 # exchange itself; reading SSH_USER_AUTH from the original session ancestry
 # avoids relying on what sudo happened to preserve.
 ssh_cutover_auth_info_file() {
-  local user="$1" pid="${2:-$PPID}" ppid real_uid target_uid candidate='' hops=0
+  local user="$1" pid="${2:-$PPID}" proc_root="${3:-/proc}"
+  local ppid real_uid target_uid candidate='' candidate_uid hops=0
   local auth_info_file=''
   target_uid="$(id -u "$user" 2>/dev/null)" || return 1
   while [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
-    real_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    real_uid="$(awk '/^Uid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
     if [ "$real_uid" = "$target_uid" ]; then
-      candidate="$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null |
+      candidate="$(tr '\0' '\n' < "$proc_root/$pid/environ" 2>/dev/null |
 	sed -n 's/^SSH_USER_AUTH=//p' | head -1)"
-      [ -z "$candidate" ] || auth_info_file="$candidate"
+      candidate_uid="$(
+	stat -c %u "$candidate" 2>/dev/null ||
+	  stat -f %u "$candidate" 2>/dev/null ||
+	  true
+      )"
+      [ -z "$candidate" ] || [ ! -f "$candidate" ] ||
+	[ "$candidate_uid" != "$target_uid" ] || auth_info_file="$candidate"
     fi
-    ppid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    ppid="$(awk '/^PPid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
     case "$ppid" in ''|*[!0-9]*) break ;; esac
     pid="$ppid"
     hops=$((hops + 1))
@@ -1728,20 +1735,24 @@ ssh_cutover_authenticated_with_key() {
 }
 
 ssh_cutover_has_sshd_ancestor() {
-  local user="$1" pid="${2:-$PPID}" comm ppid real_uid target_uid hops=0
-  local saw_sshd=0 saw_user=0
+  local user="$1" pid="${2:-$PPID}" proc_root="${3:-/proc}"
+  local comm ppid real_uid target_uid hops=0
+  local saw_authenticated_sshd=0
   target_uid="$(id -u "$user" 2>/dev/null)" || return 1
   while [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
-    comm="$(cat "/proc/$pid/comm" 2>/dev/null || true)"
-    case "$comm" in sshd|sshd-session) saw_sshd=1 ;; esac
-    real_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
-    [ "$real_uid" = "$target_uid" ] && saw_user=1
-    ppid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    comm="$(cat "$proc_root/$pid/comm" 2>/dev/null || true)"
+    real_uid="$(awk '/^Uid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
+    case "$comm:$real_uid" in
+      sshd:"$target_uid"|sshd-session:"$target_uid")
+	saw_authenticated_sshd=1
+	;;
+    esac
+    ppid="$(awk '/^PPid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
     case "$ppid" in ''|*[!0-9]*) break ;; esac
     pid="$ppid"
     hops=$((hops + 1))
   done
-  [ "$saw_sshd" -eq 1 ] && [ "$saw_user" -eq 1 ]
+  [ "$saw_authenticated_sshd" -eq 1 ]
 }
 
 finalize_ssh_cutover() {
@@ -1765,8 +1776,13 @@ finalize_ssh_cutover() {
     die "finalize this cutover by SSHing as '$user' and running sudo there;" \
 	"SUDO_USER is '${SUDO_USER:-unset}'"
   ssh_cutover_has_sshd_ancestor "$user" ||
-    die "no sshd ancestor was found. The cutover must be finalized inside an" \
-	"actual SSH session as '$user', not from a local shell or console."
+    die "no sshd session process owned by '$user' was found. The cutover must" \
+	"be finalized inside an SSH session authenticated as that account, not" \
+	"through a nested sudo from another user's session or a local console."
+  ssh_cutover_auth_info_file "$user" >/dev/null ||
+    die "no '$user'-owned SSH_USER_AUTH record was found. The cutover must be" \
+	"finalized from that account's actual SSH session; predecessor access" \
+	"was not changed."
   actual="$(printf '%s' "$nonce" | sha256sum | awk '{print $1}')"
   [ "$actual" = "$expected" ] ||
     die "the SSH cutover nonce is incorrect; predecessor access was not changed"
@@ -4259,8 +4275,7 @@ fi
 DOCKER_GROUP_WAS_PRESENT=0
 in_group "$APP_SSH_USER" docker && DOCKER_GROUP_WAS_PRESENT=1
 usermod -aG docker "$APP_SSH_USER"
-SSH_AUTH_INFO_REQUIRED=0
-[ -z "$SSH_PUBLIC_KEY" ] || SSH_AUTH_INFO_REQUIRED=1
+SSH_AUTH_INFO_REQUIRED=1
 # Recheck for the same reason as the sudo grant above. An operator's
 # `Match Group docker` block does not apply until this membership exists.
 if ! (
