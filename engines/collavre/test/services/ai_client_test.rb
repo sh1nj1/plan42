@@ -784,4 +784,55 @@ class AiClientTest < ActiveSupport::TestCase
 
     assert_not client.handed_off?
   end
+
+  # A delta of exactly "\n\n" is content — the delta branch says so in as many
+  # words, and skips only truly *empty* chunks for that reason. The rescue below
+  # it classified with `blank?`, which is true of that same delta, so a stream
+  # broken after a paragraph break recorded the handoff *and* its failure. Task#
+  # ended_undelivered? reads the failure first, so every comment that turn
+  # swallowed is dispatched again although the provider had them.
+  test "does not record a handoff failure when the error came after a whitespace-only delta" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: "\n\n"))
+      raise StandardError, "stream closed"
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    yielded = []
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |delta| yielded << delta }
+    end
+
+    assert_equal "\n\n", yielded.first, "premise: the provider streamed, and the delta reached the caller"
+    assert_predicate client, :handed_off?, "premise: the payload got there"
+    assert_not client.last_handoff_failed?
+  end
+
+  # The invariant Task#ended_undelivered? is written on: the two records are one
+  # boundary asked twice, so no ending can carry both. It reads the failure
+  # first precisely because it cannot ask which of two contradictory records is
+  # the true one — that has to be impossible here rather than resolved there.
+  test "records the handoff and its failure as one boundary asked two ways" do
+    [ [ "nothing", nil ], [ "a paragraph break", "\n\n" ], [ "an answer", "half an answer" ] ].each do |what, streamed|
+      conversation = FakeConversation.new
+      conversation.define_singleton_method(:complete) do |&block|
+        block.call(OpenStruct.new(content: streamed)) if streamed
+        raise StandardError, "stream closed"
+      end
+
+      client = AiClient.new(
+        vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+      )
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |_delta| nil }
+      end
+
+      assert_equal !client.handed_off?, client.last_handoff_failed?,
+                   "a stream that broke after #{what} must answer the same question the same way"
+    end
+  end
 end

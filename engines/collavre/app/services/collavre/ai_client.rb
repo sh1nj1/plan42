@@ -159,7 +159,13 @@ module Collavre
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
       # Nothing streamed means nothing was handed over — see #last_handoff_failed?.
-      @last_handoff_failed = response_content.blank?
+      # Asked of @handed_off rather than of the buffer, and not `blank?`: a delta
+      # of exactly "\n\n" is content the branch above deliberately keeps, so
+      # `blank?` calls a stream that broke after a paragraph break a failed
+      # handoff while @handed_off calls it a handoff. The two are the same
+      # boundary asked two ways, and Task#ended_undelivered? reads a row carrying
+      # both as undelivered — so it has to be impossible to record both.
+      @last_handoff_failed = !@handed_off
       error_message = "[#{e.class.name}] #{e.message}"
       # When log_interactions is false (inline typo correction runs on the user's
       # *unsubmitted* draft), the LLM error message can echo the request text. Log
