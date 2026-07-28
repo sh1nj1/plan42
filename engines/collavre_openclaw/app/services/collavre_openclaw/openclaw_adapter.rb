@@ -20,15 +20,49 @@ module CollavreOpenclaw
       @user = user
       @system_prompt = system_prompt
       @context = context
+      @last_handoff_failed = false
+      @handed_off = false
+    end
+
+    # Did the last #chat end without the gateway ever receiving the payload?
+    #
+    # The same question Collavre::AiClient#last_handoff_failed? answers for its
+    # own provider path, and it has to be answered here as well because
+    # AiClientExtension#chat routes past that method entirely: every failure
+    # below turns into a streamed error plus nil, and nil is also what an
+    # ordinary empty answer returns. Orchestration::DeliveryRecord needs the two
+    # apart, since a turn that handed the gateway nothing delivered nothing
+    # while AiAgentJob still marks it `done`.
+    #
+    # The proxy is the same one the base client uses: nothing streamed means
+    # nothing was handed over. An error *after* deltas is not one of these — the
+    # gateway had the payload and answered part of it, so the comments that turn
+    # swallowed did reach the agent.
+    #
+    # The question is asked of the whole #chat, not of a transport: one call can
+    # stream over the WebSocket and then fall back to HTTP, so each transport's
+    # own response buffer answers only for its own attempt. @handed_off spans
+    # both, and is reset once per #chat.
+    def last_handoff_failed?
+      @last_handoff_failed
+    end
+
+    # The same fact, asked positively — see AiClient#handed_off?. A turn the
+    # user stops mid-answer never reaches the line that sets the flag above.
+    def handed_off?
+      @handed_off
     end
 
     # @param messages_data [Hash] { messages:, first_message:, context_changed: }
     def chat(messages_data, &block)
+      @last_handoff_failed = false
+      @handed_off = false
       parse_messages_data!(messages_data)
 
       unless @user&.gateway_url.present?
         Rails.logger.error("[CollavreOpenclaw] No Gateway URL configured for user #{@user&.id}")
         yield "Error: OpenClaw Gateway URL not configured" if block_given?
+        @last_handoff_failed = true
         return nil
       end
 
@@ -36,6 +70,7 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] No API key configured for user #{@user&.id}")
         yield "Error: OpenClaw API key not configured or decryption failed. " \
               "Please re-enter the API key in AI agent settings." if block_given?
+        @last_handoff_failed = true
         return nil
       end
 
@@ -96,6 +131,7 @@ module CollavreOpenclaw
 
     def chat_via_websocket(&block)
       response_content = +""
+      errored = false
 
       begin
         client = ConnectionManager.instance.connection_for(@user)
@@ -107,28 +143,41 @@ module CollavreOpenclaw
           session_key: session_key,
           message: payload[:message],
           attachments: payload[:attachments],
-          on_run_id: method(:persist_run_id_on_comment)
+          on_run_id: method(:handle_run_id)
         ) do |event|
           case event[:state]
           when "delta"
             if event[:text].present?
               response_content << event[:text]
+              @handed_off = true
               yield event[:text] if block_given?
             end
           when "final"
             # If no deltas were streamed, final contains the full text
             if response_content.blank? && event[:text].present?
               response_content << event[:text]
+              @handed_off = true
               yield event[:text] if block_given?
             end
           when "error"
             error_msg = event[:text] || "Unknown error"
+            errored = true
             yield "OpenClaw Error: #{error_msg}" if block_given?
           when "aborted"
             # User or system aborted
           end
         end
 
+        # The gateway answered with an error and nothing else: see
+        # #last_handoff_failed?. Decided after the stream rather than in the
+        # branch above, so a delta that arrives either side of the error still
+        # counts as the payload having got through.
+        #
+        # Inert behind a client that surfaces a run id, since #handle_run_id has
+        # already answered by the time any event arrives. Kept for one that does
+        # not: an error event is then the only evidence either way, and reading
+        # it as a delivery would be the losing mistake.
+        @last_handoff_failed = true if errored && !@handed_off
         response_content.presence
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
@@ -138,6 +187,7 @@ module CollavreOpenclaw
         Rails.logger.error("[CollavreOpenclaw] WebSocket chat error: #{e.message}")
         error_msg = "OpenClaw Error: #{e.message}"
         yield error_msg if block_given?
+        @last_handoff_failed = !@handed_off
         nil
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] WebSocket unexpected error: #{e.message}\n" \
@@ -145,6 +195,21 @@ module CollavreOpenclaw
         Rails.logger.info("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
         chat_via_http(&block)
       end
+    end
+
+    # The gateway answered chat.send with a run id, which is the handoff: it has
+    # the whole payload and the run may already be calling tools. Everything
+    # after this — a run that goes quiet until the read timeout, an HTTP
+    # fallback that fails before yielding — costs an *answer*, not the delivery,
+    # and the comments this turn swallowed are with the agent either way.
+    #
+    # Reaching here at all is the acknowledgement: WebsocketClient#chat_send
+    # calls this straight after send_rpc returns, and send_rpc raises on a read
+    # timeout and on an RPC error. Set before persisting, because the handoff
+    # happened whether or not we can write the run id down.
+    def handle_run_id(run_id)
+      @handed_off = true
+      persist_run_id_on_comment(run_id)
     end
 
     # Claim the run for the solicited reply so the same run's final, re-delivered
@@ -289,6 +354,7 @@ module CollavreOpenclaw
 
         stream_response(payload) do |chunk|
           response_content << chunk
+          @handed_off = true
           yield chunk if block_given?
         end
 
@@ -298,6 +364,10 @@ module CollavreOpenclaw
                            "#{e.backtrace.first(5).join("\n")}")
         error_msg = "OpenClaw Error: #{e.message}"
         yield error_msg if block_given?
+        # Not `response_content.blank?`: this may be the fallback behind a
+        # WebSocket that already streamed, and that content is in the caller's
+        # hands even though this method's buffer is empty.
+        @last_handoff_failed = !@handed_off
         nil
       end
     end

@@ -156,6 +156,23 @@ module Collavre
           return
         end
 
+        # Guard: the same question the orchestrator asks before enqueueing, asked
+        # again where the answer is authoritative. This job can sit in the queue
+        # while the covering turn assembles its payload, so a dispatch that was
+        # not droppable at enqueue time can be droppable by the time it runs —
+        # and the enqueue door alone would leave that window open.
+        #
+        # As at the enqueue door, the drop only happens if the covering turn
+        # records it — otherwise this dispatch has nobody to restore it.
+        covering = Orchestration::DeliveryRecord.covering_task(agent, comment_id, context, event_name)
+        if covering && Orchestration::DeliveryRecord.claim_drop!(covering, comment_id)
+          Rails.logger.info(
+            "[AiAgentJob] Skipping dispatch: comment #{comment_id} was already delivered to " \
+            "agent #{agent.id} by in-flight task #{covering.id} (event=#{event_name})"
+          )
+          return
+        end
+
         # Guard: the Scheduler's topic-concurrency check counts Task rows, but
         # the row for an :immediate decision is only created *here*. A burst of
         # comments dispatched before the first job runs therefore all see an
@@ -253,6 +270,14 @@ module Collavre
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")
+        # Where a turn stopped mid-answer settles. The cancel was committed in
+        # another process while this worker was inside the provider call, so
+        # Task's status callback declined to decide
+        # (Task#ended_while_worker_settles?) and this is the first moment either
+        # answer exists: AiAgentService's ensure has recorded whether the
+        # payload got there on the way up to here.
+        # Reloaded because the status was written to the row by somebody else.
+        Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
       rescue StandardError => e
         task.update!(status: "failed")
         # Fail workflow if this is a sub-task
@@ -264,8 +289,18 @@ module Collavre
       ensure
         # Guarantee resource release for all paths except pending_approval
         tracker.release!(resource_id, tokens_used: 0) if should_release && tracker && resource_id
-        if task&.trigger_event_payload&.key?("topic") && %w[done failed cancelled escalated].include?(task.reload.status)
-          Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
+        settled_task = task&.reload
+        if settled_task &&
+           Orchestration::DeliveryRecord.worker_settling?(settled_task.trigger_event_payload)
+          # StuckDetector failed this row while this worker was still in the
+          # provider call. The worker is out now, so remove the deferral and ask
+          # the restore question from the handoff evidence AiAgentService wrote.
+          Orchestration::DeliveryRecord.settle_worker!(settled_task)
+          Orchestration::DeliveryRecord.restore_if_undelivered!(settled_task.reload)
+        end
+        if settled_task&.trigger_event_payload&.key?("topic") &&
+           %w[done failed cancelled escalated].include?(settled_task.status)
+          Orchestration::AgentOrchestrator.dequeue_next_for_topic(settled_task.topic_id, settled_task.creative_id)
         end
       end
     end

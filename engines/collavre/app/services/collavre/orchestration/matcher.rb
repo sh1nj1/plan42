@@ -47,6 +47,14 @@ module Collavre
         end
       end
 
+      # The permission every routing path in #match is gated on, asked on its
+      # own — for a caller that names its agent instead of matching one.
+      # DeliveryRecord.restore! is that caller: it puts back the dispatch this
+      # matcher once produced, and nothing else on its way re-asks this.
+      def self.permits_creative_access?(context, agent)
+        new(SystemEvents::ContextBuilder.new(context).build).has_creative_permission?(agent)
+      end
+
       def initialize(context)
         @context = context
       end
@@ -100,6 +108,19 @@ module Collavre
         mentioned_id = @context.dig("chat", "mentioned_user", "id") ||
           @context.dig(:chat, :mentioned_user, :id)
         mentioned_id.present? && mentioned_id.to_i == agent.id
+      end
+
+      # Public because #match is not the only door onto a dispatch: a restore
+      # names the agent the match once produced, and this is the gate every
+      # branch of #match shares. One predicate, so the two doors cannot come to
+      # disagree about what "may answer this creative" means.
+      def has_creative_permission?(agent)
+        # All agents need feedback permission on the creative to respond
+        # searchable only affects discoverability, not response permission
+        creative = matched_creative
+        return false unless creative
+
+        creative.has_permission?(agent, :feedback)
       end
 
       private
@@ -234,15 +255,6 @@ module Collavre
       rescue StandardError => e
         Rails.logger.error("[Matcher] Routing error for agent #{agent.id}: #{e.message}")
         false
-      end
-
-      def has_creative_permission?(agent)
-        # All agents need feedback permission on the creative to respond
-        # searchable only affects discoverability, not response permission
-        creative = matched_creative
-        return false unless creative
-
-        creative.has_permission?(agent, :feedback)
       end
 
       def matched_creative

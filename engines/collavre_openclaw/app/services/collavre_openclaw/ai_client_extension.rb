@@ -15,6 +15,12 @@ module CollavreOpenclaw
     # @param messages_input [Hash, Array] Hash { messages:, first_message:, context_changed:, system_prompt: }
     #   from SessionContextResolver, or a plain Array from standalone callers (e.g., CompressJob).
     def chat(messages_input, tools: [], &block)
+      # Cleared on the way in, as the base #chat clears it — the flag describes
+      # the last request, and this branch never reaches `super`. A client is
+      # reused across a turn's calls, so a failure left standing would have
+      # every later one claiming it delivered nothing.
+      @last_handoff_failed = false
+      @handed_off = false
       normalized_vendor = vendor.to_s.downcase
       messages_data = normalize_messages_input(messages_input)
 
@@ -42,6 +48,14 @@ module CollavreOpenclaw
           error_message = e.message
           raise
         ensure
+          # The adapter can know that the gateway accepted the request before
+          # the caller's streaming block raises (notably CancelledError). Copy
+          # both answers while unwinding as well as on a normal return, so
+          # AiAgentService can persist the actual handoff rather than infer it
+          # from how #chat exited.
+          @last_handoff_failed = adapter.last_handoff_failed?
+          @handed_off = adapter.handed_off?
+
           # Honor no-log mode (e.g. inline typo correction on *unsubmitted* drafts).
           # Base Collavre::AiClient#chat gates logging behind @log_interactions; this
           # prepended adapter path bypasses super, so it must gate it too — otherwise

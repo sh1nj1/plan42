@@ -40,6 +40,32 @@ module Collavre
         }
       end
 
+      # The "chat" block for a comment the trigger has just been moved onto.
+      #
+      # Public for the same reason `sender_context_for` is: `build` only ever
+      # fills "mentioned_user" in (`||=`) and does not run again on a
+      # re-anchoring path, and AiAgentJob asks Matcher#assignment_permits?
+      # against the raw payload. A mention left behind by the move therefore
+      # reads as "no mention at all" — and an explicit mention is precisely what
+      # outranks a topic's primary-agent assignment, so a restored or promoted
+      # dispatch that *was* addressed to this agent gets refused for a topic
+      # that belongs to someone else.
+      #
+      # The block is rebuilt rather than merged onto: a mention that finds
+      # nobody must leave the key absent, since Matcher reads its presence as
+      # the mention that outranks the assignment.
+      def self.reanchor_chat(content)
+        chat = { "content" => content }
+        mention = mentioned_user_for(content)
+        mention ? chat.merge("mentioned_user" => mention) : chat
+      end
+
+      def self.mentioned_user_for(content)
+        return nil unless content
+
+        MentionParser.resolve_user(content)&.as_json(only: [ :id, :name, :email ])
+      end
+
       # Point a payload's sender at the comment the trigger has just been moved
       # onto. Only when the author actually changed: a payload may carry a sender
       # its producer shaped deliberately (Comments::WorkflowExecutor attributes a
@@ -67,11 +93,7 @@ module Collavre
       end
 
       def mentioned_user(chat_context)
-        content = chat_context["content"]
-        return nil unless content
-
-        user = MentionParser.resolve_user(content)
-        user&.as_json(only: [ :id, :name, :email ])
+        self.class.mentioned_user_for(chat_context["content"])
       end
     end
   end

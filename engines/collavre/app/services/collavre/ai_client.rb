@@ -10,6 +10,37 @@ module Collavre
 
     attr_reader :last_input_tokens, :last_output_tokens
 
+    # Did the last #chat end without the provider ever receiving the payload?
+    #
+    # #chat swallows a provider error: it streams "⚠️ AI Error" to the caller
+    # and returns nil — which an ordinary empty answer also returns — so the
+    # return value cannot tell the two apart. Orchestration::DeliveryRecord
+    # needs them apart, because a turn that handed the provider nothing
+    # delivered nothing, and AiAgentJob still marks such a turn `done`.
+    #
+    # An error *after* the provider started answering is not one of these. It
+    # had the payload and acted on it; the truncated reply and the retry beside
+    # it are the ordinary ending the product already shows, and the comments
+    # that turn swallowed did reach the agent. "Started answering" is any chunk,
+    # not any *content* — see the stream block for why a tool-call chunk is the
+    # sharper case.
+    def last_handoff_failed?
+      @last_handoff_failed
+    end
+
+    # Whether the last #chat got its payload to the provider — the same
+    # boundary, asked positively, for the callers the flag above cannot serve.
+    #
+    # #last_handoff_failed? is only ever set from a rescue, so it says nothing
+    # about a #chat that left by exception past it: a user pressing Stop
+    # mid-answer raises CancelledError through here, and the turn ends in a
+    # status every reader counts as undelivered although the provider has the
+    # payload. Answering that needs the fact recorded as it happens rather than
+    # inferred from how the call ended.
+    def handed_off?
+      @handed_off
+    end
+
     # Vendor <select> options for AI-agent config. Core ships only its built-in
     # (stateless) providers; vendor engines append their own through
     # register_vendor_option, so core never names a vendor engine.
@@ -67,9 +98,13 @@ module Collavre
       @log_interactions = log_interactions
       @last_input_tokens = 0
       @last_output_tokens = 0
+      @last_handoff_failed = false
+      @handed_off = false
     end
 
     def chat(contents, tools: [], &block)
+      @last_handoff_failed = false
+      @handed_off = false
       response_content = +""
       error_message = nil
       input_tokens = nil
@@ -84,6 +119,17 @@ module Collavre
       add_messages(@conversation, contents)
 
       response = @conversation.complete do |chunk|
+        # A chunk at all is the provider having accepted the request and begun
+        # answering — the earliest acceptance observable from here, and the
+        # analogue of the gateway run id the OpenClaw adapter records.
+        #
+        # Set above the empty check, not below it: role-only and tool-call
+        # chunks carry no content, and a conversation that reached its tools has
+        # not merely been handed the payload, it has acted on it — this
+        # product's tools write creatives and post comments. A turn classified
+        # as a failed handoff has everything it swallowed dispatched again, and
+        # the restored turn runs those tools a second time.
+        @handed_off = true
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
         # break, which providers routinely emit as a token of its own — is
@@ -100,7 +146,10 @@ module Collavre
       end
 
       if response
-        response_content = response.content.to_s if response.content.present?
+        if response.content.present?
+          response_content = response.content.to_s
+          @handed_off = true
+        end
 
         # Extract token usage directly from response object (RubyLLM style)
         if response.respond_to?(:input_tokens)
@@ -119,6 +168,15 @@ module Collavre
     rescue CancelledError
       raise # Re-raise cancellation errors without catching them
     rescue StandardError => e
+      # Nothing came back at all means nothing was handed over — see
+      # #last_handoff_failed?. Asked of @handed_off rather than of the buffer,
+      # and not `blank?`: a delta of exactly "\n\n" is content the branch above
+      # deliberately keeps, so `blank?` calls a stream that broke after a
+      # paragraph break a failed handoff, and the buffer either way says nothing
+      # about the content-less chunks. The two are the same
+      # boundary asked two ways, and Task#ended_undelivered? reads a row carrying
+      # both as undelivered — so it has to be impossible to record both.
+      @last_handoff_failed = !@handed_off
       error_message = "[#{e.class.name}] #{e.message}"
       # When log_interactions is false (inline typo correction runs on the user's
       # *unsubmitted* draft), the LLM error message can echo the request text. Log

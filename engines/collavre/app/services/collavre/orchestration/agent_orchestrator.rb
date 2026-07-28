@@ -450,6 +450,30 @@ module Collavre
         # whether it actually delivered anything.
         scope = scope.where.not(id: delivered_ids) if delivered_ids.any?
 
+        # When the filter above removed the waiter's *own* anchor, falling back
+        # to an older comment is not a rescue.
+        #
+        # The refresh's worst case used to be a no-op: the waiter's own anchor
+        # was always among the candidates, so "the newest eligible comment" was
+        # never older than the comment the waiter was dispatched for. Delivery
+        # filtering can now take that anchor away, and what is next is older —
+        # a comment this waiter was not dispatched for, that predates the one it
+        # was, and that the covering turn had in view when it answered the
+        # anchor. Answering it is a second reply to settled conversation.
+        #
+        # Scoped to exactly that cause rather than a blanket "never move
+        # backwards": an anchor that has left the turn for some other reason
+        # (moved to another creative, made private) is a different question with
+        # its own answer, and widening the floor to cover it would change what
+        # promotion does to waiters this feature never touched.
+        #
+        # With nothing at or above the anchor left, `latest_comment` is nil and
+        # the branch below cancels the waiter — which is the right outcome:
+        # everything it could have said has been said.
+        if previous_anchor_id && delivered_ids.include?(previous_anchor_id.to_i)
+          scope = scope.where("id >= ?", previous_anchor_id)
+        end
+
         if absorbed_only
           candidate_ids = (Array(context[TaskCoalescer::PAYLOAD_KEY]) + [ previous_anchor_id ])
             .compact.map(&:to_i).uniq
@@ -497,6 +521,21 @@ module Collavre
       # that died may never have delivered anything, so the comments it held
       # stay answerable. That direction trades a possible duplicate after a
       # failure for never silencing a comment no task is left to answer.
+      #
+      # The in-flight three would be unsound here if they were reachable: a
+      # `running` turn's record says it assembled, not that it handed anything
+      # over, and this reader *cancels a waiter* — the one removal this feature
+      # makes that writes nothing down, so a later failure has no row to undo it
+      # with. They are inert instead, and TopicSlot is why: an agent that
+      # occupies a slot in this scope may not be promoted into a second turn, so
+      # at the moment the refresh runs this agent has no running, delegated,
+      # pending or pending_approval task here — and `others` is scoped to this
+      # agent, so a concurrent turn (necessarily another agent's, for the same
+      # reason) is not read at all. The only covering turn this ever decides
+      # against is one that has already ended, which is what makes the decision
+      # sound. DeliveredHistoryDispatchTest holds both halves; relax TopicSlot's
+      # per-agent exclusion and they fail rather than this quietly losing a
+      # comment.
       DELIVERED_STATUSES = %w[running delegated pending_approval done].freeze
 
       # Comment ids this agent has already been given in this topic by a turn that
@@ -532,14 +571,38 @@ module Collavre
           creative_id: context.dig("creative", "id"),
           trigger_event_name: task.trigger_event_name,
           status: DELIVERED_STATUSES
-        ).where.not(id: task.id).select(:id, :trigger_event_payload)
+        ).where.not(id: task.id).select(:id, :trigger_event_payload).to_a
 
-        acquired_anchors = others.filter_map { |other| acquired_anchor_id_in(other) }
-        merged = others.flat_map { |other|
-          Array(other.trigger_event_payload&.dig(TaskCoalescer::PAYLOAD_KEY)).compact.map(&:to_i)
+        # A resumed turn can carry both records legitimately: an earlier
+        # attempt handed off, then a later attempt failed before handoff. The
+        # failure invalidates inferred turn-wide delivery, but not the comment
+        # ids the earlier successful attempt recorded explicitly.
+        handed_off = others.flat_map { |other|
+          DeliveryRecord.handed_off_ids_in(other.trigger_event_payload)
+        }
+        delivered_turns = others.reject { |other|
+          # `done` is in DELIVERED_STATUSES because a finished turn delivered
+          # what it read — except when the request never reached the provider,
+          # which AiClient#chat swallows and AiAgentJob still finishes as
+          # `done`. Such a turn silences nothing, for the same reason `failed`
+          # is left out of the list; it just cannot be recognised by status.
+          DeliveryRecord.handoff_failed?(other.trigger_event_payload)
         }
 
-        (acquired_anchors + merged).uniq
+        acquired_anchors = delivered_turns.filter_map { |other| acquired_anchor_id_in(other) }
+        merged = delivered_turns.flat_map { |other|
+          Array(other.trigger_event_payload&.dig(TaskCoalescer::PAYLOAD_KEY)).compact.map(&:to_i)
+        }
+        # The third shape, and the one the dispatch doors cannot catch: a
+        # non-session turn re-reads the topic when it assembles its payload, so
+        # a comment that landed after that turn was dispatched can be swept into
+        # its history window without ever being merged or re-anchored. A waiter
+        # parked before the covering turn assembled is only discoverable here.
+        swallowed = delivered_turns.flat_map { |other|
+          DeliveryRecord.ids_in(other.trigger_event_payload)
+        }
+
+        (acquired_anchors + merged + swallowed + handed_off).uniq
       end
       private_class_method :delivered_comment_ids
 
@@ -651,14 +714,61 @@ module Collavre
           agent = decision[:agent]
           log_decision(decision)
 
-          # Guard: skip if agent already has a running task for this comment
+          # A rejected decision is not a dispatch, so neither guard below
+          # applies to it. Both ask "is this dispatch redundant?", which is only
+          # a question about work that was going to run: the scheduler has
+          # already refused this one, over an exhausted quota or a loop breaker
+          # that fired. Recording a drop against it would make
+          # DeliveryRecord.restore! owe a turn for work nothing scheduled, and
+          # the restore enqueues AiAgentJob directly — past the very check that
+          # did the refusing, so the quota is exceeded or the broken loop
+          # restarted. Reporting the agent would be the same mistake in the
+          # other direction: nothing is answering, and an empty result is how a
+          # caller learns that.
+          next nil if decision[:timing] == :rejected
+
+          # Guard: skip if agent already has a running task for this comment.
+          # Handled, not unscheduled — see the drop guard below for why the two
+          # are different answers and what reads them apart.
           comment_id = @context.dig("comment", "id")
           if comment_id && Task.duplicate_running_for_comment?(agent.id, comment_id)
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
               "for comment #{comment_id}"
             )
-            next
+            next agent
+          end
+
+          # Guard: an in-flight turn has already been given this comment. It
+          # reached the agent inside that turn's chat history, so a turn of its
+          # own would answer something the agent has read — and parking it as a
+          # waiter costs a "⏳" notice and a promotion round-trip for a reply
+          # nobody is waiting on. Drop it instead of queueing it.
+          #
+          # Nothing is recorded for a session-backed agent (it is sent only its
+          # :trigger), so nothing is dropped for one either — those bursts still
+          # go through TaskCoalescer, which merges rather than discards.
+          #
+          # Dropped only if the covering turn will take responsibility for it:
+          # claim_drop! re-reads that turn's status under a lock and refuses if
+          # it has already ended, because a turn that has ended has already run
+          # its restore and would leave this comment with nobody to answer it.
+          #
+          # The agent is still returned. What this method reports is who will
+          # answer, not how many turns it started — a :deferred decision
+          # returns its agent although all it created was a queued row — and a
+          # drop says this agent is answering that comment inside a turn
+          # already running. Reporting nothing is how a caller learns *no agent
+          # was scheduled*: DropTriggerJob#dispatch_trigger raises
+          # DispatchFailedError on an empty result and retries a trigger that
+          # was covered, three times, and calls the job failed at the end of it.
+          covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name)
+          if covering && DeliveryRecord.claim_drop!(covering, comment_id)
+            Rails.logger.info(
+              "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
+              "delivered to agent #{agent.id} by in-flight task #{covering.id}"
+            )
+            next agent
           end
 
           case decision[:timing]

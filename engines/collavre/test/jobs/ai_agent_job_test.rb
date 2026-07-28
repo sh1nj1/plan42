@@ -28,6 +28,9 @@ class AiAgentJobTest < ActiveJob::TestCase
       block.call("AI Response") if block
       "AI Response"
     end
+
+    def last_handoff_failed? = false
+    def handed_off? = true
   end
 
   test "creates task and executes service" do
@@ -71,6 +74,11 @@ class AiAgentJobTest < ActiveJob::TestCase
       # Do not yield any content
       ""
     end
+
+    def last_handoff_failed? = false
+    # An empty answer is an answer: the provider had the payload, as the real
+    # client reports for one.
+    def handed_off? = true
   end
 
   test "does not create reply if AI response is empty" do
@@ -105,6 +113,9 @@ class AiAgentJobTest < ActiveJob::TestCase
       block.call("AI Response") if block
       "AI Response"
     end
+
+    def last_handoff_failed? = false
+    def handed_off? = true
   end
 
   test "renders system prompt with liquid context" do
@@ -131,6 +142,9 @@ class AiAgentJobTest < ActiveJob::TestCase
       block.call("AI Response") if block
       "AI Response"
     end
+
+    def last_handoff_failed? = false
+    def handed_off? = true
 
     # Extract the messages array from the Hash (or return as-is for backward compat)
     def captured_messages
@@ -216,6 +230,9 @@ class AiAgentJobTest < ActiveJob::TestCase
         block.call("chunk 1 ") if block
         "chunk 0 chunk 1 "
       end
+      define_method(:last_handoff_failed?) { false }
+      # Streamed before the stop, as the real client records.
+      define_method(:handed_off?) { true }
     end
 
     # Temporarily set cancel check interval to 0 so it checks on every chunk
@@ -234,6 +251,160 @@ class AiAgentJobTest < ActiveJob::TestCase
     lifecycle_klass = Collavre::AiAgent::AgentLifecycleManager
     lifecycle_klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
     lifecycle_klass.const_set(:CANCEL_CHECK_INTERVAL, original_interval)
+  end
+
+  # A turn stopped mid-answer settles here, in this rescue, and not where it was
+  # stopped: the user's Stop is committed from a web request while this worker is
+  # still inside the provider call, so Task's status callback is asked a poll
+  # interval before AiAgentService's ensure records whether the payload got
+  # there. These two drive the real ordering through the real job.
+  test "a dispatch dropped against a turn stopped after the handoff is not restored" do
+    topic, _swallowed, task = stopped_turn_fixture
+
+    with_zero_cancel_interval do
+      AiClient.stub :new, stopping_client(task, handed_off: true).new do
+        AiAgentJob.perform_now(task)
+      end
+    end
+
+    assert_equal "cancelled", task.reload.status, "premise: the user's Stop landed"
+    assert_empty dispatches_besides(task, topic),
+                 "the provider had that comment; re-dispatching it answers it twice"
+  end
+
+  # The mirror, and what keeps the settling from becoming "cancelled restores
+  # nothing": stopped before anything reached the provider, the comments this
+  # turn silenced are owed back.
+  test "a dispatch dropped against a turn stopped before the handoff is restored when it settles" do
+    topic, swallowed, task = stopped_turn_fixture
+
+    with_zero_cancel_interval do
+      AiClient.stub :new, stopping_client(task, handed_off: false).new do
+        AiAgentJob.perform_now(task)
+      end
+    end
+
+    assert_equal "cancelled", task.reload.status, "premise: the user's Stop landed"
+    assert_equal [ swallowed.id ],
+                 dispatches_besides(task, topic).map { |t| t.trigger_event_payload.dig("comment", "id") },
+                 "nothing read that comment; it has no turn unless this one gives it back"
+  end
+
+  # StuckDetector can fail the row while this job is still inside #chat. The
+  # status callback must wait, but the live worker must not leave the dispatch
+  # waiting for the periodic sweep once it does come out and can answer whether
+  # a handoff happened.
+  test "a worker settles and restores a stuck failure when its provider call exits" do
+    topic, swallowed, task = stopped_turn_fixture
+    with_test_queue do
+      assert_enqueued_jobs 0
+
+      probe = -> {
+        assert_enqueued_jobs 0,
+                             "stuck recovery ran while the provider call was still active"
+      }
+      client = failing_after_stuck_recovery_client(task, probe)
+
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*) { }) do
+        AiClient.stub :new, client.new do
+          assert_raises(StandardError) { AiAgentJob.perform_now(task) }
+        end
+      end
+
+      restored = enqueued_jobs.select { |job| job[:job] == Collavre::AiAgentJob }
+      assert_equal 1, restored.size
+      assert_equal swallowed.id, restored.sole[:args][2].dig("comment", "id"),
+                   "the failed provider call handed nothing over, so its worker owes the dispatch back"
+      assert_equal "failed", task.reload.status
+      assert_not Collavre::Orchestration::DeliveryRecord.worker_settling?(
+        task.trigger_event_payload
+      ), "the live worker settled the marker rather than leaving the sweep to guess"
+      assert_equal topic.id, task.topic_id
+    end
+  end
+
+  # A running turn with one dispatch dropped against it, and the comment that
+  # dispatch was for.
+  def stopped_turn_fixture
+    topic = Topic.create!(name: "Stop topic", creative: @creative, user: @owner)
+    share = Collavre::CreativeShare.find_or_create_by!(creative: @creative, user: @agent)
+    share.update!(permission: "feedback")
+    Collavre::CreativeSharesCache.find_or_create_by!(
+      creative_id: @creative.id, user_id: @agent.id, permission: :feedback
+    )
+    swallowed = Comment.create!(
+      creative: @creative, user: @owner, topic: topic,
+      content: "@#{@agent.name}: swallowed", skip_dispatch: true
+    )
+    task = Task.create!(
+      name: "Turn", status: "running", trigger_event_name: "comment_created",
+      trigger_event_payload: @context.merge(
+        "topic" => { "id" => topic.id },
+        "sender" => { "id" => @owner.id, "name" => @owner.name }
+      ),
+      agent: @agent, topic_id: topic.id, creative_id: @creative.id
+    )
+    assert Collavre::Orchestration::DeliveryRecord.claim_drop!(task, swallowed.id),
+           "premise: a dispatch was dropped against this turn"
+    [ topic, swallowed, task.reload ]
+  end
+
+  # Streams, then has somebody else press Stop — a separately loaded row, as the
+  # controller has: the object this worker holds is not the one that is written.
+  def stopping_client(task, handed_off:)
+    Class.new do
+      define_method(:initialize) { |*args, **kwargs| }
+      define_method(:chat) do |contents, tools: [], &block|
+        block.call("partial ") if block && handed_off
+        Collavre::Task.find(task.id).update!(status: "cancelled")
+        block.call("more") if block
+        "partial more"
+      end
+      define_method(:last_handoff_failed?) { false }
+      define_method(:handed_off?) { handed_off }
+    end
+  end
+
+  def failing_after_stuck_recovery_client(task, probe)
+    Class.new do
+      define_method(:initialize) { |*args, **kwargs| }
+      define_method(:chat) do |contents, tools: [], &block|
+        item = Collavre::Orchestration::StuckDetector::StuckItem.new(
+          type: :task, item: task.reload, reason: :no_progress,
+          stuck_since: 1.hour.ago, escalation_targets: []
+        )
+        Collavre::Orchestration::StuckDetector.new.send(:recover_stuck_task, item)
+        probe.call
+        raise StandardError, "provider call ended without a handoff"
+      end
+      define_method(:last_handoff_failed?) { false }
+      define_method(:handed_off?) { false }
+    end
+  end
+
+  def with_test_queue
+    original = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+    yield
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original
+  end
+
+  def dispatches_besides(task, topic)
+    Task.where(agent: @agent, topic_id: topic.id).where.not(id: task.id)
+  end
+
+  def with_zero_cancel_interval
+    klass = Collavre::AiAgent::AgentLifecycleManager
+    original = klass::CANCEL_CHECK_INTERVAL
+    klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    klass.const_set(:CANCEL_CHECK_INTERVAL, 0)
+    yield
+  ensure
+    klass.send(:remove_const, :CANCEL_CHECK_INTERVAL)
+    klass.const_set(:CANCEL_CHECK_INTERVAL, original)
   end
 
   test "triggers dequeue_next_for_topic on completion" do
