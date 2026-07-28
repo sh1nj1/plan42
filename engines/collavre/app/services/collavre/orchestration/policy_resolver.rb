@@ -31,6 +31,10 @@ module Collavre
           # Fold un-started tasks for the same agent/topic/creative into one so a
           # burst of comments produces one answer instead of one per comment.
           "coalesce_pending_tasks" => true,
+          # Drop a dispatch whose comment an in-flight turn has already been
+          # given, instead of parking it as a waiter (see
+          # Orchestration::DeliveryRecord).
+          "drop_delivered_dispatches" => true,
           # Loop breaker settings
           "loop_breaker_enabled" => true,
           "ping_pong_threshold" => 5,           # Max back-and-forth between same agents
@@ -107,6 +111,24 @@ module Collavre
       def coalesce_pending_tasks_for?(agent)
         config = agent ? scheduling_config_for(agent) : scheduling_config
         config["coalesce_pending_tasks"] != false
+      end
+
+      # Whether a dispatch is dropped outright when an in-flight turn has
+      # already delivered its comment (see Orchestration::DeliveryRecord).
+      #
+      # Resolved per agent for the same reason coalescing is: delivery is a
+      # same-agent question, and a User-scoped scheduling policy is how an
+      # administrator turns this off for one agent without touching the others
+      # in the topic.
+      #
+      # Only the *drop* is switched. The record itself keeps being written
+      # whatever this says — it is evidence of what an agent was sent, and the
+      # promotion door reads it to keep a parked waiter from replaying a
+      # delivered comment. Gating the write here would make turning the switch
+      # off mid-burst leave that door reading a record with a hole in it.
+      def drop_delivered_dispatches_for?(agent)
+        config = agent ? scheduling_config_for(agent) : scheduling_config
+        config["drop_delivered_dispatches"] != false
       end
 
       # Convenience methods

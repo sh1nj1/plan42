@@ -156,6 +156,20 @@ module Collavre
           return
         end
 
+        # Guard: the same question the orchestrator asks before enqueueing, asked
+        # again where the answer is authoritative. This job can sit in the queue
+        # while the covering turn assembles its payload, so a dispatch that was
+        # not droppable at enqueue time can be droppable by the time it runs —
+        # and the enqueue door alone would leave that window open.
+        covering = Orchestration::DeliveryRecord.covering_task(agent, comment_id, context, event_name)
+        if covering
+          Rails.logger.info(
+            "[AiAgentJob] Skipping dispatch: comment #{comment_id} was already delivered to " \
+            "agent #{agent.id} by in-flight task #{covering.id} (event=#{event_name})"
+          )
+          return
+        end
+
         # Guard: the Scheduler's topic-concurrency check counts Task rows, but
         # the row for an :immediate decision is only created *here*. A burst of
         # comments dispatched before the first job runs therefore all see an

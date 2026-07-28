@@ -181,7 +181,11 @@ module Collavre
           history_chars += content.length
           break if history_chars > history_size_limit
 
-          messages << { role: role, kind: :chat_history, parts: [ { text: content } ] }
+          # Tagged with the comment it came from so Orchestration::DeliveryRecord
+          # can read, off the payload the adapter is actually handed, which
+          # comments this turn delivered. Consumers key into :role and :parts;
+          # the extra key is inert to all of them.
+          messages << { role: role, kind: :chat_history, comment_id: c.id, parts: [ { text: content } ] }
           count += 1
         end
 

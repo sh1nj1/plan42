@@ -441,6 +441,30 @@ module Collavre
         # whether it actually delivered anything.
         scope = scope.where.not(id: delivered_ids) if delivered_ids.any?
 
+        # When the filter above removed the waiter's *own* anchor, falling back
+        # to an older comment is not a rescue.
+        #
+        # The refresh's worst case used to be a no-op: the waiter's own anchor
+        # was always among the candidates, so "the newest eligible comment" was
+        # never older than the comment the waiter was dispatched for. Delivery
+        # filtering can now take that anchor away, and what is next is older —
+        # a comment this waiter was not dispatched for, that predates the one it
+        # was, and that the covering turn had in view when it answered the
+        # anchor. Answering it is a second reply to settled conversation.
+        #
+        # Scoped to exactly that cause rather than a blanket "never move
+        # backwards": an anchor that has left the turn for some other reason
+        # (moved to another creative, made private) is a different question with
+        # its own answer, and widening the floor to cover it would change what
+        # promotion does to waiters this feature never touched.
+        #
+        # With nothing at or above the anchor left, `latest_comment` is nil and
+        # the branch below cancels the waiter — which is the right outcome:
+        # everything it could have said has been said.
+        if previous_anchor_id && delivered_ids.include?(previous_anchor_id.to_i)
+          scope = scope.where("id >= ?", previous_anchor_id)
+        end
+
         if absorbed_only
           candidate_ids = (Array(context[TaskCoalescer::PAYLOAD_KEY]) + [ previous_anchor_id ])
             .compact.map(&:to_i).uniq
@@ -529,8 +553,14 @@ module Collavre
         merged = others.flat_map { |other|
           Array(other.trigger_event_payload&.dig(TaskCoalescer::PAYLOAD_KEY)).compact.map(&:to_i)
         }
+        # The third shape, and the one the dispatch doors cannot catch: a
+        # non-session turn re-reads the topic when it assembles its payload, so
+        # a comment that landed after that turn was dispatched can be swept into
+        # its history window without ever being merged or re-anchored. A waiter
+        # parked before the covering turn assembled is only discoverable here.
+        swallowed = others.flat_map { |other| DeliveryRecord.ids_in(other.trigger_event_payload) }
 
-        (acquired_anchors + merged).uniq
+        (acquired_anchors + merged + swallowed).uniq
       end
       private_class_method :delivered_comment_ids
 
@@ -648,6 +678,23 @@ module Collavre
             Rails.logger.warn(
               "[AgentOrchestrator] Skipping enqueue: agent #{agent.id} already has a running task " \
               "for comment #{comment_id}"
+            )
+            next
+          end
+
+          # Guard: an in-flight turn has already been given this comment. It
+          # reached the agent inside that turn's chat history, so a turn of its
+          # own would answer something the agent has read — and parking it as a
+          # waiter costs a "⏳" notice and a promotion round-trip for a reply
+          # nobody is waiting on. Drop it instead of queueing it.
+          #
+          # Nothing is recorded for a session-backed agent (it is sent only its
+          # :trigger), so nothing is dropped for one either — those bursts still
+          # go through TaskCoalescer, which merges rather than discards.
+          if (covering = DeliveryRecord.covering_task(agent, comment_id, @context, @event_name))
+            Rails.logger.info(
+              "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
+              "delivered to agent #{agent.id} by in-flight task #{covering.id}"
             )
             next
           end

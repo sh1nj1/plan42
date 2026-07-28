@@ -70,6 +70,14 @@ module Collavre
 
       resolved = resolve_session_context(messages_data, system_prompt)
 
+      # Write down what this turn is about to hand the agent, before it hands it
+      # over. A comment that landed after this task was dispatched and got swept
+      # into the history window has been read by the agent, and the dispatch
+      # still on its way for it should be dropped rather than queued behind this
+      # turn. Recorded off `resolved` — after the session filter — because a
+      # session-backed agent is sent only its :trigger and swallows nothing.
+      Orchestration::DeliveryRecord.record!(@task, resolved)
+
       @reply_comment = create_reply_comment_if_needed
 
       @lifecycle_manager = AiAgent::AgentLifecycleManager.new(
