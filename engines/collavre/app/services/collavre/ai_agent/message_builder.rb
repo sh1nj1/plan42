@@ -117,9 +117,7 @@ module Collavre
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
-        # Extract creative IDs from markdown links like [title](/creatives/123)
-        referenced_ids = contents.flat_map { |c| c.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}) }
-                                 .flatten.map(&:to_i).uniq
+        referenced_ids = contents.flat_map { |c| referenced_creative_ids(c) }.uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
 
@@ -140,6 +138,44 @@ module Collavre
         end
       end
 
+      # Creative ids linked from markdown like [title](/creatives/123).
+      def referenced_creative_ids(text)
+        text.to_s.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.map(&:to_i).uniq
+      end
+
+      # Whether a history entry carries its comment whole.
+      #
+      # A history entry is text: this window renders `content` and nothing
+      # else. Two things ride only on the trigger path — the blobs
+      # append_trigger_message attaches, and the subtree
+      # append_referenced_creative_contexts renders for a linked creative,
+      # which scans the anchor and the merged blocks and never this window. A
+      # comment carrying either is *partly* delivered here, and the turn that
+      # swept it up is not a substitute for its own dispatch.
+      #
+      # Decided here rather than at Orchestration::DeliveryRecord, which reads
+      # the :comment_id tag as a delivery claim: this is the only place that
+      # knows what was rendered, and in particular which creatives were
+      # already injected. A link to the topic's own creative — the common case
+      # — withholds nothing, and a rule written anywhere else could not tell
+      # that apart from a link to a subtree the agent never saw.
+      #
+      # Deliberately the same test append_referenced_creative_contexts applies,
+      # @injected_creative_ids and all, so the two answer alike: whatever that
+      # path would have injected for this comment is what this window failed to
+      # supply. It holds only roots, not the descendants a rendered subtree
+      # also covers, so a link to a descendant reads as withheld when its text
+      # was in fact rendered. That asymmetry costs a redundant turn; the
+      # opposite one costs the message.
+      def delivered_whole?(comment)
+        return false if comment.images.attached?
+
+        missing = referenced_creative_ids(comment.content) - @injected_creative_ids.to_a
+        return true if missing.empty?
+
+        !Creative.where(id: missing).exists?
+      end
+
       # Appends chat history messages and returns the count of messages added.
       def append_chat_history(messages)
         creative_id = @context.dig("creative", "id")
@@ -155,7 +191,7 @@ module Collavre
         scope = Comment.public_only.without_approval_action.where(creative_id: creative_id)
                        .where(topic_id: topic_id)
                        .where.not(user_id: nil)
-                       .includes(:user)
+                       .includes(:user, :images_attachments)
 
         # Exclude before limiting, not after. The trigger and the comments folded
         # into it are delivered by append_trigger_message, so leaving them in the
@@ -185,7 +221,14 @@ module Collavre
           # can read, off the payload the adapter is actually handed, which
           # comments this turn delivered. Consumers key into :role and :parts;
           # the extra key is inert to all of them.
-          messages << { role: role, kind: :chat_history, comment_id: c.id, parts: [ { text: content } ] }
+          #
+          # Only an entry that carries its comment whole wears the tag — the
+          # tag is the delivery claim, and delivered_whole? is what makes it
+          # true. An untagged entry still goes to the agent as context; it just
+          # does not stand in for the comment's own dispatch.
+          entry = { role: role, kind: :chat_history, parts: [ { text: content } ] }
+          entry[:comment_id] = c.id if delivered_whole?(c)
+          messages << entry
           count += 1
         end
 

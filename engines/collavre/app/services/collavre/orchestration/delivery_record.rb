@@ -121,7 +121,7 @@ module Collavre
           anchor_id = payload.dig("comment", "id").to_i
           next if anchor_id.zero?
 
-          swallowed = delivered_in_full(history_comment_ids(resolved).select { |id| id > anchor_id })
+          swallowed = history_comment_ids(resolved).select { |id| id > anchor_id }
           merged = (ids_in(payload) + swallowed).uniq.sort
           next if merged == ids_in(payload)
 
@@ -129,27 +129,6 @@ module Collavre
           task.reload unless task.equal?(row)
         end
       end
-
-      # Of `ids`, the comments a history entry carries whole.
-      #
-      # A history entry is text: MessageBuilder#append_chat_history renders
-      # `content` and nothing else, while blobs ride only on the trigger, which
-      # attaches the anchor's images and the merged blocks'. So a comment with
-      # an attachment that the window swept up has been *partly* delivered, and
-      # this record's predicate — the agent has been given this comment — is
-      # false for it. Recording it would let the drop discard the one dispatch
-      # that would have carried the image, and an image-only comment would
-      # reach the agent as a blank line under someone's name.
-      #
-      # Excluded here, at the record, rather than at each gate: the record is
-      # what the dispatch doors and AgentOrchestrator.delivered_comment_ids all
-      # read, so a partial delivery kept out of it is kept out of every one.
-      def self.delivered_in_full(ids)
-        return ids if ids.empty?
-
-        ids - Comment.where(id: ids).joins(:images_attachments).distinct.pluck(:id)
-      end
-      private_class_method :delivered_in_full
 
       def self.ids_in(payload)
         return [] unless payload.is_a?(Hash)
@@ -321,6 +300,13 @@ module Collavre
       end
       private_class_method :claimed_comment_ids
 
+      # The comments the history window carried *whole*, read off the tag
+      # MessageBuilder#append_chat_history writes. A window entry can render a
+      # comment without delivering it — a blob or a linked creative's subtree
+      # rides only on the trigger path — and those entries go untagged, so this
+      # record never claims them. That judgement lives with the builder, which
+      # is the only place that knows what it rendered; see
+      # MessageBuilder#delivered_whole?.
       def self.history_comment_ids(resolved)
         messages = resolved.is_a?(Hash) ? Array(resolved[:messages] || resolved["messages"]) : Array(resolved)
         messages.filter_map do |message|
