@@ -294,6 +294,20 @@ module Collavre
       # for, as its trigger or as a merged block. Any status counts: what is
       # being asked is whether a dispatch exists at all, since the only thing
       # this restore undoes is a dispatch that was never allowed to become one.
+      #
+      # A terminal sibling counts too, and deliberately. For a comment to be in
+      # DROPPED_KEY *and* have a row, the row came from a different dispatch of
+      # the same comment — a redelivered event, which `duplicate_running_for_
+      # comment?` lets past a merely queued waiter — so the discarded one is the
+      # duplicate and the row is the comment's own turn. Reading `cancelled` or
+      # `failed` there as "no longer coverage" would re-dispatch the duplicate
+      # of a turn the user stopped, or that reassignment, agent teardown or a
+      # workflow stop cancelled on purpose; restore! re-asks the comment's
+      # eligibility but has no way to re-ask those decisions. A turn that failed
+      # leaves a failed Task the product already shows and offers to retry,
+      # which is the ordinary ending for every turn — not this restore's
+      # subject, which is the dispatch that left nothing behind at all.
+      # DeliveredHistoryDispatchTest reproduces that state and holds both.
       def self.claimed_comment_ids(task)
         Task.where(
           agent_id: task.agent_id, topic_id: task.topic_id,

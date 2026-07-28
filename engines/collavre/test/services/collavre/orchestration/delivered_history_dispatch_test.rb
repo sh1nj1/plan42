@@ -382,6 +382,87 @@ module Collavre
                      "the dispatch is alive in the queue; a second one answers the comment twice"
       end
 
+      # The only state in which a dropped comment also has a Task row of its
+      # own: the row came from a *different* dispatch of the same comment, and
+      # the one that was dropped is therefore the duplicate. Reproduced here so
+      # the two controls below rest on a state that can actually arise.
+      #
+      # `duplicate_running_for_comment?` only looks for a *running* task, so a
+      # queued waiter does not stop the second dispatch from reaching the drop
+      # door — the guard the codebase already carries for redelivered events.
+      def duplicate_dispatch_over_a_waiter
+        anchor = comment("@#{@agent.name}: first")
+        holder = slot_holder(anchor)
+        late = comment("@#{@agent.name}: second")
+        dispatch(late)
+        waiter = restored_waiters.sole
+        assert_equal late.id, waiter.trigger_event_payload.dig("comment", "id"),
+                     "premise: the comment got a dispatch of its own, parked behind the slot"
+
+        data = AiAgent::MessageBuilder.new(
+          agent: @agent, context: holder.trigger_event_payload, original_comment: anchor
+        ).build
+        resolved = AiAgent::SessionContextResolver.new(
+          agent: @agent, messages_data: data, system_prompt: "prompt"
+        ).resolve
+        DeliveryRecord.record!(holder, resolved)
+
+        dispatch(late)
+        assert_includes DeliveryRecord.dropped_ids_in(holder.reload.trigger_event_payload), late.id,
+                        "premise: the redelivered dispatch was the one dropped"
+        assert_equal [ waiter.id ], restored_waiters.pluck(:id),
+                     "premise: and it left no row of its own"
+
+        [ holder, waiter, late, anchor ]
+      end
+
+      # Control: a terminal sibling is still coverage.
+      #
+      # The user pressed stop on the waiter — TasksController#cancel, one of the
+      # four doors a waiter leaves the queue through. The covering turn then
+      # fails, and its drop record still names that comment. Restoring it would
+      # answer a comment whose turn the user cancelled, from a dispatch that was
+      # only ever a duplicate of the cancelled one: `restore!` re-asks the
+      # comment's eligibility but has no way to re-ask the user's decision.
+      #
+      # This is why claimed_comment_ids counts a task in any status. Narrowing
+      # it to tasks "still capable of answering" reads a deliberate stop as an
+      # absence of coverage.
+      test "a comment whose own task the user stopped is not restored" do
+        holder, waiter, _late, anchor = duplicate_dispatch_over_a_waiter
+        waiter.update!(status: "cancelled")
+
+        slot_holder(anchor)
+        holder.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "the comment had a turn and the user stopped it; a restore reverses that"
+      end
+
+      # Control: the same for a sibling that failed rather than was cancelled.
+      #
+      # Both turns have ended without delivering, which looks like the comment
+      # is now unanswered — but its own dispatch did become a Task, and a failed
+      # Task is the ordinary ending the product already shows and offers to
+      # retry. The restore exists for the one ending that leaves nothing behind
+      # at all: a dispatch discarded before it could become a row. Extending it
+      # to comments whose turn failed makes it a general retry the rest of the
+      # system does not have, and it fires on the duplicate rather than on the
+      # turn that actually failed.
+      test "a comment whose own task failed is not restored by the turn that read it" do
+        holder, waiter, late, anchor = duplicate_dispatch_over_a_waiter
+        waiter.update!(status: "failed")
+
+        slot_holder(anchor)
+        holder.update!(status: "failed")
+
+        assert_empty restored_waiters,
+                     "the comment had a turn of its own; its failure is that turn's, not a lost dispatch"
+        assert_equal [ "failed", late.id ],
+                     [ waiter.reload.status, waiter.trigger_event_payload.dig("comment", "id") ],
+                     "and it is still visible as a failed task for that comment"
+      end
+
       # A comment deleted while the turn ran has nothing to answer.
       test "a comment that no longer exists is not restored" do
         anchor = comment("@#{@agent.name}: first")
