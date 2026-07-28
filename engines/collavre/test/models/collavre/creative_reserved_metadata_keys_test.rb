@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../../test_helper"
+require "test_helper"
 
 # Tests for Collavre::Creative.reserved_metadata_keys registry.
 # Vendor-neutral: uses a dummy key "x", no engine names.
