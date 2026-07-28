@@ -4941,7 +4941,7 @@ the actual key path and run:
   signature="\$(printf 'collavre-ssh-cutover:%s:%s' '$APP_SSH_USER' "\$nonce" |
     ssh-keygen -Y sign -f "\$key" -n collavre-ssh-cutover 2>/dev/null |
     base64 | tr -d '\\n')"
-  ssh -i "\$key" $APP_SSH_USER@$PUBLIC_IP \\
+  ssh -o IdentitiesOnly=yes -i "\$key" $APP_SSH_USER@$PUBLIC_IP \\
     "sudo /usr/local/sbin/collavre-finalize-ssh-cutover --finalize-ssh-cutover '\$nonce' '\$signature'"
 
 Only after it prints "SSH cutover finalized" should KAMAL_SSH_USER change to

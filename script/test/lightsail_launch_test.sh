@@ -6975,6 +6975,8 @@ chk "without trusting host-local process names as proof" 0 \
   "$(grep -c '^ssh_cutover_has_sshd_ancestor()' "$SRC")"
 chk "the runbook changes KAMAL_SSH_USER only after finalization" 1 \
   "$(grep -c 'Change `KAMAL_SSH_USER` only after' "$DOC")"
+chk "the proof SSH command cannot fall back to an agent predecessor key" 1 \
+  "$(grep -c 'ssh -o IdentitiesOnly=yes -i' "$DOC")"
 
 cutover_state="$(mktemp -d)"
 cutover_finalizer="$cutover_state/finalizer"

@@ -203,7 +203,7 @@ nonce='<nonce>'
 signature="$(printf 'collavre-ssh-cutover:%s:%s' '<new-user>' "$nonce" |
   ssh-keygen -Y sign -f "$key" -n collavre-ssh-cutover 2>/dev/null |
   base64 | tr -d '\n')"
-ssh -i "$key" <new-user>@<instance-ip> \
+ssh -o IdentitiesOnly=yes -i "$key" <new-user>@<instance-ip> \
   "sudo /usr/local/sbin/collavre-finalize-ssh-cutover \
     --finalize-ssh-cutover '$nonce' '$signature'"
 ```
@@ -211,7 +211,9 @@ ssh -i "$key" <new-user>@<instance-ip> \
 Run that exact command from the workstation with the key Kamal will use. The
 local `ssh-keygen` signs the nonce and staged username with that private key;
 the signature travels only as an argument to the SSH command, so a failed
-staged-account login never invokes the finalizer. The host verifies the
+staged-account login never invokes the finalizer. `IdentitiesOnly=yes` prevents
+`ssh-agent` from silently authenticating that command with a predecessor key
+when the staged key itself is rejected. The host verifies the
 signature against the public keys captured atomically when the cutover was
 staged. This is the security boundary: the predecessor is root-equivalent and
 can forge host-local process names, environment variables, and files, but it
