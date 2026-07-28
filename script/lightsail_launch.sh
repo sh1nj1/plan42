@@ -1623,6 +1623,7 @@ revoke_prior_deploy_user() {
 stage_ssh_cutover() {
   local user="$1" key="$2" current='' prior_key='' need=0
   local nonce nonce_hash key_fingerprint='' pending="$STATE_DIR/ssh_cutover.pending"
+  local proof_key proof_key_b64 proof_records=''
   local finalizer="${3:-/usr/local/sbin/collavre-finalize-ssh-cutover}"
   local source="${4:-${BASH_SOURCE[0]}}"
 
@@ -1661,13 +1662,34 @@ stage_ssh_cutover() {
       die "could not fingerprint the staged SSH key"
   fi
 
+  # Authentication on the workstation is the only proof a root-equivalent
+  # predecessor cannot synthesize from host-local state. Explicit rotations
+  # accept only the staged key; copied-key cutovers accept any valid key
+  # currently installed for the successor, because any one of them proves that
+  # account can be reached without the predecessor.
+  if [ -n "$key" ]; then
+    proof_key="$key"
+    proof_key_b64="$(printf '%s' "$proof_key" | base64 | tr -d '\n')"
+    proof_records="proof_key_b64=$proof_key_b64"$'\n'
+  else
+    while IFS= read -r proof_key; do
+      [ -n "$proof_key" ] || continue
+      ssh_public_key_fingerprint "$proof_key" >/dev/null 2>&1 || continue
+      proof_key_b64="$(printf '%s' "$proof_key" | base64 | tr -d '\n')"
+      proof_records="$proof_records"'proof_key_b64='"$proof_key_b64"$'\n'
+    done < "$AUTH_KEYS"
+  fi
+  [ -n "$proof_records" ] ||
+    die "could not stage SSH cutover proof because '$user' has no valid public" \
+	"key to verify. Install a usable key and re-run."
+
   # The key, its fingerprint and the nonce hash are one atomic record. Keeping
   # the key in a separately replaced file lets an interrupted same-user re-run
   # pair an old challenge/fingerprint with a new key and later commit a key
   # that the successful SSH session never proved.
   write_state_file "$pending" \
     "user=$user"$'\n'"nonce_sha256=$nonce_hash"$'\n'\
-"key_sha256=$key_fingerprint"$'\n'"key=$key"$'\n' 0600 ||
+"key_sha256=$key_fingerprint"$'\n'"key=$key"$'\n'"$proof_records" 0600 ||
     die "could not stage the SSH cutover challenge in $pending"
 
   [ -r "$source" ] ||
@@ -1692,71 +1714,54 @@ ssh_public_key_fingerprint() {
   printf '%s\n' "$fingerprint"
 }
 
-# Echo the authentication-info file from the target-owned session process
-# closest to sshd. ExposeAuthInfo creates this record from the authentication
-# exchange itself; reading SSH_USER_AUTH from the original session ancestry
-# avoids relying on what sudo happened to preserve.
-ssh_cutover_auth_info_file() {
-  local user="$1" pid="${2:-$PPID}" proc_root="${3:-/proc}"
-  local ppid real_uid target_uid candidate='' candidate_uid hops=0
-  local auth_info_file=''
-  target_uid="$(id -u "$user" 2>/dev/null)" || return 1
-  while [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
-    real_uid="$(awk '/^Uid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
-    if [ "$real_uid" = "$target_uid" ]; then
-      candidate="$(tr '\0' '\n' < "$proc_root/$pid/environ" 2>/dev/null |
-	sed -n 's/^SSH_USER_AUTH=//p' | head -1)"
-      candidate_uid="$(
-	stat -c %u "$candidate" 2>/dev/null ||
-	  stat -f %u "$candidate" 2>/dev/null ||
-	  true
-      )"
-      [ -z "$candidate" ] || [ ! -f "$candidate" ] ||
-	[ "$candidate_uid" != "$target_uid" ] || auth_info_file="$candidate"
-    fi
-    ppid="$(awk '/^PPid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
-    case "$ppid" in ''|*[!0-9]*) break ;; esac
-    pid="$ppid"
-    hops=$((hops + 1))
-  done
-  [ -n "$auth_info_file" ] && [ -f "$auth_info_file" ] || return 1
-  printf '%s\n' "$auth_info_file"
+ssh_public_key_material() {
+  printf '%s\n' "$1" | awk '
+    {
+      for (i = 1; i < NF; i++) {
+	if ($i ~ /^(ssh-|ecdsa-|sk-)/) {
+	  print $i " " $(i + 1)
+	  exit
+	}
+      }
+    }'
 }
 
-ssh_cutover_authenticated_with_key() {
-  local user="$1" expected="$2" auth_file method key fingerprint
-  auth_file="$(ssh_cutover_auth_info_file "$user")" || return 1
-  while read -r method key; do
-    [ "$method" = publickey ] || continue
-    fingerprint="$(ssh_public_key_fingerprint "$key")" || continue
-    [ "$fingerprint" = "$expected" ] && return 0
-  done < "$auth_file"
+ssh_cutover_signature_verifies() {
+  local user="$1" nonce="$2" signature_b64="$3" pending="$4"
+  local tmp proof_key_b64 proof_key material found=0
+  tmp="$(mktemp -d)" || return 1
+  chmod 0700 "$tmp" || { rm -rf "$tmp"; return 1; }
+  : > "$tmp/allowed_signers"
+  while IFS= read -r proof_key_b64; do
+    [ -n "$proof_key_b64" ] || continue
+    proof_key="$(printf '%s' "$proof_key_b64" | base64 -d 2>/dev/null)" ||
+      proof_key="$(printf '%s' "$proof_key_b64" | base64 -D 2>/dev/null)" ||
+      continue
+    material="$(ssh_public_key_material "$proof_key")"
+    [ -n "$material" ] || continue
+    printf 'collavre-cutover %s\n' "$material" >> "$tmp/allowed_signers" ||
+      { rm -rf "$tmp"; return 1; }
+    found=1
+  done < <(sed -n 's/^proof_key_b64=//p' "$pending")
+  [ "$found" -eq 1 ] || { rm -rf "$tmp"; return 1; }
+  if ! printf '%s' "$signature_b64" | base64 -d > "$tmp/signature" 2>/dev/null; then
+    printf '%s' "$signature_b64" | base64 -D > "$tmp/signature" 2>/dev/null ||
+      { rm -rf "$tmp"; return 1; }
+  fi
+  if printf 'collavre-ssh-cutover:%s:%s' "$user" "$nonce" |
+     ssh-keygen -Y verify -f "$tmp/allowed_signers" \
+       -I collavre-cutover -n collavre-ssh-cutover \
+       -s "$tmp/signature" >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    return 0
+  fi
+  rm -rf "$tmp"
   return 1
 }
 
-ssh_cutover_has_sshd_ancestor() {
-  local user="$1" pid="${2:-$PPID}" proc_root="${3:-/proc}"
-  local comm ppid real_uid target_uid hops=0
-  local saw_authenticated_sshd=0
-  target_uid="$(id -u "$user" 2>/dev/null)" || return 1
-  while [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
-    comm="$(cat "$proc_root/$pid/comm" 2>/dev/null || true)"
-    real_uid="$(awk '/^Uid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
-    case "$comm:$real_uid" in
-      sshd:"$target_uid"|sshd-session:"$target_uid")
-	saw_authenticated_sshd=1
-	;;
-    esac
-    ppid="$(awk '/^PPid:/{print $2}' "$proc_root/$pid/status" 2>/dev/null || true)"
-    case "$ppid" in ''|*[!0-9]*) break ;; esac
-    pid="$ppid"
-    hops=$((hops + 1))
-  done
-  [ "$saw_authenticated_sshd" -eq 1 ]
-}
-
 finalize_ssh_cutover() {
-  local nonce="${1:-}" pending="$STATE_DIR/ssh_cutover.pending"
+  local nonce="${1:-}" signature_b64="${2:-}"
+  local pending="$STATE_DIR/ssh_cutover.pending"
   local user expected key_fingerprint actual staged_fingerprint field
 
   [ -s "$pending" ] || die "no SSH cutover is pending"
@@ -1766,6 +1771,9 @@ finalize_ssh_cutover() {
 	  "was not changed. Re-run provisioning to atomically replace the" \
 	  "pending cutover."
   done
+  [ "$(grep -c '^proof_key_b64=' "$pending" 2>/dev/null || true)" -ge 1 ] ||
+    die "$pending has no staged signing key; predecessor access was not changed." \
+	"Re-run provisioning to replace this older pending cutover."
   user="$(sed -n 's/^user=//p' "$pending")"
   expected="$(sed -n 's/^nonce_sha256=//p' "$pending")"
   key_fingerprint="$(sed -n 's/^key_sha256=//p' "$pending")"
@@ -1775,17 +1783,13 @@ finalize_ssh_cutover() {
   [ "${SUDO_USER:-}" = "$user" ] ||
     die "finalize this cutover by SSHing as '$user' and running sudo there;" \
 	"SUDO_USER is '${SUDO_USER:-unset}'"
-  ssh_cutover_has_sshd_ancestor "$user" ||
-    die "no sshd session process owned by '$user' was found. The cutover must" \
-	"be finalized inside an SSH session authenticated as that account, not" \
-	"through a nested sudo from another user's session or a local console."
-  ssh_cutover_auth_info_file "$user" >/dev/null ||
-    die "no '$user'-owned SSH_USER_AUTH record was found. The cutover must be" \
-	"finalized from that account's actual SSH session; predecessor access" \
-	"was not changed."
   actual="$(printf '%s' "$nonce" | sha256sum | awk '{print $1}')"
   [ "$actual" = "$expected" ] ||
     die "the SSH cutover nonce is incorrect; predecessor access was not changed"
+  ssh_cutover_signature_verifies "$user" "$nonce" "$signature_b64" "$pending" ||
+    die "the SSH cutover signature is missing or invalid. Sign this nonce on" \
+	"the workstation with a private key installed for '$user', then retry;" \
+	"predecessor access was not changed."
   in_group "$user" sudo && in_group "$user" docker ||
     die "'$user' no longer has both sudo and docker; predecessor access was" \
 	"not changed. Re-run provisioning to repair the staged account."
@@ -1805,10 +1809,6 @@ finalize_ssh_cutover() {
       die "the staged key does not match its pending fingerprint; predecessor" \
 	  "access was not changed. Re-run provisioning to replace the pending" \
 	  "cutover atomically."
-    [ -n "$key_fingerprint" ] &&
-      ssh_cutover_authenticated_with_key "$user" "$key_fingerprint" ||
-      die "this SSH session was not authenticated with the staged key. Reconnect" \
-	  "with that key and retry; predecessor access was not changed."
     grep -qxF "$SSH_PUBLIC_KEY" "$AUTH_KEYS" ||
       die "the staged key is no longer in $AUTH_KEYS; predecessor access was" \
 	  "not changed"
@@ -2895,7 +2895,7 @@ ensure_ssh_rule() {
 # host mutation. Its caller must be the staged account inside a real SSH
 # session; finalize_ssh_cutover verifies both conditions again.
 if [ "${1:-}" = "--finalize-ssh-cutover" ]; then
-  finalize_ssh_cutover "${2:-}"
+  finalize_ssh_cutover "${2:-}" "${3:-}"
   exit 0
 fi
 
@@ -3269,7 +3269,6 @@ verify_ssh_hardening() {
   local src="${1:-}" conf_dir="${2:-/etc/ssh}" reload_state="${3:-0}"
   local deploy_user="${4:-${APP_SSH_USER:-collavre}}"
   local require_readable="${5:-0}"
-  local require_auth_info="${6:-0}"
   local effective key value expected offender unsafe_match
   if [ -n "$src" ]; then
     effective="$(cat "$src")"
@@ -3313,10 +3312,9 @@ verify_ssh_hardening() {
     fi
   fi
   for key in passwordauthentication permitrootlogin kbdinteractiveauthentication \
-	     pubkeyauthentication exposeauthinfo; do
-    [ "$key" != exposeauthinfo ] || [ "$require_auth_info" -eq 1 ] || continue
+	     pubkeyauthentication; do
     expected=no
-    case "$key" in pubkeyauthentication|exposeauthinfo) expected=yes ;; esac
+    [ "$key" != pubkeyauthentication ] || expected=yes
     value="$(printf '%s\n' "$effective" |
              awk -v k="$key" 'tolower($1) == k { print $2; exit }')"
     [ -n "$value" ] || {
@@ -3327,12 +3325,6 @@ verify_ssh_hardening() {
 	      "previous deploy user's privileged access will not be revoked until" \
 	      "the replacement account is proven reachable by key. Correct the SSH" \
 	      "configuration and re-run."
-	  ;;
-	exposeauthinfo)
-	  die "SSH authentication-key proof could not be enabled for" \
-	      "'$deploy_user': sshd did not report 'exposeauthinfo'. The previous" \
-	      "deploy user's access remains intact. Correct the SSH configuration" \
-	      "and re-run."
 	  ;;
       esac
       log "WARNING: sshd did not report '$key', so that part of the hardening" \
@@ -3413,8 +3405,7 @@ install_managed_config 'the SSH hardening drop-in' \
   'PasswordAuthentication no' \
   'PermitRootLogin no' \
   'KbdInteractiveAuthentication no' \
-  'PubkeyAuthentication yes' \
-  'ExposeAuthInfo yes'
+  'PubkeyAuthentication yes'
 # A host provisioned by an earlier version of this script carries the 99- file.
 # It is inert now that 01- sets the same keywords first, and that is the reason
 # to remove it rather than leave it: a file whose every line is overridden is
@@ -4275,12 +4266,10 @@ fi
 DOCKER_GROUP_WAS_PRESENT=0
 in_group "$APP_SSH_USER" docker && DOCKER_GROUP_WAS_PRESENT=1
 usermod -aG docker "$APP_SSH_USER"
-SSH_AUTH_INFO_REQUIRED=1
 # Recheck for the same reason as the sudo grant above. An operator's
 # `Match Group docker` block does not apply until this membership exists.
 if ! (
-  verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 \
-    "$SSH_AUTH_INFO_REQUIRED" &&
+  verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 &&
   verify_ssh_key_destination "" "$APP_SSH_USER" "$APP_HOME" "$AUTH_KEYS" &&
   verify_ssh_admission_controls "" "$APP_SSH_USER"
 ); then
@@ -4943,11 +4932,17 @@ TXT
     cat <<TXT
 
 SSH cutover is pending. The previous deploy account and managed keys remain
-privileged until the staged account proves a real SSH login. From the
-workstation, using the staged key, run:
+privileged until the workstation proves possession of an installed private key
+and the staged account accepts the same SSH command. From the workstation, set
+the actual key path and run:
 
-  ssh -i ~/.ssh/<staged-key> $APP_SSH_USER@$PUBLIC_IP \\
-    "sudo /usr/local/sbin/collavre-finalize-ssh-cutover --finalize-ssh-cutover '$2'"
+  key=~/.ssh/<staged-key>
+  nonce='$2'
+  signature="\$(printf 'collavre-ssh-cutover:%s:%s' '$APP_SSH_USER' "\$nonce" |
+    ssh-keygen -Y sign -f "\$key" -n collavre-ssh-cutover 2>/dev/null |
+    base64 | tr -d '\\n')"
+  ssh -i "\$key" $APP_SSH_USER@$PUBLIC_IP \\
+    "sudo /usr/local/sbin/collavre-finalize-ssh-cutover --finalize-ssh-cutover '\$nonce' '\$signature'"
 
 Only after it prints "SSH cutover finalized" should KAMAL_SSH_USER change to
 $APP_SSH_USER. The nonce is one-time; a failed or interrupted finalize is safe

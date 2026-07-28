@@ -195,25 +195,32 @@ that an external client can log in: `Match`, `Include`, admission rules, key
 paths, source addresses, and future sshd directives make that an open-ended
 problem.
 
-The root-only summary therefore contains a one-time command like this:
+The root-only summary therefore contains a one-time signed command like this:
 
 ```bash
-ssh -i ~/.ssh/<staged-key> <new-user>@<instance-ip> \
-  "sudo /usr/local/sbin/collavre-finalize-ssh-cutover --finalize-ssh-cutover '<nonce>'"
+key=~/.ssh/<staged-key>
+nonce='<nonce>'
+signature="$(printf 'collavre-ssh-cutover:%s:%s' '<new-user>' "$nonce" |
+  ssh-keygen -Y sign -f "$key" -n collavre-ssh-cutover 2>/dev/null |
+  base64 | tr -d '\n')"
+ssh -i "$key" <new-user>@<instance-ip> \
+  "sudo /usr/local/sbin/collavre-finalize-ssh-cutover \
+    --finalize-ssh-cutover '$nonce' '$signature'"
 ```
 
 Run that exact command from the workstation with the key Kamal will use. The
-finalizer checks that it is running through an `sshd` process tree containing
-an `sshd` session process owned by the staged account, that `SUDO_USER` is that
-account, that its `SSH_USER_AUTH` record is owned by the same account, and that
-the nonce matches. This rejects a nested `sudo -u <staged-user>` launched from
-the predecessor's SSH session. For an explicit key rotation it also requires
-the authentication record's public-key fingerprint to match the staged key;
-logging in with the predecessor key cannot finalize the rotation. Provisioning
-verifies that `ExposeAuthInfo yes` is effective before every cutover, and stores
-the nonce hash, fingerprint, and exact key in one atomic root-only pending
-record so an interrupted re-run cannot mix cutover generations. Only then does
-it take `docker` and `sudo` from every predecessor,
+local `ssh-keygen` signs the nonce and staged username with that private key;
+the signature travels only as an argument to the SSH command, so a failed
+staged-account login never invokes the finalizer. The host verifies the
+signature against the public keys captured atomically when the cutover was
+staged. This is the security boundary: the predecessor is root-equivalent and
+can forge host-local process names, environment variables, and files, but it
+cannot synthesize the workstation's private-key signature. For an explicit key
+rotation, only that exact staged key is accepted; for copied cloud keys, any
+valid key installed for the successor may sign. The nonce hash, accepted
+signing keys, fingerprint, and exact rotation key live in one atomic root-only
+pending record so an interrupted re-run cannot mix cutover generations. Only
+then does the finalizer take `docker` and `sudo` from every predecessor,
 remove their script-managed
 `sudoers.d` grants, withdraw predecessor managed keys, and commit
 `/var/lib/collavre/deploy_user`. Change `KAMAL_SSH_USER` only after the command
