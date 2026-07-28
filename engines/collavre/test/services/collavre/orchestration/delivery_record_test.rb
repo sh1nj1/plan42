@@ -76,6 +76,15 @@ module Collavre
         DeliveryRecord.ids_in(task.reload.trigger_event_payload)
       end
 
+      # What the window actually swept up, read the same way the record reads it.
+      def history_ids(resolved)
+        Array(resolved[:messages] || resolved["messages"]).filter_map do |message|
+          next unless (message[:kind] || message["kind"]).to_s == "chat_history"
+
+          (message[:comment_id] || message["comment_id"])&.to_i
+        end
+      end
+
       test "a comment that landed after the turn was dispatched is recorded as delivered" do
         anchor = comment("first")
         turn = task_for(anchor)
@@ -251,6 +260,55 @@ module Collavre
         assert_includes recorded(turn), late.id,
                         "the record is evidence, and stays true whatever the switch says"
         assert_nil DeliveryRecord.covering_task(@agent, late.id, context_for(late), "comment_created")
+      end
+
+      # A history entry is text and nothing else — MessageBuilder attaches blobs
+      # only on the trigger. So a comment carrying an image that the window swept
+      # up has been *partly* delivered, and the record's predicate is false for
+      # it. Recording it would discard the one dispatch that would have carried
+      # the image; an image-only comment would reach the agent as a blank line.
+      test "a comment whose image the history window left behind is not recorded" do
+        anchor = comment("first")
+        turn = task_for(anchor)
+        illustrated = comment("look at this")
+        illustrated.images.attach(
+          io: File.open(Collavre::Engine.root.join("test/fixtures/files/small.png")),
+          filename: "small.png", content_type: "image/png"
+        )
+
+        resolved = resolved_for(turn, @agent)
+        assert_includes history_ids(resolved), illustrated.id,
+                        "premise: the window did sweep it up, as text"
+
+        DeliveryRecord.record!(turn, resolved)
+
+        assert_not_includes recorded(turn), illustrated.id,
+                            "its image was never handed over, so it was not delivered"
+        assert_nil DeliveryRecord.covering_task(@agent, illustrated.id, context_for(anchor), "comment_created"),
+                   "and its own dispatch is the only thing that would carry the image"
+      end
+
+      # The record is written by whichever pass assembles, and merged onto the
+      # payload the caller loaded — but a drop is written by a *refused*
+      # dispatch, in another process, after that load. A resumed turn that
+      # rewrites the whole JSON from its own stale copy erases the drop, and the
+      # comment it discarded has nothing left to bring it back.
+      test "a drop claimed while the turn was assembling survives the record" do
+        anchor = comment("first")
+        turn = task_for(anchor)
+        late = comment("second")
+        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+
+        assembling = Task.find(turn.id)
+        assert DeliveryRecord.claim_drop!(Task.find(turn.id), late.id), "premise: another process refused a dispatch"
+
+        later_still = comment("third")
+        DeliveryRecord.record!(assembling, resolved_for(assembling, @agent))
+
+        assert_equal [ late.id ], DeliveryRecord.dropped_ids_in(turn.reload.trigger_event_payload),
+                     "the record must not overwrite a drop it never saw"
+        assert_includes recorded(turn), later_still.id,
+                        "and the second pass still records what it swallowed"
       end
 
       # Reading a comment and discarding a dispatch for it are different facts,

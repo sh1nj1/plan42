@@ -103,19 +103,53 @@ module Collavre
       #
       # Accumulates. A resumed turn (pending_approval, or a retry) assembles a
       # second time, and what the first pass delivered it still delivered.
+      #
+      # Written onto the row's payload under the same lock as claim_drop!, not
+      # onto the caller's. A resumed turn's task object is loaded before it
+      # assembles, and a dispatch refused in the meantime writes DROPPED_KEY
+      # into the same JSON column from another process; a merge onto the stale
+      # copy would erase the drop, and a drop no restore can find is the
+      # message lost. Both writers of this column now read it under the lock.
       def self.record!(task, resolved)
-        payload = task.trigger_event_payload
-        return unless payload.is_a?(Hash)
+        return if task.nil?
 
-        anchor_id = payload.dig("comment", "id").to_i
-        return if anchor_id.zero?
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          payload = row&.trigger_event_payload
+          next unless payload.is_a?(Hash)
 
-        swallowed = history_comment_ids(resolved).select { |id| id > anchor_id }
-        merged = (ids_in(payload) + swallowed).uniq.sort
-        return if merged == ids_in(payload)
+          anchor_id = payload.dig("comment", "id").to_i
+          next if anchor_id.zero?
 
-        task.update!(trigger_event_payload: payload.merge(KEY => merged))
+          swallowed = delivered_in_full(history_comment_ids(resolved).select { |id| id > anchor_id })
+          merged = (ids_in(payload) + swallowed).uniq.sort
+          next if merged == ids_in(payload)
+
+          row.update!(trigger_event_payload: payload.merge(KEY => merged))
+          task.reload unless task.equal?(row)
+        end
       end
+
+      # Of `ids`, the comments a history entry carries whole.
+      #
+      # A history entry is text: MessageBuilder#append_chat_history renders
+      # `content` and nothing else, while blobs ride only on the trigger, which
+      # attaches the anchor's images and the merged blocks'. So a comment with
+      # an attachment that the window swept up has been *partly* delivered, and
+      # this record's predicate — the agent has been given this comment — is
+      # false for it. Recording it would let the drop discard the one dispatch
+      # that would have carried the image, and an image-only comment would
+      # reach the agent as a blank line under someone's name.
+      #
+      # Excluded here, at the record, rather than at each gate: the record is
+      # what the dispatch doors and AgentOrchestrator.delivered_comment_ids all
+      # read, so a partial delivery kept out of it is kept out of every one.
+      def self.delivered_in_full(ids)
+        return ids if ids.empty?
+
+        ids - Comment.where(id: ids).joins(:images_attachments).distinct.pluck(:id)
+      end
+      private_class_method :delivered_in_full
 
       def self.ids_in(payload)
         return [] unless payload.is_a?(Hash)
