@@ -70,6 +70,20 @@ module Collavre
       # only place that knows is the service holding the client that failed.
       HANDOFF_FAILED_KEY = "handoff_failed"
 
+      # Everything a turn writes onto its own payload while it runs, as opposed
+      # to what it was dispatched with.
+      #
+      # One list rather than a strip enumerated at the point of use: a restored
+      # dispatch is the one that was discarded, so it carries what a dispatch
+      # carries and nothing the turn wrote onto itself afterwards. Enumerating
+      # that at the call site is how HANDOFF_FAILED_KEY came to be left in — it
+      # was added here long after restored_context had named the other four —
+      # and the drift test on this constant is what will catch the sixth.
+      TURN_SCOPED_KEYS = [
+        KEY, DROPPED_KEY, HANDOFF_FAILED_KEY,
+        TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY
+      ].freeze
+
       # Statuses in which a turn is still the thing that will answer.
       #
       # Narrower than AgentOrchestrator::DELIVERED_STATUSES, which also counts
@@ -305,15 +319,15 @@ module Collavre
 
       # The dispatch that was discarded — not a descendant of the turn that
       # discarded it. reanchor_payload is the single door for moving an anchor,
-      # and the four bookkeeping keys are stripped after it because they
-      # describe the dead turn: its drop list would make a restored turn that
+      # and TURN_SCOPED_KEYS is stripped after it because every one of them
+      # describes the dead turn: its drop list would make a restored turn that
       # fails again restore the same comments a second time, its history record
-      # would licence dropping them, its merged list would re-send comments it
-      # was created for, and its acquired anchor would label this turn's own
-      # trigger as borrowed.
+      # would licence dropping them, its failed handoff would leave a turn that
+      # succeeded unable to cover anything it read, its merged list would
+      # re-send comments it was created for, and its acquired anchor would
+      # label this turn's own trigger as borrowed.
       def self.restored_context(payload, comment)
-        TaskCoalescer.reanchor_payload(payload, comment)
-          .except(KEY, DROPPED_KEY, TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY)
+        TaskCoalescer.reanchor_payload(payload, comment).except(*TURN_SCOPED_KEYS)
       end
       private_class_method :restored_context
 

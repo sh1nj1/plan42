@@ -440,6 +440,32 @@ module Collavre
         assert_equal (terminal - AgentOrchestrator::DELIVERED_STATUSES).sort,
                      DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES.sort
       end
+
+      # The same drift, on the other list. TURN_SCOPED_KEYS is what a restored
+      # dispatch is stripped of, and it is right only while it names every key a
+      # turn writes onto its own payload. Driving all five writers over one
+      # payload is what makes a sixth added later show up here rather than as a
+      # restored dispatch quietly carrying it.
+      test "the stripped keys are exactly the ones a turn writes onto its own payload" do
+        anchor = comment("first")
+        late = comment("second")
+        folded = comment("third")
+        turn = task_for(anchor)
+        dispatched = turn.trigger_event_payload.keys
+
+        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+        DeliveryRecord.claim_drop!(turn.reload, late.id)
+        DeliveryRecord.mark_handoff_failed!(turn.reload)
+        turn.update!(
+          trigger_event_payload: TaskCoalescer.reanchor_payload(
+            TaskCoalescer.absorb_into_payload(turn.reload.trigger_event_payload, [ folded.id ]),
+            late
+          )
+        )
+
+        written = turn.reload.trigger_event_payload.keys - dispatched
+        assert_equal DeliveryRecord::TURN_SCOPED_KEYS.sort, written.sort
+      end
     end
   end
 end

@@ -620,6 +620,78 @@ module Collavre
                      "and it is anchored on the comment it was dispatched for"
       end
 
+      # The enumerated strip above is only as good as its enumeration, and the
+      # failed-handoff flag is the key it was missing. Stated as the rule the
+      # comment on restored_context always claimed: a restored dispatch is the
+      # one that was discarded, so it carries what a dispatch carries and
+      # nothing the turn wrote onto itself afterwards.
+      test "the restored dispatch carries no key the covering turn wrote onto itself" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        DeliveryRecord.mark_handoff_failed!(turn)
+
+        added = turn.reload.trigger_event_payload.keys - context_for(anchor).keys
+        assert_operator added.length, :>=, 3,
+                        "premise: the turn did write bookkeeping onto its own payload"
+
+        slot_holder(anchor)
+        turn.reload.update!(status: "done")
+
+        payload = restored_waiters.sole.trigger_event_payload
+        assert_empty payload.keys - context_for(late).keys,
+                     "a restored dispatch carries what a dispatch carries, and nothing else"
+      end
+
+      # The consequence, at the reader that makes it cost a duplicate reply.
+      # covering_task refuses a turn whose handoff failed, so a restored turn
+      # still carrying the dead turn's flag cannot cover anything it reads: the
+      # next comment swept into its history dispatches beside it.
+      test "a restored turn covers the comments it reads" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        DeliveryRecord.mark_handoff_failed!(turn)
+        turn.reload.update!(status: "done")
+
+        restored = restored_waiters.sole
+        restored.update!(status: "running")
+        third = comment("@#{@agent.name}: third")
+        data = AiAgent::MessageBuilder.new(
+          agent: @agent, context: restored.trigger_event_payload, original_comment: late
+        ).build
+        resolved = AiAgent::SessionContextResolver.new(
+          agent: @agent, messages_data: data, system_prompt: "prompt"
+        ).resolve
+        DeliveryRecord.record!(restored, resolved)
+        assert_includes DeliveryRecord.ids_in(restored.reload.trigger_event_payload), third.id,
+                        "premise: the restored turn's window did sweep the third comment up"
+
+        dispatch(third)
+
+        assert_empty tasks_for(@agent).where(status: "queued"),
+                     "the restored turn has read it; a second turn beside it is the duplicate reply"
+      end
+
+      # Control: the flag is still the dead turn's own, so the fix cannot be
+      # "stop recording it". Without it on the covering turn there is no restore
+      # at all, and this is the row every reader of it is asking about.
+      test "the turn that failed its handoff keeps the flag" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+        DeliveryRecord.mark_handoff_failed!(turn)
+        turn.reload.update!(status: "done")
+
+        assert DeliveryRecord.handoff_failed?(turn.reload.trigger_event_payload),
+               "the turn that handed nothing over is what the record is about"
+      end
+
       # A dispatch the scheduler has refused is not a dispatch. The drop asks
       # "is this redundant?", which only makes sense about work that was going
       # to run: recording one against a :rejected decision manufactures a
