@@ -237,6 +237,100 @@ module Collavre
                      "and the notice it was parked behind goes with it"
       end
 
+      def topic_max!(value)
+        OrchestratorPolicy.create!(
+          policy_type: "scheduling", scope_type: nil,
+          config: { "topic_max_concurrent_jobs" => value }
+        )
+      end
+
+      def peer_agent(tag)
+        agent = Collavre::User.create!(
+          name: "burst-peer-#{tag}",
+          email: "burst-peer-#{tag}-#{SecureRandom.hex(4)}@agent.test",
+          password: "password123",
+          llm_vendor: "openai", llm_model: "gpt-4",
+          system_prompt: "You are peer #{tag}.", searchable: true, routing_expression: "false"
+        )
+        share = CreativeShare.find_or_create_by!(creative: @creative, user: agent)
+        share.update!(permission: "feedback")
+        CreativeSharesCache.find_or_create_by!(
+          creative_id: @creative.id, user_id: agent.id, permission: :feedback
+        )
+        agent
+      end
+
+      # Cancelling a waiter is the one removal this feature makes that writes
+      # nothing down, so it is only sound against a turn whose delivery has
+      # settled. DELIVERED_STATUSES counts `running`, and the refresh only
+      # re-reads a status — what keeps that from deciding on an outcome nobody
+      # knows yet is TopicSlot, not this file: an agent occupying a slot here
+      # may not be promoted into a second turn. Pinned from this side too,
+      # because relaxing that exclusion would cost a comment rather than a
+      # duplicate turn, and silently.
+      test "a waiter is not promoted while its own agent's covering turn is still in flight" do
+        topic_max!(2)
+        anchor = comment("@#{@agent.name}: first")
+        holder = Task.create!(
+          name: "Holder", status: "running", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: context_for(anchor)
+        )
+        late = comment("@#{@agent.name}: second")
+        dispatch(late)
+        waiter = Task.where(agent: @agent, topic_id: @topic.id).where.not(id: holder.id).sole
+        assert_equal "queued", waiter.status,
+                     "premise: the dispatch parked behind the agent's own running turn"
+
+        data = AiAgent::MessageBuilder.new(
+          agent: @agent, context: holder.trigger_event_payload, original_comment: anchor
+        ).build
+        resolved = AiAgent::SessionContextResolver.new(
+          agent: @agent, messages_data: data, system_prompt: "prompt"
+        ).resolve
+        DeliveryRecord.record!(holder, resolved)
+        assert_includes DeliveryRecord.ids_in(holder.reload.trigger_event_payload), late.id,
+                        "premise: the in-flight turn's window did swallow the waiter's comment"
+        assert_equal "running", holder.reload.status,
+                     "premise: and it has not ended, so its delivery is not settled"
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal "queued", waiter.reload.status,
+                     "an agent holding a slot may not be promoted into a second turn, " \
+                     "which is what keeps the refresh from deciding against an unsettled turn"
+      end
+
+      # The other half of the same invariant. Two turns run concurrently in one
+      # topic only when they belong to different agents — TopicSlot again — and
+      # delivered_comment_ids is scoped to this agent, so the record a promotion
+      # reads is never a concurrent turn's.
+      test "another agent's in-flight turn does not silence this agent's waiter" do
+        topic_max!(2)
+        holder_a = peer_agent("a")
+        holder_b = peer_agent("b")
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        theirs = running_turn(anchor, agent: holder_a)
+        assert_includes DeliveryRecord.ids_in(theirs.trigger_event_payload), late.id,
+                        "premise: the other agent's window did carry this comment"
+        second_slot = Task.create!(
+          name: "Second slot", status: "running", trigger_event_name: "comment_created",
+          agent: holder_b, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: context_for(anchor)
+        )
+        dispatch(late)
+        waiter = tasks_for(@agent).where(status: "queued").sole
+
+        second_slot.update!(status: "done")
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        refute_equal "cancelled", waiter.reload.status,
+                     "the record read at promotion is this agent's own, and this agent has none"
+        refute_equal "queued", waiter.reload.status,
+                     "premise: the freed slot really did promote it"
+      end
+
       # Hold the topic slot so a restored dispatch parks as a waiter here
       # instead of being admitted and executed inline by the test adapter. What
       # is under test is that the dispatch exists again, not what it says.

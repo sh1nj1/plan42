@@ -512,6 +512,21 @@ module Collavre
       # that died may never have delivered anything, so the comments it held
       # stay answerable. That direction trades a possible duplicate after a
       # failure for never silencing a comment no task is left to answer.
+      #
+      # The in-flight three would be unsound here if they were reachable: a
+      # `running` turn's record says it assembled, not that it handed anything
+      # over, and this reader *cancels a waiter* — the one removal this feature
+      # makes that writes nothing down, so a later failure has no row to undo it
+      # with. They are inert instead, and TopicSlot is why: an agent that
+      # occupies a slot in this scope may not be promoted into a second turn, so
+      # at the moment the refresh runs this agent has no running, delegated,
+      # pending or pending_approval task here — and `others` is scoped to this
+      # agent, so a concurrent turn (necessarily another agent's, for the same
+      # reason) is not read at all. The only covering turn this ever decides
+      # against is one that has already ended, which is what makes the decision
+      # sound. DeliveredHistoryDispatchTest holds both halves; relax TopicSlot's
+      # per-agent exclusion and they fail rather than this quietly losing a
+      # comment.
       DELIVERED_STATUSES = %w[running delegated pending_approval done].freeze
 
       # Comment ids this agent has already been given in this topic by a turn that
