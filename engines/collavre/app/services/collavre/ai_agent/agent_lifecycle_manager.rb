@@ -30,6 +30,7 @@ module Collavre
           agent_id: @agent.id,
           agent_name: @agent.display_name,
           task_id: @task.id,
+          topic_id: @task.topic_id || @task.trigger_event_payload&.dig("topic", "id"),
           content: content,
           source_creative_id: @creative.id
         )

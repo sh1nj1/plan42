@@ -37,6 +37,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
         task_id: task.id,
+        topic_id: task.topic_id || task.trigger_event_payload&.dig("topic", "id"),
         source_creative_id: task_creative_id
       )
     end
@@ -45,13 +46,14 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
   # source_creative_id: the actual creative where agent is working (for filtering on frontend)
-  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, source_creative_id: nil)
+  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, topic_id:, task_id: nil, content: nil, source_creative_id: nil)
     payload = {
       agent_status: {
         id: agent_id,
         name: agent_name,
         status: status,
         task_id: task_id,
+        topic_id: topic_id,
         creative_id: source_creative_id || creative_id
       }
     }
@@ -84,22 +86,33 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
-  def typing
+  def typing(data)
     return unless @creative_id && current_user
+
+    topic_id = topic_id_for(data)
+    return unless topic_id
 
     ActionCable.server.broadcast(
       stream_name,
-      { typing: { id: current_user.id, name: current_user.display_name } }
+      { typing: { id: current_user.id, name: current_user.display_name, topic_id: topic_id } }
     )
   end
 
-  def stopped_typing
+  def stopped_typing(data)
     return unless @creative_id && current_user
 
-    ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id } })
+    topic_id = topic_id_for(data)
+    return unless topic_id
+
+    ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id, topic_id: topic_id } })
   end
 
   private
+
+  def topic_id_for(data)
+    topic_id = data["topic_id"] || data[:topic_id]
+    Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
+  end
 
   def stream_name
     "comments_presence:#{@creative_id}"

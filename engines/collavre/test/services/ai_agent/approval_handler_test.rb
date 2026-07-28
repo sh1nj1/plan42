@@ -19,7 +19,8 @@ module Collavre
             "creative" => { "id" => @creative.id },
             "comment" => { "user_id" => @user.id }
           },
-          agent: @agent
+          agent: @agent,
+          topic_id: @creative.main_topic.id
         )
 
         @error = ApprovalPendingError.new(
@@ -118,6 +119,24 @@ module Collavre
         @task.reload
         assert_equal "pending_approval", @task.status
         assert_equal "update_creative", @task.pending_tool_call["tool_name"]
+      end
+
+      test "idle status includes the task topic" do
+        broadcasts = []
+        handler = ApprovalHandler.new(
+          task: @task,
+          agent: @agent,
+          context: @context,
+          creative: @creative
+        )
+
+        ActionCable.server.stub :broadcast, ->(_channel, payload) { broadcasts << payload } do
+          handler.handle(@error)
+        end
+
+        status = broadcasts.filter_map { |payload| payload[:agent_status] if payload.is_a?(Hash) }.first
+        assert_equal "idle", status[:status]
+        assert_equal @task.topic_id, status[:topic_id]
       end
     end
   end
