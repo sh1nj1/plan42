@@ -122,6 +122,28 @@ describe('CommentsPresenceController', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  test('bootstraps the selected and main topics when the popup opens', () => {
+    const refreshChannelChips = jest.spyOn(controller, 'refreshChannelChips').mockImplementation(() => {})
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue({
+      currentTopicId: '45',
+      mainTopicId: '10',
+    })
+
+    controller.bootstrapChannelChips()
+
+    expect(controller.selectedTopicId).toBe('45')
+    expect(controller.mainTopicId).toBe('10')
+    expect(refreshChannelChips).toHaveBeenCalledWith('45')
+  })
+
+  test('clears topic timers when the popup closes', () => {
+    const clearTopicTimers = jest.spyOn(controller, 'clearTopicTimers').mockImplementation(() => {})
+
+    controller.onPopupClosed()
+
+    expect(clearTopicTimers).toHaveBeenCalled()
+  })
+
   test('sends typing lifecycle with the selected topic', () => {
     const perform = jest.fn()
     controller.presenceSubscription = { perform }
