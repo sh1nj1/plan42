@@ -331,7 +331,16 @@ module Collavre
         return unless creative
 
         reason_text = waiting_reason_text(:topic_concurrency, topic_id, creative_id)
-        shared = PolicyResolver.new(context || {}).coalesce_pending_tasks_for?(agent)
+        # The waiter recorded this when it was parked. Reading it back rather than
+        # resolving the policy again keeps the notice, the fold and the shared
+        # notice's stop button on one answer even if the policy changes mid-wait.
+        # Falling back for a caller without a waiter: there is no row to ask.
+        shared =
+          if waiter
+            waiter.waiting_notice_scope == Comment::WAITING_NOTICE_TOPIC
+          else
+            PolicyResolver.new(context || {}).coalesce_pending_tasks_for?(agent)
+          end
         post = lambda do
           creative.comments.create!(
             content: I18n.t("collavre.orchestration.waiting_notice", reason: reason_text),
@@ -692,6 +701,7 @@ module Collavre
       def park_waiter(agent)
         topic_id = @context.dig("topic", "id")
         creative_id = @context.dig("creative", "id")
+        coalescing = policy_resolver.coalesce_pending_tasks_for?(agent)
         waiter = nil
 
         Task.transaction do
@@ -703,9 +713,16 @@ module Collavre
             trigger_event_payload: @context,
             agent: agent,
             topic_id: topic_id,
-            creative_id: creative_id
+            creative_id: creative_id,
+            # Which notice speaks for this waiter, written with the row rather
+            # than inferred from the notices afterwards. post_waiting_notice
+            # decides it from the same policy answer, but posts in a later
+            # transaction: between the two, this waiter is queued with no notice
+            # naming it, and a shared notice deleted in that window would read it
+            # as one of its own and cancel work that was only ever deferred.
+            waiting_notice_scope: coalescing ? Comment::WAITING_NOTICE_TOPIC : Comment::WAITING_NOTICE_TASK
           )
-          TaskCoalescer.coalesce!(waiter) if policy_resolver.coalesce_pending_tasks_for?(agent)
+          TaskCoalescer.coalesce!(waiter) if coalescing
         end
 
         waiter
@@ -738,7 +755,13 @@ module Collavre
         # Keep exactly one topic-concurrency notice per creative/topic — and take
         # the check and the insert under one lock, since a burst is precisely
         # when an unserialized check reads stale.
-        shared = deferred && policy_resolver.coalesce_pending_tasks_for?(agent)
+        #
+        # Taken from the waiter, which recorded it under the admission lock when
+        # park_waiter created it. One answer for the fold, the notice and the
+        # shared notice's stop button, rather than the same question asked at
+        # three moments a policy change can fall between. :delayed has no waiter.
+        shared = deferred && (waiter ? waiter.waiting_notice_scope == Comment::WAITING_NOTICE_TOPIC
+                                     : policy_resolver.coalesce_pending_tasks_for?(agent))
         if shared
           self.class.with_deduped_topic_notice(creative_id, topic_id) do
             create_waiting_notice(creative, topic_id, reason_text, deferred: deferred,

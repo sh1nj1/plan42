@@ -489,11 +489,17 @@ module Collavre
         # all once that waiter has been folded away or promoted.
         queued_topic_waiters.select { |task| task.id == waiting_notice_task_id }
       when WAITING_NOTICE_TOPIC
-        # Every queued waiter in the topic except those a surviving per-deferral
-        # notice still speaks for: the shared notice was never their signal, and
-        # their own stop control is still on screen.
+        # Every queued waiter in the topic except those a per-deferral notice
+        # speaks for: the shared notice was never their signal, and their own
+        # stop control is — or is about to be — on screen.
+        #
+        # Asked of the waiter, not of the notices standing beside it. A waiter and
+        # its notice commit in two steps, so an opted-out waiter is queued before
+        # any notice names it; classifying it by what survives in that window
+        # cancels a turn that was only deferred, and leaves no notice behind to
+        # say so. What speaks for a waiter is settled when it is parked.
         claimed = sibling_notice_waiter_ids
-        queued_topic_waiters.reject { |task| claimed.include?(task.id) }
+        queued_topic_waiters.reject { |task| task_claims_own_notice?(task, claimed) }
       else
         # Posted before this was recorded. Nothing on the row says which kind it
         # was, so keep the behaviour those notices were created under rather than
@@ -507,6 +513,22 @@ module Collavre
       scope = Task.where(status: "queued", creative_id: creative_id)
       scope = topic_id ? scope.where(topic_id: topic_id) : scope.where(topic_id: nil)
       scope.order(created_at: :desc).to_a
+    end
+
+    # Does this waiter have a per-deferral notice of its own, rather than being
+    # one the topic's shared notice speaks for?
+    #
+    # The waiter says so itself, recorded when it was parked. Rows parked before
+    # that was recorded say nothing, so they keep the answer they were parked
+    # under — the surviving sibling notices — rather than being guessed at in
+    # either direction: widening this discards work, narrowing it disarms the only
+    # stop control an in-flight wait has.
+    def task_claims_own_notice?(task, claimed)
+      case task.waiting_notice_scope
+      when WAITING_NOTICE_TASK then true
+      when WAITING_NOTICE_TOPIC then false
+      else claimed.include?(task.id)
+      end
     end
 
     # Waiter ids a still-standing per-deferral notice represents. Runs
