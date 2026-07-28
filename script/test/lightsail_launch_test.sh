@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_cutover_has_sshd_ancestor|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -30,6 +30,7 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
 	  launch_record_is_complete record_launch_settings \
           revoke_prior_deploy_user \
           record_deploy_user_grant revoke_deploy_user_access \
+	  stage_ssh_cutover ssh_cutover_has_sshd_ancestor finalize_ssh_cutover \
           ensure_ufw_rule ssh_already_allowed ensure_ssh_rule \
           install_authorized_keys install_deploy_ssh_dir reassign_prior_db_role \
           refuse_superuser_db_rotation role_owns_app_objects revoke_prior_ssh_key \
@@ -287,11 +288,11 @@ chk "dot sanitized"   "90-collavre-deploy_bot" \
   "$(ls "$d" | grep deploy)"
 chk "no dot in name"  0 "$(ls "$d" | grep -c '\.')"
 
-echo "9. a changed APP_SSH_USER revokes the previous grant"
-# Same reason ensure_block replaces in place: converge the host, do not
-# accumulate. A stale NOPASSWD line is a login that outlives its purpose.
-chk "old user's grant gone" 0 "$(ls "$d" | grep -c 'collavre-collavre')"
-chk "only the current one"  1 "$(ls "$d" | wc -l | tr -d ' ')"
+echo "9. staging a changed APP_SSH_USER preserves the proven grant"
+# The predecessor is removed only by the nonce finalizer reached through the
+# staged account's actual SSH session.
+chk "old user's grant remains" 1 "$(ls "$d" | grep -c 'collavre-collavre')"
+chk "both staged grants remain" 2 "$(ls "$d" | wc -l | tr -d ' ')"
 # An operator's own file is not ours to delete.
 touch "$d/10-operator"
 ensure_sudoers collavre "$d"
@@ -472,7 +473,7 @@ echo "18. and the account it could not strip stays queued for the next run"
 # what case 18a shows losing an account outright on the second rotation.
 chk "still queued for revocation" 1 \
   "$(grep -cxF legacy "$d4/deploy_users")"
-chk "the marker names the account in use" "deploybot" "$(cat "$d4/deploy_user")"
+chk "the committed marker stays on the proven account" "legacy" "$(cat "$d4/deploy_user")"
 usermod() { usermod_host "$@"; }             # the host is healthy again
 revoke deploybot "$d4/deploy_user"           # the retry, on a healthy host
 chk "the retry revokes it"     0 "$(printf '%s\n' "$GROUPS_OF" | tr ' ' '\n' | grep -cxF docker)"
@@ -4065,7 +4066,7 @@ echo "114. the guard is called before anything it protects"
 call_line="$(grep -n '^refuse_defaulted_config_change$' "$SRC" | head -1 | cut -d: -f1)"
 chk "it is called at all"            1 "$([ -n "$call_line" ] && echo 1 || echo 0)"
 for after in 'apt_get update' 'ensure_sudoers "\$APP_SSH_USER"' \
-             'usermod -aG docker' 'revoke_prior_deploy_user "\$APP_SSH_USER"' \
+	     'usermod -aG docker' 'stage_ssh_cutover "\$APP_SSH_USER"' \
              'reassign_prior_db_role "\$DB_USER"'; do
   line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
   chk "before ${after%% *}" 1 \
@@ -4193,7 +4194,7 @@ echo "117. the grant is recorded before it is made, not after"
 rec_line="$(grep -n '^record_deploy_user_grant "\$APP_SSH_USER"' "$SRC" | head -1 | cut -d: -f1)"
 chk "it is called at all"                 1 "$([ -n "$rec_line" ] && echo 1 || echo 0)"
 for after in 'usermod -aG sudo "\$APP_SSH_USER"' 'usermod -aG docker "\$APP_SSH_USER"' \
-             'revoke_prior_deploy_user "\$APP_SSH_USER"'; do
+	     'stage_ssh_cutover "\$APP_SSH_USER"'; do
   line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
   chk "before ${after%% \"*}" 1 \
     "$([ -n "$line" ] && [ "$rec_line" -lt "$line" ] && echo 1 || echo 0)"
@@ -4410,7 +4411,6 @@ echo "119b. it is called before anything that could leave the account keyless"
 grd_line="$(grep -n '^refuse_unparsable_ssh_key$' "$SRC" | head -1 | cut -d: -f1)"
 chk "the guard is called at all"           1 "$([ -n "$grd_line" ] && echo 1 || echo 0)"
 for after in 'install_authorized_keys "\$AUTH_KEYS"' \
-             'revoke_prior_ssh_key "\$AUTH_KEYS"' \
              'dedupe_authorized_keys "\$AUTH_KEYS"' \
              'apt_get update' 'usermod -aG docker'; do
   line="$(grep -n "^$after" "$SRC" | head -1 | cut -d: -f1)"
@@ -6762,15 +6762,16 @@ echo "157. the credential summary is installed atomically"
 chk "the live summary is never the rendering target" 0 \
   "$(grep -cE '^render_summary "\$DATABASE_URL" > "\$SUMMARY"$' "$SRC")"
 chk "the rendered summary goes through its staging installer" 1 \
-  "$(grep -c '^install_credential_summary "\$DATABASE_URL"$' "$SRC")"
+  "$(grep -c '^install_credential_summary "\$DATABASE_URL" ' "$SRC")"
 summary_dir="$(mktemp -d)"
 SUMMARY="$summary_dir/summary"
 APP_SSH_USER=deploybot
+ACTIVE_DEPLOY_USER=deploybot
 printf 'previous complete summary\n' > "$SUMMARY"
 chmod 0644 "$SUMMARY"
 summary_inode="$(inode "$SUMMARY")"
 render_summary() {
-  printf '  KAMAL_SSH_USER=%s\n' "$APP_SSH_USER"
+  printf '  KAMAL_SSH_USER=%s\n' "$ACTIVE_DEPLOY_USER"
   case "${SUMMARY_RENDER_MODE:-whole}" in
     fail) return 1 ;;
   esac
@@ -6940,6 +6941,78 @@ chk "and only then consumes it" 0 \
   "$([ -e "$pg_rollback_dir/backup" ] && echo 1 || echo 0)"
 unset -f systemctl
 rm -rf "$pg_rollback_dir"
+
+echo "160. SSH cutover is committed only from the staged account's SSH session"
+chk "normal provisioning never revokes a deploy predecessor directly" 0 \
+  "$(grep -c '^revoke_prior_deploy_user "\$APP_SSH_USER"$' "$SRC")"
+chk "normal provisioning never withdraws a predecessor key directly" 0 \
+  "$(grep -c '^revoke_prior_ssh_key "\$AUTH_KEYS"$' "$SRC")"
+chk "the staged account creates one pending cutover" 1 \
+  "$(grep -c '^stage_ssh_cutover "\$APP_SSH_USER" "\$SSH_PUBLIC_KEY"$' "$SRC")"
+chk "the finalizer requires the sudo origin to be the staged account" 1 \
+  "$(grep -cF '[ "${SUDO_USER:-}" = "$user" ] ||' "$SRC")"
+chk "and requires an sshd process ancestor" 1 \
+  "$(grep -c '^  ssh_cutover_has_sshd_ancestor "\$user" ||$' "$SRC")"
+chk "the runbook changes KAMAL_SSH_USER only after finalization" 1 \
+  "$(grep -c 'Change `KAMAL_SSH_USER` only after' "$DOC")"
+
+cutover_state="$(mktemp -d)"
+cutover_finalizer="$cutover_state/finalizer"
+STATE_DIR="$cutover_state"
+SSH_CUTOVER_PENDING=0
+SSH_CUTOVER_NONCE=''
+stage_ssh_cutover deploybot 'ssh-ed25519 STAGED operator' \
+  "$cutover_finalizer" "$SRC"
+chk "staging creates a root-only pending record" 600 \
+  "$(file_mode "$cutover_state/ssh_cutover.pending")"
+chk "and a root-only exact key record" 600 \
+  "$(file_mode "$cutover_state/ssh_cutover.key")"
+chk "and installs the finalizer" 755 "$(file_mode "$cutover_finalizer")"
+chk "without committing the deploy user" 0 \
+  "$([ -e "$cutover_state/deploy_user" ] && echo 1 || echo 0)"
+cutover_nonce="$SSH_CUTOVER_NONCE"
+
+mkdir -p "$cutover_state/home/.ssh"
+printf '%s\n' 'ssh-ed25519 STAGED operator' \
+  > "$cutover_state/home/.ssh/authorized_keys"
+getent() { printf 'deploybot:x:1001:1001::%s/home:/bin/bash\n' "$cutover_state"; }
+id() {
+  case "$1" in
+    -gn) printf 'deploybot\n' ;;
+    *) return 0 ;;
+  esac
+}
+in_group() { return 0; }
+ssh_cutover_has_sshd_ancestor() {
+  [ "$1" = deploybot ] && [ "${SSH_PROOF:-0}" -eq 1 ]
+}
+revoke_prior_ssh_key() {
+  TRACE="${TRACE}key "
+  write_state_file "$STATE_DIR/ssh_public_key.deploybot" \
+    'ssh-ed25519 STAGED operator'$'\n'
+}
+revoke_prior_deploy_user() {
+  TRACE="${TRACE}account "
+  write_state_file "$STATE_DIR/deploy_user" "deploybot"$'\n'
+}
+TRACE=''
+( SUDO_USER=someone-else SSH_PROOF=1 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "a different sudo origin is refused" 1 "$?"
+chk "and revokes nothing" "" "$TRACE"
+( SUDO_USER=deploybot SSH_PROOF=0 \
+    finalize_ssh_cutover "$cutover_nonce" ) >/dev/null 2>&1
+chk "a local or console shell is refused" 1 "$?"
+chk "and still revokes nothing" "" "$TRACE"
+SUDO_USER=deploybot SSH_PROOF=1 finalize_ssh_cutover "$cutover_nonce" >/dev/null
+chk "an authenticated SSH proof commits key then account" "key account " "$TRACE"
+chk "and consumes the pending state" 0 \
+  "$([ -e "$cutover_state/ssh_cutover.pending" ] && echo 1 || echo 0)"
+chk "and commits the staged account" deploybot \
+  "$(cat "$cutover_state/deploy_user")"
+unset -f getent id in_group ssh_cutover_has_sshd_ancestor \
+  revoke_prior_ssh_key revoke_prior_deploy_user
+rm -rf "$cutover_state"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi

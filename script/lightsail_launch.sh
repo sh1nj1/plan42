@@ -37,8 +37,8 @@ set -euo pipefail
 # cases are indistinguishable — and the difference is the whole question a
 # re-run has to answer. `sudo FORCE=1 bash script/lightsail_launch.sh` on a host
 # provisioned with an override reads as "converge this host", but several of
-# these settings converge by *rotating*: the deploy user's sudo and docker
-# grants move to whatever APP_SSH_USER now says, and table ownership and LOGIN
+# these settings converge by *rotating*: a deploy-user cutover is staged for
+# whatever APP_SSH_USER now says, and table ownership and LOGIN
 # move to whatever DB_USER now says. Defaulted back to `collavre` and
 # `collavre_user`, that is a rotation nobody asked for, performed against the
 # account and role the running deployment authenticates as.
@@ -144,11 +144,6 @@ die() { printf '\n!!! [%s] %s\n' "$(date -Is)" "$*" >&2; exit 1; }
   "nightly backup all named $DB_PORT. Leave DB_PORT unset, and move the cluster by hand" \
   "afterwards if you need a different port."
 
-if [ -f "$MARKER" ] && [ "${FORCE:-0}" != "1" ]; then
-  log "already provisioned ($MARKER). Re-run with FORCE=1 to converge again."
-  exit 0
-fi
-
 # refuse_defaulted_config_change [state dir] [supplied settings]
 #
 # A re-run applies every setting, not just the ones it was given: an override
@@ -156,9 +151,9 @@ fi
 # default. For most of these that is harmless convergence, but three of them
 # are not convergence at all —
 #
-#   APP_SSH_USER   arms a new account and takes docker + sudo + the sudoers.d
-#                  grant back from the one recorded in $STATE_DIR/deploy_user,
-#                  which is the account KAMAL_SSH_USER names and deploys with
+#   APP_SSH_USER   stages a new account and a one-time SSH cutover challenge;
+#                  finalization moves docker + sudo away from the account in
+#                  $STATE_DIR/deploy_user only after a real successor session
 #   DB_USER        REASSIGN OWNED and NOLOGIN move the application's tables and
 #                  its ability to log in to a different role, while the
 #                  deployed DATABASE_URL still names the old one
@@ -837,22 +832,6 @@ refuse_nologin_deploy_user() {
         "'ls -l $shell', or set APP_SSH_USER to an ordinary account."
 }
 
-# Before refuse_defaulted_config_change, and long before anything is installed:
-# a value this script cannot use is not usable whatever the host was given
-# earlier, so it is answered without reading any state at all.
-refuse_unusable_db_identifier DB_NAME "$DB_NAME"
-refuse_unusable_db_identifier DB_USER "$DB_USER"
-refuse_unusable_bind_address DB_BIND_ADDRESS "$DB_BIND_ADDRESS"
-refuse_unusable_subnet DOCKER_SUBNETS "$DOCKER_SUBNETS"
-refuse_unusable_retention BACKUP_RETENTION_DAYS "$BACKUP_RETENTION_DAYS"
-refuse_unusable_backup_calendar BACKUP_AT "$BACKUP_AT" "$BACKUP_CALENDAR"
-refuse_unparsable_ssh_key
-refuse_forced_command_ssh_key
-refuse_root_deploy_user "$APP_SSH_USER"
-refuse_nologin_deploy_user "$APP_SSH_USER"
-
-refuse_defaulted_config_change
-
 # cloud-init and unattended-upgrades hold the dpkg lock during early boot;
 # DPkg::Lock::Timeout makes apt wait for them instead of failing outright.
 APT_OPTS=(-o DPkg::Lock::Timeout=600
@@ -1227,8 +1206,7 @@ ensure_block() {
   mv -f "$tmp" "$file"
 }
 
-# Give $1 passwordless sudo, and make sure it is the only deploy user holding
-# a grant this script wrote. `usermod -aG sudo` on its own does not work here:
+# Give $1 passwordless sudo. `usermod -aG sudo` on its own does not work here:
 # `adduser --disabled-password` leaves `!` in /etc/shadow and Ubuntu's %sudo
 # rule is password-authenticated, so every sudo the runbook sends over ssh
 # fails with "a password is required".
@@ -1238,7 +1216,7 @@ ensure_block() {
 # so an allowlist would withhold nothing it does not already have, while
 # breaking the next maintenance command someone documents.
 ensure_sudoers() {
-  local user="$1" dir="${2:-/etc/sudoers.d}" tmp existing
+  local user="$1" dir="${2:-/etc/sudoers.d}" tmp
   # sudo's includedir skips any filename that contains '.' or ends in '~', and
   # a Linux username may legally contain a dot.
   local name="90-collavre-${user//[^A-Za-z0-9_-]/_}"
@@ -1258,12 +1236,11 @@ ensure_sudoers() {
   install -m 0440 "$tmp" "$dir/$name"
   rm -f "$tmp"
 
-  # Converge rather than accumulate: a FORCE=1 re-run with a changed
-  # APP_SSH_USER must not leave the previous user's grant in force.
-  for existing in "$dir"/90-collavre-*; do
-    [ -e "$existing" ] || continue
-    [ "$existing" = "$dir/$name" ] || rm -f "$existing"
-  done
+  # Do not remove a predecessor here. A new account has not proved that it can
+  # open an SSH session yet, and removing the old NOPASSWD grant before that
+  # proof turns a configuration-analysis mistake into a lockout. The cutover
+  # finalizer removes predecessor grants only from a session authenticated as
+  # the staged account.
 }
 
 # Take the docker group back from the deploy user a FORCE=1 re-run replaced.
@@ -1460,7 +1437,7 @@ record_deploy_user_grant() {
 # the caller decides whether to keep retrying it, rather than this deciding by
 # where it writes a marker.
 revoke_deploy_user_access() {
-  local prior="$1" current="$2" group held
+  local prior="$1" current="$2" group held sudoers_name
 
   for group in docker sudo; do
     in_group "$prior" "$group" || continue
@@ -1503,6 +1480,9 @@ revoke_deploy_user_access() {
     return 1
   fi
 
+  sudoers_name="90-collavre-${prior//[^A-Za-z0-9_-]/_}"
+  rm -f "/etc/sudoers.d/$sudoers_name"
+
   log "WARNING: '$prior' is no longer in docker or sudo but can still log in;" \
       "remove it by hand once you can reach the host as '$current':" \
       "deluser --remove-home $prior"
@@ -1510,7 +1490,7 @@ revoke_deploy_user_access() {
 
 revoke_prior_deploy_user() {
   local current="$1" prior_file="${2:-$STATE_DIR/deploy_user}"
-  local set_file="${3:-${prior_file%/*}/deploy_users}" prior kept=''
+  local set_file="${3:-${prior_file%/*}/deploy_users}" prior kept='' failed=0
 
   # Not a no-op on the ordinary path: this is what seeds the set on a host the
   # earlier revision provisioned, and what puts $current in it on a first run,
@@ -1534,7 +1514,10 @@ revoke_prior_deploy_user() {
     # An account that no longer exists cannot hold either group through, so
     # there is nothing left for a later run to retry.
     id -u "$prior" >/dev/null 2>&1 || continue
-    revoke_deploy_user_access "$prior" "$current" || kept="$kept$prior"$'\n'
+    if ! revoke_deploy_user_access "$prior" "$current"; then
+      kept="$kept$prior"$'\n'
+      failed=1
+    fi
   done < "$set_file"
 
   # Rewritten from what the loop kept rather than appended to, so an account
@@ -1555,11 +1538,152 @@ revoke_prior_deploy_user() {
   # stops. Stale-and-conservative in both cases — where a truncated file is
   # neither.
   write_state_file "$set_file" "$kept" ||
-    log "WARNING: could not rewrite the deploy-user queue at '$set_file'; it still" \
-        "lists accounts this run revoked, which costs the next run a re-check"
+    {
+      log "WARNING: could not rewrite the deploy-user queue at '$set_file'; it still" \
+	  "lists accounts this run revoked, which costs the next run a re-check"
+      failed=1
+    }
+  [ "$failed" -eq 0 ] || {
+    log "WARNING: the SSH cutover is still pending because at least one" \
+	"predecessor retains privileged access"
+    return 1
+  }
   write_state_file "$prior_file" "$current"$'\n' ||
-    log "WARNING: could not record '$current' as the deploy user in '$prior_file';" \
-        "the host will go on reporting its predecessor until a later run rewrites it"
+    {
+      log "WARNING: could not record '$current' as the deploy user in '$prior_file';" \
+	  "the cutover remains pending and can be retried"
+      return 1
+    }
+}
+
+# stage_ssh_cutover <user> <key>
+#
+# Provisioning may grant the successor access, but it must not infer that access
+# works from sshd configuration. Instead it writes a one-time challenge and
+# installs this script as the finalizer. The challenge is accepted only when
+# the finalizer is reached through an sshd descendant running under the staged
+# account. Until then deploy_user, predecessor groups, predecessor sudoers and
+# predecessor managed keys all stay unchanged.
+stage_ssh_cutover() {
+  local user="$1" key="$2" current='' prior_key='' need=0
+  local nonce nonce_hash pending="$STATE_DIR/ssh_cutover.pending"
+  local key_file="$STATE_DIR/ssh_cutover.key"
+  local finalizer="${3:-/usr/local/sbin/collavre-finalize-ssh-cutover}"
+  local source="${4:-${BASH_SOURCE[0]}}"
+
+  [ -s "$STATE_DIR/deploy_user" ] &&
+    current="$(grep -v '^[[:space:]]*$' "$STATE_DIR/deploy_user" | head -1)"
+  [ "$current" = "$user" ] || need=1
+
+  if [ -n "$key" ]; then
+    [ -s "$STATE_DIR/ssh_public_key.$user" ] &&
+      prior_key="$(cat "$STATE_DIR/ssh_public_key.$user")"
+    [ "$prior_key" = "$key" ] || need=1
+  fi
+
+  if [ "$need" -eq 0 ]; then
+    [ ! -f "$pending" ] ||
+      die "an SSH cutover is already pending in $pending. Finalize it from the" \
+	  "staged account before another provisioning run."
+    SSH_CUTOVER_PENDING=0
+    SSH_CUTOVER_NONCE=''
+    return 0
+  fi
+
+  if [ -s "$pending" ]; then
+    local pending_user
+    pending_user="$(sed -n 's/^user=//p' "$pending")"
+    [ "$pending_user" = "$user" ] ||
+      die "an SSH cutover to '$pending_user' is already pending. Finalize that" \
+	  "cutover before staging '$user'; no predecessor access was revoked."
+  fi
+
+  nonce="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
+  [ "${#nonce}" -eq 64 ] || die "could not generate the SSH cutover challenge"
+  nonce_hash="$(printf '%s' "$nonce" | sha256sum | awk '{print $1}')"
+
+  write_state_file "$key_file" "$key"$'\n' 0600 ||
+    die "could not stage the SSH cutover key in $key_file"
+  write_state_file "$pending" \
+    "user=$user"$'\n'"nonce_sha256=$nonce_hash"$'\n' 0600 ||
+    die "could not stage the SSH cutover challenge in $pending"
+
+  [ -r "$source" ] ||
+    die "cannot install the SSH cutover finalizer because $source" \
+	"is not readable. Run this script from a file, not a consumed pipe."
+  install -m 0755 "$source" "$finalizer"
+
+  SSH_CUTOVER_PENDING=1
+  SSH_CUTOVER_NONCE="$nonce"
+  log "SSH cutover to '$user' is staged. The predecessor remains privileged" \
+      "until the nonce is finalized from an actual SSH session as '$user'."
+}
+
+ssh_cutover_has_sshd_ancestor() {
+  local user="$1" pid="${2:-$PPID}" comm ppid real_uid target_uid hops=0
+  local saw_sshd=0 saw_user=0
+  target_uid="$(id -u "$user" 2>/dev/null)" || return 1
+  while [ "$pid" -gt 1 ] 2>/dev/null && [ "$hops" -lt 64 ]; do
+    comm="$(cat "/proc/$pid/comm" 2>/dev/null || true)"
+    case "$comm" in sshd|sshd-session) saw_sshd=1 ;; esac
+    real_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    [ "$real_uid" = "$target_uid" ] && saw_user=1
+    ppid="$(awk '/^PPid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+    case "$ppid" in ''|*[!0-9]*) break ;; esac
+    pid="$ppid"
+    hops=$((hops + 1))
+  done
+  [ "$saw_sshd" -eq 1 ] && [ "$saw_user" -eq 1 ]
+}
+
+finalize_ssh_cutover() {
+  local nonce="${1:-}" pending="$STATE_DIR/ssh_cutover.pending"
+  local key_file="$STATE_DIR/ssh_cutover.key" user expected actual
+
+  [ -s "$pending" ] || die "no SSH cutover is pending"
+  user="$(sed -n 's/^user=//p' "$pending")"
+  expected="$(sed -n 's/^nonce_sha256=//p' "$pending")"
+  [ -n "$user" ] && [ -n "$expected" ] ||
+    die "$pending is incomplete; predecessor access was not changed"
+  [ "${SUDO_USER:-}" = "$user" ] ||
+    die "finalize this cutover by SSHing as '$user' and running sudo there;" \
+	"SUDO_USER is '${SUDO_USER:-unset}'"
+  ssh_cutover_has_sshd_ancestor "$user" ||
+    die "no sshd ancestor was found. The cutover must be finalized inside an" \
+	"actual SSH session as '$user', not from a local shell or console."
+  actual="$(printf '%s' "$nonce" | sha256sum | awk '{print $1}')"
+  [ "$actual" = "$expected" ] ||
+    die "the SSH cutover nonce is incorrect; predecessor access was not changed"
+  in_group "$user" sudo && in_group "$user" docker ||
+    die "'$user' no longer has both sudo and docker; predecessor access was" \
+	"not changed. Re-run provisioning to repair the staged account."
+
+  APP_SSH_USER="$user"
+  APP_HOME="$(getent passwd "$user" | cut -d: -f6)"
+  [ -n "$APP_HOME" ] || die "could not resolve the home directory for '$user'"
+  APP_SSH_GROUP="$(id -gn "$user")"
+  AUTH_KEYS="$APP_HOME/.ssh/authorized_keys"
+  [ -s "$AUTH_KEYS" ] ||
+    die "$AUTH_KEYS is empty; predecessor access was not changed"
+
+  SSH_PUBLIC_KEY="$(cat "$key_file" 2>/dev/null || true)"
+  if [ -n "$SSH_PUBLIC_KEY" ]; then
+    grep -qxF "$SSH_PUBLIC_KEY" "$AUTH_KEYS" ||
+      die "the staged key is no longer in $AUTH_KEYS; predecessor access was" \
+	  "not changed"
+    revoke_prior_ssh_key "$AUTH_KEYS"
+    [ "$(cat "$STATE_DIR/ssh_public_key.$user" 2>/dev/null || true)" = \
+      "$SSH_PUBLIC_KEY" ] ||
+      die "the staged key could not be committed; the cutover remains pending"
+  fi
+
+  revoke_prior_deploy_user "$user" ||
+    die "one or more predecessor accounts could not be disarmed. The cutover" \
+	"remains pending; repair the reported account and run this command again."
+
+  rm -f "$pending" "$key_file"
+  log "SSH cutover finalized from an authenticated session as '$user'." \
+      "KAMAL_SSH_USER may now be changed to '$user'."
 }
 
 # psql_as_postgres <database> <sql>
@@ -2602,6 +2726,36 @@ ensure_ssh_rule() {
     ufw allow 22/tcp
   }
 }
+
+# The finalizer is an installed copy of this script. Dispatch only after every
+# helper has been defined, but before the normal provisioning guards and any
+# host mutation. Its caller must be the staged account inside a real SSH
+# session; finalize_ssh_cutover verifies both conditions again.
+if [ "${1:-}" = "--finalize-ssh-cutover" ]; then
+  finalize_ssh_cutover "${2:-}"
+  exit 0
+fi
+
+# Before refuse_defaulted_config_change, and long before anything is installed:
+# a value this script cannot use is not usable whatever the host was given
+# earlier, so it is answered without reading any state at all.
+refuse_unusable_db_identifier DB_NAME "$DB_NAME"
+refuse_unusable_db_identifier DB_USER "$DB_USER"
+refuse_unusable_bind_address DB_BIND_ADDRESS "$DB_BIND_ADDRESS"
+refuse_unusable_subnet DOCKER_SUBNETS "$DOCKER_SUBNETS"
+refuse_unusable_retention BACKUP_RETENTION_DAYS "$BACKUP_RETENTION_DAYS"
+refuse_unusable_backup_calendar BACKUP_AT "$BACKUP_AT" "$BACKUP_CALENDAR"
+refuse_unparsable_ssh_key
+refuse_forced_command_ssh_key
+refuse_root_deploy_user "$APP_SSH_USER"
+refuse_nologin_deploy_user "$APP_SSH_USER"
+
+if [ -f "$MARKER" ] && [ "${FORCE:-0}" != "1" ]; then
+  log "already provisioned ($MARKER). Re-run with FORCE=1 to converge again."
+  exit 0
+fi
+
+refuse_defaulted_config_change
 
 # --------------------------------------------------------------------------
 log "1/9 base packages"
@@ -3869,7 +4023,10 @@ install_authorized_keys "$AUTH_KEYS" ||
       "$STATE_DIR/deploy_users, so a later run naming a different APP_SSH_USER" \
       "takes it back. Re-run with" \
       "SSH_PUBLIC_KEY=\"\$(cat ~/.ssh/id_ed25519.pub)\"."
-revoke_prior_ssh_key "$AUTH_KEYS"
+# Previous managed keys stay authorized until the staged key has opened a real
+# SSH session and the nonce is finalized. Removing them here would merely move
+# the lockout decision from sshd configuration analysis to another unproved
+# assumption.
 dedupe_authorized_keys "$AUTH_KEYS" "$SSH_PUBLIC_KEY"
 chown "$APP_SSH_USER:$APP_SSH_GROUP" "$AUTH_KEYS"
 chmod 0600 "$AUTH_KEYS"
@@ -3963,9 +4120,13 @@ if ! (
   die "SSH hardening failed after the docker group change. Any membership added" \
     "by this run was rolled back; correct the Match override and re-run."
 fi
-# Only once the replacement can reach Docker, so an interrupted run never
-# leaves the host with no account that can deploy.
-revoke_prior_deploy_user "$APP_SSH_USER"
+# Configuration checks are useful diagnostics, but they are not proof that an
+# external client can log in. Stage a cutover challenge instead of revoking the
+# predecessor here. The installed finalizer accepts it only from an actual SSH
+# session as this account, then removes old groups, sudoers and managed keys.
+SSH_CUTOVER_PENDING=0
+SSH_CUTOVER_NONCE=''
+stage_ssh_cutover "$APP_SSH_USER" "$SSH_PUBLIC_KEY"
 
 # --------------------------------------------------------------------------
 log "5/9 PostgreSQL $PG_MAJOR"
@@ -4573,18 +4734,24 @@ PASSWORD_NOTE=''
 if [ "$URL_PASSWORD" != "$DB_PASSWORD" ]; then
   PASSWORD_NOTE=', percent-encoded in the URL below'
 fi
+ACTIVE_DEPLOY_USER="$(cat "$STATE_DIR/deploy_user" 2>/dev/null || true)"
+if [ -z "$ACTIVE_DEPLOY_USER" ]; then
+  ACTIVE_DEPLOY_USER='<finalize SSH cutover first>'
+fi
 
 # Rendered twice: once with the real DATABASE_URL into the 0600 summary file,
-# once redacted for stdout — which is tee'd to the launch log and captured by
-# cloud-init. Templating instead of sed'ing the secret out keeps a password
-# containing regex or delimiter characters from slipping through unreplaced.
-render_summary() { # $1 = DATABASE_URL to display
+# once with both credentials redacted for stdout — which is tee'd to the launch
+# log and captured by cloud-init. Templating instead of sed'ing secrets out
+# keeps a password containing regex or delimiter characters from slipping
+# through unreplaced.
+render_summary() { # $1 = DATABASE_URL, $2 = SSH cutover nonce to display
   cat <<TXT
 Collavre Lightsail host — provisioned $(date -Is)
 
   public IP        $PUBLIC_IP
   private IP       $PRIVATE_IP
-  deploy user      $APP_SSH_USER (docker, passwordless sudo)
+  deploy user      $ACTIVE_DEPLOY_USER
+  staged SSH user  $APP_SSH_USER (docker, passwordless sudo)
   PostgreSQL       $PG_MAJOR, listening on localhost + $DB_BIND_ADDRESS only
   database         $DB_NAME owned by $DB_USER
   db password      $STATE_DIR/db_password (root only)$PASSWORD_NOTE
@@ -4592,6 +4759,25 @@ Collavre Lightsail host — provisioned $(date -Is)
                    repeat these on the command line or it is refused
   backups          /var/backups/collavre, nightly at $BACKUP_AT, ${BACKUP_RETENTION_DAYS}d retention
   log              $LOG_FILE
+TXT
+
+  if [ "${SSH_CUTOVER_PENDING:-0}" -eq 1 ]; then
+    cat <<TXT
+
+SSH cutover is pending. The previous deploy account and managed keys remain
+privileged until the staged account proves a real SSH login. From the
+workstation, using the staged key, run:
+
+  ssh -i ~/.ssh/<staged-key> $APP_SSH_USER@$PUBLIC_IP \\
+    "sudo /usr/local/sbin/collavre-finalize-ssh-cutover --finalize-ssh-cutover '$2'"
+
+Only after it prints "SSH cutover finalized" should KAMAL_SSH_USER change to
+$APP_SSH_USER. The nonce is one-time; a failed or interrupted finalize is safe
+to retry with the same command.
+TXT
+  fi
+
+  cat <<TXT
 
 Put these in .env.production at the root of your Collavre checkout, then run
 \`./kamal.sh setup\` from that same directory — the wrapper is what loads
@@ -4599,7 +4785,7 @@ Put these in .env.production at the root of your Collavre checkout, then run
 host and the wrong SSH user:
 
   COLLAVRE_SERVER=$PUBLIC_IP
-  KAMAL_SSH_USER=$APP_SSH_USER
+  KAMAL_SSH_USER=$ACTIVE_DEPLOY_USER
   KAMAL_SSH_KEY_PATH=~/.ssh/<the key matching the instance>
   DATABASE_URL=$1
   PORT=80
@@ -4613,8 +4799,8 @@ TXT
 # only after the complete output can be read back. A FORCE re-run may already
 # have rotated the database credential, so truncating the live summary would
 # destroy the only ready-to-copy, percent-encoded DATABASE_URL for that state.
-install_credential_summary() { # $1 = DATABASE_URL to display
-  local database_url="$1" target_real tmp rc=0
+install_credential_summary() { # $1 = DATABASE_URL, $2 = SSH cutover nonce
+  local database_url="$1" cutover_nonce="${2:-}" target_real tmp rc=0
   target_real="$(resolve_symlink_chain "$SUMMARY")" || exit 1
   tmp="$(stage_beside "$target_real" 0600)" || rc=$?
   [ "$rc" -eq 0 ] || {
@@ -4626,12 +4812,12 @@ install_credential_summary() { # $1 = DATABASE_URL to display
     die "could not make the staged credential summary root-only." \
 	"$target_real is left exactly as it was."
   fi
-  if ! render_summary "$database_url" > "$tmp"; then
+  if ! render_summary "$database_url" "$cutover_nonce" > "$tmp"; then
     rm -f "$tmp"
     die "could not render the staged credential summary — is the instance out" \
 	"of disk? $target_real is left exactly as it was."
   fi
-  if ! grep -qxF "  KAMAL_SSH_USER=$APP_SSH_USER" "$tmp" ||
+  if ! grep -qxF "  KAMAL_SSH_USER=$ACTIVE_DEPLOY_USER" "$tmp" ||
      ! grep -qxF "  DATABASE_URL=$database_url" "$tmp" ||
      ! grep -qxF 'Never open 5432 there.' "$tmp"; then
     rm -f "$tmp"
@@ -4659,8 +4845,8 @@ install_credential_summary() { # $1 = DATABASE_URL to display
 # this run still created the success marker.
 record_launch_settings
 
-install_credential_summary "$DATABASE_URL"
+install_credential_summary "$DATABASE_URL" "${SSH_CUTOVER_NONCE:-}"
 
 touch "$MARKER"
-render_summary "$REDACTED_URL"
+render_summary "$REDACTED_URL" '<see root-only summary>'
 log "done — full log at $LOG_FILE (root only; the DATABASE_URL above is redacted, the real one is in $SUMMARY)"

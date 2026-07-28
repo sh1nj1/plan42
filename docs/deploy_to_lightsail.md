@@ -48,8 +48,8 @@ Common overrides:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys`. [Changing it on a re-run](#rotating-ssh_public_key-on-a-re-run) withdraws the key it replaces |
-| `APP_SSH_USER` | `collavre` | Must match `KAMAL_SSH_USER`. Gets passwordless sudo — the maintenance commands below are sent non-interactively and cannot answer a prompt. [Changing it on a re-run](#changing-app_ssh_user-on-a-re-run) disarms the account it replaces |
+| `SSH_PUBLIC_KEY` | *(empty)* | Empty = copy `ubuntu`'s `authorized_keys`. [Changing it on a re-run](#rotating-ssh_public_key-on-a-re-run) stages the new key; the old key is withdrawn only after an SSH-session proof |
+| `APP_SSH_USER` | `collavre` | Becomes `KAMAL_SSH_USER` only after the SSH cutover is finalized. Gets passwordless sudo because the maintenance commands below are non-interactive. [Changing it on a re-run](#changing-app_ssh_user-on-a-re-run) is a two-phase cutover |
 | `PG_MAJOR` | `17` | Match the source database when restoring a dump. [Changing it on a re-run](#changing-pg_major-on-a-re-run) is refused, not converged |
 | `DB_PASSWORD` | *(generated)* | Generated password is alphanumeric; a custom one is [percent-encoded into `DATABASE_URL`](#a-custom-db_password-is-percent-encoded-in-database_url) |
 | `DB_USER` | `collavre_user` | [Changing it on a re-run](#changing-db_user-on-a-re-run) moves table ownership to the new role and takes `LOGIN` from the old one |
@@ -81,8 +81,8 @@ previous logging configuration remains in effect.
 **A re-run applies every setting in the table, not only the ones you name.** An
 override you used the first time and did not repeat is applied as its default,
 and three of those defaults do not converge the host — they rotate it.
-`APP_SSH_USER` back to `collavre` arms a new account and takes `docker`, `sudo`
-and the `sudoers.d` grant from the one your `KAMAL_SSH_USER` names; `DB_USER`
+`APP_SSH_USER` back to `collavre` stages a new account and an SSH cutover;
+`DB_USER`
 back to `collavre_user` moves table ownership and takes `LOGIN` from the role
 in the deployed `DATABASE_URL`. An omitted `SSH_PUBLIC_KEY` means "reuse the
 cloud user's key", so the run copies `ubuntu`'s `authorized_keys` into the
@@ -187,9 +187,38 @@ into it.
 
 ### Changing `APP_SSH_USER` on a re-run
 
-A `FORCE=1` re-run with a different `APP_SSH_USER` creates the new account and
-then takes the `docker` and `sudo` groups back from the one it replaces, along
-with its `sudoers.d` grant. Docker membership is the part that matters:
+A `FORCE=1` re-run with a different `APP_SSH_USER` is deliberately a two-phase
+cutover. The provisioning phase creates and hardens the new account, installs
+its key, and grants `docker` plus passwordless `sudo`, but leaves the old
+account and its managed keys unchanged. Configuration analysis cannot prove
+that an external client can log in: `Match`, `Include`, admission rules, key
+paths, source addresses, and future sshd directives make that an open-ended
+problem.
+
+The root-only summary therefore contains a one-time command like this:
+
+```bash
+ssh -i ~/.ssh/<staged-key> <new-user>@<instance-ip> \
+  "sudo /usr/local/sbin/collavre-finalize-ssh-cutover --finalize-ssh-cutover '<nonce>'"
+```
+
+Run that exact command from the workstation with the key Kamal will use. The
+finalizer checks that it is running through an `sshd` process tree containing
+the staged account's real UID, that `SUDO_USER` is that account, and that the
+nonce matches. Only then does it take `docker` and `sudo` from every predecessor,
+remove their script-managed
+`sudoers.d` grants, withdraw predecessor managed keys, and commit
+`/var/lib/collavre/deploy_user`. Change `KAMAL_SSH_USER` only after the command
+prints `SSH cutover finalized`.
+
+If provisioning or finalization is interrupted,
+`/var/lib/collavre/ssh_cutover.pending` remains. The old account stays
+privileged, and the same finalize command is safe to retry. A different target
+cannot be staged over a pending cutover; finish the recorded transition first.
+This is intentional availability bias: a reported stale credential is safer
+than automatically removing the last proven way into the host.
+
+Docker membership is the part that makes finalization security-sensitive:
 `docker run -v /:/host` is a root shell, so an account left in that group has
 not been rotated away from in any meaningful sense — it has only lost the
 slower route.
@@ -206,7 +235,8 @@ account it failed on: pinning it is how a second rotation walks past the account
 in between and loses it. `/var/lib/collavre/deploy_user` still names the current
 deploy user, which is what the recipes on this page read.
 
-What the script will not do is delete the account or its `authorized_keys`. If
+What the finalizer will not do is delete the account or unmanaged keys in its
+`authorized_keys`. If
 the name it replaced were ever the instance's own cloud user, deleting it would
 remove the last way in. So the run leaves an ordinary, group-less account behind
 and says so in the launch log. Finish the rotation by hand once you have
@@ -276,22 +306,25 @@ passwordless sudo, so the key you believed you retired is still root on the
 box. Rotating away from a leaked key would have withdrawn nothing while
 reporting success.
 
-So the run withdraws the key it installed last time, recorded in
-`/var/lib/collavre/ssh_public_key.<user>`. Only that exact line goes: keys you
-added by hand, and the cloud user's original key, are matched whole-line and
-left alone.
+The run therefore adds the new key but does not withdraw its predecessor.
+Instead it creates the same pending SSH cutover described above. Connect with
+the new private key and run the nonce-bearing finalize command from the
+root-only summary. That real session is the safety boundary: only after it
+succeeds does the finalizer withdraw the key recorded in
+`/var/lib/collavre/ssh_public_key.<user>`. Only exact script-managed lines go;
+keys added by hand and the cloud user's original key are left alone.
 
 The record is **per account**, because `authorized_keys` is. Changing
 `APP_SSH_USER` and changing back is the case that needs it: rotating
 `collavre`/key-A to `deploybot`/key-B leaves key-A in `collavre`'s file, which is
-correct — that is not the file being rewritten, and the same re-run takes
+correct — that is not the file being rewritten, and the finalized cutover takes
 `docker` and sudo away from `collavre`. But coming back later to
 `collavre`/key-C regrants those privileges, and with one shared record the
 withdrawal would be looking for key-B, which was never in that file. Key-A would
 be root again, two rotations after you retired it. A host provisioned by an
 earlier revision has its single `ssh_public_key` file adopted by the account the
-next run names. The withdrawal happens *after* the new key is in place, so an
-interrupted run leaves two working keys rather than none.
+next run names. The withdrawal happens only after the new key has completed an
+SSH session, so an interrupted run leaves two working keys rather than none.
 
 Two cases deliberately do nothing. A re-run with `SSH_PUBLIC_KEY` unset means
 "keep using the cloud user's keys", not "retire mine" — dropping the variable
