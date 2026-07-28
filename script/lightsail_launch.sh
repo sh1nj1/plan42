@@ -957,6 +957,33 @@ stage_beside() {
   printf '%s\n' "$tmp"
 }
 
+# restore_postgresql_bind_config <live file> <backup> <had prior: 0|1>
+#
+# Put back the managed listen-address file after a replacement cannot be
+# reached. The backup is a sibling made by stage_beside; each rollback stages
+# from it and renames that copy over the live path, atomically restoring the
+# prior owner and mode while retaining the backup until restart succeeds. On a
+# first run there was no file to restore; removing the new one returns
+# PostgreSQL to the stock localhost-only setting. Restarting is part of the
+# rollback: merely restoring the bytes would leave the postmaster running
+# whichever config the failed restart loaded.
+restore_postgresql_bind_config() {
+  local live_file="$1" backup="$2" had_prior="$3" restore_tmp
+  if [ "$had_prior" -eq 1 ]; then
+    [ -f "$backup" ] || return 1
+    restore_tmp="$(stage_beside "$live_file")" || return 1
+    if ! cp -p "$backup" "$restore_tmp" 2>/dev/null ||
+       ! mv -f "$restore_tmp" "$live_file"; then
+      rm -f "$restore_tmp"
+      return 1
+    fi
+  else
+    rm -f "$live_file" || return 1
+  fi
+  systemctl restart postgresql || return 2
+  [ -z "$backup" ] || rm -f "$backup"
+}
+
 # install_managed_config <label> <target> <line>...
 #
 # Write a whole config file this script owns: every line is put in a staging
@@ -3771,10 +3798,22 @@ MAINTENANCE_MB=$(( TOTAL_MB / 16 ))
 # nothing on the host pointing at a truncated config. The run does not even
 # reach the restart that would surface it, so the damage waits for a reboot.
 PG_CONF_FILE="$PG_CONF_DIR/conf.d/10-collavre.conf"
-PG_CONF_TMP="$(stage_beside "$PG_CONF_FILE")" ||
+PG_CONF_REAL="$(resolve_symlink_chain "$PG_CONF_FILE")" || exit 1
+PG_CONF_TMP="$(stage_beside "$PG_CONF_REAL")" ||
   die "could not stage $PG_CONF_FILE beside itself. PostgreSQL's configuration" \
       "is unchanged. Check that $PG_CONF_DIR/conf.d is writable and has space," \
       "then re-run."
+PG_CONF_HAD_PRIOR=0
+PG_CONF_BACKUP=''
+if [ -e "$PG_CONF_REAL" ]; then
+  PG_CONF_HAD_PRIOR=1
+  PG_CONF_BACKUP="$(stage_beside "$PG_CONF_REAL")" || {
+    rm -f "$PG_CONF_TMP"
+    die "could not preserve the existing $PG_CONF_FILE before replacing it." \
+	"PostgreSQL's configuration is unchanged. Check that" \
+	"$PG_CONF_DIR/conf.d is writable and has space, then re-run."
+  }
+fi
 # `if ! cat` rather than leaning on the `set -euo pipefail` at the top of this
 # file: errexit does cover a bare top-level command, so this is not a live hole
 # — but a `|| something` appended to this line later would suppress it silently,
@@ -3803,11 +3842,32 @@ timezone = '$TIMEZONE'
 CONF
 then
   rm -f "$PG_CONF_TMP"
+  [ -z "$PG_CONF_BACKUP" ] || rm -f "$PG_CONF_BACKUP"
   die "could not write PostgreSQL's generated configuration — is" \
       "$PG_CONF_DIR/conf.d full? $PG_CONF_FILE is left as it was and the" \
       "cluster is untouched."
 fi
-PG_CONF_REAL="$(resolve_symlink_chain "$PG_CONF_FILE")" || exit 1
+
+# Keep the previous config armed for every exit between replacement and the
+# reachability proof. This includes an interrupted run and a failed restart,
+# not only the explicit pg_isready branch below.
+PG_CONF_ROLLBACK_ARMED=1
+trap 'rc=$?
+  if [ "${PG_CONF_ROLLBACK_ARMED:-0}" -eq 1 ]; then
+    if restore_postgresql_bind_config "$PG_CONF_REAL" "$PG_CONF_BACKUP" "$PG_CONF_HAD_PRIOR"; then
+      log "restored the previous PostgreSQL bind configuration after the run stopped"
+    else
+      rollback_rc=$?
+      if [ "$rollback_rc" -eq 2 ]; then
+	log "CRITICAL: the previous PostgreSQL bind configuration was restored after the run stopped, but PostgreSQL did not restart on it. Run systemctl restart postgresql immediately."
+      else
+	log "CRITICAL: the run stopped after replacing $PG_CONF_FILE, and restoring the previous configuration failed. Restore $PG_CONF_BACKUP over $PG_CONF_REAL and restart PostgreSQL immediately."
+      fi
+    fi
+  fi
+  exit "$rc"' EXIT
+trap 'exit 1' HUP INT TERM
+
 mv -f "$PG_CONF_TMP" "$PG_CONF_REAL"
 
 # Containers authenticate with a password over the docker bridge.
@@ -3835,16 +3895,34 @@ systemctl restart postgresql
 # first thing to discover it is wrong would be the first deploy. pg_isready
 # needs no credentials and a pg_hba refusal still counts as a response, so this
 # asks about reachability and nothing else.
-pg_isready -h "$DB_BIND_ADDRESS" -p "$DB_PORT" -t 10 >/dev/null 2>&1 ||
-  die "PostgreSQL restarted, but it is not listening on DB_BIND_ADDRESS=" \
-      "$DB_BIND_ADDRESS:$DB_PORT. The cluster is up — it fell back to" \
-      "localhost, which it does with only a WARNING when an address cannot be" \
-      "bound, so nothing else on this host would have said so. Left to run," \
-      "the summary would print a DATABASE_URL over that address and no" \
-      "container could open it. Check the bridge with 'ip -4 addr show" \
-      "docker0' and set DB_BIND_ADDRESS to its address (the default," \
-      "172.17.0.1, is the usual one), then re-run with FORCE=1. The" \
-      "configuration this run installed is in $PG_CONF_DIR/conf.d/10-collavre.conf."
+if ! pg_isready -h "$DB_BIND_ADDRESS" -p "$DB_PORT" -t 10 >/dev/null 2>&1; then
+  PG_CONF_ROLLBACK_RC=0
+  restore_postgresql_bind_config \
+    "$PG_CONF_REAL" "$PG_CONF_BACKUP" "$PG_CONF_HAD_PRIOR" ||
+    PG_CONF_ROLLBACK_RC=$?
+  PG_CONF_ROLLBACK_ARMED=0
+  trap - EXIT HUP INT TERM
+  if [ "$PG_CONF_ROLLBACK_RC" -eq 0 ]; then
+    die "PostgreSQL restarted, but it did not listen on DB_BIND_ADDRESS=" \
+	"$DB_BIND_ADDRESS:$DB_PORT, so the previous bind configuration was" \
+	"restored and PostgreSQL was restarted on it. Check the bridge with" \
+	"'ip -4 addr show docker0' and set DB_BIND_ADDRESS to its address (the" \
+	"default, 172.17.0.1, is the usual one), then re-run with FORCE=1."
+  fi
+  if [ "$PG_CONF_ROLLBACK_RC" -eq 2 ]; then
+    die "PostgreSQL did not listen on DB_BIND_ADDRESS=$DB_BIND_ADDRESS:$DB_PORT." \
+	"The previous bind configuration was restored, but PostgreSQL did not" \
+	"restart on it. Run 'systemctl restart postgresql' immediately, then" \
+	"correct DB_BIND_ADDRESS and re-run with FORCE=1."
+  fi
+  die "PostgreSQL did not listen on DB_BIND_ADDRESS=$DB_BIND_ADDRESS:$DB_PORT," \
+      "and the previous bind configuration could not be restored automatically." \
+      "Restore '$PG_CONF_BACKUP' over '$PG_CONF_REAL' and run" \
+      "'systemctl restart postgresql' immediately."
+fi
+PG_CONF_ROLLBACK_ARMED=0
+trap - EXIT HUP INT TERM
+[ -z "$PG_CONF_BACKUP" ] || rm -f "$PG_CONF_BACKUP"
 
 # --------------------------------------------------------------------------
 log "6/9 database '$DB_NAME' and role '$DB_USER'"
@@ -3883,8 +3961,25 @@ refuse_db_name_change "$DB_NAME"
 # here must not have written anything to $STATE_DIR either.
 refuse_superuser_db_rotation "$DB_USER"
 
+DB_PASSWORD_PENDING_FILE="$STATE_DIR/db_password.pending.$DB_USER"
+[ ! -d "$STATE_DIR/db_password" ] ||
+  die "$STATE_DIR/db_password is a directory, so the applied password record" \
+      "cannot be replaced atomically. PostgreSQL is unchanged. Move that" \
+      "directory aside and re-run."
 if [ -z "$DB_PASSWORD" ]; then
-  if [ -f "$STATE_DIR/db_password" ]; then
+  if [ -f "$DB_PASSWORD_PENDING_FILE" ]; then
+    # A previous run may have committed ALTER ROLE and stopped before promoting
+    # the credential record. Reusing the role-specific pending value makes both
+    # sides converge whichever side of that commit the interruption reached.
+    chmod 0600 "$DB_PASSWORD_PENDING_FILE"
+    DB_PASSWORD="$(cat "$DB_PASSWORD_PENDING_FILE")"
+    if [ -z "$DB_PASSWORD" ]; then
+      die "$DB_PASSWORD_PENDING_FILE exists but is empty, so this host cannot" \
+	  "recover the interrupted password update for DB_USER='$DB_USER'." \
+	  "Supply DB_PASSWORD explicitly to replace the pending attempt."
+    fi
+    log "resuming the pending database password update for '$DB_USER'"
+  elif [ -f "$STATE_DIR/db_password" ]; then
     # Re-run: keep the password already handed out in DATABASE_URL.
     DB_PASSWORD="$(cat "$STATE_DIR/db_password")"
     # An empty marker is not "no password", it is a password this host can no
@@ -3911,24 +4006,21 @@ if [ -z "$DB_PASSWORD" ]; then
     log "generated a random database password"
   fi
 fi
-# 0600 from the moment the file exists, and replaced in one step. The mode is
-# not the chmod's doing: mktemp creates 0600, and the chmod inside
-# write_state_file runs before the content is written — where a bare redirection
-# creates the file 0644 under the default umask and only narrows it a command
-# later, leaving the production password world-readable in a 0755 directory for
-# that window, or permanently if the run died in between.
-#
-# The rename is the other half. `> file` truncates when the redirection opens,
-# so a write that fails after that — a full disk, an interrupted run — leaves
-# this marker existing and empty, and the read above cannot tell that from a
-# host with no password recorded. It is the only durable record of the
-# credential the app is deployed with. The chmod stays a step below to converge
-# a file an earlier revision left 0644.
-write_state_file "$STATE_DIR/db_password" "$DB_PASSWORD" 0600 ||
-  die "could not record the database password in $STATE_DIR/db_password." \
-      "Nothing has been changed — the role still has the password the previous" \
-      "run gave it, and that file still holds it. Free some disk and re-run."
-chmod 0600 "$STATE_DIR/db_password"
+if [ -f "$STATE_DIR/db_password" ]; then
+  chmod 0600 "$STATE_DIR/db_password"
+fi
+
+# Stage the credential under the role it belongs to, but keep the live record
+# untouched until psql has applied it. The role name in the path is safe because
+# refuse_unusable_db_identifier has already limited DB_USER to [A-Za-z0-9_-].
+# Role-specific pending state matters when a run changing both DB_USER and
+# DB_PASSWORD is interrupted: a later run naming another role must not apply
+# this password to that role merely because it found one unqualified pending
+# file.
+write_state_file "$DB_PASSWORD_PENDING_FILE" "$DB_PASSWORD" 0600 ||
+  die "could not stage the database password in $DB_PASSWORD_PENDING_FILE." \
+      "The live password record and PostgreSQL role are unchanged. Check that" \
+      "$STATE_DIR is writable and has space, then re-run."
 
 # Mirrors db/setup_postgres_databases.sql: create-if-missing, never drop.
 # Collavre keeps primary/cache/queue/cable in ONE database — the Solid Queue,
@@ -3940,8 +4032,10 @@ chmod 0600 "$STATE_DIR/db_password"
 # with nothing on the host naming it.
 record_db_role_grant "$DB_USER" ||
   die "could not record '$DB_USER' in $STATE_DIR/db_users, so this run cannot" \
-      "promise that a later one could find the role again. Nothing has been" \
-      "changed. Check that $STATE_DIR is writable and has space, then re-run."
+      "promise that a later one could find the role again. PostgreSQL and the" \
+      "live password record are unchanged; the attempted password remains in" \
+      "$DB_PASSWORD_PENDING_FILE. Check that $STATE_DIR is writable and has" \
+      "space, then re-run with the same DB_USER and no DB_PASSWORD."
 
 SQL_FILE="$(mktemp /tmp/collavre-db.XXXXXX.sql)"
 trap 'rm -f "$SQL_FILE"' EXIT
@@ -3956,8 +4050,9 @@ trap 'rm -f "$SQL_FILE"' EXIT
 # Two reasons to spell it this way regardless. The line escapes a credential
 # into a SQL literal, and it should not be one whose meaning is decided by the
 # interpreter version — on 3.2 psql reads the `\'` as a meta-command and stops
-# with "invalid command", after write_state_file above has already recorded the
-# password, leaving a host that records a credential its role does not have.
+# with "invalid command". The pending record above now makes that failure
+# recoverable without advancing the live credential, but it must still be
+# escaped consistently so a retry does not stop at the same statement forever.
 #
 # And it is what lets the suite assert this at all. Case 141 generates with a
 # quoted password and checks the statement; against the previous form that
@@ -4017,6 +4112,21 @@ write_state_file "$STATE_DIR/db_user" "$DB_USER"$'\n' ||
       "database exist and this run has not handed out a DATABASE_URL yet, so" \
       "re-running with the same DB_USER is safe. Check that $STATE_DIR is" \
       "writable and has space."
+
+# psql may commit ALTER ROLE and then fail on a later statement, so the pending
+# file remains the recovery record on every non-zero exit above. Promotion also
+# waits for ownership reassignment and db_user: the global password record and
+# the global role marker must advance as one logical commit. Otherwise a failed
+# A -> B rotation followed by the documented rollback to A would read B's new
+# password from the global file and apply it to A, breaking A's deployed URL.
+# The rename is within $STATE_DIR and therefore atomic.
+mv -f "$DB_PASSWORD_PENDING_FILE" "$STATE_DIR/db_password" ||
+  die "DB_USER='$DB_USER' is recorded and PostgreSQL accepted its password, but" \
+      "the pending credential could not be promoted to" \
+      "$STATE_DIR/db_password. The new value is still in" \
+      "$DB_PASSWORD_PENDING_FILE; re-run with the same DB_USER and no" \
+      "DB_PASSWORD to recover it before redeploying."
+
 # Recorded only once the database it names actually exists, so an interrupted
 # run cannot leave a marker for a database that was never created.
 write_state_file "$STATE_DIR/db_name" "$DB_NAME"$'\n' ||

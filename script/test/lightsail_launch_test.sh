@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -44,7 +44,8 @@ for fn in die ensure_block ensure_sudoers in_group write_state_file \
           passwd_home ssh_key_holder \
           record_db_role_grant reassign_one_db_role record_ssh_key_grant \
           refuse_root_deploy_user append_state_line refuse_nologin_deploy_user \
-          resolve_symlink_chain stage_beside stage_authorized_keys \
+	  resolve_symlink_chain stage_beside restore_postgresql_bind_config \
+	  stage_authorized_keys \
 	  scan_ssh_config_file find_unsafe_ssh_match verify_ssh_hardening \
 	  refuse_unusable_retention \
 	  refuse_unusable_backup_calendar \
@@ -4497,16 +4498,17 @@ chk "and not by a redirection"         0 \
 # still carries the real one. The app meets `password authentication failed` at
 # its next reconnect, and the value it needs is gone from the host.
 echo "121. an empty db_password marker is refused rather than applied"
-pw_recipe="$(awk '/^if \[ -z "\$DB_PASSWORD" \]; then$/ { f = 1 }
+pw_recipe="$(awk '/^DB_PASSWORD_PENDING_FILE=/ { f = 1 }
                   f { print }
-                  f && /^fi$/ { exit }' "$SRC")"
+		  f && /^if \[ -f "\$STATE_DIR\/db_password" \]; then$/ { chmod_block = 1 }
+		  f && chmod_block && /^fi$/ { exit }' "$SRC")"
 chk "the block was extracted" 1 \
   "$(grep -q 'STATE_DIR/db_password' <<<"$pw_recipe" && echo 1 || echo 0)"
 
 run_pw() {   # run_pw <state dir>
   PW_STATUS=0
   PW_OUT="$(
-    env STATE_DIR="$1" DB_PASSWORD= \
+    env STATE_DIR="$1" DB_USER=collavre_user DB_PASSWORD= \
       bash -c '
         set -uo pipefail
         '"$(declare -f die)"'
@@ -4537,6 +4539,12 @@ rm -f "$pwd_dir/db_password"
 run_pw "$pwd_dir"
 chk "no marker at all: generates" 0 "$PW_STATUS"
 chk "and it is not empty"         0 "$(grep -c '^APPLIED:$' <<<"$PW_OUT")"
+
+printf 'pendingpassword' > "$pwd_dir/db_password.pending.collavre_user"
+run_pw "$pwd_dir"
+chk "an interrupted update resumes its pending value" 0 "$PW_STATUS"
+chk "and applies the value recorded for this role" "APPLIED:pendingpassword" \
+  "$(grep '^APPLIED:' <<<"$PW_OUT")"
 
 echo "121a. the password marker is 0600 from the moment it exists"
 # mktemp creates 0600 and write_state_file chmods before it writes, so the
@@ -5706,7 +5714,7 @@ chk "and the run asks both before anything is written" 2 \
 # when the guards above run. Asserted at source level because it needs a
 # cluster — measured there as rc=0 bound, rc=2 up-but-not-listening.
 chk "and asks the cluster whether it is listening on it" 1 \
-  "$(grep -c '^pg_isready -h "\$DB_BIND_ADDRESS"' "$SRC")"
+  "$(grep -c '^[[:space:]]*if ! pg_isready -h "\$DB_BIND_ADDRESS"' "$SRC")"
 
 echo "144. an interrupted first append leaves the managed block off the live file"
 # The rewrite path was staged and renamed two commits ago; the append that adds
@@ -6635,6 +6643,138 @@ chk "a symlinked summary remains a symlink" yes \
 chk "and its backing file receives the complete render" 1 \
   "$(grep -c '^  DATABASE_URL=postgresql://linked$' "$summary_dir/backing/summary")"
 rm -rf "$summary_dir"
+
+echo "158. the live DB password record advances only after the role does"
+sql_apply_line="$(grep -n '^runuser -u postgres -- psql ' "$SRC" | cut -d: -f1)"
+db_user_commit_line="$(
+  grep -n '^write_state_file "\$STATE_DIR/db_user"' "$SRC" | cut -d: -f1
+)"
+password_promote_line="$(
+  grep -n '^mv -f "\$DB_PASSWORD_PENDING_FILE" "\$STATE_DIR/db_password"' "$SRC" |
+    cut -d: -f1
+)"
+chk "the password has a durable pending record" 1 \
+  "$(grep -c 'DB_PASSWORD_PENDING_FILE=.*db_password.pending' "$SRC")"
+chk "the pending credential is promoted after psql succeeds" 1 \
+  "$([ -n "$password_promote_line" ] &&
+      [ "$password_promote_line" -gt "$sql_apply_line" ] && echo 1 || echo 0)"
+chk "and only after the matching DB_USER is recorded" 1 \
+  "$([ "$password_promote_line" -gt "$db_user_commit_line" ] && echo 1 || echo 0)"
+chk "the live record is not replaced before psql" 0 \
+  "$(awk -v stop="$sql_apply_line" '
+      NR < stop && /write_state_file "\$STATE_DIR\/db_password"/ { count++ }
+      END { print count + 0 }
+    ' "$SRC")"
+password_apply_recipe="$(
+  awk '
+    /^DB_PASSWORD_PENDING_FILE=/ { f = 1 }
+    /^# Recorded only once the database it names/ { exit }
+    f { print }
+  ' "$SRC"
+)"
+run_password_apply() {
+  # <state dir> <db user> <password> <psql fails> <grant fails> <reassign fails>
+  PASSWORD_APPLY_STATUS=0
+  env STATE_DIR="$1" DB_USER="$2" DB_NAME=collavre_production \
+      DB_PASSWORD="$3" PSQL_FAIL="$4" GRANT_FAIL="$5" REASSIGN_FAIL="$6" \
+    bash -c '
+      set -euo pipefail
+      '"$(declare -f die write_state_file)"'
+      log() { :; }
+      record_db_role_grant() { [ "$GRANT_FAIL" -eq 0 ]; }
+      reassign_prior_db_role() { [ "$REASSIGN_FAIL" -eq 0 ]; }
+      chown() { :; }
+      runuser() { [ "$PSQL_FAIL" -eq 0 ]; }
+      '"$password_apply_recipe"'
+    ' >/dev/null 2>&1 || PASSWORD_APPLY_STATUS=$?
+}
+password_state="$(mktemp -d)"
+printf 'oldpassword' > "$password_state/db_password"
+run_password_apply "$password_state" collavre_user newpassword 1 0 0
+chk "a psql failure keeps the deployed password record" "oldpassword" \
+  "$(cat "$password_state/db_password")"
+chk "and preserves the attempted value for recovery" "newpassword" \
+  "$(cat "$password_state/db_password.pending.collavre_user")"
+run_password_apply "$password_state" collavre_user "" 0 0 0
+chk "a retry without DB_PASSWORD resumes and promotes it" "newpassword" \
+  "$(cat "$password_state/db_password")"
+chk "the promoted credential remains root-only" 600 \
+  "$(file_mode "$password_state/db_password")"
+chk "and consumes the completed pending record" 0 \
+  "$([ -e "$password_state/db_password.pending.collavre_user" ] && echo 1 || echo 0)"
+run_password_apply "$password_state" collavre_user nextpassword 0 1 0
+chk "a role-grant recording failure still preserves the live record" \
+  "newpassword" "$(cat "$password_state/db_password")"
+chk "while retaining the next attempt" "nextpassword" \
+  "$(cat "$password_state/db_password.pending.collavre_user")"
+rm -rf "$password_state"
+
+password_rotation_state="$(mktemp -d)"
+printf 'role_a\n' > "$password_rotation_state/db_user"
+printf 'password_a' > "$password_rotation_state/db_password"
+run_password_apply "$password_rotation_state" role_b password_b 0 0 1
+chk "a failed A-to-B reassignment leaves the global role at A" "role_a" \
+  "$(cat "$password_rotation_state/db_user")"
+chk "and its password record at A's deployed value" "password_a" \
+  "$(cat "$password_rotation_state/db_password")"
+chk "while B's applied attempt remains role-specific" "password_b" \
+  "$(cat "$password_rotation_state/db_password.pending.role_b")"
+run_password_apply "$password_rotation_state" role_a "" 0 0 0
+chk "so cancelling back to A does not apply B's password to A" "password_a" \
+  "$(cat "$password_rotation_state/db_password")"
+rm -rf "$password_rotation_state"
+
+echo "159. a failed PostgreSQL bind change restores the prior config"
+chk "the prior managed config is backed up before replacement" 1 \
+  "$(grep -c '^[[:space:]]*PG_CONF_BACKUP=.*stage_beside' "$SRC")"
+chk "a failed reachability probe invokes the rollback" 1 \
+  "$(grep -c '^  restore_postgresql_bind_config ' "$SRC")"
+chk "the rollback restarts PostgreSQL on the restored config" 1 \
+  "$(awk '
+      /^restore_postgresql_bind_config\(\)/ { f = 1 }
+      f && /systemctl restart postgresql/ { found = 1 }
+      f && /^}/ { print found + 0; exit }
+    ' "$SRC")"
+pg_rollback_dir="$(mktemp -d)"
+printf 'new bind\n' > "$pg_rollback_dir/live"
+printf 'old bind\n' > "$pg_rollback_dir/backup"
+PG_RESTARTS=0
+systemctl() {
+  [ "$*" = "restart postgresql" ] || return 1
+  PG_RESTARTS=$((PG_RESTARTS + 1))
+  [ "${PG_RESTART_FAIL:-0}" -eq 0 ]
+}
+restore_postgresql_bind_config \
+  "$pg_rollback_dir/live" "$pg_rollback_dir/backup" 1
+chk "the previous bytes are restored" "old bind" \
+  "$(cat "$pg_rollback_dir/live")"
+chk "and PostgreSQL is restarted on them" 1 "$PG_RESTARTS"
+chk "a successful rollback consumes its retry backup" 0 \
+  "$([ -e "$pg_rollback_dir/backup" ] && echo 1 || echo 0)"
+printf 'first-run bind\n' > "$pg_rollback_dir/live"
+restore_postgresql_bind_config \
+  "$pg_rollback_dir/live" "$pg_rollback_dir/unused" 0
+chk "a failed first-run bind is removed" 0 \
+  "$([ -e "$pg_rollback_dir/live" ] && echo 1 || echo 0)"
+chk "and the localhost-only config is restarted" 2 "$PG_RESTARTS"
+printf 'bad bind\n' > "$pg_rollback_dir/live"
+printf 'working bind\n' > "$pg_rollback_dir/backup"
+PG_RESTART_FAIL=1
+restore_postgresql_bind_config \
+  "$pg_rollback_dir/live" "$pg_rollback_dir/backup" 1
+chk "a restart failure has its own status" 2 "$?"
+chk "but still leaves the working bytes restored" "working bind" \
+  "$(cat "$pg_rollback_dir/live")"
+chk "and preserves the backup for an EXIT-trap retry" "working bind" \
+  "$(cat "$pg_rollback_dir/backup")"
+PG_RESTART_FAIL=0
+restore_postgresql_bind_config \
+  "$pg_rollback_dir/live" "$pg_rollback_dir/backup" 1
+chk "the retry can restart from the preserved backup" 0 "$?"
+chk "and only then consumes it" 0 \
+  "$([ -e "$pg_rollback_dir/backup" ] && echo 1 || echo 0)"
+unset -f systemctl
+rm -rf "$pg_rollback_dir"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL PASS"; else echo "FAILURES"; fi
