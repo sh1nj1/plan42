@@ -243,6 +243,39 @@ module Collavre
                      "and the notice it was parked behind goes with it"
       end
 
+      # A tool approval resumes the same Task row. The first attempt can hand
+      # the waiter's comment to the provider and a later attempt can fail before
+      # handoff, so the turn legitimately carries both kinds of evidence. The
+      # later failure must not erase the earlier attempt's per-comment delivery.
+      test "a resumed attempt failure does not promote a waiter delivered by an earlier attempt" do
+        anchor = comment("@#{@agent.name}: first")
+        holder = Task.create!(
+          name: "Holder", status: "running", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: context_for(anchor)
+        )
+        late = comment("@#{@agent.name}: second")
+        dispatch(late)
+        waiter = tasks_for(@agent).where(status: "queued").sole
+
+        reassemble(holder, anchor)
+        DeliveryRecord.mark_handed_off!(holder)
+        DeliveryRecord.mark_handoff_failed!(holder)
+        holder.update!(status: "done")
+
+        payload = holder.reload.trigger_event_payload
+        assert DeliveryRecord.handoff_failed?(payload),
+               "premise: the resumed attempt failed before handoff"
+        assert_includes DeliveryRecord.handed_off_ids_in(payload), late.id,
+                        "premise: the first attempt handed the waiter comment to the provider"
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        assert_equal "cancelled", waiter.reload.status,
+                     "the failed resumed attempt must not repeat an earlier attempt's delivery"
+        assert_empty waiting_notices
+      end
+
       def topic_max!(value)
         OrchestratorPolicy.create!(
           policy_type: "scheduling", scope_type: nil,

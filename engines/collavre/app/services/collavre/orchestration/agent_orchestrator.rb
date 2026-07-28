@@ -562,7 +562,16 @@ module Collavre
           creative_id: context.dig("creative", "id"),
           trigger_event_name: task.trigger_event_name,
           status: DELIVERED_STATUSES
-        ).where.not(id: task.id).select(:id, :trigger_event_payload).reject { |other|
+        ).where.not(id: task.id).select(:id, :trigger_event_payload).to_a
+
+        # A resumed turn can carry both records legitimately: an earlier
+        # attempt handed off, then a later attempt failed before handoff. The
+        # failure invalidates inferred turn-wide delivery, but not the comment
+        # ids the earlier successful attempt recorded explicitly.
+        handed_off = others.flat_map { |other|
+          DeliveryRecord.handed_off_ids_in(other.trigger_event_payload)
+        }
+        delivered_turns = others.reject { |other|
           # `done` is in DELIVERED_STATUSES because a finished turn delivered
           # what it read — except when the request never reached the provider,
           # which AiClient#chat swallows and AiAgentJob still finishes as
@@ -571,8 +580,8 @@ module Collavre
           DeliveryRecord.handoff_failed?(other.trigger_event_payload)
         }
 
-        acquired_anchors = others.filter_map { |other| acquired_anchor_id_in(other) }
-        merged = others.flat_map { |other|
+        acquired_anchors = delivered_turns.filter_map { |other| acquired_anchor_id_in(other) }
+        merged = delivered_turns.flat_map { |other|
           Array(other.trigger_event_payload&.dig(TaskCoalescer::PAYLOAD_KEY)).compact.map(&:to_i)
         }
         # The third shape, and the one the dispatch doors cannot catch: a
@@ -580,9 +589,11 @@ module Collavre
         # a comment that landed after that turn was dispatched can be swept into
         # its history window without ever being merged or re-anchored. A waiter
         # parked before the covering turn assembled is only discoverable here.
-        swallowed = others.flat_map { |other| DeliveryRecord.ids_in(other.trigger_event_payload) }
+        swallowed = delivered_turns.flat_map { |other|
+          DeliveryRecord.ids_in(other.trigger_event_payload)
+        }
 
-        (acquired_anchors + merged + swallowed).uniq
+        (acquired_anchors + merged + swallowed + handed_off).uniq
       end
       private_class_method :delivered_comment_ids
 
