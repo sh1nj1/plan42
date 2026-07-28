@@ -46,6 +46,17 @@ module CollavreOpenclaw
       def handed_off? = false
     end
 
+    class HandedOffRaisingAdapter
+      def initialize(**) ; end
+
+      def chat(_messages_data, &_block)
+        raise Collavre::CancelledError
+      end
+
+      def last_handoff_failed? = false
+      def handed_off? = true
+    end
+
     setup do
       Collavre::AiClient.register_adapter("faketest", FakeAdapter)
     end
@@ -128,26 +139,32 @@ module CollavreOpenclaw
       assert_not client.handed_off?
     end
 
-    # Control: the flag describes the *last* chat, and a chat that raised did
-    # not answer the question — the exception is what ends the turn, and
-    # AiAgentJob marks it `failed`, an ending the restore already reads. What
-    # must not happen is the previous chat's failure standing in for this one,
-    # which is the one path that skips the propagation above. Base #chat clears
-    # it on the way in for the same reason; this branch never reaches `super`.
-    test "a chat that raised does not leave the flag standing from the one before" do
-      Collavre::AiClient.register_adapter("failingtest", FailingAdapter)
-      client = Collavre::AiClient.new(
-        vendor: "failingtest", model: "m", system_prompt: "s", log_interactions: false
-      )
+    # The exception is not the handoff answer. The adapter can know that the
+    # gateway accepted the request before a callback raised, so both answers
+    # must cross the extension boundary even when #chat does not return.
+    test "a chat that raised before handoff copies the adapter failure state" do
+      client = build_client(log_interactions: false)
       client.chat(messages)
-      assert_predicate client, :last_handoff_failed?, "premise: the chat before it failed to hand over"
-      Collavre::AiClient.register_adapter("failingtest", RaisingAdapter)
+      assert_predicate client, :handed_off?, "premise: the chat before it did hand over"
+      Collavre::AiClient.register_adapter("faketest", RaisingAdapter)
 
       assert_raises(RuntimeError) { client.chat(messages) }
 
+      assert_predicate client, :last_handoff_failed?
+      assert_not client.handed_off?
+    end
+
+    test "a chat cancelled after handoff copies the adapter success state" do
+      Collavre::AiClient.register_adapter("faketest", FailingAdapter)
+      client = build_client(log_interactions: false)
+      client.chat(messages)
+      assert_predicate client, :last_handoff_failed?, "premise: the chat before it failed to hand over"
+      Collavre::AiClient.register_adapter("faketest", HandedOffRaisingAdapter)
+
+      assert_raises(Collavre::CancelledError) { client.chat(messages) }
+
       assert_not client.last_handoff_failed?
-    ensure
-      Collavre::AiClient.adapter_registry.delete("failingtest")
+      assert_predicate client, :handed_off?
     end
   end
 end

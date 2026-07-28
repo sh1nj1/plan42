@@ -48,6 +48,14 @@ module CollavreOpenclaw
           error_message = e.message
           raise
         ensure
+          # The adapter can know that the gateway accepted the request before
+          # the caller's streaming block raises (notably CancelledError). Copy
+          # both answers while unwinding as well as on a normal return, so
+          # AiAgentService can persist the actual handoff rather than infer it
+          # from how #chat exited.
+          @last_handoff_failed = adapter.last_handoff_failed?
+          @handed_off = adapter.handed_off?
+
           # Honor no-log mode (e.g. inline typo correction on *unsubmitted* drafts).
           # Base Collavre::AiClient#chat gates logging behind @log_interactions; this
           # prepended adapter path bypasses super, so it must gate it too — otherwise
@@ -63,18 +71,6 @@ module CollavreOpenclaw
             )
           end
         end
-
-        # Whether the payload ever left the building. AiAgentService asks the
-        # *client*, not the adapter, and marks the turn's
-        # Orchestration::DeliveryRecord off the answer; the adapter converts
-        # missing credentials and transport failures into a streamed error plus
-        # nil, so without this an OpenClaw turn that reached nothing still ends
-        # `done` with the flag down and the dispatches dropped against it are
-        # never restored. See OpenclawAdapter#last_handoff_failed?.
-        @last_handoff_failed = adapter.last_handoff_failed?
-        # And the positive form beside it, for the reader the flag above cannot
-        # serve: a turn stopped after the gateway had the payload.
-        @handed_off = adapter.handed_off?
 
         return response_content
       end
