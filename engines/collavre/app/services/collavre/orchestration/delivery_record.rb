@@ -123,6 +123,17 @@ module Collavre
       # way.
       RESTORED_KEY = "restored_dispatch_comment_ids"
 
+      # StuckDetector failed this `running` row from outside its worker while
+      # the worker may still be inside the provider call.
+      #
+      # The failed status alone cannot say whether the payload reached the
+      # provider: AiAgentService writes that evidence only when the call returns
+      # or raises. The status callback therefore defers while this marker is
+      # present. The live worker clears it in AiAgentJob's ensure; if the worker
+      # died outright, restore_missed! waits out the provider timeout and asks
+      # again.
+      WORKER_SETTLING_KEY = "delivery_worker_settling"
+
       # Everything a turn writes onto its own payload while it runs, as opposed
       # to what it was dispatched with.
       #
@@ -134,7 +145,8 @@ module Collavre
       # and the drift test on this constant is what will catch the sixth.
       TURN_SCOPED_KEYS = [
         KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
-        RESTORED_KEY, TaskCoalescer::PAYLOAD_KEY, TaskCoalescer::ACQUIRED_ANCHOR_KEY
+        RESTORED_KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
+        TaskCoalescer::ACQUIRED_ANCHOR_KEY
       ].freeze
 
       # Statuses in which a turn is still the thing that will answer.
@@ -182,9 +194,9 @@ module Collavre
       # since, and re-dispatching it then would be the more surprising answer.
       RESTORE_SWEEP_WINDOW = 1.hour
 
-      # Slack added to the provider timeout when waiting for a stopped turn's
-      # worker to settle — see .cancel_settle_grace.
-      CANCEL_SETTLE_SLACK = 5.minutes
+      # Slack added to the provider timeout when waiting for a worker that
+      # another process ended to settle — see .worker_settle_grace.
+      WORKER_SETTLE_SLACK = 5.minutes
 
       # Record what `resolved` carries as chat history.
       #
@@ -300,6 +312,52 @@ module Collavre
         return [] unless payload.is_a?(Hash)
 
         Array(payload[HANDED_OFF_IDS_KEY]).compact.map(&:to_i)
+      end
+
+      # Fail a running row from outside its worker without letting the status
+      # callback decide from evidence the worker has not written yet.
+      #
+      # Status and marker are one locked update. A marker written before a
+      # separate status update could be observed by the sweep while the row was
+      # still running; one written afterwards is too late for the callback.
+      def self.fail_while_worker_settles!(task)
+        return false if task.nil?
+
+        failed = false
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          next unless row&.status == "running"
+
+          payload = row.trigger_event_payload
+          payload = {} unless payload.is_a?(Hash)
+          row.update!(
+            status: "failed",
+            trigger_event_payload: payload.merge(WORKER_SETTLING_KEY => true)
+          )
+          failed = true
+        end
+        task.reload if failed
+        failed
+      end
+
+      def self.worker_settling?(payload)
+        payload.is_a?(Hash) && payload[WORKER_SETTLING_KEY] == true
+      end
+
+      # The original worker has left the provider call, so the handoff records
+      # now carry the best answer this attempt can give. Clearing under the row
+      # lock preserves any drop written by another process in the meantime.
+      def self.settle_worker!(task)
+        return if task.nil?
+
+        Task.transaction do
+          row = Task.lock.find_by(id: task.id)
+          payload = row&.trigger_event_payload
+          next unless worker_settling?(payload)
+
+          row.update!(trigger_event_payload: payload.except(WORKER_SETTLING_KEY))
+        end
+        task.reload
       end
 
       def self.restored_ids_in(payload)
@@ -507,15 +565,15 @@ module Collavre
       # again on each pass through the window — which is the right answer for a
       # quota that has since reset, and a bounded number of cheap refusals if it
       # has not.
-      # How long after a cancellation this sweep waits before deciding it.
+      # How long after another process ends a worker this sweep waits before
+      # deciding it.
       #
-      # Task#stopped_mid_turn? explains why the status callback declines: Stop is
-      # committed from another process while the worker is inside AiClient#chat,
-      # and the worker's account of the handoff is written only on the way out.
-      # This door reads a settled row, so it cannot ask that question — and it
-      # cannot tell "still settling" from "nobody is coming" either. Without a
-      # wait it answers in the callback's place and re-dispatches everything the
-      # turn swallowed, minutes after the user asked for no more work.
+      # Task#ended_while_worker_settles? explains why the status callback
+      # declines: Stop and StuckDetector both commit from another process while
+      # the worker can be inside AiClient#chat, and the worker's account of the
+      # handoff is written only on the way out. This door cannot tell "still
+      # settling" from "nobody is coming" either. Without a wait it answers in
+      # the callback's place and re-dispatches everything the turn swallowed.
       #
       # Derived from the configured provider timeout because that is what bounds
       # the wait in the shape this is for: Stop pressed while the turn is still
@@ -525,21 +583,19 @@ module Collavre
       # It is not a bound on a conversation that keeps making requests without
       # yielding content — a tool loop can outlast any grace, and for that one
       # this sweep can still be early. What that costs is a duplicate reply;
-      # declining cancellations outright would cost the comment, and the
-      # cancellers with no worker behind them at all — an agent unregistering,
-      # an offline delegate, a worker killed before its own rescue — are exactly
-      # what this sweep is here for.
-      def self.cancel_settle_grace
-        SystemSetting.llm_request_timeout_seconds.seconds + CANCEL_SETTLE_SLACK
+      # declining these endings outright would cost the comment when the worker
+      # died before it could clear the marker.
+      def self.worker_settle_grace
+        SystemSetting.llm_request_timeout_seconds.seconds + WORKER_SETTLE_SLACK
       end
 
       def self.restore_missed!(window: RESTORE_SWEEP_WINDOW)
-        grace = cancel_settle_grace
+        grace = worker_settle_grace
 
         [
           # The endings whose status is written after the worker is out of the
           # provider call, so the row is as settled as it will ever be.
-          Task.where(status: RESTORABLE_STATUSES - [ "cancelled" ])
+          Task.where(status: RESTORABLE_STATUSES - %w[cancelled failed])
               .where(updated_at: window.ago..),
           # And the one that is not. The window moves with the wait rather than
           # being spent by it: subtracting the grace from a fixed horizon would
@@ -550,17 +606,31 @@ module Collavre
         ].each do |scope|
           scope.find_each { |task| restore_if_undelivered!(task) }
         end
+
+        # A normal failed ending is settled and keeps the ordinary window. A
+        # StuckDetector failure carries WORKER_SETTLING_KEY and gets the same
+        # grace as cancellation. Read the marker in Ruby so this stays portable
+        # across the JSON implementations used by SQLite tests and PostgreSQL.
+        Task.where(status: "failed")
+            .where(updated_at: (window + grace).ago..)
+            .find_each do |task|
+          settling = worker_settling?(task.trigger_event_payload)
+          next if settling && task.updated_at > grace.ago
+          next if !settling && task.updated_at < window.ago
+
+          restore_if_undelivered!(task)
+        end
       end
 
       # Ask the restore question of a turn that has settled.
       #
       # The one door for every caller that is not Task's status callback: this
       # sweep, and AiAgentJob's cancellation teardown, which is where a turn
-      # stopped mid-answer settles — see Task#stopped_mid_turn? for why the
-      # cancel itself cannot decide. Gated on the same predicate the callback is,
-      # because a second door deciding "terminal" where the callback decides
-      # Task#ended_undelivered? is how one of them comes to re-answer comments
-      # the turn had already answered.
+      # stopped mid-answer settles — see Task#ended_while_worker_settles? for why
+      # the cancel itself cannot decide. Gated on the same predicate the callback
+      # is, because a second door deciding "terminal" where the callback decides
+      # Task#ended_undelivered? is how one of them comes to re-answer comments the
+      # turn had already answered.
       #
       # Best effort, like the callback's: the teardown runs inside the job's last
       # rescue, where an escaping exception would turn a cancelled turn into a

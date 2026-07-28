@@ -133,7 +133,14 @@ module Collavre
         task = stuck_item.item
         return unless %w[running delegated].include?(task.status)
 
-        task.update!(status: "failed")
+        recovered = if task.status == "running"
+          DeliveryRecord.fail_while_worker_settles!(task)
+        else
+          task.update!(status: "failed")
+          true
+        end
+        return unless recovered
+
         Rails.logger.info(
           "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
           "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"

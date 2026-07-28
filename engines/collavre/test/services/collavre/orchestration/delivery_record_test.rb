@@ -491,6 +491,7 @@ module Collavre
             late
           )
         )
+        DeliveryRecord.fail_while_worker_settles!(turn.reload)
 
         written = turn.reload.trigger_event_payload.keys - dispatched
         assert_equal DeliveryRecord::TURN_SCOPED_KEYS.sort, written.sort

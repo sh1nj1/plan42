@@ -901,9 +901,9 @@ module Collavre
       # deleted anchor — while the worker is still inside the provider call, so
       # the row carries no account of the handoff yet and will not until the
       # worker comes out. The status callback declines for exactly that reason
-      # (Task#stopped_mid_turn?); this door reads a settled row and cannot tell
-      # "still settling" from "nobody is coming", so without the wait it answers
-      # in the callback's place, minutes after the user pressed Stop.
+      # (Task#ended_while_worker_settles?); this door reads a settled row and
+      # cannot tell "still settling" from "nobody is coming", so without the wait
+      # it answers in the callback's place, minutes after the user pressed Stop.
       test "the sweep leaves a cancellation its worker has not settled alone" do
         anchor = comment("@#{@agent.name}: first")
         late = comment("@#{@agent.name}: second")
@@ -934,7 +934,7 @@ module Collavre
 
         Task.find(turn.id).update!(status: "cancelled")
         Task.where(id: turn.id)
-            .update_all(updated_at: (DeliveryRecord.cancel_settle_grace + 5.minutes).ago)
+            .update_all(updated_at: (DeliveryRecord.worker_settle_grace + 5.minutes).ago)
 
         RestoreDroppedDispatchesJob.perform_now
 
@@ -955,12 +955,66 @@ module Collavre
 
         Task.find(turn.id).update!(status: "cancelled")
         Task.where(id: turn.id).update_all(
-          updated_at: (DeliveryRecord::RESTORE_SWEEP_WINDOW + DeliveryRecord.cancel_settle_grace + 5.minutes).ago
+          updated_at: (
+            DeliveryRecord::RESTORE_SWEEP_WINDOW + DeliveryRecord.worker_settle_grace + 5.minutes
+          ).ago
         )
 
         RestoreDroppedDispatchesJob.perform_now
 
         assert_empty restored_waiters
+      end
+
+      # StuckDetector changes the row from another process while the original
+      # worker can still be inside the provider call. That is the same missing
+      # evidence as Stop, but with a `failed` ending: restoring from the status
+      # callback can start the swallowed dispatch while the first provider call
+      # is still running.
+      test "stuck recovery does not restore a dispatch before the failed worker settles" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        fail_as_stuck(turn)
+
+        assert_equal "failed", turn.reload.status, "premise: recovery failed the live row"
+        assert_empty restored_waiters,
+                     "the worker has not said yet whether the payload got there"
+      end
+
+      # The marker is a deferral, not a reason to lose the dispatch. A worker
+      # killed outright never clears it, so the restore sweep asks again after
+      # the same provider-timeout grace used for an unsettled cancellation.
+      test "the sweep restores a stuck failure whose worker never settled after the grace" do
+        anchor = comment("@#{@agent.name}: first")
+        late = comment("@#{@agent.name}: second")
+        turn = running_turn(anchor)
+        dispatch(late)
+        slot_holder(anchor)
+
+        fail_as_stuck(turn)
+        RestoreDroppedDispatchesJob.perform_now
+        assert_empty restored_waiters, "the failed worker can still be inside the provider call"
+
+        Task.where(id: turn.id)
+            .update_all(updated_at: (DeliveryRecord.worker_settle_grace + 5.minutes).ago)
+        RestoreDroppedDispatchesJob.perform_now
+
+        assert_equal [ late.id ], restored_waiters.map { |task|
+          task.trigger_event_payload.dig("comment", "id")
+        }, "nothing settled the worker, so the dropped dispatch is still owed"
+      end
+
+      def fail_as_stuck(turn)
+        item = StuckDetector::StuckItem.new(
+          type: :task, item: turn.reload, reason: :no_progress,
+          stuck_since: 1.hour.ago, escalation_targets: []
+        )
+        AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*) { }) do
+          StuckDetector.new.send(:recover_stuck_task, item)
+        end
       end
 
       test "the restored dispatch carries none of the dead turn's bookkeeping" do

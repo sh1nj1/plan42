@@ -290,6 +290,39 @@ class AiAgentJobTest < ActiveJob::TestCase
                  "nothing read that comment; it has no turn unless this one gives it back"
   end
 
+  # StuckDetector can fail the row while this job is still inside #chat. The
+  # status callback must wait, but the live worker must not leave the dispatch
+  # waiting for the periodic sweep once it does come out and can answer whether
+  # a handoff happened.
+  test "a worker settles and restores a stuck failure when its provider call exits" do
+    topic, swallowed, task = stopped_turn_fixture
+    with_test_queue do
+      assert_enqueued_jobs 0
+
+      probe = -> {
+        assert_enqueued_jobs 0,
+                             "stuck recovery ran while the provider call was still active"
+      }
+      client = failing_after_stuck_recovery_client(task, probe)
+
+      Collavre::Orchestration::AgentOrchestrator.stub(:dequeue_next_for_topic, ->(*) { }) do
+        AiClient.stub :new, client.new do
+          assert_raises(StandardError) { AiAgentJob.perform_now(task) }
+        end
+      end
+
+      restored = enqueued_jobs.select { |job| job[:job] == Collavre::AiAgentJob }
+      assert_equal 1, restored.size
+      assert_equal swallowed.id, restored.sole[:args][2].dig("comment", "id"),
+                   "the failed provider call handed nothing over, so its worker owes the dispatch back"
+      assert_equal "failed", task.reload.status
+      assert_not Collavre::Orchestration::DeliveryRecord.worker_settling?(
+        task.trigger_event_payload
+      ), "the live worker settled the marker rather than leaving the sweep to guess"
+      assert_equal topic.id, task.topic_id
+    end
+  end
+
   # A running turn with one dispatch dropped against it, and the comment that
   # dispatch was for.
   def stopped_turn_fixture
@@ -330,6 +363,33 @@ class AiAgentJobTest < ActiveJob::TestCase
       define_method(:last_handoff_failed?) { false }
       define_method(:handed_off?) { handed_off }
     end
+  end
+
+  def failing_after_stuck_recovery_client(task, probe)
+    Class.new do
+      define_method(:initialize) { |*args, **kwargs| }
+      define_method(:chat) do |contents, tools: [], &block|
+        item = Collavre::Orchestration::StuckDetector::StuckItem.new(
+          type: :task, item: task.reload, reason: :no_progress,
+          stuck_since: 1.hour.ago, escalation_targets: []
+        )
+        Collavre::Orchestration::StuckDetector.new.send(:recover_stuck_task, item)
+        probe.call
+        raise StandardError, "provider call ended without a handoff"
+      end
+      define_method(:last_handoff_failed?) { false }
+      define_method(:handed_off?) { false }
+    end
+  end
+
+  def with_test_queue
+    original = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    clear_enqueued_jobs
+    yield
+  ensure
+    clear_enqueued_jobs
+    ActiveJob::Base.queue_adapter = original
   end
 
   def dispatches_besides(task, topic)
