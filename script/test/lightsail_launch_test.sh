@@ -5806,7 +5806,10 @@ vh() {
   printf '%s\n' "$1" > "$vshd/eff"
   ( verify_ssh_hardening "$vshd/eff" "$vshd" ) >/dev/null 2>&1 && echo 0 || echo 1
 }
-vh_eff() { printf 'passwordauthentication %s\npermitrootlogin %s\nkbdinteractiveauthentication %s' "$1" "$2" "$3"; }
+vh_eff() {
+  printf 'passwordauthentication %s\npermitrootlogin %s\nkbdinteractiveauthentication %s\npubkeyauthentication %s' \
+    "$1" "$2" "$3" "${4:-yes}"
+}
 
 chk "an effective config that matches the drop-in passes" 0 "$(vh "$(vh_eff no no no)")"
 chk "password authentication still on stops the run"      1 "$(vh "$(vh_eff yes no no)")"
@@ -5814,6 +5817,9 @@ chk "password authentication still on stops the run"      1 "$(vh "$(vh_eff yes 
 # is not the 'no' this script writes.
 chk "and root login still on, however narrowly"           1 "$(vh "$(vh_eff no prohibit-password no)")"
 chk "and keyboard-interactive still on"                   1 "$(vh "$(vh_eff no no yes)")"
+chk "and public-key authentication off"                   1 "$(vh "$(vh_eff no no no no)")"
+chk "and a missing public-key result is not treated as verified" 1 \
+  "$(vh "$(printf 'passwordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no')")"
 
 printf '%s\n' "$(vh_eff yes no no)" > "$vshd/eff"
 vh_msg="$( ( verify_ssh_hardening "$vshd/eff" "$vshd" ) 2>&1 )"
@@ -5832,6 +5838,13 @@ chk "an sshd -T that will not run warns instead of stopping" 1 \
   "$(printf '%s' "$vh_unread" | grep -c '^rc=0$')"
 chk "and says the hardening is unverified"                1 \
   "$(printf '%s' "$vh_unread" | grep -c 'unverified')"
+vh_strict_unread="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot 1 ) 2>&1
+  printf 'rc=%s\n' "$?" )"
+chk "the pre-revocation gate stops when sshd cannot be read" 1 \
+  "$(printf '%s' "$vh_strict_unread" | grep -c '^rc=1$')"
+chk "and says public-key reachability could not be verified" 1 \
+  "$(printf '%s' "$vh_strict_unread" | grep -ci 'public-key authentication')"
 vh_inactive_unread="$( ( PATH="$vshd/bin:$PATH"
   verify_ssh_hardening "" "$vshd" 2 ) 2>&1
   printf 'rc=%s\n' "$?" )"
@@ -5851,7 +5864,7 @@ printf '%s\n' \
   '  *" -C user=deploybot "*) password=yes ;;' \
   '  *) password=no ;;' \
   'esac' \
-  'printf "passwordauthentication %s\npermitrootlogin no\nkbdinteractiveauthentication no\n" "$password"' \
+  'printf "passwordauthentication %s\npermitrootlogin no\nkbdinteractiveauthentication no\npubkeyauthentication yes\n" "$password"' \
   > "$vshd/bin/sshd"
 chmod +x "$vshd/bin/sshd"
 SSHD_ARGS_FILE="$vshd/sshd.args"
@@ -5870,7 +5883,7 @@ unset SSHD_ARGS_FILE
 # merely leave every other matching connection untested.
 printf '%s\n' \
   '#!/bin/sh' \
-  'printf "passwordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no\n"' \
+  'printf "passwordauthentication no\npermitrootlogin no\nkbdinteractiveauthentication no\npubkeyauthentication yes\n"' \
   > "$vshd/bin/sshd"
 chmod +x "$vshd/bin/sshd"
 printf 'Include %s/sshd_config.d/*.conf\nMatch Address 203.0.113.0/24\n  PasswordAuthentication yes\n' \
@@ -5881,6 +5894,15 @@ chk "an address-scoped password override stops the run"  1 \
   "$(printf '%s' "$vh_address" | grep -c '^rc=1$')"
 chk "and the refusal names the untestable Match context" 1 \
   "$(printf '%s' "$vh_address" | grep -ci 'Match.*Address')"
+
+printf 'Include %s/sshd_config.d/*.conf\nMatch Address 203.0.113.0/24\n  PubkeyAuthentication no\n' \
+  "$vshd" > "$vshd/sshd_config"
+vh_address_pubkey="$( ( PATH="$vshd/bin:$PATH"
+  verify_ssh_hardening "" "$vshd" 0 deploybot ) 2>&1; printf 'rc=%s\n' "$?" )"
+chk "an address-scoped public-key override stops the run" 1 \
+  "$(printf '%s' "$vh_address_pubkey" | grep -c '^rc=1$')"
+chk "and the refusal identifies the public-key directive" 1 \
+  "$(printf '%s' "$vh_address_pubkey" | grep -ci 'PubkeyAuthentication')"
 
 # ChallengeResponseAuthentication is OpenSSH's deprecated alias for
 # KbdInteractiveAuthentication. A contextual scanner that recognizes only the
@@ -5959,6 +5981,9 @@ chk "sudo-group context is rechecked before passwordless sudo" 1 \
 chk "docker-group context is rechecked before convergence continues" 1 \
   "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER"' \
       <<<"$vh_docker_grant")"
+chk "the check immediately before revocation requires a readable public-key result" 1 \
+  "$(grep -cF 'verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1' \
+      <<<"$vh_docker_grant")"
 
 # If the recheck is what discovers the override, the new group is already live.
 # A refusal must remove only the membership this run added. These assertions
@@ -5983,11 +6008,12 @@ vh_sshd=""
 for vh_c in sshd /usr/sbin/sshd; do
   command -v "$vh_c" >/dev/null 2>&1 && { vh_sshd="$vh_c"; break; }
 done
-vh_effective() { # <config dir> -> "<passwordauthentication> <permitrootlogin>"
+vh_effective() { # <config dir> -> "<passwordauth> <rootlogin> <pubkeyauth>"
   "$vh_sshd" -T -f "$1/sshd_config" 2>/dev/null |
     awk 'tolower($1)=="passwordauthentication"{p=$2}
          tolower($1)=="permitrootlogin"{r=$2}
-         END{print p, r}'
+	 tolower($1)=="pubkeyauthentication"{k=$2}
+	 END{print p, r, k}'
 }
 if [ -z "$vh_sshd" ] || ! command -v ssh-keygen >/dev/null 2>&1; then
   echo "  SKIP no sshd here — the ordering claim is sshd's own and nothing else answers it"
@@ -6008,17 +6034,17 @@ else
   vh_name="$(printf '%s\n' "$vh_call" |
                awk '/\/etc\/ssh\/sshd_config\.d\// {
                       sub(/.*sshd_config\.d\//, ""); sub(/[ \\].*/, ""); print; exit }')"
-  if [ "$(vh_effective "$vhr")" != "no no" ]; then
+  if [ "$(vh_effective "$vhr")" != "no no yes" ]; then
     echo "  SKIP sshd -T is not usable here — it could not read even the drop-in alone"
   else
-    chk "the drop-in alone hardens a fresh host"          "no no" "$(vh_effective "$vhr")"
-    printf 'PasswordAuthentication yes\nPermitRootLogin yes\n' \
+    chk "the drop-in alone hardens a fresh host"      "no no yes" "$(vh_effective "$vhr")"
+    printf 'PasswordAuthentication yes\nPermitRootLogin yes\nPubkeyAuthentication no\n' \
       > "$vhr/sshd_config.d/50-cloud-init.conf"
-    chk "and still does beside Ubuntu's cloud-init drop-in" "no no" "$(vh_effective "$vhr")"
+    chk "and still does beside Ubuntu's cloud-init drop-in" "no no yes" "$(vh_effective "$vhr")"
     # The negative control, and the one that says the assertion above is about
     # the name rather than the content: the same body under the old name.
     mv "$vhr/sshd_config.d/$vh_name" "$vhr/sshd_config.d/99-collavre.conf"
-    chk "where a 99- name would have lost both keywords"  "yes yes" "$(vh_effective "$vhr")"
+    chk "where a 99- name loses all three settings"   "yes yes no" "$(vh_effective "$vhr")"
   fi
   rm -rf "$vhr"
 fi
@@ -6141,7 +6167,7 @@ echo "148. a torn write cannot reach a drop-in this script owns"
 # back on:
 #
 #   01-collavre.conf state   bytes   sshd -t   passwordauth  permitrootlogin
-#   whole                    77      rc=0      no            no
+#   whole                   102      rc=0      no            no
 #   0 bytes (torn at open)    0      rc=0      yes           yes
 #   cut after line 1         26      rc=0      no            yes
 #   cut mid-directive        36      rc=255    -             -

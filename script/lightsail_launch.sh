@@ -2605,10 +2605,12 @@ sysctl --system >/dev/null
 
 # verify_ssh_hardening [effective config file] [sshd config dir]
 #                      [reload state: 0=reloaded, 2=no active daemon]
-#                      [deploy user]
+#                      [deploy user] [require readable result]
 #
-# Read back what sshd actually resolved the three hardened keywords to, and
-# refuse a run that reported hardening it did not perform.
+# Read back what sshd actually resolved the hardened authentication settings
+# to, and refuse a run that reported hardening it did not perform. Password,
+# root and keyboard-interactive authentication must be off; public-key
+# authentication must remain on because it is the deploy account's only way in.
 #
 # Naming the drop-in so it sorts first is necessary and not sufficient: a
 # directive above the Include in sshd_config itself, or an operator's own
@@ -2713,11 +2715,20 @@ scan_ssh_config_file() {
     if [ "${SSH_CONFIG_SCAN_CONTEXTUAL:-0}" -eq 1 ]; then
       value="${fields[1]:-}"
       value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]')"
-      if [[ "$key" =~ ^(passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication|permitrootlogin)$ ]] &&
-	 [ "$value" != no ]; then
-	SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no:${line#"${line%%[![:space:]]*}"}"
-	break
-      fi
+      case "$key" in
+	passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication|permitrootlogin)
+	  [ "$value" = no ] || {
+	    SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no:${line#"${line%%[![:space:]]*}"}"
+	    break
+	  }
+	  ;;
+	pubkeyauthentication)
+	  [ "$value" = yes ] || {
+	    SSH_CONFIG_SCAN_UNSAFE="$canonical:$line_no:${line#"${line%%[![:space:]]*}"}"
+	    break
+	  }
+	  ;;
+      esac
     fi
   done < "$file"
 
@@ -2737,7 +2748,8 @@ find_unsafe_ssh_match() {
 verify_ssh_hardening() {
   local src="${1:-}" conf_dir="${2:-/etc/ssh}" reload_state="${3:-0}"
   local deploy_user="${4:-${APP_SSH_USER:-collavre}}"
-  local effective key value offender unsafe_match
+  local require_readable="${5:-0}"
+  local effective key value expected offender unsafe_match
   if [ -n "$src" ]; then
     effective="$(cat "$src")"
   else
@@ -2758,6 +2770,12 @@ verify_ssh_hardening() {
 	"sudo or Docker access."
 
     if ! effective="$(sshd -T -C "user=$deploy_user" 2>/dev/null)"; then
+      [ "$require_readable" -ne 1 ] || die \
+	"SSH public-key authentication could not be verified for '$deploy_user':" \
+	"'sshd -T -C user=$deploy_user' rejected or could not read the" \
+	"configuration on disk. The previous deploy user's privileged access" \
+	"will not be revoked until the replacement account is proven reachable" \
+	"by key. Run 'sshd -t' to find the error, fix it, and re-run."
       [ "$reload_state" -ne 2 ] || die \
 	"SSH hardening could not be verified: there is no active sshd to reload" \
 	"and 'sshd -T -C user=$deploy_user' rejected or could not read the" \
@@ -2768,19 +2786,28 @@ verify_ssh_hardening() {
       log "WARNING: could not read the effective SSH configuration on this host" \
 	"(\`sshd -T -C user=$deploy_user\` failed), so the hardening above is" \
 	"unverified. Check it by hand: sshd -T -C user=$deploy_user | grep -E" \
-	"'^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication)'"
+	"'^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication|" \
+	"pubkeyauthentication)'"
       return 0
     fi
   fi
-  for key in passwordauthentication permitrootlogin kbdinteractiveauthentication; do
+  for key in passwordauthentication permitrootlogin kbdinteractiveauthentication \
+	     pubkeyauthentication; do
+    expected=no
+    [ "$key" != pubkeyauthentication ] || expected=yes
     value="$(printf '%s\n' "$effective" |
              awk -v k="$key" 'tolower($1) == k { print $2; exit }')"
     [ -n "$value" ] || {
+      [ "$key" != pubkeyauthentication ] || die \
+	"SSH public-key authentication could not be verified for '$deploy_user':" \
+	"sshd did not report 'pubkeyauthentication'. The previous deploy user's" \
+	"privileged access will not be revoked until the replacement account is" \
+	"proven reachable by key. Correct the SSH configuration and re-run."
       log "WARNING: sshd did not report '$key', so that part of the hardening" \
           "above is unverified"
       continue
     }
-    if [ "$value" = "no" ]; then
+    if [ "$value" = "$expected" ]; then
       continue
     fi
     # Name the file rather than leave the operator to find it. A directive
@@ -2790,7 +2817,7 @@ verify_ssh_hardening() {
                   "$conf_dir"/sshd_config.d/*.conf "$conf_dir"/sshd_config \
                   2>/dev/null | grep -v '01-collavre.conf' | head -1)" || true
     die "SSH hardening did not take effect: sshd resolves '$key' to '$value'," \
-	"not 'no', even though $conf_dir/sshd_config.d/01-collavre.conf sets" \
+	"not '$expected', even though $conf_dir/sshd_config.d/01-collavre.conf sets" \
 	"it. An earlier global directive or a Match block for '$deploy_user'" \
 	"is overriding it${offender:+ — ${offender}}. Stopping before any" \
 	"further access is granted. Remove or correct that setting and re-run."
@@ -2826,7 +2853,7 @@ install -d -m 0755 /etc/ssh/sshd_config.d
 # with Ubuntu's 50-cloud-init.conf beside it turning both keywords back on:
 #
 #   01-collavre.conf state   bytes   sshd -t   passwordauth  permitrootlogin
-#   whole                    77      rc=0      no            no
+#   whole                   102      rc=0      no            no
 #   0 bytes (torn at open)    0      rc=0      yes           yes
 #   cut after line 1         26      rc=0      no            yes
 #   cut mid-directive        36      rc=255    -             -
@@ -2853,7 +2880,8 @@ install_managed_config 'the SSH hardening drop-in' \
   /etc/ssh/sshd_config.d/01-collavre.conf \
   'PasswordAuthentication no' \
   'PermitRootLogin no' \
-  'KbdInteractiveAuthentication no'
+  'KbdInteractiveAuthentication no' \
+  'PubkeyAuthentication yes'
 # A host provisioned by an earlier version of this script carries the 99- file.
 # It is inert now that 01- sets the same keywords first, and that is the reason
 # to remove it rather than leave it: a file whose every line is overridden is
@@ -3170,7 +3198,7 @@ in_group "$APP_SSH_USER" sudo && SUDO_GROUP_WAS_PRESENT=1
 usermod -aG sudo "$APP_SSH_USER"
 # Match Group is resolved from the account's current memberships, so the check
 # before user creation cannot see an override that starts applying here.
-if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" ); then
+if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 ); then
   if [ "$SUDO_GROUP_WAS_PRESENT" -eq 0 ]; then
     gpasswd -d "$APP_SSH_USER" sudo >/dev/null 2>&1 ||
       die "SSH hardening failed after '$APP_SSH_USER' joined sudo, and the" \
@@ -3705,7 +3733,7 @@ in_group "$APP_SSH_USER" docker && DOCKER_GROUP_WAS_PRESENT=1
 usermod -aG docker "$APP_SSH_USER"
 # Recheck for the same reason as the sudo grant above. An operator's
 # `Match Group docker` block does not apply until this membership exists.
-if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" ); then
+if ! ( verify_ssh_hardening "" /etc/ssh "$SSH_RELOAD_STATE" "$APP_SSH_USER" 1 ); then
   if [ "$DOCKER_GROUP_WAS_PRESENT" -eq 0 ]; then
     gpasswd -d "$APP_SSH_USER" docker >/dev/null 2>&1 ||
       die "SSH hardening failed after '$APP_SSH_USER' joined docker, and the" \
