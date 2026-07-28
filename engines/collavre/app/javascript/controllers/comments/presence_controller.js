@@ -58,6 +58,8 @@ export default class extends Controller {
     this.selectedTopicId = nextSelectedTopicId
     this.mainTopicId = nextMainTopicId
 
+    if (selectionChanged) this.requestRunningAgents()
+
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -148,6 +150,12 @@ export default class extends Controller {
       clearTimeout(this.typingTimeoutHandle)
       this.typingTimeoutHandle = null
     }
+  }
+
+  requestRunningAgents() {
+    if (!this.presenceSubscription || !this.selectedTopicId) return
+
+    this.presenceSubscription.perform('running_agents', { topic_id: this.selectedTopicId })
   }
 
   loadParticipants({ closeOnForbidden = false } = {}) {
@@ -270,7 +278,14 @@ export default class extends Controller {
       if (agentCreativeId && String(agentCreativeId) !== String(this.creativeId)) {
         return
       }
-      if (!this.isSelectedTopic(topicId)) return
+      if (!topicId) {
+        const activeTaskId = this.activeAgentTasks?.[id]
+        const matchingLegacyIdle = status === 'idle' && task_id &&
+          String(activeTaskId) === String(task_id)
+        if (!matchingLegacyIdle) return
+      } else if (!this.isSelectedTopic(topicId)) {
+        return
+      }
 
       const isNewAgent = (status === 'thinking' || status === 'streaming') && !(id in this.typingUsers)
       if (status === 'thinking' || status === 'streaming') {

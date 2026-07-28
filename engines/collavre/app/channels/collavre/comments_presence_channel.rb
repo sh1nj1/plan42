@@ -26,10 +26,16 @@ class CommentsPresenceChannel < ApplicationCable::Channel
 
   # Broadcast status for any currently running AI agent tasks for a creative.
   # Called when a user subscribes to ensure they see ongoing agent activity.
-  def self.broadcast_running_agents(creative_id)
+  def self.broadcast_running_agents(creative_id, topic_id: nil)
+    creative = Creative.find_by(id: creative_id)
+    return unless creative
+
     Task.where(status: %w[running pending]).find_each do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
       next unless task_creative_id == creative_id
+
+      task_topic_id = AiAgent::AgentLifecycleManager.topic_id_for(task: task, creative: creative)
+      next if topic_id && task_topic_id.to_s != topic_id.to_s
 
       broadcast_agent_status(
         creative_id,
@@ -37,7 +43,7 @@ class CommentsPresenceChannel < ApplicationCable::Channel
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
         task_id: task.id,
-        topic_id: task.topic_id || task.trigger_event_payload&.dig("topic", "id"),
+        topic_id: task_topic_id,
         source_creative_id: task_creative_id
       )
     end
@@ -105,6 +111,15 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     return unless topic_id
 
     ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id, topic_id: topic_id } })
+  end
+
+  def running_agents(data)
+    return unless @creative_id && current_user
+
+    topic_id = topic_id_for(data)
+    return unless topic_id
+
+    CommentsPresenceChannel.broadcast_running_agents(@creative_id, topic_id: topic_id)
   end
 
   private
