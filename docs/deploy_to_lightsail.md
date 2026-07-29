@@ -39,10 +39,49 @@ is the practical floor**; 2 GB works only for a light pilot. The script adds a
 
 ## 2. Create the instance with the launch script
 
-Copy the contents of `script/lightsail_launch.sh` into the **Launch script** box
-(Lightsail console → Create instance → *Add launch script*). Edit the
-configuration block at the top first — at minimum `SSH_PUBLIC_KEY`, unless you
-are happy for the deploy user to reuse the key Lightsail installs for `ubuntu`.
+The full `script/lightsail_launch.sh` is larger than the Lightsail launch-script
+limit. In the Lightsail console, go to **Create instance → Add launch script**
+and paste this small bootstrap instead. It installs the download prerequisites,
+fetches the exact reviewed script revision, checks its shell syntax, and runs it:
+
+```bash
+#!/bin/bash
+set -Eeuo pipefail
+
+URL='https://raw.githubusercontent.com/sh1nj1/plan42/a3113860ffe45729c7b2420abe7becfe6c7cc950/script/lightsail_launch.sh'
+TARGET='/root/lightsail_launch.sh'
+
+apt-get update -y
+apt-get install -y curl ca-certificates
+
+curl \
+  --fail \
+  --location \
+  --silent \
+  --show-error \
+  --retry 5 \
+  --retry-delay 3 \
+  "$URL" \
+  --output "$TARGET"
+
+chmod 0700 "$TARGET"
+bash -n "$TARGET"
+exec /bin/bash "$TARGET"
+```
+
+The URL is commit-pinned so a later branch update cannot silently change the
+provisioning code. Update the commit in the URL deliberately whenever adopting
+a newer reviewed revision.
+
+To override the defaults, add exported variables before the final `exec` line.
+At minimum, set `SSH_PUBLIC_KEY` unless you are happy for the deploy user to
+reuse the key Lightsail installs for `ubuntu`:
+
+```bash
+export SSH_PUBLIC_KEY='ssh-ed25519 AAAA...'
+export APP_SSH_USER='collavre'
+exec /bin/bash "$TARGET"
+```
 
 Common overrides:
 

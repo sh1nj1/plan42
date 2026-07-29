@@ -956,6 +956,26 @@ extract_recipe() {
   ' "$DOC"
 }
 
+echo "26d. the Lightsail launch box uses a commit-pinned download bootstrap"
+bootstrap="$(extract_recipe 'raw.githubusercontent.com/sh1nj1/plan42/')"
+chk "the bootstrap is present exactly once" 1 \
+  "$(grep -c '^URL=.*raw.githubusercontent.com/sh1nj1/plan42/' <<<"$bootstrap")"
+chk "and pins a full Git commit instead of a mutable branch" 1 \
+  "$(grep -Ec "^URL='https://raw.githubusercontent.com/sh1nj1/plan42/[0-9a-f]{40}/script/lightsail_launch\\.sh'$" \
+      <<<"$bootstrap")"
+chk "and fails closed on an HTTP download error" 1 \
+  "$(grep -c '^  --fail \\$' <<<"$bootstrap")"
+chk "and checks syntax before execution" 1 \
+  "$(grep -c '^bash -n "\$TARGET"$' <<<"$bootstrap")"
+chk "and executes the downloaded root-only file" 1 \
+  "$(grep -c '^exec /bin/bash "\$TARGET"$' <<<"$bootstrap")"
+if bash -n <<<"$bootstrap"; then
+  echo "  ok   the documented bootstrap has valid Bash syntax"
+else
+  echo "  FAIL the documented bootstrap has invalid Bash syntax"
+  fail=1
+fi
+
 recipe="$(extract_recipe 'copy_status=')"
 case "$recipe" in
   *copy_status=*NOSUPERUSER*) : ;;

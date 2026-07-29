@@ -2,9 +2,10 @@
 #
 # Collavre — AWS Lightsail launch script (instance user data).
 #
-# Paste the contents of this file into the "Launch script" box when creating a
-# Lightsail instance (Ubuntu 24.04 LTS blueprint), or run it by hand on a fresh
-# instance as root:
+# This file is larger than the Lightsail "Launch script" limit. Use the
+# commit-pinned download bootstrap in docs/deploy_to_lightsail.md when creating
+# an instance (Ubuntu 24.04 LTS blueprint), or run it by hand on a fresh instance
+# as root:
 #
 #   sudo SSH_PUBLIC_KEY="ssh-ed25519 AAAA..." bash script/lightsail_launch.sh
 #
