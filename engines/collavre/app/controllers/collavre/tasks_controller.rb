@@ -11,7 +11,7 @@ module Collavre
         creative = task.creative || Creative.find_by(id: task.trigger_event_payload&.dig("creative", "id"))
         next unless creative&.has_permission?(Current.user, :read)
 
-        { id: task.id, status: task.status }
+        { id: task.id, active: task.active? }
       end
 
       render json: { tasks: results }

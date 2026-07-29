@@ -249,7 +249,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
 
     test('drops a task the poll reports as finished', async () => {
       armAgent('9', [55])
-      respondWith([{ id: 55, status: 'done' }])
+      respondWith([{ id: 55, active: false }])
 
       controller.pollAgentTaskStatuses()
       await flush()
@@ -258,19 +258,18 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       expect(controller.typingUsers['9']).toBeUndefined()
     })
 
-    test.each(['delegated', 'pending_approval'])(
-      'keeps a %s task active — it still holds the slot and is still cancellable',
-      async (status) => {
-        armAgent('9', [55])
-        respondWith([{ id: 55, status }])
+    // Which statuses count as active is the server's call (Task#active?), covered
+    // in tasks_controller_test.rb — here it only has to be believed.
+    test('keeps a task the poll still reports as active', async () => {
+      armAgent('9', [55])
+      respondWith([{ id: 55, active: true }])
 
-        controller.pollAgentTaskStatuses()
-        await flush()
+      controller.pollAgentTaskStatuses()
+      await flush()
 
-        expect(controller.activeAgentTasks['9']).toEqual([55])
-        expect(controller.typingUsers['9']).toBe('Agent')
-      },
-    )
+      expect(controller.activeAgentTasks['9']).toEqual([55])
+      expect(controller.typingUsers['9']).toBe('Agent')
+    })
 
     test('keeps a task that started after the poll request was sent', async () => {
       armAgent('9', [55])
@@ -291,7 +290,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       settle({
         ok: true,
         headers: new Headers(),
-        json: async () => ({ tasks: [{ id: 55, status: 'running' }] }),
+        json: async () => ({ tasks: [{ id: 55, active: true }] }),
       })
       await flush()
 
@@ -337,7 +336,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       settle({
         ok: true,
         headers: new Headers(),
-        json: async () => ({ tasks: [{ id: 55, status: 'done' }] }),
+        json: async () => ({ tasks: [{ id: 55, active: false }] }),
       })
       await flush()
 

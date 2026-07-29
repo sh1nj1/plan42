@@ -8,14 +8,6 @@ const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
 const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
 
-// A task still worth an indicator and a Stop button. Mirrors what the server
-// treats as in-flight: Task.occupying_topic_slot (running / delegated / pending /
-// pending_approval) plus queued, a waiter not yet promoted. delegated and
-// pending_approval look idle but are not — AiAgentJob returns holding the slot
-// while awaiting an MCP /reply or a tool approval, and TasksController#cancel
-// still accepts both, so dropping them hides Stop exactly when it is wanted.
-const ACTIVE_TASK_STATUSES = new Set(['running', 'pending', 'queued', 'delegated', 'pending_approval'])
-
 // agent_status values that keep a task registered. thinking/streaming are the
 // agent producing output; pending_approval is it paused on a tool approval,
 // which is not the end of the task — treating it as idle would drop the task
@@ -675,7 +667,9 @@ export default class extends Controller {
       })
       .then((data) => {
         if (!data) return
-        const activeTaskIds = new Set(data.tasks.filter((t) => ACTIVE_TASK_STATUSES.has(t.status)).map((t) => t.id))
+        // Task#active? decides what still deserves an indicator and a Stop
+        // button, so the client never has to know the status vocabulary.
+        const activeTaskIds = new Set(data.tasks.filter((t) => t.active).map((t) => t.id))
 
         // This response only speaks for the ids it was asked about. A task that
         // an agent_status message appended while the request was in flight was

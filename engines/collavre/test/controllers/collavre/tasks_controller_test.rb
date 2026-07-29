@@ -41,7 +41,28 @@ module Collavre
 
       sign_in_as(@owner, password: "password")
 
-      assert_equal [ { "id" => task.id, "status" => "running" } ], statuses_for(task.id)
+      assert_equal [ { "id" => task.id, "active" => true } ], statuses_for(task.id)
+    end
+
+    # The client drops a task the moment this says false, taking the indicator
+    # and its Stop button with it — so every status that still holds the topic
+    # slot, or is only waiting for its turn, has to answer true here.
+    test "reports every in-flight status as active" do
+      sign_in_as(@owner, password: "password")
+
+      Task::ACTIVE_STATUSES.each do |status|
+        task = build_task(status: status)
+
+        assert_equal [ { "id" => task.id, "active" => true } ], statuses_for(task.id), status
+      end
+    end
+
+    test "reports a finished task as inactive" do
+      task = build_task(status: "done")
+
+      sign_in_as(@owner, password: "password")
+
+      assert_equal [ { "id" => task.id, "active" => false } ], statuses_for(task.id)
     end
 
     test "omits tasks on creatives the user cannot read" do
