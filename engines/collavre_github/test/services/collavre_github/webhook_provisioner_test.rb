@@ -561,6 +561,53 @@ module CollavreGithub
       assert_includes client.created.first[:events], "push"
     end
 
+    test "scopes provisioning to the selected repository id when a stale name is reused" do
+      @link.update!(
+        repository_id: 111,
+        webhook_secret: "stale-secret",
+        markdown_sync_enabled: true
+      )
+      valid = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name,
+        repository_id: 222,
+        webhook_secret: "valid-secret"
+      )
+      client = FakeClient.new(hooks: [ Hook.new(7, { "url" => OWN_URL }) ])
+
+      assert_equal [ [ valid, :updated ] ], provision(client, links: [ valid ])
+      assert_equal "valid-secret", valid.reload.webhook_secret
+      assert_nil @link.reload.webhook_hook_id
+      assert_equal 7, valid.reload.webhook_hook_id
+      assert_equal "valid-secret", client.updated.first[:secret]
+      assert_not_includes client.updated.first[:events], "push"
+    end
+
+    test "excludes name-only stale links from id-scoped provisioning" do
+      @link.update!(
+        repository_id: nil,
+        webhook_secret: "unverified-secret",
+        webhook_hook_id: 99,
+        markdown_sync_enabled: true
+      )
+      valid = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name,
+        repository_id: 222,
+        webhook_secret: "valid-secret"
+      )
+      client = FakeClient.new(hooks: [ Hook.new(7, { "url" => OWN_URL }) ])
+
+      assert_equal [ [ valid, :updated ] ], provision(client, links: [ valid ])
+      assert_equal "valid-secret", valid.reload.webhook_secret
+      assert_equal 99, @link.reload.webhook_hook_id
+      assert_equal 7, valid.reload.webhook_hook_id
+      assert_equal "valid-secret", client.updated.first[:secret]
+      assert_not_includes client.updated.first[:events], "push"
+    end
+
     private
 
     # Captured at WARN so the level itself is under test: an informational log

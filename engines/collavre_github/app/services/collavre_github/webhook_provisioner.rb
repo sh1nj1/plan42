@@ -87,9 +87,10 @@ module CollavreGithub
 
     private
 
-    attr_reader :client, :webhook_url
+    attr_reader :client, :webhook_url, :repository_id_scope
 
     def ensure_webhook(link)
+      @repository_id_scope = link.repository_id
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
       hooks = repository_hooks(repository_full_name)
@@ -130,6 +131,8 @@ module CollavreGithub
         "GitHub webhook provisioning failed for #{repository_full_name}: #{e.message}"
       )
       :failed
+    ensure
+      @repository_id_scope = nil
     end
 
     def provision_hook(link, repository_full_name, primary_link, hooks, hook, shared)
@@ -288,9 +291,20 @@ module CollavreGithub
     # let the next run create a second hook: precisely the proliferation this
     # class exists to prevent. The webhook controller and pr_monitor already
     # compare with `LOWER(repository_full_name)`; this matches them.
+    #
+    # Once the caller supplies an ID-backed link, that stable identity also
+    # bounds every primary-link, registration, and event lookup for this
+    # provisioning attempt. A stale link for another repository may carry the
+    # same reused name, but neither a conflicting ID nor an unverified NULL ID
+    # may contribute its secret, hook registration, or markdown-sync settings.
+    # Proven legacy siblings have already been stamped by
+    # RepositoryIdentitySynchronizer before the reprovisioner reaches here.
     def links_for(repository_full_name)
-      CollavreGithub::RepositoryLink
+      links = CollavreGithub::RepositoryLink
         .where("LOWER(repository_full_name) = ?", normalize_repository_name(repository_full_name))
+      return links if repository_id_scope.blank?
+
+      links.where(repository_id: repository_id_scope)
     end
 
     def normalize_repository_name(repository_full_name)

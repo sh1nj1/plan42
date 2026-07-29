@@ -268,6 +268,49 @@ module CollavreGithub
       assert_equal 111, stale.reload.repository_id
     end
 
+    test "tries a later account when an identity-valid candidate cannot update the hook" do
+      @primary.destroy!
+      @sibling.destroy!
+      @other.destroy!
+      first_account = @account
+      second_account = CollavreGithub::Account.create!(
+        user: users(:two),
+        github_uid: "second-reprovisioner",
+        login: "second-reprovisioner",
+        name: "Second Reprovisioner",
+        token: "second-token"
+      )
+      first = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:tshirt),
+        github_account: first_account,
+        repository_full_name: "owner/shared",
+        repository_id: 222
+      )
+      second = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:childless_creative),
+        github_account: second_account,
+        repository_full_name: "owner/shared",
+        repository_id: 222
+      )
+      calls = []
+      provision = lambda do |**kwargs|
+        calls << kwargs
+        status = kwargs[:account] == first_account ? :failed : :updated
+        [ [ kwargs[:links].first, status ] ]
+      end
+      client = IdentityClient.new(hooks: [], repository_id: 222)
+
+      results = CollavreGithub::Client.stub(:new, client) do
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          CollavreGithub::WebhookReprovisioner.call(webhook_url: "https://example.com/github/webhooks")
+        end
+      end
+
+      assert_equal [ [ "owner/shared", :updated ] ], results
+      assert_equal [ first, second ], calls.map { |call| call[:links].first }
+      assert_equal [ first_account, second_account ], calls.map { |call| call[:account] }
+    end
+
     test "skips a name-only legacy repository with no registered hook" do
       @other.update_columns(repository_id: nil, webhook_hook_id: nil)
       calls = []

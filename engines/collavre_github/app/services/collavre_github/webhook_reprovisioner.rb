@@ -60,7 +60,13 @@ module CollavreGithub
           links: [ link ],
           webhook_url: webhook_url
         )
-        return result.first&.last || :failed
+        status = result.first&.last || :failed
+        if status == :failed
+          failed = true
+          next
+        end
+
+        return status
       rescue => e
         failed = true
         log_failure(repository_name, e)
