@@ -337,6 +337,126 @@ module CollavreGithub
         assert_includes patched_events, "pull_request"
       end
 
+      test "serializes identity verification and forced refresh by repository id" do
+        account = CollavreGithub::Account.create!(
+          user: @user,
+          github_uid: "pr-monitor-prov-lock",
+          login: "owner",
+          name: @user.name,
+          token: "ghp-test-token-lock"
+        )
+        link = CollavreGithub::RepositoryLink.create!(
+          creative: @creative,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          repository_id: 101,
+          webhook_secret: "secret-lock-1234"
+        )
+
+        inside_lock = false
+        identity_requests = 0
+        identity_verified_inside_lock = false
+        stub_request(:get, "https://api.github.com/repos/owner/repo")
+          .with do
+            identity_requests += 1
+            identity_verified_inside_lock = inside_lock
+            true
+          end
+          .to_return(
+            status: 200,
+            body: { id: 101, full_name: "owner/repo" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+        lock_events = []
+        lock = lambda do |repository_id, &block|
+          assert_equal 101, repository_id
+          lock_events << :entered
+          inside_lock = true
+          block.call
+        ensure
+          inside_lock = false
+          lock_events << :released
+        end
+        provision = lambda do |links:, force_hook_refresh:, **|
+          assert inside_lock
+          assert_equal [ link.id ], links.map(&:id)
+          assert force_hook_refresh
+          [ [ links.fetch(0), :updated ] ]
+        end
+
+        CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+          CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+            result = PrMonitorService.new.call(
+              topic_id: @topic.id,
+              pr_url: "https://github.com/owner/repo/pull/77"
+            )
+
+            assert_nil result[:webhook_warning]
+          end
+        end
+
+        assert_equal [ :entered, :released ], lock_events
+        assert_equal 1, identity_requests
+        assert identity_verified_inside_lock,
+          "repository identity must be verified inside the provisioning lock"
+      end
+
+      test "tries another identity-valid account when the first hook refresh fails" do
+        first_account = CollavreGithub::Account.create!(
+          user: @user,
+          github_uid: "pr-monitor-prov-first",
+          login: "owner",
+          name: @user.name,
+          token: "ghp-test-token-first"
+        )
+        second_user = users(:two)
+        second_account = CollavreGithub::Account.create!(
+          user: second_user,
+          github_uid: "pr-monitor-prov-second",
+          login: "owner",
+          name: second_user.name,
+          token: "ghp-test-token-second"
+        )
+        child = Collavre::Creative.create!(
+          parent: @creative,
+          description: "Child",
+          user: @user
+        )
+        child_topic = Collavre::Topic.create!(name: "Child topic", creative: child, user: @user)
+        CollavreGithub::RepositoryLink.create!(
+          creative: @creative,
+          github_account: first_account,
+          repository_full_name: "owner/repo",
+          repository_id: 101,
+          webhook_secret: "secret-#{first_account.id}"
+        )
+        CollavreGithub::RepositoryLink.create!(
+          creative: child,
+          github_account: second_account,
+          repository_full_name: "owner/repo",
+          repository_id: 101,
+          webhook_secret: "secret-#{second_account.id}"
+        )
+        stub_github_repository("owner/repo", id: 101)
+        attempts = []
+        provision = lambda do |account:, links:, **|
+          attempts << account.id
+          status = account == first_account ? :failed : :updated
+          [ [ links.fetch(0), status ] ]
+        end
+
+        result = nil
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          result = PrMonitorService.new.call(
+            topic_id: child_topic.id,
+            pr_url: "https://github.com/owner/repo/pull/77"
+          )
+        end
+
+        assert_nil result[:webhook_warning]
+        assert_equal [ first_account.id, second_account.id ], attempts
+      end
+
       test "surfaces webhook_warning when GitHub rejects the hook PATCH" do
         # CollavreGithub::Client rescues Octokit/Faraday errors silently and
         # returns nil. Without surfacing that result, pr_monitor would report
