@@ -79,6 +79,10 @@ module CollavreGithub
       client.hooks(repo_full_name)
     end
 
+    def repository_id(repo_full_name)
+      client.repository(repo_full_name).id
+    end
+
     def create_repository_webhook(repo_full_name, url:, secret:, events:, content_type: "json")
       client.create_hook(
         repo_full_name,

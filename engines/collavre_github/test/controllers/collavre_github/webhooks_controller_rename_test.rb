@@ -143,6 +143,35 @@ module CollavreGithub
       assert_equal REPO_ID, @link.reload.repository_id
     end
 
+    test "repository_id is not backfilled onto a stale name match with another secret" do
+      other_creative = creatives(:childless_creative)
+      other = CollavreGithub::RepositoryLink.create!(
+        creative: other_creative,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: nil,
+        webhook_secret: "other-repository-secret"
+      )
+      other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Other")
+      GithubPrChannel.create!(
+        topic: other_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 99 }
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 21, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: OLD_NAME }
+        })
+      end
+
+      assert_response :ok
+      assert_equal REPO_ID, @link.reload.repository_id
+      assert_nil other.reload.repository_id
+    end
+
     test "repository_id is NOT backfilled from an unverified delivery" do
       # The lookup runs before signature verification, so an unauthenticated
       # caller can reach it. Stamping an id there would let anyone repoint a
@@ -292,6 +321,40 @@ module CollavreGithub
       assert_response :ok
       assert_equal OLD_NAME, @link.reload.repository_full_name
       assert_equal OLD_NAME, @channel.reload.repo_full_name
+    end
+
+    test "repository.renamed merges an obsolete same-id link into the new-name survivor" do
+      @link.update!(
+        webhook_hook_id: 123,
+        markdown_sync_enabled: true,
+        markdown_root_creative: @creative,
+        sync_branch: "docs"
+      )
+      survivor = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME,
+        repository_id: REPO_ID,
+        webhook_secret: "obsolete-secret"
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_not CollavreGithub::RepositoryLink.exists?(@link.id)
+      survivor.reload
+      assert_equal @link.webhook_secret, survivor.webhook_secret
+      assert_equal 123, survivor.webhook_hook_id
+      assert survivor.markdown_sync_enabled?
+      assert_equal @creative, survivor.markdown_root_creative
+      assert_equal "docs", survivor.sync_branch
+      assert_equal [ survivor.id ],
+        CollavreGithub::RepositoryLink.where(creative: @creative, repository_id: REPO_ID).pluck(:id)
+      assert_equal NEW_NAME, @channel.reload.repo_full_name
     end
 
     # --- 401 visibility ----------------------------------------------------

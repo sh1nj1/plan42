@@ -246,7 +246,7 @@ module CollavreGithub
       # topic and have subsequent PR comments injected there. Only auto-attach
       # when the topic's creative — or any of its ancestors — is linked to this
       # repo (RepositoryLink applies to the whole subtree).
-      linked_creative_ids = links_for(payload).pluck(:creative_id)
+      linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
       creative = topic.creative
       return unless creative
       candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
@@ -274,7 +274,7 @@ module CollavreGithub
     # topic link. Mirrors dispatch's scope re-validation so a channel whose
     # creative is no longer linked to this repo is NOT resurrected.
     def reactivate_existing_channels_on_reopen(repo, pr_number, payload)
-      linked_creative_ids = links_for(payload).pluck(:creative_id)
+      linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
       return if linked_creative_ids.empty?
 
       GithubPrChannel.find_each do |channel|
@@ -326,7 +326,7 @@ module CollavreGithub
       # RepositoryLink can be removed or a topic can be moved to a different
       # creative subtree after attachment. Without re-validating here, an
       # orphaned channel would keep receiving cross-tenant PR events.
-      linked_creative_ids = links_for(payload).pluck(:creative_id)
+      linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
 
       # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
       # Future optimization: switch to a jsonb-portable query once an established
@@ -597,7 +597,15 @@ module CollavreGithub
       id, full_name = repository_identity(payload)
       return [ @repository_link ].compact if id.blank? && full_name.blank?
 
-      links_for(payload).to_a
+      links = links_for(payload).to_a
+      return links if id.blank?
+
+      # ID-backed rows are authoritative. A NULL-id name match is only a
+      # sibling of the authenticated repository when it carries the same HMAC
+      # secret; otherwise the name may be stale and reused by another repo.
+      links.select do |link|
+        link.repository_id.present? || secrets_match?(link.webhook_secret, webhook_secret)
+      end
     end
 
     def find_repository_link(payload)
@@ -616,15 +624,17 @@ module CollavreGithub
     end
 
     # Stamp the stable id onto links that predate id-based routing. Scoped to
-    # links this repository actually resolved to, and only ever fills a NULL —
-    # an existing id is never rewritten, so a payload cannot move a link that
-    # is already anchored to a different repository.
+    # links this repository actually resolved to, carrying the same secret that
+    # authenticated this delivery, and only ever fills a NULL. Name matching
+    # alone is not proof of identity: a stale NULL-id link may carry a name that
+    # GitHub has since assigned to another repository.
     def backfill_repository_ids(payload)
       id, _full_name = repository_identity(payload)
       return if id.blank?
 
       links_for(payload).each do |link|
         next if link.repository_id.present?
+        next unless secrets_match?(link.webhook_secret, webhook_secret)
 
         link.update_column(:repository_id, id)
       end
@@ -690,6 +700,7 @@ module CollavreGithub
             .where("LOWER(repository_full_name) = ?", new_full_name.downcase)
             .first
           if survivor&.repository_id.to_s == repo_id.to_s
+            merge_repository_links!(obsolete: link, survivor: survivor)
             renamed_creative_ids << link.creative_id
           else
             Rails.logger.warn(
@@ -702,6 +713,24 @@ module CollavreGithub
 
       rename_channels(old_full_name, new_full_name, renamed_creative_ids) if old_full_name
       Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
+    end
+
+    # A delayed rename can meet a link that was already created under the new
+    # name in the same creative. Leaving both rows behind would make every
+    # subsequent ID lookup process that creative twice. Keep the new-name row,
+    # align it with the secret that authenticated the delivery, preserve the
+    # obsolete row's sync/registration state where the survivor has none, and
+    # remove the duplicate.
+    def merge_repository_links!(obsolete:, survivor:)
+      survivor.update!(
+        webhook_secret: webhook_secret,
+        webhook_hook_id: survivor.webhook_hook_id || obsolete.webhook_hook_id,
+        markdown_sync_enabled: survivor.markdown_sync_enabled? || obsolete.markdown_sync_enabled?,
+        markdown_root_creative_id: survivor.markdown_root_creative_id || obsolete.markdown_root_creative_id,
+        sync_branch: survivor.sync_branch.presence || obsolete.sync_branch,
+        last_synced_at: [ survivor.last_synced_at, obsolete.last_synced_at ].compact.max
+      )
+      obsolete.destroy!
     end
 
     # Channels carry their own copy of the repo name (dispatch matches on it),
