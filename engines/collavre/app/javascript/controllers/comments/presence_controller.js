@@ -5,7 +5,14 @@ import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
 
 const TYPING_TIMEOUT = 3000
-const AGENT_STATUS_TIMEOUT = 10000 // Safety timeout for agent_status (heartbeat expected every 3s)
+const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
+const STREAMING_HEARTBEAT_TIMEOUT = 5000 // Transition streaming → thinking if no heartbeat
+
+// agent_status values that keep a task registered. thinking/streaming are the
+// agent producing output; pending_approval is it paused on a tool approval,
+// which is not the end of the task — treating it as idle would drop the task
+// and stop the poll, so the status above could never be seen.
+const LIVE_AGENT_STATUSES = new Set(['thinking', 'streaming', 'pending_approval'])
 
 export default class extends Controller {
   static targets = ['participants', 'typingIndicator', 'textarea', 'privateCheckbox', 'channelChips', 'scrollRow']
@@ -19,6 +26,10 @@ export default class extends Controller {
     this.manualTypingMessage = null
     this.presenceSubscription = null
     this.typingTimeoutHandle = null
+    this.activeAgentTasks = {} // { agentId: [taskId, ...] } - ordered, last is most recent
+    this.agentStates = {} // { agentId: 'streaming' | 'thinking' }
+    this.streamingHeartbeatTimers = {} // { agentId: timeoutHandle }
+    this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
     this.currentUserId = document.body.dataset.currentUserId
     this.selectedTopicId = null
@@ -38,6 +49,8 @@ export default class extends Controller {
 
   disconnect() {
     this.unsubscribe()
+    this.stopAgentTaskPoll()
+    this.clearAllStreamingHeartbeats()
     this.textareaTarget.removeEventListener('input', this.handleInput)
     this.textareaTarget.removeEventListener('focus', this.handleFocus)
     this.textareaTarget.removeEventListener('blur', this.handleBlur)
@@ -80,6 +93,15 @@ export default class extends Controller {
   }
 
   onPopupOpened({ creativeId }) {
+    // Navigating the OPEN popup to another creative comes through here, not through
+    // onPopupClosed() — PopupController#_navigateToEntry reuses open()/openForCreative().
+    // Every piece of agent state below belongs to the chat being left: the poll is keyed
+    // on task ids and /tasks/active_statuses answers for any task the user can read, so a
+    // carried-over id keeps a foreign task's indicator alive here, and the Stop button it
+    // renders cancels a turn in a creative that is no longer on screen.
+    if (this.creativeId !== undefined && String(creativeId) !== String(this.creativeId)) {
+      this.resetAgentActivity()
+    }
     this.creativeId = creativeId
     this.loadParticipants()
     this.subscribe()
@@ -106,14 +128,50 @@ export default class extends Controller {
     }
   }
 
+  // Everything that describes activity in ONE chat. Leaving that chat — closed, or
+  // navigated to another creative with the popup still open — has to drop all of it
+  // together: the maps the indicator renders from, the timers that write back into
+  // them, and the poll that keeps them alive. Clearing the maps alone would leave the
+  // interval and the heartbeat timeouts running for a chat nobody is looking at.
+  resetAgentActivity() {
+    this.stopAgentTaskPoll()
+    this.clearAllStreamingHeartbeats()
+    this.clearTypingTimers()
+    this.typingUsers = {}
+    this.activeAgentTasks = {}
+    this.agentStates = {}
+    this.syncGlobalAgentTasks()
+  }
+
+  // An agent's turns, label, state and heartbeat come down together or not at all.
+  // The heartbeat is keyed by agent, so it may only go when the agent itself does —
+  // a surviving turn still needs it to degrade to thinking. Three paths remove an
+  // agent (idle, Stop, poll); routing them all through here is what keeps them from
+  // drifting apart, which is how that heartbeat got dropped early once already.
+  dropAgent(agentId) {
+    delete this.activeAgentTasks[agentId]
+    delete this.typingUsers[agentId]
+    delete this.agentStates[agentId]
+    this.clearStreamingHeartbeat(agentId)
+  }
+
+  // Ends one turn, and the agent with it once nothing is left. A missing taskId means
+  // the caller can't say which turn ended, so the agent goes entirely.
+  dropAgentTask(agentId, taskId) {
+    const tasks = this.activeAgentTasks[agentId]
+    if (!tasks) return this.dropAgent(agentId)
+    if (taskId) {
+      const idx = tasks.indexOf(taskId)
+      if (idx !== -1) tasks.splice(idx, 1)
+    }
+    if (!taskId || tasks.length === 0) this.dropAgent(agentId)
+  }
+
   onPopupClosed() {
     this.unsubscribe()
     this.participantsData = null
     this.currentPresentIds = []
-    this.typingUsers = {}
-    this.activeAgentTasks = {}
-    this.syncGlobalAgentTasks()
-    this.clearTopicTimers()
+    this.resetAgentActivity()
     this.clearManualTypingMessage()
     this.renderParticipants([])
     this.renderTypingIndicator()
@@ -279,36 +337,37 @@ export default class extends Controller {
         return
       }
       if (!topicId) {
-        const activeTaskId = this.activeAgentTasks?.[id]
+        // Turns are tracked per agent as an array, so a legacy idle has to match a
+        // member — String() on the array only happens to work at length 1.
+        const activeTaskIds = this.activeAgentTasks?.[id] || []
         const matchingLegacyIdle = status === 'idle' && task_id &&
-          String(activeTaskId) === String(task_id)
+          activeTaskIds.some((activeTaskId) => String(activeTaskId) === String(task_id))
         if (!matchingLegacyIdle) return
       } else if (!this.isSelectedTopic(topicId)) {
         return
       }
 
       const isNewAgent = (status === 'thinking' || status === 'streaming') && !(id in this.typingUsers)
-      if (status === 'thinking' || status === 'streaming') {
+      if (LIVE_AGENT_STATUSES.has(status)) {
         this.typingUsers[id] = name
-        if (!this.activeAgentTasks) this.activeAgentTasks = {}
-        if (task_id) this.activeAgentTasks[id] = task_id
-        // Safety timeout: auto-remove if no heartbeat within AGENT_STATUS_TIMEOUT
-        if (!this.agentStatusTimers) this.agentStatusTimers = {}
-        if (this.agentStatusTimers[id]) clearTimeout(this.agentStatusTimers[id])
-        this.agentStatusTimers[id] = setTimeout(() => {
-          delete this.typingUsers[id]
-          delete this.agentStatusTimers[id]
-          delete this.activeAgentTasks?.[id]
-          this.syncGlobalAgentTasks()
-          this.renderTypingIndicator()
-        }, AGENT_STATUS_TIMEOUT)
-      } else {
-        delete this.typingUsers[id]
-        delete this.activeAgentTasks?.[id]
-        if (this.agentStatusTimers?.[id]) {
-          clearTimeout(this.agentStatusTimers[id])
-          delete this.agentStatusTimers[id]
+        this.agentStates[id] = status
+        if (!this.activeAgentTasks[id]) this.activeAgentTasks[id] = []
+        if (task_id && !this.activeAgentTasks[id].includes(task_id)) {
+          this.activeAgentTasks[id].push(task_id)
         }
+        // Streaming heartbeat: transition to thinking if no update within timeout
+        this.clearStreamingHeartbeat(id)
+        if (status === 'streaming') {
+          this.streamingHeartbeatTimers[id] = setTimeout(() => {
+            this.agentStates[id] = 'thinking'
+            delete this.streamingHeartbeatTimers[id]
+            this.renderTypingIndicator()
+          }, STREAMING_HEARTBEAT_TIMEOUT)
+        }
+        this.startAgentTaskPoll()
+      } else {
+        this.dropAgentTask(id, task_id)
+        this.maybeStopAgentTaskPoll()
       }
       this.syncGlobalAgentTasks()
       this.renderTypingIndicator({ newItem: isNewAgent })
@@ -425,7 +484,7 @@ export default class extends Controller {
     this.typingIndicatorTarget.style.opacity = '1'
 
     // Add stop button first (before avatars/names) for active agent tasks
-    const hasActiveTask = ids.some((id) => this.activeAgentTasks?.[id])
+    const hasActiveTask = ids.some((id) => this.activeAgentTasks[id]?.length > 0)
     if (hasActiveTask) {
       const stopBtn = document.createElement('button')
       stopBtn.type = 'button'
@@ -435,8 +494,11 @@ export default class extends Controller {
       stopBtn.title = stopLabel
       stopBtn.addEventListener('click', () => {
         ids.forEach((id) => {
-          const taskId = this.activeAgentTasks?.[id]
-          if (taskId) this.cancelAgentTask(taskId, id)
+          const tasks = this.activeAgentTasks[id]
+          if (tasks?.length > 0) {
+            // Cancel the last (most recent) task
+            this.cancelAgentTask(tasks[tasks.length - 1], id)
+          }
         })
       })
       this.typingIndicatorTarget.appendChild(stopBtn)
@@ -466,9 +528,13 @@ export default class extends Controller {
         this.typingIndicatorTarget.appendChild(wrapper)
       })
     }
-    const names = ids.map((id) => this.typingUsers[id])
     const text = document.createElement('span')
-    text.textContent = `${names.join(', ')} ...`
+    const parts = ids.map((id) => {
+      const name = this.typingUsers[id]
+      const isAgentThinking = this.activeAgentTasks[id]?.length > 0 && this.agentStates[id] !== 'streaming'
+      return isAgentThinking ? `${name} \u23F3` : `${name} ...`
+    })
+    text.textContent = parts.join('  ')
     this.typingIndicatorTarget.appendChild(text)
 
     if (stickToEnd) this.scrollRowToEnd()
@@ -504,11 +570,13 @@ export default class extends Controller {
   }
 
   cancelAllAgentTasks() {
-    const ids = Object.keys(this.activeAgentTasks || {})
-    if (ids.length === 0) return false
-    ids.forEach((id) => {
-      const taskId = this.activeAgentTasks[id]
-      if (taskId) this.cancelAgentTask(taskId, id)
+    const agentIds = Object.keys(this.activeAgentTasks)
+    if (agentIds.length === 0) return false
+    agentIds.forEach((agentId) => {
+      const tasks = this.activeAgentTasks[agentId]
+      if (tasks?.length > 0) {
+        this.cancelAgentTask(tasks[tasks.length - 1], agentId)
+      }
     })
     return true
   }
@@ -520,12 +588,8 @@ export default class extends Controller {
     })
       .then((response) => {
         if (response.ok) {
-          delete this.typingUsers[agentId]
-          delete this.activeAgentTasks?.[agentId]
-          if (this.agentStatusTimers?.[agentId]) {
-            clearTimeout(this.agentStatusTimers[agentId])
-            delete this.agentStatusTimers[agentId]
-          }
+          this.dropAgentTask(agentId, taskId)
+          this.maybeStopAgentTaskPoll()
           this.syncGlobalAgentTasks()
           this.renderTypingIndicator()
         }
@@ -597,17 +661,11 @@ export default class extends Controller {
     this.typingTimers = {}
   }
 
-  clearTopicTimers() {
-    this.clearTypingTimers()
-    Object.values(this.agentStatusTimers || {}).forEach((timer) => clearTimeout(timer))
-    this.agentStatusTimers = {}
-  }
-
+  // Every indicator on screen belongs to the topic being left, and the replay that
+  // follows is scoped to the new one — so the whole agent state goes, heartbeats and
+  // poll included. A surviving poll would keep resurrecting the old topic's turns.
   clearTopicIndicators() {
-    this.typingUsers = {}
-    this.activeAgentTasks = {}
-    this.clearTopicTimers()
-    this.syncGlobalAgentTasks()
+    this.resetAgentActivity()
     this.renderTypingIndicator()
   }
 
@@ -621,6 +679,79 @@ export default class extends Controller {
       topicId &&
       String(topicId) === String(this.selectedTopicId)
     )
+  }
+
+  // ── Streaming heartbeat ─────────────────────────────────
+
+  clearStreamingHeartbeat(agentId) {
+    if (this.streamingHeartbeatTimers[agentId]) {
+      clearTimeout(this.streamingHeartbeatTimers[agentId])
+      delete this.streamingHeartbeatTimers[agentId]
+    }
+  }
+
+  clearAllStreamingHeartbeats() {
+    Object.values(this.streamingHeartbeatTimers).forEach((timer) => clearTimeout(timer))
+    this.streamingHeartbeatTimers = {}
+  }
+
+  // ── Agent task status polling ──────────────────────────
+
+  startAgentTaskPoll() {
+    if (this.agentTaskPollHandle) return
+    this.agentTaskPollHandle = setInterval(() => this.pollAgentTaskStatuses(), AGENT_TASK_POLL_INTERVAL)
+  }
+
+  stopAgentTaskPoll() {
+    if (this.agentTaskPollHandle) {
+      clearInterval(this.agentTaskPollHandle)
+      this.agentTaskPollHandle = null
+    }
+  }
+
+  maybeStopAgentTaskPoll() {
+    if (Object.keys(this.activeAgentTasks).length === 0) this.stopAgentTaskPoll()
+  }
+
+  pollAgentTaskStatuses() {
+    const allTaskIds = Object.values(this.activeAgentTasks).flat()
+    if (allTaskIds.length === 0) {
+      this.stopAgentTaskPoll()
+      return
+    }
+    const requestedTaskIds = new Set(allTaskIds)
+
+    csrfFetch(`/tasks/active_statuses?task_ids=${allTaskIds.join(',')}`, {
+      headers: { Accept: 'application/json' },
+    })
+      .then((response) => {
+        if (!response.ok) return null
+        return response.json()
+      })
+      .then((data) => {
+        if (!data) return
+        // Task#active? decides what still deserves an indicator and a Stop
+        // button, so the client never has to know the status vocabulary.
+        const activeTaskIds = new Set(data.tasks.filter((t) => t.active).map((t) => t.id))
+
+        // This response only speaks for the ids it was asked about. A task that
+        // an agent_status message appended while the request was in flight was
+        // never requested, so its absence here means nothing — keep it until a
+        // poll that actually asked about it says otherwise.
+        let changed = false
+        Object.keys(this.activeAgentTasks).forEach((agentId) => {
+          const before = this.activeAgentTasks[agentId].length
+          this.activeAgentTasks[agentId] = this.activeAgentTasks[agentId].filter(
+            (taskId) => activeTaskIds.has(taskId) || !requestedTaskIds.has(taskId),
+          )
+          if (this.activeAgentTasks[agentId].length !== before) changed = true
+          if (this.activeAgentTasks[agentId].length === 0) this.dropAgent(agentId)
+        })
+
+        if (changed) this.renderTypingIndicator()
+        this.maybeStopAgentTaskPoll()
+      })
+      .catch((err) => console.warn('[presence] poll agent task statuses failed:', err))
   }
 
   handleInput() {

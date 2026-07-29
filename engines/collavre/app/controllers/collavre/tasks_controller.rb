@@ -2,6 +2,21 @@
 
 module Collavre
   class TasksController < ApplicationController
+    def active_statuses
+      task_ids = params[:task_ids].to_s.split(",").map(&:to_i).reject(&:zero?)
+      return render json: { tasks: [] } if task_ids.empty?
+
+      tasks = Task.where(id: task_ids).includes(:creative)
+      results = tasks.filter_map do |task|
+        creative = task.creative || Creative.find_by(id: task.trigger_event_payload&.dig("creative", "id"))
+        next unless creative&.has_permission?(Current.user, :read)
+
+        { id: task.id, active: task.active? }
+      end
+
+      render json: { tasks: results }
+    end
+
     def cancel
       task = Task.find(params[:id])
       creative = task.creative || Creative.find_by(id: task.trigger_event_payload&.dig("creative", "id"))
@@ -25,7 +40,7 @@ module Collavre
       # cancelling the blocker leaves agent capacity and the next waiter stuck
       # until stuck recovery. release!/dequeue are idempotent (dequeue is bounded
       # by topic_at_capacity?), so a racing live worker that also drains is harmless.
-      held_slot_without_worker = %w[pending delegated pending_approval].include?(task.status)
+      held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(task.status)
       task.update!(status: "cancelled")
 
       # The third door a waiter leaves the queue through without ever being

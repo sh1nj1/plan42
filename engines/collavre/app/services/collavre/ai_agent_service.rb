@@ -115,6 +115,9 @@ module Collavre
       # Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY.
       Orchestration::DeliveryRecord.mark_handoff_failed!(@task) if @client.last_handoff_failed?
 
+      # Signal thinking state during finalize so the indicator shows ⏳
+      @lifecycle_manager.broadcast_status("thinking")
+
       log_action("completion", { response: @streamer.content })
 
       finalized_comment = finalize_response

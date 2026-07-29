@@ -121,8 +121,10 @@ module Collavre
         assert_equal "update_creative", @task.pending_tool_call["tool_name"]
       end
 
-      test "idle status includes the task topic" do
-        broadcasts = []
+      # An "idle" here read as "task over" to the client, which dropped the task
+      # and stopped polling, so the pending_approval status set below was never
+      # seen and the Stop button vanished on the one turn waiting on the user.
+      test "broadcasts pending_approval, not idle, and only after the task is updated" do
         handler = ApprovalHandler.new(
           task: @task,
           agent: @agent,
@@ -130,13 +132,44 @@ module Collavre
           creative: @creative
         )
 
-        ActionCable.server.stub :broadcast, ->(_channel, payload) { broadcasts << payload } do
+        statuses = capture_agent_statuses { handler.handle(@error) }
+
+        assert_equal [ "pending_approval" ], statuses.map { |s| s[:status] }
+        assert_equal [ @task.id ], statuses.map { |s| s[:task_id] }
+        assert_equal [ @task.topic_id ], statuses.map { |s| s[:topic_id] },
+                     "the client routes the indicator by topic, so a replayed pause needs one"
+      end
+
+      test "the broadcast task is already pending_approval when the payload goes out" do
+        handler = ApprovalHandler.new(
+          task: @task,
+          agent: @agent,
+          context: @context,
+          creative: @creative
+        )
+
+        observed = nil
+        capture_agent_statuses(during: -> { observed = Collavre::Task.find(@task.id).status }) do
           handler.handle(@error)
         end
 
-        status = broadcasts.filter_map { |payload| payload[:agent_status] if payload.is_a?(Hash) }.first
-        assert_equal "idle", status[:status]
-        assert_equal @task.topic_id, status[:topic_id]
+        assert_equal "pending_approval", observed,
+                     "a client polling on receipt must not read a status the payload contradicts"
+      end
+
+      private
+
+      # Collect the agent_status payloads broadcast while the block runs. `during`
+      # runs at broadcast time, for asserting what the DB says at that instant.
+      def capture_agent_statuses(during: nil)
+        payloads = []
+        CommentsPresenceChannel.stub(:broadcast_agent_status, lambda { |_creative_id, **kwargs|
+          payloads << kwargs
+          during&.call
+        }) do
+          yield
+        end
+        payloads
       end
     end
   end

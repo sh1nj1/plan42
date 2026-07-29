@@ -53,6 +53,23 @@ module Collavre
       rel
     }
 
+    # Of the slot-occupying statuses, these have no live worker to run
+    # AiAgentJob's ensure-block drain, so whoever cancels one must release the
+    # slot itself.
+    HELD_SLOT_WITHOUT_WORKER = %w[pending delegated pending_approval].freeze
+
+    # Work still worth a typing indicator — and the Stop button that only exists
+    # inside it: everything occupying_topic_slot counts, plus queued, a waiter
+    # not yet promoted. delegated and pending_approval look idle but are not, the
+    # job returned holding the slot while it awaits an MCP /reply or a tool
+    # approval, and #cancel still accepts both. Kept here rather than in the
+    # client so one list decides it.
+    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued].freeze
+
+    def active?
+      ACTIVE_STATUSES.include?(status)
+    end
+
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same

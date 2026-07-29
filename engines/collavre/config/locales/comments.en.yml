@@ -71,6 +71,8 @@ en:
       approve_missing_action: No approval action is associated with this comment.
       approve_missing_approver: This comment has no approver to run the action.
       approve_already_executed: This comment action has already been executed.
+      approve_task_not_pending: This turn was stopped or has already resumed, so the tool was not run.
+      approve_task_superseded: This approval was superseded by a newer tool call, so the tool was not run.
       approve_execution_failed: 'Comment action failed: %{message}'
       approve_success: Action approved.
       approve_error: Unable to approve the action.

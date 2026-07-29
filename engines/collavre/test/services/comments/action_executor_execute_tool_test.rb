@@ -126,4 +126,128 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     @task.reload
     assert_equal({ "error" => "Tool failed" }, @task.pending_tool_call["result"])
   end
+
+  # Stop is reachable while a turn waits on approval, and stopping it leaves the
+  # approval comment on screen. Approving afterwards used to run the tool anyway
+  # — the resumed job then exited on the cancelled task, so the side effect
+  # happened with nothing left to consume it.
+  test "a stopped turn does not run the tool it was waiting on" do
+    @task.update!(status: "cancelled")
+
+    invoked = false
+    service = Object.new
+    service.define_singleton_method(:call) { |**_args| invoked = true }
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      ::Tools::MetaToolService.stub :new, -> { service } do
+        Comments::ActionExecutor.new(comment: approval_comment, executor: @user).call
+      end
+    end
+
+    refute invoked, "the tool ran for a cancelled turn"
+    assert_match(/stopped/i, error.message)
+  end
+
+  # The comment stays un-executed so the row does not read as an action that
+  # already ran, and the cancelled turn keeps its record of what was refused.
+  test "refusing a stopped turn leaves the comment and task untouched" do
+    @task.update!(status: "cancelled")
+    comment = approval_comment
+
+    assert_raises(Comments::ActionExecutor::ExecutionError) do
+      ::Tools::MetaToolService.stub :new, -> { Object.new } do
+        Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      end
+    end
+
+    assert_nil comment.reload.action_executed_at
+    refute @task.reload.pending_tool_call.key?("approved")
+  end
+
+  # A task can be re-paused on a newer tool call, which leaves the earlier
+  # approval comment behind. Approving the stale one must not run its tool.
+  test "an approval superseded by a newer tool call is refused" do
+    comment = approval_comment
+    @task.update!(pending_tool_call: @task.pending_tool_call.merge("tool_call_id" => "call_456"))
+
+    invoked = false
+    service = Object.new
+    service.define_singleton_method(:call) { |**_args| invoked = true }
+
+    assert_raises(Comments::ActionExecutor::ExecutionError) do
+      ::Tools::MetaToolService.stub :new, -> { service } do
+        Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      end
+    end
+
+    refute invoked, "the tool ran for a superseded approval"
+  end
+
+  # Approving only enqueues the resume; AiAgentJob assigns "running" when it
+  # actually starts. Claiming it as running here would make a Stop landing in
+  # that window skip the release TasksController#cancel reserves for states with
+  # no live worker, stranding the agent slot until stuck recovery.
+  test "an approved turn is still releasable by Stop until its job starts" do
+    service = Object.new
+    service.define_singleton_method(:call) { |**_args| { result: "success" } }
+
+    ::Tools::MetaToolService.stub :new, -> { service } do
+      Collavre::AiAgentJob.stub :perform_later, ->(_task) { nil } do
+        Comments::ActionExecutor.new(comment: approval_comment, executor: @user).call
+      end
+    end
+
+    assert_includes Collavre::Task::HELD_SLOT_WITHOUT_WORKER, @task.reload.status
+  end
+
+  # An action payload may carry an `actions` array, and nothing stops an agent from
+  # emitting the same execute_tool entry twice. The row lock does not help here —
+  # both entries run under the same lock — so the approval marker is what makes the
+  # second one a no-op instead of a second side effect and a second resume.
+  test "a tool call already approved is not executed a second time" do
+    entry = {
+      "action" => "execute_tool",
+      "tool_name" => "test_tool",
+      "arguments" => { "param" => "value" },
+      "resume" => { "task_id" => @task.id, "tool_call_id" => "call_123" }
+    }
+    comment = @creative.comments.create!(
+      user: @agent,
+      content: "Tool approval request",
+      approver: @user,
+      action: JSON.pretty_generate("actions" => [ entry, entry ])
+    )
+
+    invocations = 0
+    service = Object.new
+    service.define_singleton_method(:call) { |**_args| invocations += 1; { result: "success" } }
+    resumes = 0
+
+    ::Tools::MetaToolService.stub :new, -> { service } do
+      Collavre::AiAgentJob.stub :perform_later, ->(_task) { resumes += 1 } do
+        Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      end
+    end
+
+    assert_equal 1, invocations, "the tool ran once per duplicate entry"
+    assert_equal 1, resumes, "each execution queued its own resume"
+    assert_equal true, @task.reload.pending_tool_call["approved"]
+    assert comment.reload.action_executed_at.present?
+  end
+
+  private
+
+  def approval_comment
+    @creative.comments.create!(
+      user: @agent,
+      content: "Tool approval request",
+      approver: @user,
+      action: JSON.pretty_generate(
+        "action" => "execute_tool",
+        "tool_name" => "test_tool",
+        "arguments" => { "param" => "value" },
+        "resume" => { "task_id" => @task.id, "tool_call_id" => "call_123" }
+      )
+    )
+  end
 end
