@@ -307,12 +307,12 @@ module CollavreGithub
       @link.update_columns(repository_full_name: "owner/somewhere-else", repository_id: nil)
     end
 
-    def post_unidentifiable(id_seed)
+    def post_unidentifiable(id_seed, full_name: OLD_NAME, repository_id: REPO_ID)
       post_event("issue_comment", {
         action: "created",
         comment: { id: id_seed, body: "hi", user: { login: "alice", type: "User", id: 1 } },
         issue: { number: 99, pull_request: {} },
-        repository: { id: REPO_ID, full_name: OLD_NAME }
+        repository: { id: repository_id, full_name: full_name }
       }, secret: "any-secret-at-all")
     end
 
@@ -346,6 +346,26 @@ module CollavreGithub
       3.times { |i| post_unidentifiable(10 + i) ; assert_response :unauthorized }
 
       assert_equal 1, Collavre::Comment.where(topic_id: @topic.id).count
+    end
+
+    test "unknown repository scans are globally throttled across names" do
+      orphan_the_link!
+      other_topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "Other repo")
+      GithubPrChannel.create!(
+        topic: other_topic,
+        config: { "repo_full_name" => "owner/other", "pr_number" => 100 }
+      )
+
+      post_unidentifiable(15)
+      post_unidentifiable(16, full_name: "owner/other", repository_id: 777)
+
+      assert_equal 1, Collavre::Comment.where(topic_id: @topic.id).count
+      assert_equal 0, Collavre::Comment.where(topic_id: other_topic.id).count
+
+      travel 2.minutes do
+        post_unidentifiable(17, full_name: "owner/other", repository_id: 777)
+      end
+      assert_equal 1, Collavre::Comment.where(topic_id: other_topic.id).count
     end
 
     test "announcement is throttled per channel, not globally" do

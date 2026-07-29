@@ -736,12 +736,15 @@ module CollavreGithub
     # would fill with identical warnings.
     AUTH_FAILURE_NOTICE_INTERVAL = 1.hour
 
-    # Repo-level guard on the channel scan below. This path is reachable by
-    # unauthenticated callers, so the scan must not be repeatable at request
-    # rate. Read-then-write rather than `write(unless_exist:)` so the guard
-    # fails OPEN: a cache store that reads back nil (NullStore) costs an extra
-    # scan, it does not suppress the warning this exists to deliver.
+    # Global guard on the channel query below. This path is reachable by
+    # unauthenticated callers, so the payload's repository name must not be part
+    # of the throttle key: otherwise a caller can cycle arbitrary names to force
+    # one query and one cache entry per request. A short global interval bounds
+    # the work while still letting independently broken repositories announce
+    # promptly. `unless_exist` makes concurrent claims atomic on cache stores
+    # that support it; NullStore fails open and preserves the warning.
     AUTH_FAILURE_SCAN_INTERVAL = 1.minute
+    AUTH_FAILURE_SCAN_CACHE_KEY = "collavre_github:auth_failure_scan".freeze
 
     # Announce a rejected delivery in every topic monitoring the repository.
     #
@@ -755,13 +758,15 @@ module CollavreGithub
       _id, repo = repository_identity(payload)
       return if repo.blank?
 
-      scan_key = "collavre_github:auth_failure_scan:#{repo}"
-      return if Rails.cache.read(scan_key)
-      Rails.cache.write(scan_key, true, expires_in: AUTH_FAILURE_SCAN_INTERVAL)
+      claimed = Rails.cache.write(
+        AUTH_FAILURE_SCAN_CACHE_KEY,
+        true,
+        expires_in: AUTH_FAILURE_SCAN_INTERVAL,
+        unless_exist: true
+      )
+      return unless claimed
 
-      GithubPrChannel.active.find_each do |channel|
-        next unless channel.repo_full_name.to_s.downcase == repo
-
+      GithubPrChannel.active.where("LOWER(repo_full_name) = ?", repo).find_each do |channel|
         begin
           channel.with_lock do
             last = channel.config["auth_failure_notified_at"]
@@ -788,8 +793,7 @@ module CollavreGithub
       _id, repo = repository_identity(payload)
       return if repo.blank?
 
-      GithubPrChannel.find_each do |channel|
-        next unless channel.repo_full_name.to_s.downcase == repo
+      GithubPrChannel.where("LOWER(repo_full_name) = ?", repo).find_each do |channel|
         next if channel.config["auth_failure_notified_at"].blank?
 
         begin

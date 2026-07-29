@@ -89,23 +89,7 @@ module CollavreGithub
 
     attr_reader :client, :webhook_url
 
-    # Stamp the rename-stable id at provisioning time so a link is protected
-    # from its first moment, rather than from its first inbound delivery. Only
-    # ever fills a NULL, and a failed fetch is a no-op — name matching still
-    # works, and the webhook backfill remains as the later safety net.
-    def ensure_repository_id(link)
-      return if link.repository_id.present?
-
-      id = client.repository_id(link.repository_full_name)
-      link.update_column(:repository_id, id) if id.present?
-    rescue => e
-      Rails.logger.warn(
-        "[CollavreGithub] repository id backfill failed for #{link.repository_full_name}: #{e.class}: #{e.message}"
-      )
-    end
-
     def ensure_webhook(link)
-      ensure_repository_id(link)
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
       hooks = repository_hooks(repository_full_name)
