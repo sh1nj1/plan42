@@ -125,6 +125,18 @@ module CollavreGithub
       nil
     end
 
+    # GitHub's numeric repository id — the one identifier that survives a
+    # rename, which is what webhook routing falls back to when the stored
+    # `repository_full_name` has gone stale. nil on any error: a link with no
+    # id is still usable (it matches by name), so this must never fail a
+    # provisioning run.
+    def repository_id(repo_full_name)
+      client.repository(repo_full_name).id
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub repository id fetch failed for #{repo_full_name}: #{e.message}")
+      nil
+    end
+
     # Fetch the default branch name for a repository
     def default_branch(repo_full_name)
       repo = client.repository(repo_full_name)

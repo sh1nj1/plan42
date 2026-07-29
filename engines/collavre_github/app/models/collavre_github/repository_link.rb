@@ -21,6 +21,31 @@ module CollavreGithub
 
     scope :markdown_sync, -> { where(markdown_sync_enabled: true) }
 
+    # Every link for one GitHub repository, matched by BOTH identifiers.
+    #
+    # `repository_full_name` is the only key webhook routing used to have, and
+    # it is not stable: renaming a repository on GitHub changes `full_name` in
+    # every subsequent payload with no local event to notice it. The lookup
+    # then found nothing, the controller fell through to a fallback secret that
+    # production does not configure, and every delivery was answered 401 before
+    # dispatch — silently, since the deliveries ledger is only written after
+    # signature verification. `repository.id` does survive a rename, which is
+    # why it is matched first-class here.
+    #
+    # Deliberately a UNION, not id-first-else-name. A repository linked to two
+    # creatives can be half-backfilled (one row stamped, its sibling still
+    # nil); preferring the id match would silently drop the un-stamped sibling
+    # from the fan-out — the exact class of bug this method exists to fix.
+    def self.for_repository(id:, full_name:)
+      name = full_name.to_s.downcase.presence
+      by_id = id.present? ? where(repository_id: id) : nil
+      by_name = name ? where("LOWER(repository_full_name) = ?", name) : nil
+
+      return by_id.or(by_name) if by_id && by_name
+
+      by_id || by_name || none
+    end
+
     def markdown_sync_branch
       sync_branch.presence || "main"
     end

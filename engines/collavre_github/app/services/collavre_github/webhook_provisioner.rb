@@ -6,8 +6,17 @@ module CollavreGithub
     # a channel that silently misses comments. `pull_request` is required by
     # the auto-attach + close detection paths.
     CHANNEL_EVENTS = %w[issue_comment pull_request_review pull_request_review_comment].freeze
-    EVENTS = (%w[pull_request] + CHANNEL_EVENTS).freeze
-    EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS).freeze
+
+    # `repository` carries the `renamed` action. Without it a rename is
+    # invisible to this app: `repository_full_name` goes stale on every link at
+    # once and, for links with no `repository_id` yet, there is no other key to
+    # find them by — so every subsequent delivery is answered 401 and the
+    # rename event that would repair it is rejected along with the rest.
+    # NOT a member of CHANNEL_EVENTS: it is routing maintenance, and the
+    # controller drops it rather than formatting it into any feed.
+    MAINTENANCE_EVENTS = %w[repository].freeze
+    EVENTS = (%w[pull_request] + CHANNEL_EVENTS + MAINTENANCE_EVENTS).freeze
+    EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS + MAINTENANCE_EVENTS).freeze
     CONTENT_TYPE = "json".freeze
 
     # Last path segment of the deprecated singular `post "webhook"` route. The
@@ -80,7 +89,23 @@ module CollavreGithub
 
     attr_reader :client, :webhook_url
 
+    # Stamp the rename-stable id at provisioning time so a link is protected
+    # from its first moment, rather than from its first inbound delivery. Only
+    # ever fills a NULL, and a failed fetch is a no-op — name matching still
+    # works, and the webhook backfill remains as the later safety net.
+    def ensure_repository_id(link)
+      return if link.repository_id.present?
+
+      id = client.repository_id(link.repository_full_name)
+      link.update_column(:repository_id, id) if id.present?
+    rescue => e
+      Rails.logger.warn(
+        "[CollavreGithub] repository id backfill failed for #{link.repository_full_name}: #{e.class}: #{e.message}"
+      )
+    end
+
     def ensure_webhook(link)
+      ensure_repository_id(link)
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
       hooks = repository_hooks(repository_full_name)

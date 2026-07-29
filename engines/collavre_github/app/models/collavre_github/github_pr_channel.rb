@@ -67,6 +67,18 @@ module CollavreGithub
       )
     end
 
+    # Shown when GitHub's delivery could not be authenticated. Renders this
+    # channel's OWN stored repo name, never the rejected payload's — the
+    # payload is unverified by definition at the point this is built.
+    def auth_failure_message
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t("auth_failure_message", repo: repo_full_name, label: label, url: pr_url),
+        label: label,
+        link: pr_url
+      )
+    end
+
     def reopened_message
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,

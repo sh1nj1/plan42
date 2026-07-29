@@ -13,12 +13,20 @@ module CollavreGithub
       attr_reader :created, :updated, :deleted
       attr_accessor :hooks
 
-      def initialize(hooks: [], next_id: 100)
+      attr_accessor :repo_id
+
+      def initialize(hooks: [], next_id: 100, repo_id: 555)
         @hooks = hooks
         @created = []
         @updated = []
         @deleted = []
         @next_id = next_id
+        @repo_id = repo_id
+      end
+
+      # Mirrors Client#repository_id, which answers nil on any GitHub error.
+      def repository_id(_repo)
+        @repo_id
       end
 
       def repository_hooks(_repo)
@@ -106,6 +114,34 @@ module CollavreGithub
         github_account: @account,
         repository_full_name: "owner/repo"
       )
+    end
+
+    # `repository_id` is the only routing key that survives a repository
+    # rename. Stamping it at provisioning time protects a link from its first
+    # moment rather than from its first inbound delivery.
+    test "stamps the repository id onto a link that has none" do
+      client = FakeClient.new(repo_id: 4242)
+      provision(client)
+
+      assert_equal 4242, @link.reload.repository_id
+    end
+
+    test "does not overwrite a repository id that is already set" do
+      # An existing id anchors the link to a specific repository. Letting a
+      # provisioning run move it would undo exactly the protection it provides.
+      @link.update!(repository_id: 1)
+      provision(FakeClient.new(repo_id: 4242))
+
+      assert_equal 1, @link.reload.repository_id
+    end
+
+    test "a failed repository id fetch does not fail provisioning" do
+      # Name matching still works without an id, so this must never be the
+      # thing that stops a hook being created.
+      client = FakeClient.new(repo_id: nil)
+
+      assert_equal [ [ @link, :created ] ], provision(client)
+      assert_nil @link.reload.repository_id
     end
 
     test "creates a hook when the repo has none" do
