@@ -124,7 +124,10 @@ module CollavreGithub
 
     def link!(creative)
       CollavreGithub::RepositoryLink.create!(
-        creative: creative, github_account: @account, repository_full_name: REPO
+        creative: creative,
+        github_account: @account,
+        repository_full_name: REPO,
+        repository_id: 123
       )
     end
 

@@ -1,10 +1,13 @@
 module CollavreGithub
-  # Reconciles every safely identifiable repository hook with
-  # WebhookProvisioner's current event list. New event subscriptions in code do
-  # not change hooks already stored at GitHub, so deploys run this once after
-  # the new app is live. For a name-only legacy link, the stored hook id must
-  # still exist under that name before the name is trusted: a stale name may
-  # have been reused, but the unrelated repository cannot also own our hook id.
+  # Reconciles every ID-backed repository hook with WebhookProvisioner's current
+  # event list. New event subscriptions in code do not change hooks already
+  # stored at GitHub, so deploys run this once after the new app is live.
+  #
+  # Name-only legacy rows are never mutated automatically. Older provisioners
+  # copied a hook registration and secret to every same-name row, so neither
+  # value is independent proof that a legacy row belongs to the repository
+  # currently owning that name. Their presence is reported as requiring manual
+  # verification so deploys cannot silently leave them unreconciled.
   class WebhookReprovisioner
     def self.call(webhook_url: default_webhook_url)
       new(webhook_url: webhook_url).call
@@ -44,9 +47,10 @@ module CollavreGithub
         .where("LOWER(repository_full_name) = ?", repository_name)
         .order(:id)
         .to_a
+      manual_verification_required = links.any? { |link| link.repository_id.blank? }
       failed = false
 
-      links.each do |candidate|
+      links.select { |link| link.repository_id.present? }.each do |candidate|
         unless candidate.github_account
           failed = true
           next
@@ -67,13 +71,18 @@ module CollavreGithub
           next
         end
 
+        return :manual_verification_required if manual_verification_required
+
         return status
       rescue => e
         failed = true
         log_failure(repository_name, e)
       end
 
-      failed ? :failed : :skipped_unverified
+      return :failed if failed
+      return :manual_verification_required if manual_verification_required
+
+      :skipped_unverified
     end
 
     def log_failure(repository_name, error)
@@ -84,24 +93,17 @@ module CollavreGithub
     end
 
     def establish_repository_identity(link)
+      return if link.repository_id.blank?
+
       client = CollavreGithub::Client.new(link.github_account)
-      if link.repository_id.blank?
-        return if link.webhook_hook_id.blank?
-
-        hook_ids = client.repository_hooks!(link.repository_full_name).map { |hook| hook.id.to_s }
-        return unless hook_ids.include?(link.webhook_hook_id.to_s)
-      end
-
       identity = client.repository_identity(link.repository_full_name)
       return if identity&.id.blank? || identity&.full_name.blank?
-      return if link.repository_id.present? && link.repository_id.to_s != identity.id.to_s
+      return if link.repository_id.to_s != identity.id.to_s
 
       synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
         anchor: link,
         repository_id: identity.id,
-        full_name: identity.full_name,
-        trusted_hook_id: link.webhook_hook_id,
-        trusted_secret: link.webhook_secret
+        full_name: identity.full_name
       )
       synchronized.find { |candidate| candidate.creative_id == link.creative_id }
     end

@@ -113,7 +113,7 @@ module CollavreGithub
       assert_equal [ [ "owner/other", :failed ], [ "owner/repo", :updated ] ], results
     end
 
-    test "reprovisions a name-only legacy repository after its registered hook proves identity" do
+    test "skips a name-only legacy repository even when its registered hook is live" do
       @other.update_column(:repository_id, nil)
       @other.update_column(:webhook_hook_id, 77)
       calls = []
@@ -132,16 +132,80 @@ module CollavreGithub
         end
       end
 
-      assert_equal [ [ "owner/other", :updated ], [ "owner/repo", :updated ] ], results
-      assert_equal [ @other, @primary ], calls.map { |call| call[:links].first }
-      assert_equal 202, @other.reload.repository_id
-      assert_equal [ "owner/other", "owner/other", "Owner/Repo" ], client.repository_names
+      assert_equal [ [ "owner/other", :manual_verification_required ], [ "owner/repo", :updated ] ], results
+      assert_equal [ @primary ], calls.map { |call| call[:links].first }
+      assert_nil @other.reload.repository_id
+      assert_equal [ "Owner/Repo" ], client.repository_names
     end
 
-    test "persists the canonical repository name and renames channels during legacy reconciliation" do
+    test "does not treat a copied legacy hook registration as repository identity" do
       @primary.destroy!
       @sibling.destroy!
-      @other.update_columns(repository_id: nil, webhook_hook_id: 77)
+      @other.destroy!
+      contaminated = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:tshirt),
+        github_account: @account,
+        repository_full_name: "owner/reused",
+        repository_id: nil,
+        webhook_hook_id: 77,
+        webhook_secret: "shared-secret"
+      )
+      valid = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:childless_creative),
+        github_account: @account,
+        repository_full_name: "owner/reused",
+        repository_id: 222,
+        webhook_hook_id: 77,
+        webhook_secret: "shared-secret"
+      )
+      calls = []
+      provision = lambda do |**kwargs|
+        calls << kwargs
+        [ [ kwargs[:links].first, :updated ] ]
+      end
+      client = IdentityClient.new(
+        hooks: [ Hook.new(77) ],
+        repository_id: 222
+      )
+
+      results = CollavreGithub::Client.stub(:new, client) do
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          CollavreGithub::WebhookReprovisioner.call(webhook_url: "https://example.com/github/webhooks")
+        end
+      end
+
+      assert_equal [ [ "owner/reused", :manual_verification_required ] ], results
+      assert_equal [ valid ], calls.map { |call| call[:links].first }
+      assert_nil contaminated.reload.repository_id
+      assert_equal "owner/reused", contaminated.repository_full_name
+    end
+
+    test "reports a failed ID-backed candidate when its same-name legacy row also needs verification" do
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "owner/repo",
+        repository_id: nil,
+        webhook_hook_id: @primary.webhook_hook_id,
+        webhook_secret: @primary.webhook_secret
+      )
+      client = IdentityClient.new(hooks: [], repository_id: 101)
+      provision = ->(**kwargs) { [ [ kwargs[:links].first, :failed ] ] }
+
+      results = CollavreGithub::Client.stub(:new, client) do
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          CollavreGithub::WebhookReprovisioner.call(webhook_url: "https://example.com/github/webhooks")
+        end
+      end
+
+      assert_equal :failed, results.assoc("owner/repo").last
+      assert_nil legacy.reload.repository_id
+    end
+
+    test "persists the canonical repository name and renames channels during reconciliation" do
+      @primary.destroy!
+      @sibling.destroy!
+      @other.update_column(:webhook_hook_id, 77)
       topic = Collavre::Topic.create!(creative: @other.creative, user: @user, name: "Legacy")
       channel = GithubPrChannel.create!(
         topic: topic,
@@ -334,7 +398,7 @@ module CollavreGithub
         end
       end
 
-      assert_equal [ [ "owner/other", :skipped_unverified ], [ "owner/repo", :updated ] ], results
+      assert_equal [ [ "owner/other", :manual_verification_required ], [ "owner/repo", :updated ] ], results
       assert_equal [ @primary ], calls.map { |call| call[:links].first }
       assert_nil @other.reload.repository_id
     end
@@ -357,10 +421,10 @@ module CollavreGithub
         end
       end
 
-      assert_equal [ [ "owner/other", :skipped_unverified ], [ "owner/repo", :updated ] ], results
+      assert_equal [ [ "owner/other", :manual_verification_required ], [ "owner/repo", :updated ] ], results
       assert_equal [ @primary ], calls.map { |call| call[:links].first }
       assert_nil @other.reload.repository_id
-      assert_equal [ "owner/other", "Owner/Repo" ], client.repository_names
+      assert_equal [ "Owner/Repo" ], client.repository_names
     end
   end
 end

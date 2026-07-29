@@ -11,7 +11,7 @@ module CollavreGithub
       )
       @link = CollavreGithub::RepositoryLink.create!(
         creative: @creative, github_account: @account,
-        repository_full_name: "owner/repo"
+        repository_full_name: "owner/repo", repository_id: 123
       )
       @topic = Collavre::Topic.create!(creative: @creative, user: @user, name: "T")
     end

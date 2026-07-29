@@ -5,4 +5,29 @@ results.each do |repository, status|
 end
 
 failed = results.select { |_repository, status| status == :failed }
-abort "GitHub webhook reprovisioning failed for: #{failed.map(&:first).join(", ")}" if failed.any?
+warn "GitHub webhook reprovisioning failed for: #{failed.map(&:first).join(", ")}" if failed.any?
+
+manual_links = CollavreGithub::RepositoryLink
+  .where(repository_id: nil)
+  .includes(:github_account)
+  .order(:id)
+  .to_a
+if manual_links.any?
+  warn "GitHub repository links requiring explicit identity verification:"
+  manual_links.each do |link|
+    warn(
+      "  link_id=#{link.id} creative_id=#{link.creative_id} " \
+      "account_id=#{link.github_account_id} account=#{link.github_account&.login.inspect} " \
+      "stored_name=#{link.repository_full_name.inspect}"
+    )
+  end
+  manual_names = manual_links.map { |link| link.repository_full_name.downcase }.uniq.sort
+  warn(
+    "GitHub repository identity verification required for: #{manual_names.join(", ")}. " \
+    "For each row, run GITHUB_REPOSITORY_LINK_ID=<link_id> " \
+    "GITHUB_REPOSITORY=<owner/name> bin/rails runner " \
+    "script/verify_github_repository_link_identity, then rerun this script."
+  )
+end
+
+abort "GitHub webhook reconciliation requires operator action" if failed.any? || manual_links.any?

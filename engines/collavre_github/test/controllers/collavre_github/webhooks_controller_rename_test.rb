@@ -72,6 +72,37 @@ module CollavreGithub
       assert_equal NEW_NAME, @channel.reload.repo_full_name
     end
 
+    test "ordinary missed-rename collision preserves the verified secret for later deliveries" do
+      survivor = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME,
+        repository_id: REPO_ID,
+        webhook_secret: "unverified-survivor-secret"
+      )
+
+      post_event("issue_comment", {
+        action: "created",
+        comment: { id: 91, body: "first", user: { login: "alice", type: "User", id: 1 } },
+        issue: { number: 99, pull_request: {} },
+        repository: { id: REPO_ID, full_name: NEW_NAME }
+      })
+      assert_response :ok
+
+      assert_not CollavreGithub::RepositoryLink.exists?(@link.id)
+      assert_equal @link.webhook_secret, survivor.reload.webhook_secret
+
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 92, body: "second", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        }, secret: @link.webhook_secret)
+      end
+      assert_response :ok
+    end
+
     test "ID-backed missed-rename repair does not capture a NULL-id same-secret link" do
       other_creative = creatives(:childless_creative)
       legacy = CollavreGithub::RepositoryLink.create!(
@@ -102,7 +133,7 @@ module CollavreGithub
       assert_equal OLD_NAME, other_channel.reload.repo_full_name
     end
 
-    test "ID-backed missed-rename repair preserves a NULL-id same-hook sibling" do
+    test "ID-backed missed-rename repair does not capture a NULL-id same-hook sibling" do
       @link.update!(webhook_hook_id: 77)
       other_creative = creatives(:childless_creative)
       legacy = CollavreGithub::RepositoryLink.create!(
@@ -119,7 +150,7 @@ module CollavreGithub
         config: { "repo_full_name" => OLD_NAME, "pr_number" => 99 }
       )
 
-      assert_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count }, 1 do
+      assert_no_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count } do
         post_event("issue_comment", {
           action: "created",
           comment: { id: 3, body: "hi", user: { login: "alice", type: "User", id: 1 } },
@@ -129,9 +160,9 @@ module CollavreGithub
       end
 
       assert_response :ok
-      assert_equal REPO_ID, legacy.reload.repository_id
-      assert_equal NEW_NAME, legacy.repository_full_name
-      assert_equal NEW_NAME, other_channel.reload.repo_full_name
+      assert_nil legacy.reload.repository_id
+      assert_equal OLD_NAME, legacy.repository_full_name
+      assert_equal OLD_NAME, other_channel.reload.repo_full_name
     end
 
     test "ID-backed repair rejects a hook id not registered to the authoritative repository" do
@@ -272,18 +303,20 @@ module CollavreGithub
       assert_includes links, @link
     end
 
-    test "repository_id is backfilled from a verified delivery" do
+    test "a name-only link requires explicit verification before delivery processing" do
       @link.update_column(:repository_id, nil)
 
-      post_event("issue_comment", {
-        action: "created",
-        comment: { id: 2, body: "hi", user: { login: "alice", type: "User", id: 1 } },
-        issue: { number: 99, pull_request: {} },
-        repository: { id: REPO_ID, full_name: OLD_NAME }
-      })
+      assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 2, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: OLD_NAME }
+        })
+      end
 
-      assert_response :ok
-      assert_equal REPO_ID, @link.reload.repository_id
+      assert_response :unauthorized
+      assert_nil @link.reload.repository_id
     end
 
     test "repository_id is not backfilled onto a stale name match with another secret" do
@@ -332,10 +365,10 @@ module CollavreGithub
       assert_nil @link.reload.repository_id
     end
 
-    test "a verified hook id repairs a missed rename and dispatches the current event" do
+    test "a hook id and valid secret cannot establish a legacy row identity" do
       @link.update_columns(repository_id: nil, webhook_hook_id: 77)
 
-      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+      assert_no_difference -> { Collavre::Comment.where(topic_id: @topic.id).count } do
         post_event("issue_comment", {
           action: "created",
           comment: { id: 31, body: "after missed rename", user: { login: "alice", type: "User", id: 1 } },
@@ -344,10 +377,10 @@ module CollavreGithub
         }, hook_id: 77)
       end
 
-      assert_response :ok
-      assert_equal REPO_ID, @link.reload.repository_id
-      assert_equal NEW_NAME, @link.repository_full_name
-      assert_equal NEW_NAME, @channel.reload.repo_full_name
+      assert_response :unauthorized
+      assert_nil @link.reload.repository_id
+      assert_equal OLD_NAME, @link.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
     end
 
     test "an unverified hook id cannot repair repository identity" do
@@ -513,7 +546,7 @@ module CollavreGithub
       assert_equal OLD_NAME, child_channel.reload.repo_full_name
     end
 
-    test "repository.renamed repairs an unbackfilled sibling with the verified secret" do
+    test "repository.renamed does not capture an unbackfilled same-secret sibling" do
       other_creative = creatives(:childless_creative)
       sibling = CollavreGithub::RepositoryLink.create!(
         creative: other_creative,
@@ -535,9 +568,9 @@ module CollavreGithub
       })
 
       assert_response :ok
-      assert_equal NEW_NAME, sibling.reload.repository_full_name
-      assert_equal REPO_ID, sibling.repository_id
-      assert_equal NEW_NAME, sibling_channel.reload.repo_full_name
+      assert_equal OLD_NAME, sibling.reload.repository_full_name
+      assert_nil sibling.repository_id
+      assert_equal OLD_NAME, sibling_channel.reload.repo_full_name
     end
 
     test "repository.renamed leaves a creative unchanged when the new name belongs to another id" do

@@ -30,6 +30,19 @@ module CollavreGithub
         return head :unauthorized
       end
 
+      # NULL-id rows predate trustworthy repository identity storage. Their
+      # hook registration and secret may both have been copied across every
+      # same-name row by older provisioners, so even a valid HMAC cannot prove
+      # which row the current repository belongs to. Require the explicit
+      # reattachment workflow before processing or mutating such a link.
+      if @repository_link && @repository_link.repository_id.blank?
+        Rails.logger.warn(
+          "[CollavreGithub] rejecting delivery for unverified repository link " \
+          "#{@repository_link.id}; explicit identity verification is required"
+        )
+        return head :unauthorized
+      end
+
       # Idempotency claim. Deliberately AFTER signature verification: the claim
       # writes a row keyed by an attacker-supplied header, so an unauthenticated
       # caller must not be able to pre-claim a GUID and have GitHub's real
@@ -191,11 +204,6 @@ module CollavreGithub
       # feature.
       return if event == "repository"
 
-      # A delivery that verified is proof this payload really describes a
-      # repository we are linked to, so it is the only safe place to learn the
-      # id. Doing it at lookup time instead would let an unauthenticated caller
-      # repoint a link's routing key at a repository they control.
-      backfill_repository_ids(payload)
       clear_auth_failure_notices(payload)
 
       # Process all links for this repo (same repo can be linked to multiple creatives)
@@ -606,12 +614,7 @@ module CollavreGithub
       links = links_for(payload).to_a
       return links if id.blank?
 
-      # ID-backed rows are authoritative. A NULL-id name match is only a
-      # sibling of the authenticated repository when it carries the same HMAC
-      # secret; otherwise the name may be stale and reused by another repo.
-      links.select do |link|
-        link.repository_id.present? || secrets_match?(link.webhook_secret, webhook_secret)
-      end
+      links.select { |link| link.repository_id.to_s == id.to_s }
     end
 
     def find_repository_link(payload)
@@ -633,94 +636,35 @@ module CollavreGithub
       authoritative = candidates.where(repository_id: id).first
       return authoritative if authoritative
 
-      hook_link = repository_link_for_hook_id(id)
-      if hook_link
-        @repository_link_from_hook_id = true
-        return hook_link
-      end
-
       candidates.first
     end
 
-    # GitHub includes the stable hook registration id on every delivery. It is
-    # safe to use as a secret-selection fallback because no state changes until
-    # the request passes HMAC verification. This recovers the exact missed-
-    # rename case: both the link and channel still carry the old repository
-    # name, while the payload carries only the new one.
-    def repository_link_for_hook_id(repository_id)
-      hook_id = github_hook_id
-      return unless hook_id
-
-      candidates = CollavreGithub::RepositoryLink.where(webhook_hook_id: hook_id)
-      if repository_id.present?
-        candidates = candidates.where(repository_id: [ nil, repository_id ])
-        candidates.where(repository_id: repository_id).first || candidates.first
-      else
-        candidates.first
-      end
-    end
-
     # A verified delivery proves the current canonical name whenever its stable
-    # repository id matches the link used for HMAC verification. Hook-id
-    # fallback provides the same proof for legacy links that do not have an id
-    # yet. Repair both paths before ordinary fan-out resolves channel names.
+    # repository id matches the link used for HMAC verification. Repair that
+    # exact ID scope before ordinary fan-out resolves channel names.
     def repair_repository_identity_from_verified_delivery(payload)
       id, full_name = repository_identity(payload)
       return if id.blank? || full_name.blank?
 
       verified_by_id = @repository_link&.repository_id.present? &&
         @repository_link.repository_id.to_s == id.to_s
-      return unless verified_by_id || @repository_link_from_hook_id
+      return unless verified_by_id
 
-      if verified_by_id && !@repository_link_from_hook_id
-        stale_name_exists = CollavreGithub::RepositoryLink
-          .where(repository_id: id)
-          .where("LOWER(repository_full_name) <> ?", full_name)
-          .exists?
-        return unless stale_name_exists
-      end
+      stale_name_exists = CollavreGithub::RepositoryLink
+        .where(repository_id: id)
+        .where("LOWER(repository_full_name) <> ?", full_name)
+        .exists?
+      return unless stale_name_exists
 
-      trusted_hook_id = github_hook_id
-      authoritative_hook = trusted_hook_id.present? &&
-        CollavreGithub::RepositoryLink.exists?(
-          repository_id: id,
-          webhook_hook_id: trusted_hook_id
-        )
       synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
         anchor: @repository_link,
         repository_id: id,
         full_name: full_name,
-        trusted_hook_id: trusted_hook_id,
-        trusted_secret: webhook_secret,
-        include_legacy: @repository_link_from_hook_id || authoritative_hook,
-        include_legacy_secret: @repository_link_from_hook_id
+        trusted_secret: webhook_secret
       )
       @repository_link = synchronized.find do |link|
         link.creative_id == @repository_link.creative_id
       end || @repository_link
-    end
-
-    def github_hook_id
-      raw_hook_id = request.headers["X-GitHub-Hook-ID"].to_s
-      hook_id = Integer(raw_hook_id, 10, exception: false)
-      hook_id if hook_id&.between?(1, (2**63) - 1)
-    end
-
-    # Stamp the stable id onto links that predate id-based routing. Scoped to
-    # links this repository actually resolved to, carrying the same secret that
-    # authenticated this delivery, and only ever fills a NULL. Name matching
-    # alone is not proof of identity: a stale NULL-id link may carry a name that
-    # GitHub has since assigned to another repository.
-    def backfill_repository_ids(payload)
-      id, _full_name = repository_identity(payload)
-      return if id.blank?
-
-      links_for(payload).each do |link|
-        next if link.repository_id.present?
-        next unless secrets_match?(link.webhook_secret, webhook_secret)
-
-        link.update_column(:repository_id, id)
-      end
     end
 
     # GitHub sends `repository.renamed` with the NEW `full_name` and only the
@@ -729,12 +673,9 @@ module CollavreGithub
     # lets a link that was already backfilled be found even when its stored
     # name matches nothing in the payload.
     #
-    # Note the ordering dependency this creates. A link whose `repository_id`
-    # is still NULL when its repository is renamed cannot be repaired by this
-    # handler — the delivery carrying the rename is itself rejected 401,
-    # because the secret is looked up by the same keys. Backfill is what makes
-    # this handler reachable; `announce_webhook_auth_failure` is what covers
-    # the links that never got one.
+    # A link whose `repository_id` is still NULL cannot be repaired by this
+    # handler. It is rejected before processing and requires the explicit
+    # identity reattachment workflow.
     def handle_repository_renamed(payload)
       repo = payload["repository"] || {}
       new_full_name = (repo["full_name"] || repo[:full_name]).to_s
@@ -750,19 +691,10 @@ module CollavreGithub
       # the rename, and a delayed/redelivered event would otherwise capture the
       # new repository's links and channels too.
       #
-      # ID-backed rows are authoritative. The legacy fallback is restricted to
-      # unbackfilled rows carrying the SAME secret that authenticated this
-      # delivery; this preserves fan-out for a half-backfilled repository
-      # without trusting the now-reusable name by itself.
+      # ID-backed rows are authoritative. NULL-id rows require explicit
+      # reattachment because older provisioners may have copied both their hook
+      # registration and secret from an unrelated same-name repository.
       links = repo_id.present? ? CollavreGithub::RepositoryLink.where(repository_id: repo_id).to_a : []
-      if old_full_name.present? && webhook_secret.present?
-        legacy = CollavreGithub::RepositoryLink
-          .where(repository_id: nil)
-          .where("LOWER(repository_full_name) = ?", old_full_name.downcase)
-          .select { |link| secrets_match?(link.webhook_secret, webhook_secret) }
-        links.concat(legacy)
-      end
-      links.uniq!(&:id)
 
       renamed_creative_ids = []
       links.each do |link|
@@ -864,12 +796,9 @@ module CollavreGithub
     AUTH_FAILURE_SCAN_CACHE_KEY = "collavre_github:auth_failure_scan".freeze
 
     # Announce a rejected delivery in every topic already monitoring the name
-    # carried by the payload. A missed rename with a registered hook does not
-    # enter this path: `repository_link_for_hook_id` selects its secret, HMAC
-    # verification succeeds, and the verified identity synchronizer repairs the
-    # old link/channel names before dispatch. Without either a name match or a
-    # recorded hook id there is no safe mapping from an unverified new name to
-    # an old channel.
+    # carried by the payload. A stale ID-backed link is repaired after HMAC
+    # verification. A NULL-id link requires explicit reattachment because its
+    # historical hook registration and secret are not row identity.
     #
     # The payload is UNVERIFIED here — that is the whole situation — so nothing
     # from it reaches the message. The repo name rendered is the channel's own

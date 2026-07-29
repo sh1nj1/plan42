@@ -2,27 +2,23 @@ module CollavreGithub
   # Persists a repository identity established through trusted evidence and
   # keeps attached channel routing keys in sync with the canonical GitHub name.
   #
-  # Stable repository ids are authoritative. NULL-id siblings are included
-  # only when they share the verified hook registration or HMAC secret with the
-  # anchor link; a name alone is never enough because GitHub can reuse it.
+  # Stable repository ids are authoritative. A NULL-id anchor is accepted only
+  # by the explicit operator reattachment workflow; hook registrations and HMAC
+  # secrets are not row identity because older provisioners propagated both.
   class RepositoryIdentitySynchronizer
     def self.call(
       anchor:,
       repository_id:,
       full_name:,
-      trusted_hook_id: nil,
       trusted_secret: nil,
-      include_legacy: true,
-      include_legacy_secret: true
+      allow_anchor_backfill: false
     )
       new(
         anchor: anchor,
         repository_id: repository_id,
         full_name: full_name,
-        trusted_hook_id: trusted_hook_id,
         trusted_secret: trusted_secret,
-        include_legacy: include_legacy,
-        include_legacy_secret: include_legacy_secret
+        allow_anchor_backfill: allow_anchor_backfill
       ).call
     end
 
@@ -30,18 +26,14 @@ module CollavreGithub
       anchor:,
       repository_id:,
       full_name:,
-      trusted_hook_id:,
       trusted_secret:,
-      include_legacy:,
-      include_legacy_secret:
+      allow_anchor_backfill:
     )
       @anchor = anchor
       @repository_id = repository_id
       @full_name = full_name.to_s
-      @trusted_hook_id = trusted_hook_id
       @trusted_secret = trusted_secret
-      @include_legacy = include_legacy
-      @include_legacy_secret = include_legacy_secret
+      @allow_anchor_backfill = allow_anchor_backfill
     end
 
     def call
@@ -77,31 +69,13 @@ module CollavreGithub
     attr_reader :anchor,
       :repository_id,
       :full_name,
-      :trusted_hook_id,
       :trusted_secret,
-      :include_legacy,
-      :include_legacy_secret
+      :allow_anchor_backfill
 
     def candidate_links
       links = RepositoryLink.where(repository_id: repository_id).to_a
-      legacy = if include_legacy
-        RepositoryLink
-          .where(repository_id: nil)
-          .where("LOWER(repository_full_name) = ?", anchor.repository_full_name.to_s.downcase)
-          .select { |link| trusted_legacy_link?(link) }
-      else
-        []
-      end
-
-      (links + legacy + [ anchor ]).uniq(&:id)
-    end
-
-    def trusted_legacy_link?(link)
-      hook_matches = trusted_hook_id.present? &&
-        link.webhook_hook_id.to_s == trusted_hook_id.to_s
-      secret_matches = include_legacy_secret && trusted_secret.present? &&
-        secrets_match?(link.webhook_secret, trusted_secret)
-      hook_matches || secret_matches
+      links << anchor if allow_anchor_backfill || anchor.repository_id.to_s == repository_id.to_s
+      links.uniq(&:id)
     end
 
     def synchronize_link(link)
@@ -154,14 +128,6 @@ module CollavreGithub
 
         channel.synchronize_repository_name!(full_name)
       end
-    end
-
-    def secrets_match?(left, right)
-      left = left.to_s
-      right = right.to_s
-      return false if left.bytesize != right.bytesize
-
-      ActiveSupport::SecurityUtils.secure_compare(left, right)
     end
   end
 end
