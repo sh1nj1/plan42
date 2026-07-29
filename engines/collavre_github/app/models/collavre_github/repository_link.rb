@@ -21,7 +21,8 @@ module CollavreGithub
 
     scope :markdown_sync, -> { where(markdown_sync_enabled: true) }
 
-    # Every link for one GitHub repository, matched by BOTH identifiers.
+    # Every link for one GitHub repository, matched by its stable id plus
+    # unbackfilled name-only siblings.
     #
     # `repository_full_name` is the only key webhook routing used to have, and
     # it is not stable: renaming a repository on GitHub changes `full_name` in
@@ -32,18 +33,23 @@ module CollavreGithub
     # signature verification. `repository.id` does survive a rename, which is
     # why it is matched first-class here.
     #
-    # Deliberately a UNION, not id-first-else-name. A repository linked to two
-    # creatives can be half-backfilled (one row stamped, its sibling still
-    # nil); preferring the id match would silently drop the un-stamped sibling
-    # from the fan-out — the exact class of bug this method exists to fix.
+    # When an id is present, name matching is restricted to NULL-id rows. A
+    # repository linked to two creatives can be half-backfilled (one row
+    # stamped, its sibling still nil), so those legacy siblings must remain in
+    # the fan-out. Rows carrying another id are authoritative links to another
+    # repository, even when GitHub has reused their stored name.
     def self.for_repository(id:, full_name:)
       name = full_name.to_s.downcase.presence
-      by_id = id.present? ? where(repository_id: id) : nil
-      by_name = name ? where("LOWER(repository_full_name) = ?", name) : nil
+      if id.present?
+        by_id = where(repository_id: id)
+        return by_id unless name
 
-      return by_id.or(by_name) if by_id && by_name
+        unbackfilled_by_name = where(repository_id: nil)
+          .where("LOWER(repository_full_name) = ?", name)
+        return by_id.or(unbackfilled_by_name)
+      end
 
-      by_id || by_name || none
+      name ? where("LOWER(repository_full_name) = ?", name) : none
     end
 
     def markdown_sync_branch

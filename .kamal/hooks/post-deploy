@@ -1,12 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Rollbacks can target an image created before the reconciliation script
-# existed. Only new deploy/setup runs need to apply the current subscription
-# contract to GitHub hooks that predate it.
-case "${KAMAL_COMMAND:-}" in
-  deploy|redeploy|setup) ;;
-  *) exit 0 ;;
-esac
-
-./bin/kamal app exec --primary --reuse "bin/rails runner script/reprovision_github_webhooks"
+# Post-deploy hooks do not receive KAMAL_COMMAND, so reconcile after every
+# successful rollout. The file guard runs inside the deployed container and
+# keeps rollbacks to images predating the reconciliation script safe.
+./bin/kamal app exec --primary --reuse \
+  "if [ -f script/reprovision_github_webhooks ]; then bin/rails runner script/reprovision_github_webhooks; fi"

@@ -83,6 +83,47 @@ module CollavreGithub
       assert_includes links, legacy
     end
 
+    test "repository_id lookup excludes name matches anchored to another repository" do
+      reused_name = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:childless_creative),
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: 777
+      )
+
+      links = CollavreGithub::RepositoryLink.for_repository(id: REPO_ID, full_name: OLD_NAME)
+      assert_includes links, @link
+      assert_not_includes links, reused_name
+    end
+
+    test "a reused repository name does not receive another repository's event" do
+      other_creative = creatives(:childless_creative)
+      CollavreGithub::RepositoryLink.create!(
+        creative: other_creative,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: 777,
+        webhook_secret: @link.webhook_secret
+      )
+      other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Other")
+      GithubPrChannel.create!(
+        topic: other_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 99 }
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count } do
+        assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+          post_event("issue_comment", {
+            action: "created",
+            comment: { id: 101, body: "private", user: { login: "alice", type: "User", id: 1 } },
+            issue: { number: 99, pull_request: {} },
+            repository: { id: REPO_ID, full_name: OLD_NAME }
+          })
+        end
+      end
+      assert_response :ok
+    end
+
     test "blank repository_id falls back to name matching" do
       links = CollavreGithub::RepositoryLink.for_repository(id: nil, full_name: OLD_NAME)
       assert_includes links, @link
