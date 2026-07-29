@@ -169,17 +169,26 @@ module CollavreGithub
       stub_github_repository("testuser/repo1", id: 101)
       stub_github_hooks("testuser/repo1")
       stub_github_create_hook("testuser/repo1")
+      lock_events = []
+      lock = lambda do |repository_id, &block|
+        lock_events << [ :entered, repository_id ]
+        block.call
+        lock_events << [ :released, repository_id ]
+      end
 
-      patch "/github/creatives/#{@creative.id}/integration",
-            params: { repositories: [ "testuser/repo1" ] },
-            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
-            as: :json
+      CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: { repositories: [ "testuser/repo1" ] },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
 
       assert_response :success
       data = JSON.parse(response.body)
       assert data["success"]
       assert_includes data["selected_repositories"], "testuser/repo1"
       assert data["webhooks"]["testuser/repo1"].present?
+      assert_equal [ [ :entered, 101 ], [ :released, 101 ] ], lock_events
     end
 
     test "update deduplicates aliases that resolve to the same repository" do

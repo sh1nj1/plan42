@@ -141,56 +141,58 @@ module CollavreGithub
 
           repository_failed = false
           sync_job_link_id = nil
-          CollavreGithub::RepositoryLink.transaction(requires_new: true) do
-            anchor = linked_repository_links(account)
-              .where(repository_id: identity.id)
-              .order(:id)
-              .first
-            link = if anchor
-              synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
-                anchor: anchor,
-                repository_id: identity.id,
-                full_name: identity.full_name,
-                trusted_secret: anchor.webhook_secret
-              )
-              synchronized.find do |candidate|
-                candidate.creative_id == @origin.id &&
-                  candidate.repository_id.to_s == identity.id.to_s
-              end
-            else
-              @origin.github_repository_links
-                .where("LOWER(repository_full_name) = ?", identity.full_name.downcase)
+          CollavreGithub::RepositoryProvisioningLock.with_lock(identity.id) do
+            CollavreGithub::RepositoryLink.transaction(requires_new: true) do
+              anchor = linked_repository_links(account)
                 .where(repository_id: identity.id)
+                .order(:id)
                 .first
-            end
-
-            unless link
-              link = @origin.github_repository_links.create!(
-                github_account: account,
-                repository_full_name: identity.full_name,
-                repository_id: identity.id
-              )
-            end
-            link.update!(github_account: account) if link.github_account_id != account.id
-
-            if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
-              if markdown_sync.key?(identity.full_name)
-                enabled = ActiveModel::Type::Boolean.new.cast(markdown_sync[identity.full_name])
-                was_enabled = link.markdown_sync_enabled?
-                link.update!(markdown_sync_enabled: enabled)
-                sync_job_link_id = link.id if enabled && !was_enabled
+              link = if anchor
+                synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
+                  anchor: anchor,
+                  repository_id: identity.id,
+                  full_name: identity.full_name,
+                  trusted_secret: anchor.webhook_secret
+                )
+                synchronized.find do |candidate|
+                  candidate.creative_id == @origin.id &&
+                    candidate.repository_id.to_s == identity.id.to_s
+                end
+              else
+                @origin.github_repository_links
+                  .where("LOWER(repository_full_name) = ?", identity.full_name.downcase)
+                  .where(repository_id: identity.id)
+                  .first
               end
-            end
 
-            results = CollavreGithub::WebhookProvisioner.ensure_for_links(
-              account: account,
-              links: [ link ],
-              webhook_url: github_webhook_url,
-              force_hook_refresh: true
-            )
-            if results.any? { |_candidate, status| status == :failed }
-              repository_failed = true
-              raise ActiveRecord::Rollback
+              unless link
+                link = @origin.github_repository_links.create!(
+                  github_account: account,
+                  repository_full_name: identity.full_name,
+                  repository_id: identity.id
+                )
+              end
+              link.update!(github_account: account) if link.github_account_id != account.id
+
+              if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
+                if markdown_sync.key?(identity.full_name)
+                  enabled = ActiveModel::Type::Boolean.new.cast(markdown_sync[identity.full_name])
+                  was_enabled = link.markdown_sync_enabled?
+                  link.update!(markdown_sync_enabled: enabled)
+                  sync_job_link_id = link.id if enabled && !was_enabled
+                end
+              end
+
+              results = CollavreGithub::WebhookProvisioner.ensure_for_links(
+                account: account,
+                links: [ link ],
+                webhook_url: github_webhook_url,
+                force_hook_refresh: true
+              )
+              if results.any? { |_candidate, status| status == :failed }
+                repository_failed = true
+                raise ActiveRecord::Rollback
+              end
             end
           end
 
