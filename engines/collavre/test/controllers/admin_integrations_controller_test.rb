@@ -56,6 +56,16 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "index masks sensitive inputs without using password fields" do
+    sign_in_as(@admin, password: "password")
+
+    get collavre.admin_integrations_path
+
+    assert_select "input[type='text'][name='integration_setting[slack_client_secret]'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
+    assert_select "input[type='password'][name='integration_setting[slack_client_secret]']", count: 0
+    assert_select "input[type='text'][name='integration_setting[slack_client_id]']:not(.masked-secret-field)"
+  end
+
   # ---------- index display ----------
 
   test "index masks sensitive values" do
