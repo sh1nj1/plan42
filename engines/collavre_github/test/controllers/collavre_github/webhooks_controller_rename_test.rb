@@ -39,17 +39,19 @@ module CollavreGithub
       )
     end
 
-    def post_event(event, payload, secret: @link.webhook_secret, guid: SecureRandom.uuid)
+    def post_event(event, payload, secret: @link.webhook_secret, guid: SecureRandom.uuid, hook_id: nil)
       body = payload.to_json
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", secret, body)
+      headers = {
+        "Content-Type" => "application/json",
+        "X-GitHub-Event" => event,
+        "X-GitHub-Delivery" => guid,
+        "X-Hub-Signature-256" => sig
+      }
+      headers["X-GitHub-Hook-ID"] = hook_id.to_s if hook_id
       post "/github/webhooks",
         params: body,
-        headers: {
-          "Content-Type" => "application/json",
-          "X-GitHub-Event" => event,
-          "X-GitHub-Delivery" => guid,
-          "X-Hub-Signature-256" => sig
-        }
+        headers: headers
     end
 
     # --- repository_id matching -------------------------------------------
@@ -214,6 +216,55 @@ module CollavreGithub
 
       assert_response :unauthorized
       assert_nil @link.reload.repository_id
+    end
+
+    test "a verified hook id repairs a missed rename and dispatches the current event" do
+      @link.update_columns(repository_id: nil, webhook_hook_id: 77)
+
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 31, body: "after missed rename", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        }, hook_id: 77)
+      end
+
+      assert_response :ok
+      assert_equal REPO_ID, @link.reload.repository_id
+      assert_equal NEW_NAME, @link.repository_full_name
+      assert_equal NEW_NAME, @channel.reload.repo_full_name
+    end
+
+    test "an unverified hook id cannot repair repository identity" do
+      @link.update_columns(repository_id: nil, webhook_hook_id: 77)
+
+      post_event("issue_comment", {
+        action: "created",
+        comment: { id: 32, body: "forged", user: { login: "alice", type: "User", id: 1 } },
+        issue: { number: 99, pull_request: {} },
+        repository: { id: REPO_ID, full_name: NEW_NAME }
+      }, secret: "wrong-secret", hook_id: 77)
+
+      assert_response :unauthorized
+      assert_nil @link.reload.repository_id
+      assert_equal OLD_NAME, @link.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
+    end
+
+    test "a malformed hook id is rejected without querying it as a bigint" do
+      @link.update_columns(repository_id: nil, webhook_hook_id: 77)
+
+      post_event("issue_comment", {
+        action: "created",
+        comment: { id: 33, body: "forged", user: { login: "alice", type: "User", id: 1 } },
+        issue: { number: 99, pull_request: {} },
+        repository: { id: REPO_ID, full_name: NEW_NAME }
+      }, hook_id: "not-a-number")
+
+      assert_response :unauthorized
+      assert_nil @link.reload.repository_id
+      assert_equal OLD_NAME, @link.repository_full_name
     end
 
     # --- repository.renamed ------------------------------------------------

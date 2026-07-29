@@ -46,7 +46,8 @@ module CollavreGithub
         .first
       return :failed unless link.github_account
 
-      return :skipped_unverified unless establish_legacy_identity(link)
+      link = establish_repository_identity(link)
+      return :skipped_unverified unless link
 
       result = CollavreGithub::WebhookProvisioner.ensure_for_links(
         account: link.github_account,
@@ -61,19 +62,27 @@ module CollavreGithub
       :failed
     end
 
-    def establish_legacy_identity(link)
-      return true if link.repository_id.present?
-      return false if link.webhook_hook_id.blank?
-
+    def establish_repository_identity(link)
       client = CollavreGithub::Client.new(link.github_account)
-      hook_ids = client.repository_hooks!(link.repository_full_name).map { |hook| hook.id.to_s }
-      return false unless hook_ids.include?(link.webhook_hook_id.to_s)
+      if link.repository_id.blank?
+        return if link.webhook_hook_id.blank?
 
-      repository_id = client.repository_id(link.repository_full_name)
-      return false if repository_id.blank?
+        hook_ids = client.repository_hooks!(link.repository_full_name).map { |hook| hook.id.to_s }
+        return unless hook_ids.include?(link.webhook_hook_id.to_s)
+      end
 
-      link.update_column(:repository_id, repository_id)
-      true
+      identity = client.repository_identity(link.repository_full_name)
+      return if identity&.id.blank? || identity&.full_name.blank?
+      return if link.repository_id.present? && link.repository_id.to_s != identity.id.to_s
+
+      synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
+        anchor: link,
+        repository_id: identity.id,
+        full_name: identity.full_name,
+        trusted_hook_id: link.webhook_hook_id,
+        trusted_secret: link.webhook_secret
+      )
+      synchronized.find { |candidate| candidate.creative_id == link.creative_id }
     end
   end
 end

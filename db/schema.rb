@@ -326,6 +326,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_000000) do
     t.index ["markdown_sync_enabled"], name: "index_github_repository_links_on_markdown_sync_enabled"
     t.index ["repository_full_name"], name: "index_github_repository_links_on_repository_full_name"
     t.index ["repository_id"], name: "index_github_repository_links_on_repository_id"
+    t.index ["webhook_hook_id"], name: "index_github_repository_links_on_webhook_hook_id"
   end
 
   create_table "github_webhook_deliveries", force: :cascade do |t|

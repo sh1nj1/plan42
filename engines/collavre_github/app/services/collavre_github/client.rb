@@ -1,6 +1,7 @@
 module CollavreGithub
   class Client
     MOCK_SERVER_DEFAULT = "http://localhost:4567"
+    RepositoryIdentity = Data.define(:id, :full_name)
 
     def initialize(account)
       options = { access_token: account.token }
@@ -79,8 +80,13 @@ module CollavreGithub
       client.hooks(repo_full_name)
     end
 
+    def repository_identity(repo_full_name)
+      repository = client.repository(repo_full_name)
+      RepositoryIdentity.new(id: repository.id, full_name: repository.full_name)
+    end
+
     def repository_id(repo_full_name)
-      client.repository(repo_full_name).id
+      repository_identity(repo_full_name).id
     end
 
     def create_repository_webhook(repo_full_name, url:, secret:, events:, content_type: "json")
