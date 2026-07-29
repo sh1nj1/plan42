@@ -6,22 +6,42 @@ module CollavreGithub
   # only when they share the verified hook registration or HMAC secret with the
   # anchor link; a name alone is never enough because GitHub can reuse it.
   class RepositoryIdentitySynchronizer
-    def self.call(anchor:, repository_id:, full_name:, trusted_hook_id: nil, trusted_secret: nil)
+    def self.call(
+      anchor:,
+      repository_id:,
+      full_name:,
+      trusted_hook_id: nil,
+      trusted_secret: nil,
+      include_legacy: true,
+      include_legacy_secret: true
+    )
       new(
         anchor: anchor,
         repository_id: repository_id,
         full_name: full_name,
         trusted_hook_id: trusted_hook_id,
-        trusted_secret: trusted_secret
+        trusted_secret: trusted_secret,
+        include_legacy: include_legacy,
+        include_legacy_secret: include_legacy_secret
       ).call
     end
 
-    def initialize(anchor:, repository_id:, full_name:, trusted_hook_id:, trusted_secret:)
+    def initialize(
+      anchor:,
+      repository_id:,
+      full_name:,
+      trusted_hook_id:,
+      trusted_secret:,
+      include_legacy:,
+      include_legacy_secret:
+    )
       @anchor = anchor
       @repository_id = repository_id
       @full_name = full_name.to_s
       @trusted_hook_id = trusted_hook_id
       @trusted_secret = trusted_secret
+      @include_legacy = include_legacy
+      @include_legacy_secret = include_legacy_secret
     end
 
     def call
@@ -54,14 +74,24 @@ module CollavreGithub
 
     private
 
-    attr_reader :anchor, :repository_id, :full_name, :trusted_hook_id, :trusted_secret
+    attr_reader :anchor,
+      :repository_id,
+      :full_name,
+      :trusted_hook_id,
+      :trusted_secret,
+      :include_legacy,
+      :include_legacy_secret
 
     def candidate_links
       links = RepositoryLink.where(repository_id: repository_id).to_a
-      legacy = RepositoryLink
-        .where(repository_id: nil)
-        .where("LOWER(repository_full_name) = ?", anchor.repository_full_name.to_s.downcase)
-        .select { |link| trusted_legacy_link?(link) }
+      legacy = if include_legacy
+        RepositoryLink
+          .where(repository_id: nil)
+          .where("LOWER(repository_full_name) = ?", anchor.repository_full_name.to_s.downcase)
+          .select { |link| trusted_legacy_link?(link) }
+      else
+        []
+      end
 
       (links + legacy + [ anchor ]).uniq(&:id)
     end
@@ -69,7 +99,7 @@ module CollavreGithub
     def trusted_legacy_link?(link)
       hook_matches = trusted_hook_id.present? &&
         link.webhook_hook_id.to_s == trusted_hook_id.to_s
-      secret_matches = trusted_secret.present? &&
+      secret_matches = include_legacy_secret && trusted_secret.present? &&
         secrets_match?(link.webhook_secret, trusted_secret)
       hook_matches || secret_matches
     end

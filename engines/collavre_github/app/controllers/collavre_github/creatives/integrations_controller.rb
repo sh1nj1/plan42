@@ -65,10 +65,12 @@ module CollavreGithub
 
           if existing && existing.repository_id.to_s != identity.id.to_s
             Rails.logger.warn(
-              "[CollavreGithub] skipping webhook provisioning for stale link #{existing.id}: " \
+              "[CollavreGithub] rejecting integration save for stale link #{existing.id}: " \
               "#{full_name} resolves to repository #{identity.id}, not #{existing.repository_id}"
             )
-            next
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
           end
 
           identities[normalized_name] = identity unless existing

@@ -176,16 +176,20 @@ module CollavreGithub
       payload = payload.presence || {}
 
       # Rename first, and terminally: the whole point is to repair the routing
-      # keys before anything downstream reads them. The other `repository`
-      # actions (archived, publicized, transferred, ...) are deliberately
-      # dropped rather than formatted into the creative feed — subscribing to
-      # this event is a routing-maintenance concern, not a feed feature.
-      if event == "repository"
-        handle_repository_renamed(payload) if payload["action"] == "renamed"
+      # keys before anything downstream reads them.
+      if event == "repository" && payload["action"] == "renamed"
+        handle_repository_renamed(payload)
         return
       end
 
-      repair_repository_identity_from_verified_hook(payload)
+      repair_repository_identity_from_verified_delivery(payload)
+
+      # Other `repository` actions (archived, publicized, transferred, ...) can
+      # still repair a missed rename through the verified stable id, but are
+      # deliberately dropped rather than formatted into the creative feed.
+      # Subscribing to this event is a routing-maintenance concern, not a feed
+      # feature.
+      return if event == "repository"
 
       # A delivery that verified is proof this payload really describes a
       # repository we are linked to, so it is the only safe place to learn the
@@ -644,9 +648,8 @@ module CollavreGithub
     # rename case: both the link and channel still carry the old repository
     # name, while the payload carries only the new one.
     def repository_link_for_hook_id(repository_id)
-      raw_hook_id = request.headers["X-GitHub-Hook-ID"].to_s
-      hook_id = Integer(raw_hook_id, 10, exception: false)
-      return unless hook_id&.between?(1, (2**63) - 1)
+      hook_id = github_hook_id
+      return unless hook_id
 
       candidates = CollavreGithub::RepositoryLink.where(webhook_hook_id: hook_id)
       if repository_id.present?
@@ -657,25 +660,50 @@ module CollavreGithub
       end
     end
 
-    # Once a hook-id fallback has passed HMAC verification, the delivery proves
-    # both the stable repository id and its current canonical name. Repair the
-    # link and its in-scope channels before ordinary fan-out resolves them.
-    def repair_repository_identity_from_verified_hook(payload)
-      return unless @repository_link_from_hook_id
-
+    # A verified delivery proves the current canonical name whenever its stable
+    # repository id matches the link used for HMAC verification. Hook-id
+    # fallback provides the same proof for legacy links that do not have an id
+    # yet. Repair both paths before ordinary fan-out resolves channel names.
+    def repair_repository_identity_from_verified_delivery(payload)
       id, full_name = repository_identity(payload)
       return if id.blank? || full_name.blank?
 
+      verified_by_id = @repository_link&.repository_id.present? &&
+        @repository_link.repository_id.to_s == id.to_s
+      return unless verified_by_id || @repository_link_from_hook_id
+
+      if verified_by_id && !@repository_link_from_hook_id
+        stale_name_exists = CollavreGithub::RepositoryLink
+          .where(repository_id: id)
+          .where("LOWER(repository_full_name) <> ?", full_name)
+          .exists?
+        return unless stale_name_exists
+      end
+
+      trusted_hook_id = github_hook_id
+      authoritative_hook = trusted_hook_id.present? &&
+        CollavreGithub::RepositoryLink.exists?(
+          repository_id: id,
+          webhook_hook_id: trusted_hook_id
+        )
       synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
         anchor: @repository_link,
         repository_id: id,
         full_name: full_name,
-        trusted_hook_id: request.headers["X-GitHub-Hook-ID"],
-        trusted_secret: webhook_secret
+        trusted_hook_id: trusted_hook_id,
+        trusted_secret: webhook_secret,
+        include_legacy: @repository_link_from_hook_id || authoritative_hook,
+        include_legacy_secret: @repository_link_from_hook_id
       )
       @repository_link = synchronized.find do |link|
         link.creative_id == @repository_link.creative_id
       end || @repository_link
+    end
+
+    def github_hook_id
+      raw_hook_id = request.headers["X-GitHub-Hook-ID"].to_s
+      hook_id = Integer(raw_hook_id, 10, exception: false)
+      hook_id if hook_id&.between?(1, (2**63) - 1)
     end
 
     # Stamp the stable id onto links that predate id-based routing. Scoped to

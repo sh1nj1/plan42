@@ -256,7 +256,7 @@ module CollavreGithub
       assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/reused/hooks/}
     end
 
-    test "re-saving a stale id-backed link does not provision the reused name" do
+    test "re-saving a stale id-backed link rejects all downstream mutations" do
       stale = CollavreGithub::RepositoryLink.create!(
         creative: @creative.effective_origin,
         github_account: @account,
@@ -267,13 +267,21 @@ module CollavreGithub
       sign_in_as(@user)
       stub_github_repository("testuser/reused", id: 222)
 
-      patch "/github/creatives/#{@creative.id}/integration",
-            params: { repositories: [ "testuser/reused" ] },
-            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
-            as: :json
+      sync_enqueued = false
+      CollavreGithub::InitialMarkdownSyncJob.stub(:perform_later, ->(*) { sync_enqueued = true }) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: {
+                repositories: [ "testuser/reused" ],
+                markdown_sync: { "testuser/reused" => true }
+              },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
 
-      assert_response :success
+      assert_response :unprocessable_entity
+      assert_not sync_enqueued
       assert_equal 111, stale.reload.repository_id
+      assert_not stale.markdown_sync_enabled?
       assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/reused/hooks}
       assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/reused/hooks}
       assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/reused/hooks/}

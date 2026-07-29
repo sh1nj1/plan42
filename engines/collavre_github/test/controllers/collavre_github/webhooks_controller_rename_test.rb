@@ -56,14 +56,128 @@ module CollavreGithub
 
     # --- repository_id matching -------------------------------------------
 
-    test "signature verifies against a renamed repo when repository_id matches" do
+    test "verified ID-backed delivery repairs a missed rename and dispatches the current event" do
       # The name in the payload matches nothing in the DB. Only the id does.
-      post_event("issue_comment", {
-        action: "created",
-        comment: { id: 1, body: "hi", user: { login: "alice", type: "User", id: 1 } },
-        issue: { number: 99, pull_request: {} },
-        repository: { id: REPO_ID, full_name: NEW_NAME }
-      })
+      assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 1, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        })
+      end
+
+      assert_response :ok
+      assert_equal NEW_NAME, @link.reload.repository_full_name
+      assert_equal NEW_NAME, @channel.reload.repo_full_name
+    end
+
+    test "ID-backed missed-rename repair does not capture a NULL-id same-secret link" do
+      other_creative = creatives(:childless_creative)
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: other_creative,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: nil,
+        webhook_secret: @link.webhook_secret
+      )
+      other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Other")
+      other_channel = GithubPrChannel.create!(
+        topic: other_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 99 }
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 2, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        })
+      end
+
+      assert_response :ok
+      assert_nil legacy.reload.repository_id
+      assert_equal OLD_NAME, legacy.repository_full_name
+      assert_equal OLD_NAME, other_channel.reload.repo_full_name
+    end
+
+    test "ID-backed missed-rename repair preserves a NULL-id same-hook sibling" do
+      @link.update!(webhook_hook_id: 77)
+      other_creative = creatives(:childless_creative)
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: other_creative,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: nil,
+        webhook_hook_id: 77,
+        webhook_secret: @link.webhook_secret
+      )
+      other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Other")
+      other_channel = GithubPrChannel.create!(
+        topic: other_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 99 }
+      )
+
+      assert_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count }, 1 do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 3, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        }, hook_id: 77)
+      end
+
+      assert_response :ok
+      assert_equal REPO_ID, legacy.reload.repository_id
+      assert_equal NEW_NAME, legacy.repository_full_name
+      assert_equal NEW_NAME, other_channel.reload.repo_full_name
+    end
+
+    test "ID-backed repair rejects a hook id not registered to the authoritative repository" do
+      @link.update!(webhook_hook_id: 77)
+      other_creative = creatives(:childless_creative)
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: other_creative,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: nil,
+        webhook_hook_id: 88,
+        webhook_secret: @link.webhook_secret
+      )
+      other_topic = Collavre::Topic.create!(creative: other_creative, user: @user, name: "Other")
+      other_channel = GithubPrChannel.create!(
+        topic: other_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 99 }
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: other_topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 4, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        }, hook_id: 88)
+      end
+
+      assert_response :ok
+      assert_nil legacy.reload.repository_id
+      assert_equal OLD_NAME, legacy.repository_full_name
+      assert_equal OLD_NAME, other_channel.reload.repo_full_name
+    end
+
+    test "canonical ID-backed delivery does not run identity synchronization" do
+      CollavreGithub::RepositoryIdentitySynchronizer.stub(
+        :call,
+        ->(**) { flunk("canonical delivery must not run identity synchronization") }
+      ) do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 3, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: OLD_NAME }
+        })
+      end
 
       assert_response :ok
     end
