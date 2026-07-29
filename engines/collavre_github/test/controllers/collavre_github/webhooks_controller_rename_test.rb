@@ -464,6 +464,36 @@ module CollavreGithub
       assert_equal NEW_NAME, @channel.reload.repo_full_name
     end
 
+    test "repository.renamed rolls back links and releases the claim when a channel rename fails" do
+      guid = "rename-channel-failure"
+      payload = {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      }
+
+      assert_raises(ActiveRecord::StatementInvalid) do
+        GithubPrChannel.stub(:find_each, ->(&block) { block.call(@channel) }) do
+          @channel.stub(
+            :synchronize_repository_name!,
+            ->(*) { raise ActiveRecord::StatementInvalid, "transient rename failure" }
+          ) do
+            post_event("repository", payload, guid: guid)
+          end
+        end
+      end
+
+      assert_equal OLD_NAME, @link.reload.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
+      assert_nil CollavreGithub::WebhookDelivery.find_by(delivery_guid: guid)
+
+      post_event("repository", payload, guid: guid)
+
+      assert_response :ok
+      assert_equal NEW_NAME, @link.reload.repository_full_name
+      assert_equal NEW_NAME, @channel.reload.repo_full_name
+    end
+
     test "repository.renamed repairs channels left behind by an earlier missed rename" do
       final_name = "owner/final-name"
 
@@ -674,14 +704,25 @@ module CollavreGithub
         repository_id: REPO_ID,
         webhook_secret: "obsolete-secret"
       )
+      transaction_options = []
+      original_transaction = CollavreGithub::RepositoryLink.method(:transaction)
 
-      post_event("repository", {
-        action: "renamed",
-        changes: { repository: { name: { from: "old-name" } } },
-        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
-      })
+      CollavreGithub::RepositoryLink.stub(
+        :transaction,
+        lambda do |**options, &block|
+          transaction_options << options
+          original_transaction.call(**options, &block)
+        end
+      ) do
+        post_event("repository", {
+          action: "renamed",
+          changes: { repository: { name: { from: "old-name" } } },
+          repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+        })
+      end
 
       assert_response :ok
+      assert_includes transaction_options, { requires_new: true }
       assert_not CollavreGithub::RepositoryLink.exists?(@link.id)
       survivor.reload
       assert_equal @link.webhook_secret, survivor.webhook_secret

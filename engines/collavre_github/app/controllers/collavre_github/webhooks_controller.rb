@@ -689,6 +689,17 @@ module CollavreGithub
       from = payload.dig("changes", "repository", "name", "from")
       old_full_name = ("#{owner}/#{from}" if owner.present? && from.present?)
 
+      CollavreGithub::RepositoryLink.transaction do
+        synchronize_repository_rename!(
+          repository_id: repo_id,
+          old_full_name: old_full_name,
+          new_full_name: new_full_name
+        )
+      end
+      Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
+    end
+
+    def synchronize_repository_rename!(repository_id:, old_full_name:, new_full_name:)
       # An authenticated rename must never mutate every row carrying the old
       # name. GitHub allows that name to be reused by another repository after
       # the rename, and a delayed/redelivered event would otherwise capture the
@@ -697,19 +708,26 @@ module CollavreGithub
       # ID-backed rows are authoritative. NULL-id rows require explicit
       # reattachment because older provisioners may have copied both their hook
       # registration and secret from an unrelated same-name repository.
-      links = repo_id.present? ? CollavreGithub::RepositoryLink.where(repository_id: repo_id).to_a : []
+      links = if repository_id.present?
+        CollavreGithub::RepositoryLink.where(repository_id: repository_id).to_a
+      else
+        []
+      end
 
       renamed_creative_ids = []
       stored_names_by_creative = Hash.new { |hash, key| hash[key] = [] }
       links.each do |link|
         stored_full_name = link.repository_full_name.to_s
-        if link.repository_full_name == new_full_name && link.repository_id.to_s == repo_id.to_s
+        if link.repository_full_name == new_full_name &&
+            link.repository_id.to_s == repository_id.to_s
           renamed_creative_ids << link.creative_id
           next
         end
 
         begin
-          link.update_columns(repository_full_name: new_full_name, repository_id: repo_id)
+          CollavreGithub::RepositoryLink.transaction(requires_new: true) do
+            link.update_columns(repository_full_name: new_full_name, repository_id: repository_id)
+          end
           renamed_creative_ids << link.creative_id
           stored_names_by_creative[stored_full_name.downcase] << link.creative_id
         rescue ActiveRecord::RecordNotUnique
@@ -720,7 +738,7 @@ module CollavreGithub
             .where(creative_id: link.creative_id)
             .where("LOWER(repository_full_name) = ?", new_full_name.downcase)
             .first
-          if survivor&.repository_id.to_s == repo_id.to_s
+          if survivor&.repository_id.to_s == repository_id.to_s
             merge_repository_links!(obsolete: link, survivor: survivor)
             renamed_creative_ids << link.creative_id
             stored_names_by_creative[stored_full_name.downcase] << link.creative_id
@@ -737,9 +755,8 @@ module CollavreGithub
         stored_names_by_creative[old_full_name.downcase].concat(renamed_creative_ids)
       end
       stored_names_by_creative.each do |stored_name, creative_ids|
-        rename_channels(stored_name, new_full_name, creative_ids.uniq, repo_id)
+        rename_channels(stored_name, new_full_name, creative_ids.uniq, repository_id)
       end
-      Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
     end
 
     # A delayed rename can meet a link that was already created under the new
@@ -773,13 +790,7 @@ module CollavreGithub
           repository_id: repository_id
         )
 
-        begin
-          channel.synchronize_repository_name!(new_full_name)
-        rescue => e
-          Rails.logger.error(
-            "[CollavreGithub] rename failed for channel #{channel.id}: #{e.class}: #{e.message}"
-          )
-        end
+        channel.synchronize_repository_name!(new_full_name)
       end
     end
 
