@@ -53,12 +53,31 @@ class ReprovisionGithubWebhooksScriptTest < ActiveSupport::TestCase
       markdown_sync_enabled: true,
       sync_branch: "docs"
     )
+    locked = false
+    lock_ids = []
+    identity_lookups_inside_lock = []
+    lock = lambda do |repository_id, &block|
+      lock_ids << repository_id
+      account.update!(token: "rotated-token")
+      locked = true
+      block.call
+    ensure
+      locked = false
+    end
     client = Object.new
     client.define_singleton_method(:repository_identity) do |_repository_name|
+      identity_lookups_inside_lock << locked
       RepositoryIdentity.new(4242, "owner/canonical")
     end
+    client_tokens = []
+    client_factory = lambda do |client_account|
+      client_tokens << client_account.token
+      client
+    end
     provision = lambda do |account:, links:, webhook_url:, force_hook_refresh:|
+      assert locked
       assert_equal link.github_account, account
+      assert_equal "rotated-token", account.token
       assert_equal [ link.id ], links.map(&:id)
       assert_equal 4242, links.first.repository_id
       assert force_hook_refresh
@@ -71,13 +90,18 @@ class ReprovisionGithubWebhooksScriptTest < ActiveSupport::TestCase
     ENV["GITHUB_REPOSITORY_LINK_ID"] = link.id.to_s
     ENV["GITHUB_REPOSITORY"] = "owner/selected"
     stdout, _stderr = capture_io do
-      CollavreGithub::Client.stub(:new, client) do
-        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
-          load Rails.root.join("script/verify_github_repository_link_identity")
+      CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+        CollavreGithub::Client.stub(:new, client_factory) do
+          CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+            load Rails.root.join("script/verify_github_repository_link_identity")
+          end
         end
       end
     end
 
+    assert_equal [ 4242 ], lock_ids
+    assert_equal [ false, true ], identity_lookups_inside_lock
+    assert_equal [ "test-token", "rotated-token" ], client_tokens
     link.reload
     assert_equal 4242, link.repository_id
     assert_equal "owner/canonical", link.repository_full_name
