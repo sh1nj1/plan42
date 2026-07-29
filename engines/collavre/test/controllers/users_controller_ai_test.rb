@@ -41,11 +41,16 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
   end
 
   test "should get edit_ai for ai user" do
+    @ai_user.update!(llm_api_key: "existing-secret-key")
+
     get edit_ai_user_url(@ai_user)
+
     assert_response :success
     assert_select "h1", "Edit AI Agent"
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
     assert_select "input[type='text'][name='user[llm_api_key]'].masked-secret-field[autocomplete='off'][spellcheck='false']"
+    assert_predicate css_select("input[name='user[llm_api_key]']").first["value"], :blank?
+    assert_not_includes response.body, "existing-secret-key"
   end
 
   test "should not get edit_ai for normal user" do
@@ -69,6 +74,28 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "New prompt", @ai_user.system_prompt
     assert_equal "gemini-1.5-pro", @ai_user.llm_model
     assert @ai_user.searchable
+  end
+
+  test "should preserve existing api key when submitted value is blank" do
+    @ai_user.update!(llm_api_key: "existing-secret-key")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: { name: "Updated Bot Name", llm_api_key: "" }
+    }
+
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_equal "existing-secret-key", @ai_user.reload.llm_api_key
+  end
+
+  test "should update api key when submitted value is present" do
+    @ai_user.update!(llm_api_key: "existing-secret-key")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: { llm_api_key: "replacement-secret-key" }
+    }
+
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_equal "replacement-secret-key", @ai_user.reload.llm_api_key
   end
 
   test "should not update ai user if not authorized" do
