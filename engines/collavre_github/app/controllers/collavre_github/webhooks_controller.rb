@@ -620,7 +620,11 @@ module CollavreGithub
         return
       end
 
-      links_for(payload).first
+      candidates = links_for(payload)
+      # A NULL-id name match is only a legacy candidate. Prefer the stable ID
+      # row for signature lookup so a stale same-name row with another secret
+      # cannot make a legitimate delivery fail depending on database order.
+      candidates.where(repository_id: id).first || candidates.first
     end
 
     # Stamp the stable id onto links that predate id-based routing. Scoped to

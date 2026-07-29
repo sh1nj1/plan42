@@ -96,6 +96,33 @@ module CollavreGithub
       assert_not_includes links, reused_name
     end
 
+    test "signature lookup prefers an ID-backed link over an older NULL-id name match" do
+      @link.destroy!
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:childless_creative),
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: nil,
+        webhook_secret: "stale-secret"
+      )
+      @link = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: REPO_ID
+      )
+
+      post_event("issue_comment", {
+        action: "created",
+        comment: { id: 100, body: "hi", user: { login: "alice", type: "User", id: 1 } },
+        issue: { number: 99, pull_request: {} },
+        repository: { id: REPO_ID, full_name: OLD_NAME }
+      })
+
+      assert_response :ok
+      assert_nil stale.reload.repository_id
+    end
+
     test "a reused repository name does not receive another repository's event" do
       other_creative = creatives(:childless_creative)
       CollavreGithub::RepositoryLink.create!(
