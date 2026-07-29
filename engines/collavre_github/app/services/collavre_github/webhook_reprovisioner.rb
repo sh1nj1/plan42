@@ -51,25 +51,32 @@ module CollavreGithub
       failed = false
 
       links.select { |link| link.repository_id.present? }.each do |candidate|
-        unless candidate.github_account
-          failed = true
-          next
+        repository_id = candidate.repository_id
+        status = CollavreGithub::RepositoryProvisioningLock.with_lock(repository_id) do
+          locked_candidate = CollavreGithub::RepositoryLink.find_by(
+            id: candidate.id,
+            repository_id: repository_id
+          )
+          next :skipped_unverified unless locked_candidate
+          next :failed unless locked_candidate.github_account
+
+          link = establish_repository_identity(locked_candidate)
+          next :skipped_unverified unless link
+
+          result = CollavreGithub::WebhookProvisioner.ensure_for_links(
+            account: link.github_account,
+            links: [ link ],
+            webhook_url: webhook_url,
+            force_hook_refresh: true
+          )
+          result.first&.last || :failed
         end
 
-        link = establish_repository_identity(candidate)
-        next unless link
-
-        result = CollavreGithub::WebhookProvisioner.ensure_for_links(
-          account: link.github_account,
-          links: [ link ],
-          webhook_url: webhook_url,
-          force_hook_refresh: true
-        )
-        status = result.first&.last || :failed
         if status == :failed
           failed = true
           next
         end
+        next if status == :skipped_unverified
 
         return :manual_verification_required if manual_verification_required
 

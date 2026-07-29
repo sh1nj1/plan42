@@ -383,6 +383,77 @@ module CollavreGithub
       assert calls.all? { |call| call[:force_hook_refresh] }
     end
 
+    test "serializes identity repair and hook refresh by repository id" do
+      @primary.destroy!
+      @sibling.destroy!
+      inside_lock = false
+      identity_verified_inside_lock = false
+      lock_events = []
+      test_case = self
+      client = Object.new
+      client.define_singleton_method(:repository_identity) do |repository_name|
+        identity_verified_inside_lock = inside_lock
+        RepositoryIdentity.new(202, repository_name)
+      end
+      lock = lambda do |repository_id, &block|
+        test_case.assert_equal 202, repository_id
+        lock_events << :entered
+        @other.update_column(:markdown_sync_enabled, true)
+        inside_lock = true
+        block.call
+      ensure
+        inside_lock = false
+        lock_events << :released
+      end
+      provision = lambda do |links:, force_hook_refresh:, **|
+        test_case.assert inside_lock
+        test_case.assert_equal [ @other.id ], links.map(&:id)
+        test_case.assert links.fetch(0).markdown_sync_enabled?
+        test_case.assert force_hook_refresh
+        [ [ links.fetch(0), :updated ] ]
+      end
+
+      results = CollavreGithub::Client.stub(:new, client) do
+        CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+          CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+            CollavreGithub::WebhookReprovisioner.call(
+              webhook_url: "https://example.com/github/webhooks"
+            )
+          end
+        end
+      end
+
+      assert_equal [ [ "owner/other", :updated ] ], results
+      assert_equal [ :entered, :released ], lock_events
+      assert identity_verified_inside_lock,
+        "repository identity must be verified inside the provisioning lock"
+    end
+
+    test "skips a candidate removed while waiting for the repository lock" do
+      @primary.destroy!
+      @sibling.destroy!
+      calls = []
+      lock = lambda do |_repository_id, &block|
+        @other.destroy!
+        block.call
+      end
+      provision = lambda do |**kwargs|
+        calls << kwargs
+        [ [ kwargs[:links].first, :updated ] ]
+      end
+
+      results = CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          CollavreGithub::WebhookReprovisioner.call(
+            webhook_url: "https://example.com/github/webhooks"
+          )
+        end
+      end
+
+      assert_equal [ [ "owner/other", :skipped_unverified ] ], results
+      assert_empty calls
+    end
+
     test "skips a name-only legacy repository with no registered hook" do
       @other.update_columns(repository_id: nil, webhook_hook_id: nil)
       calls = []
