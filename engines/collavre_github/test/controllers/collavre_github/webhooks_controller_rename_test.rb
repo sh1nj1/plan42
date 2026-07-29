@@ -803,6 +803,56 @@ module CollavreGithub
       assert_equal OLD_NAME, @channel.reload.repo_full_name
     end
 
+    test "repository.renamed leaves a creative unchanged for a case-insensitive conflicting id" do
+      conflicting = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME.upcase,
+        repository_id: 777
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal OLD_NAME, @link.reload.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
+      assert_equal NEW_NAME.upcase, conflicting.reload.repository_full_name
+      assert_equal 777, conflicting.repository_id
+    end
+
+    test "repository.renamed does not rename channels through a canonical link with a case-insensitive conflict" do
+      @link.update!(repository_full_name: NEW_NAME)
+      conflicting_link = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME.upcase,
+        repository_id: 777
+      )
+      conflicting_channel = GithubPrChannel.create!(
+        topic: @topic,
+        state: :detached,
+        dismissed_at: 1.hour.ago,
+        config: { "repo_full_name" => NEW_NAME.upcase, "pr_number" => 99 }
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
+      assert GithubPrChannel.exists?(conflicting_channel.id)
+      assert_equal NEW_NAME.upcase, conflicting_channel.reload.repo_full_name
+      assert CollavreGithub::RepositoryLink.exists?(conflicting_link.id)
+      assert_equal 777, conflicting_link.reload.repository_id
+    end
+
     test "repository.renamed merges an obsolete same-id link into the new-name survivor" do
       @link.update!(
         webhook_hook_id: 123,
@@ -817,25 +867,13 @@ module CollavreGithub
         repository_id: REPO_ID,
         webhook_secret: "obsolete-secret"
       )
-      transaction_options = []
-      original_transaction = CollavreGithub::RepositoryLink.method(:transaction)
-
-      CollavreGithub::RepositoryLink.stub(
-        :transaction,
-        lambda do |**options, &block|
-          transaction_options << options
-          original_transaction.call(**options, &block)
-        end
-      ) do
-        post_event("repository", {
-          action: "renamed",
-          changes: { repository: { name: { from: "old-name" } } },
-          repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
-        })
-      end
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
 
       assert_response :ok
-      assert_includes transaction_options, { requires_new: true }
       assert_not CollavreGithub::RepositoryLink.exists?(@link.id)
       survivor.reload
       assert_equal @link.webhook_secret, survivor.webhook_secret

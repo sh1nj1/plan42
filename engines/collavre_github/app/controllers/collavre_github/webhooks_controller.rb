@@ -749,6 +749,19 @@ module CollavreGithub
       stored_names_by_creative = Hash.new { |hash, key| hash[key] = [] }
       links.each do |link|
         stored_full_name = link.repository_full_name.to_s
+        collision_resolution = resolve_repository_rename_collision(
+          link: link,
+          new_full_name: new_full_name,
+          repository_id: repository_id
+        )
+        unless collision_resolution.nil?
+          if collision_resolution
+            renamed_creative_ids << link.creative_id
+            stored_names_by_creative[stored_full_name.downcase] << link.creative_id
+          end
+          next
+        end
+
         if link.repository_full_name == new_full_name &&
             link.repository_id.to_s == repository_id.to_s
           renamed_creative_ids << link.creative_id
@@ -762,22 +775,13 @@ module CollavreGithub
           renamed_creative_ids << link.creative_id
           stored_names_by_creative[stored_full_name.downcase] << link.creative_id
         rescue ActiveRecord::RecordNotUnique
-          # The creative is already linked to the repository under its new
-          # name. Only treat that row as the same repository when its stable id
-          # agrees; otherwise leave both it and the creative's channels alone.
-          survivor = CollavreGithub::RepositoryLink
-            .where(creative_id: link.creative_id)
-            .where("LOWER(repository_full_name) = ?", new_full_name.downcase)
-            .first
-          if survivor&.repository_id.to_s == repository_id.to_s
-            merge_repository_links!(obsolete: link, survivor: survivor)
+          if resolve_repository_rename_collision(
+            link: link,
+            new_full_name: new_full_name,
+            repository_id: repository_id
+          )
             renamed_creative_ids << link.creative_id
             stored_names_by_creative[stored_full_name.downcase] << link.creative_id
-          else
-            Rails.logger.warn(
-              "[CollavreGithub] rename collision for link #{link.id}: #{new_full_name} in " \
-              "creative #{link.creative_id} belongs to repository #{survivor&.repository_id.inspect}"
-            )
           end
         end
       end
@@ -788,6 +792,37 @@ module CollavreGithub
       stored_names_by_creative.each do |stored_name, creative_ids|
         rename_channels(stored_name, new_full_name, creative_ids.uniq, repository_id)
       end
+    end
+
+    def resolve_repository_rename_collision(link:, new_full_name:, repository_id:)
+      collisions = CollavreGithub::RepositoryLink
+        .where(creative_id: link.creative_id)
+        .where.not(id: link.id)
+        .where("LOWER(repository_full_name) = ?", new_full_name.downcase)
+        .to_a
+      return if collisions.empty?
+
+      conflict = collisions.find { |candidate| candidate.repository_id.to_s != repository_id.to_s }
+      if conflict
+        Rails.logger.warn(
+          "[CollavreGithub] rename collision for link #{link.id}: #{new_full_name} in " \
+          "creative #{link.creative_id} belongs to repository #{conflict.repository_id.inspect}"
+        )
+        return false
+      end
+
+      survivor = if link.repository_full_name == new_full_name
+        link
+      else
+        collisions.find { |candidate| candidate.repository_full_name == new_full_name } || collisions.first
+      end
+      ([ link ] + collisions).uniq.each do |candidate|
+        next if candidate == survivor
+
+        merge_repository_links!(obsolete: candidate, survivor: survivor)
+      end
+      survivor.update_columns(repository_full_name: new_full_name)
+      true
     end
 
     # A delayed rename can meet a link that was already created under the new
