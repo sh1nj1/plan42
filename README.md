@@ -121,6 +121,7 @@ JavaScript is bundled with `jsbundling-rails`, so `npm ci` must run before
 ## More
 
 - [Engine development guide](docs/engine_development.md) — Collavre is extended with local Rails engines
+- [Deploy to AWS Lightsail](docs/deploy_to_lightsail.md) — app + PostgreSQL on one instance
 - [Deploy to AWS EC2](docs/deploy_to_ec2.md)
 - [MCP configuration](docs/mcp-configuration.md)
 
