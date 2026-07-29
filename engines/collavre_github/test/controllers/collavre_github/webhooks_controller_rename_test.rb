@@ -438,6 +438,48 @@ module CollavreGithub
       assert_equal NEW_NAME, @channel.reload.repo_full_name
     end
 
+    test "repository.renamed repairs channels left behind by an earlier missed rename" do
+      final_name = "owner/final-name"
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "new-name" } } },
+        repository: { id: REPO_ID, full_name: final_name, name: "final-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal final_name, @link.reload.repository_full_name
+      assert_equal final_name, @channel.reload.repo_full_name
+    end
+
+    test "stale-name repair excludes a descendant anchored to an unverified link" do
+      child = Collavre::Creative.create!(parent: @creative, user: @user, description: "Child")
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: child,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: nil
+      )
+      child_topic = Collavre::Topic.create!(creative: child, user: @user, name: "Unverified repository")
+      child_channel = GithubPrChannel.create!(
+        topic: child_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 100 }
+      )
+      final_name = "owner/final-name"
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "new-name" } } },
+        repository: { id: REPO_ID, full_name: final_name, name: "final-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal final_name, @channel.reload.repo_full_name
+      assert_nil legacy.reload.repository_id
+      assert_equal OLD_NAME, legacy.repository_full_name
+      assert_equal OLD_NAME, child_channel.reload.repo_full_name
+    end
+
     test "repository.renamed removes an old-name channel when the canonical channel already exists" do
       survivor = GithubPrChannel.create!(
         topic: @topic,

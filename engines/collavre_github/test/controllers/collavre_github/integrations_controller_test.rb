@@ -182,6 +182,247 @@ module CollavreGithub
       assert data["webhooks"]["testuser/repo1"].present?
     end
 
+    test "update deduplicates aliases that resolve to the same repository" do
+      sign_in_as(@user)
+
+      stub_github_repository("TestUser/Repo1", id: 101, full_name: "testuser/repo1")
+      stub_github_repository("testuser/repo1", id: 101)
+      stub_github_hooks("testuser/repo1")
+      stub_github_create_hook("testuser/repo1")
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "TestUser/Repo1", "testuser/repo1" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :success
+      links = @creative.effective_origin.github_repository_links.where(github_account: @account)
+      assert_equal 1, links.count
+      assert_equal 101, links.first.repository_id
+      assert_equal "testuser/repo1", links.first.repository_full_name
+    end
+
+    test "alias dedup preserves an existing canonical link and its settings" do
+      existing = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/old-name",
+        repository_id: 101,
+        webhook_hook_id: 77,
+        markdown_sync_enabled: true,
+        markdown_root_creative: @creative.effective_origin,
+        sync_branch: "docs"
+      )
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/old-name", id: 101, full_name: "testuser/repo1")
+      stub_github_repository("testuser/repo1", id: 101)
+      provision = lambda do |links:, **|
+        assert_equal [ existing.id ], links.map(&:id)
+        assert_equal "testuser/repo1", links.first.repository_full_name
+        []
+      end
+
+      CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: {
+                repositories: [ "testuser/old-name", "testuser/repo1" ],
+                markdown_sync: { "testuser/repo1" => false }
+              },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
+
+      assert_response :success
+      links = @creative.effective_origin.github_repository_links.where(github_account: @account)
+      assert_equal [ existing.id ], links.pluck(:id)
+      existing.reload
+      assert_equal "testuser/repo1", existing.repository_full_name
+      assert_equal 77, existing.webhook_hook_id
+      assert_not existing.markdown_sync_enabled?
+      assert_equal @creative.effective_origin, existing.markdown_root_creative
+      assert_equal "docs", existing.sync_branch
+    end
+
+    test "failed hook refresh rolls a canonical collision merge back" do
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/old-name",
+        repository_id: 101,
+        webhook_secret: "active-secret",
+        webhook_hook_id: 77,
+        markdown_sync_enabled: true
+      )
+      canonical = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/repo1",
+        repository_id: 101,
+        webhook_secret: "canonical-secret"
+      )
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/old-name", id: 101, full_name: "testuser/repo1")
+      stub_github_repository("testuser/repo1", id: 101)
+      provision = lambda do |links:, **|
+        assert_equal [ canonical.id ], links.map(&:id)
+        assert_equal "active-secret", links.first.webhook_secret
+        [ [ links.first, :failed ] ]
+      end
+
+      CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: { repositories: [ "testuser/old-name", "testuser/repo1" ] },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
+
+      assert_response :unprocessable_entity
+      assert_equal "testuser/old-name", stale.reload.repository_full_name
+      assert_equal "active-secret", stale.webhook_secret
+      assert_equal 77, stale.webhook_hook_id
+      assert stale.markdown_sync_enabled?
+      assert_equal "testuser/repo1", canonical.reload.repository_full_name
+      assert_equal "canonical-secret", canonical.webhook_secret
+    end
+
+    test "canonical collision keeps the verified account and anchor secret" do
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/old-name",
+        repository_id: 101,
+        webhook_secret: "active-secret"
+      )
+      other_user = create_user(email: "gh-other-account@example.com", name: "Other GitHub User")
+      other_account = create_github_account(other_user)
+      canonical = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: other_account,
+        repository_full_name: "testuser/repo1",
+        repository_id: 101,
+        webhook_secret: "other-secret"
+      )
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/old-name", id: 101, full_name: "testuser/repo1")
+      provision = lambda do |account:, links:, **|
+        assert_equal @account, account
+        assert_equal [ canonical.id ], links.map(&:id)
+        assert_equal @account, links.first.github_account
+        assert_equal "active-secret", links.first.webhook_secret
+        [ [ links.first, :updated ] ]
+      end
+
+      CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: { repositories: [ "testuser/old-name" ] },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
+
+      assert_response :success
+      assert_not CollavreGithub::RepositoryLink.exists?(stale.id)
+      canonical.reload
+      assert_equal @account, canonical.github_account
+      assert_equal "active-secret", canonical.webhook_secret
+      assert_equal "testuser/repo1", canonical.repository_full_name
+    end
+
+    test "canonicalization rejects an unverified canonical-name collision" do
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/old-name",
+        repository_id: 101,
+        webhook_secret: "active-secret"
+      )
+      collision = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/repo1",
+        repository_id: nil,
+        webhook_secret: "unverified-secret"
+      )
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/old-name", id: 101, full_name: "testuser/repo1")
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "testuser/old-name" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :unprocessable_entity
+      assert_equal "testuser/old-name", stale.reload.repository_full_name
+      assert_equal 101, stale.repository_id
+      assert_equal "testuser/repo1", collision.reload.repository_full_name
+      assert_nil collision.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/repo1/hooks/}
+    end
+
+    test "a later provisioning failure does not roll back an earlier successful repository" do
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/repo1", id: 101)
+      stub_github_repository("testuser/repo2", id: 202)
+      provisioned = []
+      provision = lambda do |links:, **|
+        link = links.fetch(0)
+        provisioned << link.repository_full_name
+        status = link.repository_id == 101 ? :updated : :failed
+        [ [ link, status ] ]
+      end
+
+      CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: { repositories: [ "testuser/repo1", "testuser/repo2" ] },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
+
+      assert_response :unprocessable_entity
+      assert_equal [ "testuser/repo1", "testuser/repo2" ], provisioned
+      links = @creative.effective_origin.github_repository_links.where(github_account: @account)
+      assert_equal [ [ "testuser/repo1", 101 ] ],
+        links.order(:repository_full_name).pluck(:repository_full_name, :repository_id)
+    end
+
+    test "markdown sync is applied before a forced hook refresh" do
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/repo1", id: 101)
+      provision = lambda do |links:, force_hook_refresh:, **|
+        assert links.fetch(0).markdown_sync_enabled?
+        assert force_hook_refresh
+        [ [ links.fetch(0), :updated ] ]
+      end
+      enqueued_link_ids = []
+
+      CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+        CollavreGithub::InitialMarkdownSyncJob.stub(
+          :perform_later,
+          ->(link_id) { enqueued_link_ids << link_id }
+        ) do
+          patch "/github/creatives/#{@creative.id}/integration",
+                params: {
+                  repositories: [ "testuser/repo1" ],
+                  markdown_sync: { "testuser/repo1" => true }
+                },
+                headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+                as: :json
+        end
+      end
+
+      assert_response :success
+      link = @creative.effective_origin.github_repository_links.find_by!(github_account: @account)
+      assert link.markdown_sync_enabled?
+      assert_equal [ link.id ], enqueued_link_ids
+    end
+
     test "update replaces existing repositories" do
       sign_in_as(@user)
 
@@ -251,6 +492,35 @@ module CollavreGithub
 
       assert_response :success
       assert_nil legacy.reload.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/reused}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/reused/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/reused/hooks/}
+    end
+
+    test "a name-only legacy link cannot enable markdown import" do
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/reused",
+        repository_id: nil,
+        webhook_secret: "legacy-secret"
+      )
+      sign_in_as(@user)
+      sync_enqueued = false
+
+      CollavreGithub::InitialMarkdownSyncJob.stub(:perform_later, ->(*) { sync_enqueued = true }) do
+        patch "/github/creatives/#{@creative.id}/integration",
+              params: {
+                repositories: [ "testuser/reused" ],
+                markdown_sync: { "testuser/reused" => true }
+              },
+              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+              as: :json
+      end
+
+      assert_response :unprocessable_entity
+      assert_not sync_enqueued
+      assert_not legacy.reload.markdown_sync_enabled?
       assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/reused}
       assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/reused/hooks}
       assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/reused/hooks/}
