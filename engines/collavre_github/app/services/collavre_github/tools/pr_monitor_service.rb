@@ -84,71 +84,89 @@ module CollavreGithub
       # Returns a warning string when provisioning cannot run or fails; nil on
       # success so the MCP response stays clean.
       def ensure_webhook_events(topic, repo)
-        scoped_link = scoped_repository_link_for(topic, repo)
-        return "no RepositoryLink found for #{repo} in topic creative scope; webhook events not auto-provisioned" unless scoped_link
+        scoped_repository_ids(topic, repo).each do |repository_id|
+          outcome = CollavreGithub::RepositoryProvisioningLock.with_lock(repository_id) do
+            scoped_links = verified_scoped_repository_links_for(
+              topic,
+              repo,
+              repository_id: repository_id
+            )
+            next :unverified if scoped_links.empty?
 
-        # Provision through the *global* primary link (lowest id across all
-        # creatives), not the scoped link. WebhookProvisioner only patches hook
-        # events when the link IS the primary; non-primary links short-circuit
-        # to secret alignment and skip the GitHub edit_hook call. So if we
-        # provisioned the scoped link and it was not the global primary, the
-        # existing hook would keep its old event list. The scoped link is only
-        # used as an authorization gate above.
-        provisioning_link = global_primary_repository_link_for(repo) || scoped_link
+            all_failed = scoped_links.all? do |scoped_link|
+              results = CollavreGithub::WebhookProvisioner.ensure_for_links(
+                account: scoped_link.github_account,
+                links: [ scoped_link ],
+                webhook_url: github_webhook_url,
+                force_hook_refresh: true
+              )
+              results.first&.last == :failed
+            end
+            if all_failed
+              "webhook provisioning failed: GitHub API rejected the hook request (see logs)"
+            end
+          end
+          next if outcome == :unverified
 
-        account = provisioning_link.github_account
-        return "RepositoryLink for #{repo} has no GitHub account; webhook events not auto-provisioned" unless account
+          # A nil outcome means a verified hook was refreshed successfully.
+          # :shared is also success: the registered hook was patched before
+          # WebhookProvisioner returned that status.
+          return outcome
+        end
 
-        results = CollavreGithub::WebhookProvisioner.ensure_for_links(
-          account: account,
-          links: [ provisioning_link ],
-          webhook_url: github_webhook_url
-        )
-        status = results.first&.last
-        # :failed means Client returned nil (Octokit/Faraday error rescued in
-        # CollavreGithub::Client). Surface that to the MCP caller so they know
-        # webhook events were not actually patched.
-        return "webhook provisioning failed: GitHub API rejected the hook request (see logs)" if status == :failed
-        # :shared is NOT a warning. It means a hook registered in this database
-        # already exists, so this instance reused it instead of adding a second
-        # one, and its events and secret have been patched from here — a patch
-        # that fails comes back as :failed and is reported above. (The other
-        # route to :shared is losing the creation race to a sibling, whose hook
-        # was just built from these same RepositoryLink rows, so its
-        # subscriptions are current by construction.) Only the hook's URL is
-        # left pointing at the sibling, which pr_monitor does not depend on.
-        # Warning here reported a provisioning problem where there is none.
-        nil
+        "no verified RepositoryLink found for #{repo} in topic creative scope; " \
+          "webhook events not auto-provisioned"
       rescue => e
         Rails.logger.warn("[pr_monitor] webhook provisioning failed for #{repo}: #{e.class}: #{e.message}")
         "webhook provisioning failed: #{e.message}"
       end
 
-      # Authorization gate: a RepositoryLink for `repo` must live in this
-      # topic's creative subtree (the topic creative itself or one of its
-      # ancestors). Without one, the dispatch path in WebhooksController would
-      # silently drop events for this topic anyway.
-      def scoped_repository_link_for(topic, repo)
+      def scoped_repository_ids(topic, repo)
         creative = topic.creative
-        return nil unless creative
+        return [] unless creative
 
         candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
         CollavreGithub::RepositoryLink
           .where("LOWER(repository_full_name) = ?", repo.downcase)
           .where(creative_id: candidate_ids)
-          .order(:id)
-          .first
+          .where.not(repository_id: nil)
+          .distinct
+          .pluck(:repository_id)
       end
 
-      # Mirrors WebhookProvisioner#primary_link_for: the lowest-id link for the
-      # repo across ALL creatives. This is the link whose secret + events the
-      # hook is aligned to, so we must provision through it to trigger an
-      # actual edit_hook call.
-      def global_primary_repository_link_for(repo)
-        CollavreGithub::RepositoryLink
+      # Authorization and identity gate: a RepositoryLink for `repo` must live
+      # in this topic's creative subtree, carry a stable repository id, and
+      # resolve to that same id through its GitHub account. A stored name alone
+      # is not safe provisioning evidence because GitHub can reuse a renamed
+      # repository's old name.
+      def verified_scoped_repository_links_for(topic, repo, repository_id:)
+        creative = topic.creative
+        return [] unless creative
+
+        candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+        candidates = CollavreGithub::RepositoryLink
           .where("LOWER(repository_full_name) = ?", repo.downcase)
+          .where(creative_id: candidate_ids)
+          .where(repository_id: repository_id)
           .order(:id)
-          .first
+          .to_a
+        identities = {}
+
+        candidates.uniq(&:github_account_id).select do |link|
+          account = link.github_account
+          next false if link.repository_id.blank? || account.nil?
+
+          identity = identities.fetch(account.id) do
+            identities[account.id] = CollavreGithub::Client.new(account).repository_identity(repo)
+          rescue Octokit::Error, Faraday::Error => e
+            Rails.logger.warn(
+              "[pr_monitor] repository identity lookup failed for #{repo} through " \
+              "account #{account.id}: #{e.class}: #{e.message}"
+            )
+            identities[account.id] = nil
+          end
+          identity&.id.to_s == link.repository_id.to_s
+        end
       end
 
       def github_webhook_url

@@ -196,5 +196,75 @@ module CollavreGithub
         assert_equal s, @channel.reload.pr_state
       end
     end
+
+    test "destroy broadcasts a channel chip refresh" do
+      broadcasts = []
+      callback = ->(*args, **kwargs) { broadcasts << [ args, kwargs ] }
+
+      Collavre::CommentsPresenceChannel.stub(:broadcast_channel_chips_changed, callback) do
+        @channel.destroy!
+      end
+
+      assert_equal [ [ [ @creative.id ], { topic_id: @topic.id } ] ], broadcasts
+    end
+
+    test "repository name collision preserves the active monitor" do
+      canonical = GithubPrChannel.create!(
+        topic: @topic,
+        state: :detached,
+        dismissed_at: 1.hour.ago,
+        config: { "repo_full_name" => "owner/renamed", "pr_number" => 42 }
+      )
+
+      result = @channel.synchronize_repository_name!("owner/renamed")
+
+      assert_equal @channel, result
+      assert_predicate @channel.reload, :active?
+      assert_nil @channel.dismissed_at
+      assert_equal "owner/renamed", @channel.repo_full_name
+      assert_not GithubPrChannel.exists?(canonical.id)
+    end
+
+    test "repository name collision preserves a detached visible monitor" do
+      @channel.update!(state: :detached)
+      canonical = GithubPrChannel.create!(
+        topic: @topic,
+        state: :detached,
+        dismissed_at: 1.hour.ago,
+        config: { "repo_full_name" => "owner/renamed", "pr_number" => 42 }
+      )
+
+      result = @channel.synchronize_repository_name!("owner/renamed")
+
+      assert_equal @channel, result
+      assert_predicate @channel.reload, :detached?
+      assert_nil @channel.dismissed_at
+      assert_equal "owner/renamed", @channel.repo_full_name
+      assert_not GithubPrChannel.exists?(canonical.id)
+    end
+
+    test "repository name collision rolls back survivor deletion when canonical update fails" do
+      canonical = GithubPrChannel.create!(
+        topic: @topic,
+        state: :detached,
+        dismissed_at: 1.hour.ago,
+        config: { "repo_full_name" => "owner/renamed", "pr_number" => 42 }
+      )
+      broadcasts = []
+      callback = ->(*args, **kwargs) { broadcasts << [ args, kwargs ] }
+      failure = ->(*) { raise ActiveRecord::RecordInvalid, @channel }
+
+      Collavre::CommentsPresenceChannel.stub(:broadcast_channel_chips_changed, callback) do
+        @channel.stub(:update!, failure) do
+          assert_raises(ActiveRecord::RecordInvalid) do
+            @channel.synchronize_repository_name!("owner/renamed")
+          end
+        end
+      end
+
+      assert GithubPrChannel.exists?(canonical.id)
+      assert_equal "owner/repo", @channel.reload.repo_full_name
+      assert_empty broadcasts
+    end
   end
 end

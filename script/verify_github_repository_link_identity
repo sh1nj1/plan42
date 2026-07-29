@@ -1,0 +1,81 @@
+link_id = Integer(ENV["GITHUB_REPOSITORY_LINK_ID"].to_s, 10, exception: false)
+repository_name = ENV["GITHUB_REPOSITORY"].to_s.strip
+unless link_id&.positive? && repository_name.present?
+  abort(
+    "Usage: GITHUB_REPOSITORY_LINK_ID=<link_id> GITHUB_REPOSITORY=<owner/name> " \
+    "bin/rails runner script/verify_github_repository_link_identity"
+  )
+end
+
+link = CollavreGithub::RepositoryLink.find_by(id: link_id)
+abort "GitHub repository link #{link_id} was not found" unless link
+abort "GitHub repository link #{link_id} already has repository_id=#{link.repository_id}" if link.repository_id.present?
+abort "GitHub repository link #{link_id} has no GitHub account" unless link.github_account
+
+begin
+  client = CollavreGithub::Client.new(link.github_account)
+  identity = client.repository_identity(repository_name)
+  unless identity&.id.present? && identity&.full_name.present?
+    abort "GitHub could not verify repository #{repository_name.inspect} for link #{link_id}"
+  end
+
+  expected_account_id = link.github_account_id
+  verified_link = nil
+  status = :failed
+  failure_message = nil
+  CollavreGithub::RepositoryProvisioningLock.with_lock(identity.id) do
+    CollavreGithub::RepositoryLink.transaction do
+      locked_link = CollavreGithub::RepositoryLink.find_by(id: link_id)
+      unless locked_link && locked_link.repository_id.nil? &&
+          locked_link.github_account_id == expected_account_id
+        failure_message = "GitHub repository link #{link_id} changed while awaiting verification"
+        raise ActiveRecord::Rollback
+      end
+
+      provisioning_account = locked_link.github_account.reload
+      locked_client = CollavreGithub::Client.new(provisioning_account)
+      locked_identity = locked_client.repository_identity(repository_name)
+      unless locked_identity&.id.to_s == identity.id.to_s && locked_identity&.full_name.present?
+        failure_message = "GitHub repository #{repository_name.inspect} changed while awaiting verification"
+        raise ActiveRecord::Rollback
+      end
+      identity = locked_identity
+
+      synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
+        anchor: locked_link,
+        repository_id: identity.id,
+        full_name: identity.full_name,
+        trusted_secret: locked_link.webhook_secret,
+        allow_anchor_backfill: true
+      )
+      verified_link = synchronized.find { |candidate| candidate.creative_id == locked_link.creative_id }
+      unless verified_link
+        failure_message = "GitHub repository link #{link_id} could not be reattached safely"
+        raise ActiveRecord::Rollback
+      end
+      if verified_link.github_account_id != provisioning_account.id
+        verified_link.update!(github_account: provisioning_account)
+      end
+
+      result = CollavreGithub::WebhookProvisioner.ensure_for_links(
+        account: provisioning_account,
+        links: [ verified_link ],
+        webhook_url: CollavreGithub::WebhookReprovisioner.default_webhook_url,
+        force_hook_refresh: true
+      )
+      status = result.first&.last || :failed
+      if status == :failed
+        failure_message = "GitHub webhook provisioning failed for #{identity.full_name}"
+        raise ActiveRecord::Rollback
+      end
+    end
+  end
+  abort failure_message if failure_message
+
+  puts(
+    "GitHub repository link #{verified_link.id} verified as " \
+    "#{identity.full_name} (repository_id=#{identity.id}); webhook=#{status}"
+  )
+rescue Octokit::Error, Faraday::Error => e
+  abort "GitHub repository verification failed: #{e.class}: #{e.message}"
+end

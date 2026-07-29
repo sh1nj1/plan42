@@ -6,8 +6,17 @@ module CollavreGithub
     # a channel that silently misses comments. `pull_request` is required by
     # the auto-attach + close detection paths.
     CHANNEL_EVENTS = %w[issue_comment pull_request_review pull_request_review_comment].freeze
-    EVENTS = (%w[pull_request] + CHANNEL_EVENTS).freeze
-    EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS).freeze
+
+    # `repository` carries the `renamed` action. Without it a rename is
+    # invisible to this app: `repository_full_name` goes stale on every link at
+    # once and, for links with no `repository_id` yet, there is no other key to
+    # find them by — so every subsequent delivery is answered 401 and the
+    # rename event that would repair it is rejected along with the rest.
+    # NOT a member of CHANNEL_EVENTS: it is routing maintenance, and the
+    # controller drops it rather than formatting it into any feed.
+    MAINTENANCE_EVENTS = %w[repository].freeze
+    EVENTS = (%w[pull_request] + CHANNEL_EVENTS + MAINTENANCE_EVENTS).freeze
+    EVENTS_WITH_PUSH = (%w[pull_request push] + CHANNEL_EVENTS + MAINTENANCE_EVENTS).freeze
     CONTENT_TYPE = "json".freeze
 
     # Last path segment of the deprecated singular `post "webhook"` route. The
@@ -18,17 +27,27 @@ module CollavreGithub
     LEGACY_ROUTE_SEGMENT = "webhook".freeze
     ROUTE_SEGMENT = "webhooks".freeze
 
-    def self.ensure_for_links(account:, links:, webhook_url:)
-      new(account: account, webhook_url: webhook_url).ensure_for_links(Array(links))
+    def self.ensure_for_links(account:, links:, webhook_url:, force_hook_refresh: false)
+      new(
+        account: account,
+        webhook_url: webhook_url,
+        force_hook_refresh: force_hook_refresh
+      ).ensure_for_links(Array(links))
     end
 
-    def self.remove_for_repositories(account:, repositories:, webhook_url:)
-      new(account: account, webhook_url: webhook_url).remove_for_repositories(Array(repositories))
+    def self.remove_for_links(account:, links:, webhook_url:)
+      new(account: account, webhook_url: webhook_url).remove_for_links(Array(links))
     end
 
-    def initialize(account:, webhook_url:, client: CollavreGithub::Client.new(account))
+    def initialize(
+      account:,
+      webhook_url:,
+      client: CollavreGithub::Client.new(account),
+      force_hook_refresh: false
+    )
       @client = client
       @webhook_url = webhook_url
+      @force_hook_refresh = force_hook_refresh
     end
 
     # Returns [[link, status], ...] so callers can detect silent GitHub
@@ -56,31 +75,35 @@ module CollavreGithub
       links.map { |link| [ link, ensure_webhook(link) ] }
     end
 
-    def remove_for_repositories(repositories)
-      # Batch-query to avoid N+1: find all repo names that still have links.
-      # Compared case-insensitively — see `links_for`. Matching exactly would
-      # miss a surviving link stored under different casing and tear down a
-      # hook the repository still needs.
-      names = repositories.map { |name| normalize_repository_name(name) }
-      linked_names = CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) IN (?)", names)
-        .distinct
-        .pluck(:repository_full_name)
-        .map { |name| normalize_repository_name(name) }
-        .to_set
+    # Link objects retain their stable identity after destroy, allowing removal
+    # to find a surviving sibling even when it still stores a pre-rename name.
+    # Once the last ID-backed link is gone, re-resolve its stored name and
+    # require GitHub's live numeric id to match before touching the remote hook.
+    # NULL-id links fail closed: their name may have been reassigned and cannot
+    # safely identify a repository for an outbound mutation.
+    def remove_for_links(links)
+      links
+        .select { |link| link.repository_id.present? }
+        .group_by { |link| link.repository_id.to_s }
+        .each_value do |candidates|
+          repository_id = candidates.first.repository_id
+          CollavreGithub::RepositoryProvisioningLock.with_lock(repository_id) do
+            next if CollavreGithub::RepositoryLink.where(repository_id: repository_id).exists?
 
-      repositories.each do |repository_full_name|
-        next if linked_names.include?(normalize_repository_name(repository_full_name))
-
-        remove_webhook(repository_full_name)
-      end
+            verified_name = candidates.filter_map { |link| verified_removal_name(link) }.first
+            remove_webhook(verified_name) if verified_name
+          end
+        end
     end
 
     private
 
-    attr_reader :client, :webhook_url
+    attr_reader :client, :webhook_url, :provisioning_link, :force_hook_refresh,
+                :superseding_hook
 
     def ensure_webhook(link)
+      @provisioning_link = link
+      @superseding_hook = nil
       repository_full_name = link.repository_full_name
       primary_link = primary_link_for(repository_full_name)
       hooks = repository_hooks(repository_full_name)
@@ -121,6 +144,9 @@ module CollavreGithub
         "GitHub webhook provisioning failed for #{repository_full_name}: #{e.message}"
       )
       :failed
+    ensure
+      @provisioning_link = nil
+      @superseding_hook = nil
     end
 
     def provision_hook(link, repository_full_name, primary_link, hooks, hook, shared)
@@ -129,7 +155,15 @@ module CollavreGithub
 
         if primary_link && primary_link != link
           align_link_secret(link, primary_link.webhook_secret)
-          :secret_aligned
+          if force_hook_refresh
+            update_webhook(
+              repository_full_name,
+              hook.id,
+              primary_link.webhook_secret
+            ) ? :updated : :failed
+          else
+            :secret_aligned
+          end
         else
           update_webhook(repository_full_name, hook.id, link.webhook_secret) ? :updated : :failed
         end
@@ -171,7 +205,13 @@ module CollavreGithub
         # a working hook on a guess would leave the repository with none at
         # all — strictly worse than the duplicate delivery that keeping it may
         # cost, which the GUID ledger collapses anyway.
-        return :created unless register_hook(repository_full_name, created_id, hooks) == :superseded
+        registration = register_hook(repository_full_name, created_id, hooks)
+        return :created unless registration == :superseded
+
+        if force_hook_refresh
+          return :failed unless superseding_hook &&
+            update_shared_webhook(repository_full_name, superseding_hook, secret)
+        end
 
         # A sibling instance created and registered its own hook while this one
         # was creating its own. Both feed this database, so keeping both would
@@ -268,24 +308,42 @@ module CollavreGithub
       end
     end
 
-    # Every single-repository link lookup in this class goes through here
-    # (`remove_for_repositories` batches many names and normalizes them the same
-    # way inline). GitHub treats
-    # `owner/repo` case-insensitively and serves one repository — and one set of
-    # hooks — regardless of the spelling used, but `repository_full_name` is
-    # stored verbatim from whatever the caller supplied. Two creatives linking
-    # the same repository with different casing therefore produce link rows an
-    # exact match cannot see across, which would hide the registered hook id and
-    # let the next run create a second hook: precisely the proliferation this
-    # class exists to prevent. The webhook controller and pr_monitor already
-    # compare with `LOWER(repository_full_name)`; this matches them.
+    # Every primary-link, registration, and event lookup is bounded by the
+    # selected link's identity. ID-backed attempts use the stable repository id
+    # across every stored-name alias, including links that missed a rename.
+    # Name-only attempts remain limited to same-name NULL-id links: a row with
+    # an authoritative id under that reused name may belong to another
+    # repository and must not contribute its secret, registration, or settings.
     def links_for(repository_full_name)
-      CollavreGithub::RepositoryLink
+      if provisioning_link&.repository_id.present?
+        return CollavreGithub::RepositoryLink.where(repository_id: provisioning_link.repository_id)
+      end
+
+      links = CollavreGithub::RepositoryLink
         .where("LOWER(repository_full_name) = ?", normalize_repository_name(repository_full_name))
+      return links unless provisioning_link
+
+      links.where(repository_id: nil)
     end
 
     def normalize_repository_name(repository_full_name)
       repository_full_name.to_s.downcase
+    end
+
+    def verified_removal_name(link)
+      return if link.repository_id.blank?
+
+      identity = client.repository_identity(link.repository_full_name)
+      return if identity&.id.blank? || identity&.full_name.blank?
+      return unless identity.id.to_s == link.repository_id.to_s
+
+      identity.full_name
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn(
+        "[CollavreGithub] webhook removal identity verification failed for " \
+        "#{link.repository_full_name}: #{e.class}: #{e.message}"
+      )
+      nil
     end
 
     def registered_hook_id(repository_full_name)
@@ -334,7 +392,10 @@ module CollavreGithub
       # to: this run is replacing that hook, not racing a sibling for it.
       # Deferring would discard the replacement just created and then delete the
       # legacy hook, leaving the repository with none at all.
-      return :superseded if live && !legacy_hook?(live)
+      if live && !legacy_hook?(live)
+        @superseding_hook = live
+        return :superseded
+      end
 
       links_for(repository_full_name)
         .where(webhook_hook_id: [ nil, registered ].uniq)

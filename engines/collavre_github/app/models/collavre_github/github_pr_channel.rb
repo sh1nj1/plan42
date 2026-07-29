@@ -2,6 +2,8 @@ module CollavreGithub
   class GithubPrChannel < Collavre::Channel
     self.table_name = "channels"
 
+    after_destroy_commit :broadcast_chips_changed
+
     def repo_full_name
       config["repo_full_name"]
     end
@@ -58,10 +60,55 @@ module CollavreGithub
       self.config = config.merge("pr_state" => value)
     end
 
+    # Keep a single monitor when identity repair meets a channel that a user
+    # already attached under the canonical repository name. The explicit
+    # canonical channel survives; topic comments are not owned by channels, so
+    # removing the obsolete routing row loses no timeline content.
+    def synchronize_repository_name!(canonical_full_name)
+      return self if repo_full_name == canonical_full_name
+
+      survivor = self.class
+        .where(topic_id: topic_id, pr_number: pr_number)
+        .where("LOWER(repo_full_name) = ?", canonical_full_name.to_s.downcase)
+        .where.not(id: id)
+        .first
+
+      if survivor
+        if preferred_over?(survivor)
+          self.class.transaction do
+            survivor.destroy!
+            update!(config: config.merge("repo_full_name" => canonical_full_name))
+          end
+          return self
+        end
+
+        survivor.update!(
+          config: survivor.config.merge("repo_full_name" => canonical_full_name)
+        )
+        destroy!
+        survivor
+      else
+        update!(config: config.merge("repo_full_name" => canonical_full_name))
+        self
+      end
+    end
+
     def attached_message
       Collavre::Channel::InjectedMessage.new(
         speaker: channel_bot_user,
         message: t("attached_message", label: label, url: pr_url),
+        label: label,
+        link: pr_url
+      )
+    end
+
+    # Shown when GitHub's delivery could not be authenticated. Renders this
+    # channel's OWN stored repo name, never the rejected payload's — the
+    # payload is unverified by definition at the point this is built.
+    def auth_failure_message
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t("auth_failure_message", repo: repo_full_name, label: label, url: pr_url),
         label: label,
         link: pr_url
       )
@@ -90,6 +137,17 @@ module CollavreGithub
     end
 
     private
+
+    def preferred_over?(other)
+      (lifecycle_priority(self) <=> lifecycle_priority(other)) == 1
+    end
+
+    def lifecycle_priority(channel)
+      [
+        channel.active? ? 1 : 0,
+        channel.dismissed? ? 0 : 1
+      ]
+    end
 
     def handle_pull_request(payload)
       return nil unless payload["action"] == "closed"

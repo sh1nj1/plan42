@@ -16,6 +16,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
       creative: @creative,
       github_account: @account,
       repository_full_name: "webhook-user/example",
+      repository_id: 123,
       webhook_secret: "existing-secret"
     )
     @payload = {

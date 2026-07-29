@@ -10,7 +10,38 @@ module CollavreGithub
       raw_body = request.raw_post.presence || request.body.read
       payload = parse_payload(raw_body)
       @repository_link = find_repository_link(payload)
-      return head :unauthorized unless valid_signature?(raw_body)
+      unless valid_signature?(raw_body)
+        # A rejected delivery is otherwise visible ONLY as a red row in
+        # GitHub's hook UI. On this side it leaves no trace at all: the
+        # deliveries ledger is written below, after verification. Everyone
+        # watching the topic just sees silence where PR comments should be.
+        #
+        # Announced ONLY when no secret could be resolved — i.e. the delivery
+        # named a repository this app cannot identify. That is the failure that
+        # is worth a human's attention (a rename, or a link that was never
+        # provisioned) and it is the one that stays broken until someone acts.
+        #
+        # A signature MISMATCH is deliberately silent. There the repository was
+        # identified and a secret was found; the request simply did not sign
+        # with it, which is what an attacker probing the endpoint looks like.
+        # Announcing that would hand any unauthenticated caller who can guess a
+        # monitored repository's name a way to post into that topic on demand.
+        announce_webhook_auth_failure(payload) if webhook_secret.blank?
+        return head :unauthorized
+      end
+
+      # NULL-id rows predate trustworthy repository identity storage. Their
+      # hook registration and secret may both have been copied across every
+      # same-name row by older provisioners, so even a valid HMAC cannot prove
+      # which row the current repository belongs to. Require the explicit
+      # reattachment workflow before processing or mutating such a link.
+      if @repository_link && @repository_link.repository_id.blank?
+        Rails.logger.warn(
+          "[CollavreGithub] rejecting delivery for unverified repository link " \
+          "#{@repository_link.id}; explicit identity verification is required"
+        )
+        return head :unauthorized
+      end
 
       # Idempotency claim. Deliberately AFTER signature verification: the claim
       # writes a row keyed by an attacker-supplied header, so an unauthenticated
@@ -157,6 +188,24 @@ module CollavreGithub
     def process_delivery(event, payload)
       payload = payload.presence || {}
 
+      # Rename first, and terminally: the whole point is to repair the routing
+      # keys before anything downstream reads them.
+      if event == "repository" && payload["action"] == "renamed"
+        handle_repository_renamed(payload)
+        return
+      end
+
+      repair_repository_identity_from_verified_delivery(payload)
+
+      # Other `repository` actions (archived, publicized, transferred, ...) can
+      # still repair a missed rename through the verified stable id, but are
+      # deliberately dropped rather than formatted into the creative feed.
+      # Subscribing to this event is a routing-maintenance concern, not a feed
+      # feature.
+      return if event == "repository"
+
+      clear_auth_failure_notices(payload)
+
       # Process all links for this repo (same repo can be linked to multiple creatives)
       all_links = all_repository_links_for(payload)
       all_links.each do |link|
@@ -194,7 +243,7 @@ module CollavreGithub
       # below would short-circuit and dispatch_to_channels (.active scope) would
       # skip the dismissed/detached row, leaving the chip hidden and the PR
       # unmonitored for the rest of its reopened life.
-      reactivate_existing_channels_on_reopen(repo, pr_number) if payload["action"] == "reopened"
+      reactivate_existing_channels_on_reopen(repo, pr_number, payload) if payload["action"] == "reopened"
 
       # Body-link path: only used to CREATE a new channel. Existing-channel paths
       # are intentionally handled above (reopened) or as a strict no-op (opened
@@ -211,12 +260,15 @@ module CollavreGithub
       # topic and have subsequent PR comments injected there. Only auto-attach
       # when the topic's creative — or any of its ancestors — is linked to this
       # repo (RepositoryLink applies to the whole subtree).
-      linked_creative_ids = CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+      linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
       creative = topic.creative
-      return unless creative
-      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
-      return if (linked_creative_ids & candidate_ids).empty?
+      repository_id, = repository_identity(payload)
+      return unless creative_in_repo_scope?(
+        creative,
+        linked_creative_ids,
+        full_name: repo,
+        repository_id: repository_id
+      )
 
       existing = GithubPrChannel.where(topic_id: topic.id).find do |c|
         c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
@@ -239,14 +291,14 @@ module CollavreGithub
     # reopened`, regardless of whether the PR description currently contains a
     # topic link. Mirrors dispatch's scope re-validation so a channel whose
     # creative is no longer linked to this repo is NOT resurrected.
-    def reactivate_existing_channels_on_reopen(repo, pr_number)
-      linked_creative_ids = CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+    def reactivate_existing_channels_on_reopen(repo, pr_number, payload)
+      linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
       return if linked_creative_ids.empty?
 
+      repository_id, = repository_identity(payload)
       GithubPrChannel.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
-        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+        next unless channel_in_repo_scope?(channel, linked_creative_ids, repository_id: repository_id)
 
         begin
           # Row-level lock + re-read guards against duplicate reopened announcements
@@ -293,17 +345,17 @@ module CollavreGithub
       # RepositoryLink can be removed or a topic can be moved to a different
       # creative subtree after attachment. Without re-validating here, an
       # orphaned channel would keep receiving cross-tenant PR events.
-      linked_creative_ids = CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) = ?", repo).pluck(:creative_id)
+      linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
 
       # Ruby-level filter for DB portability (SQLite dev/test, Postgres prod).
       # Future optimization: switch to a jsonb-portable query once an established
       # pattern exists in this codebase. Compare repo names case-insensitively
       # so legacy mixed-case rows continue to match the canonical lowercase
       # payload value.
+      repository_id, = repository_identity(payload)
       GithubPrChannel.active.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
-        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+        next unless channel_in_repo_scope?(channel, linked_creative_ids, repository_id: repository_id)
 
         begin
           # Row-level lock + re-check guards against duplicate dispatch when the
@@ -336,13 +388,30 @@ module CollavreGithub
     # still listed in a RepositoryLink for the webhook's repo. Mirrors the
     # auto-attach guard so removing a link severs the dispatch, not just the
     # ability to create new monitors.
-    def channel_in_repo_scope?(channel, linked_creative_ids)
+    def channel_in_repo_scope?(channel, linked_creative_ids, repository_id:)
       return false if linked_creative_ids.empty?
 
       creative = channel.topic&.creative
+      creative_in_repo_scope?(
+        creative,
+        linked_creative_ids,
+        full_name: channel.repo_full_name,
+        repository_id: repository_id
+      )
+    end
+
+    def creative_in_repo_scope?(creative, linked_creative_ids, full_name:, repository_id:)
       return false unless creative
+      return false if CollavreGithub::RepositoryLink.conflicting_repository_in_scope?(
+        creative: creative,
+        full_name: full_name,
+        repository_id: repository_id
+      )
 
       candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      excluded_ids = @identity_repair_excluded_creative_ids || []
+      return false if (excluded_ids & candidate_ids).any?
+
       (linked_creative_ids & candidate_ids).any?
     end
 
@@ -544,13 +613,34 @@ module CollavreGithub
       )
     end
 
-    def all_repository_links_for(payload)
-      repo = payload&.dig("repository", "full_name") || payload&.dig(:repository, :full_name)
-      return [ @repository_link ].compact if repo.blank?
+    # [github_repository_id, lowercased_full_name] from a payload that may use
+    # either string or symbol keys depending on how it was parsed.
+    def repository_identity(payload)
+      repo = payload&.dig("repository") || payload&.dig(:repository)
+      return [ nil, nil ] if repo.blank?
 
-      CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) = ?", repo.downcase)
-        .to_a
+      [
+        repo["id"] || repo[:id],
+        (repo["full_name"] || repo[:full_name]).to_s.downcase.presence
+      ]
+    end
+
+    def links_for(payload)
+      id, full_name = repository_identity(payload)
+      CollavreGithub::RepositoryLink.for_repository(id: id, full_name: full_name)
+    end
+
+    def all_repository_links_for(payload)
+      id, full_name = repository_identity(payload)
+      return [ @repository_link ].compact if id.blank? && full_name.blank?
+
+      links = links_for(payload).to_a
+      return links if id.blank?
+
+      links.select! { |link| link.repository_id.to_s == id.to_s }
+      return links if @identity_repair_link_ids.nil?
+
+      links.select { |link| @identity_repair_link_ids.include?(link.id) }
     end
 
     def find_repository_link(payload)
@@ -559,21 +649,309 @@ module CollavreGithub
         return
       end
 
-      repo = payload["repository"] || payload[:repository]
-      if repo.blank?
-        Rails.logger.warn("[GitHub Webhook] Repository missing in payload")
+      id, full_name = repository_identity(payload)
+      if id.blank? && full_name.blank?
+        Rails.logger.warn("[GitHub Webhook] Repository identity missing in payload")
         return
       end
 
-      full_name = repo["full_name"] || repo[:full_name]
-      if full_name.blank?
-        Rails.logger.warn("[GitHub Webhook] Repository full_name missing in payload")
-        return
+      candidates = links_for(payload)
+      # A NULL-id name match is only a legacy candidate. Prefer the stable ID
+      # row for signature lookup so a stale same-name row with another secret
+      # cannot make a legitimate delivery fail depending on database order.
+      authoritative = candidates.where(repository_id: id).first
+      return authoritative if authoritative
+
+      candidates.first
+    end
+
+    # A verified delivery proves the current canonical name whenever its stable
+    # repository id matches the link used for HMAC verification. Repair that
+    # exact ID scope before ordinary fan-out resolves channel names.
+    def repair_repository_identity_from_verified_delivery(payload)
+      id, full_name = repository_identity(payload)
+      return if id.blank? || full_name.blank?
+
+      verified_by_id = @repository_link&.repository_id.present? &&
+        @repository_link.repository_id.to_s == id.to_s
+      return unless verified_by_id
+
+      repair_scope = CollavreGithub::RepositoryLink
+        .where(repository_id: id)
+        .pluck(:id, :repository_full_name)
+      return unless repair_scope.any? { |_link_id, name| name.to_s != full_name }
+
+      synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
+        anchor: @repository_link,
+        repository_id: id,
+        full_name: full_name,
+        trusted_secret: webhook_secret
+      )
+      canonical_link_ids = CollavreGithub::RepositoryLink
+        .where(repository_id: id, repository_full_name: full_name)
+        .pluck(:id)
+      @identity_repair_link_ids = synchronized.map(&:id) & canonical_link_ids
+      @identity_repair_excluded_creative_ids = CollavreGithub::RepositoryLink
+        .where(repository_id: id)
+        .where.not(repository_full_name: full_name)
+        .distinct
+        .pluck(:creative_id)
+      @repository_link = synchronized.find do |link|
+        link.creative_id == @repository_link.creative_id
+      end || @repository_link
+    end
+
+    # GitHub sends `repository.renamed` with the NEW `full_name` and only the
+    # short name of the old one, so the previous full name has to be rebuilt
+    # from the owner login. The id is matched too, and matters more: it is what
+    # lets a link that was already backfilled be found even when its stored
+    # name matches nothing in the payload.
+    #
+    # A link whose `repository_id` is still NULL cannot be repaired by this
+    # handler. It is rejected before processing and requires the explicit
+    # identity reattachment workflow.
+    def handle_repository_renamed(payload)
+      repo = payload["repository"] || {}
+      new_full_name = (repo["full_name"] || repo[:full_name]).to_s
+      return if new_full_name.blank?
+
+      repo_id = repo["id"] || repo[:id]
+      owner = repo.dig("owner", "login")
+      from = payload.dig("changes", "repository", "name", "from")
+      old_full_name = ("#{owner}/#{from}" if owner.present? && from.present?)
+
+      CollavreGithub::RepositoryProvisioningLock.with_repository_name_lock(new_full_name) do
+        CollavreGithub::RepositoryLink.transaction do
+          synchronize_repository_rename!(
+            repository_id: repo_id,
+            old_full_name: old_full_name,
+            new_full_name: new_full_name
+          )
+        end
+      end
+      Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
+    end
+
+    def synchronize_repository_rename!(repository_id:, old_full_name:, new_full_name:)
+      # An authenticated rename must never mutate every row carrying the old
+      # name. GitHub allows that name to be reused by another repository after
+      # the rename, and a delayed/redelivered event would otherwise capture the
+      # new repository's links and channels too.
+      #
+      # ID-backed rows are authoritative. NULL-id rows require explicit
+      # reattachment because older provisioners may have copied both their hook
+      # registration and secret from an unrelated same-name repository.
+      links = if repository_id.present?
+        CollavreGithub::RepositoryLink.where(repository_id: repository_id).to_a
+      else
+        []
       end
 
-      CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) = ?", full_name.downcase)
-        .first
+      renamed_creative_ids = []
+      stored_names_by_creative = Hash.new { |hash, key| hash[key] = [] }
+      links.each do |link|
+        stored_full_name = link.repository_full_name.to_s
+        collision_resolution = resolve_repository_rename_collision(
+          link: link,
+          new_full_name: new_full_name,
+          repository_id: repository_id
+        )
+        unless collision_resolution.nil?
+          if collision_resolution
+            renamed_creative_ids << link.creative_id
+            stored_names_by_creative[stored_full_name.downcase] << link.creative_id
+          end
+          next
+        end
+
+        if link.repository_full_name == new_full_name &&
+            link.repository_id.to_s == repository_id.to_s
+          renamed_creative_ids << link.creative_id
+          next
+        end
+
+        conflicting_link = CollavreGithub::RepositoryLink.identity_conflict_in_link_scope(
+          creative: link.creative,
+          full_name: new_full_name,
+          repository_id: repository_id,
+          excluding_id: link.id
+        )
+        if conflicting_link
+          Rails.logger.warn(
+            "[CollavreGithub] rename collision for link #{link.id}: #{new_full_name} in " \
+            "creative #{link.creative_id} belongs to repository #{conflicting_link.repository_id.inspect}"
+          )
+          next
+        end
+
+        begin
+          CollavreGithub::RepositoryLink.transaction(requires_new: true) do
+            link.update_columns(repository_full_name: new_full_name, repository_id: repository_id)
+          end
+          renamed_creative_ids << link.creative_id
+          stored_names_by_creative[stored_full_name.downcase] << link.creative_id
+        rescue ActiveRecord::RecordNotUnique
+          if resolve_repository_rename_collision(
+            link: link,
+            new_full_name: new_full_name,
+            repository_id: repository_id
+          )
+            renamed_creative_ids << link.creative_id
+            stored_names_by_creative[stored_full_name.downcase] << link.creative_id
+          end
+        end
+      end
+
+      if old_full_name
+        stored_names_by_creative[old_full_name.downcase].concat(renamed_creative_ids)
+      end
+      stored_names_by_creative.each do |stored_name, creative_ids|
+        rename_channels(stored_name, new_full_name, creative_ids.uniq, repository_id)
+      end
+    end
+
+    def resolve_repository_rename_collision(link:, new_full_name:, repository_id:)
+      collisions = CollavreGithub::RepositoryLink
+        .where(creative_id: link.creative_id)
+        .where.not(id: link.id)
+        .where("LOWER(repository_full_name) = ?", new_full_name.downcase)
+        .to_a
+      return if collisions.empty?
+
+      conflict = collisions.find { |candidate| candidate.repository_id.to_s != repository_id.to_s }
+      if conflict
+        Rails.logger.warn(
+          "[CollavreGithub] rename collision for link #{link.id}: #{new_full_name} in " \
+          "creative #{link.creative_id} belongs to repository #{conflict.repository_id.inspect}"
+        )
+        return false
+      end
+
+      survivor = if link.repository_full_name == new_full_name
+        link
+      else
+        collisions.find { |candidate| candidate.repository_full_name == new_full_name } || collisions.first
+      end
+      ([ link ] + collisions).uniq.each do |candidate|
+        next if candidate == survivor
+
+        merge_repository_links!(obsolete: candidate, survivor: survivor)
+      end
+      survivor.update_columns(repository_full_name: new_full_name)
+      true
+    end
+
+    # A delayed rename can meet a link that was already created under the new
+    # name in the same creative. Leaving both rows behind would make every
+    # subsequent ID lookup process that creative twice. Keep the new-name row,
+    # align it with the secret that authenticated the delivery, preserve the
+    # obsolete row's sync/registration state where the survivor has none, and
+    # remove the duplicate.
+    def merge_repository_links!(obsolete:, survivor:)
+      survivor.update!(
+        webhook_secret: webhook_secret,
+        webhook_hook_id: survivor.webhook_hook_id || obsolete.webhook_hook_id,
+        markdown_sync_enabled: survivor.markdown_sync_enabled? || obsolete.markdown_sync_enabled?,
+        markdown_root_creative_id: survivor.markdown_root_creative_id || obsolete.markdown_root_creative_id,
+        sync_branch: survivor.sync_branch.presence || obsolete.sync_branch,
+        last_synced_at: [ survivor.last_synced_at, obsolete.last_synced_at ].compact.max
+      )
+      obsolete.destroy!
+    end
+
+    # Channels carry their own copy of the repo name (dispatch matches on it),
+    # so renaming the links alone would leave every attached PR chip orphaned.
+    def rename_channels(old_full_name, new_full_name, renamed_creative_ids, repository_id)
+      old = old_full_name.downcase
+      GithubPrChannel.find_each do |channel|
+        next unless channel.repo_full_name.to_s.downcase == old
+        next unless channel_in_repo_scope?(
+          channel,
+          renamed_creative_ids,
+          repository_id: repository_id
+        )
+
+        channel.synchronize_repository_name!(new_full_name)
+      end
+    end
+
+    # How long a channel stays quiet after announcing a rejected delivery.
+    # GitHub retries nothing, but a busy repository produces a steady stream of
+    # events and every one of them fails the same way — without this the topic
+    # would fill with identical warnings.
+    AUTH_FAILURE_NOTICE_INTERVAL = 1.hour
+
+    # Global guard on the channel query below. This path is reachable by
+    # unauthenticated callers, so the payload's repository name must not be part
+    # of the throttle key: otherwise a caller can cycle arbitrary names to force
+    # one query and one cache entry per request. A short global interval bounds
+    # the work while still letting independently broken repositories announce
+    # promptly. `unless_exist` makes concurrent claims atomic on cache stores
+    # that support it; NullStore fails open and preserves the warning.
+    AUTH_FAILURE_SCAN_INTERVAL = 1.minute
+    AUTH_FAILURE_SCAN_CACHE_KEY = "collavre_github:auth_failure_scan".freeze
+
+    # Announce a rejected delivery in every topic already monitoring the name
+    # carried by the payload. A stale ID-backed link is repaired after HMAC
+    # verification. A NULL-id link requires explicit reattachment because its
+    # historical hook registration and secret are not row identity.
+    #
+    # The payload is UNVERIFIED here — that is the whole situation — so nothing
+    # from it reaches the message. The repo name rendered is the channel's own
+    # stored value, and a channel is only selected when that value already
+    # equals the payload's. An attacker can therefore cause a canned warning in
+    # topics that are already monitoring the repository they named, at most
+    # once an hour each, and can inject no content of their own.
+    def announce_webhook_auth_failure(payload)
+      _id, repo = repository_identity(payload)
+      return if repo.blank?
+
+      claimed = Rails.cache.write(
+        AUTH_FAILURE_SCAN_CACHE_KEY,
+        true,
+        expires_in: AUTH_FAILURE_SCAN_INTERVAL,
+        unless_exist: true
+      )
+      return unless claimed
+
+      GithubPrChannel.active.where("LOWER(repo_full_name) = ?", repo).find_each do |channel|
+        begin
+          channel.with_lock do
+            last = channel.config["auth_failure_notified_at"]
+            next if last.present? && Time.zone.parse(last) > AUTH_FAILURE_NOTICE_INTERVAL.ago
+
+            # Marked before injecting: a failure while injecting must not leave
+            # the channel free to retry the same warning on the next delivery,
+            # which for a busy repo is seconds away.
+            channel.update!(config: channel.config.merge("auth_failure_notified_at" => Time.current.iso8601))
+            channel.inject_into_topic!(channel.auth_failure_message)
+          end
+        rescue => e
+          Rails.logger.error(
+            "[CollavreGithub] auth failure notice failed for channel #{channel.id}: #{e.class}: #{e.message}"
+          )
+        end
+      end
+    end
+
+    # Clear the marker once deliveries verify again, so a repository that
+    # breaks, is repaired, then breaks again months later warns the second time
+    # too. Left set, the interval above would be the only thing re-arming it.
+    def clear_auth_failure_notices(payload)
+      _id, repo = repository_identity(payload)
+      return if repo.blank?
+
+      GithubPrChannel.where("LOWER(repo_full_name) = ?", repo).find_each do |channel|
+        next if channel.config["auth_failure_notified_at"].blank?
+
+        begin
+          channel.update!(config: channel.config.except("auth_failure_notified_at"))
+        rescue => e
+          Rails.logger.error(
+            "[CollavreGithub] clearing auth failure notice failed for channel #{channel.id}: #{e.class}: #{e.message}"
+          )
+        end
+      end
     end
 
     def valid_signature?(raw_body)
@@ -602,8 +980,13 @@ module CollavreGithub
       ActiveSupport::SecurityUtils.secure_compare(expected_signature, signature_header)
     end
 
+    # Memoized: a rejected delivery reads this twice — once to verify, once to
+    # decide whether the rejection is worth announcing — and the fallback path
+    # queries integration settings.
     def webhook_secret
-      @repository_link&.webhook_secret || fallback_webhook_secret
+      return @webhook_secret if defined?(@webhook_secret)
+
+      @webhook_secret = @repository_link&.webhook_secret || fallback_webhook_secret
     end
 
     def fallback_webhook_secret

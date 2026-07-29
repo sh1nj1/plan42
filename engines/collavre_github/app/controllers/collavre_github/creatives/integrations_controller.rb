@@ -45,48 +45,258 @@ module CollavreGithub
         end
 
         integration_attributes = integration_params
+        markdown_sync = integration_attributes[:markdown_sync]
+        markdown_sync_by_name =
+          if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
+            markdown_sync.to_h.each_with_object({}) do |(full_name, enabled), toggles|
+              key = full_name.to_s.downcase
+              toggles[key] ||= []
+              toggles[key] << ActiveModel::Type::Boolean.new.cast(enabled)
+            end
+          else
+            {}
+          end
         repositories = Array(integration_attributes[:repositories]).map(&:to_s).uniq
+        existing_links = linked_repository_links(account).to_a
+        existing_by_name = existing_links.index_by { |link| link.repository_full_name.downcase }
+        client = CollavreGithub::Client.new(account)
+        identities = {}
+        repositories.each do |full_name|
+          normalized_name = full_name.downcase
+          existing = existing_by_name[normalized_name]
+          next if existing && existing.repository_id.blank?
+
+          identity = client.repository_identity(full_name)
+          unless identity&.id.present? && identity&.full_name.present?
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
+          end
+
+          if existing && existing.repository_id.to_s != identity.id.to_s
+            Rails.logger.warn(
+              "[CollavreGithub] rejecting integration save for stale link #{existing.id}: " \
+              "#{full_name} resolves to repository #{identity.id}, not #{existing.repository_id}"
+            )
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
+          end
+
+          identities[normalized_name] = identity
+          identities[identity.full_name.downcase] = identity
+        end
+
+        markdown_sync_by_repository = {}
+        repository_groups = repositories.group_by do |full_name|
+          normalized_name = full_name.downcase
+          existing = existing_by_name[normalized_name]
+          identity = identities[normalized_name]
+          repository_id = identity&.id || existing&.repository_id
+
+          if repository_id.present?
+            [ :id, repository_id.to_s ]
+          else
+            canonical_name = identity&.full_name || existing&.repository_full_name || full_name
+            [ :name, canonical_name.downcase ]
+          end
+        end
+        repositories = repository_groups.values.map do |aliases|
+          identity = aliases.filter_map { |full_name| identities[full_name.downcase] }.first
+          existing = aliases.filter_map { |full_name| existing_by_name[full_name.downcase] }.first
+          canonical_name = identity&.full_name || existing&.repository_full_name || aliases.first
+          toggle_keys = (aliases.map(&:downcase) + [ canonical_name.downcase ]).uniq
+          toggle_values = toggle_keys.each_with_object([]) do |key, values|
+            values.concat(markdown_sync_by_name.fetch(key, []))
+          end.uniq
+          if toggle_values.length > 1
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
+          end
+          if toggle_values.length == 1
+            markdown_sync_by_repository[canonical_name.downcase] = toggle_values.first
+          end
+          canonical_name
+        end
+
+        # Reject deterministic canonical-name collisions before any hook is
+        # touched. A NULL or different-id row is not the verified repository
+        # and must never replace its old-name exact-id anchor.
+        repositories.each do |full_name|
+          identity = identities[full_name.downcase]
+          next unless identity
+
+          canonical_conflict = CollavreGithub::RepositoryLink.identity_conflict_in_link_scope(
+            creative: @origin,
+            full_name: identity.full_name,
+            repository_id: identity.id
+          )
+          next unless canonical_conflict
+
+          render json: { error: I18n.t("collavre_github.setup.save_error") },
+                 status: :unprocessable_entity
+          return
+        end
+
+        # A legacy NULL-id row may point at a repository name GitHub has since
+        # reassigned. Enabling import would read that unrelated repository and
+        # archive the creative's existing sync tree before identity is proven.
+        if markdown_sync_by_repository.present?
+          unsafe_legacy_enable = repositories.any? do |full_name|
+            link = existing_by_name[full_name.downcase]
+            next false unless link && link.repository_id.blank?
+            next false unless markdown_sync_by_repository.key?(full_name.downcase)
+
+            markdown_sync_by_repository[full_name.downcase]
+          end
+          if unsafe_legacy_enable
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
+          end
+        end
+
+        # Provision each verified repository in its own transaction. If a
+        # later repository fails, earlier successful GitHub mutations retain
+        # their matching local link/secret instead of being rolled back into a
+        # ghost-hook state.
+        live_repository_names = {}
+        repositories.each do |full_name|
+          identity = identities[full_name.downcase]
+          next unless identity
+
+          toggle_key = identity.full_name.downcase
+          toggle_present = markdown_sync_by_repository.key?(toggle_key)
+          toggle_enabled = markdown_sync_by_repository[toggle_key]
+          repository_failed = false
+          sync_job_link_id = nil
+          CollavreGithub::RepositoryProvisioningLock.with_lock(identity.id) do
+            CollavreGithub::RepositoryProvisioningLock.with_repository_name_lock(identity.full_name) do
+              CollavreGithub::RepositoryLink.transaction(requires_new: true) do
+                live_identity = client.repository_identity(full_name)
+                unless live_identity&.id.to_s == identity.id.to_s &&
+                    live_identity&.full_name.present? &&
+                    live_identity.full_name.to_s.casecmp?(identity.full_name.to_s)
+                  repository_failed = true
+                  raise ActiveRecord::Rollback
+                end
+
+                canonical_conflict = CollavreGithub::RepositoryLink.identity_conflict_in_link_scope(
+                  creative: @origin,
+                  full_name: live_identity.full_name,
+                  repository_id: live_identity.id
+                )
+                if canonical_conflict
+                  repository_failed = true
+                  raise ActiveRecord::Rollback
+                end
+
+                anchor = linked_repository_links(account)
+                  .where(repository_id: live_identity.id)
+                  .order(:id)
+                  .first
+                link = if anchor
+                  synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
+                    anchor: anchor,
+                    repository_id: live_identity.id,
+                    full_name: live_identity.full_name,
+                    trusted_secret: anchor.webhook_secret
+                  )
+                  synchronized.find do |candidate|
+                    candidate.creative_id == @origin.id &&
+                      candidate.repository_id.to_s == live_identity.id.to_s
+                  end
+                else
+                  @origin.github_repository_links
+                    .where("LOWER(repository_full_name) = ?", live_identity.full_name.downcase)
+                    .where(repository_id: live_identity.id)
+                    .first
+                end
+
+                unless link
+                  link = @origin.github_repository_links.create!(
+                    github_account: account,
+                    repository_full_name: live_identity.full_name,
+                    repository_id: live_identity.id
+                  )
+                end
+                link.update!(github_account: account) if link.github_account_id != account.id
+
+                if toggle_present
+                  enabled = toggle_enabled
+                  was_enabled = link.markdown_sync_enabled?
+                  link.update!(markdown_sync_enabled: enabled)
+                  sync_job_link_id = link.id if enabled && !was_enabled
+                end
+
+                results = CollavreGithub::WebhookProvisioner.ensure_for_links(
+                  account: account,
+                  links: [ link ],
+                  webhook_url: github_webhook_url,
+                  force_hook_refresh: true
+                )
+                if results.any? { |_candidate, status| status == :failed }
+                  repository_failed = true
+                  raise ActiveRecord::Rollback
+                end
+
+                live_repository_names[identity.id.to_s] = live_identity.full_name
+                if toggle_present
+                  markdown_sync_by_repository[live_identity.full_name.downcase] = toggle_enabled
+                end
+              end
+            end
+          end
+
+          if repository_failed
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
+          end
+
+          if sync_job_link_id
+            CollavreGithub::InitialMarkdownSyncJob.perform_later(sync_job_link_id)
+          end
+        end
+
+        repositories.map! do |full_name|
+          identity = identities[full_name.downcase]
+          identity ? live_repository_names.fetch(identity.id.to_s, full_name) : full_name
+        end
 
         links = nil
-
+        sync_job_link_ids = []
         CollavreGithub::RepositoryLink.transaction do
-          linked_repository_links(account)
-            .where.not(repository_full_name: repositories)
-            .delete_all
-
-          repositories.each do |full_name|
-            @origin.github_repository_links.find_or_create_by!(
-              github_account: account,
-              repository_full_name: full_name
-            )
+          selected_names = repositories.map(&:downcase)
+          current_links = linked_repository_links(account)
+          if selected_names.empty?
+            current_links.delete_all
+          else
+            current_links
+              .where.not("LOWER(repository_full_name) IN (?)", selected_names)
+              .delete_all
           end
 
           links = linked_repository_links(account).to_a
-        end
 
-        # Handle markdown sync toggle BEFORE webhook provisioning
-        # so events_for() sees the updated markdown_sync_enabled state
-        markdown_sync = integration_attributes[:markdown_sync]
-        if markdown_sync.is_a?(ActionController::Parameters) || markdown_sync.is_a?(Hash)
-          links.each do |link|
-            repo = link.repository_full_name
-            next unless markdown_sync.key?(repo)
+          # Enqueue the initial import only after selection and every hook
+          # provision have succeeded.
+          if markdown_sync_by_repository.present?
+            links.each do |link|
+              repo = link.repository_full_name
+              next unless markdown_sync_by_repository.key?(repo.downcase)
 
-            enabled = ActiveModel::Type::Boolean.new.cast(markdown_sync[repo])
-            was_enabled = link.markdown_sync_enabled?
-            link.update!(markdown_sync_enabled: enabled)
+              enabled = markdown_sync_by_repository[repo.downcase]
+              was_enabled = link.markdown_sync_enabled?
+              link.update!(markdown_sync_enabled: enabled)
 
-            if enabled && !was_enabled
-              CollavreGithub::InitialMarkdownSyncJob.perform_later(link.id)
+              sync_job_link_ids << link.id if enabled && !was_enabled
             end
           end
         end
 
-        CollavreGithub::WebhookProvisioner.ensure_for_links(
-          account: account,
-          links: links,
-          webhook_url: github_webhook_url
-        ) if links.present?
+        sync_job_link_ids.each { |link_id| CollavreGithub::InitialMarkdownSyncJob.perform_later(link_id) }
 
         render json: {
           success: true,
@@ -102,6 +312,13 @@ module CollavreGithub
         }
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
+      rescue Octokit::Error, Faraday::Error => e
+        Rails.logger.warn(
+          "[CollavreGithub] repository identity lookup failed while saving integration: " \
+          "#{e.class}: #{e.message}"
+        )
+        render json: { error: I18n.t("collavre_github.setup.save_error") },
+               status: :unprocessable_entity
       end
 
       def resync
@@ -145,7 +362,7 @@ module CollavreGithub
 
         scope = linked_repository_links(account)
 
-        removed_repositories = []
+        removed_links = []
 
         if repositories.present?
           links_to_remove = scope.where(repository_full_name: repositories).to_a
@@ -156,7 +373,7 @@ module CollavreGithub
           end
 
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = links_to_remove.map(&:repository_full_name)
+            removed_links = links_to_remove
             links_to_remove.each(&:destroy!)
           end
         elsif repository
@@ -167,20 +384,20 @@ module CollavreGithub
           end
 
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = [ link.repository_full_name ]
+            removed_links = [ link ]
             link.destroy!
           end
         else
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = scope.pluck(:repository_full_name)
-            scope.destroy_all
+            removed_links = scope.to_a
+            removed_links.each(&:destroy!)
           end
         end
 
-        if removed_repositories.present?
-          CollavreGithub::WebhookProvisioner.remove_for_repositories(
+        if removed_links.present?
+          CollavreGithub::WebhookProvisioner.remove_for_links(
             account: account,
-            repositories: removed_repositories,
+            links: removed_links,
             webhook_url: github_webhook_url
           )
         end

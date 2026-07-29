@@ -107,6 +107,7 @@ en:
         closed_message: "%{label} was **%{verb}**. Detaching channel."
         attached_message: "%{label} monitoring started.\n\n%{url}"
         reopened_message: "%{label} was reopened. Monitoring resumed.\n\n%{url}"
+        auth_failure_message: "⚠️ A GitHub webhook delivery for `%{repo}` could not be verified, so events for %{label} are **not being received**.\n\nThis usually means the repository was renamed or its webhook secret was changed. Re-run the GitHub integration setup for this repository to restore delivery.\n\n%{url}"
         badge:
           open: "Open"
           merged: "Merged"
