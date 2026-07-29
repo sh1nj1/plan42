@@ -262,9 +262,13 @@ module CollavreGithub
       # repo (RepositoryLink applies to the whole subtree).
       linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
       creative = topic.creative
-      return unless creative
-      candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
-      return if (linked_creative_ids & candidate_ids).empty?
+      repository_id, = repository_identity(payload)
+      return unless creative_in_repo_scope?(
+        creative,
+        linked_creative_ids,
+        full_name: repo,
+        repository_id: repository_id
+      )
 
       existing = GithubPrChannel.where(topic_id: topic.id).find do |c|
         c.repo_full_name.to_s.downcase == repo && c.pr_number == pr_number
@@ -291,9 +295,10 @@ module CollavreGithub
       linked_creative_ids = all_repository_links_for(payload).map(&:creative_id)
       return if linked_creative_ids.empty?
 
+      repository_id, = repository_identity(payload)
       GithubPrChannel.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
-        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+        next unless channel_in_repo_scope?(channel, linked_creative_ids, repository_id: repository_id)
 
         begin
           # Row-level lock + re-read guards against duplicate reopened announcements
@@ -347,9 +352,10 @@ module CollavreGithub
       # pattern exists in this codebase. Compare repo names case-insensitively
       # so legacy mixed-case rows continue to match the canonical lowercase
       # payload value.
+      repository_id, = repository_identity(payload)
       GithubPrChannel.active.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == repo && channel.pr_number == pr_number
-        next unless channel_in_repo_scope?(channel, linked_creative_ids)
+        next unless channel_in_repo_scope?(channel, linked_creative_ids, repository_id: repository_id)
 
         begin
           # Row-level lock + re-check guards against duplicate dispatch when the
@@ -382,13 +388,30 @@ module CollavreGithub
     # still listed in a RepositoryLink for the webhook's repo. Mirrors the
     # auto-attach guard so removing a link severs the dispatch, not just the
     # ability to create new monitors.
-    def channel_in_repo_scope?(channel, linked_creative_ids)
+    def channel_in_repo_scope?(channel, linked_creative_ids, repository_id:)
       return false if linked_creative_ids.empty?
 
       creative = channel.topic&.creative
+      creative_in_repo_scope?(
+        creative,
+        linked_creative_ids,
+        full_name: channel.repo_full_name,
+        repository_id: repository_id
+      )
+    end
+
+    def creative_in_repo_scope?(creative, linked_creative_ids, full_name:, repository_id:)
       return false unless creative
+      return false if CollavreGithub::RepositoryLink.conflicting_repository_in_scope?(
+        creative: creative,
+        full_name: full_name,
+        repository_id: repository_id
+      )
 
       candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      excluded_ids = @identity_repair_excluded_creative_ids || []
+      return false if (excluded_ids & candidate_ids).any?
+
       (linked_creative_ids & candidate_ids).any?
     end
 
@@ -614,10 +637,10 @@ module CollavreGithub
       links = links_for(payload).to_a
       return links if id.blank?
 
-      links.select do |link|
-        link.repository_id.to_s == id.to_s &&
-          link.repository_full_name.to_s.downcase == full_name
-      end
+      links.select! { |link| link.repository_id.to_s == id.to_s }
+      return links if @identity_repair_link_ids.nil?
+
+      links.select { |link| @identity_repair_link_ids.include?(link.id) }
     end
 
     def find_repository_link(payload)
@@ -653,11 +676,10 @@ module CollavreGithub
         @repository_link.repository_id.to_s == id.to_s
       return unless verified_by_id
 
-      stale_name_exists = CollavreGithub::RepositoryLink
+      repair_scope = CollavreGithub::RepositoryLink
         .where(repository_id: id)
-        .where("LOWER(repository_full_name) <> ?", full_name)
-        .exists?
-      return unless stale_name_exists
+        .pluck(:id, :repository_full_name)
+      return unless repair_scope.any? { |_link_id, name| name.to_s != full_name }
 
       synchronized = CollavreGithub::RepositoryIdentitySynchronizer.call(
         anchor: @repository_link,
@@ -665,6 +687,15 @@ module CollavreGithub
         full_name: full_name,
         trusted_secret: webhook_secret
       )
+      canonical_link_ids = CollavreGithub::RepositoryLink
+        .where(repository_id: id, repository_full_name: full_name)
+        .pluck(:id)
+      @identity_repair_link_ids = synchronized.map(&:id) & canonical_link_ids
+      @identity_repair_excluded_creative_ids = CollavreGithub::RepositoryLink
+        .where(repository_id: id)
+        .where.not(repository_full_name: full_name)
+        .distinct
+        .pluck(:creative_id)
       @repository_link = synchronized.find do |link|
         link.creative_id == @repository_link.creative_id
       end || @repository_link
@@ -783,10 +814,9 @@ module CollavreGithub
       old = old_full_name.downcase
       GithubPrChannel.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == old
-        next unless channel_in_repo_scope?(channel, renamed_creative_ids)
-        next if CollavreGithub::RepositoryLink.conflicting_repository_in_scope?(
-          creative: channel.topic&.creative,
-          full_name: old_full_name,
+        next unless channel_in_repo_scope?(
+          channel,
+          renamed_creative_ids,
           repository_id: repository_id
         )
 

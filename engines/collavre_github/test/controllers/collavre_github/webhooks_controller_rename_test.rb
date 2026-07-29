@@ -103,7 +103,7 @@ module CollavreGithub
       assert_response :ok
     end
 
-    test "identity-conflicted stale links are excluded from markdown fan-out" do
+    test "identity-conflicted link is excluded from markdown sync fan-out" do
       @link.update!(markdown_sync_enabled: true)
       CollavreGithub::RepositoryLink.create!(
         creative: @creative,
@@ -111,22 +111,135 @@ module CollavreGithub
         repository_full_name: NEW_NAME,
         repository_id: 777
       )
-      sync_jobs = []
+      sync_calls = []
 
       CollavreGithub::MarkdownSyncJob.stub(
         :perform_later,
-        ->(*args) { sync_jobs << args }
+        ->(*args) { sync_calls << args }
       ) do
         post_event("push", {
           ref: "refs/heads/main",
+          pusher: { name: "alice" },
+          commits: [],
           repository: { id: REPO_ID, full_name: NEW_NAME }
         })
       end
 
       assert_response :ok
-      assert_empty sync_jobs
+      assert_empty sync_calls
       assert_equal OLD_NAME, @link.reload.repository_full_name
       assert_equal REPO_ID, @link.repository_id
+    end
+
+    test "identity-conflicted descendant channel is excluded despite a valid ancestor link" do
+      child = Collavre::Creative.create!(parent: @creative, user: @user, description: "Child")
+      CollavreGithub::RepositoryLink.create!(
+        creative: child,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: REPO_ID
+      )
+      CollavreGithub::RepositoryLink.create!(
+        creative: child,
+        github_account: @account,
+        repository_full_name: NEW_NAME,
+        repository_id: 777
+      )
+      child_topic = Collavre::Topic.create!(creative: child, user: @user, name: "Conflicted")
+      GithubPrChannel.create!(
+        topic: child_topic,
+        config: { "repo_full_name" => NEW_NAME, "pr_number" => 99 }
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: child_topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 93, body: "must not leak", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        })
+      end
+
+      assert_response :ok
+    end
+
+    test "partial alias repair does not hide another conflicted link in the same creative" do
+      @link.update!(markdown_sync_enabled: true)
+      case_variant = CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: "Owner/New-Name",
+        repository_id: REPO_ID
+      )
+      CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME,
+        repository_id: 777
+      )
+      conflicting_topic = Collavre::Topic.create!(
+        creative: @creative,
+        user: @user,
+        name: "Case-conflicted"
+      )
+      GithubPrChannel.create!(
+        topic: conflicting_topic,
+        config: { "repo_full_name" => NEW_NAME, "pr_number" => 99 }
+      )
+      sync_calls = []
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: conflicting_topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 94, body: "must not leak", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        })
+      end
+      assert_response :ok
+
+      CollavreGithub::MarkdownSyncJob.stub(:perform_later, ->(*args) { sync_calls << args }) do
+        post_event("push", {
+          ref: "refs/heads/main",
+          pusher: { name: "alice" },
+          commits: [],
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        }, secret: @link.webhook_secret)
+      end
+
+      assert_response :ok
+      assert_empty sync_calls
+      assert_equal "Owner/New-Name", case_variant.reload.repository_full_name
+    end
+
+    test "canonical link does not authorize a case-variant conflicting repository channel" do
+      @link.update!(repository_full_name: NEW_NAME)
+      CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: "Owner/New-Name",
+        repository_id: 777
+      )
+      conflicting_topic = Collavre::Topic.create!(
+        creative: @creative,
+        user: @user,
+        name: "Case-variant repository"
+      )
+      GithubPrChannel.create!(
+        topic: conflicting_topic,
+        config: { "repo_full_name" => "Owner/New-Name", "pr_number" => 99 }
+      )
+
+      assert_no_difference -> { Collavre::Comment.where(topic_id: conflicting_topic.id).count } do
+        post_event("issue_comment", {
+          action: "created",
+          comment: { id: 95, body: "must not leak", user: { login: "alice", type: "User", id: 1 } },
+          issue: { number: 99, pull_request: {} },
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        })
+      end
+
+      assert_response :ok
     end
 
     test "ID-backed missed-rename repair does not capture a NULL-id same-secret link" do
