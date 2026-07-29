@@ -422,6 +422,97 @@ module CollavreGithub
       assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/repo1/hooks/}
     end
 
+    test "canonicalization checks every case-insensitive collision row" do
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/old-name",
+        repository_id: 101,
+        webhook_secret: "active-secret"
+      )
+      same_id = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "TestUser/Repo1",
+        repository_id: 101,
+        webhook_secret: "same-repository-secret"
+      )
+      conflict = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/repo1",
+        repository_id: nil,
+        webhook_secret: "unverified-secret"
+      )
+      sign_in_as(@user)
+      stub_github_repository("testuser/old-name", id: 101, full_name: "testuser/repo1")
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "testuser/old-name" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :unprocessable_entity
+      assert_equal "testuser/old-name", stale.reload.repository_full_name
+      assert_equal "TestUser/Repo1", same_id.reload.repository_full_name
+      assert_equal "testuser/repo1", conflict.reload.repository_full_name
+      assert_nil conflict.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/repo1/hooks/}
+    end
+
+    test "canonicalization rechecks every collision row inside the provisioning lock" do
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/old-name",
+        repository_id: 101,
+        webhook_secret: "active-secret"
+      )
+      sign_in_as(@user)
+      stub_github_repository("testuser/old-name", id: 101, full_name: "testuser/repo1")
+      stub_github_repository("testuser/repo1", id: 101)
+      conflict = nil
+      lock = lambda do |repository_id, &block|
+        assert_equal 101, repository_id
+        conflict = CollavreGithub::RepositoryLink.create!(
+          creative: @creative.effective_origin,
+          github_account: @account,
+          repository_full_name: "testuser/repo1",
+          repository_id: 202,
+          webhook_secret: "conflicting-secret"
+        )
+        block.call
+      end
+      provisioned = false
+
+      CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+        CollavreGithub::WebhookProvisioner.stub(
+          :ensure_for_links,
+          ->(**) {
+            provisioned = true
+            []
+          }
+        ) do
+          patch "/github/creatives/#{@creative.id}/integration",
+                params: { repositories: [ "testuser/old-name" ] },
+                headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+                as: :json
+        end
+      end
+
+      assert_response :unprocessable_entity
+      assert_not provisioned
+      assert_equal "testuser/old-name", stale.reload.repository_full_name
+      assert_equal 101, stale.repository_id
+      assert_equal "testuser/repo1", conflict.reload.repository_full_name
+      assert_equal 202, conflict.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/repo1/hooks/}
+    end
+
     test "a later provisioning failure does not roll back an earlier successful repository" do
       sign_in_as(@user)
 

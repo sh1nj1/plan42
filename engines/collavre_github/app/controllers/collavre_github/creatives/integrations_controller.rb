@@ -127,11 +127,11 @@ module CollavreGithub
           identity = identities[full_name.downcase]
           next unless identity
 
-          canonical = @origin.github_repository_links
+          canonical_conflict = @origin.github_repository_links
             .where("LOWER(repository_full_name) = ?", identity.full_name.downcase)
-            .first
-          next unless canonical
-          next if canonical.repository_id.to_s == identity.id.to_s
+            .where("repository_id IS NULL OR repository_id != ?", identity.id)
+            .exists?
+          next unless canonical_conflict
 
           render json: { error: I18n.t("collavre_github.setup.save_error") },
                  status: :unprocessable_entity
@@ -179,11 +179,11 @@ module CollavreGithub
                 raise ActiveRecord::Rollback
               end
 
-              canonical_collision = @origin.github_repository_links
+              canonical_conflict = @origin.github_repository_links
                 .where("LOWER(repository_full_name) = ?", live_identity.full_name.downcase)
-                .first
-              if canonical_collision &&
-                  canonical_collision.repository_id.to_s != live_identity.id.to_s
+                .where("repository_id IS NULL OR repository_id != ?", live_identity.id)
+                .exists?
+              if canonical_conflict
                 repository_failed = true
                 raise ActiveRecord::Rollback
               end
