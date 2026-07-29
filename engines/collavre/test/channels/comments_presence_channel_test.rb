@@ -33,7 +33,7 @@ module Collavre
       assert_equal @topic.id, status[:topic_id]
     end
 
-    test "broadcast_running_agents derives the workflow topic from its trigger comment" do
+    test "running_agent_payloads derives the workflow topic from its trigger comment" do
       trigger_comment = @creative.comments.create!(
         content: "Workflow request",
         user: @owner,
@@ -52,17 +52,12 @@ module Collavre
         agent: @agent
       )
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id)
-      end
-
-      status = broadcasts.find { |broadcast| broadcast[:payload].key?(:agent_status) }[:payload][:agent_status]
+      status = agent_statuses_for(@creative).sole
       assert_equal task.id, status[:task_id]
       assert_equal @topic.id, status[:topic_id]
     end
 
-    test "broadcast_running_agents filters snapshots by topic" do
+    test "running_agent_payloads filters snapshots by topic" do
       other_topic = @creative.topics.create!(name: "Other", user: @owner)
       [ @topic, other_topic ].each do |topic|
         Task.create!(
@@ -78,12 +73,7 @@ module Collavre
         )
       end
 
-      broadcasts = []
-      ActionCable.server.stub :broadcast, ->(channel, payload) { broadcasts << { channel: channel, payload: payload } } do
-        CommentsPresenceChannel.broadcast_running_agents(@creative.id, topic_id: other_topic.id)
-      end
-
-      statuses = broadcasts.filter_map { |broadcast| broadcast[:payload][:agent_status] }
+      statuses = agent_statuses_for(@creative, topic_id: other_topic.id)
       assert_equal [ other_topic.id ], statuses.pluck(:topic_id)
     end
 
@@ -132,18 +122,62 @@ module Collavre
       end
     end
 
-    test "running agents action requests a snapshot for a validated topic" do
-      requested = []
+    # The client wipes its agent state on every topic switch and asks for the new
+    # topic's snapshot, so this replay — not a heartbeat — is what puts a paused
+    # turn's indicator and Stop button back. It goes to the connection that asked
+    # and to no one else: the stream is per origin and shared by every viewer of it.
+    test "running agents transmits the requested topic's snapshot to the caller" do
+      other_topic = @creative.topics.create!(name: "Other", user: @owner)
+      paused = create_task(status: "pending_approval", topic: other_topic)
+      create_task(status: "pending_approval", topic: @topic)
+
       stub_connection current_user: @owner
       subscribe creative_id: @creative.id
+      already_sent = transmissions.size
 
-      CommentsPresenceChannel.stub :broadcast_running_agents, ->(creative_id, topic_id:) {
-        requested << [ creative_id, topic_id ]
-      } do
-        perform :running_agents, topic_id: @topic.id
+      assert_no_broadcasts("comments_presence:#{@creative.id}") do
+        perform :running_agents, topic_id: other_topic.id
       end
 
-      assert_equal [ [ @creative.id, @topic.id ] ], requested
+      replayed = agent_statuses_in(transmissions.drop(already_sent))
+      assert_equal [ paused.id ], replayed.pluck(:task_id)
+    end
+
+    test "running agents ignores a topic from another creative" do
+      other_creative = Creative.create!(user: @owner, description: "Other")
+      create_task(status: "pending_approval", topic: @topic)
+
+      stub_connection current_user: @owner
+      subscribe creative_id: @creative.id
+      already_sent = transmissions.size
+
+      perform :running_agents, topic_id: other_creative.main_topic.id
+
+      assert_empty agent_statuses_in(transmissions.drop(already_sent))
+    end
+
+    # A shared viewer has the popup open on their own link, so the turn's rows carry
+    # the shell id while the subscription streams from the origin. A topic switch
+    # must not fall back to the origin id: the replay query filters on the exact
+    # creative, and a pending_approval turn is announced by nothing else — its
+    # indicator and Stop button would stay missing until the viewer reloaded.
+    test "running agents replays a turn dispatched on the creative in view" do
+      reader = users(:two)
+      linked = Creative.create!(user: reader, origin: @creative)
+      CreativeShare.create!(creative: @creative, user: reader, permission: :read)
+      task = create_task(status: "pending_approval", creative: linked, topic: @topic)
+
+      stub_connection current_user: reader
+      subscribe creative_id: linked.id
+      already_sent = transmissions.size
+
+      perform :running_agents, topic_id: @topic.id
+
+      replayed = agent_statuses_in(transmissions.drop(already_sent))
+      assert_equal [ task.id ], replayed.pluck(:task_id),
+                   "the switch searched the origin for a task that only ever carried the link's id"
+      assert_equal linked.id, replayed.sole[:creative_id],
+                   "the client drops any payload naming a creative it does not have open"
     end
 
     test "running_agent_payloads ignores tasks for other creatives" do
@@ -265,8 +299,16 @@ module Collavre
       )
     end
 
-    def agent_statuses_for(creative)
-      CommentsPresenceChannel.running_agent_payloads(creative.id).filter_map { |payload| payload[:agent_status] }
+    def agent_statuses_in(payloads)
+      payloads.filter_map do |payload|
+        payload.is_a?(Hash) && (payload[:agent_status] || payload["agent_status"])
+      end
+    end
+
+    def agent_statuses_for(creative, topic_id: nil)
+      CommentsPresenceChannel
+        .running_agent_payloads(creative.id, topic_id: topic_id)
+        .filter_map { |payload| payload[:agent_status] }
     end
   end
 

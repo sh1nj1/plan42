@@ -77,15 +77,6 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
-  # Broadcast status for any currently running AI agent tasks for a creative.
-  # Only for the client-requested replay: subscribed transmits instead, because a
-  # broadcast published while stream_from is still attaching can be dropped.
-  def self.broadcast_running_agents(creative_id, topic_id: nil)
-    running_agent_payloads(creative_id, topic_id: topic_id).each do |payload|
-      ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
-    end
-  end
-
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
   # source_creative_id: the actual creative where agent is working (for filtering on frontend)
@@ -126,15 +117,20 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     return reject unless creative&.has_permission?(current_user, :read)
 
     @creative_id = creative.id
+    # Kept for the whole subscription, not just for the replay below: comments live on
+    # the origin, so everything else on this channel is keyed by @creative_id, while
+    # a task is dispatched on — and replayed for — the creative the popup is open on.
+    # #running_agents replays too, and reading @creative_id there would search the
+    # origin for rows that only ever carried the shell's id.
+    @requested_creative_id = requested.id
     stream_from stream_name
     CommentPresenceStore.add(@creative_id, current_user.id)
     Comment.broadcast_badge(creative, current_user)
     broadcast_presence
     # Transmitted, not broadcast: stream_from attaches asynchronously, so a broadcast
     # published in the same breath can be dropped. Presence and badges survive that
-    # (later events re-send them); this replay is one-shot. Streaming is per origin,
-    # but the replay is per open creative — the id the client will match against.
-    self.class.running_agent_payloads(requested.id).each { |payload| transmit(payload) }
+    # (later events re-send them); this replay is one-shot.
+    replay_running_agents
   end
 
   def unsubscribed
@@ -170,16 +166,29 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id, topic_id: topic_id } })
   end
 
+  # The client clears its agent state on every topic switch and asks for the new
+  # topic's snapshot. A pending_approval turn has no heartbeat behind it, so this
+  # replay is the only thing that can put its indicator and Stop button back.
   def running_agents(data)
     return unless @creative_id && current_user
 
     topic_id = topic_id_for(data)
     return unless topic_id
 
-    CommentsPresenceChannel.broadcast_running_agents(@creative_id, topic_id: topic_id)
+    replay_running_agents(topic_id: topic_id)
   end
 
   private
+
+  # Transmitted to the connection that asked, never broadcast: the stream is per
+  # origin and shared by every viewer of it, so publishing one client's snapshot
+  # there would re-push agent state to everyone — including viewers sitting on a
+  # different topic, whose own state the client would then have to reconcile.
+  def replay_running_agents(topic_id: nil)
+    self.class
+        .running_agent_payloads(@requested_creative_id, topic_id: topic_id)
+        .each { |payload| transmit(payload) }
+  end
 
   def topic_id_for(data)
     topic_id = data["topic_id"] || data[:topic_id]
