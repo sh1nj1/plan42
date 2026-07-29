@@ -100,6 +100,19 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_nil @ai_user.reload.llm_api_key
   end
 
+  test "should preserve api key removal intent after validation failure" do
+    @ai_user.update!(llm_api_key: "existing-secret-key")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: { name: "", llm_api_key: "", clear_llm_api_key: "1" }
+    }
+
+    assert_response :unprocessable_entity
+    assert_select "input[type='checkbox'][name='user[clear_llm_api_key]'][checked='checked']"
+    assert_equal "existing-secret-key", @ai_user.reload.llm_api_key
+    assert_not_includes response.body, "existing-secret-key"
+  end
+
   test "should update api key when submitted value is present" do
     @ai_user.update!(llm_api_key: "existing-secret-key")
 

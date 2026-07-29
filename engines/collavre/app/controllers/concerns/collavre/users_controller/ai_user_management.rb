@@ -55,11 +55,14 @@ module Collavre
 
     def edit_ai
       @available_tools = load_available_tools
+      @has_stored_llm_api_key = @user.llm_api_key.present?
     end
 
     def update_ai
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
       clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
+      @has_stored_llm_api_key = @user.llm_api_key.present?
+      @clear_llm_api_key = clear_llm_api_key
 
       if clear_llm_api_key
         ai_params[:llm_api_key] = nil
