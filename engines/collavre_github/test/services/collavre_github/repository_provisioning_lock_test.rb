@@ -59,6 +59,52 @@ module CollavreGithub
       [ first, second ].compact.each(&:join)
     end
 
+    test "serializes repository names case-insensitively" do
+      first_entered = Queue.new
+      release_first = Queue.new
+      events = Queue.new
+
+      first = Thread.new do
+        RepositoryProvisioningLock.with_repository_name_lock("Owner/Repo") do
+          events << :first_entered
+          first_entered << true
+          release_first.pop
+          events << :first_leaving
+        end
+      end
+      first_entered.pop
+
+      second = Thread.new do
+        RepositoryProvisioningLock.with_repository_name_lock("owner/repo") do
+          events << :second_entered
+        end
+      end
+
+      assert_equal :first_entered, events.pop
+      assert events.empty?, "case-variant repository names entered the lock concurrently"
+
+      release_first << true
+      [ first, second ].each(&:join)
+
+      assert_equal :first_leaving, events.pop
+      assert_equal :second_entered, events.pop
+    ensure
+      release_first << true if first&.alive?
+      [ first, second ].compact.each(&:join)
+    end
+
+    test "allows a repository name lock to be reacquired by the same thread" do
+      entered = []
+
+      RepositoryProvisioningLock.with_repository_name_lock("Owner/Repo") do
+        RepositoryProvisioningLock.with_repository_name_lock("owner/repo") do
+          entered << true
+        end
+      end
+
+      assert_equal [ true ], entered
+    end
+
     test "releases a postgres lock when acquisition result handling raises" do
       connection = Class.new do
         attr_reader :queries

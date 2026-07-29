@@ -161,6 +161,8 @@ module CollavreGithub
       end
 
       assert_response :ok
+      assert_equal OLD_NAME, @link.reload.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
     end
 
     test "partial alias repair does not hide another conflicted link in the same creative" do
@@ -822,6 +824,55 @@ module CollavreGithub
       assert_equal OLD_NAME, @channel.reload.repo_full_name
       assert_equal NEW_NAME.upcase, conflicting.reload.repository_full_name
       assert_equal 777, conflicting.repository_id
+    end
+
+    test "repository.renamed rejects a case-variant conflict in the linked creative subtree" do
+      child = Collavre::Creative.create!(parent: @creative, user: @user, description: "Child")
+      conflicting_link = CollavreGithub::RepositoryLink.create!(
+        creative: child,
+        github_account: @account,
+        repository_full_name: "Owner/New-Name",
+        repository_id: 777
+      )
+      child_topic = Collavre::Topic.create!(creative: child, user: @user, name: "Child monitor")
+      child_channel = GithubPrChannel.create!(
+        topic: child_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 100 }
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal OLD_NAME, @link.reload.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
+      assert_equal OLD_NAME, child_channel.reload.repo_full_name
+      assert_equal "Owner/New-Name", conflicting_link.reload.repository_full_name
+    end
+
+    test "repository.renamed rejects a case-variant conflict in an ancestor creative" do
+      parent = Collavre::Creative.create!(user: @user, description: "Parent")
+      @creative.update!(parent: parent)
+      conflicting_link = CollavreGithub::RepositoryLink.create!(
+        creative: parent,
+        github_account: @account,
+        repository_full_name: "Owner/New-Name",
+        repository_id: 777
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal OLD_NAME, @link.reload.repository_full_name
+      assert_equal OLD_NAME, @channel.reload.repo_full_name
+      assert_equal "Owner/New-Name", conflicting_link.reload.repository_full_name
     end
 
     test "repository.renamed does not rename channels through a canonical link with a case-insensitive conflict" do

@@ -67,6 +67,21 @@ module CollavreGithub
         .exists?
     end
 
+    # Link mutations affect the link's whole descendant subtree, while an
+    # ancestor link is inherited into the same scope. Before assigning a
+    # canonical name, reject any NULL/different-id row in either direction so
+    # case variants cannot leave both repositories permanently undispatchable.
+    def self.identity_conflict_in_link_scope(creative:, full_name:, repository_id:, excluding_id: nil)
+      return if creative.blank? || full_name.blank? || repository_id.blank?
+
+      creative_ids = creative.subtree_ids + creative.ancestors.pluck(:id)
+      candidates = where(creative_id: creative_ids)
+        .where("LOWER(repository_full_name) = ?", full_name.to_s.downcase)
+        .where("repository_id IS NULL OR repository_id <> ?", repository_id)
+      candidates = candidates.where.not(id: excluding_id) if excluding_id
+      candidates.order(:id).first
+    end
+
     def markdown_sync_branch
       sync_branch.presence || "main"
     end

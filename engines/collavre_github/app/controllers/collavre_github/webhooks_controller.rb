@@ -720,12 +720,14 @@ module CollavreGithub
       from = payload.dig("changes", "repository", "name", "from")
       old_full_name = ("#{owner}/#{from}" if owner.present? && from.present?)
 
-      CollavreGithub::RepositoryLink.transaction do
-        synchronize_repository_rename!(
-          repository_id: repo_id,
-          old_full_name: old_full_name,
-          new_full_name: new_full_name
-        )
+      CollavreGithub::RepositoryProvisioningLock.with_repository_name_lock(new_full_name) do
+        CollavreGithub::RepositoryLink.transaction do
+          synchronize_repository_rename!(
+            repository_id: repo_id,
+            old_full_name: old_full_name,
+            new_full_name: new_full_name
+          )
+        end
       end
       Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
     end
@@ -765,6 +767,20 @@ module CollavreGithub
         if link.repository_full_name == new_full_name &&
             link.repository_id.to_s == repository_id.to_s
           renamed_creative_ids << link.creative_id
+          next
+        end
+
+        conflicting_link = CollavreGithub::RepositoryLink.identity_conflict_in_link_scope(
+          creative: link.creative,
+          full_name: new_full_name,
+          repository_id: repository_id,
+          excluding_id: link.id
+        )
+        if conflicting_link
+          Rails.logger.warn(
+            "[CollavreGithub] rename collision for link #{link.id}: #{new_full_name} in " \
+            "creative #{link.creative_id} belongs to repository #{conflicting_link.repository_id.inspect}"
+          )
           next
         end
 

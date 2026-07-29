@@ -170,17 +170,24 @@ module CollavreGithub
       stub_github_hooks("testuser/repo1")
       stub_github_create_hook("testuser/repo1")
       lock_events = []
-      lock = lambda do |repository_id, &block|
-        lock_events << [ :entered, repository_id ]
+      repository_lock = lambda do |repository_id, &block|
+        lock_events << [ :repository_entered, repository_id ]
         block.call
-        lock_events << [ :released, repository_id ]
+        lock_events << [ :repository_released, repository_id ]
+      end
+      name_lock = lambda do |full_name, &block|
+        lock_events << [ :name_entered, full_name ]
+        block.call
+        lock_events << [ :name_released, full_name ]
       end
 
-      CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
-        patch "/github/creatives/#{@creative.id}/integration",
-              params: { repositories: [ "testuser/repo1" ] },
-              headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
-              as: :json
+      CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, repository_lock) do
+        CollavreGithub::RepositoryProvisioningLock.stub(:with_repository_name_lock, name_lock) do
+          patch "/github/creatives/#{@creative.id}/integration",
+                params: { repositories: [ "testuser/repo1" ] },
+                headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+                as: :json
+        end
       end
 
       assert_response :success
@@ -188,7 +195,12 @@ module CollavreGithub
       assert data["success"]
       assert_includes data["selected_repositories"], "testuser/repo1"
       assert data["webhooks"]["testuser/repo1"].present?
-      assert_equal [ [ :entered, 101 ], [ :released, 101 ] ], lock_events
+      assert_equal [
+        [ :repository_entered, 101 ],
+        [ :name_entered, "testuser/repo1" ],
+        [ :name_released, "testuser/repo1" ],
+        [ :repository_released, 101 ]
+      ], lock_events
     end
 
     test "update revalidates repository identity after acquiring the provisioning lock" do
@@ -508,6 +520,36 @@ module CollavreGithub
       assert_equal 101, stale.repository_id
       assert_equal "testuser/repo1", conflict.reload.repository_full_name
       assert_equal 202, conflict.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/repo1/hooks/}
+    end
+
+    test "update rejects a canonical repository name owned by another id in an ancestor" do
+      parent = create_creative(@user)
+      @creative.update!(parent: parent)
+      ancestor_link = CollavreGithub::RepositoryLink.create!(
+        creative: parent,
+        github_account: @account,
+        repository_full_name: "TestUser/Repo1",
+        repository_id: 101,
+        webhook_secret: "ancestor-secret"
+      )
+      sign_in_as(@user)
+      stub_github_repository("testuser/repo1", id: 202)
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "testuser/repo1" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :unprocessable_entity
+      assert_equal "TestUser/Repo1", ancestor_link.reload.repository_full_name
+      assert_equal 101, ancestor_link.repository_id
+      assert_not CollavreGithub::RepositoryLink.exists?(
+        creative: @creative,
+        repository_id: 202
+      )
       assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
       assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/repo1/hooks}
       assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/repo1/hooks/}

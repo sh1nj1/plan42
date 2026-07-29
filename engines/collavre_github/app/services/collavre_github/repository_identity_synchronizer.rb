@@ -13,13 +13,17 @@ module CollavreGithub
       trusted_secret: nil,
       allow_anchor_backfill: false
     )
-      new(
-        anchor: anchor,
-        repository_id: repository_id,
-        full_name: full_name,
-        trusted_secret: trusted_secret,
-        allow_anchor_backfill: allow_anchor_backfill
-      ).call
+      return [] if anchor.blank? || repository_id.blank? || full_name.blank?
+
+      RepositoryProvisioningLock.with_repository_name_lock(full_name) do
+        new(
+          anchor: anchor,
+          repository_id: repository_id,
+          full_name: full_name,
+          trusted_secret: trusted_secret,
+          allow_anchor_backfill: allow_anchor_backfill
+        ).call
+      end
     end
 
     def initialize(
@@ -83,6 +87,14 @@ module CollavreGithub
           link.repository_id.to_s == repository_id.to_s
         return link
       end
+
+      conflict = RepositoryLink.identity_conflict_in_link_scope(
+        creative: link.creative,
+        full_name: full_name,
+        repository_id: repository_id,
+        excluding_id: link.id
+      )
+      return if conflict
 
       survivor = RepositoryLink
         .where(creative_id: link.creative_id)
