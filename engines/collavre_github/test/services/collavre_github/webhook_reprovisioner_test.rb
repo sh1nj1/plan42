@@ -65,8 +65,13 @@ module CollavreGithub
 
     test "reprovisions every existing repository once through its primary link" do
       calls = []
-      provision = lambda do |account:, links:, webhook_url:|
-        calls << { account: account, links: links, webhook_url: webhook_url }
+      provision = lambda do |account:, links:, webhook_url:, force_hook_refresh:|
+        calls << {
+          account: account,
+          links: links,
+          webhook_url: webhook_url,
+          force_hook_refresh: force_hook_refresh
+        }
         [ [ links.first, :updated ] ]
       end
 
@@ -84,11 +89,13 @@ module CollavreGithub
       assert_equal [ @other, @primary ], calls.map { |call| call[:links].first }
       assert calls.all? { |call| call[:account] == @account }
       assert calls.all? { |call| call[:webhook_url] == "https://example.com/github/webhooks" }
+      assert calls.all? { |call| call[:force_hook_refresh] }
       assert_not_includes calls.map { |call| call[:links].first }, @sibling
     end
 
     test "reports a failed repository and continues reprovisioning the rest" do
-      provision = lambda do |account:, links:, webhook_url:|
+      provision = lambda do |account:, links:, webhook_url:, force_hook_refresh:|
+        assert force_hook_refresh
         status = links.first == @other ? :failed : :updated
         [ [ links.first, status ] ]
       end
@@ -309,6 +316,7 @@ module CollavreGithub
       assert_equal [ [ "owner/shared", :updated ] ], results
       assert_equal [ first, second ], calls.map { |call| call[:links].first }
       assert_equal [ first_account, second_account ], calls.map { |call| call[:account] }
+      assert calls.all? { |call| call[:force_hook_refresh] }
     end
 
     test "skips a name-only legacy repository with no registered hook" do

@@ -46,18 +46,56 @@ module CollavreGithub
 
         integration_attributes = integration_params
         repositories = Array(integration_attributes[:repositories]).map(&:to_s).uniq
+        existing_by_name = linked_repository_links(account)
+          .index_by { |link| link.repository_full_name.downcase }
+        client = CollavreGithub::Client.new(account)
+        identities = {}
+        verified_repository_ids = {}
+        repositories.each do |full_name|
+          normalized_name = full_name.downcase
+          existing = existing_by_name[normalized_name]
+          next if existing && existing.repository_id.blank?
+
+          identity = client.repository_identity(full_name)
+          unless identity&.id.present? && identity&.full_name.present?
+            render json: { error: I18n.t("collavre_github.setup.save_error") },
+                   status: :unprocessable_entity
+            return
+          end
+
+          if existing && existing.repository_id.to_s != identity.id.to_s
+            Rails.logger.warn(
+              "[CollavreGithub] skipping webhook provisioning for stale link #{existing.id}: " \
+              "#{full_name} resolves to repository #{identity.id}, not #{existing.repository_id}"
+            )
+            next
+          end
+
+          identities[normalized_name] = identity unless existing
+          verified_repository_ids[normalized_name] = identity.id
+          verified_repository_ids[identity.full_name.downcase] = identity.id
+        end
 
         links = nil
-
         CollavreGithub::RepositoryLink.transaction do
-          linked_repository_links(account)
-            .where.not(repository_full_name: repositories)
-            .delete_all
+          selected_names = repositories.map(&:downcase)
+          current_links = linked_repository_links(account)
+          if selected_names.empty?
+            current_links.delete_all
+          else
+            current_links
+              .where.not("LOWER(repository_full_name) IN (?)", selected_names)
+              .delete_all
+          end
 
           repositories.each do |full_name|
-            @origin.github_repository_links.find_or_create_by!(
+            next if existing_by_name.key?(full_name.downcase)
+
+            identity = identities.fetch(full_name.downcase)
+            @origin.github_repository_links.create!(
               github_account: account,
-              repository_full_name: full_name
+              repository_full_name: identity.full_name,
+              repository_id: identity.id
             )
           end
 
@@ -82,11 +120,25 @@ module CollavreGithub
           end
         end
 
-        CollavreGithub::WebhookProvisioner.ensure_for_links(
-          account: account,
-          links: links,
-          webhook_url: github_webhook_url
-        ) if links.present?
+        # Provision only identities positively verified before the transaction.
+        # Existing name-only links may predate stable repository identities,
+        # while an ID-backed link can still carry a stale name after a missed
+        # rename. Neither may mutate whatever repository owns that name now.
+        # Legacy links are upgraded only by WebhookReprovisioner after their
+        # recorded hook id proves the live identity.
+        provisionable_links = links.select do |link|
+          verified_id = verified_repository_ids[link.repository_full_name.downcase]
+          verified_id.present? &&
+            link.repository_id.present? &&
+            verified_id.to_s == link.repository_id.to_s
+        end
+        if provisionable_links.present?
+          CollavreGithub::WebhookProvisioner.ensure_for_links(
+            account: account,
+            links: provisionable_links,
+            webhook_url: github_webhook_url
+          )
+        end
 
         render json: {
           success: true,
@@ -102,6 +154,13 @@ module CollavreGithub
         }
       rescue ActiveRecord::RecordInvalid => e
         render json: { error: e.message }, status: :unprocessable_entity
+      rescue Octokit::Error, Faraday::Error => e
+        Rails.logger.warn(
+          "[CollavreGithub] repository identity lookup failed while saving integration: " \
+          "#{e.class}: #{e.message}"
+        )
+        render json: { error: I18n.t("collavre_github.setup.save_error") },
+               status: :unprocessable_entity
       end
 
       def resync

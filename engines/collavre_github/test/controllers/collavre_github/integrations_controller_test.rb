@@ -166,6 +166,7 @@ module CollavreGithub
     test "update links repositories" do
       sign_in_as(@user)
 
+      stub_github_repository("testuser/repo1", id: 101)
       stub_github_hooks("testuser/repo1")
       stub_github_create_hook("testuser/repo1")
 
@@ -190,6 +191,7 @@ module CollavreGithub
         repository_full_name: "testuser/old-repo"
       )
 
+      stub_github_repository("testuser/new-repo", id: 202)
       stub_github_hooks("testuser/new-repo")
       stub_github_create_hook("testuser/new-repo")
 
@@ -202,6 +204,79 @@ module CollavreGithub
       data = JSON.parse(response.body)
       assert_includes data["selected_repositories"], "testuser/new-repo"
       assert_not_includes data["selected_repositories"], "testuser/old-repo"
+    end
+
+    test "new links persist identity before sharing an existing repository hook" do
+      existing = CollavreGithub::RepositoryLink.create!(
+        creative: create_creative(@user),
+        github_account: @account,
+        repository_full_name: "testuser/repo1",
+        repository_id: 101,
+        webhook_secret: "existing-secret"
+      )
+      sign_in_as(@user)
+
+      stub_github_repository("testuser/repo1", id: 101)
+      stub_github_hooks("testuser/repo1")
+      stub_github_create_hook("testuser/repo1")
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "testuser/repo1" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :success
+      linked = @creative.effective_origin.github_repository_links.find_by!(
+        github_account: @account,
+        repository_full_name: "testuser/repo1"
+      )
+      assert_equal 101, linked.repository_id
+      assert_equal existing.webhook_secret, linked.webhook_secret
+    end
+
+    test "re-saving a name-only legacy link does not provision the reused name" do
+      legacy = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/reused",
+        repository_id: nil,
+        webhook_secret: "legacy-secret"
+      )
+      sign_in_as(@user)
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "testuser/reused" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :success
+      assert_nil legacy.reload.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/reused}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/reused/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/reused/hooks/}
+    end
+
+    test "re-saving a stale id-backed link does not provision the reused name" do
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: @creative.effective_origin,
+        github_account: @account,
+        repository_full_name: "testuser/reused",
+        repository_id: 111,
+        webhook_secret: "stale-secret"
+      )
+      sign_in_as(@user)
+      stub_github_repository("testuser/reused", id: 222)
+
+      patch "/github/creatives/#{@creative.id}/integration",
+            params: { repositories: [ "testuser/reused" ] },
+            headers: { "Content-Type" => "application/json", "Accept" => "application/json" },
+            as: :json
+
+      assert_response :success
+      assert_equal 111, stale.reload.repository_id
+      assert_not_requested :get, %r{https://api\.github\.com/repos/testuser/reused/hooks}
+      assert_not_requested :post, %r{https://api\.github\.com/repos/testuser/reused/hooks}
+      assert_not_requested :patch, %r{https://api\.github\.com/repos/testuser/reused/hooks/}
     end
 
     test "update returns error when not connected" do

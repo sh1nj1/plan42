@@ -58,7 +58,8 @@ module CollavreGithub
         result = CollavreGithub::WebhookProvisioner.ensure_for_links(
           account: link.github_account,
           links: [ link ],
-          webhook_url: webhook_url
+          webhook_url: webhook_url,
+          force_hook_refresh: true
         )
         status = result.first&.last || :failed
         if status == :failed

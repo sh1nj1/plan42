@@ -190,7 +190,92 @@ module CollavreGithub
         # No CollavreGithub::RepositoryLink exists for owner/repo in @creative's
         # subtree, so pr_monitor cannot provision webhook events. It should
         # surface this in the response rather than silently succeeding.
-        assert_includes result[:webhook_warning].to_s, "no RepositoryLink found"
+        assert_includes result[:webhook_warning].to_s, "no verified RepositoryLink found"
+      end
+
+      test "does not provision through a name-only legacy link" do
+        account = CollavreGithub::Account.create!(
+          user: @user,
+          github_uid: "pr-monitor-legacy",
+          login: "owner",
+          name: @user.name,
+          token: "ghp-test-token-legacy"
+        )
+        CollavreGithub::RepositoryLink.create!(
+          creative: @creative,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          repository_id: nil
+        )
+
+        result = PrMonitorService.new.call(
+          topic_id: @topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        assert_includes result[:webhook_warning].to_s, "no verified RepositoryLink found"
+        assert_not_requested :get, %r{https://api\.github\.com/repos/owner/repo}
+        assert_not_requested :post, %r{https://api\.github\.com/repos/owner/repo/hooks}
+        assert_not_requested :patch, %r{https://api\.github\.com/repos/owner/repo/hooks/}
+      end
+
+      test "skips a stale scoped id candidate and provisions through the live repository link" do
+        child = Collavre::Creative.create!(
+          parent: @creative,
+          description: "Child",
+          user: @user
+        )
+        child_topic = Collavre::Topic.create!(name: "Child topic", creative: child, user: @user)
+        account = CollavreGithub::Account.create!(
+          user: @user,
+          github_uid: "pr-monitor-reused-name",
+          login: "owner",
+          name: @user.name,
+          token: "ghp-test-token-reused"
+        )
+        CollavreGithub::RepositoryLink.create!(
+          creative: @creative,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          repository_id: 111,
+          webhook_secret: "stale-secret"
+        )
+        CollavreGithub::RepositoryLink.create!(
+          creative: child,
+          github_account: account,
+          repository_full_name: "owner/repo",
+          repository_id: 222,
+          webhook_secret: "live-secret"
+        )
+        stub_github_repository("owner/repo", id: 222)
+        webhook_url = CollavreGithub::Engine.routes.url_helpers.webhooks_url(
+          Rails.application.config.action_mailer.default_url_options
+        )
+        hook_id = 31313131
+        stub_github_hooks(
+          "owner/repo",
+          hooks: [ { id: hook_id, config: { url: webhook_url }, events: [ "pull_request" ] } ]
+        )
+        patched_body = nil
+        stub_request(:patch, "https://api.github.com/repos/owner/repo/hooks/#{hook_id}")
+          .with do |request|
+            patched_body = JSON.parse(request.body)
+            true
+          end
+          .to_return(
+            status: 200,
+            body: { id: hook_id, active: true }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        result = PrMonitorService.new.call(
+          topic_id: child_topic.id,
+          pr_url: "https://github.com/owner/repo/pull/77"
+        )
+
+        assert_nil result[:webhook_warning]
+        assert_equal "live-secret", patched_body["config"]["secret"]
+        assert_includes patched_body["events"], "repository"
       end
 
       test "auto-provisions PR-channel webhook events when a RepositoryLink exists" do
@@ -205,8 +290,10 @@ module CollavreGithub
           creative: @creative,
           github_account: account,
           repository_full_name: "owner/repo",
+          repository_id: 101,
           webhook_secret: "secret-1234567890"
         )
+        stub_github_repository("owner/repo", id: 101)
 
         # Existing hook on the repo is subscribed only to `pull_request` —
         # exactly the production bug. WebhookProvisioner must PATCH it to add
@@ -266,8 +353,10 @@ module CollavreGithub
           creative: @creative,
           github_account: account,
           repository_full_name: "owner/repo",
+          repository_id: 101,
           webhook_secret: "secret-fail-1234"
         )
+        stub_github_repository("owner/repo", id: 101)
 
         webhook_url = CollavreGithub::Engine.routes.url_helpers.webhooks_url(
           Rails.application.config.action_mailer.default_url_options
@@ -313,11 +402,13 @@ module CollavreGithub
           creative: @creative,
           github_account: account,
           repository_full_name: "owner/repo",
+          repository_id: 101,
           webhook_secret: "secret-sibling-1234",
           # Registered in this database: written by the sibling instance that
           # created the hook, which is what proves the two share state.
           webhook_hook_id: sibling_hook_id
         )
+        stub_github_repository("owner/repo", id: 101)
 
         sibling_url = "https://local.collavre.com/github/webhooks"
         stub_request(:get, %r{https://api\.github\.com/repos/owner/repo/hooks})
@@ -352,7 +443,7 @@ module CollavreGithub
           "the sibling's URL must survive the patch"
       end
 
-      test "provisions through the global primary link when topic's scoped link is non-primary" do
+      test "force-refreshes through a verified scoped link when it is non-primary" do
         # When the same repo is linked from multiple creatives,
         # WebhookProvisioner only PATCHes hook events for the lowest-id
         # (primary) link. Non-primary links short-circuit to secret alignment
@@ -379,6 +470,7 @@ module CollavreGithub
           creative: sibling_creative,
           github_account: account,
           repository_full_name: "owner/repo",
+          repository_id: 101,
           webhook_secret: "primary-secret-1234"
         )
         # Higher id, sits in the topic's creative subtree → satisfies the
@@ -387,8 +479,10 @@ module CollavreGithub
           creative: @creative,
           github_account: account,
           repository_full_name: "owner/repo",
+          repository_id: 101,
           webhook_secret: "scoped-secret-5678"
         )
+        stub_github_repository("owner/repo", id: 101)
 
         webhook_url = CollavreGithub::Engine.routes.url_helpers.webhooks_url(
           Rails.application.config.action_mailer.default_url_options

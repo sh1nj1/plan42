@@ -78,6 +78,15 @@ module CollavreGithubTestHelpers
       )
   end
 
+  def stub_github_repository(repo, id:, full_name: repo)
+    stub_request(:get, "https://api.github.com/repos/#{repo}")
+      .to_return(
+        status: 200,
+        body: { id: id, full_name: full_name }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+  end
+
   def stub_github_create_hook(repo)
     stub_request(:post, "https://api.github.com/repos/#{repo}/hooks")
       .to_return(

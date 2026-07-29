@@ -489,6 +489,18 @@ module CollavreGithub
         "the winner's registration must stand"
     end
 
+    test "force refresh patches the winner after losing the registration race" do
+      sibling_hook = Hook.new(555, { "url" => SIBLING_URL })
+      client = RacingClient.new(sibling_hook: sibling_hook)
+
+      assert_equal [ [ @link, :shared ] ], provision(client, force_hook_refresh: true)
+
+      assert_equal [ 555 ], client.updated.map { |update| update[:hook_id] }
+      assert_equal SIBLING_URL, client.updated.first[:url]
+      assert_includes client.updated.first[:events], "repository"
+      assert_equal [ 101 ], client.deleted.map { |deletion| deletion[:hook_id] }
+    end
+
     test "a registration whose hook is gone from GitHub is still replaced" do
       # The counterpart to the race above, and the reason it cannot simply defer
       # to any registration it finds: a registration left behind by a deleted
@@ -608,6 +620,48 @@ module CollavreGithub
       assert_not_includes client.updated.first[:events], "push"
     end
 
+    test "isolates name-only provisioning from id-backed links with a reused name" do
+      @link.update!(
+        repository_id: 111,
+        webhook_secret: "stale-secret",
+        webhook_hook_id: 99,
+        markdown_sync_enabled: true
+      )
+      current = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name,
+        repository_id: nil,
+        webhook_secret: "current-secret"
+      )
+      client = FakeClient.new(hooks: [ Hook.new(7, { "url" => OWN_URL }) ])
+
+      assert_equal [ [ current, :updated ] ], provision(client, links: [ current ])
+      assert_equal "current-secret", current.reload.webhook_secret
+      assert_equal 99, @link.reload.webhook_hook_id
+      assert_equal 7, current.reload.webhook_hook_id
+      assert_equal "current-secret", client.updated.first[:secret]
+      assert_not_includes client.updated.first[:events], "push"
+    end
+
+    test "force refresh updates an existing hook through a non-primary account link" do
+      @link.update!(repository_id: 222, webhook_secret: "primary-secret")
+      fallback = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: @link.repository_full_name,
+        repository_id: 222,
+        webhook_secret: "fallback-secret"
+      )
+      client = FakeClient.new(hooks: [ Hook.new(7, { "url" => OWN_URL }) ])
+
+      assert_equal [ [ fallback, :updated ] ],
+        provision(client, links: [ fallback ], force_hook_refresh: true)
+      assert_equal "primary-secret", fallback.reload.webhook_secret
+      assert_equal "primary-secret", client.updated.first[:secret]
+      assert_includes client.updated.first[:events], "repository"
+    end
+
     private
 
     # Captured at WARN so the level itself is under test: an informational log
@@ -623,9 +677,12 @@ module CollavreGithub
       Rails.logger = original
     end
 
-    def provision(client, webhook_url: OWN_URL, links: nil)
+    def provision(client, webhook_url: OWN_URL, links: nil, force_hook_refresh: false)
       CollavreGithub::WebhookProvisioner.new(
-        account: @account, webhook_url: webhook_url, client: client
+        account: @account,
+        webhook_url: webhook_url,
+        client: client,
+        force_hook_refresh: force_hook_refresh
       ).ensure_for_links(Array(links || @link))
     end
   end
