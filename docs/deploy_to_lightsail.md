@@ -1671,6 +1671,7 @@ both the Lightsail firewall and ufw (the script already allows 443).
 | Symptom | Check |
 | --- | --- |
 | Launch script did nothing | `/var/log/collavre-launch.log`, `/var/log/cloud-init-output.log` |
+| SSH hardening says there is no active sshd and disk verification failed | Keep the current session open and run `sudo install -d -o root -g root -m 0755 /run/sshd`, then `sudo /usr/sbin/sshd -t`. Ubuntu 24.04 creates this runtime directory when socket activation starts `ssh.service`; older copies of the launch script could test the configuration before that happened. Re-run only after `sshd -t` succeeds. |
 | `kamal` can't SSH | `sudo cat /home/collavre/.ssh/authorized_keys` — empty means no `SSH_PUBLIC_KEY` and no key to copy |
 | `kamal` SSH works, Docker denied | Reconnect: `docker` group membership needs a new session |
 | `sudo: a password is required` | The deploy user has no password, so `%sudo` alone cannot authenticate it. `sudo ls /etc/sudoers.d/90-collavre-*` from the `ubuntu` account — missing means the host predates that grant; re-run the launch script with `FORCE=1` **and every setting in `/var/lib/collavre/launch.env`**, or the re-run is refused |

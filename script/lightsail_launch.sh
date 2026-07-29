@@ -3415,6 +3415,23 @@ rm -f /etc/ssh/sshd_config.d/99-collavre.conf
 # sshd_config; without it the drop-in above is silently ignored.
 grep -q '^Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config 2>/dev/null || \
   log "WARNING: sshd_config has no Include for sshd_config.d — harden SSH by hand"
+# ensure_sshd_runtime_dir [directory]
+#
+# Ubuntu 24.04's ssh.service declares RuntimeDirectory=sshd. On a
+# socket-activated host with no connection yet, ssh.service has not started and
+# systemd has therefore not created /run/sshd. A direct `sshd -t` or `sshd -T`
+# then fails with "Missing privilege separation directory" even when the
+# configuration is valid. The verifier below deliberately runs before the
+# socket starts the daemon, so prepare the same root-owned runtime directory
+# without changing socket activation into a permanently running service.
+ensure_sshd_runtime_dir() {
+  local dir="${1:-/run/sshd}"
+  install -d -o root -g root -m 0755 "$dir" ||
+    die "could not prepare sshd's runtime directory '$dir'. The SSH" \
+	"configuration cannot be validated safely; check that /run is writable" \
+	"and re-run."
+}
+
 # reload_ssh_daemon — reload whichever unit carries sshd.
 #
 # Returns 0 when a unit adopted the configuration, 1 when a running daemon
@@ -3469,6 +3486,7 @@ reload_ssh_daemon() {
 # verifier runs again immediately after later group changes, when its answer can
 # differ because Match Group has begun to apply.
 SSH_RELOAD_STATE=0
+ensure_sshd_runtime_dir
 reload_ssh_daemon || SSH_RELOAD_STATE=$?
 [ "$SSH_RELOAD_STATE" -ne 1 ] || die \
   "SSH hardening was written but the running sshd refused to reload it." \

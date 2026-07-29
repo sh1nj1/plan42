@@ -21,7 +21,7 @@ SRC="${1:-$ROOT/script/lightsail_launch.sh}"
 # die() is a one-liner; the others run to the first column-1 closing brace.
 eval "$(awk '
   /^die\(\) \{/ { print; next }
-  /^(ensure_block|sudoers_file_name|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_public_key_fingerprint|ssh_public_key_material|ssh_cutover_signature_verifies|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|reload_ssh_daemon)\(\) \{/ { f = 1 }
+  /^(ensure_block|sudoers_file_name|ensure_sudoers|in_group|write_state_file|launch_record_is_complete|record_launch_settings|record_deploy_user_grant|revoke_deploy_user_access|revoke_prior_deploy_user|stage_ssh_cutover|ssh_public_key_fingerprint|ssh_public_key_material|ssh_cutover_signature_verifies|finalize_ssh_cutover|ensure_ufw_rule|ssh_already_allowed|ensure_ssh_rule|install_authorized_keys|install_deploy_ssh_dir|reassign_prior_db_role|refuse_superuser_db_rotation|revoke_prior_ssh_key|ensure_cluster_on_default_port|ensure_swapfile|allocate_swapfile|ensure_docker_log_caps|warn_existing_containers_keep_log_config|dedupe_authorized_keys|install_staged_authorized_keys|postgresql_conf_includes_confd|role_owns_app_objects|refuse_db_name_change|refuse_defaulted_config_change|refuse_unusable_db_identifier|refuse_unparsable_ssh_key|refuse_forced_command_ssh_key|ipv4_dotted_quad|refuse_unusable_bind_address|refuse_unusable_subnet|passwd_home|ssh_key_holder|adopt_legacy_ssh_key_marker|record_db_role_grant|reassign_one_db_role|record_ssh_key_grant|refuse_root_deploy_user|append_state_line|refuse_nologin_deploy_user|resolve_symlink_chain|stage_beside|restore_postgresql_bind_config|stage_authorized_keys|scan_ssh_config_file|find_unsafe_ssh_match|verify_ssh_key_destination|ssh_pattern_list_matches|verify_ssh_admission_controls|verify_ssh_hardening|refuse_unusable_retention|refuse_unusable_backup_calendar|install_managed_config|install_downloaded_file|install_credential_summary|ensure_sshd_runtime_dir|reload_ssh_daemon)\(\) \{/ { f = 1 }
   f { print }
   f && /^\}/ { f = 0 }
 ' "$SRC")"
@@ -55,7 +55,7 @@ for fn in die ensure_block sudoers_file_name ensure_sudoers in_group write_state
 	  refuse_unusable_retention \
 	  refuse_unusable_backup_calendar \
 	  install_managed_config install_downloaded_file \
-	  install_credential_summary reload_ssh_daemon \
+	  install_credential_summary ensure_sshd_runtime_dir reload_ssh_daemon \
           adopt_legacy_ssh_key_marker; do
   declare -F "$fn" >/dev/null || {
     echo "could not extract $fn() from $SRC — has the definition moved?" >&2
@@ -6479,6 +6479,28 @@ echo "150. a running sshd that refused the hardening stops the run"
 # something connects), not an edge case. A guard on the rc alone would refuse
 # every correctly-provisioned host. is-active is the discriminator, and it is
 # read from systemctl rather than from the message, which is localised.
+runtime_call="$(
+  install() { printf '%s\n' "$*"; }
+  ensure_sshd_runtime_dir /run/sshd-test
+)"
+chk "the socket-activated host prepares sshd's runtime directory" \
+  "-d -o root -g root -m 0755 /run/sshd-test" "$runtime_call"
+runtime_fail="$(
+  ( install() { return 1; }
+    ensure_sshd_runtime_dir /run/sshd-test ) 2>&1
+  printf 'rc=%s\n' "$?"
+)"
+chk "an unwritable sshd runtime directory stops the run" 1 \
+  "$(printf '%s' "$runtime_fail" | grep -c '^rc=1$')"
+chk "and reports the directory that could not be prepared" 1 \
+  "$(printf '%s' "$runtime_fail" | grep -cF "/run/sshd-test")"
+chk "the runtime directory is prepared before reload and disk verification" 1 \
+  "$(awk '
+    /^ensure_sshd_runtime_dir$/ { prepared = 1 }
+    prepared && /^reload_ssh_daemon \|\| SSH_RELOAD_STATE=\$\?$/ { found = 1 }
+    END { print found + 0 }
+  ' "$SRC")"
+
 systemctl() { # <verb> <unit>
   case "$1 $2" in
     "reload $RELOAD_OK")  return 0 ;;
