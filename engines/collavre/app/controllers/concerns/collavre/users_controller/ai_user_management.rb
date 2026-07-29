@@ -58,8 +58,14 @@ module Collavre
     end
 
     def update_ai
-      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
-      ai_params.delete(:llm_api_key) if ai_params[:llm_api_key].blank?
+      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :searchable, :routing_expression, :agent_conf, tools: [])
+      clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
+
+      if clear_llm_api_key
+        ai_params[:llm_api_key] = nil
+      elsif ai_params[:llm_api_key].blank?
+        ai_params.delete(:llm_api_key)
+      end
 
       if @user.update(ai_params)
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")

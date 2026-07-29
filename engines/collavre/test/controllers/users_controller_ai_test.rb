@@ -12,7 +12,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", I18n.t("collavre.users.new_ai.title")
     assert_select "form[action=?]", create_ai_users_path
-    assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][spellcheck='false']"
+    assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
     # Verify tools section is rendered
     assert_select "label", I18n.t("collavre.users.edit_ai.tools_title")
   end
@@ -48,7 +48,9 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Edit AI Agent"
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
-    assert_select "input[type='text'][name='user[llm_api_key]'].masked-secret-field[autocomplete='off'][spellcheck='false']"
+    assert_select "input[type='text'][name='user[llm_api_key]'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
+    assert_select "input[type='checkbox'][name='user[clear_llm_api_key]'][value='1']"
+    assert_select "label[for='user_clear_llm_api_key']", I18n.t("collavre.users.edit_ai.clear_api_key_label")
     assert_predicate css_select("input[name='user[llm_api_key]']").first["value"], :blank?
     assert_not_includes response.body, "existing-secret-key"
   end
@@ -85,6 +87,17 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to edit_ai_user_path(@ai_user)
     assert_equal "existing-secret-key", @ai_user.reload.llm_api_key
+  end
+
+  test "should clear existing api key when explicitly requested" do
+    @ai_user.update!(llm_api_key: "existing-secret-key")
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: { llm_api_key: "", clear_llm_api_key: "1" }
+    }
+
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_nil @ai_user.reload.llm_api_key
   end
 
   test "should update api key when submitted value is present" do

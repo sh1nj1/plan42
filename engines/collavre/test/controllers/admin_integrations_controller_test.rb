@@ -61,7 +61,7 @@ class AdminIntegrationsControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.admin_integrations_path
 
-    assert_select "input[type='text'][name='integration_setting[slack_client_secret]'].masked-secret-field[autocomplete='off'][spellcheck='false']"
+    assert_select "input[type='text'][name='integration_setting[slack_client_secret]'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
     assert_select "input[type='password'][name='integration_setting[slack_client_secret]']", count: 0
     assert_select "input[type='text'][name='integration_setting[slack_client_id]']:not(.masked-secret-field)"
   end

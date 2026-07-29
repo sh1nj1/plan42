@@ -107,7 +107,12 @@ module Collavre
     private
 
     def masked_secret_field_options(options)
-      options.merge(autocomplete: "off", spellcheck: false, class: class_names("masked-secret-field", options[:class]))
+      options.merge(
+        autocomplete: "off",
+        autocapitalize: "none",
+        spellcheck: false,
+        class: class_names("masked-secret-field", options[:class])
+      )
     end
 
     CSS_VARIABLE_KEY_PATTERN = /\A--[a-zA-Z0-9_-]+\z/
