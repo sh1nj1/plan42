@@ -70,6 +70,14 @@ module Collavre
 
       resolved = resolve_session_context(messages_data, system_prompt)
 
+      # Write down what this turn is about to hand the agent, before it hands it
+      # over. A comment that landed after this task was dispatched and got swept
+      # into the history window has been read by the agent, and the dispatch
+      # still on its way for it should be dropped rather than queued behind this
+      # turn. Recorded off `resolved` — after the session filter — because a
+      # session-backed agent is sent only its :trigger and swallows nothing.
+      Orchestration::DeliveryRecord.record!(@task, resolved)
+
       @reply_comment = create_reply_comment_if_needed
 
       @lifecycle_manager = AiAgent::AgentLifecycleManager.new(
@@ -86,7 +94,26 @@ module Collavre
       @lifecycle_manager.broadcast_status("thinking")
 
       @client = build_ai_client(resolved[:system_prompt])
-      stream_response(@client, resolved)
+      begin
+        stream_response(@client, resolved)
+      ensure
+        # Write down that the payload got there, whatever became of the turn
+        # afterwards. In an `ensure` because the ending this is for leaves by
+        # exception: a user pressing Stop mid-answer raises CancelledError out
+        # of the block above, and the task ends `cancelled` — an undelivered
+        # ending to every reader, although the agent has read this turn's
+        # payload and every comment it swallowed. See
+        # Orchestration::DeliveryRecord::HANDED_OFF_KEY.
+        Orchestration::DeliveryRecord.mark_handed_off!(@task) if @client.handed_off?
+      end
+
+      # ...and write down when the handing over did not happen. The record
+      # above licences discarding other dispatches on the strength of the agent
+      # having read their comments; a request that never reached the provider
+      # read nothing. AiAgentJob finishes this task `done` either way, so
+      # without this the delivered ending is the one it ends in. See
+      # Orchestration::DeliveryRecord::HANDOFF_FAILED_KEY.
+      Orchestration::DeliveryRecord.mark_handoff_failed!(@task) if @client.last_handoff_failed?
 
       # Signal thinking state during finalize so the indicator shows ⏳
       @lifecycle_manager.broadcast_status("thinking")

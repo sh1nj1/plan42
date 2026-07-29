@@ -12,6 +12,149 @@ module CollavreGithub
       @repository_link = find_repository_link(payload)
       return head :unauthorized unless valid_signature?(raw_body)
 
+      # Idempotency claim. Deliberately AFTER signature verification: the claim
+      # writes a row keyed by an attacker-supplied header, so an unauthenticated
+      # caller must not be able to pre-claim a GUID and have GitHub's real
+      # delivery dropped as a duplicate.
+      #
+      # `head :ok` on a lost claim (not an error status). An error status would
+      # mark a delivery failed that was in fact handled, and a failed delivery
+      # is the one thing an operator is asked to act on.
+      #
+      # Worth stating plainly, because several decisions below turn on it:
+      # GitHub NEVER redelivers automatically. A 4xx, a 5xx or a timeout is
+      # simply recorded as failed. Recovery is a human pressing Redeliver or a
+      # scheduled script walking the deliveries API, and only inside GitHub's
+      # 3-day window. So an error status here buys no automatic retry — it only
+      # spends the one signal that recovery depends on.
+      # The token, not the GUID, is this run's proof of ownership. Ownership can
+      # be taken away mid-run (see WebhookDelivery::STALE_CLAIM_AFTER), so both
+      # the release below and the mark_processed! at the end are scoped to it.
+      #
+      # The claim is lost in two states that this request cannot tell apart at
+      # the moment it answers: the owner has finished, or the owner is still
+      # running and may yet fail. Both answer 200, i.e. this branch ASSUMES the
+      # owner succeeds. That assumption is deliberate, and it is safe because it
+      # does not consume the owner's own recovery: a failing owner answers 5xx
+      # on ITS delivery, and each hook (and each Redeliver press) is a separate
+      # delivery with a separate response. So a lost claim never reduces
+      # recoverability below that of any other failed delivery.
+      #
+      # Answering a retryable status here instead would be strictly worse. Two
+      # hooks are fanned out in parallel and a delivery takes well under a
+      # second, so the loser overlaps the owner on essentially every event: one
+      # hook would show a permanent stream of failed deliveries for events that
+      # were handled correctly — destroying the very signal (a red delivery
+      # means look at me) that the release-and-redeliver recovery depends on.
+      # Waiting for processed_at fares no better: it holds the connection open
+      # against GitHub's ~10s delivery timeout while a different request works,
+      # and cannot separate a slow owner from a dead one — only
+      # STALE_CLAIM_AFTER does that, and it is far longer than the timeout.
+      #
+      # What the assumption does cost is diagnosability, so the two states are
+      # distinguished in the log: a Redeliver pressed while the owner is still
+      # running is answered 200 and, if that owner then fails, the event is left
+      # for the owner's 5xx to recover. Only the log says which of the two
+      # happened.
+      claim_token = CollavreGithub::WebhookDelivery.claim(delivery_guid, event: event)
+      unless claim_token
+        # Block form: `claim_state_for_log` costs a query, and this branch is
+        # taken on nearly every event once a repository carries two hooks, so it
+        # must not run when info logging is off.
+        Rails.logger.info do
+          "[CollavreGithub] duplicate delivery #{delivery_guid} (#{event}); skipping " \
+            "(#{claim_state_for_log})"
+        end
+        return head :ok
+      end
+
+      begin
+        process_delivery(event, payload)
+      rescue => e
+        # The claim must not outlive a failed run. This request answers 5xx,
+        # and any redelivery that follows — always operator- or script-driven,
+        # never automatic — carries the SAME GUID. With the row still in
+        # place that redelivery would take the duplicate branch above, answer
+        # 200 and drop the event permanently, which is strictly worse than the
+        # duplicate this ledger exists to prevent.
+        #
+        # Processing is therefore at-least-once: a run that fails halfway can
+        # repeat the side effects it already performed. Wrapping the whole
+        # delivery in one transaction would make it exactly-once but would
+        # break `dispatch_to_channels`, which isolates a broken channel with a
+        # rescue — under Postgres a rescued statement error leaves the
+        # enclosing transaction aborted, so every sibling channel would fail
+        # too. Repeating a comment beats losing the event and taking every
+        # other channel down with it.
+        Rails.logger.error(
+          "[CollavreGithub] delivery #{delivery_guid} (#{event}) failed, releasing claim: #{e.class}: #{e.message}"
+        )
+        CollavreGithub::WebhookDelivery.release(delivery_guid, claim_token)
+        raise
+      end
+
+      complete_delivery(event, claim_token)
+      head :ok
+    rescue JSON::ParserError
+      head :bad_request
+    end
+
+    private
+
+    # Why the claim was lost, for the log line only — never for the response,
+    # which is 200 in every case. Read separately from `claim` because the
+    # answer is advisory: the owner can finish between the failed claim and
+    # this read, and a state that is already stale is still the closest thing
+    # to an answer available to a request that owns nothing.
+    #
+    # `released` is the state worth grepping for. It means the owner failed and
+    # dropped the claim, so this delivery was dismissed with nobody left
+    # holding the event — recovery rests entirely on the owner's own 5xx.
+    def claim_state_for_log
+      delivery = CollavreGithub::WebhookDelivery.find_by(delivery_guid: delivery_guid)
+      return "released by a failed owner" if delivery.nil?
+
+      delivery.processed_at ? "already processed" : "owner still in flight"
+    end
+
+    # Bounded because the ledger write is a single UPDATE on a row this run
+    # already owns: it either goes through on a retry or the database is gone,
+    # and spinning would only hold the request open while GitHub times out.
+    MARK_PROCESSED_ATTEMPTS = 3
+
+    # Stamping the ledger is part of completing the delivery, not an epilogue
+    # to it. Left outside the failure handling, a transient database error here
+    # stranded the claim unprocessed *after* every side effect had already run,
+    # and a redelivery arriving past STALE_CLAIM_AFTER took the row over and
+    # repeated all of them.
+    #
+    # A failure that outlives the retries does NOT release the claim, which is
+    # where this parts from the rescue around `process_delivery`. There the
+    # event was never handled, so freeing the GUID is what saves it. Here the
+    # event *was* handled: releasing would hand the next redelivery a clean
+    # slate and guarantee the repeat this is meant to avoid, while keeping the
+    # claim leaves a redelivery inside the stale window correctly dismissed.
+    #
+    # For the same reason the request still answers 200. Processing succeeded —
+    # only our bookkeeping did not — and a 5xx here would invite the very
+    # redelivery whose side effects we cannot afford to run twice.
+    def complete_delivery(event, claim_token)
+      attempts = 0
+      begin
+        attempts += 1
+        CollavreGithub::WebhookDelivery.mark_processed!(delivery_guid, claim_token)
+      rescue => e
+        retry if attempts < MARK_PROCESSED_ATTEMPTS
+
+        Rails.logger.error(
+          "[CollavreGithub] delivery #{delivery_guid} (#{event}) was processed but could not be " \
+          "marked processed after #{attempts} attempts; claim kept to keep a redelivery inside " \
+          "#{CollavreGithub::WebhookDelivery::STALE_CLAIM_AFTER.inspect} deduplicated: #{e.class}: #{e.message}"
+        )
+      end
+    end
+
+    def process_delivery(event, payload)
       payload = payload.presence || {}
 
       # Process all links for this repo (same repo can be linked to multiple creatives)
@@ -23,13 +166,7 @@ module CollavreGithub
 
       maybe_auto_attach_channel(event, payload)
       dispatch_to_channels(event, payload)
-
-      head :ok
-    rescue JSON::ParserError
-      head :bad_request
     end
-
-    private
 
     # `WebhookProvisioner` auto-subscribes every repo webhook to the events
     # GithubPrChannel needs (`issue_comment`, `pull_request_review`,
@@ -501,6 +638,11 @@ module CollavreGithub
     def github_event_header
       request.headers["X-GitHub-Event"].presence ||
         request.get_header("HTTP_X_GITHUB_EVENT").presence
+    end
+
+    def delivery_guid
+      request.headers["X-GitHub-Delivery"].presence ||
+        request.get_header("HTTP_X_GITHUB_DELIVERY").presence
     end
   end
 end

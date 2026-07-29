@@ -133,7 +133,14 @@ module Collavre
         task = stuck_item.item
         return unless %w[running delegated].include?(task.status)
 
-        task.update!(status: "failed")
+        recovered = if task.status == "running"
+          DeliveryRecord.fail_while_worker_settles!(task)
+        else
+          task.update!(status: "failed")
+          true
+        end
+        return unless recovered
+
         Rails.logger.info(
           "[StuckDetector] Auto-recovered task #{task.id} (agent=#{task.agent_id}): " \
           "marked as failed after #{((Time.current - stuck_item.stuck_since) / 60).round} minutes"
@@ -244,10 +251,11 @@ module Collavre
                 .where("updated_at < ?", threshold_time)
                 .includes(creative_shares: :user)
                 .find_each do |creative|
-          # Skip if no AI agents have access
+          # Skip if no AI agents have access. Public shares carry no user, so
+          # drop them before asking whether the holder is an AI agent.
           ai_agents = creative.creative_shares
                               .reject { |s| s.permission == "no_access" }
-                              .map(&:user)
+                              .filter_map(&:user)
                               .select(&:ai_user?)
 
           next if ai_agents.empty?
@@ -286,7 +294,7 @@ module Collavre
         ancestor_ids = [ creative.id ] + creative.ancestor_ids
         admin_users = CreativeShare.where(creative_id: ancestor_ids, permission: "admin")
                                    .includes(:user)
-                                   .filter_map { |share| share.user unless share.user.ai_user? }
+                                   .filter_map { |share| share.user if share.user && !share.user.ai_user? }
 
         # Also include the creative owner
         admin_users << creative.user if creative.user && !creative.user.ai_user?

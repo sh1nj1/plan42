@@ -11,6 +11,14 @@ production: &production
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  restore_dropped_dispatches:
+    class: Collavre::RestoreDroppedDispatchesJob
+    queue: default
+    schedule: every 10 minutes
+  github_webhook_delivery_prune:
+    class: CollavreGithub::WebhookDeliveryPruneJob
+    queue: default
+    schedule: at 4am every day
 
 # Desktop runs non-mail jobs only: it has no SMTP/SES, so daily_inbox_summary's
 # deliver_now would fail every run and the in-Puma Solid Queue supervisor would retry forever.
@@ -23,6 +31,14 @@ desktop:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  restore_dropped_dispatches:
+    class: Collavre::RestoreDroppedDispatchesJob
+    queue: default
+    schedule: every 10 minutes
+  github_webhook_delivery_prune:
+    class: CollavreGithub::WebhookDeliveryPruneJob
+    queue: default
+    schedule: at 4am every day
 
 development:
   daily_inbox_summary:
@@ -37,3 +53,11 @@ development:
     class: Collavre::CommentPushDeliverySweepJob
     queue: default
     schedule: every minute
+  restore_dropped_dispatches:
+    class: Collavre::RestoreDroppedDispatchesJob
+    queue: default
+    schedule: every 10 minutes
+  github_webhook_delivery_prune:
+    class: CollavreGithub::WebhookDeliveryPruneJob
+    queue: default
+    schedule: at 4am every day

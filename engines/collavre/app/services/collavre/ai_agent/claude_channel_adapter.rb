@@ -43,7 +43,13 @@ module Collavre
           session_topic: session_topic?,
           comment: {
             id: @context.dig("comment", "id"),
-            content: @context.dig("comment", "content"),
+            # This payload is the agent's ONLY input — the MCP client gets no
+            # chat history — so comments that Orchestration::TaskCoalescer
+            # folded into this turn have to be rendered inline here or they
+            # never reach the agent at all.
+            content: MergedTriggerComments.prepend_to(
+              @context.dig("comment", "content"), @context, agent: @agent
+            ),
             author_id: @context.dig("sender", "id") || @context.dig("comment", "user_id"),
             author_name: @context.dig("sender", "name") || comment&.user&.display_name,
             topic_id: @topic_id,

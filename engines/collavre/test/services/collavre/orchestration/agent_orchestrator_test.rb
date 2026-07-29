@@ -150,6 +150,56 @@ module Collavre
                         "waiting notice should name the running blocker agent"
       end
 
+      # "One notice per topic" only holds if the existence check and the insert
+      # are one step. The burst this path handles is exactly what breaks a
+      # read-then-write: every deferring worker reads "no notice yet" before any
+      # of them inserts, and the topic collects N dead ends for one blocker.
+      test "the late-defer notice checks and inserts under the admission lock" do
+        topic = Topic.create!(name: "Notice lock topic", creative: @creative, user: @user)
+        # A notice describes a waiter; the same lock also decides whether one is
+        # still waiting, so the queue has to be non-empty for the insert to run.
+        Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        locked_topic_ids = []
+        lock_relation = Struct.new(:sink) do
+          def find_by(id:)
+            sink << id
+            nil
+          end
+        end.new(locked_topic_ids)
+
+        baseline_depth = Comment.connection.open_transactions
+        check_depth = nil
+
+        Topic.stub(:lock, lock_relation) do
+          AgentOrchestrator.stub(:topic_concurrency_notice_exists?, ->(*) {
+            check_depth ||= Comment.connection.open_transactions
+            false
+          }) do
+            AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id)
+          end
+        end
+
+        assert_equal [ topic.id ], locked_topic_ids.uniq,
+                     "the notice must serialize on the same row admission locks"
+        assert_operator check_depth, :>, baseline_depth,
+                        "the existence check must run inside the inserting transaction"
+      end
+
+      test "a second late-defer for the same topic adds no second notice" do
+        topic = Topic.create!(name: "Notice dedup topic", creative: @creative, user: @user)
+        Task.create!(name: "Running", status: "running", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+        Task.create!(name: "Waiter", status: "queued", trigger_event_name: "e",
+                     agent: @ai_agent, topic_id: topic.id, creative: @creative)
+
+        2.times { AgentOrchestrator.post_topic_concurrency_notice(@creative.id, topic.id) }
+
+        notices = @creative.comments.where(topic_id: topic.id, topic_concurrency_defer: true)
+                           .select { |c| c.content.start_with?(Comment::WAITING_NOTICE_PREFIX) }
+        assert_equal 1, notices.size, "one waiting notice per topic, not one per deferral"
+      end
+
       # The waiting notice must expose a stop button for the *blocker* so a user
       # can cancel a hung in-progress task and unstick their deferred waiter.
       # The button targets the running blocker resolved at render time, NOT the
@@ -380,6 +430,99 @@ module Collavre
         AgentOrchestrator.dequeue_next_for_topic(nil)
 
         assert_not_equal "queued", queued_task.reload.status
+      end
+
+      # A queued waiter keeps the agent chosen at dispatch time, so an exclusive
+      # assignment made while it waited has to be rechecked on promotion.
+      test "dequeue_next_for_topic cancels a waiter the topic assignment now excludes" do
+        topic = Topic.create!(name: "Assigned while waiting", creative: @creative, user: @user)
+        other = build_agent
+        Comment.create!(creative: @creative, user: @user, content: "please help", topic: topic)
+
+        queued_task = queued_task_for(other, topic)
+        topic.set_primary_agent!(@ai_agent)
+
+        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+
+        assert_equal "cancelled", queued_task.reload.status
+      end
+
+      test "dequeue_next_for_topic keeps a waiter that is the topic's primary agent" do
+        topic = Topic.create!(name: "Assigned to the waiter", creative: @creative, user: @user)
+        Comment.create!(creative: @creative, user: @user, content: "please help", topic: topic)
+
+        queued_task = queued_task_for(@ai_agent, topic)
+        topic.set_primary_agent!(@ai_agent)
+
+        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+
+        assert_not_equal "cancelled", queued_task.reload.status
+      end
+
+      # refresh_deferred_context! rewrites the whole "chat" hash, dropping the
+      # resolved mentioned_user — so the revalidation has to rebuild the context
+      # or an explicitly invited agent would be cancelled by an unrelated pin.
+      test "dequeue_next_for_topic keeps a waiter the latest comment still mentions" do
+        topic = Topic.create!(name: "Mentioned while waiting", creative: @creative, user: @user)
+        other = build_agent
+        Comment.create!(
+          creative: @creative, user: @user, content: "@#{other.name}: your turn", topic: topic
+        )
+
+        queued_task = queued_task_for(other, topic)
+        topic.set_primary_agent!(@ai_agent)
+
+        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+
+        assert_not_equal "cancelled", queued_task.reload.status
+      end
+
+      test "dequeue_next_for_topic drains to the next waiter after cancelling an excluded one" do
+        topic = Topic.create!(name: "Drain past excluded", creative: @creative, user: @user)
+        other = build_agent
+        Comment.create!(creative: @creative, user: @user, content: "please help", topic: topic)
+
+        excluded = queued_task_for(other, topic)
+        successor = queued_task_for(@ai_agent, topic)
+        topic.set_primary_agent!(@ai_agent)
+
+        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+
+        assert_equal "cancelled", excluded.reload.status
+        assert_not_equal "queued", successor.reload.status,
+                         "cancelling an excluded waiter must not strand the rest of the queue"
+      end
+
+      private
+
+      def build_agent
+        agent = User.create!(
+          name: "Agent #{SecureRandom.hex(3)}",
+          email: "agent_#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "openai",
+          searchable: true
+        )
+        share = CreativeShare.find_or_create_by!(creative: @creative, user: agent)
+        share.update!(permission: "feedback")
+        CreativeSharesCache.find_or_create_by!(
+          creative_id: @creative.id, user_id: agent.id, permission: :feedback
+        )
+        agent
+      end
+
+      def queued_task_for(agent, topic)
+        Task.create!(
+          name: "Queued task", status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => topic.id },
+            "comment" => { "id" => 0, "content" => "stale" },
+            "chat" => { "content" => "stale" }
+          },
+          agent: agent, topic_id: topic.id
+        )
       end
     end
   end

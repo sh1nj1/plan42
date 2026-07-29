@@ -15,6 +15,9 @@ module Collavre
           llm_model: "gpt-4",
           searchable: true
         )
+        # Pinning requires the agent to be able to answer here (see
+        # Topic.primary_agent_assignable?), so the agent under test is shared.
+        CreativeShare.create!(creative: @creative, user: @ai_agent, shared_by: @user, permission: :feedback)
         @topic = Topic.create!(creative: @creative, user: @user, name: "Test Topic")
       end
 
@@ -109,6 +112,136 @@ module Collavre
         assert_nil topic.primary_agent_id
       end
 
+      # User.mentionable_for resolves every searchable agent, shared or not, so
+      # /topic could otherwise pin an agent that cannot answer — which mutes the
+      # topic outright, since the pin also excludes every other agent.
+      test "refuses to pin an agent that has no feedback access on the creative" do
+        outsider = User.create!(
+          email: "outsider@test.local", password: "password123", name: "OutsiderAgent",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        comment = create_comment('/topic "Outsider Topic" @OutsiderAgent: ')
+
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_match(/OutsiderAgent/, result)
+        assert_not Topic.exists?(creative: @creative, name: "Outsider Topic")
+        assert_nil Topic.find_by(primary_agent_id: outsider.id)
+      end
+
+      test "leaves an existing topic's agent untouched when the mention has no access" do
+        @topic.set_primary_agent!(@ai_agent)
+        outsider = User.create!(
+          email: "outsider2@test.local", password: "password123", name: "OutsiderAgent2",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        comment = create_comment('/topic "Test Topic" @OutsiderAgent2: ')
+
+        TopicCommand.new(comment: comment, user: @user).call
+
+        assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+      end
+
+      # The pin decides who may speak in the topic, so changing it is a routing
+      # change: TopicsController#set_primary_agent requires :write. Comments are
+      # authorized at :feedback, so without this gate commenting access would be
+      # enough to redirect an existing topic from chat.
+      test "refuses to release an assignment for a commenter without write access" do
+        @topic.set_primary_agent!(@ai_agent)
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Test Topic"', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/write permission/i, result)
+        assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+      end
+
+      test "refuses to reassign an existing topic for a commenter without write access" do
+        @topic.set_primary_agent!(@ai_agent)
+        other_agent = User.create!(
+          email: "otheragent@test.local", password: "password123", name: "OtherAgent",
+          llm_vendor: "openai", llm_model: "gpt-4", searchable: true
+        )
+        CreativeShare.create!(creative: @creative, user: other_agent, shared_by: @user, permission: :feedback)
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Test Topic" @OtherAgent: ', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/write permission/i, result)
+        assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+      end
+
+      test "lets a write collaborator release an assignment" do
+        @topic.set_primary_agent!(@ai_agent)
+        collaborator = users(:two)
+        CreativeShare.create!(creative: @creative, user: collaborator, shared_by: @user, permission: :write)
+        comment = create_comment('/topic "Test Topic"', user: collaborator)
+
+        TopicCommand.new(comment: comment, user: collaborator).call
+
+        assert_nil @topic.reload.primary_agent_id
+      end
+
+      # Creating the topic in the same breath does not make the assignment any
+      # less of a routing decision: the new topic opens with an exclusive pin,
+      # so every other agent is silenced there from the first message. REST
+      # topic creation with an agent_id sits behind :write for the same reason.
+      test "refuses to create a topic with an agent for a commenter without write access" do
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Pinned New Topic" @TestAgent: ', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/write permission/i, result)
+        assert_not Topic.exists?(creative: @creative, name: "Pinned New Topic"),
+                   "a refused command must not leave the topic behind"
+      end
+
+      test "lets a write collaborator create a topic with an agent" do
+        collaborator = users(:two)
+        CreativeShare.create!(creative: @creative, user: collaborator, shared_by: @user, permission: :write)
+        comment = create_comment('/topic "Collaborator Topic" @TestAgent: ', user: collaborator)
+
+        TopicCommand.new(comment: comment, user: collaborator).call
+
+        topic = Topic.find_by(creative: @creative, name: "Collaborator Topic")
+        assert topic, "write collaborator must still be able to create the topic"
+        assert_equal @ai_agent.id, topic.primary_agent_id
+      end
+
+      # Only the assignment is gated. Creating a plain topic from chat has always
+      # been available at :feedback and writes no pin, so ambient routing at the
+      # new topic is unchanged — that stays open.
+      test "still creates an unassigned topic for a commenter without write access" do
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Plain New Topic"', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/Plain New Topic/, result)
+        topic = Topic.find_by(creative: @creative, name: "Plain New Topic")
+        assert topic, "a commenter may still open a topic with no assignment"
+        assert_nil topic.primary_agent_id
+      end
+
+      # The gate must cover only the assignment write — naming an unassigned
+      # topic still just reports that it exists, which commenters may do.
+      test "still reports an unassigned existing topic to a commenter without write access" do
+        commenter = users(:two)
+        CreativeShare.create!(creative: @creative, user: commenter, shared_by: @user, permission: :feedback)
+        comment = create_comment('/topic "Test Topic"', user: commenter)
+
+        result = TopicCommand.new(comment: comment, user: commenter).call
+
+        assert_match(/already exists/i, result)
+      end
+
       test "returns error when topic name is missing" do
         comment = create_comment("/topic")
 
@@ -168,6 +301,57 @@ module Collavre
         assert_equal @ai_agent.id, existing.primary_agent_id
       end
 
+      test "releases primary agent when existing assigned topic is named without a mention" do
+        existing = Topic.create!(creative: @creative, user: @user, name: "Release Topic")
+        existing.set_primary_agent!(@ai_agent)
+
+        comment = create_comment('/topic "Release Topic"')
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        existing.reload
+        assert_nil existing.primary_agent_id
+        assert_match(/Release Topic/, result)
+      end
+
+      # A session topic's primary agent is its identity, not a routing pin, so
+      # /topic must neither release nor reassign it.
+      test "leaves a session topic's primary agent untouched" do
+        existing = Topic.create!(creative: @creative, user: @user, name: "Session Topic")
+        existing.set_primary_agent!(@ai_agent)
+        existing.update!(session_id: "sess-xyz789")
+
+        comment = create_comment('/topic "Session Topic"')
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_equal @ai_agent.id, existing.reload.primary_agent_id
+        assert_match(/Session Topic/, result)
+      end
+
+      # The inbox share registration creates puts a Claude Channel agent in
+      # User.mentionable_for even though it is searchable: false, so `/topic`
+      # can name one. Matcher only routes it in its own session topic, so
+      # pinning it on an ordinary inbox topic would mute that topic entirely.
+      test "refuses a Claude Channel session agent on an ordinary inbox topic" do
+        inbox = Creative.inbox_for(@user)
+        session_agent = User.create!(
+          email: "cc-cmd@test.local", password: "password123", name: "ClaudeChannelDev",
+          llm_vendor: "anthropic", llm_model: "claude-code", searchable: false,
+          created_by_id: @user.id
+        )
+        CreativeShare.create!(creative: inbox, user: session_agent, shared_by: @user, permission: :feedback)
+        inbox_topic = Topic.create!(creative: inbox, user: @user, name: "Inbox Command Topic")
+        comment = Collavre::Comment.create!(
+          creative: inbox, topic: inbox_topic, user: @user,
+          content: '/topic "Inbox Command Topic" @ClaudeChannelDev: '
+        )
+
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_nil inbox_topic.reload.primary_agent_id
+        assert_equal I18n.t("collavre.comments.topic_command.session_agent_not_assignable",
+                            agent: session_agent.display_name), result
+      end
+
       test "reports already exists when topic exists without agent mention" do
         Topic.create!(creative: @creative, user: @user, name: "Duplicate Topic")
         comment = create_comment('/topic "Duplicate Topic"')
@@ -180,11 +364,11 @@ module Collavre
 
       private
 
-      def create_comment(content)
+      def create_comment(content, user: @user)
         Collavre::Comment.create!(
           creative: @creative,
           topic: @topic,
-          user: @user,
+          user: user,
           content: content
         )
       end

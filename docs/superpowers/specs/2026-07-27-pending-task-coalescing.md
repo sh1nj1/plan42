@@ -1,0 +1,424 @@
+# Coalescing pending agent tasks for burst chat messages
+
+Date: 2026-07-27
+Branch: `feat/coalesce-pending-agent-tasks`
+
+## Problem
+
+An external event (a PR comment sync, a webhook burst) can create several
+`Collavre::Comment` rows in the same topic within milliseconds. Each one fires
+`Comment#dispatch_to_orchestration` → `AgentOrchestrator.dispatch`, so the same
+agent ends up with several tasks for one logical conversation turn. The agent
+answers N times.
+
+Two independent paths produce the duplication.
+
+### 1. Queued waiters replay the same comment
+
+`topic_max_concurrent_jobs` defaults to `1`, so comments 2..N are `:deferred`
+and each creates a `Task(status: "queued")` plus a "⏳" waiting notice.
+When the running task finishes, `dequeue_next_for_topic` promotes **one**
+waiter, and `refresh_deferred_context!` rewrites its payload to the *latest
+non-agent comment*. The agent's own replies are excluded from that lookup, so
+every waiter resolves to the **same** last comment and answers it again.
+N comments → N-1 identical answers.
+
+### 2. Immediate dispatch races on the topic slot
+
+`Scheduler#evaluate` counts occupants, but the task row is only created **inside**
+`AiAgentJob`. Dispatches that arrive before the first job runs all see zero
+running tasks and are all judged `:immediate`, so several tasks run concurrently
+in one topic despite `topic_max_concurrent_jobs = 1`.
+
+### Constraint: cancelling is not enough
+
+For session-backed agents (`supports_session?` — Claude Channel / CLI adapters)
+`SessionContextResolver#incremental_payload` sends **only** the `:trigger`
+message and drops chat history. Cancelling the older tasks and running just the
+newest would therefore silently drop the content of every intermediate comment.
+The older comments must be **merged into** the survivor, not discarded.
+
+## Solution
+
+Keep exactly one un-started task per `(agent, topic, creative, trigger_event)`
+and fold the superseded triggers into it.
+
+### `Orchestration::TopicSlot`
+
+One rule for who may hold a topic's concurrency slot, shared by every path that
+hands one out. Two entry points:
+
+- `TopicSlot.lock!(topic_id, creative_id)` — `SELECT ... FOR UPDATE` on one
+  stable row, so admission, promotion, folding and notice posting for one topic
+  scope all serialize against each other. `topic_id: nil` is **not** the Main
+  topic: `Creative#main_topic` is a real `Topic` row and `Comment#assign_main_topic`
+  files every topic-less comment under it, so any dispatch derived from a comment
+  names a topic. A nil scope is a dispatch with no topic at all; tasks carry
+  `topic_id` with no foreign key, so it falls back to the **creative** row.
+  Returning `nil` there would run those paths with no serialization at all —
+  silently the one state the lock exists to prevent. The SQLite visitor drops the
+  lock clause; serialization is a Postgres property.
+
+  A payload that names `nil` for a comment that *does* have a topic is therefore
+  a bug in the producer, not a scope: it buckets the turn away from the topic's
+  real slot and leaves the promotion refresh re-selecting an anchor from an empty
+  topic. Producers build the topic from the persisted row — `Comment#dispatch_payload`
+  for the ordinary paths, `comment.topic_id` in `CronActionJob`.
+- `TopicSlot.available_for?(agent_id, topic_id, creative_id, context)` —
+  occupancy counts `running`/`delegated` **plus** `pending` (claimed, job not
+  started) and `pending_approval` (paused, still holding the resource). A free
+  slot is not automatically *this* agent's to take: `topic_max > 1` exists to run
+  *different* agents in parallel, so an agent already in flight here waits.
+
+Deliberately **not** gated on `coalesce_pending_tasks?`. That switch governs
+whether waiters are folded, not whether `topic_max_concurrent_jobs` is enforced.
+
+### `Orchestration::TaskCoalescer`
+
+`TaskCoalescer.coalesce!(keep_task, scope: :older | :all)`:
+
+- Selects sibling tasks with the same `agent_id`, `topic_id`, `creative_id`,
+  `trigger_event_name` and `status: "queued"`.
+- `scope: :older` (the enqueue doors) adds `id < keep.id`, which guarantees a
+  survivor when two dispatches coalesce concurrently: each only ever cancels
+  strictly older rows. `scope: :all` (the promotion and start-of-turn doors)
+  drops the guard, because the survivor has already left `queued` — nothing can
+  cancel it, and the waiters left behind are *newer*.
+- Locks the survivor **together with** its siblings in one id-ordered statement,
+  then re-reads the survivor's status from the locked row and aborts unless it is
+  still in `UNSTARTED_STATUSES` (`queued`/`pending`). `Comment#cancel_pending_tasks`
+  can cancel the survivor from a deletion transaction that holds no lock this
+  method waits on; folding on that stale object would cancel every still-valid
+  sibling onto a task `AiAgentJob` abandons on sight. One id-ordered statement
+  rather than `keep.lock!` first: in the `:older` scope the survivor's id is
+  above every sibling's, so taking it first would descend where a concurrent
+  fold ascends — the shape a deadlock needs.
+- Sibling statuses are re-checked against the locked rows too; the id list came
+  from an unlocked read.
+- Each absorbed task is cancelled (`update!`, so audit callbacks still run) and
+  recorded as a `TaskAction(action_type: "superseded")`.
+- The absorbed comment ids — plus anything those tasks had already absorbed —
+  are merged into `keep.trigger_event_payload["merged_comment_ids"]`, sorted,
+  with the surviving anchor id removed. The merge reads its base payload from
+  the locked row but **writes through the caller's object**, because
+  `dequeue_next_for_topic` hands that same instance to `refresh_deferred_context!`
+  on the next line.
+
+The **newest** task survives, so the payload's `comment` stays the newest
+comment: reply anchoring, `quoted_comment` review handling, and image
+attachment all keep pointing at the message the user actually sent last.
+Ordering is by `id` alone rather than `created_at` — `created_at` is
+caller-settable, so a retraction could otherwise sort ahead of what it retracts.
+
+Coalescing is scoped **per agent**, so `topic_max_concurrent_jobs > 1` keeps
+doing what it is for: several *different* agents still run in parallel in one
+topic. Two waiters for the *same* agent in the same topic are one conversation
+turn no matter how many slots exist, so they are folded regardless of
+`topic_max`.
+
+**Review requests neither absorb nor get absorbed.** A review is an action bound
+to one comment, not one more message in the burst: `AiAgentService` and
+`ResponseFinalizer` read review behaviour off the surviving anchor alone, so
+folding across that boundary degrades an absorbed review into a normal reply and
+lets a surviving review overwrite its quoted comment with text answering an
+unrelated message. `refresh_deferred_context!` leaves a review anchor where it
+is for the same reason — but not moving it is not the same as not checking it.
+An ordinary anchor is revalidated by having to be re-selected through the
+eligibility scope, so the review branch asks the same question directly
+(`MergedTriggerComments.in_turn`) and cancels the turn when the answer is no.
+The anchor is the one part of the payload rendered without a filter and
+`ReviewHandler#eligible?` only inspects the *quoted* comment's privacy, so a
+review request withdrawn while it waited would otherwise still be delivered from
+cache and still drive an in-place revision.
+
+### Call sites
+
+1. `AgentOrchestrator#park_waiter` — the `:deferred` enqueue door. Creates the
+   waiter and folds its predecessors **in one transaction under `TopicSlot.lock!`**,
+   the same lock the other enqueue door already takes. Serialized creation is
+   what makes `id < keep.id` read as "everything already parked".
+2. `AiAgentJob#admit_or_defer!` — the late-admission door. `TopicSlot.lock!`,
+   `TopicSlot.available_for?`, and `Task.create!` (as `running` or `queued`) are
+   one transaction, so the decision and the insert cannot be separated. The
+   loop breaker is recorded around this call rather than after it: the turn is
+   counted where its row is created, so losing the admission race parks the
+   dispatch without hiding it from the creative-retry threshold. The promotion
+   that later runs it enters the resumed-`Task` branch, which records nothing —
+   counting there instead would double-count every `pending_approval` resume.
+3. `AgentOrchestrator.coalesce_promoted!` — after a waiter is promoted
+   (`scope: :all`).
+4. `AgentOrchestrator.coalesce_at_start!` — under the topic lock immediately
+   before execution (`scope: :all`), for waiters parked between the claim and the
+   start of the turn.
+
+### Handing the slot on
+
+Promotion moves a waiter `queued -> pending`, which *is* the slot claim, and the
+task then holds it until its `AiAgentJob` runs. A task that leaves that window
+without running must hand the slot on, or the waiters behind it sit `queued`
+until orphan recovery — nothing else re-drains a topic whose occupant is gone.
+
+The whole gap is one a user can reach: `Comment#cancel_pending_tasks` covers
+`pending`, so deleting the comment a promoted task answers cancels it, and it
+takes no lock either door waits on. So the status a caller is holding can be
+stale at any point after `claim_next_waiter` returns:
+
+- `dequeue_next_for_topic` re-reads the row once, after `coalesce_promoted!`.
+  `TaskCoalescer` re-reads the survivor under its own lock and declines to fold
+  onto a cancelled one, but declining leaves the caller's object saying
+  `pending` — the refresh would then write a payload onto a dead row and the
+  status check below would enqueue it instead of recursing.
+- `AiAgentJob`'s first guard drains before returning, for the same cancellation
+  arriving after that re-read or while the job sat in the queue. Only when the
+  payload carries a topic: a workflow subtask cancelled here never held one.
+
+### Re-anchoring
+
+`refresh_deferred_context!` is merge-aware: when the refreshed anchor is a
+*different* comment than the payload's current one, the previous anchor is pushed
+into `merged_comment_ids` instead of being dropped, and the payload's `"sender"`
+block is rebuilt with it (`ContextBuilder` fills that with `||=` and never re-runs
+on this path).
+
+Both doors that move an anchor — this one and `Comment#reanchor_coalesced_task` —
+write it through `TaskCoalescer.reanchor_payload`, which also records the move
+under `acquired_comment_id`. A payload therefore *says* whether its anchor is the
+comment the task was created for, rather than leaving a later reader to infer it
+from timestamps (see `delivered_comment_ids` below). The mark is written only when
+the id actually changes, and never cleared.
+
+Two restrictions on the destination:
+
+- `absorbed_only:` — `coalesce_at_start!` (the call site this branch added)
+  restricts the destination to the task's own anchor plus what coalescing folded
+  into it. The topic lock orders *task creation*, not comment visibility, so a
+  comment committed before its `AiAgentJob` materializes a task would otherwise
+  be adopted here and answered again by its own waiter later. The promotion path
+  keeps its topic-wide destination, which predates this branch and is its stated
+  purpose.
+- `delivered_comment_ids` — a comment another turn of the same agent has already
+  delivered is excluded from both the destination and the merged list. A comment
+  counts as delivered by another turn only if it is in that turn's merged list,
+  or is that turn's anchor *and* recorded as acquired (`acquired_comment_id`);
+  an anchor the turn was created for is its own trigger, and counting it would
+  cancel every waiter standing behind an answered comment. The distinction comes
+  from the payload rather than from `comment.created_at` against
+  `task.created_at` — those are stamped by whichever process wrote each row, so a
+  tie or a skew reads an acquired anchor as an original one (answering it twice)
+  or an original one as acquired (cancelling a waiter with no candidate left).
+  It is the same reason ordering here is by `id`. Judged at
+  promotion rather than at dispatch, so a turn that dies without delivering
+  (`failed`/`cancelled`) leaves its comments answerable — rejecting the second
+  dispatch instead would turn a duplicate into a loss.
+
+`Comment#reanchor_coalesced_task` runs on anchor deletion, **before** the
+cancellation branch: the task moves onto the newest comment it absorbed rather
+than being cancelled, and only a task with nothing left to say is still
+cancelled. It takes `task.lock!` inside a transaction and re-reads the status
+there (a snapshot saying `queued` may have started since, and a started turn has
+already been handed its payload). `RecordNotFound` from the lock returns `false`
+rather than raising out of an `after_destroy_commit`. Candidates are scoped by
+`task.creative_id`/`task.topic_id` — not the deleted comment's, which
+`CommentMoveService` may have changed — and go through
+`MergedTriggerComments.in_turn`.
+
+### One scoping predicate
+
+`MergedTriggerComments.in_turn(ids, context)` carries
+`public_only.without_approval_action` plus the creative/topic scope, and is the
+single answer to "is this comment still part of this turn?". Three callers ask
+it: the renderer (what is delivered), `Matcher#permits_assignment?` (whether a
+merged mention still outranks the topic's primary-agent assignment), and the
+re-anchor (what may become the anchor). `merged_comment_ids` is a **snapshot of
+the fold**, not a standing claim — `CommentMoveService` can move a comment to
+another creative and a user can flip one to private while the burst waits, so a
+lookup by id alone would deliver content across a permission boundary. The
+anchor slot is the one part of the payload delivered without a filter, which is
+why promotion into it must ask the same question.
+
+`context.key?("topic")` rather than a presence check: `topic_id` nil is a real
+scope, so "no topic key" and "topic id nil" are different questions.
+
+### Waiting notices
+
+At most one "⏳" topic-concurrency notice per `(creative, topic)` **when
+coalescing is on**. Coalescing absorbs the waiters behind it, so N notices would
+be N dead ends pointing at one blocker.
+
+- `with_live_topic_wait` holds `TopicSlot.lock!` and refuses to post a notice
+  once the queue has drained — removal only happens when a promotion drains a
+  `queued` waiter, so a notice posted after that cleanup describes a wait that is
+  over and nothing will ever take it down.
+- `with_live_waiter` is the same guard asked of **one** waiter, and is what the
+  per-deferral branch of both doors takes. "Is anyone still waiting?" is the
+  shared notice's question; a per-deferral notice answers for the waiter it names,
+  and that waiter can be promoted between its row committing and the notice going
+  up (two steps on both doors). Another deferral parked in the same burst keeps
+  the topic-wide answer `true`, so the narrower question is the one that matches
+  what the notice claims — otherwise the notice offers a stop button for a turn
+  already running, `cleanup_waiter_notice!` has already run and matched nothing,
+  and deleting it by hand cancels nothing either.
+- `with_deduped_topic_notice` is `with_live_topic_wait` plus the existence check, taken only when
+  `coalesce_pending_tasks_for?(agent)` is true. Both enqueue doors resolve the
+  policy from the dispatch's own context *and its agent*, so a topic where one
+  agent coalesces and another does not gets the right answer per dispatch.
+- **The kind is recorded, not inferred.** `comments.waiting_notice_scope` is
+  `"topic"` for the deduplicated notice and `"task"` for a per-deferral one,
+  which also carries `waiting_notice_task_id`. Classifying by "is a sibling
+  notice still standing?" holds only while a topic has one kind at a time, and
+  the two coexist as soon as the policy differs between agents or changes
+  mid-wait: the shared notice then reads as a per-deferral one and takes down the
+  newest queued waiter — which is very likely the one the *other* notice speaks
+  for. `nil` is a notice posted before this was recorded and keeps the old
+  behaviour; widening it would discard work, narrowing it would disarm the only
+  stop control an in-flight wait has.
+- **And it is recorded on the waiter too, not read off its neighbours.**
+  `tasks.waiting_notice_scope` says which notice speaks for a waiter, written by
+  the same statement that creates it — `park_waiter` on the enqueue door,
+  `#admit_or_defer!` on the admission door — under the admission lock. The waiter
+  and its notice commit in two steps, so asking "which notices name this waiter?"
+  has a window where the honest answer is "none yet": an opted-out waiter is
+  already `queued` while its own notice does not exist, and a shared notice
+  deleted in that window reads it as one of its own and cancels a turn that was
+  only deferred, leaving no notice behind to say a wait happened. Recording it on
+  the row also means the fold, the notice and the shared notice's stop button read
+  one answer rather than resolving the policy at three moments a mid-wait policy
+  change can fall between. `nil` is a waiter parked before this was recorded and
+  keeps the old sibling-notice answer, for the same reason as above.
+- `topic_concurrency_notice_exists?` counts `"topic"` and legacy notices only. A
+  per-deferral notice speaks for one waiter, so letting it answer would leave a
+  coalescing agent's waiters with no notice whenever an opted-out agent deferred
+  into the topic first.
+- **A notice is on screen exactly as long as it represents a queued waiter.**
+  What it represents is `Comment#represented_queued_waiters` — the same statement
+  its stop button cancels through, so "what this notice is for" has one answer:
+  its own waiter for a `"task"` notice, every unclaimed queued waiter for a
+  shared one, the single newest waiter for a legacy one. "Unclaimed" is the
+  waiter's own `waiting_notice_scope`, falling back to the surviving sibling
+  notices only for waiters parked before it was recorded. Asked per notice, never
+  per topic: "is anything queued here?" is nobody's question, and a promotion
+  that leaves only *claimed* waiters behind reads as "still busy" while the
+  shared notice it kept up speaks for none of them — a second "⏳" line whose
+  stop button selects nothing.
+- Cleanup is `Comment.remove_stranded_waiting_notices!`, under the topic lock,
+  from every door that takes a waiter out of `queued` without promoting it:
+  promotion (`cleanup_waiting_notices_if_drained!`), a deleted anchor
+  (`Comment#cancel_pending_tasks`), the user's own stop button
+  (`TasksController#cancel`) and a dismissed notice
+  (`#cancel_queued_tasks_for_waiting_notice`). With `topic_max > 1`, promoting
+  one agent can leave another agent's waiter behind, and `coalesce_promoted!`
+  folds same-agent siblings only — an unclaimed survivor keeps the shared notice
+  up, which is what it is for. A per-deferral notice is additionally taken down
+  unconditionally by `cleanup_waiter_notice!` on the promotion of its own waiter,
+  or it would keep offering a stop button for a turn that is already running.
+- **A `"task"` notice lives exactly as long as its waiter is queued**, so it
+  comes down at every door that takes that waiter out of the queue — promotion,
+  the fold, a deleted anchor, and the user's own stop button. `TaskCoalescer`
+  removes the notices naming the tasks it absorbs, in the same transaction as
+  the cancellation. Nothing else would: the cancelled task is never promoted, so
+  `cleanup_waiter_notice!` never runs for it, and the drained sweep needs the
+  topic queue to empty — which the survivor of that very fold prevents.
+  Reachable whenever the policy is off when a waiter defers and on by the time
+  the next one folds it. The remaining doors need no policy change at all: with
+  the opt-out alone, `Comment#cancel_pending_tasks` (deleting the comment a
+  waiter answers) and `TasksController#cancel` (which whitelists `queued`) each
+  cancel a waiter the same way, and a sibling still parked keeps the sweep from
+  running. The anchor door applies only once the task is actually cancelled — a
+  re-anchored waiter is still queued and keeps its notice. All four callers go
+  through `Comment.remove_waiter_notices!` rather than each spelling the query
+  out.
+- `Comment#cancel_queued_tasks_for_waiting_notice` cancels, for a `"topic"`
+  notice, every queued waiter in the scope except those a surviving `"task"`
+  notice still speaks for; for a `"task"` notice, exactly its own waiter; and for
+  a legacy one, the single newest waiter. `queued` only: a `pending`/`running`
+  task is the blocker, not a waiter, and is surfaced separately with its own stop
+  control. It then asks `Comment.remove_stranded_waiting_notices!`, as every
+  cancellation door does. Scoped to `topic_concurrency_defer` notices, since a
+  `:delayed` one shares the prefix but explains a dispatch that is still going to
+  run and so represents no waiter by design.
+
+### Message assembly
+
+`MergedTriggerComments`:
+
+- `prepend_to` / `append_trigger_message` renders the merged comments
+  (chronological, `[speaker]: content`) above the anchor's own text, and appends
+  their image attachments to the trigger parts.
+- `MessageBuilder#merged_comment_ids` excludes only the blocks actually
+  rendered, so `append_chat_history` does not send them twice.
+- **Size budget.** Coalescing is what makes this bite: a burst that used to
+  arrive as N separately budgeted turns is now one indivisible message, so it
+  does not degrade — the whole turn fails. `within_budget` keeps **every** block
+  and truncates each to `budget / blocks.size` (marked with `…[truncated]`).
+  Dropping the oldest blocks was tried and reverted: history caps by
+  `chat_history_limit` *count* and by *this same* size budget spread across the
+  whole conversation, accumulating oldest-first and breaking — so it cuts from
+  the end where a just-dropped burst comment sits — and `append_chat_history`
+  builds text parts only, so a dropped block's images reach the agent through no
+  path at all. No floor under the per-block share: a budget too small to say much
+  per comment is a configuration problem, not one this class should paper over by
+  discarding a user's message.
+
+This keeps `SessionContextResolver#incremental_payload` correct without change:
+the single `:trigger` message carries every merged comment.
+
+### Policy
+
+`scheduling.coalesce_pending_tasks` (default `true`), reachable as
+`PolicyResolver#coalesce_pending_tasks_for?(agent)`, so a creative, topic **or
+agent** can opt out. Agent scope is the granularity of the thing being switched —
+coalescing folds same-agent siblings — and `#scheduling_config` excludes agent
+policies by construction, so the agent-less predicate this replaces could only
+ever ignore a User-scoped opt-out. There is deliberately no agent-less variant
+left to fall back to.
+The opt-out is a real configuration with its own semantics, not "the feature
+off": each deferral keeps its own waiter *and* its own notice, and deleting one
+notice cancels one waiter. It does **not** disable `topic_max_concurrent_jobs`,
+`TopicSlot` serialization, or the drained-queue guard.
+
+## Not doing
+
+Debouncing the *first* message (waiting N seconds before the initial dispatch to
+collect a burst) would reduce a 5-comment burst to a single answer instead of
+two, but delays every ordinary conversation turn. Out of scope.
+
+Promotion's topic-wide refresh destination has the same duplicate-answer shape
+as the `coalesce_at_start!` call site, but it predates this branch (`main`'s
+`refresh_deferred_context!` already selects the newest comment in the topic) and
+ten tests pin it. Narrowing it means deciding that a waiter should answer only what
+it absorbed rather than the current state of the conversation — its own change,
+with its own reasoning.
+
+## Test coverage
+
+- `TaskCoalescer`: absorbs older queued siblings; leaves other agents,
+  creatives, topics, `trigger_event_name`s, and `pending`/`running` tasks alone;
+  never cancels the newest; transitive merge of already-absorbed ids; records
+  `TaskAction`; a `cancelled` survivor supersedes nothing (with a `pending`
+  survivor as the control); reviews neither absorb nor get absorbed.
+- `TopicSlot` / `AiAgentJob`: an occupied topic slot yields a queued waiter, not
+  a second running task; an emptied slot re-drains immediately; an agent already
+  holding a slot queues even with `topic_max > 1`, while a *different* agent
+  still takes the free slot; the opt-out still parks rather than starting a
+  second concurrent turn, and still posts one notice per waiter.
+- `AgentOrchestrator`: burst of 3 deferred dispatches leaves 1 queued task and
+  1 waiting notice; the fold runs with the topic lock already taken and above
+  the ambient transaction depth; the notice survives a promotion that leaves
+  another agent queued, and is removed once nothing is queued; a promoted waiter
+  does not re-answer a comment an earlier turn delivered, and still advances onto
+  an unanswered newer one; a survivor cancelled between the claim and the fold
+  drains the queue behind it instead of being enqueued, and so does one
+  abandoned at job start — with the controls that a healthy survivor still keeps
+  the slot it claimed, and that a cancelled task with no topic drains nothing.
+- Re-anchoring: an anchor deleted mid-wait re-anchors onto the newest absorbed
+  comment in the *task's* creative; a moved, privated, or already-delivered
+  comment is not adopted; a stale snapshot cannot overwrite a concurrent fold; a
+  waiter with nothing absorbed is still cancelled.
+- `Matcher`: a merged mention moved out of the turn no longer licenses it, while
+  an in-scope merged mention still does.
+- `MergedTriggerComments` / `MessageBuilder`: merged comments appear in the
+  trigger in order with their images and are excluded from chat history; an
+  under-budget burst renders in full; an over-budget burst keeps every comment,
+  truncated, within the budget.
+- `PolicyResolver`: default on, overridable off; coalescing disabled restores
+  the previous per-comment behaviour.

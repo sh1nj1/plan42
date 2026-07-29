@@ -9,6 +9,9 @@ en:
       unarchive: Restore
       archived_topics: "Archived topics (%{count})"
       not_ai_agent: Only AI agents can be set as primary agent.
+      session_topic_locked: This topic belongs to a live agent session. Its primary agent cannot be changed or released.
+      agent_no_creative_access: "%{name} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first."
+      session_agent_not_assignable: "%{name} is a live agent session and only responds in its own session topic, so it cannot be the primary agent here."
       default_name_prefix: "Topic"
       branch_prefix: "Branch"
       main_name: "Main"
@@ -18,6 +21,9 @@ en:
       move:
         no_target_permission: You don't have write permission on the target creative.
         duplicate_name: A topic named '%{name}' already exists in the target creative.
+        session_topic_locked: This topic belongs to a live agent session and cannot be moved.
+        primary_agent_released: '@%{agent} was released as primary agent because it has no feedback access in "%{creative}". Share that creative with the agent and assign it again to keep it on this topic.'
+        primary_agent_released_session_agent: '@%{agent} was released as primary agent because it is a live agent session and only responds in its own session topic, which "%{creative}" is not.'
         add_members:
           title: Add members to the new location?
           description: These people had access where the topic used to live, but not in "%{creative}". Add them so they keep access.
@@ -110,6 +116,8 @@ en:
       recent_chats: Recent chats
       remove_from_history: Remove from history
       topic_set_agent_error: Unable to assign the agent to this topic.
+      topic_agent_assigned_title: "%{name} is assigned to this topic — click to release"
+      topic_clear_agent_confirm: "Release %{name} from this topic? Every agent will be able to respond here again."
       topic_create_error: Unable to create the topic.
       topic_update_error: Unable to update the topic.
       topic_delete_error: Unable to delete the topic.
@@ -195,10 +203,15 @@ en:
         failed: "Compress failed"
       topic_command:
         missing_name: 'Please specify a topic name in quotes: /topic "topic name"'
+        not_authorized: "You need write permission to change a topic's primary agent."
         created: 'Topic "%{name}" created.'
         created_with_agent: 'Topic "%{name}" created with @%{agent} as primary agent.'
         updated_agent: 'Topic "%{name}" primary agent updated to @%{agent}.'
+        cleared_agent: 'Topic "%{name}" primary agent released. All agents can respond again.'
         already_exists: 'Topic "%{name}" already exists.'
+        session_topic_locked: 'Topic "%{name}" belongs to a live agent session. Its primary agent cannot be changed or released.'
+        agent_no_creative_access: '@%{agent} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first.'
+        session_agent_not_assignable: '@%{agent} is a live agent session and only responds in its own session topic, so it cannot be the primary agent here.'
       work_command:
         agent_not_found: "Please mention an AI agent to execute the workflow."
         no_children: "This creative has no child creatives to work on."

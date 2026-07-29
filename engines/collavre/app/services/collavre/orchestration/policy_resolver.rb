@@ -28,6 +28,13 @@ module Collavre
           "rate_limit_per_minute" => 20,
           "backoff_strategy" => "exponential",
           "topic_max_concurrent_jobs" => 1,
+          # Fold un-started tasks for the same agent/topic/creative into one so a
+          # burst of comments produces one answer instead of one per comment.
+          "coalesce_pending_tasks" => true,
+          # Drop a dispatch whose comment an in-flight turn has already been
+          # given, instead of parking it as a waiter (see
+          # Orchestration::DeliveryRecord).
+          "drop_delivered_dispatches" => true,
           # Loop breaker settings
           "loop_breaker_enabled" => true,
           "ping_pong_threshold" => 5,           # Max back-and-forth between same agents
@@ -87,6 +94,43 @@ module Collavre
         scheduling_config["topic_max_concurrent_jobs"]
       end
 
+      # Whether un-started tasks for the same agent/topic/creative are folded
+      # into a single one (see Orchestration::TaskCoalescer).
+      #
+      # Resolved per agent, because that is the granularity of the thing being
+      # switched: coalescing folds *same-agent* siblings, and a User-scoped
+      # scheduling policy is how an administrator turns it off for one agent
+      # without touching the others in the topic. #scheduling_config excludes
+      # agent policies by construction, so asking it here silently ignored that
+      # opt-out on every enqueue, promotion, start and notice path.
+      #
+      # There is deliberately no agent-less variant to fall back to: a second
+      # door onto this question is how the two answers drift, and every caller
+      # has the agent to hand. `nil` is accepted only for a dispatch with no
+      # agent resolved yet, where the global answer is the only one there is.
+      def coalesce_pending_tasks_for?(agent)
+        config = agent ? scheduling_config_for(agent) : scheduling_config
+        config["coalesce_pending_tasks"] != false
+      end
+
+      # Whether a dispatch is dropped outright when an in-flight turn has
+      # already delivered its comment (see Orchestration::DeliveryRecord).
+      #
+      # Resolved per agent for the same reason coalescing is: delivery is a
+      # same-agent question, and a User-scoped scheduling policy is how an
+      # administrator turns this off for one agent without touching the others
+      # in the topic.
+      #
+      # Only the *drop* is switched. The record itself keeps being written
+      # whatever this says — it is evidence of what an agent was sent, and the
+      # promotion door reads it to keep a parked waiter from replaying a
+      # delivered comment. Gating the write here would make turning the switch
+      # off mid-burst leave that door reading a record with a hole in it.
+      def drop_delivered_dispatches_for?(agent)
+        config = agent ? scheduling_config_for(agent) : scheduling_config
+        config["drop_delivered_dispatches"] != false
+      end
+
       # Convenience methods
       def arbitration_strategy
         return "primary_first" if topic_primary_agent_id.present?
@@ -100,6 +144,19 @@ module Collavre
 
       def primary_agent_id
         topic_primary_agent_id || arbitration_config["primary_agent_id"]
+      end
+
+      # Read primary_agent_id directly from the topics table.
+      #
+      # Public because the two sources of a primary agent carry different
+      # strength: a topic-column assignment is exclusive, while a policy-level
+      # primary_agent_id is only a preference. The Arbiter needs to tell them
+      # apart even though #primary_agent_id collapses both.
+      def topic_primary_agent_id
+        topic_id = @context.dig("topic", "id")
+        return nil unless topic_id
+
+        Topic.where(id: topic_id).pick(:primary_agent_id)
       end
 
       # Bid strategy specific
@@ -162,14 +219,6 @@ module Collavre
         end
 
         config
-      end
-
-      # Read primary_agent_id directly from the topics table
-      def topic_primary_agent_id
-        topic_id = @context.dig("topic", "id")
-        return nil unless topic_id
-
-        Topic.where(id: topic_id).pick(:primary_agent_id)
       end
     end
   end

@@ -8,13 +8,53 @@ module Collavre
     # 1. Mention-based: If a user is @mentioned, route exclusively to that user
     #    - If mentioned user is AI agent → route to that agent only
     #    - If mentioned user is human → no AI agents respond
-    # 2. Expression-based: Evaluate each agent's routing_expression (Liquid)
+    # 2. Primary-agent assignment: If the topic has a primary_agent, that agent is
+    #    the topic's sole ambient responder (see #match_by_primary_agent)
+    # 3. Expression-based: Evaluate each agent's routing_expression (Liquid)
     #
     # Permission checks:
     # - All agents need feedback permission on the creative to respond
     # - searchable only affects discoverability, not response permission
     #
     class Matcher
+      # The one entry point for "may this agent answer, given the topic's
+      # primary-agent assignment?", taking a raw trigger payload.
+      #
+      # Three paths re-ask this question about a waiting task — promotion
+      # (AgentOrchestrator.revalidate_assignment!), the resumed AiAgentJob, and
+      # approval resumption through it — and each one cancels the task on a
+      # "no". They must ask the same question, because a direct @mention
+      # outranks the assignment and coalescing moves that mention out of the
+      # anchor and into "merged_comment_ids": judging the anchor alone cancels a
+      # task that WAS explicitly addressed, and discards every comment it had
+      # absorbed along with it. The mention still reaches the agent
+      # (MergedTriggerComments folds it into the trigger), so it still counts.
+      def self.permits_assignment?(context, agent)
+        return true if new(SystemEvents::ContextBuilder.new(context).build)
+                       .assignment_permits?(agent)
+
+        merged_ids = Array(context[TaskCoalescer::PAYLOAD_KEY]).compact
+        return false if merged_ids.empty?
+
+        # Scoped to the turn, through the same predicate that decides what is
+        # delivered. A merged mention moved to another creative while the task
+        # waited is deliberately kept out of the trigger, so it cannot also be
+        # the reason the turn is permitted: that would let a non-primary agent
+        # answer an ambient anchor with no in-scope mention anywhere.
+        AiAgent::MergedTriggerComments.in_turn(merged_ids, context).pluck(:content).any? do |content|
+          probe = context.merge("chat" => { "content" => content })
+          new(SystemEvents::ContextBuilder.new(probe).build).assignment_permits?(agent)
+        end
+      end
+
+      # The permission every routing path in #match is gated on, asked on its
+      # own — for a caller that names its agent instead of matching one.
+      # DeliveryRecord.restore! is that caller: it puts back the dispatch this
+      # matcher once produced, and nothing else on its way re-asks this.
+      def self.permits_creative_access?(context, agent)
+        new(SystemEvents::ContextBuilder.new(context).build).has_creative_permission?(agent)
+      end
+
       def initialize(context)
         @context = context
       end
@@ -29,8 +69,58 @@ module Collavre
         mentioned_result = match_by_mention
         return mentioned_result unless mentioned_result.nil?
 
-        # Priority 2: Liquid expression routing (fallback)
+        # Priority 2: Topic primary agent assignment (exclusive)
+        primary_result = match_by_primary_agent
+        return primary_result unless primary_result.nil?
+
+        # Priority 3: Liquid expression routing (fallback)
         match_by_expression
+      end
+
+      # May this agent still take the floor in this topic, given the topic's
+      # CURRENT primary-agent assignment?
+      #
+      # #match runs when an event is dispatched, but the agent it selects can
+      # reach execution much later: a :deferred decision parks a queued Task
+      # until the topic's blocker finishes, and a :delayed one sleeps in the job
+      # queue. Neither path re-matches — AiAgentJob#perform runs the agent the
+      # decision named — so an assignment created or moved during that window
+      # would be bypassed by work scheduled moments before it, and a demoted
+      # agent would speak in a topic that is now exclusively someone else's.
+      #
+      # Mirrors #match's precedence rather than re-deriving it: review and
+      # mention are exclusive routings that outrank the assignment (see
+      # #match_by_primary_agent), so those dispatches stay valid. Expression
+      # routing does not, so it is revalidated. Only the assignment is rechecked
+      # here — re-running the whole match would also re-evaluate each
+      # routing_expression against the refreshed comment, silently dropping
+      # deferred work for reasons that have nothing to do with the assignment.
+      def assignment_permits?(agent)
+        primary_id = matched_topic&.primary_agent_id
+        return true if primary_id.nil? || primary_id == agent.id
+
+        # A review can only ever be applied in place by the author of the quoted
+        # comment; no assignment can transfer it, so the alternative to running
+        # it is not "the primary answers instead" but a dead Review button.
+        return true if matched_comment&.review_message? &&
+          matched_comment.quoted_comment&.user_id == agent.id
+
+        mentioned_id = @context.dig("chat", "mentioned_user", "id") ||
+          @context.dig(:chat, :mentioned_user, :id)
+        mentioned_id.present? && mentioned_id.to_i == agent.id
+      end
+
+      # Public because #match is not the only door onto a dispatch: a restore
+      # names the agent the match once produced, and this is the gate every
+      # branch of #match shares. One predicate, so the two doors cannot come to
+      # disagree about what "may answer this creative" means.
+      def has_creative_permission?(agent)
+        # All agents need feedback permission on the creative to respond
+        # searchable only affects discoverability, not response permission
+        creative = matched_creative
+        return false unless creative
+
+        creative.has_permission?(agent, :feedback)
       end
 
       private
@@ -92,6 +182,34 @@ module Collavre
         [ mentioned_user ]
       end
 
+      # Returns [primary_agent] when the topic has one, nil when it does not.
+      #
+      # A topic's primary agent is an exclusive assignment: it is the only agent
+      # that speaks on ambient events in that topic. This deliberately overrides
+      # each agent's own routing_expression in BOTH directions:
+      #
+      # - The primary speaks even with no routing_expression (or one that
+      #   evaluates false), so pinning an agent is enough to talk to it.
+      # - Every other agent stays silent even when its expression matches, so a
+      #   project-wide roster of agents does not all pile into one task.
+      #
+      # Other agents are not muted, only demoted to explicit invitation: an
+      # @mention routes to them via #match_by_mention, which runs first.
+      #
+      # Returning [] (rather than nil) when the primary is ineligible is
+      # intentional — falling through to expression routing would let exactly
+      # the agents this assignment excludes take the floor instead.
+      def match_by_primary_agent
+        agent = matched_topic&.primary_agent
+        return nil unless agent
+
+        return [] unless agent.ai_user?
+        return [] unless has_creative_permission?(agent)
+        return [] unless eligible_in_inbox?(agent)
+
+        [ agent ]
+      end
+
       def match_by_expression
         # Find all AI agents with routing expressions
         # Order by id for consistent ordering (important for round_robin strategy)
@@ -137,15 +255,6 @@ module Collavre
       rescue StandardError => e
         Rails.logger.error("[Matcher] Routing error for agent #{agent.id}: #{e.message}")
         false
-      end
-
-      def has_creative_permission?(agent)
-        # All agents need feedback permission on the creative to respond
-        # searchable only affects discoverability, not response permission
-        creative = matched_creative
-        return false unless creative
-
-        creative.has_permission?(agent, :feedback)
       end
 
       def matched_creative

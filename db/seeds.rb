@@ -11,15 +11,31 @@
 # NB: compare to `true` explicitly — an unset config.x.* key reads back as a
 # truthy empty OrderedOptions, so a bare `if` would skip in every env.
 default_email = ENV.fetch('DEFAULT_USER_EMAIL', 'admin@example.com')
+default_password = ENV['DEFAULT_USER_PASSWORD'].presence
 
 if Rails.application.config.x.bootstrap_first_admin == true
   puts "Skipping default admin seed (env bootstraps admin via first-run signup)"
+elsif Rails.env.production? && default_password.nil?
+  # The fallback below is a published credential. In development and test that
+  # is the point; on a deployed host it is a system_admin login that anyone who
+  # has read this repository already knows, reachable the moment the instance
+  # answers on 443. So production must say the password out loud or get no
+  # admin — never the default. Engine seeds still run; they mint their own
+  # credentials with SecureRandom.
+  puts <<~MSG
+    Skipping default admin seed: DEFAULT_USER_PASSWORD is not set.
+    Seeding the built-in default in production would create a system_admin with
+    a publicly known password. Re-run with one you generated, e.g.
+
+      bin/rails db:seed  # with DEFAULT_USER_EMAIL and DEFAULT_USER_PASSWORD set
+  MSG
 elsif !User.exists?(email: default_email)
+  password = default_password || 'password123'
   User.create!(
     name: ENV.fetch('DEFAULT_USER_NAME', 'Admin'),
     email: default_email,
-    password: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
-    password_confirmation: ENV.fetch('DEFAULT_USER_PASSWORD', 'password123'),
+    password: password,
+    password_confirmation: password,
     email_verified_at: Time.zone.now,
     system_admin: true
   )

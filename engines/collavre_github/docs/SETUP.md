@@ -101,7 +101,26 @@ export GITHUB_WEBHOOK_SECRET=your_webhook_secret  # optional
 
 ### Automatic Setup
 
-When you link a repository in the integration modal, Collavre automatically creates a webhook via the GitHub API pointing to `/github/webhook` with a per-repository secret. No manual setup required.
+When you link a repository in the integration modal, Collavre automatically creates a webhook via the GitHub API pointing to `/github/webhooks` with a per-repository secret. No manual setup required.
+
+### One Hook Per Repository
+
+When an instance creates a hook it records the GitHub hook id on every `RepositoryLink` for the repository (`webhook_hook_id`). Another instance recognises that hook as its own deployment's and reuses it instead of adding a second one.
+
+Several instances of this app (for example a server deployment and a local one) frequently share a database while serving different hostnames. Matching hooks on the full URL made each instance treat the others' as foreign and add its own, so GitHub delivered every event once per instance and each PR comment landed in the topic N times. The recorded id is what identifies a hook as shared — the URL cannot, in either direction:
+
+- **Path alone is not enough.** A completely separate deployment serves the same `/github/webhooks` path with its own database and its own webhook secret. Deferring to its hook would leave this instance linked on paper and receiving nothing at all, so a hook this database never registered is never reused.
+- **The full URL is too strict.** It is instance-specific, which is what caused the proliferation in the first place.
+
+Consequences:
+
+- A registered hook under a different host is **reused** — no new hook, and its events and secret are patched from here. Only the URL is left alone: rewriting it would break the other instance and start the two of them flipping it back and forth. Reuse is not a `webhook_warning`; the hook ends up fully provisioned, and a patch that fails is reported as a provisioning failure instead.
+
+  Reuse means this instance has **no hook of its own**: every delivery for that repository goes to whichever host created the hook. Because the registry is claimed first-come, that host can be a laptop or a tunnel that later goes away — GitHub then delivers to a dead URL and *no* instance receives events. Reusing a hook on another host is therefore logged at `warn`, together with GitHub's own record of the last delivery to it, so a repository going quiet can be traced from the logs: grep for `reusing registered hook`. Which host should own a repository's hook is not something the app can decide — first-come is a default, not a policy — so if a local instance has ever pointed at a shared database, check `github_repository_links.webhook_hook_id` and the hook's recent deliveries on GitHub before assuming a silent repository is a Collavre bug.
+- Hooks pointing at the deprecated singular `/github/webhook` path are **deleted** during provisioning — but only when this instance can prove the hook is its own to migrate: its id is registered in this database, or it sits on this instance's host. A legacy hook under another host that this database never registered is logged and left in place, since it may be an independent deployment's only way of receiving events. The alias route therefore cannot be dropped on the strength of provisioning alone; those hooks have to be cleared by hand first.
+- Unlinking a repository deletes only this instance's own hook. By then the links carrying the registration are gone, so any remaining hook's owner can no longer be established — it is logged rather than deleted, since it may belong to a separate deployment.
+
+Inbound deliveries are additionally deduplicated on the `X-GitHub-Delivery` GUID (`github_webhook_deliveries`), which also covers redelivery of the same GUID. A claim is released if processing raises, and an unprocessed claim is taken over after `STALE_CLAIM_AFTER` — otherwise a run that died would leave the GUID answering `200` forever and silently swallow every redelivery. The ledger is trimmed daily by `CollavreGithub::WebhookDeliveryPruneJob`.
 
 ### Manual Setup (Fallback)
 
@@ -109,7 +128,7 @@ If automatic webhook creation fails:
 
 1. Go to your repository → **Settings → Webhooks → Add webhook**
 2. Configure:
-   - **Payload URL**: `https://your-collavre-domain.com/github/webhook`
+   - **Payload URL**: `https://your-collavre-domain.com/github/webhooks`
    - **Content type**: `application/json`
    - **Secret**: Use the per-repository secret shown in the integration modal
    - **Events**: Select **Let me select individual events** → check **Pull requests**
@@ -124,7 +143,7 @@ GitHub must reach a public URL. Use a tunnel:
 ngrok http http://localhost:3000
 
 # GitHub CLI
-gh webhook forward --url http://localhost:3000/github/webhook
+gh webhook forward --url http://localhost:3000/github/webhooks
 
 # Smee.io
 # Create a channel at smee.io and run the relay client
@@ -144,7 +163,7 @@ Options:
 - `--repo` — repository (optional if a `GithubRepositoryLink` exists)
 - `--number` — PR number
 - `--action` — webhook action (default: `opened`)
-- `--url` — target URL (default: `http://localhost:3000/github/webhook`)
+- `--url` — target URL (default: `http://localhost:3000/github/webhooks`)
 
 The script generates a valid `X-Hub-Signature-256` header.
 

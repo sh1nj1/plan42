@@ -9,6 +9,9 @@ ko:
       unarchive: 복원
       archived_topics: "아카이브된 토픽 (%{count}개)"
       not_ai_agent: AI 에이전트만 Primary Agent로 설정할 수 있습니다.
+      session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.
+      agent_no_creative_access: "%{name}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요."
+      session_agent_not_assignable: "%{name}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다."
       default_name_prefix: "토픽"
       branch_prefix: "분기"
       main_name: "메인"
@@ -18,6 +21,9 @@ ko:
       move:
         no_target_permission: 대상 크리에이티브에 대한 쓰기 권한이 없습니다.
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
+        session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 이동할 수 없습니다.
+        primary_agent_released: '@%{agent}은(는) "%{creative}"에 피드백 권한이 없어 Primary Agent 지정이 해제되었습니다. 계속 담당하게 하려면 해당 크리에이티브를 에이전트와 공유한 뒤 다시 지정하세요.'
+        primary_agent_released_session_agent: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. "%{creative}"은(는) 그 토픽이 아니어서 Primary Agent 지정이 해제되었습니다.'
         add_members:
           title: 새 위치에 멤버를 추가할까요?
           description: 이 사람들은 토픽이 있던 곳에는 접근할 수 있었지만 "%{creative}"에는 없습니다. 계속 접근할 수 있도록 추가하세요.
@@ -107,6 +113,8 @@ ko:
       recent_chats: 최근 채팅
       remove_from_history: 히스토리에서 제거
       topic_set_agent_error: 이 토픽에 에이전트를 지정할 수 없습니다.
+      topic_agent_assigned_title: "%{name}이(가) 이 토픽에 할당되어 있습니다 — 클릭하면 해제됩니다"
+      topic_clear_agent_confirm: "%{name}의 토픽 할당을 해제할까요? 이 토픽에서 다시 모든 에이전트가 응답할 수 있게 됩니다."
       topic_create_error: 토픽을 생성할 수 없습니다.
       topic_update_error: 토픽을 수정할 수 없습니다.
       topic_delete_error: 토픽을 삭제할 수 없습니다.
@@ -192,10 +200,15 @@ ko:
         failed: "요약 실패"
       topic_command:
         missing_name: '토픽 이름을 따옴표로 지정하세요: /topic "토픽 이름"'
+        not_authorized: 토픽의 Primary Agent를 변경하려면 쓰기 권한이 필요합니다.
         created: '토픽 "%{name}"이(가) 생성되었습니다.'
         created_with_agent: '토픽 "%{name}"이(가) 생성되었습니다. @%{agent}이(가) Primary Agent로 설정되었습니다.'
         updated_agent: '토픽 "%{name}"의 Primary Agent가 @%{agent}(으)로 변경되었습니다.'
+        cleared_agent: '토픽 "%{name}"의 Primary Agent 지정이 해제되었습니다. 다시 모든 에이전트가 응답할 수 있습니다.'
         already_exists: '토픽 "%{name}"이(가) 이미 존재합니다.'
+        session_topic_locked: '토픽 "%{name}"은(는) 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.'
+        agent_no_creative_access: '@%{agent}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요.'
+        session_agent_not_assignable: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다.'
       work_command:
         agent_not_found: "워크플로우를 실행할 AI 에이전트를 멘션해주세요."
         no_children: "이 크리에이티브에는 작업할 하위 크리에이티브가 없습니다."

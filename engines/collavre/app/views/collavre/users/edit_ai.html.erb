@@ -42,8 +42,15 @@
 
   <div class="form-group">
     <%= form.label :llm_api_key, t('collavre.users.new_ai.api_key_label') %>
-    <%= form.password_field :llm_api_key, class: "stacked-form-control", placeholder: "sk-...", value: @user.llm_api_key %>
+    <%= masked_secret_field form, :llm_api_key, class: "stacked-form-control", placeholder: "sk-...", value: nil %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.api_key_help') %></small>
+    <% if @has_stored_llm_api_key %>
+      <div class="form-check mt-2">
+	<%= check_box_tag "user[clear_llm_api_key]", "1", @clear_llm_api_key, id: "user_clear_llm_api_key", class: "form-check-input" %>
+        <%= label_tag "user_clear_llm_api_key", t("collavre.users.edit_ai.clear_api_key_label"), class: "form-check-label" %>
+      </div>
+      <small class="form-text text-muted"><%= t("collavre.users.edit_ai.clear_api_key_help") %></small>
+    <% end %>
   </div>
 
   <div class="form-group">

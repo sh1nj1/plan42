@@ -645,4 +645,222 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal [ "First.", "\n\n", "Second." ], yielded
     assert_equal "First.\n\nSecond.", result
   end
+
+  # #chat swallows a provider error: it streams "⚠️ AI Error" to the user and
+  # returns nil, which an ordinary empty answer also returns. Orchestration::
+  # DeliveryRecord needs the two apart — a turn that handed the provider
+  # nothing delivered nothing, and the dispatches it discarded on the strength
+  # of "the agent has read that comment" have to come back.
+  test "records a handoff failure when the request errors before any content" do
+    conversation = FakeConversation.new
+    def conversation.complete
+      raise StandardError, "connection refused"
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    result = client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+
+    assert_nil result, "premise: the caught error is indistinguishable from an empty answer by return value"
+    assert_predicate client, :last_handoff_failed?
+  end
+
+  # Control, and the boundary: an error *after* deltas have streamed is not a
+  # failed handoff. The provider had the payload and answered part of it, which
+  # the product surfaces as a truncated reply — the agent did read the comments
+  # that turn swallowed.
+  test "does not record a handoff failure when the error came after content streamed" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: "half an answer"))
+      raise StandardError, "stream closed"
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    yielded = +""
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |delta| yielded << delta }
+    end
+
+    assert_includes yielded, "half an answer", "premise: the provider did answer, partially"
+    assert_not client.last_handoff_failed?
+  end
+
+  # Control against the flag latching: an ordinary chat leaves it false, and so
+  # does an empty-but-successful one, which returns nil for a different reason.
+  test "does not record a handoff failure on a chat that reached the provider" do
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    client.stub(:build_conversation, FakeConversation.new) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+    assert_not client.last_handoff_failed?
+
+    empty = FakeConversation.new
+    empty.define_singleton_method(:complete) { |&_block| OpenStruct.new(content: "") }
+    client.stub(:build_conversation, empty) do
+      assert_nil client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+    assert_not client.last_handoff_failed?,
+               "an empty answer is an answer; the provider had the payload"
+  end
+
+  # The other half of the same question, asked positively. #last_handoff_failed?
+  # is only ever set from a rescue, so it cannot answer for a chat that raised
+  # past it — which is what a user pressing Stop mid-answer does. What the
+  # cancelled turn needs to know is whether the provider got the payload.
+  test "records the handoff once content has streamed" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: "half an answer"))
+      raise Collavre::CancelledError
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    assert_raises(Collavre::CancelledError) do
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |_delta| nil }
+      end
+    end
+
+    assert_predicate client, :handed_off?
+  end
+
+  # Deltas are not the only way an answer arrives: a provider that returns its
+  # whole reply at once yields nothing at all, and that turn handed over just as
+  # much. The delta branch alone would read it as never having reached anybody.
+  test "records the handoff for an answer that arrived without deltas" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&_block|
+      OpenStruct.new(content: "the whole answer")
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    result = client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+
+    assert_equal "the whole answer", result, "premise: nothing streamed, and yet it answered"
+    assert_predicate client, :handed_off?
+  end
+
+  # Control: nothing streamed means nothing was handed over — the same boundary
+  # #last_handoff_failed? draws — and the answer belongs to this chat alone, not
+  # to the one before it.
+  test "records no handoff for a chat that streamed nothing" do
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    client.stub(:build_conversation, FakeConversation.new) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+    end
+    assert_predicate client, :handed_off?, "premise: the chat before it did stream"
+
+    silent = FakeConversation.new
+    silent.define_singleton_method(:complete) do |&_block|
+      raise Collavre::CancelledError
+    end
+    assert_raises(Collavre::CancelledError) do
+      client.stub(:build_conversation, silent) do
+        client.chat([ { role: "user", parts: [ { text: "hello" } ] } ])
+      end
+    end
+
+    assert_not client.handed_off?
+  end
+
+  # A delta of exactly "\n\n" is content — the delta branch says so in as many
+  # words, and skips only truly *empty* chunks for that reason. The rescue below
+  # it classified with `blank?`, which is true of that same delta, so a stream
+  # broken after a paragraph break recorded the handoff *and* its failure. Task#
+  # ended_undelivered? reads the failure first, so every comment that turn
+  # swallowed is dispatched again although the provider had them.
+  test "does not record a handoff failure when the error came after a whitespace-only delta" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: "\n\n"))
+      raise StandardError, "stream closed"
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    yielded = []
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |delta| yielded << delta }
+    end
+
+    assert_equal "\n\n", yielded.first, "premise: the provider streamed, and the delta reached the caller"
+    assert_predicate client, :handed_off?, "premise: the payload got there"
+    assert_not client.last_handoff_failed?
+  end
+
+  # A tool-call chunk carries no content — the delta branch says so, and skips
+  # it — but a conversation that reached its tools has had the payload and has
+  # already done things with it: this product's tools write creatives and post
+  # comments. Classifying that turn as a failed handoff re-dispatches every
+  # comment it swallowed, and the restored turn runs those tools again.
+  test "does not record a handoff failure when the error came after a content-less chunk" do
+    conversation = FakeConversation.new
+    conversation.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      raise StandardError, "stream closed"
+    end
+
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+    )
+
+    yielded = []
+    client.stub(:build_conversation, conversation) do
+      client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |delta| yielded << delta }
+    end
+
+    assert_equal 1, yielded.size, "premise: the chunk carried no content, so only the error notice reached the caller"
+    assert_match(/AI Error/, yielded.first)
+    assert_predicate client, :handed_off?, "premise: the provider answered — with a chunk that is not text"
+    assert_not client.last_handoff_failed?
+  end
+
+  # The invariant Task#ended_undelivered? is written on: the two records are one
+  # boundary asked twice, so no ending can carry both. It reads the failure
+  # first precisely because it cannot ask which of two contradictory records is
+  # the true one — that has to be impossible here rather than resolved there.
+  test "records the handoff and its failure as one boundary asked two ways" do
+    [ [ "nothing", [] ], [ "a content-less chunk", [ nil ] ],
+      [ "a paragraph break", [ "\n\n" ] ], [ "an answer", [ "half an answer" ] ] ].each do |what, streamed|
+      conversation = FakeConversation.new
+      conversation.define_singleton_method(:complete) do |&block|
+        streamed.each { |content| block.call(OpenStruct.new(content: content)) }
+        raise StandardError, "stream closed"
+      end
+
+      client = AiClient.new(
+        vendor: "google", model: "gemini-pro", system_prompt: "system", llm_api_key: "api-key"
+      )
+      client.stub(:build_conversation, conversation) do
+        client.chat([ { role: "user", parts: [ { text: "hello" } ] } ]) { |_delta| nil }
+      end
+
+      assert_equal !client.handed_off?, client.last_handoff_failed?,
+                   "a stream that broke after #{what} must answer the same question the same way"
+    end
+  end
 end

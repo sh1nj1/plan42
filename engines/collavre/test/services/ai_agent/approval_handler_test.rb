@@ -19,7 +19,8 @@ module Collavre
             "creative" => { "id" => @creative.id },
             "comment" => { "user_id" => @user.id }
           },
-          agent: @agent
+          agent: @agent,
+          topic_id: @creative.main_topic.id
         )
 
         @error = ApprovalPendingError.new(
@@ -135,6 +136,8 @@ module Collavre
 
         assert_equal [ "pending_approval" ], statuses.map { |s| s[:status] }
         assert_equal [ @task.id ], statuses.map { |s| s[:task_id] }
+        assert_equal [ @task.topic_id ], statuses.map { |s| s[:topic_id] },
+                     "the client routes the indicator by topic, so a replayed pause needs one"
       end
 
       test "the broadcast task is already pending_approval when the payload goes out" do

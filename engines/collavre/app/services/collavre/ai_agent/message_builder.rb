@@ -106,14 +106,18 @@ module Collavre
       end
 
       def append_referenced_creative_contexts(messages)
-        content = @context.dig("comment", "content")
-        return unless content
+        # Comments coalesced into this turn are delivered with the trigger, so
+        # their links point at creatives the agent is about to be asked about.
+        # Scanning only the surviving anchor would drop the subtree that the
+        # absorbed comment's own dispatch would have supplied.
+        contents = [ @context.dig("comment", "content") ] + merged_trigger.blocks.map(&:text)
+        contents = contents.compact
+        return if contents.empty?
 
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
-        # Extract creative IDs from markdown links like [title](/creatives/123)
-        referenced_ids = content.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.map(&:to_i).uniq
+        referenced_ids = contents.flat_map { |c| referenced_creative_ids(c) }.uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = Creative.where(id: referenced_ids).index_by(&:id)
 
@@ -134,6 +138,44 @@ module Collavre
         end
       end
 
+      # Creative ids linked from markdown like [title](/creatives/123).
+      def referenced_creative_ids(text)
+        text.to_s.scan(%r{\[[^\]]*\]\(/creatives/(\d+)\)}).flatten.map(&:to_i).uniq
+      end
+
+      # Whether a history entry carries its comment whole.
+      #
+      # A history entry is text: this window renders `content` and nothing
+      # else. Two things ride only on the trigger path — the blobs
+      # append_trigger_message attaches, and the subtree
+      # append_referenced_creative_contexts renders for a linked creative,
+      # which scans the anchor and the merged blocks and never this window. A
+      # comment carrying either is *partly* delivered here, and the turn that
+      # swept it up is not a substitute for its own dispatch.
+      #
+      # Decided here rather than at Orchestration::DeliveryRecord, which reads
+      # the :comment_id tag as a delivery claim: this is the only place that
+      # knows what was rendered, and in particular which creatives were
+      # already injected. A link to the topic's own creative — the common case
+      # — withholds nothing, and a rule written anywhere else could not tell
+      # that apart from a link to a subtree the agent never saw.
+      #
+      # Deliberately the same test append_referenced_creative_contexts applies,
+      # @injected_creative_ids and all, so the two answer alike: whatever that
+      # path would have injected for this comment is what this window failed to
+      # supply. It holds only roots, not the descendants a rendered subtree
+      # also covers, so a link to a descendant reads as withheld when its text
+      # was in fact rendered. That asymmetry costs a redundant turn; the
+      # opposite one costs the message.
+      def delivered_whole?(comment)
+        return false if comment.images.attached?
+
+        missing = referenced_creative_ids(comment.content) - @injected_creative_ids.to_a
+        return true if missing.empty?
+
+        !Creative.where(id: missing).exists?
+      end
+
       # Appends chat history messages and returns the count of messages added.
       def append_chat_history(messages)
         creative_id = @context.dig("creative", "id")
@@ -146,16 +188,23 @@ module Collavre
         history_chars = 0
         count = 0
 
-        Comment.public_only.without_approval_action.where(creative_id: creative_id)
-               .where(topic_id: topic_id)
-               .where.not(user_id: nil)
-               .includes(:user)
-               .order(created_at: :desc)
-               .limit(history_limit)
-               .reverse
-               .each do |c|
-          next if c.id == trigger_comment&.id
+        scope = Comment.public_only.without_approval_action.where(creative_id: creative_id)
+                       .where(topic_id: topic_id)
+                       .where.not(user_id: nil)
+                       .includes(:user, :images_attachments)
 
+        # Exclude before limiting, not after. The trigger and the comments folded
+        # into it are delivered by append_trigger_message, so leaving them in the
+        # limited window lets a burst eat every history slot — a burst as large as
+        # the limit would leave no conversation at all and mark the turn
+        # first_message. Dropping them first lets older messages backfill.
+        excluded_ids = (merged_comment_ids + [ @context.dig("comment", "id") ]).compact.map(&:to_i)
+        scope = scope.where.not(id: excluded_ids) if excluded_ids.any?
+
+        scope.order(created_at: :desc)
+             .limit(history_limit)
+             .reverse
+             .each do |c|
           role = (c.user_id == @agent.id) ? "model" : "user"
           content = c.content.to_s
 
@@ -168,7 +217,18 @@ module Collavre
           history_chars += content.length
           break if history_chars > history_size_limit
 
-          messages << { role: role, kind: :chat_history, parts: [ { text: content } ] }
+          # Tagged with the comment it came from so Orchestration::DeliveryRecord
+          # can read, off the payload the adapter is actually handed, which
+          # comments this turn delivered. Consumers key into :role and :parts;
+          # the extra key is inert to all of them.
+          #
+          # Only an entry that carries its comment whole wears the tag — the
+          # tag is the delivery claim, and delivered_whole? is what makes it
+          # true. An untagged entry still goes to the agent as context; it just
+          # does not stand in for the comment's own dispatch.
+          entry = { role: role, kind: :chat_history, parts: [ { text: content } ] }
+          entry[:comment_id] = c.id if delivered_whole?(c)
+          messages << entry
           count += 1
         end
 
@@ -192,7 +252,16 @@ module Collavre
           payload_text = "[#{sender_name}]: #{payload_text}"
         end
 
+        # Comments that were folded into this task by Orchestration::TaskCoalescer
+        # (a burst of messages answered as one turn). They belong *in* the
+        # trigger, not in chat history: a session-backed agent receives only the
+        # :trigger message, so history-only placement would lose them entirely.
+        merged_blocks = merged_trigger.blocks
+        payload_text = (merged_blocks.map(&:text) + [ payload_text ]).join("\n\n") if merged_blocks.any?
+
         trigger_parts = [ { text: payload_text } ]
+
+        merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
         if @original_comment&.images&.attached?
           @original_comment.images.each do |image|
@@ -201,6 +270,20 @@ module Collavre
         end
 
         messages << { role: "user", kind: :trigger, parts: trigger_parts }
+      end
+
+      def merged_trigger
+        @merged_trigger ||= MergedTriggerComments.new(@context, agent: @agent)
+      end
+
+      # Ids of the coalesced comments this turn actually renders into the
+      # trigger (anchor excluded). Deliberately the rendered blocks rather than
+      # every merged id: MergedTriggerComments drops the oldest of an oversized
+      # burst, and excluding a comment that no longer appears in the trigger
+      # would delete it from the turn outright. Leaving it in the history scope
+      # lets that separately budgeted window carry it instead.
+      def merged_comment_ids
+        merged_trigger.blocks.filter_map { |b| b.comment&.id }
       end
 
       def trigger_comment

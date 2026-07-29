@@ -40,10 +40,17 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # that id as this.creativeId and drops any payload naming a different one, and a
   # link is a placement — replaying every task under the origin would put another
   # user's shell id on the wire, which PermissionFilter#readable_ids exists to hide.
-  def self.running_agent_payloads(creative_id)
+  # Topics hang off the origin, so that is what resolves a task's topic_id.
+  def self.running_agent_payloads(creative_id, topic_id: nil)
+    creative = Creative.find_by(id: creative_id)&.effective_origin
+    return [] unless creative
+
     replayable_tasks.filter_map do |task|
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
       next unless task_creative_id == creative_id
+
+      task_topic_id = AiAgent::AgentLifecycleManager.topic_id_for(task: task, creative: creative)
+      next if topic_id && task_topic_id.to_s != topic_id.to_s
 
       agent_status_payload(
         creative_id,
@@ -52,32 +59,44 @@ class CommentsPresenceChannel < ApplicationCable::Channel
         status: task.status == "pending_approval" ? "pending_approval" : "thinking",
         agent_id: task.agent_id,
         agent_name: task.agent.display_name,
-        task_id: task.id
+        task_id: task.id,
+        topic_id: task_topic_id,
+        source_creative_id: task_creative_id
       )
+    end
+  end
+
+  # Broadcast status for any currently running AI agent tasks for a creative.
+  # Only for the client-requested replay: subscribed transmits instead, because a
+  # broadcast published while stream_from is still attaching can be dropped.
+  def self.broadcast_running_agents(creative_id, topic_id: nil)
+    running_agent_payloads(creative_id, topic_id: topic_id).each do |payload|
+      ActionCable.server.broadcast("comments_presence:#{creative_id}", payload)
     end
   end
 
   # Broadcast agent status (thinking/streaming/idle) to presence channel.
   # This allows the frontend typing indicator to show AI agent activity.
   # source_creative_id: the actual creative where agent is working (for filtering on frontend)
-  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, source_creative_id: nil)
+  def self.broadcast_agent_status(creative_id, status:, agent_id:, agent_name:, topic_id:, task_id: nil, content: nil, source_creative_id: nil)
     ActionCable.server.broadcast(
       "comments_presence:#{creative_id}",
       agent_status_payload(
         creative_id,
-        status: status, agent_id: agent_id, agent_name: agent_name,
+        status: status, agent_id: agent_id, agent_name: agent_name, topic_id: topic_id,
         task_id: task_id, content: content, source_creative_id: source_creative_id
       )
     )
   end
 
-  def self.agent_status_payload(creative_id, status:, agent_id:, agent_name:, task_id: nil, content: nil, source_creative_id: nil)
+  def self.agent_status_payload(creative_id, status:, agent_id:, agent_name:, topic_id:, task_id: nil, content: nil, source_creative_id: nil)
     payload = {
       agent_status: {
         id: agent_id,
         name: agent_name,
         status: status,
         task_id: task_id,
+        topic_id: topic_id,
         creative_id: source_creative_id || creative_id
       }
     }
@@ -119,22 +138,42 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     end
   end
 
-  def typing
+  def typing(data)
     return unless @creative_id && current_user
+
+    topic_id = topic_id_for(data)
+    return unless topic_id
 
     ActionCable.server.broadcast(
       stream_name,
-      { typing: { id: current_user.id, name: current_user.display_name } }
+      { typing: { id: current_user.id, name: current_user.display_name, topic_id: topic_id } }
     )
   end
 
-  def stopped_typing
+  def stopped_typing(data)
     return unless @creative_id && current_user
 
-    ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id } })
+    topic_id = topic_id_for(data)
+    return unless topic_id
+
+    ActionCable.server.broadcast(stream_name, { stop_typing: { id: current_user.id, topic_id: topic_id } })
+  end
+
+  def running_agents(data)
+    return unless @creative_id && current_user
+
+    topic_id = topic_id_for(data)
+    return unless topic_id
+
+    CommentsPresenceChannel.broadcast_running_agents(@creative_id, topic_id: topic_id)
   end
 
   private
+
+  def topic_id_for(data)
+    topic_id = data["topic_id"] || data[:topic_id]
+    Topic.find_by(id: topic_id, creative_id: @creative_id)&.id
+  end
 
   def stream_name
     "comments_presence:#{@creative_id}"

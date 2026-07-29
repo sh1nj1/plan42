@@ -32,6 +32,14 @@ module Collavre
         # strategy with bid_fallback_enabled: false) or the Review button no-ops.
         return candidates if review_message?
 
+        # Mentions are forced routing too: the Matcher already narrowed candidates
+        # to the single @mentioned agent. Arbitration must not second-guess it —
+        # with a topic primary agent pinned, arbitration_strategy is
+        # "primary_first", and a mention of any OTHER agent would otherwise be
+        # dropped for not being the primary. Explicitly inviting a second agent
+        # into a pinned topic is exactly the escape hatch the pin needs.
+        return candidates if mention_routed?
+
         strategy = @policy_resolver.arbitration_strategy
         selected = apply_strategy(strategy, candidates)
 
@@ -51,6 +59,16 @@ module Collavre
         return false unless comment_id
 
         Comment.find_by(id: comment_id)&.review_message? || false
+      end
+
+      # True when the Matcher routed by @mention (mirrors Matcher#match_by_mention).
+      # Only an AI mention produces candidates; a human mention yields [] and never
+      # reaches the Arbiter.
+      def mention_routed?
+        mentioned_id = @context.dig("chat", "mentioned_user", "id")
+        return false if mentioned_id.blank?
+
+        User.find_by(id: mentioned_id)&.ai_user? || false
       end
 
       def apply_strategy(strategy, candidates)
@@ -75,13 +93,30 @@ module Collavre
         candidates
       end
 
-      # Primary agent responds if available, otherwise first candidate
+      # Primary agent responds. With no primary configured at all this degrades to
+      # "one candidate, not all" — the historical meaning of the bare
+      # primary_first policy.
       def strategy_primary_first(candidates)
         primary_id = @policy_resolver.primary_agent_id
         return candidates.take(1) if primary_id.blank?
 
         primary = candidates.find { |agent| agent.id == primary_id }
-        primary ? [ primary ] : candidates.take(1)
+        return [ primary ] if primary
+
+        # The primary is unavailable (no feedback permission, inbox-confined, or
+        # a stale id). What that means depends on where the primary came from:
+        #
+        # - A topic-column assignment is EXCLUSIVE. Stay silent: promoting an
+        #   arbitrary other agent is precisely the interloper the assignment
+        #   exists to keep out of the topic. (Mention- and review-routed
+        #   candidates bypass arbitration and never reach here.)
+        # - A policy-level primary_agent_id is only a PREFERENCE — the admin
+        #   reference defines primary_first as "primary agent responds first,
+        #   others only if unavailable". Keep that fallback intact so an
+        #   unassigned topic behaves exactly as it did before topic pinning.
+        return [] if @policy_resolver.topic_primary_agent_id.present?
+
+        candidates.take(1)
       end
 
       # Rotate between agents using Rails cache for state

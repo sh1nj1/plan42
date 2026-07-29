@@ -13,6 +13,7 @@ export default class extends Controller {
         this.topics = []
         this.canManageTopics = false
         this.canCreateTopic = false
+        this.canSetPrimaryAgent = false
         this.subscribedCreativeId = null
         this.topicsSubscription = null
         this._loadTopicsVersion = 0
@@ -90,9 +91,16 @@ export default class extends Controller {
                 const topics = Array.isArray(data) ? data : data.topics
                 const canManage = Array.isArray(data) ? false : data.can_manage
                 const canCreateTopic = Array.isArray(data) ? false : (data.can_create_topic ?? canManage)
+                // Assigning an agent is authorized at :write, not :admin, so the
+                // release control must follow the same capability — otherwise a
+                // write collaborator can pin an agent by drag-and-drop and then
+                // has no way to undo it. Falls back to canManage for a server
+                // that predates the field.
+                const canSetPrimaryAgent = Array.isArray(data) ? false : (data.can_set_primary_agent ?? canManage)
                 this.topics = topics
                 this.canManageTopics = canManage
                 this.canCreateTopic = canCreateTopic
+                this.canSetPrimaryAgent = canSetPrimaryAgent
                 this.archivedTopics = data.archived_topics || []
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
                 this.isInbox = !!data.is_inbox
@@ -108,7 +116,7 @@ export default class extends Controller {
                 // Migrate localStorage to server if server has no value
                 this.migrateLocalStorage()
 
-                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
                 this.restoreSelection()
             }
         } catch (e) {
@@ -131,7 +139,7 @@ export default class extends Controller {
         this.selectTopic(this.mainTopicId || "")
     }
 
-    renderTopics(topics, canManage = false, canCreateTopic = canManage) {
+    renderTopics(topics, canManage = false, canCreateTopic = canManage, canSetPrimaryAgent = canManage) {
         const dragActions = canManage
             ? 'dragstart->comments--topics#handleTopicDragStart dragend->comments--topics#handleTopicDragEnd'
             : ''
@@ -150,8 +158,12 @@ export default class extends Controller {
         const renderTopic = (topic) => {
             const isActive = String(this.currentTopicId) === String(topic.id) ? 'active' : ''
             const draggable = canManage ? 'draggable="true"' : ''
+            // agent_locked marks a live agent session topic, whose primary agent is
+            // session identity rather than a routing pin — the server refuses to
+            // change it, so the avatar must not offer to release it.
+            const releasableTopicId = canSetPrimaryAgent && !topic.agent_locked ? topic.id : null
             const agentAvatar = topic.primary_agent
-                ? this.renderAgentAvatar(topic.primary_agent)
+                ? this.renderAgentAvatar(topic.primary_agent, releasableTopicId)
                 : ''
             const branchIcon = topic.source_topic_id ? '<span class="topic-branch-icon" title="Branched">↗</span>' : ''
             const isMainTopic = this.mainTopicId && String(topic.id) === String(this.mainTopicId)
@@ -367,7 +379,7 @@ export default class extends Controller {
 
         // Update local state and UI immediately
         this.topics = topics
-        this.renderTopics(topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
 
         // Send to server
@@ -486,7 +498,7 @@ export default class extends Controller {
     toggleArchivedTopics(event) {
         event.stopPropagation()
         this.showingArchived = !this.showingArchived
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -680,7 +692,7 @@ export default class extends Controller {
                 if (index !== -1) {
                     this.topics[index] = { ...this.topics[index], ...updatedTopic }
                 }
-                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+                this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
                 this.restoreSelection()
             } else {
                 alertDialog(this._i18n("update_error"))
@@ -909,7 +921,7 @@ export default class extends Controller {
         if (existsByName) return
 
         this.topics = [...topics, data.topic]
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
 
         // Auto-select the new topic if created by the current user
         const currentUserId = document.body.dataset.currentUserId
@@ -937,7 +949,7 @@ export default class extends Controller {
         })
 
         this.topics = reorderedTopics
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -947,7 +959,7 @@ export default class extends Controller {
         if (index === -1) return
 
         this.topics[index] = { ...this.topics[index], ...updatedTopic }
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -964,7 +976,7 @@ export default class extends Controller {
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
         }
 
-        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic)
+        this.renderTopics(this.topics, this.canManageTopics, this.canCreateTopic, this.canSetPrimaryAgent)
         this.restoreSelection()
     }
 
@@ -1028,6 +1040,8 @@ export default class extends Controller {
     _i18n(key) {
         const translations = {
             set_agent_error: this.element.dataset.topicSetAgentError || 'Unable to assign the agent to this topic.',
+            agent_assigned_title: this.element.dataset.topicAgentAssignedTitle || '%{name} is assigned to this topic — click to release',
+            clear_agent_confirm: this.element.dataset.topicClearAgentConfirm || 'Release %{name} from this topic? Every agent will be able to respond here again.',
             create_error: this.element.dataset.topicCreateError || 'Unable to create the topic.',
             update_error: this.element.dataset.topicUpdateError || 'Unable to update the topic.',
             delete_error: this.element.dataset.topicDeleteError || 'Unable to delete the topic.',
@@ -1037,6 +1051,28 @@ export default class extends Controller {
         return translations[key] || key
     }
 
+    // Clicking the avatar of an assigned agent releases the assignment. The avatar
+    // sits inside the topic tag, so the click must not also fall through to
+    // selecting that topic.
+    async clearTopicPrimaryAgent(event) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        const topicId = event.currentTarget.dataset.id
+        if (!topicId) return
+
+        const topic = (this.topics || []).find(t => String(t.id) === String(topicId))
+        const agentName = topic?.primary_agent?.name || ''
+
+        const confirmed = await confirmDialog(
+            this._i18n('clear_agent_confirm').replace('%{name}', agentName)
+        )
+        if (!confirmed) return
+
+        await this.setTopicPrimaryAgent(topicId, null)
+    }
+
+    // Pass agent === null to release the topic's assignment.
     async setTopicPrimaryAgent(topicId, agent) {
         if (!this.creativeId) return
 
@@ -1047,7 +1083,7 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({ agent_id: agent.id })
+                body: JSON.stringify({ agent_id: agent ? agent.id : null })
             })
 
             const data = await response.json().catch(() => ({}))
@@ -1092,16 +1128,34 @@ export default class extends Controller {
                 await this.loadTopics()
                 this.dispatch("change", { detail: { topicId: topic.id, mainTopicId: this.mainTopicId } })
             } else {
-                console.error('Failed to create topic with agent')
+                // Dropping an agent that has no feedback access here is now
+                // refused (it would mute the topic), and that is a user mistake
+                // with a fix — sharing the creative. A console line would leave
+                // the drop looking like it silently did nothing.
+                const data = await response.json().catch(() => ({}))
+                const message = data.errors?.[0] || data.error
+                console.error('Failed to create topic with agent', message)
+                alertDialog(message || this._i18n('create_error'))
             }
         } catch (e) {
             console.error('Error creating topic with agent', e)
+            alertDialog(this._i18n('create_error'))
         }
     }
 
-    renderAgentAvatar(agent) {
+    // When topicId is given the avatar doubles as the release control: clicking it
+    // unassigns the agent from the topic. Pass null to render it as a plain badge
+    // (viewers who cannot manage topics).
+    renderAgentAvatar(agent, topicId = null) {
         const size = 16
-        let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper" style="width:${size}px;height:${size}px;" title="${this.escapeAttr(agent.name)}">`
+        const releasable = topicId !== null && topicId !== undefined
+        const title = releasable
+            ? this._i18n('agent_assigned_title').replace('%{name}', agent.name)
+            : agent.name
+        const releaseAttrs = releasable
+            ? ` data-action="click->comments--topics#clearTopicPrimaryAgent" data-id="${this.escapeAttr(String(topicId))}" role="button"`
+            : ''
+        let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper${releasable ? ' topic-agent-avatar-releasable' : ''}"${releaseAttrs} style="width:${size}px;height:${size}px;" title="${this.escapeAttr(title)}">`
         html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
         if (agent.default_avatar) {
             html += `<span class="avatar-initial">${this.escapeAttr(agent.initial)}</span>`

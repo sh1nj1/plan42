@@ -6,6 +6,7 @@ module Collavre
     COLLAVRE_STYLESHEETS = %w[
       collavre/design_tokens
       collavre/dark_mode
+      collavre/secret_fields
       collavre/gnb
       collavre/creatives
       collavre/actiontext
@@ -41,6 +42,14 @@ module Collavre
         stylesheet_link_tag(sheet, media: "print")
       end
       safe_join(tags, "\n    ")
+    end
+
+    def masked_secret_field(form, method, options = {})
+      form.text_field(method, masked_secret_field_options(options))
+    end
+
+    def masked_secret_field_tag(name, value = nil, options = {})
+      text_field_tag(name, value, masked_secret_field_options(options))
     end
 
     # Returns the body CSS class for the current user's theme.
@@ -96,6 +105,15 @@ module Collavre
     end
 
     private
+
+    def masked_secret_field_options(options)
+      options.merge(
+        autocomplete: "off",
+        autocapitalize: "none",
+        spellcheck: false,
+        class: class_names("masked-secret-field", options[:class])
+      )
+    end
 
     CSS_VARIABLE_KEY_PATTERN = /\A--[a-zA-Z0-9_-]+\z/
     CSS_VARIABLE_VALUE_PATTERN = /\A[^;}{<>"']+\z/

@@ -25,6 +25,7 @@ module Collavre
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
+    after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: %w[running delegated])
@@ -94,6 +95,33 @@ module Collavre
       broadcast_stop_button_removal if terminal_status?
     end
 
+    # What a persisted row says about whether this turn ever handed anything
+    # over — ended_without_delivering? without the transition.
+    #
+    # Asked twice: by the callback of a status change, and by
+    # RestoreDroppedDispatchesJob of a row it finds afterwards. Written once,
+    # because a sweep deciding "terminal" where the callback decides this is how
+    # a backstop comes to re-answer comments the turn had already answered.
+    def ended_undelivered?
+      payload = trigger_event_payload
+      # Asked first, so that a row carrying both records is read as undelivered.
+      # A resumed turn can legitimately carry both: an earlier attempt handed
+      # off, while a later one failed before doing so. DeliveryRecord restores
+      # that row but subtracts the comment ids the successful attempts carried,
+      # leaving only the later attempt's undelivered comments.
+      return true if status == "done" && Orchestration::DeliveryRecord.handoff_failed?(payload)
+
+      # An ending is undelivered because the payload never reached the provider,
+      # not because of the name of the ending. A turn stopped — or broken — after
+      # the handoff has been read by the agent along with everything it
+      # swallowed, and the product already shows that turn with its partial
+      # reply. Only a turn that got far enough to record the handoff is exempt;
+      # everything quieter than that still owes its dispatches back.
+      return false if Orchestration::DeliveryRecord.handed_off?(payload)
+
+      status.in?(Orchestration::DeliveryRecord::UNDELIVERED_TERMINAL_STATUSES)
+    end
+
     private
 
     def trigger_loop_candidate?
@@ -121,6 +149,69 @@ module Collavre
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    # This turn refused other dispatches on the strength of having read their
+    # comments, and then died without answering anything. Those dispatches have
+    # to come back — see Orchestration::DeliveryRecord.restore!.
+    #
+    # Only the status transition is decided here. Whether anything was actually
+    # refused is asked inside restore!, off the persisted row: the drop record
+    # is written by the refused dispatch in another process, so this object's
+    # payload predates it and a check here would read `none` on every turn that
+    # dropped something.
+    #
+    # A status callback rather than a call site: AiAgentJob's rescue and
+    # StuckDetector both end a turn this way, and only one of them runs for a
+    # process that was killed outright.
+    #
+    # `done` is an undelivered ending too when the turn recorded that its
+    # request never reached the provider: AiClient#chat catches the error and
+    # AiAgentJob finishes the task normally, so the status alone cannot say it.
+    # Read off this object rather than the row because the flag is written by
+    # this turn's own service, in this process, immediately before the status
+    # update that fires this callback — unlike DROPPED_KEY, which the refused
+    # dispatch writes from another process and restore! therefore re-reads.
+    def ended_without_delivering?
+      return false unless saved_change_to_attribute?("status")
+      return false if ended_while_worker_settles?
+
+      ended_undelivered?
+    end
+
+    # A turn ended from another process while its worker is still inside the
+    # provider call, whose own account of the handoff does not exist yet.
+    #
+    # Stop is committed from a web request, and StuckDetector can fail a running
+    # row from its recurring job. Both can beat AiAgentService's ensure, which
+    # writes whether the payload reached the provider only after the call exits.
+    # This callback fires before that evidence exists.
+    #
+    # So it declines, and the question is asked where the turn settles —
+    # AiAgentJob's teardown, once the record is written. Behind that,
+    # DeliveryRecord.restore_missed! covers an ending with no live worker to
+    # settle anything.
+    def ended_while_worker_settles?
+      return false unless status_before_last_save == "running"
+      return true if status == "cancelled"
+
+      status == "failed" &&
+        Orchestration::DeliveryRecord.worker_settling?(trigger_event_payload)
+    end
+
+    # Best effort, deliberately: this runs after the turn's own status is
+    # committed, so an exception here propagates back into the update! that
+    # ended the turn — and AiAgentJob's rescue answers that by writing `failed`
+    # over a turn that had in fact finished and answered. The restore is
+    # reconstructible from the row it was given, and
+    # DeliveryRecord.restore_missed! is what asks again.
+    def restore_undelivered_dispatches
+      Orchestration::DeliveryRecord.restore!(self)
+    rescue StandardError => e
+      Rails.logger.error(
+        "[Task] Restore failed for task #{id}: #{e.class}: #{e.message} — " \
+        "leaving it to the restore sweep"
+      )
     end
 
     def terminal_status?

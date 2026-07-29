@@ -32,6 +32,8 @@ export default class extends Controller {
     this.agentTaskPollHandle = null
     this.hasPresenceConnected = false
     this.currentUserId = document.body.dataset.currentUserId
+    this.selectedTopicId = null
+    this.mainTopicId = null
 
     this.handleInput = this.handleInput.bind(this)
     this.handleFocus = this.handleFocus.bind(this)
@@ -57,6 +59,20 @@ export default class extends Controller {
 
   handleTopicChange(event) {
     const topicId = event.detail?.topicId
+    const nextSelectedTopicId = topicId || null
+    const nextMainTopicId = event.detail?.mainTopicId || this.mainTopicId
+    const selectionChanged = String(nextSelectedTopicId || '') !== String(this.selectedTopicId || '')
+
+    if (selectionChanged) {
+      this.stoppedTyping()
+      this.clearTopicIndicators()
+    }
+
+    this.selectedTopicId = nextSelectedTopicId
+    this.mainTopicId = nextMainTopicId
+
+    if (selectionChanged) this.requestRunningAgents()
+
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -103,6 +119,8 @@ export default class extends Controller {
       this.element, 'comments--topics'
     )
     const topicId = topicsCtrl?.currentTopicId
+    this.selectedTopicId = topicId || null
+    this.mainTopicId = topicsCtrl?.mainTopicId || null
     if (topicId) {
       this.refreshChannelChips(topicId)
     } else {
@@ -174,18 +192,28 @@ export default class extends Controller {
 
   typing() {
     if (!this.presenceSubscription || this.privateCheckboxTarget?.checked) return
-    this.presenceSubscription.perform('typing')
+    const topicId = this.typingTopicId
+    if (!topicId) return
+
+    this.presenceSubscription.perform('typing', { topic_id: topicId })
     this.resetTypingTimeout()
   }
 
   stoppedTyping() {
-    if (this.presenceSubscription) {
-      this.presenceSubscription.perform('stopped_typing')
+    const topicId = this.typingTopicId
+    if (this.presenceSubscription && topicId) {
+      this.presenceSubscription.perform('stopped_typing', { topic_id: topicId })
     }
     if (this.typingTimeoutHandle) {
       clearTimeout(this.typingTimeoutHandle)
       this.typingTimeoutHandle = null
     }
+  }
+
+  requestRunningAgents() {
+    if (!this.presenceSubscription || !this.selectedTopicId) return
+
+    this.presenceSubscription.perform('running_agents', { topic_id: this.selectedTopicId })
   }
 
   loadParticipants({ closeOnForbidden = false } = {}) {
@@ -254,7 +282,9 @@ export default class extends Controller {
       this.updateReadReceiptPresence(this.currentPresentIds)
     }
     if (data.typing) {
-      const { id, name } = data.typing
+      const { id, name, topic_id: topicId } = data.typing
+      if (!this.isSelectedTopic(topicId)) return
+
       const isNewTyper = !(id in this.typingUsers)
       // The user always wants to see their OWN typing indicator the moment it
       // appears — they just started typing. Stick-to-end (which pauses while the
@@ -271,7 +301,9 @@ export default class extends Controller {
       }, TYPING_TIMEOUT)
     }
     if (data.stop_typing) {
-      const { id } = data.stop_typing
+      const { id, topic_id: topicId } = data.stop_typing
+      if (!this.isSelectedTopic(topicId)) return
+
       delete this.typingUsers[id]
       if (this.typingTimers[id]) {
         clearTimeout(this.typingTimers[id])
@@ -299,11 +331,22 @@ export default class extends Controller {
       this.refreshChannelChips(data.channel_chips.topic_id)
     }
     if (data.agent_status) {
-      const { id, name, status, task_id, creative_id: agentCreativeId } = data.agent_status
+      const { id, name, status, task_id, topic_id: topicId, creative_id: agentCreativeId } = data.agent_status
       // Only show typing indicator if agent is working on this specific creative
       if (agentCreativeId && String(agentCreativeId) !== String(this.creativeId)) {
         return
       }
+      if (!topicId) {
+        // Turns are tracked per agent as an array, so a legacy idle has to match a
+        // member — String() on the array only happens to work at length 1.
+        const activeTaskIds = this.activeAgentTasks?.[id] || []
+        const matchingLegacyIdle = status === 'idle' && task_id &&
+          activeTaskIds.some((activeTaskId) => String(activeTaskId) === String(task_id))
+        if (!matchingLegacyIdle) return
+      } else if (!this.isSelectedTopic(topicId)) {
+        return
+      }
+
       const isNewAgent = (status === 'thinking' || status === 'streaming') && !(id in this.typingUsers)
       if (LIVE_AGENT_STATUSES.has(status)) {
         this.typingUsers[id] = name
@@ -616,6 +659,26 @@ export default class extends Controller {
   clearTypingTimers() {
     Object.values(this.typingTimers).forEach((timer) => clearTimeout(timer))
     this.typingTimers = {}
+  }
+
+  // Every indicator on screen belongs to the topic being left, and the replay that
+  // follows is scoped to the new one — so the whole agent state goes, heartbeats and
+  // poll included. A surviving poll would keep resurrecting the old topic's turns.
+  clearTopicIndicators() {
+    this.resetAgentActivity()
+    this.renderTypingIndicator()
+  }
+
+  get typingTopicId() {
+    return this.selectedTopicId || this.mainTopicId
+  }
+
+  isSelectedTopic(topicId) {
+    return Boolean(
+      this.selectedTopicId &&
+      topicId &&
+      String(topicId) === String(this.selectedTopicId)
+    )
   }
 
   // ── Streaming heartbeat ─────────────────────────────────

@@ -121,6 +121,142 @@ describe('CommentsPresenceController', () => {
     expect(loadInitialComments).not.toHaveBeenCalled()
     expect(close).not.toHaveBeenCalled()
   })
+
+  test('bootstraps the selected and main topics when the popup opens', () => {
+    const refreshChannelChips = jest.spyOn(controller, 'refreshChannelChips').mockImplementation(() => {})
+    jest.spyOn(application, 'getControllerForElementAndIdentifier').mockReturnValue({
+      currentTopicId: '45',
+      mainTopicId: '10',
+    })
+
+    controller.bootstrapChannelChips()
+
+    expect(controller.selectedTopicId).toBe('45')
+    expect(controller.mainTopicId).toBe('10')
+    expect(refreshChannelChips).toHaveBeenCalledWith('45')
+  })
+
+  test('clears topic timers when the popup closes', () => {
+    const resetAgentActivity = jest.spyOn(controller, 'resetAgentActivity').mockImplementation(() => {})
+
+    controller.onPopupClosed()
+
+    expect(resetAgentActivity).toHaveBeenCalled()
+  })
+
+  test('sends typing lifecycle with the selected topic', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = '45'
+
+    controller.typing()
+    controller.stoppedTyping()
+
+    expect(perform).toHaveBeenNthCalledWith(1, 'typing', { topic_id: '45' })
+    expect(perform).toHaveBeenNthCalledWith(2, 'stopped_typing', { topic_id: '45' })
+  })
+
+  test('does not request running agents without a presence subscription', () => {
+    controller.selectedTopicId = '45'
+
+    controller.requestRunningAgents()
+
+    expect(controller.presenceSubscription).toBeNull()
+  })
+
+  test('sends All Messages input to Main but does not render topic indicators there', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = null
+    controller.mainTopicId = '10'
+
+    controller.typing()
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '10' } })
+
+    expect(perform).toHaveBeenCalledWith('typing', { topic_id: '10' })
+    expect(controller.typingUsers).toEqual({})
+    controller.stoppedTyping()
+  })
+
+  test('shows typing only for the selected topic', () => {
+    controller.selectedTopicId = '10'
+
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '11' } })
+    expect(controller.typingUsers).toEqual({})
+
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '10' } })
+    expect(controller.typingUsers).toEqual({ 5: 'Alice' })
+  })
+
+  test('ignores stop events from another topic', () => {
+    controller.selectedTopicId = '10'
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '10' } })
+
+    controller.handlePresenceMessage({ stop_typing: { id: 5, topic_id: '11' } })
+    expect(controller.typingUsers).toEqual({ 5: 'Alice' })
+
+    controller.handlePresenceMessage({ stop_typing: { id: 5, topic_id: '10' } })
+    expect(controller.typingUsers).toEqual({})
+  })
+
+  test('ignores agent idle events from another topic and mismatched legacy tasks', () => {
+    controller.selectedTopicId = '10'
+    const status = {
+      id: 9,
+      name: 'Agent',
+      status: 'thinking',
+      task_id: 99,
+      creative_id: '123',
+      topic_id: '10',
+    }
+    controller.handlePresenceMessage({ agent_status: status })
+
+    controller.handlePresenceMessage({
+      agent_status: { ...status, status: 'idle', topic_id: '11' },
+    })
+    expect(controller.typingUsers).toEqual({ 9: 'Agent' })
+
+    const { topic_id: _topicId, ...legacyStatus } = status
+    controller.handlePresenceMessage({
+      agent_status: { ...legacyStatus, status: 'idle', task_id: 100 },
+    })
+    expect(controller.typingUsers).toEqual({ 9: 'Agent' })
+
+    controller.handlePresenceMessage({
+      agent_status: { ...legacyStatus, status: 'idle' },
+    })
+    expect(controller.typingUsers).toEqual({})
+  })
+
+  test('clears typing and agent state immediately when switching topics', () => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.selectedTopicId = '10'
+    controller.mainTopicId = '1'
+    controller.typingUsers = { 5: 'Alice', 9: 'Agent' }
+    controller.activeAgentTasks = { 9: 99 }
+    controller.typingTimers = { 5: setTimeout(() => {}, 1000) }
+    controller.streamingHeartbeatTimers = { 9: setTimeout(() => {}, 1000) }
+    controller.startAgentTaskPoll()
+    jest.spyOn(controller, 'refreshChannelChips').mockImplementation(() => {})
+
+    controller.handleTopicChange({ detail: { topicId: '11', mainTopicId: '1' } })
+
+    expect(perform).toHaveBeenCalledWith('stopped_typing', { topic_id: '10' })
+    expect(perform).toHaveBeenCalledWith('running_agents', { topic_id: '11' })
+    expect(controller.selectedTopicId).toBe('11')
+    expect(controller.typingUsers).toEqual({})
+    expect(controller.activeAgentTasks).toEqual({})
+    expect(controller.typingTimers).toEqual({})
+    expect(controller.streamingHeartbeatTimers).toEqual({})
+    // A poll left running would keep asking about the old topic's turns and
+    // re-render an indicator the user just navigated away from.
+    expect(controller.agentTaskPollHandle).toBeNull()
+
+    perform.mockClear()
+    controller.handleTopicChange({ detail: { topicId: '11', mainTopicId: '1' } })
+    expect(perform).not.toHaveBeenCalled()
+  })
 })
 
 describe('CommentsPresenceController typing-row horizontal scroll', () => {
@@ -169,6 +305,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     const el = document.getElementById('comments-popup')
     controller = application.getControllerForElementAndIdentifier(el, 'comments--presence')
     controller.creativeId = '123'
+    controller.selectedTopicId = '11'
     row = el.querySelector('#typing-scroll-viewport')
   })
 
@@ -182,7 +319,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
   test('auto-scrolls a new typer into view when parked at the right edge', () => {
     setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 200 }) // at end
 
-    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '11' } })
 
     expect(scrollLeftValue).toBe(300)
   })
@@ -190,20 +327,20 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
   test('does NOT scroll when the user has scrolled back to look at earlier items', () => {
     setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 }) // scrolled back
 
-    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '11' } })
 
     expect(scrollLeftValue).toBe(0)
   })
 
   test('does not re-scroll on repeat typing pings from the same user (not a new item)', () => {
     setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 200 })
-    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '11' } })
     expect(scrollLeftValue).toBe(300)
 
     // User scrolls back; a heartbeat ping for the same (already-shown) typer
     // must not yank them to the end again.
     scrollLeftValue = 0
-    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice' } })
+    controller.handlePresenceMessage({ typing: { id: 5, name: 'Alice', topic_id: '11' } })
     expect(scrollLeftValue).toBe(0)
   })
 
@@ -213,20 +350,20 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     // always want to see their own indicator, so stick-to-end must not suppress it.
     setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 })
 
-    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me', topic_id: '11' } })
 
     expect(scrollLeftValue).toBe(300)
   })
 
   test('does not re-scroll on repeat self typing pings (only the first appearance forces scroll)', () => {
     setGeometry({ clientWidth: 100, scrollWidth: 300, scrollLeft: 0 })
-    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me', topic_id: '11' } })
     expect(scrollLeftValue).toBe(300)
 
     // A heartbeat ping for the same (already-shown) self typer while scrolled
     // back must not yank to the end again — only the first appearance forces it.
     scrollLeftValue = 0
-    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me' } })
+    controller.handlePresenceMessage({ typing: { id: 7, name: 'Me', topic_id: '11' } })
     expect(scrollLeftValue).toBe(0)
   })
 
@@ -346,7 +483,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
 
   describe('agent_status for a task paused on approval', () => {
     const agentStatus = (status) => ({
-      agent_status: { id: 9, name: 'Agent', status, task_id: 55, creative_id: '123' },
+      agent_status: { id: 9, name: 'Agent', status, task_id: 55, creative_id: '123', topic_id: '11' },
     })
 
     beforeEach(() => {
@@ -394,7 +531,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
 
   describe('indicator label per agent state', () => {
     const agentStatus = (status) => ({
-      agent_status: { id: 9, name: 'Agent', status, task_id: 55, creative_id: '123' },
+      agent_status: { id: 9, name: 'Agent', status, task_id: 55, creative_id: '123', topic_id: '11' },
     })
     const label = () => controller.typingIndicatorTarget.lastChild.textContent
 
@@ -450,7 +587,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     // turn stays labelled as typing forever once its stream goes quiet.
     test('one turn ending leaves the other turn able to degrade to waiting', () => {
       const statusFor = (status, taskId) => ({
-        agent_status: { id: 9, name: 'Agent', status, task_id: taskId, creative_id: '123' },
+        agent_status: { id: 9, name: 'Agent', status, task_id: taskId, creative_id: '123', topic_id: '11' },
       })
       jest.useFakeTimers()
       try {
@@ -488,7 +625,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
       jest.spyOn(controller, 'bootstrapChannelChips').mockImplementation(() => {})
 
       controller.handlePresenceMessage({
-        agent_status: { id: 9, name: 'Agent', status: 'streaming', task_id: 55, creative_id: '123' },
+        agent_status: { id: 9, name: 'Agent', status: 'streaming', task_id: 55, creative_id: '123', topic_id: '11' },
       })
       expect(controller.activeAgentTasks['9']).toEqual([55])
       expect(controller.agentTaskPollHandle).not.toBeNull()
@@ -529,7 +666,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
 
     const arrive = (status, { agentId = 9, taskId = 55, name = 'Agent' } = {}) =>
       controller.handlePresenceMessage({
-        agent_status: { id: agentId, name, status, task_id: taskId, creative_id: '123' },
+        agent_status: { id: agentId, name, status, task_id: taskId, creative_id: '123', topic_id: '11' },
       })
 
     test('the Stop button cancels the turn and takes the indicator down with it', async () => {
@@ -619,7 +756,7 @@ describe('CommentsPresenceController typing-row horizontal scroll', () => {
     beforeEach(() => {
       jest.spyOn(controller, 'unsubscribe').mockImplementation(() => {})
       controller.handlePresenceMessage({
-        agent_status: { id: 9, name: 'Agent', status: 'streaming', task_id: 55, creative_id: '123' },
+        agent_status: { id: 9, name: 'Agent', status: 'streaming', task_id: 55, creative_id: '123', topic_id: '11' },
       })
       expect(controller.agentTaskPollHandle).not.toBeNull()
       expect(controller.streamingHeartbeatTimers['9']).toBeDefined()

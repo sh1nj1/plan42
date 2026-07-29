@@ -37,7 +37,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
 
     assert_difference "Comment.count", 1 do
-      post "/github/webhook",
+      post "/github/webhooks",
            params: body,
            headers: {
              "CONTENT_TYPE" => "application/json",
@@ -62,7 +62,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     dispatched = false
 
     Collavre::SystemEvents::Dispatcher.stub :dispatch, ->(*_args) { dispatched = true } do
-      post "/github/webhook",
+      post "/github/webhooks",
            params: body,
            headers: {
              "CONTENT_TYPE" => "application/json",
@@ -84,7 +84,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
 
     Rails.application.stub :credentials, OpenStruct.new(github: { webhook_secret: fallback_secret }) do
       assert_no_difference "Comment.count" do
-        post "/github/webhook",
+        post "/github/webhooks",
              params: body,
              headers: {
                "CONTENT_TYPE" => "application/json",
@@ -110,7 +110,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     body = push_payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
 
-    post "/github/webhook",
+    post "/github/webhooks",
          params: body,
          headers: {
            "CONTENT_TYPE" => "application/json",
@@ -131,7 +131,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', 'wrong-secret', body)}"
 
     assert_no_difference "Comment.count" do
-      post "/github/webhook",
+      post "/github/webhooks",
            params: body,
            headers: {
              "CONTENT_TYPE" => "application/json",
@@ -149,7 +149,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, form_body)}"
 
     assert_difference "Comment.count", 1 do
-      post "/github/webhook",
+      post "/github/webhooks",
            params: { payload: payload_json },
            headers: {
              "CONTENT_TYPE" => "application/x-www-form-urlencoded",
@@ -165,7 +165,7 @@ class CollavreGithub::WebhooksControllerTest < ActionDispatch::IntegrationTest
     body = @payload.to_json
     signature = "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', @link.webhook_secret, body)}"
 
-    post "/github/webhook",
+    post "/github/webhooks",
          params: body,
          headers: {
            "CONTENT_TYPE" => "application/json",

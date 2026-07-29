@@ -342,6 +342,224 @@ module Collavre
         assert_not_includes history, "secret-payload",
           "approval-action comment content must never enter chat history"
       end
+
+      # Comments folded into this turn by Orchestration::TaskCoalescer belong in
+      # the trigger, not in chat history: a session-backed agent receives only
+      # the :trigger message (SessionContextResolver#incremental_payload).
+      test "merged comments are folded into the trigger message" do
+        merged = @creative.comments.create!(
+          content: "earlier burst message", user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        messages = builder.build[:messages]
+
+        trigger = messages.find { |m| m[:kind] == :trigger }
+        assert_includes trigger[:parts].first[:text], "earlier burst message"
+        assert_includes trigger[:parts].first[:text], @comment.content
+      end
+
+      test "merged comments are not repeated in chat history" do
+        merged = @creative.comments.create!(
+          content: "earlier burst message", user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        history = builder.build[:messages]
+          .select { |m| m[:kind] == :chat_history }
+          .map { |m| m[:parts].first[:text] }
+          .join("\n")
+
+        assert_not_includes history, "earlier burst message",
+          "a comment already inlined in the trigger must not be sent twice"
+      end
+
+      # The exclusion above pairs with the trigger actually carrying the comment.
+      # It used to be the other way round for an oversized burst: the trigger
+      # dropped its oldest blocks and history was expected to carry them. It
+      # cannot be relied on to — history applies the same size budget across the
+      # whole conversation and never carries attachments — so the trigger keeps
+      # every merged comment and shrinks them, and the exclusion covers all of
+      # them with none left to double-send.
+      test "an oversized burst keeps every merged comment in the trigger, none in history" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
+        older = @creative.comments.create!(
+          content: "OLDER #{'D' * 150}", user: @user, topic_id: @comment.topic_id
+        )
+        newer = @creative.comments.create!(
+          content: "NEWER #{'K' * 150}", user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ older.id, newer.id ]
+        }
+
+        messages = MessageBuilder.new(
+          agent: @agent, context: context, original_comment: @comment
+        ).build[:messages]
+        trigger = messages.find { |m| m[:kind] == :trigger }[:parts].first[:text]
+        history = messages.select { |m| m[:kind] == :chat_history }
+                          .map { |m| m[:parts].first[:text] }.join("\n")
+
+        assert_includes trigger, "NEWER", "the newest merged comment stays in the trigger"
+        assert_includes trigger, "OLDER",
+          "a comment cut from the trigger reaches the agent through no channel at all"
+        assert_not_includes history, "OLDER",
+          "a comment inlined in the trigger must not be sent twice"
+      end
+
+      test "merged comments carry their image attachments into the trigger" do
+        merged = @creative.comments.create!(
+          content: "with a picture", user: @user, topic_id: @comment.topic_id
+        )
+        merged.images.attach(
+          io: StringIO.new(one_pixel_png), filename: "pixel.png", content_type: "image/png"
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        trigger = builder.build[:messages].find { |m| m[:kind] == :trigger }
+
+        assert_equal 1, trigger[:parts].count { |p| p.key?(:image) },
+          "an image posted in a coalesced comment must still reach the agent"
+      end
+
+      # The history limit counts *delivered* history. Merged comments move into
+      # the trigger, so letting them occupy history slots hands the agent a burst
+      # with no conversation behind it — and, when they fill the limit outright,
+      # flags the turn as first_message.
+      test "coalesced comments do not crowd older messages out of chat history" do
+        older = @creative.comments.create!(
+          content: "older context worth keeping", user: @user, topic_id: @comment.topic_id
+        )
+        burst = 3.times.map do |i|
+          @creative.comments.create!(
+            content: "burst message #{i}", user: @user, topic_id: @comment.topic_id
+          )
+        end
+        anchor = burst.last
+
+        context = {
+          "comment" => { "id" => anchor.id, "content" => anchor.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => burst.map(&:id)
+        }
+
+        result = @agent.stub(:chat_history_limit, 3) do
+          MessageBuilder.new(agent: @agent, context: context, original_comment: anchor).build
+        end
+        history = result[:messages]
+          .select { |m| m[:kind] == :chat_history }
+          .map { |m| m[:parts].first[:text] }
+          .join("\n")
+
+        assert_includes history, "older context worth keeping",
+          "eligible older messages must backfill the slots merged comments vacate"
+        assert_not result[:first_message],
+          "a burst that fills the limit must not make the turn look like a first message"
+        assert_not_includes history, "burst message",
+          "merged comments still belong in the trigger, not in history"
+      end
+
+      # An absorbed comment's creative links have to be resolved too: the merged
+      # text reaches the agent, so the subtree it points at must reach it as well.
+      test "creative links in coalesced comments are injected as referenced context" do
+        other_creative = Creative.create!(
+          description: "<p>Linked Project</p>", user: @user, progress: 0.0
+        )
+        merged = @creative.comments.create!(
+          content: "look at [Linked Project](/creatives/#{other_creative.id})",
+          user: @user, topic_id: @comment.topic_id
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        messages = MessageBuilder.new(
+          agent: @agent, context: context, original_comment: @comment
+        ).build[:messages]
+
+        referenced = messages.find do |m|
+          m[:kind] == :referenced_creative &&
+            m[:parts].first[:text].include?("id: #{other_creative.id}")
+        end
+        assert_not_nil referenced,
+          "a creative referenced only by an absorbed comment must still be injected"
+        assert_includes referenced[:parts].first[:text], "Linked Project"
+      end
+
+      # The whole-turn version of the trigger budget: dropping a merged block was
+      # justified by the history window carrying it instead, but history applies
+      # the *same* size budget across the preceding conversation and cuts from its
+      # newest end — which is exactly where a just-dropped burst comment sits. So
+      # a block dropped from the trigger can reach the agent through no channel at
+      # all. Asserted end to end over the built messages, because neither
+      # component is wrong on its own; the loss only exists between them.
+      test "a merged comment cut from the trigger is not lost from the turn as well" do
+        @agent.update!(agent_conf: "context:\n  chat_history_size: 200")
+        topic = @creative.topics.create!(name: "Budget burst", user: @user)
+        bodies = %w[OLDEST MIDDLE NEWEST].map { |tag| "#{tag} #{tag[0] * 150}" }
+        merged = bodies.map do |body|
+          @creative.comments.create!(content: body, user: @user, topic: topic, skip_dispatch: true)
+        end
+        anchor = @creative.comments.create!(
+          content: "anchor", user: @user, topic: topic, skip_dispatch: true
+        )
+
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "id" => anchor.id, "content" => anchor.content },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => merged.map(&:id)
+        }
+
+        messages = MessageBuilder.new(
+          agent: @agent, context: context, original_comment: anchor
+        ).build[:messages]
+        delivered = messages.flat_map { |m| Array(m[:parts]).filter_map { |p| p[:text] } }.join("\n")
+
+        %w[OLDEST MIDDLE NEWEST].each do |tag|
+          assert_includes delivered, tag,
+                          "#{tag} reached the agent through neither the trigger nor history"
+        end
+      end
+
+      test "no merged ids leaves the trigger message unchanged" do
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id }
+        }
+
+        builder = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment)
+        trigger = builder.build[:messages].find { |m| m[:kind] == :trigger }
+
+        assert_equal @comment.content, trigger[:parts].first[:text]
+      end
+
+      private
+
+      def one_pixel_png
+        Base64.decode64(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+      end
     end
   end
 end
