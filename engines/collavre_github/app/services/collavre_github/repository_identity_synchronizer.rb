@@ -116,6 +116,11 @@ module CollavreGithub
 
         candidate_ids = [ creative.id ] + creative.ancestors.pluck(:id)
         next if (creative_ids & candidate_ids).empty?
+        next if RepositoryLink.conflicting_repository_in_scope?(
+          creative: creative,
+          full_name: old_name,
+          repository_id: repository_id
+        )
 
         channel.update!(config: channel.config.merge("repo_full_name" => full_name))
       end

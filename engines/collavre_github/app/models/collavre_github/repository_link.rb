@@ -52,6 +52,21 @@ module CollavreGithub
       name ? where("LOWER(repository_full_name) = ?", name) : none
     end
 
+    # A parent link normally applies to every descendant, but a descendant may
+    # carry its own authoritative link for a different repository that reused
+    # the same name. In that case the descendant's channels belong to the
+    # conflicting repository and must not be renamed through the parent.
+    def self.conflicting_repository_in_scope?(creative:, full_name:, repository_id:)
+      return false if creative.blank? || full_name.blank? || repository_id.blank?
+
+      creative_ids = [ creative.id ] + creative.ancestors.pluck(:id)
+      where(creative_id: creative_ids)
+        .where("LOWER(repository_full_name) = ?", full_name.to_s.downcase)
+        .where.not(repository_id: nil)
+        .where.not(repository_id: repository_id)
+        .exists?
+    end
+
     def markdown_sync_branch
       sync_branch.presence || "main"
     end

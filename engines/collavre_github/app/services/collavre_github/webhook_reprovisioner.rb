@@ -40,26 +40,40 @@ module CollavreGithub
     end
 
     def reprovision(repository_name)
-      link = CollavreGithub::RepositoryLink
+      links = CollavreGithub::RepositoryLink
         .where("LOWER(repository_full_name) = ?", repository_name)
         .order(:id)
-        .first
-      return :failed unless link.github_account
+        .to_a
+      failed = false
 
-      link = establish_repository_identity(link)
-      return :skipped_unverified unless link
+      links.each do |candidate|
+        unless candidate.github_account
+          failed = true
+          next
+        end
 
-      result = CollavreGithub::WebhookProvisioner.ensure_for_links(
-        account: link.github_account,
-        links: [ link ],
-        webhook_url: webhook_url
-      )
-      result.first&.last || :failed
-    rescue => e
+        link = establish_repository_identity(candidate)
+        next unless link
+
+        result = CollavreGithub::WebhookProvisioner.ensure_for_links(
+          account: link.github_account,
+          links: [ link ],
+          webhook_url: webhook_url
+        )
+        return result.first&.last || :failed
+      rescue => e
+        failed = true
+        log_failure(repository_name, e)
+      end
+
+      failed ? :failed : :skipped_unverified
+    end
+
+    def log_failure(repository_name, error)
       Rails.logger.warn(
-        "[CollavreGithub::WebhookReprovisioner] #{repository_name} failed: #{e.class}: #{e.message}"
+        "[CollavreGithub::WebhookReprovisioner] #{repository_name} failed: " \
+        "#{error.class}: #{error.message}"
       )
-      :failed
     end
 
     def establish_repository_identity(link)

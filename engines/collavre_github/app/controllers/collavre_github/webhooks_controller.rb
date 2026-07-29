@@ -766,7 +766,7 @@ module CollavreGithub
         end
       end
 
-      rename_channels(old_full_name, new_full_name, renamed_creative_ids) if old_full_name
+      rename_channels(old_full_name, new_full_name, renamed_creative_ids, repo_id) if old_full_name
       Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
     end
 
@@ -790,11 +790,16 @@ module CollavreGithub
 
     # Channels carry their own copy of the repo name (dispatch matches on it),
     # so renaming the links alone would leave every attached PR chip orphaned.
-    def rename_channels(old_full_name, new_full_name, renamed_creative_ids)
+    def rename_channels(old_full_name, new_full_name, renamed_creative_ids, repository_id)
       old = old_full_name.downcase
       GithubPrChannel.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == old
         next unless channel_in_repo_scope?(channel, renamed_creative_ids)
+        next if CollavreGithub::RepositoryLink.conflicting_repository_in_scope?(
+          creative: channel.topic&.creative,
+          full_name: old_full_name,
+          repository_id: repository_id
+        )
 
         begin
           channel.update!(config: channel.config.merge("repo_full_name" => new_full_name))

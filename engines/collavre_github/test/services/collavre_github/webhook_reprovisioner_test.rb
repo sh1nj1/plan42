@@ -140,6 +140,18 @@ module CollavreGithub
         topic: topic,
         config: { "repo_full_name" => "owner/other", "pr_number" => 9 }
       )
+      child = Collavre::Creative.create!(parent: @other.creative, user: @user, description: "Child")
+      CollavreGithub::RepositoryLink.create!(
+        creative: child,
+        github_account: @account,
+        repository_full_name: "owner/other",
+        repository_id: 999
+      )
+      child_topic = Collavre::Topic.create!(creative: child, user: @user, name: "Conflicting repository")
+      child_channel = GithubPrChannel.create!(
+        topic: child_topic,
+        config: { "repo_full_name" => "owner/other", "pr_number" => 10 }
+      )
       client = IdentityClient.new(
         hooks: [ Hook.new(77) ],
         repository_id: 202,
@@ -160,6 +172,7 @@ module CollavreGithub
       assert_equal 202, @other.reload.repository_id
       assert_equal "owner/renamed", @other.repository_full_name
       assert_equal "owner/renamed", channel.reload.repo_full_name
+      assert_equal "owner/other", child_channel.reload.repo_full_name
     end
 
     test "skips an ID-backed stale name that now resolves to another repository" do
@@ -182,6 +195,40 @@ module CollavreGithub
       assert_empty calls
       assert_equal 202, @other.reload.repository_id
       assert_equal "owner/other", @other.repository_full_name
+    end
+
+    test "tries later same-name links when the first ID-backed candidate is stale" do
+      @primary.destroy!
+      @sibling.destroy!
+      @other.destroy!
+      stale = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:tshirt),
+        github_account: @account,
+        repository_full_name: "owner/shared",
+        repository_id: 111
+      )
+      valid = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:childless_creative),
+        github_account: @account,
+        repository_full_name: "owner/shared",
+        repository_id: 222
+      )
+      calls = []
+      provision = lambda do |**kwargs|
+        calls << kwargs
+        [ [ kwargs[:links].first, :updated ] ]
+      end
+      client = IdentityClient.new(hooks: [], repository_id: 222)
+
+      results = CollavreGithub::Client.stub(:new, client) do
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          CollavreGithub::WebhookReprovisioner.call(webhook_url: "https://example.com/github/webhooks")
+        end
+      end
+
+      assert_equal [ [ "owner/shared", :updated ] ], results
+      assert_equal [ valid ], calls.map { |call| call[:links].first }
+      assert_equal 111, stale.reload.repository_id
     end
 
     test "skips a name-only legacy repository with no registered hook" do

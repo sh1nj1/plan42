@@ -355,6 +355,31 @@ module CollavreGithub
       assert_equal OLD_NAME, other_channel.reload.repo_full_name
     end
 
+    test "repository.renamed does not capture a descendant channel linked to a conflicting id" do
+      child = Collavre::Creative.create!(parent: @creative, user: @user, description: "Child")
+      CollavreGithub::RepositoryLink.create!(
+        creative: child,
+        github_account: @account,
+        repository_full_name: OLD_NAME,
+        repository_id: 777
+      )
+      child_topic = Collavre::Topic.create!(creative: child, user: @user, name: "Other repository")
+      child_channel = GithubPrChannel.create!(
+        topic: child_topic,
+        config: { "repo_full_name" => OLD_NAME, "pr_number" => 100 }
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_equal NEW_NAME, @channel.reload.repo_full_name
+      assert_equal OLD_NAME, child_channel.reload.repo_full_name
+    end
+
     test "repository.renamed repairs an unbackfilled sibling with the verified secret" do
       other_creative = creatives(:childless_creative)
       sibling = CollavreGithub::RepositoryLink.create!(
