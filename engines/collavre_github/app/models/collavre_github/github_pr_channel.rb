@@ -74,6 +74,14 @@ module CollavreGithub
         .first
 
       if survivor
+        if preferred_over?(survivor)
+          self.class.transaction do
+            survivor.destroy!
+            update!(config: config.merge("repo_full_name" => canonical_full_name))
+          end
+          return self
+        end
+
         survivor.update!(
           config: survivor.config.merge("repo_full_name" => canonical_full_name)
         )
@@ -129,6 +137,17 @@ module CollavreGithub
     end
 
     private
+
+    def preferred_over?(other)
+      (lifecycle_priority(self) <=> lifecycle_priority(other)) == 1
+    end
+
+    def lifecycle_priority(channel)
+      [
+        channel.active? ? 1 : 0,
+        channel.dismissed? ? 0 : 1
+      ]
+    end
 
     def handle_pull_request(payload)
       return nil unless payload["action"] == "closed"

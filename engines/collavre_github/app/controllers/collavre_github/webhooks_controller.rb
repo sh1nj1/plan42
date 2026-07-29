@@ -614,7 +614,10 @@ module CollavreGithub
       links = links_for(payload).to_a
       return links if id.blank?
 
-      links.select { |link| link.repository_id.to_s == id.to_s }
+      links.select do |link|
+        link.repository_id.to_s == id.to_s &&
+          link.repository_full_name.to_s.downcase == full_name
+      end
     end
 
     def find_repository_link(payload)

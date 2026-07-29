@@ -103,6 +103,32 @@ module CollavreGithub
       assert_response :ok
     end
 
+    test "identity-conflicted stale links are excluded from markdown fan-out" do
+      @link.update!(markdown_sync_enabled: true)
+      CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME,
+        repository_id: 777
+      )
+      sync_jobs = []
+
+      CollavreGithub::MarkdownSyncJob.stub(
+        :perform_later,
+        ->(*args) { sync_jobs << args }
+      ) do
+        post_event("push", {
+          ref: "refs/heads/main",
+          repository: { id: REPO_ID, full_name: NEW_NAME }
+        })
+      end
+
+      assert_response :ok
+      assert_empty sync_jobs
+      assert_equal OLD_NAME, @link.reload.repository_full_name
+      assert_equal REPO_ID, @link.repository_id
+    end
+
     test "ID-backed missed-rename repair does not capture a NULL-id same-secret link" do
       other_creative = creatives(:childless_creative)
       legacy = CollavreGithub::RepositoryLink.create!(
