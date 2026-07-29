@@ -652,31 +652,65 @@ module CollavreGithub
       from = payload.dig("changes", "repository", "name", "from")
       old_full_name = ("#{owner}/#{from}" if owner.present? && from.present?)
 
-      links = CollavreGithub::RepositoryLink.for_repository(id: repo_id, full_name: old_full_name)
+      # An authenticated rename must never mutate every row carrying the old
+      # name. GitHub allows that name to be reused by another repository after
+      # the rename, and a delayed/redelivered event would otherwise capture the
+      # new repository's links and channels too.
+      #
+      # ID-backed rows are authoritative. The legacy fallback is restricted to
+      # unbackfilled rows carrying the SAME secret that authenticated this
+      # delivery; this preserves fan-out for a half-backfilled repository
+      # without trusting the now-reusable name by itself.
+      links = repo_id.present? ? CollavreGithub::RepositoryLink.where(repository_id: repo_id).to_a : []
+      if old_full_name.present? && webhook_secret.present?
+        legacy = CollavreGithub::RepositoryLink
+          .where(repository_id: nil)
+          .where("LOWER(repository_full_name) = ?", old_full_name.downcase)
+          .select { |link| secrets_match?(link.webhook_secret, webhook_secret) }
+        links.concat(legacy)
+      end
+      links.uniq!(&:id)
+
+      renamed_creative_ids = []
       links.each do |link|
-        next if link.repository_full_name == new_full_name
+        if link.repository_full_name == new_full_name && link.repository_id.to_s == repo_id.to_s
+          renamed_creative_ids << link.creative_id
+          next
+        end
 
         begin
           link.update_columns(repository_full_name: new_full_name, repository_id: repo_id)
+          renamed_creative_ids << link.creative_id
         rescue ActiveRecord::RecordNotUnique
           # The creative is already linked to the repository under its new
-          # name. Nothing to rename into; the surviving row is the correct one.
-          Rails.logger.warn(
-            "[CollavreGithub] rename skipped for link #{link.id}: #{new_full_name} already linked to creative #{link.creative_id}"
-          )
+          # name. Only treat that row as the same repository when its stable id
+          # agrees; otherwise leave both it and the creative's channels alone.
+          survivor = CollavreGithub::RepositoryLink
+            .where(creative_id: link.creative_id)
+            .where("LOWER(repository_full_name) = ?", new_full_name.downcase)
+            .first
+          if survivor&.repository_id.to_s == repo_id.to_s
+            renamed_creative_ids << link.creative_id
+          else
+            Rails.logger.warn(
+              "[CollavreGithub] rename collision for link #{link.id}: #{new_full_name} in " \
+              "creative #{link.creative_id} belongs to repository #{survivor&.repository_id.inspect}"
+            )
+          end
         end
       end
 
-      rename_channels(old_full_name, new_full_name) if old_full_name
+      rename_channels(old_full_name, new_full_name, renamed_creative_ids) if old_full_name
       Rails.logger.info("[CollavreGithub] repository renamed #{old_full_name.inspect} -> #{new_full_name}")
     end
 
     # Channels carry their own copy of the repo name (dispatch matches on it),
     # so renaming the links alone would leave every attached PR chip orphaned.
-    def rename_channels(old_full_name, new_full_name)
+    def rename_channels(old_full_name, new_full_name, renamed_creative_ids)
       old = old_full_name.downcase
       GithubPrChannel.find_each do |channel|
         next unless channel.repo_full_name.to_s.downcase == old
+        next unless channel_in_repo_scope?(channel, renamed_creative_ids)
 
         begin
           channel.update!(config: channel.config.merge("repo_full_name" => new_full_name))
@@ -686,6 +720,14 @@ module CollavreGithub
           )
         end
       end
+    end
+
+    def secrets_match?(left, right)
+      left = left.to_s
+      right = right.to_s
+      return false if left.bytesize != right.bytesize
+
+      ActiveSupport::SecurityUtils.secure_compare(left, right)
     end
 
     # How long a channel stays quiet after announcing a rejected delivery.

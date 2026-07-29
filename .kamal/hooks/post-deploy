@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+# Rollbacks can target an image created before the reconciliation script
+# existed. Only new deploy/setup runs need to apply the current subscription
+# contract to GitHub hooks that predate it.
+case "${KAMAL_COMMAND:-}" in
+  deploy|redeploy|setup) ;;
+  *) exit 0 ;;
+esac
+
+./bin/kamal app exec --primary --reuse "bin/rails runner script/reprovision_github_webhooks"

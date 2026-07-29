@@ -1,0 +1,8 @@
+results = CollavreGithub::WebhookReprovisioner.call
+
+results.each do |repository, status|
+  puts "#{repository}: #{status}"
+end
+
+failed = results.select { |_repository, status| status == :failed }
+abort "GitHub webhook reprovisioning failed for: #{failed.map(&:first).join(", ")}" if failed.any?
