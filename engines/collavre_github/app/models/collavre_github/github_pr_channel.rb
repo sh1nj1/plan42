@@ -2,6 +2,8 @@ module CollavreGithub
   class GithubPrChannel < Collavre::Channel
     self.table_name = "channels"
 
+    after_destroy_commit :broadcast_chips_changed
+
     def repo_full_name
       config["repo_full_name"]
     end
@@ -56,6 +58,31 @@ module CollavreGithub
       value = value.to_s
       raise ArgumentError, "Invalid pr_state: #{value.inspect}" unless PR_STATES.include?(value)
       self.config = config.merge("pr_state" => value)
+    end
+
+    # Keep a single monitor when identity repair meets a channel that a user
+    # already attached under the canonical repository name. The explicit
+    # canonical channel survives; topic comments are not owned by channels, so
+    # removing the obsolete routing row loses no timeline content.
+    def synchronize_repository_name!(canonical_full_name)
+      return self if repo_full_name == canonical_full_name
+
+      survivor = self.class
+        .where(topic_id: topic_id, pr_number: pr_number)
+        .where("LOWER(repo_full_name) = ?", canonical_full_name.to_s.downcase)
+        .where.not(id: id)
+        .first
+
+      if survivor
+        survivor.update!(
+          config: survivor.config.merge("repo_full_name" => canonical_full_name)
+        )
+        destroy!
+        survivor
+      else
+        update!(config: config.merge("repo_full_name" => canonical_full_name))
+        self
+      end
     end
 
     def attached_message

@@ -802,7 +802,7 @@ module CollavreGithub
         )
 
         begin
-          channel.update!(config: channel.config.merge("repo_full_name" => new_full_name))
+          channel.synchronize_repository_name!(new_full_name)
         rescue => e
           Rails.logger.error(
             "[CollavreGithub] rename failed for channel #{channel.id}: #{e.class}: #{e.message}"

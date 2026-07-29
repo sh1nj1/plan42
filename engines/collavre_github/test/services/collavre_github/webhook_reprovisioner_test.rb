@@ -175,6 +175,43 @@ module CollavreGithub
       assert_equal "owner/other", child_channel.reload.repo_full_name
     end
 
+    test "merges an old-name channel when the canonical channel already exists" do
+      @primary.destroy!
+      @sibling.destroy!
+      topic = Collavre::Topic.create!(creative: @other.creative, user: @user, name: "Duplicate")
+      obsolete = GithubPrChannel.create!(
+        topic: topic,
+        config: { "repo_full_name" => "owner/other", "pr_number" => 9 }
+      )
+      survivor = GithubPrChannel.create!(
+        topic: topic,
+        config: {
+          "repo_full_name" => "OWNER/RENAMED",
+          "pr_number" => 9,
+          "ignore_actor_logins" => [ "existing-bot" ]
+        }
+      )
+      client = IdentityClient.new(
+        hooks: [],
+        repository_id: 202,
+        repository_full_name: "owner/renamed"
+      )
+      provision = ->(**kwargs) { [ [ kwargs[:links].first, :updated ] ] }
+
+      results = CollavreGithub::Client.stub(:new, client) do
+        CollavreGithub::WebhookProvisioner.stub(:ensure_for_links, provision) do
+          CollavreGithub::WebhookReprovisioner.call(webhook_url: "https://example.com/github/webhooks")
+        end
+      end
+
+      assert_equal [ [ "owner/other", :updated ] ], results
+      assert_not GithubPrChannel.exists?(obsolete.id)
+      assert GithubPrChannel.exists?(survivor.id)
+      assert_equal [ survivor.id ],
+        GithubPrChannel.where(topic: topic, repo_full_name: "owner/renamed", pr_number: 9).pluck(:id)
+      assert_equal [ "existing-bot" ], survivor.reload.config["ignore_actor_logins"]
+    end
+
     test "skips an ID-backed stale name that now resolves to another repository" do
       @primary.destroy!
       @sibling.destroy!

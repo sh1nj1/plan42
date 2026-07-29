@@ -291,6 +291,25 @@ module CollavreGithub
       assert_equal NEW_NAME, @channel.reload.repo_full_name
     end
 
+    test "repository.renamed removes an old-name channel when the canonical channel already exists" do
+      survivor = GithubPrChannel.create!(
+        topic: @topic,
+        config: { "repo_full_name" => NEW_NAME, "pr_number" => 99 }
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      assert_not GithubPrChannel.exists?(@channel.id)
+      assert GithubPrChannel.exists?(survivor.id)
+      assert_equal [ survivor.id ],
+        GithubPrChannel.where(topic: @topic, repo_full_name: NEW_NAME, pr_number: 99).pluck(:id)
+    end
+
     test "renamed repo keeps dispatching to its channel afterwards" do
       # End-to-end: the rename must leave the (link, channel) pair consistent
       # enough that the very next PR comment still lands in the topic.
@@ -457,6 +476,29 @@ module CollavreGithub
       assert_equal "docs", survivor.sync_branch
       assert_equal [ survivor.id ],
         CollavreGithub::RepositoryLink.where(creative: @creative, repository_id: REPO_ID).pluck(:id)
+      assert_equal NEW_NAME, @channel.reload.repo_full_name
+    end
+
+    test "repository.renamed merges a same-id link whose new name differs only by case" do
+      CollavreGithub::RepositoryLink.create!(
+        creative: @creative,
+        github_account: @account,
+        repository_full_name: NEW_NAME.upcase,
+        repository_id: REPO_ID,
+        webhook_secret: "obsolete-secret"
+      )
+
+      post_event("repository", {
+        action: "renamed",
+        changes: { repository: { name: { from: "old-name" } } },
+        repository: { id: REPO_ID, full_name: NEW_NAME, name: "new-name", owner: { login: "owner" } }
+      })
+
+      assert_response :ok
+      links = CollavreGithub::RepositoryLink.where(creative: @creative, repository_id: REPO_ID)
+      assert_equal 1, links.count
+      assert_equal NEW_NAME, links.first.repository_full_name
+      assert_equal @link.webhook_secret, links.first.webhook_secret
       assert_equal NEW_NAME, @channel.reload.repo_full_name
     end
 

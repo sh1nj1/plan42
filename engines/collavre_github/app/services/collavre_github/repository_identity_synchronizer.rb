@@ -122,7 +122,7 @@ module CollavreGithub
           repository_id: repository_id
         )
 
-        channel.update!(config: channel.config.merge("repo_full_name" => full_name))
+        channel.synchronize_repository_name!(full_name)
       end
     end
 

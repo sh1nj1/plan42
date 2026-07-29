@@ -196,5 +196,16 @@ module CollavreGithub
         assert_equal s, @channel.reload.pr_state
       end
     end
+
+    test "destroy broadcasts a channel chip refresh" do
+      broadcasts = []
+      callback = ->(*args, **kwargs) { broadcasts << [ args, kwargs ] }
+
+      Collavre::CommentsPresenceChannel.stub(:broadcast_channel_chips_changed, callback) do
+        @channel.destroy!
+      end
+
+      assert_equal [ [ [ @creative.id ], { topic_id: @topic.id } ] ], broadcasts
+    end
   end
 end
