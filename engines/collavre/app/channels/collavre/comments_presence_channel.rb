@@ -29,11 +29,19 @@ class CommentsPresenceChannel < ApplicationCable::Channel
   # reloading viewer would lose the Stop button on the turn that is waiting on them.
   AGENT_REPLAY_STATUSES = %w[running pending pending_approval].freeze
 
+  # Narrowed by creative in SQL, not in Ruby: a pending_approval turn sits until
+  # somebody answers it, so the replayable set is unbounded and deployment-wide,
+  # and every subscribe would otherwise load all of it just to keep one creative's
+  # rows. tasks.creative_id is written from the same context["creative"]["id"] the
+  # payload carries (AiAgentJob#admit_or_defer!, park_waiter, WorkflowExecutor,
+  # WorkCommand), and is indexed. A row can only lose it to the FK's on_delete:
+  # :nullify, and a deleted creative already returns [] above.
+  #
   # Ordered by id because the client appends these into a per-agent array and stops
   # the last one. Not created_at: turns are stamped by whichever process dispatched
   # them, so a web/worker clock skew can invert two of them (see PR #1431).
-  def self.replayable_tasks
-    Task.where(status: AGENT_REPLAY_STATUSES).order(:id)
+  def self.replayable_tasks(creative_id)
+    Task.where(status: AGENT_REPLAY_STATUSES, creative_id: creative_id).order(:id)
   end
 
   # Scoped to the creative the popup is open on, not to its origin: the client keeps
@@ -45,7 +53,10 @@ class CommentsPresenceChannel < ApplicationCable::Channel
     creative = Creative.find_by(id: creative_id)&.effective_origin
     return [] unless creative
 
-    replayable_tasks.filter_map do |task|
+    replayable_tasks(creative_id).filter_map do |task|
+      # Still checked: the column is what the query trusts, the payload is what the
+      # client is handed back as source_creative_id, and a row where the two
+      # disagree must not name a creative it was not dispatched on.
       task_creative_id = task.trigger_event_payload&.dig("creative", "id")
       next unless task_creative_id == creative_id
 

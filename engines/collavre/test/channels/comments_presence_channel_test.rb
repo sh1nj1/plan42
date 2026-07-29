@@ -48,6 +48,7 @@ module Collavre
           "comment" => { "id" => trigger_comment.id },
           "creative" => { "id" => @creative.id }
         },
+        creative: @creative,
         agent: @agent
       )
 
@@ -72,6 +73,7 @@ module Collavre
             "creative" => { "id" => @creative.id },
             "topic" => { "id" => topic.id }
           },
+          creative: @creative,
           agent: @agent
         )
       end
@@ -197,8 +199,27 @@ module Collavre
     # as the newest turn — Stop cancels that one. Without an ORDER BY, Postgres is
     # free to hand back rows in any order, so Stop could kill an older turn.
     test "the replay query orders tasks by id" do
-      assert_match(/ORDER BY\s+"?tasks"?\.?"?id"?/i, CommentsPresenceChannel.replayable_tasks.to_sql,
+      assert_match(/ORDER BY\s+"?tasks"?\.?"?id"?/i, CommentsPresenceChannel.replayable_tasks(@creative.id).to_sql,
                    "the client's \"last id is the newest turn\" assumption needs an explicit order")
+    end
+
+    # pending_approval turns wait on a human, so the replayable set has no ceiling
+    # and spans every tenant. Filtering it in Ruby would make one subscribe load
+    # every outstanding approval in the deployment to keep this creative's few.
+    test "the replay query narrows to the creative in SQL" do
+      assert_match(/creative_id/i, CommentsPresenceChannel.replayable_tasks(@creative.id).to_sql,
+                   "opening a chat must not materialize every replayable task in the database")
+    end
+
+    test "running_agent_payloads ignores a task whose payload names another creative" do
+      other_creative = Creative.create!(user: @owner, description: "Other")
+      task = create_task(status: "running")
+      task.update!(trigger_event_payload: task.trigger_event_payload.merge(
+        "creative" => { "id" => other_creative.id }
+      ))
+
+      assert_empty agent_statuses_for(@creative),
+                   "the id handed to the client comes from the payload, so it has to agree with the column"
     end
 
     test "running_agent_payloads replays concurrent turns oldest first" do
@@ -236,6 +257,10 @@ module Collavre
         status: status,
         trigger_event_name: "comment_created",
         trigger_event_payload: payload,
+        # Set alongside the payload because every dispatch path writes both from
+        # the same context["creative"]["id"], and the replay query filters on the
+        # indexed column rather than reading every replayable row in the database.
+        creative: creative,
         agent: @agent
       )
     end
@@ -365,6 +390,7 @@ module Collavre
           "comment" => { "id" => 1, "content" => "Hello" },
           "creative" => { "id" => creative.id }
         },
+        creative: creative,
         agent: @agent
       )
     end
