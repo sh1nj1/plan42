@@ -12,6 +12,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", I18n.t("collavre.users.new_ai.title")
     assert_select "form[action=?]", create_ai_users_path
+    assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][spellcheck='false']"
     # Verify tools section is rendered
     assert_select "label", I18n.t("collavre.users.edit_ai.tools_title")
   end
@@ -44,6 +45,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Edit AI Agent"
     assert_select "form[action=?]", update_ai_user_path(@ai_user)
+    assert_select "input[type='text'][name='user[llm_api_key]'].masked-secret-field[autocomplete='off'][spellcheck='false']"
   end
 
   test "should not get edit_ai for normal user" do

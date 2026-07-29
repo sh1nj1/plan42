@@ -42,7 +42,7 @@
 
   <div class="form-group">
     <%= form.label :llm_api_key, t('collavre.users.new_ai.api_key_label') %>
-    <%= form.password_field :llm_api_key, class: "stacked-form-control", placeholder: "sk-...", value: @user.llm_api_key %>
+    <%= masked_secret_field form, :llm_api_key, class: "stacked-form-control", placeholder: "sk-...", value: @user.llm_api_key %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.api_key_help') %></small>
   </div>
 
