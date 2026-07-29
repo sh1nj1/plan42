@@ -780,14 +780,6 @@ module CollavreGithub
       end
     end
 
-    def secrets_match?(left, right)
-      left = left.to_s
-      right = right.to_s
-      return false if left.bytesize != right.bytesize
-
-      ActiveSupport::SecurityUtils.secure_compare(left, right)
-    end
-
     # How long a channel stays quiet after announcing a rejected delivery.
     # GitHub retries nothing, but a busy repository produces a steady stream of
     # events and every one of them fails the same way — without this the topic

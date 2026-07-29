@@ -13,12 +13,13 @@ module CollavreGithub
       attr_reader :created, :updated, :deleted
       attr_accessor :hooks
 
-      def initialize(hooks: [], next_id: 100)
+      def initialize(hooks: [], next_id: 100, repository_identities: {})
         @hooks = hooks
         @created = []
         @updated = []
         @deleted = []
         @next_id = next_id
+        @repository_identities = repository_identities
       end
 
       def repository_hooks(_repo)
@@ -44,6 +45,10 @@ module CollavreGithub
       def delete_repository_webhook(repo, hook_id)
         @deleted << { repo: repo, hook_id: hook_id }
         true
+      end
+
+      def repository_identity(repo)
+        @repository_identities[repo]
       end
     end
 
@@ -435,25 +440,48 @@ module CollavreGithub
     end
 
     test "removal deletes its own hook but leaves a sibling in place" do
+      @link.update!(repository_id: 222)
       client = FakeClient.new(hooks: [
         Hook.new(9, { "url" => OWN_URL }),
         Hook.new(10, { "url" => SIBLING_URL })
-      ])
+      ], repository_identities: {
+        "owner/repo" => CollavreGithub::Client::RepositoryIdentity.new(
+          id: 222,
+          full_name: "owner/repo"
+        )
+      })
       @link.destroy!
+      lock_events = []
+      lock = lambda do |repository_id, &block|
+        lock_events << [ :entered, repository_id ]
+        block.call
+        lock_events << [ :released, repository_id ]
+      end
 
-      CollavreGithub::WebhookProvisioner.new(
-        account: @account, webhook_url: OWN_URL, client: client
-      ).remove_for_repositories([ "owner/repo" ])
+      CollavreGithub::RepositoryProvisioningLock.stub(:with_lock, lock) do
+        CollavreGithub::WebhookProvisioner.new(
+          account: @account, webhook_url: OWN_URL, client: client
+        ).remove_for_links([ @link ])
+      end
 
       assert_equal [ 9 ], client.deleted.map { |d| d[:hook_id] }
+      assert_equal [ [ :entered, 222 ], [ :released, 222 ] ], lock_events
     end
 
     test "removal does not delete any hook while a link still exists" do
+      @link.update!(repository_id: 222)
+      removed = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "owner/repo",
+        repository_id: 222
+      )
+      removed.destroy!
       client = FakeClient.new(hooks: [ Hook.new(11, { "url" => OWN_URL }) ])
 
       CollavreGithub::WebhookProvisioner.new(
         account: @account, webhook_url: OWN_URL, client: client
-      ).remove_for_repositories([ "owner/repo" ])
+      ).remove_for_links([ removed ])
 
       assert_empty client.deleted
     end
@@ -462,12 +490,99 @@ module CollavreGithub
       # The link that still needs the hook is spelled differently from the name
       # being unlinked. Comparing exactly would conclude nothing links the repo
       # any more and tear down a hook that is still in use.
-      @link.update!(repository_full_name: "Owner/Repo")
+      @link.update!(repository_full_name: "Owner/Repo", repository_id: 222)
+      removed = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "owner/repo",
+        repository_id: 222
+      )
+      removed.destroy!
       client = FakeClient.new(hooks: [ Hook.new(11, { "url" => OWN_URL }) ])
 
       CollavreGithub::WebhookProvisioner.new(
         account: @account, webhook_url: OWN_URL, client: client
-      ).remove_for_repositories([ "owner/repo" ])
+      ).remove_for_links([ removed ])
+
+      assert_empty client.deleted
+    end
+
+    test "removal keeps the hook for a stale-name sibling with the same repository id" do
+      @link.update!(repository_full_name: "owner/old-name", repository_id: 222)
+      removed = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "owner/repo",
+        repository_id: 222
+      )
+      removed.destroy!
+      client = FakeClient.new(hooks: [ Hook.new(11, { "url" => OWN_URL }) ])
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_links([ removed ])
+
+      assert_empty client.deleted
+    end
+
+    test "removal does not use a stale name that resolves to another repository id" do
+      @link.update!(repository_full_name: "owner/reused", repository_id: 111)
+      @link.destroy!
+      client = FakeClient.new(
+        hooks: [ Hook.new(11, { "url" => OWN_URL }) ],
+        repository_identities: {
+          "owner/reused" => CollavreGithub::Client::RepositoryIdentity.new(
+            id: 222,
+            full_name: "owner/reused"
+          )
+        }
+      )
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_links([ @link ])
+
+      assert_empty client.deleted
+    end
+
+    test "removal tries every deleted alias until one verifies the repository id" do
+      @link.update!(repository_full_name: "owner/reused", repository_id: 111)
+      canonical = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "owner/canonical",
+        repository_id: 111
+      )
+      @link.destroy!
+      canonical.destroy!
+      client = FakeClient.new(
+        hooks: [ Hook.new(11, { "url" => OWN_URL }) ],
+        repository_identities: {
+          "owner/reused" => CollavreGithub::Client::RepositoryIdentity.new(
+            id: 222,
+            full_name: "owner/reused"
+          ),
+          "owner/canonical" => CollavreGithub::Client::RepositoryIdentity.new(
+            id: 111,
+            full_name: "owner/canonical"
+          )
+        }
+      )
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_links([ @link, canonical ])
+
+      assert_equal [ { repo: "owner/canonical", hook_id: 11 } ], client.deleted
+    end
+
+    test "removal fails closed for a name-only link" do
+      @link.destroy!
+      client = FakeClient.new(hooks: [ Hook.new(11, { "url" => OWN_URL }) ])
+
+      CollavreGithub::WebhookProvisioner.new(
+        account: @account, webhook_url: OWN_URL, client: client
+      ).remove_for_links([ @link ])
 
       assert_empty client.deleted
     end
@@ -618,6 +733,32 @@ module CollavreGithub
       assert_equal 7, valid.reload.webhook_hook_id
       assert_equal "valid-secret", client.updated.first[:secret]
       assert_not_includes client.updated.first[:events], "push"
+    end
+
+    test "id-scoped provisioning includes siblings stored under a stale name" do
+      @link.update!(
+        repository_full_name: "owner/old-name",
+        repository_id: 222,
+        webhook_secret: "primary-secret",
+        webhook_hook_id: 7,
+        markdown_sync_enabled: true
+      )
+      canonical = CollavreGithub::RepositoryLink.create!(
+        creative: creatives(:root_parent),
+        github_account: @account,
+        repository_full_name: "owner/repo",
+        repository_id: 222,
+        webhook_secret: "canonical-secret"
+      )
+      client = FakeClient.new(hooks: [ Hook.new(7, { "url" => OWN_URL }) ])
+
+      assert_equal [ [ canonical, :updated ] ],
+        provision(client, links: [ canonical ], force_hook_refresh: true)
+      assert_equal "primary-secret", @link.reload.webhook_secret
+      assert_equal "primary-secret", canonical.reload.webhook_secret
+      assert_equal 7, canonical.webhook_hook_id
+      assert_equal "primary-secret", client.updated.first[:secret]
+      assert_includes client.updated.first[:events], "push"
     end
 
     test "isolates name-only provisioning from id-backed links with a reused name" do

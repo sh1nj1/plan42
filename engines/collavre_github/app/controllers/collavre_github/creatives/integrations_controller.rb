@@ -304,7 +304,7 @@ module CollavreGithub
 
         scope = linked_repository_links(account)
 
-        removed_repositories = []
+        removed_links = []
 
         if repositories.present?
           links_to_remove = scope.where(repository_full_name: repositories).to_a
@@ -315,7 +315,7 @@ module CollavreGithub
           end
 
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = links_to_remove.map(&:repository_full_name)
+            removed_links = links_to_remove
             links_to_remove.each(&:destroy!)
           end
         elsif repository
@@ -326,20 +326,20 @@ module CollavreGithub
           end
 
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = [ link.repository_full_name ]
+            removed_links = [ link ]
             link.destroy!
           end
         else
           CollavreGithub::RepositoryLink.transaction do
-            removed_repositories = scope.pluck(:repository_full_name)
-            scope.destroy_all
+            removed_links = scope.to_a
+            removed_links.each(&:destroy!)
           end
         end
 
-        if removed_repositories.present?
-          CollavreGithub::WebhookProvisioner.remove_for_repositories(
+        if removed_links.present?
+          CollavreGithub::WebhookProvisioner.remove_for_links(
             account: account,
-            repositories: removed_repositories,
+            links: removed_links,
             webhook_url: github_webhook_url
           )
         end

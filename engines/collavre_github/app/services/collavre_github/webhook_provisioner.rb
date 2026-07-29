@@ -35,8 +35,8 @@ module CollavreGithub
       ).ensure_for_links(Array(links))
     end
 
-    def self.remove_for_repositories(account:, repositories:, webhook_url:)
-      new(account: account, webhook_url: webhook_url).remove_for_repositories(Array(repositories))
+    def self.remove_for_links(account:, links:, webhook_url:)
+      new(account: account, webhook_url: webhook_url).remove_for_links(Array(links))
     end
 
     def initialize(
@@ -75,24 +75,25 @@ module CollavreGithub
       links.map { |link| [ link, ensure_webhook(link) ] }
     end
 
-    def remove_for_repositories(repositories)
-      # Batch-query to avoid N+1: find all repo names that still have links.
-      # Compared case-insensitively — see `links_for`. Matching exactly would
-      # miss a surviving link stored under different casing and tear down a
-      # hook the repository still needs.
-      names = repositories.map { |name| normalize_repository_name(name) }
-      linked_names = CollavreGithub::RepositoryLink
-        .where("LOWER(repository_full_name) IN (?)", names)
-        .distinct
-        .pluck(:repository_full_name)
-        .map { |name| normalize_repository_name(name) }
-        .to_set
+    # Link objects retain their stable identity after destroy, allowing removal
+    # to find a surviving sibling even when it still stores a pre-rename name.
+    # Once the last ID-backed link is gone, re-resolve its stored name and
+    # require GitHub's live numeric id to match before touching the remote hook.
+    # NULL-id links fail closed: their name may have been reassigned and cannot
+    # safely identify a repository for an outbound mutation.
+    def remove_for_links(links)
+      links
+        .select { |link| link.repository_id.present? }
+        .group_by { |link| link.repository_id.to_s }
+        .each_value do |candidates|
+          repository_id = candidates.first.repository_id
+          CollavreGithub::RepositoryProvisioningLock.with_lock(repository_id) do
+            next if CollavreGithub::RepositoryLink.where(repository_id: repository_id).exists?
 
-      repositories.each do |repository_full_name|
-        next if linked_names.include?(normalize_repository_name(repository_full_name))
-
-        remove_webhook(repository_full_name)
-      end
+            verified_name = candidates.filter_map { |link| verified_removal_name(link) }.first
+            remove_webhook(verified_name) if verified_name
+          end
+        end
     end
 
     private
@@ -307,34 +308,42 @@ module CollavreGithub
       end
     end
 
-    # Every single-repository link lookup in this class goes through here
-    # (`remove_for_repositories` batches many names and normalizes them the same
-    # way inline). GitHub treats
-    # `owner/repo` case-insensitively and serves one repository — and one set of
-    # hooks — regardless of the spelling used, but `repository_full_name` is
-    # stored verbatim from whatever the caller supplied. Two creatives linking
-    # the same repository with different casing therefore produce link rows an
-    # exact match cannot see across, which would hide the registered hook id and
-    # let the next run create a second hook: precisely the proliferation this
-    # class exists to prevent. The webhook controller and pr_monitor already
-    # compare with `LOWER(repository_full_name)`; this matches them.
-    #
-    # The selected link bounds every primary-link, registration, and event
-    # lookup for this provisioning attempt. An ID-backed link uses that exact
-    # stable identity. A name-only link can share state only with other
-    # name-only links: an ID-backed row with the same stale/reused name may
-    # belong to another repository and must not contribute its secret, hook
-    # registration, or markdown-sync settings.
+    # Every primary-link, registration, and event lookup is bounded by the
+    # selected link's identity. ID-backed attempts use the stable repository id
+    # across every stored-name alias, including links that missed a rename.
+    # Name-only attempts remain limited to same-name NULL-id links: a row with
+    # an authoritative id under that reused name may belong to another
+    # repository and must not contribute its secret, registration, or settings.
     def links_for(repository_full_name)
+      if provisioning_link&.repository_id.present?
+        return CollavreGithub::RepositoryLink.where(repository_id: provisioning_link.repository_id)
+      end
+
       links = CollavreGithub::RepositoryLink
         .where("LOWER(repository_full_name) = ?", normalize_repository_name(repository_full_name))
       return links unless provisioning_link
 
-      links.where(repository_id: provisioning_link.repository_id)
+      links.where(repository_id: nil)
     end
 
     def normalize_repository_name(repository_full_name)
       repository_full_name.to_s.downcase
+    end
+
+    def verified_removal_name(link)
+      return if link.repository_id.blank?
+
+      identity = client.repository_identity(link.repository_full_name)
+      return if identity&.id.blank? || identity&.full_name.blank?
+      return unless identity.id.to_s == link.repository_id.to_s
+
+      identity.full_name
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn(
+        "[CollavreGithub] webhook removal identity verification failed for " \
+        "#{link.repository_full_name}: #{e.class}: #{e.message}"
+      )
+      nil
     end
 
     def registered_hook_id(repository_full_name)
