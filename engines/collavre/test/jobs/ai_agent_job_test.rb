@@ -104,7 +104,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     attr_reader :captured_system_prompt
     attr_reader :captured_context
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key:, gateway_url: nil, context: {})
+    def initialize(vendor:, model:, system_prompt:, llm_api_key:, gateway_url: nil, context: {}, before_tool_call: nil)
       @captured_system_prompt = system_prompt
       @captured_context = context
     end
@@ -964,6 +964,93 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected WorkflowExecutor#fail_subtask! to be invoked so the parent workflow fails"
     assert_equal sub_task.id, fail_called_with[:sub_task].id
     assert_match(/offline/i, fail_called_with[:error_message].to_s)
+  end
+
+  test "turn deadline on a workflow subtask fails the parent workflow" do
+    # Every external failer of a workflow subtask (StuckDetector, the offline
+    # guards above, comment deletion) calls fail_subtask! at the site that
+    # writes `failed`. The turn deadline is the one terminal exit the worker
+    # inflicts on itself — AgentLifecycleManager marks the row and raises
+    # TurnDeadlineError — so if the job's rescue doesn't notify the parent,
+    # nobody does, and the parent workflow stays "running" on a child that
+    # already failed underneath it.
+    parent_creative = Creative.create!(user: @owner, description: "Deadline Workflow Parent")
+    parent_task = Task.create!(
+      name: "Deadline Workflow Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+
+    # Workflow subtasks carry parent_task_id and no topic
+    # (see WorkflowExecutor#build_subtask_context).
+    workflow_context = {
+      "creative" => { "id" => @creative.id },
+      "comment" => { "id" => @comment.id, "content" => "Deadline subtask" }
+    }
+
+    sub_task = Task.create!(
+      name: "Deadline subtask",
+      status: "pending",
+      agent: @agent,
+      parent_task_id: parent_task.id,
+      creative_id: @creative.id,
+      trigger_event_payload: workflow_context
+    )
+
+    fail_called_with = nil
+    fake_executor = Class.new do
+      define_method(:fail_subtask!) do |child, error_message: nil|
+        fail_called_with = { sub_task: child, error_message: error_message }
+      end
+    end.new
+
+    # Mimic AgentLifecycleManager#check_cancelled!'s deadline exit: mark the
+    # row failed under the worker-settling protocol, then raise.
+    fake_service_class = Class.new do
+      define_method(:initialize) { |task| @task = task }
+      define_method(:call) do
+        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        raise Collavre::TurnDeadlineError
+      end
+    end
+
+    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+      Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task) } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    assert_equal "failed", sub_task.reload.status,
+      "subtask must settle as failed after the deadline exit"
+    assert_not_nil fail_called_with,
+      "Expected WorkflowExecutor#fail_subtask! so the parent workflow fails instead of hanging"
+    assert_equal sub_task.id, fail_called_with[:sub_task].id
+    assert_match(/deadline/i, fail_called_with[:error_message].to_s)
+  end
+
+  test "turn deadline without a parent workflow does not touch WorkflowExecutor" do
+    # The non-workflow deadline path must stay on the plain cancellation exit:
+    # fail_subtask! flips its parent to failed, so calling it with no workflow
+    # parent would be a NoMethodError on nil at best.
+    executor_touched = false
+    fake_service_class = Class.new do
+      define_method(:initialize) { |task| @task = task }
+      define_method(:call) do
+        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        raise Collavre::TurnDeadlineError
+      end
+    end
+
+    captured_task = nil
+    Collavre::Comments::WorkflowExecutor.stub :new, ->(_parent) { executor_touched = true } do
+      Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service_class.new(task) } do
+        AiAgentJob.perform_now(@agent.id, "test_event", @context)
+      end
+    end
+
+    refute executor_touched, "no parent workflow, so WorkflowExecutor must not be built"
+    assert_equal "failed", captured_task.reload.status
   end
 
   # A resumed Task takes the branch above the agent_id guard, so the assignment

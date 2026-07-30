@@ -16,10 +16,18 @@ module CollavreOpenclaw
     #   Same Topic, multiple users → shared context
     #   Different Topics → isolated sessions
 
-    def initialize(user:, system_prompt:, context: {})
+    # lifecycle_check: callable polled during a chat so the turn can observe
+    # an external terminal status or its wall-clock deadline. It has to be
+    # injected here because this adapter's tools run remotely on the gateway —
+    # there is no local tool-call boundary, and the caller's streaming block
+    # fires only on text, which a tool-only run never emits. A raise from it
+    # (Collavre::CancelledError or a subclass) unwinds past both transports'
+    # fallback rescues.
+    def initialize(user:, system_prompt:, context: {}, lifecycle_check: nil)
       @user = user
       @system_prompt = system_prompt
       @context = context
+      @lifecycle_check = lifecycle_check
       @last_handoff_failed = false
       @handed_off = false
     end
@@ -143,7 +151,8 @@ module CollavreOpenclaw
           session_key: session_key,
           message: payload[:message],
           attachments: payload[:attachments],
-          on_run_id: method(:handle_run_id)
+          on_run_id: method(:handle_run_id),
+          lifecycle_check: @lifecycle_check
         ) do |event|
           case event[:state]
           when "delta"
@@ -590,11 +599,16 @@ module CollavreOpenclaw
 
     def process_sse_buffer(buffer, final: false, &block)
       while (idx = buffer.index("\n\n"))
+        # The HTTP transport has no event loop to poll from; this parser is
+        # its one checkpoint that runs for every received chunk, including
+        # tool/comment events that never yield text to the caller's block.
+        @lifecycle_check&.call
         event_data = buffer.slice!(0, idx + 2)
         parse_sse_event(event_data, &block)
       end
 
       if final && buffer.present?
+        @lifecycle_check&.call
         parse_sse_event(buffer, &block)
         buffer.clear
       end

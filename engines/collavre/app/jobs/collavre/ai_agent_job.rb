@@ -267,6 +267,24 @@ module Collavre
         # Don't release resources yet - task will resume
         should_release = false
         Rails.logger.info("AiAgentJob paused for task #{task.id}: awaiting tool approval")
+      rescue TurnDeadlineError
+        # The deadline is the one terminal exit this worker inflicts on itself:
+        # every external failer of a workflow subtask (StuckDetector, the
+        # offline guards above, comment deletion) calls fail_subtask! at the
+        # site that writes `failed`, which is why the CancelledError branch
+        # below never has to. Here the writer is AgentLifecycleManager inside
+        # this very call stack, so the parent notification happens here or
+        # nowhere — and without it the parent workflow stays "running" on a
+        # child that already failed underneath it. Restore/settle of dropped
+        # dispatches needs nothing extra: fail_while_worker_settles! marked the
+        # row, and the ensure below settles it.
+        Rails.logger.info("AiAgentJob turn deadline exceeded for task #{task.id}")
+        if task.parent_task_id.present?
+          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
+            task,
+            error_message: "Turn exceeded the #{SystemSetting.ai_agent_turn_deadline_seconds}s deadline"
+          )
+        end
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")

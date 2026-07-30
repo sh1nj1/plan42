@@ -181,6 +181,60 @@ module CollavreOpenclaw
       assert_equal 1, finals.size, "Final event must not be filtered by seq dedup"
     end
 
+    # The delta callback is the caller's only checkpoint against terminal
+    # status and the turn deadline, and a gateway-side tool-only run emits no
+    # deltas. chat_send must give the caller a checkpoint of its own: invoked
+    # ahead of every event it consumes, so a flood of non-text events still
+    # crosses it.
+    test "chat_send invokes lifecycle_check ahead of each event it consumes" do
+      client = WebsocketClient.new(user: @user)
+      calls = 0
+
+      events = [
+        { state: "delta", message: { content: "Hi" } },
+        { state: "final", message: { content: "Hi" } }
+      ]
+
+      result = run_chat_send_with_events(client, events, lifecycle_check: -> { calls += 1 }) { |_ev| }
+
+      assert_equal "Hi", result
+      assert_operator calls, :>=, 2,
+        "lifecycle_check must run once per consumed event, not once per send"
+    end
+
+    test "a lifecycle_check raise unwinds chat_send before any gateway event arrives" do
+      client = WebsocketClient.new(user: @user)
+
+      # No events at all: the shape of a run doing remote tool work in
+      # silence. Without the checkpoint this wait is bounded only by
+      # config.read_timeout (llm_request_timeout_seconds, 1800s default).
+      assert_raises(Collavre::CancelledError) do
+        run_chat_send_with_events(
+          client, [], lifecycle_check: -> { raise Collavre::CancelledError }
+        ) { |_ev| }
+      end
+
+      pending = client.instance_variable_get(:@pending_runs)
+      assert_empty pending, "an unwound run must not leak its queue registration"
+    end
+
+    test "chat_send polls lifecycle_check while the gateway is silent" do
+      client = WebsocketClient.new(user: @user)
+      calls = 0
+      # First call passes (the pre-wait check), so a raise on a later call
+      # proves the check re-fires during the idle wait itself.
+      check = lambda do
+        calls += 1
+        raise Collavre::CancelledError if calls >= 2
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        run_chat_send_with_events(client, [], lifecycle_check: check) { |_ev| }
+      end
+
+      assert_operator calls, :>=, 2, "lifecycle_check must re-fire between idle wait slices"
+    end
+
     # Regression: duplicate_chat_event? must distinguish delta vs final with same seq.
     test "handle_chat_event does not dedup final event sharing seq with delta" do
       client = WebsocketClient.new(user: @user)
@@ -419,7 +473,7 @@ module CollavreOpenclaw
       assert_equal "x.png", captured[:attachments].first[:fileName]
     end
 
-    def run_chat_send_with_events(client, events, &block)
+    def run_chat_send_with_events(client, events, lifecycle_check: nil, &block)
       session_key = "test-session"
       idempotency_key = "test-key"
 
@@ -440,6 +494,7 @@ module CollavreOpenclaw
         session_key: session_key,
         message: "Hello",
         idempotency_key: idempotency_key,
+        lifecycle_check: lifecycle_check,
         &block
       )
     end

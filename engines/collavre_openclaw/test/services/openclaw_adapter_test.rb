@@ -876,6 +876,66 @@ module CollavreOpenclaw
       end
     end
 
+    # The caller's streaming block fires only on text, and an OpenClaw run does
+    # its tool work on the gateway — so a tool-only run never crosses the
+    # block. The lifecycle check injected at construction is the adapter path's
+    # substitute for the RubyLLM tool-call boundary: it must reach chat_send,
+    # and its raise must unwind like a block raise, not start a fallback.
+    test "the websocket transport polls the injected lifecycle check" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { raise Collavre::CancelledError }
+      )
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+      begin
+        client = Object.new
+        # A run that goes quiet doing gateway-side tool work: chat.send is
+        # acknowledged, then no events. The real client's lifecycle poll is
+        # what raises here; the fake honors the same contract.
+        client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &_blk|
+          on_run_id&.call("run-#{SecureRandom.hex(4)}")
+          lifecycle_check&.call
+          flunk "lifecycle_check must raise before any event handling"
+        end
+        manager = Object.new
+        manager.define_singleton_method(:connection_for) { |_user| client }
+
+        CollavreOpenclaw::ConnectionManager.stub(:instance, manager) do
+          assert_raises(Collavre::CancelledError) { adapter.chat(messages_data) { |_chunk| } }
+        end
+      ensure
+        CollavreOpenclaw.config.transport = original
+      end
+
+      assert_not fallback_called, "a lifecycle raise must unwind, not start an HTTP fallback"
+    end
+
+    # The HTTP transport has no event loop to poll from; its checkpoint is the
+    # SSE parser, which runs for every received chunk — including comment/tool
+    # events that never yield text to the caller's block.
+    test "the http sse parser crosses the injected lifecycle check on non-content chunks" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { checks += 1 }
+      )
+
+      buffer = +"event: tool_use\ndata: {\"type\":\"tool_use\"}\n\n"
+      adapter.send(:process_sse_buffer, buffer) { |_chunk| flunk "no text to yield" }
+
+      assert_operator checks, :>=, 1,
+        "a chunk with no caller-visible text must still cross the lifecycle check"
+    end
+
     private
 
     # Drive the real #chat_via_websocket: surface a run id the way the real
@@ -890,7 +950,7 @@ module CollavreOpenclaw
 
       acked = acknowledged
       client = Object.new
-      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, &blk|
+      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &blk|
         on_run_id&.call("run-#{SecureRandom.hex(4)}") if acked
         blk.call({ state: "delta", text: delta }) if delta
         raise CollavreOpenclaw::TimeoutError, "gateway went quiet"
@@ -910,7 +970,7 @@ module CollavreOpenclaw
       CollavreOpenclaw.config.transport = "auto"
 
       client = Object.new
-      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, &blk|
+      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &blk|
         on_run_id&.call("run-#{SecureRandom.hex(4)}")
         blk.call({ state: "delta", text: delta })
         nil

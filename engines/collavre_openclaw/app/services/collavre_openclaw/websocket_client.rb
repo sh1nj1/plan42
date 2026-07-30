@@ -158,7 +158,8 @@ module CollavreOpenclaw
     #   streaming, so callers can persist it as a cross-process idempotency key.
     # @yield [Hash] chat events with :state, :text, :message keys
     # @return [String, nil] final response text
-    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, on_run_id: nil, &block)
+    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, on_run_id: nil,
+                  lifecycle_check: nil, &block)
       ensure_connected!
       touch_activity!
 
@@ -213,7 +214,16 @@ module CollavreOpenclaw
       last_seq = nil
 
       loop do
-        event = wait_with_timeout(run_queue, config.read_timeout, "chat response")
+        # The caller's block fires only on text deltas, and a run doing its
+        # tool work on the gateway can emit none for the whole turn. This is
+        # the checkpoint that does not depend on text: once per consumed
+        # event (a flood of non-text events still crosses it) and, inside
+        # the wait below, once per idle slice (total silence still crosses
+        # it). A raise here unwinds through the adapter's CancelledError
+        # re-raise instead of holding this worker until read_timeout.
+        lifecycle_check&.call
+
+        event = wait_for_chat_event(run_queue, config.read_timeout, lifecycle_check)
 
         break if event[:done]
 
@@ -695,6 +705,31 @@ module CollavreOpenclaw
     def extract_agent_id
       return nil unless @user&.email.present?
       @user.email.split("@").first
+    end
+
+    # Seconds between lifecycle_check invocations while waiting on a silent
+    # gateway. Matches AgentLifecycleManager::CANCEL_CHECK_INTERVAL — the
+    # check self-throttles at that interval, so polling faster buys nothing.
+    LIFECYCLE_POLL_INTERVAL = 1.0
+
+    # Wait for the next chat event. Without a lifecycle_check this is one
+    # blocking pop bounded by read_timeout, exactly as before. With one, the
+    # same total bound is kept but the wait is sliced so the check runs
+    # between slices — a run that goes quiet doing gateway-side tool work is
+    # otherwise unobservable until read_timeout (30 minutes by default).
+    def wait_for_chat_event(queue, timeout_seconds, lifecycle_check)
+      return wait_with_timeout(queue, timeout_seconds, "chat response") unless lifecycle_check
+
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
+      loop do
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        raise TimeoutError, "chat response timed out after #{timeout_seconds}s" if remaining <= 0
+
+        event = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
+        return event if event
+
+        lifecycle_check.call
+      end
     end
 
     def wait_with_timeout(queue, timeout_seconds, operation)

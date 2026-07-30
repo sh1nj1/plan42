@@ -122,6 +122,34 @@ module CollavreOpenclaw
       assert_not client.last_handoff_failed?
     end
 
+    # The client's before_tool_call is AiAgentService's lifecycle checkpoint
+    # (terminal status + turn deadline). The RubyLLM path fires it at tool-call
+    # boundaries; the adapter path never reaches those, so the extension must
+    # hand the same callable to the adapter for it to poll mid-stream —
+    # otherwise a gateway-side tool-only run has no checkpoint at all.
+    test "the adapter path receives the client's before_tool_call as its lifecycle check" do
+      captured = nil
+      capturing_adapter = Class.new do
+        define_method(:initialize) { |**kwargs| captured = kwargs }
+        def chat(_messages_data, &_block) = "ok"
+        def last_handoff_failed? = false
+        def handed_off? = true
+      end
+      Collavre::AiClient.register_adapter("lifecycletest", capturing_adapter)
+
+      probe = -> { }
+      client = Collavre::AiClient.new(
+        vendor: "lifecycletest", model: "m", system_prompt: "s",
+        log_interactions: false, before_tool_call: probe
+      )
+
+      assert_equal "ok", client.chat(messages)
+      assert_same probe, captured[:lifecycle_check],
+        "the adapter must be constructed with the client's lifecycle callable"
+    ensure
+      Collavre::AiClient.adapter_registry.delete("lifecycletest")
+    end
+
     # The same seam, positively: a turn the user stops mid-answer never reaches
     # the line that sets the flag above, so the cancelled ending is read off
     # this instead. It has to travel the same way, and be this chat's answer
