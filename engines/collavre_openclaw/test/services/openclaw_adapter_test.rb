@@ -1031,10 +1031,13 @@ module CollavreOpenclaw
       user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
       adapter = OpenclawAdapter.new(
         user: user, system_prompt: "Test", context: {},
-        request_timeout_seconds: -> { 60.0 }
+        request_timeout_seconds: -> { 5.0 }
       )
 
-      assert_equal 60.0, adapter.send(:build_connection).options.timeout
+      connection = adapter.send(:build_connection)
+      assert_equal 5.0, connection.options.timeout
+      assert_equal 5.0, connection.options.open_timeout,
+                   "TCP/TLS setup must not outlive the remaining turn budget"
     end
 
     test "the http sse parser records handoff before lifecycle cancellation" do

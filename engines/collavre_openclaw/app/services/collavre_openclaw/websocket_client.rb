@@ -162,6 +162,10 @@ module CollavreOpenclaw
                   lifecycle_check: nil, &block)
       ensure_connected!
       touch_activity!
+      # Connection establishment can block after the service-level preflight.
+      # Recheck before registering queues or scheduling chat.send so a Stop
+      # that won during the handshake cannot start remote tool side effects.
+      force_lifecycle_check(lifecycle_check) if lifecycle_check
 
       idempotency_key ||= SecureRandom.uuid
       actual_run_id = nil

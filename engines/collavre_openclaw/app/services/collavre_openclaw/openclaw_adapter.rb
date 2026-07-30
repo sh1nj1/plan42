@@ -718,11 +718,15 @@ module CollavreOpenclaw
 
     def build_connection
       Faraday.new do |builder|
+        remaining_deadline = @request_timeout_seconds&.call
         builder.options.timeout = [
           CollavreOpenclaw.config.read_timeout,
-          @request_timeout_seconds&.call
+          remaining_deadline
         ].compact.min
-        builder.options.open_timeout = CollavreOpenclaw.config.open_timeout
+        builder.options.open_timeout = [
+          CollavreOpenclaw.config.open_timeout,
+          remaining_deadline
+        ].compact.min
         builder.adapter Faraday.default_adapter
       end
     end

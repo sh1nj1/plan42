@@ -235,15 +235,19 @@ module CollavreOpenclaw
       assert_operator calls, :>=, 2, "lifecycle_check must re-fire between idle wait slices"
     end
 
-    test "chat_send passes lifecycle_check into the chat.send acknowledgement wait" do
+    test "chat_send force-checks lifecycle after connecting before scheduling chat.send" do
       client = WebsocketClient.new(user: @user)
-      client.define_singleton_method(:ensure_connected!) { nil }
-      client.define_singleton_method(:touch_activity!) { nil }
-      received_check = nil
-      check = -> { raise Collavre::CancelledError }
-      client.define_singleton_method(:send_rpc) do |_method, _params, request_id:, lifecycle_check: nil|
-        received_check = lifecycle_check
-        lifecycle_check&.call
+      order = []
+      client.define_singleton_method(:ensure_connected!) { order << :connected }
+      client.define_singleton_method(:touch_activity!) { order << :activity }
+      rpc_scheduled = false
+      client.define_singleton_method(:send_rpc) do |*_args, lifecycle_check:, **_kwargs|
+        rpc_scheduled = true
+        lifecycle_check.call
+      end
+      check = lambda do |force = false|
+        order << [ :lifecycle_check, force ]
+        raise Collavre::CancelledError
       end
 
       assert_raises(Collavre::CancelledError) do
@@ -255,7 +259,8 @@ module CollavreOpenclaw
         )
       end
 
-      assert_same check, received_check
+      assert_equal [ :connected, :activity, [ :lifecycle_check, true ] ], order
+      assert_not rpc_scheduled, "a terminal turn must not enqueue the chat.send frame"
       assert_empty client.instance_variable_get(:@pending_runs)
       assert_empty client.instance_variable_get(:@rpc_run_registrations)
     end
@@ -288,7 +293,7 @@ module CollavreOpenclaw
       checks = 0
       check = lambda do
         checks += 1
-        raise Collavre::CancelledError
+        raise Collavre::CancelledError if checks >= 2
       end
 
       # The Gateway response arrives on the EM thread before the worker starts
@@ -312,7 +317,7 @@ module CollavreOpenclaw
       end
 
       assert_equal [ "gateway-run-42" ], seen_run_ids
-      assert_equal 1, checks, "cancellation should be observed at the subsequent event wait"
+      assert_equal 2, checks, "cancellation should be observed at the subsequent event wait"
       assert_empty client.instance_variable_get(:@pending_requests)
       assert_empty client.instance_variable_get(:@pending_runs)
       assert_empty client.instance_variable_get(:@rpc_run_registrations)
@@ -328,11 +333,13 @@ module CollavreOpenclaw
       deadline_error = Collavre::TurnDeadlineError.new(3600)
       check = lambda do
         calls += 1
-        if calls == 1
+        if calls == 2
           request_id = client.instance_variable_get(:@pending_requests).keys.first
           client.send(:handle_response, request_id, true, { runId: "gateway-run-deadline" }, nil)
           raise deadline_error
         end
+
+        next if calls == 1
 
         # Once the deadline transition writes task.status=failed, a later poll
         # can only reconstruct an ordinary cancellation. The original error
@@ -353,7 +360,7 @@ module CollavreOpenclaw
       end
 
       assert_same deadline_error, error
-      assert_equal 1, calls
+      assert_equal 2, calls
       assert_equal [ "gateway-run-deadline" ], seen_run_ids
       assert_empty client.instance_variable_get(:@pending_requests)
       assert_empty client.instance_variable_get(:@pending_runs)
@@ -368,7 +375,11 @@ module CollavreOpenclaw
       seen_run_ids = []
       original_error = RuntimeError.new("task reload failed")
       lifecycle_error = OpenclawAdapter::LifecycleCheckError.new(original_error)
+      calls = 0
       check = lambda do
+        calls += 1
+        next if calls == 1
+
         request_id = client.instance_variable_get(:@pending_requests).keys.first
         client.send(:handle_response, request_id, true, { runId: "gateway-run-lifecycle-error" }, nil)
         raise lifecycle_error
@@ -387,6 +398,7 @@ module CollavreOpenclaw
       end
 
       assert_same lifecycle_error, error
+      assert_equal 2, calls
       assert_equal [ "gateway-run-lifecycle-error" ], seen_run_ids
       assert_empty client.instance_variable_get(:@pending_requests)
       assert_empty client.instance_variable_get(:@pending_runs)
