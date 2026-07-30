@@ -1,6 +1,6 @@
 module Collavre
   class AiAgentJob < ApplicationJob
-    queue_as :default
+    queue_as :ai_agents
 
     # Allow resuming a task that was pending approval
     def perform(agent_id_or_task, event_name = nil, context = nil)

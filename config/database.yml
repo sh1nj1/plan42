@@ -7,7 +7,7 @@
 <% adapter = ENV["DATABASE_URL"].to_s.then { |u| u.empty? ? "sqlite3" : URI.parse(u).scheme } %>
 default: &default
   adapter: <%= adapter %>
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  pool: <%= ENV.fetch("DB_POOL") { ENV.fetch("RAILS_MAX_THREADS") { 5 }.to_i + ENV.fetch("AI_AGENT_THREADS", 12).to_i + 10 } %>
   timeout: 5000
   <% if adapter == "sqlite3" %>
   variables:

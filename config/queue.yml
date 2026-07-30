@@ -14,6 +14,18 @@ default: &default
       threads: 3
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
       polling_interval: 0.1
+    # Dedicated worker for AI agent turns (AiAgentJob). A turn streams from
+    # the LLM for minutes, so these must not share threads with short jobs
+    # (broadcasts, mailers, notifications) on the default worker. Thread
+    # count is the real execution capacity behind
+    # OrchestratorPolicy#max_concurrent_jobs — keep the two in sync.
+    # Threads block on provider I/O (GVL released), so they are cheap; each
+    # does hold one DB connection for its whole turn — see the pool sizing
+    # in config/database.yml.
+    - queues: [ai_agents]
+      threads: <%= ENV.fetch("AI_AGENT_THREADS", 12) %>
+      processes: 1
+      polling_interval: 0.1
     # Sequential worker for inbound Linear webhooks. A single thread + single
     # process makes this queue a strict FIFO consumer so events apply in receipt
     # order (a comment can arrive before its issue's create). Do NOT raise
