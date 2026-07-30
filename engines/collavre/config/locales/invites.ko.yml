@@ -10,6 +10,9 @@ ko:
         prompt: 초대를 수락하려면 로그인하거나 회원 가입을 해주세요.
         login: 로그인
         sign_up: 회원 가입
+        meta:
+          title: '"%{creative}" 크리에이티브 초대'
+          description: "%{inviter}님이 콜라브에서 함께 협업하도록 초대했습니다."
     invitation_mailer:
       invite:
         subject: 콜라브에 초대되었습니다

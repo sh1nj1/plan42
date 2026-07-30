@@ -1,5 +1,10 @@
 module Collavre
   class InvitesController < ApplicationController
+    LINK_PREVIEW_USER_AGENT_PATTERN = /
+      bot\b|crawler\b|spider\b|preview\b|scrap(?:e|er)?\b|
+      facebookexternalhit|whatsapp|iframely|embedly
+    /ix
+
     allow_unauthenticated_access only: :show
     before_action :set_invitation, only: :show
 
@@ -17,10 +22,16 @@ module Collavre
     end
 
     def show
-      @invitation.update(clicked_at: Time.current) unless @invitation.clicked_at
+      return if @invitation.clicked_at || link_preview_crawler?
+
+      @invitation.update(clicked_at: Time.current)
     end
 
     private
+
+    def link_preview_crawler?
+      request.user_agent.to_s.match?(LINK_PREVIEW_USER_AGENT_PATTERN)
+    end
 
     def set_invitation
       @invitation = Invitation.find_by_token_for(:invite, params[:token])

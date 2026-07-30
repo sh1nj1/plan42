@@ -1,3 +1,16 @@
+<% creative_title = CGI.unescapeHTML(strip_tags(@invitation.creative.effective_origin.description).to_s).squish %>
+<% meta_title = t(".meta.title", creative: creative_title) %>
+<% content_for :title, meta_title %>
+<% content_for :head do %>
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="<%= t("app.name") %>">
+  <meta property="og:title" content="<%= meta_title %>">
+  <meta property="og:description" content="<%= t(".meta.description", inviter: @invitation.inviter.display_name) %>">
+  <meta property="og:url" content="<%= request.original_url %>">
+  <meta property="og:image" content="<%= "#{request.base_url}/icon-1e3cf549d2.png" %>">
+  <meta property="og:image:alt" content="<%= t("app.name") %>">
+<% end %>
+
 <h1 class="no-top-margin"><%= t('.title') %></h1>
 <p><%= t('collavre.invites.show.invited_by', inviter: @invitation.inviter.display_name, email: @invitation.inviter.email, creative: strip_tags(@invitation.creative.effective_origin.description)) %></p>
 <p><%= t('collavre.invites.show.prompt') %></p>
