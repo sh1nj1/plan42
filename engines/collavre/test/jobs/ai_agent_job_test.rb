@@ -56,6 +56,63 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal @agent.id, reply.user_id
   end
 
+  test "does not overwrite a task cancelled after the service returns" do
+    task = Task.create!(
+      name: "Completion race",
+      status: "pending",
+      agent: @agent,
+      creative: @creative,
+      trigger_event_name: "test_event",
+      trigger_event_payload: @context
+    )
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      task.update!(status: "cancelled")
+      "Late response"
+    end
+
+    AiAgentService.stub :new, ->(_task) { fake_service } do
+      AiAgentJob.perform_now(task)
+    end
+
+    assert_equal "cancelled", task.reload.status,
+                 "the job's done transition must not overwrite an external cancellation"
+  end
+
+  test "does not retry an empty workflow response after the subtask is cancelled" do
+    parent_task = Task.create!(
+      name: "Workflow parent",
+      status: "running",
+      agent: @agent,
+      creative: @creative
+    )
+    sub_task = Task.create!(
+      name: "Workflow completion race",
+      status: "pending",
+      agent: @agent,
+      creative: @creative,
+      parent_task: parent_task,
+      trigger_event_name: "workflow_subtask",
+      trigger_event_payload: @context
+    )
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      sub_task.update!(status: "cancelled")
+      ""
+    end
+
+    retry_scheduled = false
+    AiAgentJob.stub :set, ->(**) { retry_scheduled = true } do
+      AiAgentService.stub :new, ->(_task) { fake_service } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    assert_equal "cancelled", sub_task.reload.status,
+                 "the retry transition must not overwrite an external cancellation"
+    refute retry_scheduled, "a cancelled subtask must not schedule another attempt"
+  end
+
   test "handles service errors" do
     # Mock AiClient to raise error
     AiClient.stub :new, ->(*args) { raise StandardError, "AI Error" } do
@@ -104,7 +161,8 @@ class AiAgentJobTest < ActiveJob::TestCase
     attr_reader :captured_system_prompt
     attr_reader :captured_context
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key:, gateway_url: nil, context: {})
+    def initialize(vendor:, model:, system_prompt:, llm_api_key:, gateway_url: nil, context: {},
+                   before_tool_call: nil, request_timeout_seconds: nil)
       @captured_system_prompt = system_prompt
       @captured_context = context
     end
@@ -964,6 +1022,141 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected WorkflowExecutor#fail_subtask! to be invoked so the parent workflow fails"
     assert_equal sub_task.id, fail_called_with[:sub_task].id
     assert_match(/offline/i, fail_called_with[:error_message].to_s)
+  end
+
+  test "turn deadline on a workflow subtask fails the parent workflow" do
+    # Every external failer of a workflow subtask (StuckDetector, the offline
+    # guards above, comment deletion) calls fail_subtask! at the site that
+    # writes `failed`. The turn deadline is the one terminal exit the worker
+    # inflicts on itself — AgentLifecycleManager marks the row and raises
+    # TurnDeadlineError — so if the job's rescue doesn't notify the parent,
+    # nobody does, and the parent workflow stays "running" on a child that
+    # already failed underneath it.
+    parent_creative = Creative.create!(user: @owner, description: "Deadline Workflow Parent")
+    parent_task = Task.create!(
+      name: "Deadline Workflow Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+
+    # Workflow subtasks carry parent_task_id and no topic
+    # (see WorkflowExecutor#build_subtask_context).
+    workflow_context = {
+      "creative" => { "id" => @creative.id },
+      "comment" => { "id" => @comment.id, "content" => "Deadline subtask" }
+    }
+
+    sub_task = Task.create!(
+      name: "Deadline subtask",
+      status: "pending",
+      agent: @agent,
+      parent_task_id: parent_task.id,
+      creative_id: @creative.id,
+      trigger_event_payload: workflow_context
+    )
+
+    fail_called_with = nil
+    fake_executor = Class.new do
+      define_method(:fail_subtask!) do |child, error_message: nil|
+        fail_called_with = { sub_task: child, error_message: error_message }
+      end
+    end.new
+
+    # Mimic AgentLifecycleManager#check_cancelled!'s deadline exit: mark the
+    # row failed under the worker-settling protocol, then raise.
+    captured_deadline = 3600
+    fake_service_class = Class.new do
+      define_method(:initialize) { |task| @task = task }
+      define_method(:call) do
+        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        raise Collavre::TurnDeadlineError.new(captured_deadline)
+      end
+    end
+
+    Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 60 do
+      Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+        Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task) } do
+          AiAgentJob.perform_now(sub_task)
+        end
+      end
+    end
+
+    assert_equal "failed", sub_task.reload.status,
+      "subtask must settle as failed after the deadline exit"
+    assert_not_nil fail_called_with,
+      "Expected WorkflowExecutor#fail_subtask! so the parent workflow fails instead of hanging"
+    assert_equal sub_task.id, fail_called_with[:sub_task].id
+    assert_equal "Turn exceeded the 3600s deadline", fail_called_with[:error_message]
+  end
+
+  test "turn deadline without a parent workflow does not touch WorkflowExecutor" do
+    # The non-workflow deadline path must stay on the plain cancellation exit:
+    # fail_subtask! flips its parent to failed, so calling it with no workflow
+    # parent would be a NoMethodError on nil at best.
+    executor_touched = false
+    fake_service_class = Class.new do
+      define_method(:initialize) { |task| @task = task }
+      define_method(:call) do
+        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        raise Collavre::TurnDeadlineError.new(3600)
+      end
+    end
+
+    captured_task = nil
+    Collavre::Comments::WorkflowExecutor.stub :new, ->(_parent) { executor_touched = true } do
+      Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service_class.new(task) } do
+        AiAgentJob.perform_now(@agent.id, "test_event", @context)
+      end
+    end
+
+    refute executor_touched, "no parent workflow, so WorkflowExecutor must not be built"
+    assert_equal "failed", captured_task.reload.status
+  end
+
+  test "turn deadline does not overwrite a parent workflow cancelled during unwind" do
+    parent_creative = Creative.create!(user: @owner, description: "Cancelled Deadline Parent")
+    parent_task = Task.create!(
+      name: "Cancelled Deadline Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+    sub_task = Task.create!(
+      name: "Cancelled deadline subtask",
+      status: "pending",
+      agent: @agent,
+      parent_task_id: parent_task.id,
+      creative_id: @creative.id,
+      trigger_event_payload: {
+        "creative" => { "id" => @creative.id },
+        "comment" => { "id" => @comment.id, "content" => "Cancelled deadline subtask" }
+      }
+    )
+
+    fake_service_class = Class.new do
+      define_method(:initialize) do |task, parent|
+        @task = task
+        @parent = parent
+      end
+      define_method(:call) do
+        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        @parent.update!(status: "cancelled")
+        raise Collavre::TurnDeadlineError.new(3600)
+      end
+    end
+
+    executor_touched = false
+    Collavre::Comments::WorkflowExecutor.stub :new, ->(_parent) { executor_touched = true } do
+      Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task, parent_task) } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    assert_equal "failed", sub_task.reload.status
+    assert_equal "cancelled", parent_task.reload.status,
+                 "an explicit parent cancellation must win over child deadline reporting"
+    refute executor_touched, "a cancelled parent must not receive a failure notice"
   end
 
   # A resumed Task takes the branch above the agent_id guard, so the assignment

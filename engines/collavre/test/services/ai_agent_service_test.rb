@@ -335,6 +335,38 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert @task.task_actions.exists?(action_type: "cancelled")
   end
 
+  # StuckDetectorJob marks a hung task `failed` from another process while
+  # this worker is still streaming. The worker must notice at the next chunk
+  # and leave through the CancelledError recovery path instead of streaming
+  # on — in production a thread kept streaming for an hour after its row was
+  # already failed, holding one of the worker's threads the whole time.
+  test "stops streaming when the task was failed externally" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("Partial ")
+      Task.find(task_id).update!(status: "failed")
+      block.call("content")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    with_immediate_cancel_checks do
+      assert_raises(Collavre::CancelledError) do
+        AiClient.stub :new, mock_client do
+          AiAgentService.new(@task).call
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status,
+      "the externally-written status must not be overwritten"
+    failure_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Task failed externally", failure_action.payload["message"]
+    assert_not @task.task_actions.exists?(action_type: "cancelled"),
+               "an automatic failure must not be attributed to a user"
+  end
+
   # The service is the only place that sees both the delivery record it wrote
   # and the client that failed to hand it over. AiClient#chat swallows the
   # provider error and the job then marks the task `done`, so unless the
@@ -421,6 +453,215 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     end
 
     assert_not Collavre::Orchestration::DeliveryRecord.handed_off?(@task.reload.trigger_event_payload)
+  end
+
+  # llm_request_timeout_seconds bounds ONE provider request; a turn is a loop
+  # of requests (LLM -> tools -> LLM ...), so its wall clock is otherwise
+  # unbounded. With the deadline already in the past, the very next chunk
+  # must end the turn as failed through the cancellation recovery path.
+  test "fails the turn when the wall-clock deadline is exceeded" do
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("Partial ")
+      block.call("content")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    with_immediate_cancel_checks do
+      Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 0 do
+        assert_raises(Collavre::TurnDeadlineError) do
+          AiClient.stub :new, mock_client do
+            AiAgentService.new(@task).call
+          end
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    deadline_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Turn exceeded the 0s deadline", deadline_action.payload["message"]
+  end
+
+  test "force-checks terminal status after the provider completes" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &_block|
+      # Simulate StuckDetector winning while the provider's final response is
+      # in flight, less than one throttle interval after the prior checkpoint.
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(Task.find(task_id))
+      nil
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    assert_raises(Collavre::CancelledError) do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    assert_not @task.task_actions.exists?(action_type: "completion"),
+               "an externally failed turn must not enter response finalization"
+  end
+
+  test "force-checks terminal status immediately before starting the provider call" do
+    task_id = @task.id
+    provider_called = false
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &_block|
+      provider_called = true
+      "must not run"
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = false
+
+    service = AiAgentService.new(@task)
+    service.define_singleton_method(:build_ai_client) do |_system_prompt|
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(Task.find(task_id))
+      mock_client
+    end
+
+    assert_raises(Collavre::CancelledError) { service.call }
+
+    refute provider_called,
+           "a task that ended during prompt preparation must not reach the provider"
+    assert_equal "failed", @task.reload.status
+  end
+
+  test "rechecks terminal status after response finalization before A2A dispatch" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("An answer")
+      "An answer"
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    service = AiAgentService.new(@task)
+    service.define_singleton_method(:finalize_response) do
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(Task.find(task_id))
+      nil
+    end
+    dispatched = false
+    service.define_singleton_method(:dispatch_a2a) { |_comment| dispatched = true }
+
+    assert_raises(Collavre::CancelledError) do
+      AiClient.stub :new, mock_client do
+        service.call
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    refute dispatched, "a finalized response must not dispatch after the task became terminal"
+  end
+
+  # The delta callback above is the deadline's only checkpoint on the text
+  # path — and a tool-only turn has no text: AiClient skips contentless
+  # tool-call chunks above the yield, so the streaming block never runs. The
+  # service must hand the client its lifecycle check to run at the tool-call
+  # boundary; otherwise a looping tool-only turn outlives any deadline while
+  # holding its worker thread.
+  test "tool-only turns hit the deadline at the tool-call boundary" do
+    before_tool_call = nil
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      # A tool-only loop as AiClient drives it: no delta ever reaches the
+      # streaming block; the injected boundary check is all the turn crosses.
+      before_tool_call.call
+      block.call("never reached")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    build_client = lambda do |**kwargs|
+      before_tool_call = kwargs.fetch(:before_tool_call)
+      mock_client
+    end
+
+    with_immediate_cancel_checks do
+      Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 0 do
+        assert_raises(Collavre::TurnDeadlineError) do
+          AiClient.stub :new, build_client do
+            AiAgentService.new(@task).call
+          end
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    deadline_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Turn exceeded the 0s deadline", deadline_action.payload["message"]
+  end
+
+  test "handles a deadline raised while generating an approval summary" do
+    task = @task
+    deadline_error = Collavre::TurnDeadlineError.new(60)
+    tool_call = OpenStruct.new(name: "creative_update", arguments: { "id" => 1 }, id: "call-1")
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &_block|
+      raise Collavre::ApprovalPendingError.new(tool_call: tool_call, task: task)
+    end
+    mock_client.define_singleton_method(:ask) do |_prompt|
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(task)
+      raise deadline_error
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    error = assert_raises(Collavre::TurnDeadlineError) do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert_same deadline_error, error
+    assert_equal "failed", @task.reload.status
+    deadline_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Turn exceeded the 60s deadline", deadline_action.payload["message"]
+    assert_not @task.task_actions.exists?(action_type: "approval_requested"),
+               "a turn that hit its deadline must not be parked for approval"
+  end
+
+  # A bare `update!(status: "failed")` on deadline would fire Task's
+  # after_update_commit callback before mark_handed_off! ever runs (that
+  # happens later, in execute_llm_conversation's ensure) — so the callback
+  # would read a payload with no handoff evidence yet and restore a dispatch
+  # this turn actually delivered, producing a duplicate reply on a busy topic.
+  # The deadline path must instead go through
+  # Orchestration::DeliveryRecord.fail_while_worker_settles!, which marks the
+  # row so the callback defers the decision to AiAgentJob's ensure once real
+  # handoff evidence exists — see ai_agent_job.rb's worker_settling? branch.
+  test "does not restore a dropped dispatch at the moment the deadline fires" do
+    other_comment = @creative.comments.create!(content: "Second comment", user: @user)
+    assert Collavre::Orchestration::DeliveryRecord.claim_drop!(@task, other_comment.id),
+           "premise: another process refused a dispatch against this in-flight turn"
+
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("Partial ")
+      block.call("content")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    with_immediate_cancel_checks do
+      Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 0 do
+        assert_raises(Collavre::TurnDeadlineError) do
+          AiClient.stub :new, mock_client do
+            AiAgentService.new(@task).call
+          end
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    assert Collavre::Orchestration::DeliveryRecord.worker_settling?(@task.trigger_event_payload),
+           "the deadline path must leave the worker-settling marker for AiAgentJob's ensure to resolve"
+    assert_empty Collavre::Orchestration::DeliveryRecord.restored_ids_in(@task.trigger_event_payload),
+                 "the dispatch must wait for the job's settle path, not be restored at deadline time"
   end
 
   def with_immediate_cancel_checks

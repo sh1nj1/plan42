@@ -158,9 +158,14 @@ module CollavreOpenclaw
     #   streaming, so callers can persist it as a cross-process idempotency key.
     # @yield [Hash] chat events with :state, :text, :message keys
     # @return [String, nil] final response text
-    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, on_run_id: nil, &block)
+    def chat_send(session_key:, message:, attachments: nil, idempotency_key: nil, on_run_id: nil,
+                  lifecycle_check: nil, &block)
       ensure_connected!
       touch_activity!
+      # Connection establishment can block after the service-level preflight.
+      # Recheck before registering queues or scheduling chat.send so a Stop
+      # that won during the handshake cannot start remote tool side effects.
+      force_lifecycle_check(lifecycle_check) if lifecycle_check
 
       idempotency_key ||= SecureRandom.uuid
       actual_run_id = nil
@@ -186,34 +191,51 @@ module CollavreOpenclaw
       }
       rpc_params[:attachments] = attachments if attachments.present?
 
-      response = send_rpc("chat.send", rpc_params, request_id: rpc_request_id)
+      acknowledge_response = lambda do |response|
+        # The EM thread already registered @pending_runs[actual_run_id] in
+        # handle_response. Clean up the idempotency_key entry if a different
+        # runId was assigned.
+        actual_run_id = response&.dig(:runId) || idempotency_key
+        if actual_run_id != idempotency_key
+          @mutex.synchronize do
+            @pending_runs.delete(idempotency_key)
+            # Ensure runId is registered (may already be from handle_response)
+            @pending_runs[actual_run_id] ||= run_queue
+          end
+        end
 
-      # The EM thread already registered @pending_runs[actual_run_id] in
-      # handle_response. Clean up the idempotency_key entry if a different
-      # runId was assigned.
-      actual_run_id = response&.dig(:runId) || idempotency_key
-      if actual_run_id != idempotency_key
-        @mutex.synchronize do
-          @pending_runs.delete(idempotency_key)
-          # Ensure runId is registered (may already be from handle_response)
-          @pending_runs[actual_run_id] ||= run_queue
+        # Surface runId before streaming; guard so a faulty callback can't abort the stream.
+        if on_run_id
+          begin
+            on_run_id.call(actual_run_id)
+          rescue StandardError => e
+            Rails.logger.warn("[CollavreOpenclaw::WS] on_run_id callback failed: #{e.message}")
+          end
         end
       end
-
-      # Surface runId before streaming; guard so a faulty callback can't abort the stream.
-      if on_run_id
-        begin
-          on_run_id.call(actual_run_id)
-        rescue StandardError => e
-          Rails.logger.warn("[CollavreOpenclaw::WS] on_run_id callback failed: #{e.message}")
-        end
-      end
+      response = send_rpc(
+        "chat.send",
+        rpc_params,
+        request_id: rpc_request_id,
+        lifecycle_check: lifecycle_check,
+        &acknowledge_response
+      )
+      # Compatibility with test/custom send_rpc replacements that return a
+      # response but do not invoke the acknowledgement callback.
+      acknowledge_response.call(response) unless actual_run_id
 
       # Stream events until final/error/aborted
       last_seq = nil
 
       loop do
-        event = wait_with_timeout(run_queue, config.read_timeout, "chat response")
+        # The caller's block fires only on text deltas, and a run doing its
+        # tool work on the gateway can emit none for the whole turn. This is
+        # the checkpoint that does not depend on text: the wait below polls
+        # once before every event and once per idle slice, so both a flood of
+        # non-text events and total silence cross it. A raise unwinds through
+        # the adapter's CancelledError re-raise instead of holding this worker
+        # until read_timeout.
+        event = wait_for_chat_event(run_queue, config.read_timeout, lifecycle_check)
 
         break if event[:done]
 
@@ -268,6 +290,7 @@ module CollavreOpenclaw
         @pending_runs.delete(actual_run_id) if actual_run_id
         # Also clean up idempotency_key if send_rpc failed before we got a runId
         @pending_runs.delete(idempotency_key) if idempotency_key
+        @rpc_run_registrations.delete(rpc_request_id) if rpc_request_id
 
         # Record completed runs so late-arriving events are suppressed
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -599,7 +622,11 @@ module CollavreOpenclaw
     # @param request_id [String, nil] Pre-generated request ID. Used by chat_send
     #   to correlate the RPC response with the run_queue for EM-thread runId
     #   registration (see handle_response). If nil, a random UUID is generated.
-    def send_rpc(method, params, request_id: nil)
+    # @param lifecycle_check [#call, nil] Optional cooperative cancellation
+    #   check polled while waiting for an RPC response.
+    # @yield [Hash] successful response payload before a deferred lifecycle
+    #   error is re-raised, allowing chat.send to persist its acknowledged runId.
+    def send_rpc(method, params, request_id: nil, lifecycle_check: nil, &on_response)
       request_id ||= SecureRandom.uuid
       queue = Queue.new
 
@@ -616,13 +643,25 @@ module CollavreOpenclaw
         })
       end
 
-      result = wait_with_timeout(queue, config.read_timeout, method)
+      result = if lifecycle_check
+        wait_for_rpc_response(queue, config.read_timeout, method, lifecycle_check)
+      else
+        wait_with_timeout(queue, config.read_timeout, method)
+      end
       if result[:error]
         raise RpcError, "#{method} failed: #{result[:error]}"
       end
-      result[:payload]
+
+      payload = result[:payload]
+      on_response&.call(payload)
+      raise result[:deferred_lifecycle_error] if result[:deferred_lifecycle_error]
+
+      payload
     ensure
-      @mutex.synchronize { @pending_requests.delete(request_id) }
+      @mutex.synchronize do
+        @pending_requests.delete(request_id)
+        @rpc_run_registrations.delete(request_id)
+      end
     end
 
     def send_frame(frame)
@@ -695,6 +734,102 @@ module CollavreOpenclaw
     def extract_agent_id
       return nil unless @user&.email.present?
       @user.email.split("@").first
+    end
+
+    # Seconds between lifecycle_check invocations while waiting on a silent
+    # gateway. Matches AgentLifecycleManager::CANCEL_CHECK_INTERVAL — the
+    # check self-throttles at that interval, so polling faster buys nothing.
+    LIFECYCLE_POLL_INTERVAL = 1.0
+
+    # Wait for the next chat event. Without a lifecycle_check this is one
+    # blocking pop bounded by read_timeout, exactly as before. With one, the
+    # same total bound is kept but the wait is sliced so the check runs
+    # between slices — a run that goes quiet doing gateway-side tool work is
+    # otherwise unobservable until read_timeout (30 minutes by default).
+    def wait_for_chat_event(queue, timeout_seconds, lifecycle_check)
+      return wait_with_timeout(queue, timeout_seconds, "chat response") unless lifecycle_check
+
+      event = wait_with_lifecycle_poll(queue, timeout_seconds, "chat response", lifecycle_check)
+      force_lifecycle_check(lifecycle_check) if terminal_chat_event?(event)
+      event
+    end
+
+    # A chat.send acknowledgement is the provider handoff record: handle_response
+    # registers the Gateway runId before queueing it. If cancellation becomes
+    # visible at the same time, consume that acknowledgement first so chat_send
+    # can surface the runId and clean up its registration. The following chat
+    # event wait will still observe cancellation before consuming any run event.
+    def wait_for_rpc_response(queue, timeout_seconds, operation, lifecycle_check)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
+      loop do
+        result = pop_queue_nonblock(queue)
+        if result
+          force_lifecycle_check(lifecycle_check) unless result[:ok]
+          return result
+        end
+
+        begin
+          lifecycle_check.call
+        rescue StandardError => error
+          # Close the narrow race where the response arrived while the
+          # lifecycle check was reading terminal state from the database. This
+          # includes wrapped lifecycle infrastructure failures as well as
+          # cancellation. Only a successful response proves handoff; an RPC
+          # error must not replace the lifecycle failure that just won.
+          result = pop_queue_nonblock(queue)
+          if result&.dig(:ok)
+            result[:deferred_lifecycle_error] = error
+            return result
+          end
+          raise
+        end
+
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        raise TimeoutError, "#{operation} timed out after #{timeout_seconds}s" if remaining <= 0
+
+        result = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
+        if result
+          force_lifecycle_check(lifecycle_check) unless result[:ok]
+          return result
+        end
+      end
+    end
+
+    def wait_with_lifecycle_poll(queue, timeout_seconds, operation, lifecycle_check)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
+      loop do
+        lifecycle_check.call
+
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        raise TimeoutError, "#{operation} timed out after #{timeout_seconds}s" if remaining <= 0
+
+        event = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
+        return event if event
+      end
+    end
+
+    def terminal_chat_event?(event)
+      event[:done] || %w[final error aborted].include?(event[:state])
+    end
+
+    # Production lifecycle checks accept a force flag that bypasses their
+    # one-second database polling throttle. Keep zero-argument test/custom
+    # callables compatible while still checking at a terminal event boundary.
+    def force_lifecycle_check(lifecycle_check)
+      parameters = if lifecycle_check.respond_to?(:parameters)
+        lifecycle_check.parameters
+      else
+        lifecycle_check.method(:call).parameters
+      end
+      accepts_argument = parameters.any? { |type, _name| %i[req opt rest].include?(type) }
+
+      accepts_argument ? lifecycle_check.call(true) : lifecycle_check.call
+    end
+
+    def pop_queue_nonblock(queue)
+      queue.pop(true)
+    rescue ThreadError
+      nil
     end
 
     def wait_with_timeout(queue, timeout_seconds, operation)

@@ -51,7 +51,9 @@ module Collavre
         parent_task = find_active_workflow
         return I18n.t("collavre.comments.work_command.no_active_workflow") unless parent_task
 
-        WorkflowExecutor.new(parent_task).stop!
+        stopped = WorkflowExecutor.new(parent_task).stop!
+        return I18n.t("collavre.comments.work_command.no_active_workflow") unless stopped
+
         I18n.t("collavre.comments.work_command.stopped",
                agent: parent_task.agent.display_name)
       end

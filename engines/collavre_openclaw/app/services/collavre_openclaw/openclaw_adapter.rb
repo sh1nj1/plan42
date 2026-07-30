@@ -3,6 +3,16 @@ require "json"
 
 module CollavreOpenclaw
   class OpenclawAdapter
+    class LifecycleCheckError < StandardError
+      attr_reader :original
+
+      def initialize(original)
+        @original = original
+        super(original.message)
+        set_backtrace(original.backtrace)
+      end
+    end
+
     # Pure transport adapter for OpenClaw AI Gateway.
     # Session context filtering (full vs incremental) is handled upstream
     # by SessionContextResolver — this adapter sends exactly what it receives.
@@ -16,10 +26,19 @@ module CollavreOpenclaw
     #   Same Topic, multiple users → shared context
     #   Different Topics → isolated sessions
 
-    def initialize(user:, system_prompt:, context: {})
+    # lifecycle_check: callable polled during a chat so the turn can observe
+    # an external terminal status or its wall-clock deadline. It has to be
+    # injected here because this adapter's tools run remotely on the gateway —
+    # there is no local tool-call boundary, and the caller's streaming block
+    # fires only on text, which a tool-only run never emits. A raise from it
+    # (Collavre::CancelledError or a subclass) unwinds past both transports'
+    # fallback rescues.
+    def initialize(user:, system_prompt:, context: {}, lifecycle_check: nil, request_timeout_seconds: nil)
       @user = user
       @system_prompt = system_prompt
       @context = context
+      @lifecycle_check = wrap_lifecycle_check(lifecycle_check)
+      @request_timeout_seconds = request_timeout_seconds
       @last_handoff_failed = false
       @handed_off = false
     end
@@ -143,26 +162,27 @@ module CollavreOpenclaw
           session_key: session_key,
           message: payload[:message],
           attachments: payload[:attachments],
-          on_run_id: method(:handle_run_id)
+          on_run_id: method(:handle_run_id),
+          lifecycle_check: @lifecycle_check
         ) do |event|
           case event[:state]
           when "delta"
             if event[:text].present?
               response_content << event[:text]
               @handed_off = true
-              yield event[:text] if block_given?
+              emit_to_caller(event[:text], &block)
             end
           when "final"
             # If no deltas were streamed, final contains the full text
             if response_content.blank? && event[:text].present?
               response_content << event[:text]
               @handed_off = true
-              yield event[:text] if block_given?
+              emit_to_caller(event[:text], &block)
             end
           when "error"
             error_msg = event[:text] || "Unknown error"
             errored = true
-            yield "OpenClaw Error: #{error_msg}" if block_given?
+            emit_to_caller("OpenClaw Error: #{error_msg}", &block)
           when "aborted"
             # User or system aborted
           end
@@ -179,6 +199,18 @@ module CollavreOpenclaw
         # it as a delivery would be the losing mistake.
         @last_handoff_failed = true if errored && !@handed_off
         response_content.presence
+      rescue Collavre::CancelledError
+        # Raised out of the caller's streaming block when the task hit a
+        # terminal status or its turn deadline. The turn is already over —
+        # falling back to HTTP would issue a second provider request (and
+        # repeat tool side effects) instead of releasing this worker.
+        raise
+      rescue LifecycleCheckError => e
+        # A lifecycle poll is application control flow, not evidence that the
+        # WebSocket transport failed. In particular, falling back after the
+        # gateway acknowledged chat.send could submit the same tool-bearing
+        # payload twice. Restore the callback's original exception unchanged.
+        raise e.original
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
         Rails.logger.warn("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
@@ -355,10 +387,17 @@ module CollavreOpenclaw
         stream_response(payload) do |chunk|
           response_content << chunk
           @handed_off = true
-          yield chunk if block_given?
+          emit_to_caller(chunk, &block)
         end
 
         response_content.presence
+      rescue Collavre::CancelledError
+        # Same contract as the WebSocket path: a cancelled/deadline-failed
+        # turn must release the worker, not be rewritten as a provider error.
+        raise
+      rescue LifecycleCheckError => e
+        # Do not rewrite application/lifecycle failures into provider text.
+        raise e.original
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] HTTP chat error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
@@ -513,7 +552,13 @@ module CollavreOpenclaw
           req.options.on_data = proc do |chunk, _size, env|
             if env&.status.nil? || (env.status >= 200 && env.status < 300)
               buffer << chunk
+              @handed_off = true if env&.response_headers&.[]("content-type")&.include?("application/json")
               process_sse_buffer(buffer, &block)
+              # A peer can keep the socket active indefinitely by sending an
+              # event without its terminating blank line. Completed events are
+              # checked inside the parser after handoff classification; poll
+              # here only when an unterminated fragment remains.
+              @lifecycle_check&.call if buffer.present?
             else
               buffer << chunk
             end
@@ -525,9 +570,15 @@ module CollavreOpenclaw
           raise parse_error_message(response.status, error_body)
         end
 
+        json_response = response.headers["content-type"]&.include?("application/json")
+        # A completed successful JSON response proves the gateway accepted the
+        # payload just as an SSE data event does. Record that before the final
+        # lifecycle check, which may abort parsing because the task became
+        # terminal while this response was in flight.
+        @handed_off = true if json_response
         process_sse_buffer(buffer, final: true, &block)
 
-        if response.headers["content-type"]&.include?("application/json")
+        if json_response
           handle_json_response(response.body, &block)
         end
 
@@ -535,16 +586,20 @@ module CollavreOpenclaw
       rescue Faraday::TimeoutError
         retries += 1
         if retries <= max_retries
+          @lifecycle_check&.call
           Rails.logger.warn("[CollavreOpenclaw] Timed out, retrying (#{retries}/#{max_retries})...")
           sleep(1 * retries)
+          @lifecycle_check&.call
           retry
         end
         raise "OpenClaw request timed out after #{max_retries + 1} attempts"
       rescue Faraday::ConnectionFailed => e
         retries += 1
         if retries <= max_retries
+          @lifecycle_check&.call
           Rails.logger.warn("[CollavreOpenclaw] Connection failed, retrying (#{retries}/#{max_retries})...")
           sleep(1 * retries)
+          @lifecycle_check&.call
           retry
         end
         raise "Failed to connect to OpenClaw after #{max_retries + 1} attempts: #{e.message}"
@@ -580,13 +635,57 @@ module CollavreOpenclaw
 
     def process_sse_buffer(buffer, final: false, &block)
       while (idx = buffer.index("\n\n"))
+        # The HTTP transport has no event loop to poll from; this parser is
+        # its one checkpoint that runs for every received chunk, including
+        # tool/comment events that never yield text to the caller's block.
         event_data = buffer.slice!(0, idx + 2)
+        # Record delivery first for application data: receiving a successful
+        # data event proves the gateway accepted the payload and may already
+        # have run tools, even when it contains no caller-visible text. SSE
+        # comments are transport keepalives, so they cross the lifecycle check
+        # without claiming the agent received anything.
+        @handed_off = true if sse_data_event?(event_data)
+        @lifecycle_check&.call
         parse_sse_event(event_data, &block)
       end
 
       if final && buffer.present?
+        @handed_off = true if sse_data_event?(buffer)
+        @lifecycle_check&.call
         parse_sse_event(buffer, &block)
         buffer.clear
+      end
+    end
+
+    def wrap_lifecycle_check(check)
+      return nil unless check
+
+      lambda do |*args|
+        check.call(*args)
+      rescue Collavre::CancelledError
+        raise
+      rescue StandardError => e
+        raise LifecycleCheckError.new(e)
+      end
+    end
+
+    # Exceptions raised by the service's streaming callback are application
+    # control flow, not transport failures. Wrap them so the adapter's rescue
+    # chain cannot start an HTTP fallback after WebSocket handoff.
+    def emit_to_caller(value)
+      return unless block_given?
+
+      yield value
+    rescue Collavre::CancelledError
+      raise
+    rescue StandardError => e
+      raise LifecycleCheckError.new(e)
+    end
+
+    def sse_data_event?(event_str)
+      event_str.each_line.any? do |line|
+        stripped = line.strip
+        stripped.start_with?("data:") && stripped.delete_prefix("data:").strip.present?
       end
     end
 
@@ -619,8 +718,15 @@ module CollavreOpenclaw
 
     def build_connection
       Faraday.new do |builder|
-        builder.options.timeout = CollavreOpenclaw.config.read_timeout
-        builder.options.open_timeout = CollavreOpenclaw.config.open_timeout
+        remaining_deadline = @request_timeout_seconds&.call
+        builder.options.timeout = [
+          CollavreOpenclaw.config.read_timeout,
+          remaining_deadline
+        ].compact.min
+        builder.options.open_timeout = [
+          CollavreOpenclaw.config.open_timeout,
+          remaining_deadline
+        ].compact.min
         builder.adapter Faraday.default_adapter
       end
     end

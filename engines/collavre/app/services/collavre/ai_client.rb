@@ -88,7 +88,15 @@ module Collavre
     # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
     # inline typo correction on debounced typing) so private drafts are never
     # written to server-side activity logs.
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true)
+    #
+    # before_tool_call: callable run before every tool execution, on every
+    # iteration of the request->tools->request loop. This is the only
+    # cancellation/deadline checkpoint a tool-only turn has: tool-call chunks
+    # carry no content, so #chat never yields them to the caller's streaming
+    # block, where the text path runs its check. A CancelledError raised here
+    # propagates out of #chat as a cancellation, not an "⚠️ AI Error" delta.
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {},
+                   log_interactions: true, before_tool_call: nil, request_timeout_seconds: nil)
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
@@ -96,6 +104,8 @@ module Collavre
       @gateway_url = gateway_url
       @context = context
       @log_interactions = log_interactions
+      @before_tool_call = before_tool_call
+      @request_timeout_seconds = request_timeout_seconds
       @last_input_tokens = 0
       @last_output_tokens = 0
       @last_handoff_failed = false
@@ -211,11 +221,18 @@ module Collavre
     def ask(prompt)
       return nil unless @conversation
 
+      refresh_turn_boundary!(@conversation)
       # Disable tool calls for summary generation to avoid recursive approval
       @conversation.with_tools(replace: true)
       response = @conversation.ask(prompt)
+      refresh_turn_boundary!(@conversation)
       response&.content&.strip.presence
+    rescue CancelledError
+      raise
     rescue StandardError => e
+      # A provider timeout at the turn boundary must become the deadline that
+      # caused it, not a missing summary followed by pending_approval.
+      refresh_turn_boundary!(@conversation)
       Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
       nil
     end
@@ -298,16 +315,34 @@ module Collavre
       chat_opts[:provider] = provider if provider
       chat_opts[:assume_model_exists] = true if provider
 
-      # Apply current system timeout setting (picks up changes without restart)
-      RubyLLM.config.request_timeout = SystemSetting.llm_request_timeout_seconds
+      # RubyLLM::Context duplicates the global config. Set the timeout on that
+      # per-client copy so concurrent agent threads cannot overwrite one
+      # another's deadline cap.
+      @ruby_llm_context = RubyLLM.context do |config|
+        context_block.call(config)
+        config.request_timeout = effective_request_timeout_seconds
+      end
 
-      RubyLLM.context(&context_block)
-             .chat(**chat_opts).tap do |chat|
+      @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         session_id = build_session_id
         chat.with_headers("X-Session-Id" => session_id) if session_id
         chat.on_tool_call do |tool_call|
+          # Cancellation ahead of the approval gate: a turn that already
+          # reached a terminal status or its deadline must end, not park
+          # itself as pending approval for a tool it will never run. Force this
+          # boundary through the lifecycle throttle: the first tool call can
+          # arrive during the manager's initial one-second quiet period.
+          @before_tool_call&.call(true)
           check_tool_approval!(tool_call)
+        end
+        if @request_timeout_seconds
+          chat.after_tool_result do |_result|
+            # A tool can consume much of the turn. Recheck the deadline and
+            # rebuild RubyLLM's provider connection with the new remaining
+            # timeout before the loop starts its next request.
+            refresh_turn_boundary!(chat)
+          end
         end
         if tools.any?
           # Resolve tool names to classes using the gem's helper
@@ -315,6 +350,22 @@ module Collavre
           chat.with_tools(*tool_classes, replace: true)
         end
       end
+    end
+
+    def refresh_turn_boundary!(conversation)
+      @before_tool_call&.call(true)
+      return unless @request_timeout_seconds && @ruby_llm_context
+
+      @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
+      conversation.with_context(@ruby_llm_context)
+    end
+
+    def effective_request_timeout_seconds
+      configured = SystemSetting.llm_request_timeout_seconds.to_f
+      remaining = @request_timeout_seconds&.call
+      return configured unless remaining
+
+      [ configured, remaining.to_f ].min.clamp(0.001, configured)
     end
 
     def build_session_id

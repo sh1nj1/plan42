@@ -6,6 +6,7 @@ require "ostruct"
 class AiClientTest < ActiveSupport::TestCase
   class FakeConversation
     attr_reader :messages_added, :instructions_set, :headers_set
+    attr_reader :after_tool_result_callback, :context_set
 
     def initialize(response_content: "final response")
       @response_content = response_content
@@ -31,6 +32,15 @@ class AiClientTest < ActiveSupport::TestCase
     end
 
     def on_tool_call(&block)
+    end
+
+    def after_tool_result(&block)
+      @after_tool_result_callback = block
+    end
+
+    def with_context(context)
+      @context_set = context
+      self
     end
 
     def ask(prompt)
@@ -78,6 +88,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     mock_config = Minitest::Mock.new
     mock_config.expect(:gemini_api_key=, nil, [ "api-key" ])
+    mock_config.expect(:request_timeout=, 1800, [ 1800 ])
 
     context_stub = proc do |&block|
       block.call(mock_config) if block
@@ -109,6 +120,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     mock_config = Minitest::Mock.new
     mock_config.expect(:gemini_api_key=, nil, [ "api-key" ])
+    mock_config.expect(:request_timeout=, 1800, [ 1800 ])
 
     context_stub = proc do |&block|
       block.call(mock_config) if block
@@ -121,6 +133,100 @@ class AiClientTest < ActiveSupport::TestCase
 
     assert_equal "Be helpful", fake_chat.instructions_set
     mock_config.verify
+  end
+
+  test "caps a provider request by the remaining turn deadline" do
+    remaining_seconds = 60.0
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: nil,
+      llm_api_key: "api-key",
+      request_timeout_seconds: -> { remaining_seconds }
+    )
+    fake_chat = FakeConversation.new
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_config = RubyLLM.config.dup
+    context_config.request_timeout = 1800
+
+    context_stub = proc do |&block|
+      block.call(context_config)
+      mock_context
+    end
+
+    Collavre::SystemSetting.stub :llm_request_timeout_seconds, 1800 do
+      RubyLLM.stub(:context, context_stub) { client.send(:build_conversation) }
+    end
+
+    assert_equal remaining_seconds, context_config.request_timeout,
+                 "a silent request must time out no later than the turn deadline"
+  end
+
+  test "refreshes the request timeout after a tool consumes turn budget" do
+    remaining_seconds = 60.0
+    forced_checks = []
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: nil,
+      llm_api_key: "api-key",
+      before_tool_call: ->(force) { forced_checks << force },
+      request_timeout_seconds: -> { remaining_seconds }
+    )
+    fake_chat = FakeConversation.new
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_config = RubyLLM.config.dup
+    mock_context.define_singleton_method(:config) { context_config }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    remaining_seconds = 20.0
+    fake_chat.after_tool_result_callback.call("tool result")
+
+    assert_equal [ true ], forced_checks
+    assert_equal 20.0, context_config.request_timeout
+    assert_same mock_context, fake_chat.context_set
+  end
+
+  test "refreshes timeout and rechecks lifecycle when an approval summary request fails" do
+    remaining_seconds = 60.0
+    forced_checks = []
+    deadline_error = Collavre::TurnDeadlineError.new(60)
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: nil,
+      llm_api_key: "api-key",
+      before_tool_call: lambda { |force|
+        forced_checks << force
+        raise deadline_error if forced_checks.size == 2
+      },
+      request_timeout_seconds: -> { remaining_seconds }
+    )
+    fake_chat = FakeConversation.new
+    fake_chat.define_singleton_method(:ask) { |_prompt| raise Faraday::TimeoutError, "summary timed out" }
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_config = RubyLLM.config.dup
+    mock_context.define_singleton_method(:config) { context_config }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      conversation = client.send(:build_conversation)
+      client.instance_variable_set(:@conversation, conversation)
+    end
+
+    remaining_seconds = 5.0
+    error = assert_raises(Collavre::TurnDeadlineError) { client.ask("Summarize the tool call") }
+
+    assert_same deadline_error, error
+    assert_equal [ true, true ], forced_checks,
+                 "approval summaries must check both before the request and after a timeout"
+    assert_equal 5.0, context_config.request_timeout
+    assert_same mock_context, fake_chat.context_set
   end
 
   test "build_conversation supplies a placeholder key for a keyless local gateway" do
@@ -142,6 +248,7 @@ class AiClientTest < ActiveSupport::TestCase
     mock_config = Minitest::Mock.new
     mock_config.expect(:openai_api_key=, nil, [ "local-gateway" ])
     mock_config.expect(:openai_api_base=, nil, [ "http://localhost:11434/v1" ])
+    mock_config.expect(:request_timeout=, 1800, [ 1800 ])
 
     context_stub = proc do |&block|
       block.call(mock_config) if block
@@ -862,5 +969,84 @@ class AiClientTest < ActiveSupport::TestCase
       assert_equal !client.handed_off?, client.last_handoff_failed?,
                    "a stream that broke after #{what} must answer the same question the same way"
     end
+  end
+
+  # A tool-only turn never reaches the caller's streaming block: tool-call
+  # chunks carry no content, and #chat skips empty deltas above the yield —
+  # so the terminal-status/deadline check AiAgentService runs there never
+  # runs. RubyLLM fires on_tool_call before every tool execution on every
+  # iteration of the request->tools->request loop, so that boundary is the
+  # one a tool-only turn is guaranteed to keep crossing. The injected check
+  # runs there, ahead of the approval gate: a turn that already ended must
+  # end, not park itself as pending approval for a tool it will never run.
+  test "runs the injected before_tool_call check ahead of the approval gate" do
+    order = []
+    forced = []
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system",
+      llm_api_key: "api-key",
+      before_tool_call: lambda { |force|
+        forced << force
+        order << :cancellation_check
+      }
+    )
+    client.define_singleton_method(:check_tool_approval!) { |_tool_call| order << :approval_gate }
+
+    fake_chat = FakeConversation.new
+    tool_boundary = nil
+    fake_chat.define_singleton_method(:on_tool_call) { |&block| tool_boundary = block }
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      tool_boundary.call(OpenStruct.new(name: "creative_read", arguments: {}))
+      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+    end
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_stub = proc { |&block| block&.call(OpenStruct.new); mock_context }
+
+    RubyLLM.stub(:context, context_stub) do
+      client.chat([ { role: "user", parts: [ { text: "go" } ] } ]) { |_delta| nil }
+    end
+
+    assert_equal [ :cancellation_check, :approval_gate ], order
+    assert_equal [ true ], forced,
+                 "the approval boundary must bypass the lifecycle throttle"
+  end
+
+  # The check ending the turn must leave #chat as the cancellation it is.
+  # The StandardError rescue would rewrite it into an "⚠️ AI Error" delta and
+  # end the turn normally — keeping the worker for the rest of the loop the
+  # check was meant to stop.
+  test "cancellation raised at the tool-call boundary propagates out of chat" do
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system",
+      llm_api_key: "api-key",
+      before_tool_call: ->(_force) { raise Collavre::TurnDeadlineError.new(3600) }
+    )
+
+    fake_chat = FakeConversation.new
+    tool_boundary = nil
+    fake_chat.define_singleton_method(:on_tool_call) { |&block| tool_boundary = block }
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      tool_boundary.call(OpenStruct.new(name: "creative_read", arguments: {}))
+    end
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_stub = proc { |&block| block&.call(OpenStruct.new); mock_context }
+
+    yielded = []
+    error = assert_raises(Collavre::TurnDeadlineError) do
+      RubyLLM.stub(:context, context_stub) do
+        client.chat([ { role: "user", parts: [ { text: "go" } ] } ]) { |delta| yielded << delta }
+      end
+    end
+    assert_equal 3600, error.deadline_seconds
+
+    assert_empty yielded, "the cancellation must not be rewritten into an error delta"
+    assert_predicate client, :handed_off?,
+      "premise: the tool-call chunk arrived, so the provider has the payload — the ending must read delivered"
   end
 end

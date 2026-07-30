@@ -68,4 +68,19 @@ class SystemSettingTest < ActiveSupport::TestCase
     SystemSetting.create!(key: "creatives_login_required", value: "true")
     assert SystemSetting.creatives_login_required?
   end
+
+  test "ai_agent_turn_deadline_seconds default, floor, and override" do
+    SystemSetting.destroy_all
+    Rails.cache.delete("system_setting:ai_agent_turn_deadline_seconds")
+    assert_equal SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS,
+                 SystemSetting.ai_agent_turn_deadline_seconds
+
+    setting = SystemSetting.create!(key: "ai_agent_turn_deadline_seconds", value: "10")
+    assert_equal SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS,
+                 SystemSetting.ai_agent_turn_deadline_seconds,
+                 "below-floor values fall back to the default"
+
+    setting.update!(value: "900")
+    assert_equal 900, SystemSetting.ai_agent_turn_deadline_seconds
+  end
 end

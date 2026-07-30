@@ -831,7 +831,389 @@ module CollavreOpenclaw
       assert_predicate adapter, :last_handoff_failed?
     end
 
+    # A raise from the caller's streaming block is the turn aborting itself —
+    # AgentLifecycleManager#check_cancelled! raises from the delta callback on a
+    # terminal task status or an overrun turn deadline — not the transport
+    # failing. Falling back to HTTP would hand the gateway the same payload a
+    # second time and hold the worker thread through a whole second attempt.
+    test "a cancellation raised mid-stream over websocket unwinds instead of falling back to http" do
+      adapter = http_adapter
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      with_websocket_streaming(delta: "partial") do
+        assert_raises(Collavre::CancelledError) do
+          adapter.chat(messages_data) { |_chunk| raise Collavre::CancelledError }
+        end
+      end
+
+      assert_not fallback_called, "cancellation must unwind, not start an HTTP fallback"
+    end
+
+    test "a non-cancellation streaming callback error does not start an HTTP fallback" do
+      adapter = http_adapter
+      callback_error = RuntimeError.new("task reload failed")
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      raised = with_websocket_streaming(delta: "partial") do
+        assert_raises(RuntimeError) do
+          adapter.chat(messages_data) { |_chunk| raise callback_error }
+        end
+      end
+
+      assert_same callback_error, raised
+      refute fallback_called,
+             "an application callback failure is not a WebSocket transport failure"
+    end
+
+    # Same turn-abort raise on the HTTP transport. The block raises only once —
+    # in production check_cancelled! is throttled, so the "OpenClaw Error"
+    # yielded by the rescue would not re-raise; without the re-raise the
+    # cancellation is swallowed into the reply text and the turn ends normally.
+    test "a cancellation raised mid-stream over http is re-raised, not swallowed" do
+      with_http_transport do
+        adapter = http_adapter
+        adapter.define_singleton_method(:stream_response) do |_payload, &blk|
+          blk.call("partial")
+        end
+
+        cancelled = false
+        assert_raises(Collavre::CancelledError) do
+          adapter.chat(messages_data) do |_chunk|
+            next if cancelled
+
+            cancelled = true
+            raise Collavre::CancelledError
+          end
+        end
+      end
+    end
+
+    # The caller's streaming block fires only on text, and an OpenClaw run does
+    # its tool work on the gateway — so a tool-only run never crosses the
+    # block. The lifecycle check injected at construction is the adapter path's
+    # substitute for the RubyLLM tool-call boundary: it must reach chat_send,
+    # and its raise must unwind like a block raise, not start a fallback.
+    test "the websocket transport polls the injected lifecycle check" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { raise Collavre::CancelledError }
+      )
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+      begin
+        client = Object.new
+        # A run that goes quiet doing gateway-side tool work: chat.send is
+        # acknowledged, then no events. The real client's lifecycle poll is
+        # what raises here; the fake honors the same contract.
+        client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &_blk|
+          on_run_id&.call("run-#{SecureRandom.hex(4)}")
+          lifecycle_check&.call
+          flunk "lifecycle_check must raise before any event handling"
+        end
+        manager = Object.new
+        manager.define_singleton_method(:connection_for) { |_user| client }
+
+        CollavreOpenclaw::ConnectionManager.stub(:instance, manager) do
+          assert_raises(Collavre::CancelledError) { adapter.chat(messages_data) { |_chunk| } }
+        end
+      ensure
+        CollavreOpenclaw.config.transport = original
+      end
+
+      assert_not fallback_called, "a lifecycle raise must unwind, not start an HTTP fallback"
+    end
+
+    test "a non-cancellation lifecycle error does not start an HTTP fallback" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      lifecycle_error = RuntimeError.new("task reload failed")
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { raise lifecycle_error }
+      )
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+      begin
+        client = Object.new
+        client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &_blk|
+          on_run_id&.call("run-#{SecureRandom.hex(4)}")
+          lifecycle_check&.call
+        end
+        manager = Object.new
+        manager.define_singleton_method(:connection_for) { |_user| client }
+
+        raised = CollavreOpenclaw::ConnectionManager.stub(:instance, manager) do
+          assert_raises(RuntimeError) { adapter.chat(messages_data) { |_chunk| } }
+        end
+        assert_same lifecycle_error, raised
+      ensure
+        CollavreOpenclaw.config.transport = original
+      end
+
+      refute fallback_called,
+             "a lifecycle callback failure is not a WebSocket transport failure"
+    end
+
+    # The HTTP transport has no event loop to poll from; its checkpoint is the
+    # SSE parser, which runs for every received chunk — including comment/tool
+    # events that never yield text to the caller's block.
+    test "the http sse parser crosses the injected lifecycle check on non-content chunks" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { checks += 1 }
+      )
+
+      buffer = +"event: tool_use\ndata: {\"type\":\"tool_use\"}\n\n"
+      adapter.send(:process_sse_buffer, buffer) { |_chunk| flunk "no text to yield" }
+
+      assert_operator checks, :>=, 1,
+        "a chunk with no caller-visible text must still cross the lifecycle check"
+    end
+
+    test "the http stream polls lifecycle before an unterminated SSE event completes" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: lambda {
+          checks += 1
+          raise Collavre::CancelledError
+        }
+      )
+
+      request = OpenStruct.new(headers: {}, options: OpenStruct.new)
+      request.define_singleton_method(:url) { |_endpoint| }
+      on_data_returned = false
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&configure|
+        configure.call(request)
+        body = +'data: {"type":"tool_use"'
+        request.options.on_data.call(body, body.bytesize, OpenStruct.new(status: 200))
+        on_data_returned = true
+        OpenStruct.new(status: 200, headers: { "content-type" => "text/event-stream" }, body: body)
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, { messages: [] }) { |_chunk| flunk "no text to yield" }
+      end
+
+      assert_equal 1, checks
+      assert_not on_data_returned,
+                 "lifecycle must be checked from on_data instead of waiting for response completion"
+      assert_not adapter.handed_off?,
+                 "an unterminated SSE fragment does not prove the agent accepted the payload"
+    end
+
+    test "the http connection timeout is capped by the remaining turn deadline" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        request_timeout_seconds: -> { 5.0 }
+      )
+
+      connection = adapter.send(:build_connection)
+      assert_equal 5.0, connection.options.timeout
+      assert_equal 5.0, connection.options.open_timeout,
+                   "TCP/TLS setup must not outlive the remaining turn budget"
+    end
+
+    test "the http sse parser records handoff before lifecycle cancellation" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = nil
+      handed_off_at_check = false
+      check = lambda do
+        handed_off_at_check = adapter.handed_off?
+        raise Collavre::CancelledError
+      end
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: check
+      )
+      buffer = +"event: tool_use\ndata: {\"type\":\"tool_use\"}\n\n"
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:process_sse_buffer, buffer) { |_chunk| flunk "no text to yield" }
+      end
+
+      assert handed_off_at_check,
+             "a successful HTTP event proves delivery before cancellation is observed"
+      assert_predicate adapter, :handed_off?
+    end
+
+    test "a successful http json response records handoff before lifecycle cancellation" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = nil
+      handed_off_at_check = false
+      check = lambda do
+        handed_off_at_check = adapter.handed_off?
+        raise Collavre::CancelledError
+      end
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: check
+      )
+
+      body = <<~JSON
+        {
+          "choices": [
+
+            {"message":{"content":"done"}}
+          ]
+        }
+      JSON
+      request = OpenStruct.new(headers: {}, options: OpenStruct.new)
+      request.define_singleton_method(:url) { |_endpoint| }
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&configure|
+        configure.call(request)
+        env = OpenStruct.new(
+          status: 200,
+          response_headers: { "content-type" => "application/json" }
+        )
+        request.options.on_data.call(body, body.bytesize, env)
+        OpenStruct.new(
+          status: 200,
+          headers: { "content-type" => "application/json" },
+          body: body
+        )
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, { messages: [] }) { |_chunk| }
+      end
+
+      assert handed_off_at_check,
+             "a completed successful JSON response proves delivery before cancellation is observed"
+      assert_predicate adapter, :handed_off?
+    end
+
+    test "the http sse parser checks lifecycle without treating a keepalive comment as handoff" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = nil
+      handed_off_at_check = nil
+      check = lambda do
+        handed_off_at_check = adapter.handed_off?
+        raise Collavre::CancelledError
+      end
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: check
+      )
+      buffer = +": ping\n\n"
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:process_sse_buffer, buffer) { |_chunk| flunk "no text to yield" }
+      end
+
+      assert_equal false, handed_off_at_check,
+                   "an SSE transport keepalive does not prove the agent received the payload"
+      assert_not adapter.handed_off?
+    end
+
+    test "the http sse parser checks lifecycle before flushing a final partial event" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { checks += 1 }
+      )
+      buffer = +'data: {"choices":[{"delta":{"content":"last"}}]}'
+      streamed = +""
+
+      adapter.send(:process_sse_buffer, buffer, final: true) { |chunk| streamed << chunk }
+
+      assert_equal 1, checks
+      assert_equal "last", streamed
+      assert_empty buffer
+    end
+
+    test "an http timeout checks lifecycle before retrying the request" do
+      assert_http_retry_checks_lifecycle(Faraday::TimeoutError.new("gateway went quiet"))
+    end
+
+    test "an http connection failure checks lifecycle before retrying the request" do
+      assert_http_retry_checks_lifecycle(Faraday::ConnectionFailed.new("gateway unavailable"))
+    end
+
+    test "an http timeout rechecks lifecycle after retry backoff" do
+      assert_http_retry_rechecks_after_backoff(Faraday::TimeoutError.new("gateway went quiet"))
+    end
+
+    test "an http connection failure rechecks lifecycle after retry backoff" do
+      assert_http_retry_rechecks_after_backoff(Faraday::ConnectionFailed.new("gateway unavailable"))
+    end
+
     private
+
+    def assert_http_retry_checks_lifecycle(transport_error)
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      attempts = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { raise Collavre::CancelledError }
+      )
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&_block|
+        attempts += 1
+        raise transport_error
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, messages_data)
+      end
+      assert_equal 1, attempts, "a cancelled turn must not issue another provider request"
+    end
+
+    def assert_http_retry_rechecks_after_backoff(transport_error)
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      attempts = 0
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: lambda {
+          checks += 1
+          raise Collavre::CancelledError if checks >= 2
+        }
+      )
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&_block|
+        attempts += 1
+        raise transport_error
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+      adapter.define_singleton_method(:sleep) { |_seconds| }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, messages_data)
+      end
+      assert_equal 2, checks, "lifecycle must be checked on both sides of retry backoff"
+      assert_equal 1, attempts, "cancellation during backoff must prevent a second provider request"
+    end
 
     # Drive the real #chat_via_websocket: surface a run id the way the real
     # client does — WebsocketClient#chat_send calls on_run_id as soon as
@@ -845,10 +1227,30 @@ module CollavreOpenclaw
 
       acked = acknowledged
       client = Object.new
-      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, &blk|
+      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &blk|
         on_run_id&.call("run-#{SecureRandom.hex(4)}") if acked
         blk.call({ state: "delta", text: delta }) if delta
         raise CollavreOpenclaw::TimeoutError, "gateway went quiet"
+      end
+      manager = Object.new
+      manager.define_singleton_method(:connection_for) { |_user| client }
+
+      CollavreOpenclaw::ConnectionManager.stub(:instance, manager) { yield }
+    ensure
+      CollavreOpenclaw.config.transport = original
+    end
+
+    # A websocket whose gateway acknowledges chat.send and streams `delta`
+    # normally, so the caller's block is the only thing that can raise.
+    def with_websocket_streaming(delta:)
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+
+      client = Object.new
+      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &blk|
+        on_run_id&.call("run-#{SecureRandom.hex(4)}")
+        blk.call({ state: "delta", text: delta })
+        nil
       end
       manager = Object.new
       manager.define_singleton_method(:connection_for) { |_user| client }

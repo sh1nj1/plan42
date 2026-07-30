@@ -135,6 +135,13 @@
           <%= t('admin.settings.llm_request_timeout_seconds_hint') %>
         </div>
       </div>
+      <div style="max-width: 300px;">
+        <%= f.label :ai_agent_turn_deadline_seconds, t('admin.settings.ai_agent_turn_deadline_seconds') %>
+        <%= f.number_field :ai_agent_turn_deadline_seconds, value: @ai_agent_turn_deadline_seconds, min: 60, style: "width: 100%;" %>
+        <div class="help-text" style="font-size: 0.85em; color: var(--color-text-muted); margin-top: 0.25em;">
+          <%= t('admin.settings.ai_agent_turn_deadline_seconds_hint') %>
+        </div>
+      </div>
     </div>
 
     <div style="margin-top: 2em; border-top: 1px solid var(--color-border); padding-top: 1.5em;">

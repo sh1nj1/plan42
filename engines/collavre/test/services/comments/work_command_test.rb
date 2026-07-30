@@ -178,6 +178,45 @@ module Collavre
         assert_match(/No active workflow/, result)
       end
 
+      test "stop does not overwrite a workflow whose failure already won" do
+        parent_task = Task.create!(
+          name: "Failed workflow",
+          status: "failed",
+          agent: @ai_agent,
+          creative: @creative,
+          workflow_state: { "current_creative_id" => @child1.id }
+        )
+        sub_task = Task.create!(
+          name: "Deadline child",
+          status: "failed",
+          agent: @ai_agent,
+          creative: @child1,
+          parent_task: parent_task
+        )
+
+        stopped = WorkflowExecutor.new(parent_task).stop!
+
+        refute stopped
+        assert_equal "failed", parent_task.reload.status
+        assert_equal "failed", sub_task.reload.status
+      end
+
+      test "stop reports no active workflow when failure wins after lookup" do
+        comment = create_comment('/work @TestAgent: Do work')
+        assert_enqueued_with(job: AiAgentJob) do
+          WorkCommand.new(comment: comment, user: @user).call
+        end
+        stop_comment = create_comment('/work stop')
+        executor = Object.new
+        executor.define_singleton_method(:stop!) { false }
+
+        result = WorkflowExecutor.stub(:new, executor) do
+          WorkCommand.new(comment: stop_comment, user: @user).call
+        end
+
+        assert_match(/No active workflow/, result)
+      end
+
       test "resume restarts cancelled workflow" do
         comment = create_comment('/work @TestAgent: Do work')
         assert_enqueued_with(job: AiAgentJob) do

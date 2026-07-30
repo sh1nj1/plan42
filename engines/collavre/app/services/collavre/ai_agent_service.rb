@@ -16,22 +16,35 @@ module Collavre
     end
 
     def call
-      Current.set(user: @agent) do
-        if @agent.claude_channel_agent?
-          delegate_to_claude_channel
-        else
-          execute_llm_conversation
+      begin
+        Current.set(user: @agent) do
+          if @agent.claude_channel_agent?
+            delegate_to_claude_channel
+          else
+            execute_llm_conversation
+          end
         end
+      rescue ApprovalPendingError => e
+        summary = generate_approval_summary(e)
+        AiAgent::ApprovalHandler.new(
+          task: @task, agent: @agent, context: @context,
+          creative: @creative, reply_comment: @reply_comment
+        ).handle(e, summary: summary)
+        raise
       end
-    rescue ApprovalPendingError => e
-      summary = generate_approval_summary(e)
-      AiAgent::ApprovalHandler.new(
-        task: @task, agent: @agent, context: @context,
-        creative: @creative, reply_comment: @reply_comment
-      ).handle(e, summary: summary)
+    rescue TurnDeadlineError => e
+      handle_cancelled(
+        action_type: "failed",
+        message: "Turn exceeded the #{e.deadline_seconds}s deadline"
+      )
+      abort_agent_session_if_needed
       raise
     rescue CancelledError
-      handle_cancelled
+      if @task.reload.status == "failed"
+        handle_cancelled(action_type: "failed", message: "Task failed externally")
+      else
+        handle_cancelled
+      end
       abort_agent_session_if_needed
       raise
     end
@@ -121,7 +134,13 @@ module Collavre
       log_action("completion", { response: @streamer.content })
 
       finalized_comment = finalize_response
+      # Stop/failure can land while the finalizer persists and broadcasts the
+      # reply. Revalidate before dispatching that reply to other agents.
+      @lifecycle_manager.check_cancelled!(force: true)
       dispatch_a2a(finalized_comment) unless @finalizer&.review_flow
+      # A2A dispatch may itself perform I/O. Keep the normal return path from
+      # handing a stale "success" to AiAgentJob after a terminal transition.
+      @lifecycle_manager.check_cancelled!(force: true)
 
       @lifecycle_manager.broadcast_status("idle")
 
@@ -203,16 +222,33 @@ module Collavre
           user: @agent,
           task: @task,
           comment: @reply_comment || @original_comment
-        }
+        },
+        request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
+        # The streaming block below checks cancellation only when a text delta
+        # arrives; a tool-only loop emits none, so the tool-call boundary is
+        # that loop's only checkpoint against terminal status and the deadline.
+        before_tool_call: ->(force = false) { @lifecycle_manager.check_cancelled!(force: force) }
       )
     end
 
     def stream_response(client, messages_data)
-      client.chat(messages_data, tools: @agent.tools || []) do |delta|
+      # Prompt/session preparation can take long enough for Stop or
+      # StuckDetector to end the task before the provider request begins.
+      # Bypass the new manager's initial polling throttle at this handoff
+      # boundary so a terminal turn cannot start remote tool side effects.
+      @lifecycle_manager.check_cancelled!(force: true)
+      response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
         @streamer.append(delta)
         @lifecycle_manager.heartbeat_if_needed
       end
+      # A provider can return its final response inside the one-second polling
+      # throttle after StuckDetector failed the task or the turn crossed its
+      # deadline. This is the common completion boundary for RubyLLM and both
+      # OpenClaw transports; validate it without throttling before finalization
+      # can overwrite the terminal outcome.
+      @lifecycle_manager.check_cancelled!(force: true)
+      response
     end
 
     def finalize_response
@@ -237,10 +273,12 @@ module Collavre
       dispatcher.dispatch
     end
 
-    def handle_cancelled
+    def handle_cancelled(action_type: "cancelled", message: "Task cancelled by user")
       @lifecycle_manager.handle_cancelled(
         reply_comment: @reply_comment,
-        response_content: @streamer.content
+        response_content: @streamer.content,
+        action_type: action_type,
+        message: message
       )
 
       # Reassociate activity logs if there was partial content

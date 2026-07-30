@@ -66,6 +66,22 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='password_min_length'][min='#{SystemSetting::DEFAULT_PASSWORD_MIN_LENGTH}'][max='72']"
   end
 
+  test "ai_agent_turn_deadline_seconds persists and floors at 60" do
+    sign_in_as(@admin, password: "password")
+
+    patch collavre.admin_settings_path, params: { ai_agent_turn_deadline_seconds: 900, auth_providers: [ "email" ] }
+    assert_redirected_to collavre.admin_settings_path
+    Rails.cache.clear
+    assert_equal 900, SystemSetting.ai_agent_turn_deadline_seconds
+
+    patch collavre.admin_settings_path, params: { ai_agent_turn_deadline_seconds: 10, auth_providers: [ "email" ] }
+    assert_redirected_to collavre.admin_settings_path
+    Rails.cache.clear
+    assert_equal SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS,
+                 SystemSetting.ai_agent_turn_deadline_seconds,
+                 "below-floor values fall back to the default"
+  end
+
   test "update saves both home_page_path and home_page_path_authenticated" do
     sign_in_as(@admin, password: "password")
 

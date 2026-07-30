@@ -33,10 +33,16 @@ module CollavreOpenclaw
         # key?(:system_prompt) distinguishes "not provided" (Array input) from "explicitly nil" (incremental session).
         resolved_system_prompt = messages_data.key?(:system_prompt) ? messages_data[:system_prompt] : system_prompt
         user = context&.dig(:user)
+        # before_tool_call is the client's lifecycle checkpoint (terminal
+        # status + turn deadline). The base client fires it at RubyLLM
+        # tool-call boundaries; this path never reaches those, so the adapter
+        # gets the same callable to poll mid-stream instead.
         adapter = adapter_class.new(
           user: user,
           system_prompt: resolved_system_prompt,
-          context: context
+          context: context,
+          lifecycle_check: @before_tool_call,
+          request_timeout_seconds: @request_timeout_seconds
         )
 
         response_content = nil

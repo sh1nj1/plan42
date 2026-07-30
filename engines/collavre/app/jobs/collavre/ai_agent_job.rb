@@ -1,6 +1,6 @@
 module Collavre
   class AiAgentJob < ApplicationJob
-    queue_as :default
+    queue_as :ai_agents
 
     # Allow resuming a task that was pending approval
     def perform(agent_id_or_task, event_name = nil, context = nil)
@@ -243,20 +243,24 @@ module Collavre
           current_retry = task.retry_count || 0
 
           if current_retry < max_retries
-            task.update!(retry_count: current_retry + 1, status: "pending")
+            transition_running_task!(
+              task,
+              retry_count: current_retry + 1,
+              status: "pending"
+            )
             Rails.logger.warn(
               "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
               "retrying (#{current_retry + 1}/#{max_retries})"
             )
             AiAgentJob.set(wait: 5.seconds).perform_later(task)
           else
-            task.update!(status: "failed")
+            transition_running_task!(task, status: "failed")
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
               task, error_message: "Agent returned empty response after #{max_retries} retries"
             )
           end
         else
-          task.update!(status: "done")
+          transition_running_task!(task, status: "done")
           # Advance workflow (release happens in ensure block)
           if task.parent_task_id.present?
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
@@ -267,6 +271,32 @@ module Collavre
         # Don't release resources yet - task will resume
         should_release = false
         Rails.logger.info("AiAgentJob paused for task #{task.id}: awaiting tool approval")
+      rescue TurnDeadlineError => e
+        # The deadline is the one terminal exit this worker inflicts on itself:
+        # every external failer of a workflow subtask (StuckDetector, the
+        # offline guards above, comment deletion) calls fail_subtask! at the
+        # site that writes `failed`, which is why the CancelledError branch
+        # below never has to. Here the writer is AgentLifecycleManager inside
+        # this very call stack, so the parent notification happens here or
+        # nowhere — and without it the parent workflow stays "running" on a
+        # child that already failed underneath it. Restore/settle of dropped
+        # dispatches needs nothing extra: fail_while_worker_settles! marked the
+        # row, and the ensure below settles it.
+        Rails.logger.info("AiAgentJob turn deadline exceeded for task #{task.id}")
+        if (parent_task = task.parent_task)
+          # The parent can be stopped independently while this exception
+          # unwinds. Serialize against that transition and report failure only
+          # while it is still the active workflow; an explicit cancellation
+          # that gets the lock first must remain the terminal result.
+          parent_task.with_lock do
+            next unless parent_task.status == "running"
+
+            Collavre::Comments::WorkflowExecutor.new(parent_task).fail_subtask!(
+              task,
+              error_message: "Turn exceeded the #{e.deadline_seconds}s deadline"
+            )
+          end
+        end
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
         Rails.logger.info("AiAgentJob cancelled for task #{task.id}: trigger message deleted")
@@ -306,6 +336,18 @@ module Collavre
     end
 
     private
+
+    # A terminal status can be written by Stop/StuckDetector after the service's
+    # last lifecycle checkpoint but before this job records its outcome. Lock
+    # and re-check the row so normal completion/retry cannot overwrite that
+    # external winner.
+    def transition_running_task!(task, **attributes)
+      task.with_lock do
+        raise CancelledError unless task.status == "running"
+
+        task.update!(attributes)
+      end
+    end
 
     # Create this dispatch's Task row, either admitted (`running`) or parked as
     # a `queued` waiter when the topic's concurrency slot is already taken.

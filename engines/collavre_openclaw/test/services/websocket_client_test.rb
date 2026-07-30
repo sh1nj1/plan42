@@ -181,6 +181,293 @@ module CollavreOpenclaw
       assert_equal 1, finals.size, "Final event must not be filtered by seq dedup"
     end
 
+    # The delta callback is the caller's only checkpoint against terminal
+    # status and the turn deadline, and a gateway-side tool-only run emits no
+    # deltas. chat_send must give the caller a checkpoint of its own: invoked
+    # ahead of every event it consumes, so a flood of non-text events still
+    # crosses it.
+    test "chat_send invokes lifecycle_check ahead of each event it consumes" do
+      client = WebsocketClient.new(user: @user)
+      calls = 0
+
+      events = [
+        { state: "delta", message: { content: "Hi" } },
+        { state: "final", message: { content: "Hi" } }
+      ]
+
+      result = run_chat_send_with_events(client, events, lifecycle_check: -> { calls += 1 }) { |_ev| }
+
+      assert_equal "Hi", result
+      assert_operator calls, :>=, 2,
+        "lifecycle_check must run once per consumed event, not once per send"
+    end
+
+    test "a lifecycle_check raise unwinds chat_send before any gateway event arrives" do
+      client = WebsocketClient.new(user: @user)
+
+      # No events at all: the shape of a run doing remote tool work in
+      # silence. Without the checkpoint this wait is bounded only by
+      # config.read_timeout (llm_request_timeout_seconds, 1800s default).
+      assert_raises(Collavre::CancelledError) do
+        run_chat_send_with_events(
+          client, [], lifecycle_check: -> { raise Collavre::CancelledError }
+        ) { |_ev| }
+      end
+
+      pending = client.instance_variable_get(:@pending_runs)
+      assert_empty pending, "an unwound run must not leak its queue registration"
+    end
+
+    test "chat_send polls lifecycle_check while the gateway is silent" do
+      client = WebsocketClient.new(user: @user)
+      calls = 0
+      # First call passes (the pre-wait check), so a raise on a later call
+      # proves the check re-fires during the idle wait itself.
+      check = lambda do
+        calls += 1
+        raise Collavre::CancelledError if calls >= 2
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        run_chat_send_with_events(client, [], lifecycle_check: check) { |_ev| }
+      end
+
+      assert_operator calls, :>=, 2, "lifecycle_check must re-fire between idle wait slices"
+    end
+
+    test "chat_send force-checks lifecycle after connecting before scheduling chat.send" do
+      client = WebsocketClient.new(user: @user)
+      order = []
+      client.define_singleton_method(:ensure_connected!) { order << :connected }
+      client.define_singleton_method(:touch_activity!) { order << :activity }
+      rpc_scheduled = false
+      client.define_singleton_method(:send_rpc) do |*_args, lifecycle_check:, **_kwargs|
+        rpc_scheduled = true
+        lifecycle_check.call
+      end
+      check = lambda do |force = false|
+        order << [ :lifecycle_check, force ]
+        raise Collavre::CancelledError
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.chat_send(
+          session_key: "test-session",
+          message: "Hello",
+          idempotency_key: "test-key",
+          lifecycle_check: check
+        )
+      end
+
+      assert_equal [ :connected, :activity, [ :lifecycle_check, true ] ], order
+      assert_not rpc_scheduled, "a terminal turn must not enqueue the chat.send frame"
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
+    test "send_rpc polls lifecycle_check while awaiting its response" do
+      client = WebsocketClient.new(user: @user)
+      check = -> { raise Collavre::CancelledError }
+
+      EmReactor.stub :next_tick, ->(*, &_block) { } do
+        assert_raises(Collavre::CancelledError) do
+          client.send(
+            :send_rpc,
+            "chat.send",
+            { sessionKey: "test-session" },
+            request_id: "rpc-request",
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_empty client.instance_variable_get(:@pending_requests)
+    end
+
+    test "chat_send consumes a queued acknowledgement before observing cancellation" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      seen_run_ids = []
+      checks = 0
+      check = lambda do
+        checks += 1
+        raise Collavre::CancelledError if checks >= 2
+      end
+
+      # The Gateway response arrives on the EM thread before the worker starts
+      # waiting. handle_response has already registered the real runId and
+      # queued its acknowledgement; cancellation must not discard that handoff.
+      deliver_ack = lambda do |*, &_block|
+        request_id = client.instance_variable_get(:@pending_requests).keys.first
+        client.send(:handle_response, request_id, true, { runId: "gateway-run-42" }, nil)
+      end
+
+      EmReactor.stub :next_tick, deliver_ack do
+        assert_raises(Collavre::CancelledError) do
+          client.chat_send(
+            session_key: "test-session",
+            message: "Hello",
+            idempotency_key: "test-key",
+            on_run_id: ->(run_id) { seen_run_ids << run_id },
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_equal [ "gateway-run-42" ], seen_run_ids
+      assert_equal 2, checks, "cancellation should be observed at the subsequent event wait"
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
+    test "chat_send surfaces a concurrent acknowledgement before re-raising the same deadline error" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      seen_run_ids = []
+      calls = 0
+      deadline_error = Collavre::TurnDeadlineError.new(3600)
+      check = lambda do
+        calls += 1
+        if calls == 2
+          request_id = client.instance_variable_get(:@pending_requests).keys.first
+          client.send(:handle_response, request_id, true, { runId: "gateway-run-deadline" }, nil)
+          raise deadline_error
+        end
+
+        next if calls == 1
+
+        # Once the deadline transition writes task.status=failed, a later poll
+        # can only reconstruct an ordinary cancellation. The original error
+        # must therefore leave send_rpc immediately after the ACK is surfaced.
+        raise Collavre::CancelledError
+      end
+
+      error = EmReactor.stub :next_tick, ->(*, &_block) { } do
+        assert_raises(Collavre::TurnDeadlineError) do
+          client.chat_send(
+            session_key: "test-session",
+            message: "Hello",
+            idempotency_key: "test-key",
+            on_run_id: ->(run_id) { seen_run_ids << run_id },
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_same deadline_error, error
+      assert_equal 2, calls
+      assert_equal [ "gateway-run-deadline" ], seen_run_ids
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
+    test "chat_send preserves a concurrent acknowledgement across a lifecycle infrastructure error" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      seen_run_ids = []
+      original_error = RuntimeError.new("task reload failed")
+      lifecycle_error = OpenclawAdapter::LifecycleCheckError.new(original_error)
+      calls = 0
+      check = lambda do
+        calls += 1
+        next if calls == 1
+
+        request_id = client.instance_variable_get(:@pending_requests).keys.first
+        client.send(:handle_response, request_id, true, { runId: "gateway-run-lifecycle-error" }, nil)
+        raise lifecycle_error
+      end
+
+      error = EmReactor.stub :next_tick, ->(*, &_block) { } do
+        assert_raises(OpenclawAdapter::LifecycleCheckError) do
+          client.chat_send(
+            session_key: "test-session",
+            message: "Hello",
+            idempotency_key: "test-key",
+            on_run_id: ->(run_id) { seen_run_ids << run_id },
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_same lifecycle_error, error
+      assert_equal 2, calls
+      assert_equal [ "gateway-run-lifecycle-error" ], seen_run_ids
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
+    test "cancellation wins when an RPC error is queued during the lifecycle check" do
+      client = WebsocketClient.new(user: @user)
+      queue = Queue.new
+      check = lambda do
+        queue.push({ error: "gateway rejected request" })
+        raise Collavre::CancelledError
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.send(:wait_for_rpc_response, queue, 30, "chat.send", check)
+      end
+    end
+
+    test "a prequeued RPC error forces a lifecycle check before it is returned" do
+      client = WebsocketClient.new(user: @user)
+      queue = Queue.new
+      queue.push({ error: "gateway rejected request" })
+      checks = []
+      check = lambda do |force = false|
+        checks << force
+        raise Collavre::CancelledError if force
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.send(:wait_for_rpc_response, queue, 30, "chat.send", check)
+      end
+      assert_equal [ true ], checks
+    end
+
+    test "terminal chat events force a lifecycle check after waking the wait" do
+      client = WebsocketClient.new(user: @user)
+      queue = Queue.new
+      queue.push({ state: "final", message: { content: "too late" } })
+      checks = []
+      check = lambda do |force = false|
+        checks << force
+        raise Collavre::CancelledError if force
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.send(:wait_for_chat_event, queue, 30, check)
+      end
+      assert_equal [ false, true ], checks
+    end
+
+    test "lifecycle polling keeps the original total wait timeout" do
+      client = WebsocketClient.new(user: @user)
+      checks = 0
+
+      error = assert_raises(CollavreOpenclaw::TimeoutError) do
+        client.send(
+          :wait_with_lifecycle_poll,
+          Queue.new,
+          0,
+          "chat.send",
+          -> { checks += 1 }
+        )
+      end
+
+      assert_equal 1, checks
+      assert_match(/chat\.send timed out after 0s/, error.message)
+    end
+
     # Regression: duplicate_chat_event? must distinguish delta vs final with same seq.
     test "handle_chat_event does not dedup final event sharing seq with delta" do
       client = WebsocketClient.new(user: @user)
@@ -419,7 +706,7 @@ module CollavreOpenclaw
       assert_equal "x.png", captured[:attachments].first[:fileName]
     end
 
-    def run_chat_send_with_events(client, events, &block)
+    def run_chat_send_with_events(client, events, lifecycle_check: nil, &block)
       session_key = "test-session"
       idempotency_key = "test-key"
 
@@ -440,6 +727,7 @@ module CollavreOpenclaw
         session_key: session_key,
         message: "Hello",
         idempotency_key: idempotency_key,
+        lifecycle_check: lifecycle_check,
         &block
       )
     end
