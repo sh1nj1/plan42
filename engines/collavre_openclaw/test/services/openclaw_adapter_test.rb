@@ -1073,7 +1073,14 @@ module CollavreOpenclaw
         lifecycle_check: check
       )
 
-      body = '{"choices":[{"message":{"content":"done"}}]}'
+      body = <<~JSON
+        {
+          "choices": [
+
+            {"message":{"content":"done"}}
+          ]
+        }
+      JSON
       request = OpenStruct.new(headers: {}, options: OpenStruct.new)
       request.define_singleton_method(:url) { |_endpoint| }
       connection = Object.new
