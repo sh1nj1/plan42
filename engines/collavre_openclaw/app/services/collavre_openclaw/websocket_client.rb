@@ -633,7 +633,7 @@ module CollavreOpenclaw
       end
 
       result = if lifecycle_check
-        wait_with_lifecycle_poll(queue, config.read_timeout, method, lifecycle_check)
+        wait_for_rpc_response(queue, config.read_timeout, method, lifecycle_check)
       else
         wait_with_timeout(queue, config.read_timeout, method)
       end
@@ -736,6 +736,35 @@ module CollavreOpenclaw
       wait_with_lifecycle_poll(queue, timeout_seconds, "chat response", lifecycle_check)
     end
 
+    # A chat.send acknowledgement is the provider handoff record: handle_response
+    # registers the Gateway runId before queueing it. If cancellation becomes
+    # visible at the same time, consume that acknowledgement first so chat_send
+    # can surface the runId and clean up its registration. The following chat
+    # event wait will still observe cancellation before consuming any run event.
+    def wait_for_rpc_response(queue, timeout_seconds, operation, lifecycle_check)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
+      loop do
+        result = pop_queue_nonblock(queue)
+        return result if result
+
+        begin
+          lifecycle_check.call
+        rescue Collavre::CancelledError
+          # Close the narrow race where the response arrived while the
+          # lifecycle check was reading terminal state from the database.
+          result = pop_queue_nonblock(queue)
+          return result if result
+          raise
+        end
+
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        raise TimeoutError, "#{operation} timed out after #{timeout_seconds}s" if remaining <= 0
+
+        result = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
+        return result if result
+      end
+    end
+
     def wait_with_lifecycle_poll(queue, timeout_seconds, operation, lifecycle_check)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
       loop do
@@ -747,6 +776,12 @@ module CollavreOpenclaw
         event = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
         return event if event
       end
+    end
+
+    def pop_queue_nonblock(queue)
+      queue.pop(true)
+    rescue ThreadError
+      nil
     end
 
     def wait_with_timeout(queue, timeout_seconds, operation)

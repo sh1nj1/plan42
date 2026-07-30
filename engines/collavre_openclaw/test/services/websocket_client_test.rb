@@ -279,6 +279,45 @@ module CollavreOpenclaw
       assert_empty client.instance_variable_get(:@pending_requests)
     end
 
+    test "chat_send consumes a queued acknowledgement before observing cancellation" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      seen_run_ids = []
+      checks = 0
+      check = lambda do
+        checks += 1
+        raise Collavre::CancelledError
+      end
+
+      # The Gateway response arrives on the EM thread before the worker starts
+      # waiting. handle_response has already registered the real runId and
+      # queued its acknowledgement; cancellation must not discard that handoff.
+      deliver_ack = lambda do |*, &_block|
+        request_id = client.instance_variable_get(:@pending_requests).keys.first
+        client.send(:handle_response, request_id, true, { runId: "gateway-run-42" }, nil)
+      end
+
+      EmReactor.stub :next_tick, deliver_ack do
+        assert_raises(Collavre::CancelledError) do
+          client.chat_send(
+            session_key: "test-session",
+            message: "Hello",
+            idempotency_key: "test-key",
+            on_run_id: ->(run_id) { seen_run_ids << run_id },
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_equal [ "gateway-run-42" ], seen_run_ids
+      assert_equal 1, checks, "cancellation should be observed at the subsequent event wait"
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
     test "lifecycle polling keeps the original total wait timeout" do
       client = WebsocketClient.new(user: @user)
       checks = 0
