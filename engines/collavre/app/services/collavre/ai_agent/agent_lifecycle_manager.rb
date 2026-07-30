@@ -58,9 +58,9 @@ module Collavre
 
       # Check if task reached a terminal status or overran its turn deadline,
       # raise Collavre::CancelledError / Collavre::TurnDeadlineError if so
-      def check_cancelled!
+      def check_cancelled!(force: false)
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
+        return if !force && (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
 
         @last_cancel_check_at = now
         raise Collavre::CancelledError if TERMINAL_STATUSES.include?(@task.reload.status)

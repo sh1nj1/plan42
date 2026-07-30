@@ -318,6 +318,51 @@ module CollavreOpenclaw
       assert_empty client.instance_variable_get(:@rpc_run_registrations)
     end
 
+    test "cancellation wins when an RPC error is queued during the lifecycle check" do
+      client = WebsocketClient.new(user: @user)
+      queue = Queue.new
+      check = lambda do
+        queue.push({ error: "gateway rejected request" })
+        raise Collavre::CancelledError
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.send(:wait_for_rpc_response, queue, 30, "chat.send", check)
+      end
+    end
+
+    test "a prequeued RPC error forces a lifecycle check before it is returned" do
+      client = WebsocketClient.new(user: @user)
+      queue = Queue.new
+      queue.push({ error: "gateway rejected request" })
+      checks = []
+      check = lambda do |force = false|
+        checks << force
+        raise Collavre::CancelledError if force
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.send(:wait_for_rpc_response, queue, 30, "chat.send", check)
+      end
+      assert_equal [ true ], checks
+    end
+
+    test "terminal chat events force a lifecycle check after waking the wait" do
+      client = WebsocketClient.new(user: @user)
+      queue = Queue.new
+      queue.push({ state: "final", message: { content: "too late" } })
+      checks = []
+      check = lambda do |force = false|
+        checks << force
+        raise Collavre::CancelledError if force
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.send(:wait_for_chat_event, queue, 30, check)
+      end
+      assert_equal [ false, true ], checks
+    end
+
     test "lifecycle polling keeps the original total wait timeout" do
       client = WebsocketClient.new(user: @user)
       checks = 0

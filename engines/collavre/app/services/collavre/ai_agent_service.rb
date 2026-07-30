@@ -207,7 +207,7 @@ module Collavre
         # The streaming block below checks cancellation only when a text delta
         # arrives; a tool-only loop emits none, so the tool-call boundary is
         # that loop's only checkpoint against terminal status and the deadline.
-        before_tool_call: -> { @lifecycle_manager.check_cancelled! }
+        before_tool_call: ->(force = false) { @lifecycle_manager.check_cancelled!(force: force) }
       )
     end
 

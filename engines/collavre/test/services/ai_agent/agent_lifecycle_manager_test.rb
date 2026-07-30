@@ -100,6 +100,21 @@ module Collavre
                            "a lost deadline race must not be classified as TurnDeadlineError"
         assert_equal "cancelled", task.reload.status
       end
+
+      test "forced cancellation check bypasses the polling throttle" do
+        task = Task.create!(
+          name: "Workflow response",
+          status: "running",
+          trigger_event_name: "workflow",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          agent: @agent
+        )
+        lifecycle = AgentLifecycleManager.new(task: task, agent: @agent, creative: @creative)
+        task.update!(status: "cancelled")
+
+        assert_nothing_raised { lifecycle.check_cancelled! }
+        assert_raises(Collavre::CancelledError) { lifecycle.check_cancelled!(force: true) }
+      end
     end
   end
 end

@@ -733,7 +733,9 @@ module CollavreOpenclaw
     def wait_for_chat_event(queue, timeout_seconds, lifecycle_check)
       return wait_with_timeout(queue, timeout_seconds, "chat response") unless lifecycle_check
 
-      wait_with_lifecycle_poll(queue, timeout_seconds, "chat response", lifecycle_check)
+      event = wait_with_lifecycle_poll(queue, timeout_seconds, "chat response", lifecycle_check)
+      force_lifecycle_check(lifecycle_check) if terminal_chat_event?(event)
+      event
     end
 
     # A chat.send acknowledgement is the provider handoff record: handle_response
@@ -745,15 +747,20 @@ module CollavreOpenclaw
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
       loop do
         result = pop_queue_nonblock(queue)
-        return result if result
+        if result
+          force_lifecycle_check(lifecycle_check) unless result[:ok]
+          return result
+        end
 
         begin
           lifecycle_check.call
         rescue Collavre::CancelledError
           # Close the narrow race where the response arrived while the
-          # lifecycle check was reading terminal state from the database.
+          # lifecycle check was reading terminal state from the database. Only
+          # a successful response proves handoff; an RPC error must not replace
+          # the cancellation that just won.
           result = pop_queue_nonblock(queue)
-          return result if result
+          return result if result&.dig(:ok)
           raise
         end
 
@@ -761,7 +768,10 @@ module CollavreOpenclaw
         raise TimeoutError, "#{operation} timed out after #{timeout_seconds}s" if remaining <= 0
 
         result = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
-        return result if result
+        if result
+          force_lifecycle_check(lifecycle_check) unless result[:ok]
+          return result
+        end
       end
     end
 
@@ -776,6 +786,24 @@ module CollavreOpenclaw
         event = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
         return event if event
       end
+    end
+
+    def terminal_chat_event?(event)
+      event[:done] || %w[final error aborted].include?(event[:state])
+    end
+
+    # Production lifecycle checks accept a force flag that bypasses their
+    # one-second database polling throttle. Keep zero-argument test/custom
+    # callables compatible while still checking at a terminal event boundary.
+    def force_lifecycle_check(lifecycle_check)
+      parameters = if lifecycle_check.respond_to?(:parameters)
+        lifecycle_check.parameters
+      else
+        lifecycle_check.method(:call).parameters
+      end
+      accepts_argument = parameters.any? { |type, _name| %i[req opt rest].include?(type) }
+
+      accepts_argument ? lifecycle_check.call(true) : lifecycle_check.call
     end
 
     def pop_queue_nonblock(queue)
