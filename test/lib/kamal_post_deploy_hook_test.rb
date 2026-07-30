@@ -28,8 +28,8 @@ class KamalPostDeployHookTest < ActiveSupport::TestCase
       arguments = File.readlines("#{directory}/kamal-arguments", chomp: true)
       assert_equal [ "app", "exec", "--primary", "--reuse" ], arguments.first(4)
       assert_equal(
-        "if [ -f script/reprovision_github_webhooks ]; " \
-          "then bin/rails runner script/reprovision_github_webhooks; fi",
+        "sh -c 'if [ -f script/reprovision_github_webhooks ]; " \
+          "then bin/rails runner script/reprovision_github_webhooks; fi'",
         arguments.last
       )
     end
