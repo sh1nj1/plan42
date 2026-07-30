@@ -318,6 +318,48 @@ module CollavreOpenclaw
       assert_empty client.instance_variable_get(:@rpc_run_registrations)
     end
 
+    test "chat_send surfaces a concurrent acknowledgement before re-raising the same deadline error" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      seen_run_ids = []
+      calls = 0
+      deadline_error = Collavre::TurnDeadlineError.new(3600)
+      check = lambda do
+        calls += 1
+        if calls == 1
+          request_id = client.instance_variable_get(:@pending_requests).keys.first
+          client.send(:handle_response, request_id, true, { runId: "gateway-run-deadline" }, nil)
+          raise deadline_error
+        end
+
+        # Once the deadline transition writes task.status=failed, a later poll
+        # can only reconstruct an ordinary cancellation. The original error
+        # must therefore leave send_rpc immediately after the ACK is surfaced.
+        raise Collavre::CancelledError
+      end
+
+      error = EmReactor.stub :next_tick, ->(*, &_block) { } do
+        assert_raises(Collavre::TurnDeadlineError) do
+          client.chat_send(
+            session_key: "test-session",
+            message: "Hello",
+            idempotency_key: "test-key",
+            on_run_id: ->(run_id) { seen_run_ids << run_id },
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_same deadline_error, error
+      assert_equal 1, calls
+      assert_equal [ "gateway-run-deadline" ], seen_run_ids
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
     test "cancellation wins when an RPC error is queued during the lifecycle check" do
       client = WebsocketClient.new(user: @user)
       queue = Queue.new

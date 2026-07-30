@@ -187,33 +187,38 @@ module CollavreOpenclaw
       }
       rpc_params[:attachments] = attachments if attachments.present?
 
+      acknowledge_response = lambda do |response|
+        # The EM thread already registered @pending_runs[actual_run_id] in
+        # handle_response. Clean up the idempotency_key entry if a different
+        # runId was assigned.
+        actual_run_id = response&.dig(:runId) || idempotency_key
+        if actual_run_id != idempotency_key
+          @mutex.synchronize do
+            @pending_runs.delete(idempotency_key)
+            # Ensure runId is registered (may already be from handle_response)
+            @pending_runs[actual_run_id] ||= run_queue
+          end
+        end
+
+        # Surface runId before streaming; guard so a faulty callback can't abort the stream.
+        if on_run_id
+          begin
+            on_run_id.call(actual_run_id)
+          rescue StandardError => e
+            Rails.logger.warn("[CollavreOpenclaw::WS] on_run_id callback failed: #{e.message}")
+          end
+        end
+      end
       response = send_rpc(
         "chat.send",
         rpc_params,
         request_id: rpc_request_id,
-        lifecycle_check: lifecycle_check
+        lifecycle_check: lifecycle_check,
+        &acknowledge_response
       )
-
-      # The EM thread already registered @pending_runs[actual_run_id] in
-      # handle_response. Clean up the idempotency_key entry if a different
-      # runId was assigned.
-      actual_run_id = response&.dig(:runId) || idempotency_key
-      if actual_run_id != idempotency_key
-        @mutex.synchronize do
-          @pending_runs.delete(idempotency_key)
-          # Ensure runId is registered (may already be from handle_response)
-          @pending_runs[actual_run_id] ||= run_queue
-        end
-      end
-
-      # Surface runId before streaming; guard so a faulty callback can't abort the stream.
-      if on_run_id
-        begin
-          on_run_id.call(actual_run_id)
-        rescue StandardError => e
-          Rails.logger.warn("[CollavreOpenclaw::WS] on_run_id callback failed: #{e.message}")
-        end
-      end
+      # Compatibility with test/custom send_rpc replacements that return a
+      # response but do not invoke the acknowledgement callback.
+      acknowledge_response.call(response) unless actual_run_id
 
       # Stream events until final/error/aborted
       last_seq = nil
@@ -615,7 +620,9 @@ module CollavreOpenclaw
     #   registration (see handle_response). If nil, a random UUID is generated.
     # @param lifecycle_check [#call, nil] Optional cooperative cancellation
     #   check polled while waiting for an RPC response.
-    def send_rpc(method, params, request_id: nil, lifecycle_check: nil)
+    # @yield [Hash] successful response payload before a deferred lifecycle
+    #   error is re-raised, allowing chat.send to persist its acknowledged runId.
+    def send_rpc(method, params, request_id: nil, lifecycle_check: nil, &on_response)
       request_id ||= SecureRandom.uuid
       queue = Queue.new
 
@@ -640,7 +647,12 @@ module CollavreOpenclaw
       if result[:error]
         raise RpcError, "#{method} failed: #{result[:error]}"
       end
-      result[:payload]
+
+      payload = result[:payload]
+      on_response&.call(payload)
+      raise result[:deferred_lifecycle_error] if result[:deferred_lifecycle_error]
+
+      payload
     ensure
       @mutex.synchronize do
         @pending_requests.delete(request_id)
@@ -754,13 +766,16 @@ module CollavreOpenclaw
 
         begin
           lifecycle_check.call
-        rescue Collavre::CancelledError
+        rescue Collavre::CancelledError => error
           # Close the narrow race where the response arrived while the
           # lifecycle check was reading terminal state from the database. Only
           # a successful response proves handoff; an RPC error must not replace
           # the cancellation that just won.
           result = pop_queue_nonblock(queue)
-          return result if result&.dig(:ok)
+          if result&.dig(:ok)
+            result[:deferred_lifecycle_error] = error
+            return result
+          end
           raise
         end
 
