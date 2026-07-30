@@ -103,7 +103,7 @@ module Collavre
       end
 
       # Handle cancellation cleanup
-      def handle_cancelled(reply_comment:, response_content:)
+      def handle_cancelled(reply_comment:, response_content:, action_type: "cancelled", message: "Task cancelled by user")
         if reply_comment
           if response_content.present?
             reply_comment.content_will_change!
@@ -120,7 +120,7 @@ module Collavre
         end
 
         broadcast_status("idle")
-        log_action("cancelled", { message: "Task cancelled by user" })
+        log_action(action_type, { message: message })
       end
 
       private

@@ -30,6 +30,13 @@ module Collavre
         creative: @creative, reply_comment: @reply_comment
       ).handle(e, summary: summary)
       raise
+    rescue TurnDeadlineError => e
+      handle_cancelled(
+        action_type: "failed",
+        message: "Turn exceeded the #{e.deadline_seconds}s deadline"
+      )
+      abort_agent_session_if_needed
+      raise
     rescue CancelledError
       handle_cancelled
       abort_agent_session_if_needed
@@ -248,10 +255,12 @@ module Collavre
       dispatcher.dispatch
     end
 
-    def handle_cancelled
+    def handle_cancelled(action_type: "cancelled", message: "Task cancelled by user")
       @lifecycle_manager.handle_cancelled(
         reply_comment: @reply_comment,
-        response_content: @streamer.content
+        response_content: @streamer.content,
+        action_type: action_type,
+        message: message
       )
 
       # Reassociate activity logs if there was partial content

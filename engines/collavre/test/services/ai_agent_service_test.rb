@@ -476,7 +476,8 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     end
 
     assert_equal "failed", @task.reload.status
-    assert @task.task_actions.exists?(action_type: "cancelled")
+    deadline_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Turn exceeded the 0s deadline", deadline_action.payload["message"]
   end
 
   test "force-checks terminal status after the provider completes" do
@@ -536,7 +537,8 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     end
 
     assert_equal "failed", @task.reload.status
-    assert @task.task_actions.exists?(action_type: "cancelled")
+    deadline_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Turn exceeded the 0s deadline", deadline_action.payload["message"]
   end
 
   # A bare `update!(status: "failed")` on deadline would fire Task's
