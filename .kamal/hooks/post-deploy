@@ -5,4 +5,4 @@ set -eu
 # successful rollout. The file guard runs inside the deployed container and
 # keeps rollbacks to images predating the reconciliation script safe.
 ./bin/kamal app exec --primary --reuse \
-  "if [ -f script/reprovision_github_webhooks ]; then bin/rails runner script/reprovision_github_webhooks; fi"
+  "sh -c 'if [ -f script/reprovision_github_webhooks ]; then bin/rails runner script/reprovision_github_webhooks; fi'"
