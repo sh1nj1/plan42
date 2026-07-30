@@ -94,6 +94,13 @@ env:
     # (default 5) gates admission—raise both together if needed.
     AI_AGENT_THREADS: <%= ENV.fetch('AI_AGENT_THREADS', '12') %>
 
+    # Override the Active Record pool size formula in config/database.yml
+    # (RAILS_MAX_THREADS + AI_AGENT_THREADS + 10). Only passed through when set
+    # on the deploy machine, so the in-container formula stays the default.
+<% if ENV['DB_POOL'].to_s.strip != '' %>
+    DB_POOL: <%= ENV['DB_POOL'] %>
+<% end %>
+
     # Set number of cores available to the application on each server (default: 1).
     # WEB_CONCURRENCY: 2
 

@@ -831,6 +831,51 @@ module CollavreOpenclaw
       assert_predicate adapter, :last_handoff_failed?
     end
 
+    # A raise from the caller's streaming block is the turn aborting itself —
+    # AgentLifecycleManager#check_cancelled! raises from the delta callback on a
+    # terminal task status or an overrun turn deadline — not the transport
+    # failing. Falling back to HTTP would hand the gateway the same payload a
+    # second time and hold the worker thread through a whole second attempt.
+    test "a cancellation raised mid-stream over websocket unwinds instead of falling back to http" do
+      adapter = http_adapter
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      with_websocket_streaming(delta: "partial") do
+        assert_raises(Collavre::CancelledError) do
+          adapter.chat(messages_data) { |_chunk| raise Collavre::CancelledError }
+        end
+      end
+
+      assert_not fallback_called, "cancellation must unwind, not start an HTTP fallback"
+    end
+
+    # Same turn-abort raise on the HTTP transport. The block raises only once —
+    # in production check_cancelled! is throttled, so the "OpenClaw Error"
+    # yielded by the rescue would not re-raise; without the re-raise the
+    # cancellation is swallowed into the reply text and the turn ends normally.
+    test "a cancellation raised mid-stream over http is re-raised, not swallowed" do
+      with_http_transport do
+        adapter = http_adapter
+        adapter.define_singleton_method(:stream_response) do |_payload, &blk|
+          blk.call("partial")
+        end
+
+        cancelled = false
+        assert_raises(Collavre::CancelledError) do
+          adapter.chat(messages_data) do |_chunk|
+            next if cancelled
+
+            cancelled = true
+            raise Collavre::CancelledError
+          end
+        end
+      end
+    end
+
     private
 
     # Drive the real #chat_via_websocket: surface a run id the way the real
@@ -849,6 +894,26 @@ module CollavreOpenclaw
         on_run_id&.call("run-#{SecureRandom.hex(4)}") if acked
         blk.call({ state: "delta", text: delta }) if delta
         raise CollavreOpenclaw::TimeoutError, "gateway went quiet"
+      end
+      manager = Object.new
+      manager.define_singleton_method(:connection_for) { |_user| client }
+
+      CollavreOpenclaw::ConnectionManager.stub(:instance, manager) { yield }
+    ensure
+      CollavreOpenclaw.config.transport = original
+    end
+
+    # A websocket whose gateway acknowledges chat.send and streams `delta`
+    # normally, so the caller's block is the only thing that can raise.
+    def with_websocket_streaming(delta:)
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+
+      client = Object.new
+      client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, &blk|
+        on_run_id&.call("run-#{SecureRandom.hex(4)}")
+        blk.call({ state: "delta", text: delta })
+        nil
       end
       manager = Object.new
       manager.define_singleton_method(:connection_for) { |_user| client }

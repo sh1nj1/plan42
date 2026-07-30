@@ -179,6 +179,12 @@ module CollavreOpenclaw
         # it as a delivery would be the losing mistake.
         @last_handoff_failed = true if errored && !@handed_off
         response_content.presence
+      rescue Collavre::CancelledError
+        # Raised out of the caller's streaming block when the task hit a
+        # terminal status or its turn deadline. The turn is already over —
+        # falling back to HTTP would issue a second provider request (and
+        # repeat tool side effects) instead of releasing this worker.
+        raise
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
         Rails.logger.warn("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
@@ -359,6 +365,10 @@ module CollavreOpenclaw
         end
 
         response_content.presence
+      rescue Collavre::CancelledError
+        # Same contract as the WebSocket path: a cancelled/deadline-failed
+        # turn must release the worker, not be rewritten as a provider error.
+        raise
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] HTTP chat error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
