@@ -212,11 +212,18 @@ module Collavre
     end
 
     def stream_response(client, messages_data)
-      client.chat(messages_data, tools: @agent.tools || []) do |delta|
+      response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
         @streamer.append(delta)
         @lifecycle_manager.heartbeat_if_needed
       end
+      # A provider can return its final response inside the one-second polling
+      # throttle after StuckDetector failed the task or the turn crossed its
+      # deadline. This is the common completion boundary for RubyLLM and both
+      # OpenClaw transports; validate it without throttling before finalization
+      # can overwrite the terminal outcome.
+      @lifecycle_manager.check_cancelled!(force: true)
+      response
     end
 
     def finalize_response

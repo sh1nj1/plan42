@@ -479,6 +479,29 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert @task.task_actions.exists?(action_type: "cancelled")
   end
 
+  test "force-checks terminal status after the provider completes" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &_block|
+      # Simulate StuckDetector winning while the provider's final response is
+      # in flight, less than one throttle interval after the prior checkpoint.
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(Task.find(task_id))
+      nil
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    assert_raises(Collavre::CancelledError) do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    assert_not @task.task_actions.exists?(action_type: "completion"),
+               "an externally failed turn must not enter response finalization"
+  end
+
   # The delta callback above is the deadline's only checkpoint on the text
   # path — and a tool-only turn has no text: AiClient skips contentless
   # tool-call chunks above the yield, so the streaming block never runs. The
