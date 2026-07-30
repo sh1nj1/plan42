@@ -936,7 +936,52 @@ module CollavreOpenclaw
         "a chunk with no caller-visible text must still cross the lifecycle check"
     end
 
+    test "the http sse parser checks lifecycle before flushing a final partial event" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { checks += 1 }
+      )
+      buffer = +'data: {"choices":[{"delta":{"content":"last"}}]}'
+      streamed = +""
+
+      adapter.send(:process_sse_buffer, buffer, final: true) { |chunk| streamed << chunk }
+
+      assert_equal 1, checks
+      assert_equal "last", streamed
+      assert_empty buffer
+    end
+
+    test "an http timeout checks lifecycle before retrying the request" do
+      assert_http_retry_checks_lifecycle(Faraday::TimeoutError.new("gateway went quiet"))
+    end
+
+    test "an http connection failure checks lifecycle before retrying the request" do
+      assert_http_retry_checks_lifecycle(Faraday::ConnectionFailed.new("gateway unavailable"))
+    end
+
     private
+
+    def assert_http_retry_checks_lifecycle(transport_error)
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      attempts = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { raise Collavre::CancelledError }
+      )
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&_block|
+        attempts += 1
+        raise transport_error
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, messages_data)
+      end
+      assert_equal 1, attempts, "a cancelled turn must not issue another provider request"
+    end
 
     # Drive the real #chat_via_websocket: surface a run id the way the real
     # client does — WebsocketClient#chat_send calls on_run_id as soon as

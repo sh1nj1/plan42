@@ -554,6 +554,7 @@ module CollavreOpenclaw
       rescue Faraday::TimeoutError
         retries += 1
         if retries <= max_retries
+          @lifecycle_check&.call
           Rails.logger.warn("[CollavreOpenclaw] Timed out, retrying (#{retries}/#{max_retries})...")
           sleep(1 * retries)
           retry
@@ -562,6 +563,7 @@ module CollavreOpenclaw
       rescue Faraday::ConnectionFailed => e
         retries += 1
         if retries <= max_retries
+          @lifecycle_check&.call
           Rails.logger.warn("[CollavreOpenclaw] Connection failed, retrying (#{retries}/#{max_retries})...")
           sleep(1 * retries)
           retry
