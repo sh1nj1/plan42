@@ -361,7 +361,10 @@ class AiAgentServiceTest < ActiveSupport::TestCase
 
     assert_equal "failed", @task.reload.status,
       "the externally-written status must not be overwritten"
-    assert @task.task_actions.exists?(action_type: "cancelled")
+    failure_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Task failed externally", failure_action.payload["message"]
+    assert_not @task.task_actions.exists?(action_type: "cancelled"),
+               "an automatic failure must not be attributed to a user"
   end
 
   # The service is the only place that sees both the delivery record it wrote

@@ -1044,6 +1044,14 @@ module CollavreOpenclaw
       assert_http_retry_checks_lifecycle(Faraday::ConnectionFailed.new("gateway unavailable"))
     end
 
+    test "an http timeout rechecks lifecycle after retry backoff" do
+      assert_http_retry_rechecks_after_backoff(Faraday::TimeoutError.new("gateway went quiet"))
+    end
+
+    test "an http connection failure rechecks lifecycle after retry backoff" do
+      assert_http_retry_rechecks_after_backoff(Faraday::ConnectionFailed.new("gateway unavailable"))
+    end
+
     private
 
     def assert_http_retry_checks_lifecycle(transport_error)
@@ -1064,6 +1072,32 @@ module CollavreOpenclaw
         adapter.send(:stream_response, messages_data)
       end
       assert_equal 1, attempts, "a cancelled turn must not issue another provider request"
+    end
+
+    def assert_http_retry_rechecks_after_backoff(transport_error)
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      attempts = 0
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: lambda {
+          checks += 1
+          raise Collavre::CancelledError if checks >= 2
+        }
+      )
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&_block|
+        attempts += 1
+        raise transport_error
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+      adapter.define_singleton_method(:sleep) { |_seconds| }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, messages_data)
+      end
+      assert_equal 2, checks, "lifecycle must be checked on both sides of retry backoff"
+      assert_equal 1, attempts, "cancellation during backoff must prevent a second provider request"
     end
 
     # Drive the real #chat_via_websocket: surface a run id the way the real

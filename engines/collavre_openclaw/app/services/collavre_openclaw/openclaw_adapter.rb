@@ -563,6 +563,7 @@ module CollavreOpenclaw
           @lifecycle_check&.call
           Rails.logger.warn("[CollavreOpenclaw] Timed out, retrying (#{retries}/#{max_retries})...")
           sleep(1 * retries)
+          @lifecycle_check&.call
           retry
         end
         raise "OpenClaw request timed out after #{max_retries + 1} attempts"
@@ -572,6 +573,7 @@ module CollavreOpenclaw
           @lifecycle_check&.call
           Rails.logger.warn("[CollavreOpenclaw] Connection failed, retrying (#{retries}/#{max_retries})...")
           sleep(1 * retries)
+          @lifecycle_check&.call
           retry
         end
         raise "Failed to connect to OpenClaw after #{max_retries + 1} attempts: #{e.message}"

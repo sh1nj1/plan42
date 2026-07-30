@@ -38,7 +38,11 @@ module Collavre
       abort_agent_session_if_needed
       raise
     rescue CancelledError
-      handle_cancelled
+      if @task.reload.status == "failed"
+        handle_cancelled(action_type: "failed", message: "Task failed externally")
+      else
+        handle_cancelled
+      end
       abort_agent_session_if_needed
       raise
     end
