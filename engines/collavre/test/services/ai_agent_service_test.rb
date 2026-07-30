@@ -506,6 +506,34 @@ class AiAgentServiceTest < ActiveSupport::TestCase
                "an externally failed turn must not enter response finalization"
   end
 
+  test "rechecks terminal status after response finalization before A2A dispatch" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("An answer")
+      "An answer"
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    service = AiAgentService.new(@task)
+    service.define_singleton_method(:finalize_response) do
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(Task.find(task_id))
+      nil
+    end
+    dispatched = false
+    service.define_singleton_method(:dispatch_a2a) { |_comment| dispatched = true }
+
+    assert_raises(Collavre::CancelledError) do
+      AiClient.stub :new, mock_client do
+        service.call
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    refute dispatched, "a finalized response must not dispatch after the task became terminal"
+  end
+
   # The delta callback above is the deadline's only checkpoint on the text
   # path — and a tool-only turn has no text: AiClient skips contentless
   # tool-call chunks above the yield, so the streaming block never runs. The

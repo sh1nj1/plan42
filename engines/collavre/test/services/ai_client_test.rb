@@ -874,9 +874,14 @@ class AiClientTest < ActiveSupport::TestCase
   # end, not park itself as pending approval for a tool it will never run.
   test "runs the injected before_tool_call check ahead of the approval gate" do
     order = []
+    forced = []
     client = AiClient.new(
       vendor: "google", model: "gemini-pro", system_prompt: "system",
-      llm_api_key: "api-key", before_tool_call: -> { order << :cancellation_check }
+      llm_api_key: "api-key",
+      before_tool_call: lambda { |force|
+        forced << force
+        order << :cancellation_check
+      }
     )
     client.define_singleton_method(:check_tool_approval!) { |_tool_call| order << :approval_gate }
 
@@ -898,6 +903,8 @@ class AiClientTest < ActiveSupport::TestCase
     end
 
     assert_equal [ :cancellation_check, :approval_gate ], order
+    assert_equal [ true ], forced,
+                 "the approval boundary must bypass the lifecycle throttle"
   end
 
   # The check ending the turn must leave #chat as the cancellation it is.
@@ -908,7 +915,7 @@ class AiClientTest < ActiveSupport::TestCase
     client = AiClient.new(
       vendor: "google", model: "gemini-pro", system_prompt: "system",
       llm_api_key: "api-key",
-      before_tool_call: -> { raise Collavre::TurnDeadlineError.new(3600) }
+      before_tool_call: ->(_force) { raise Collavre::TurnDeadlineError.new(3600) }
     )
 
     fake_chat = FakeConversation.new

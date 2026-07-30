@@ -317,8 +317,10 @@ module Collavre
         chat.on_tool_call do |tool_call|
           # Cancellation ahead of the approval gate: a turn that already
           # reached a terminal status or its deadline must end, not park
-          # itself as pending approval for a tool it will never run.
-          @before_tool_call&.call
+          # itself as pending approval for a tool it will never run. Force this
+          # boundary through the lifecycle throttle: the first tool call can
+          # arrive during the manager's initial one-second quiet period.
+          @before_tool_call&.call(true)
           check_tool_approval!(tool_call)
         end
         if tools.any?

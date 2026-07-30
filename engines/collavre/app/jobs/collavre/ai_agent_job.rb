@@ -243,20 +243,24 @@ module Collavre
           current_retry = task.retry_count || 0
 
           if current_retry < max_retries
-            task.update!(retry_count: current_retry + 1, status: "pending")
+            transition_running_task!(
+              task,
+              retry_count: current_retry + 1,
+              status: "pending"
+            )
             Rails.logger.warn(
               "[AiAgentJob] Workflow subtask #{task.id} returned empty response, " \
               "retrying (#{current_retry + 1}/#{max_retries})"
             )
             AiAgentJob.set(wait: 5.seconds).perform_later(task)
           else
-            task.update!(status: "failed")
+            transition_running_task!(task, status: "failed")
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
               task, error_message: "Agent returned empty response after #{max_retries} retries"
             )
           end
         else
-          task.update!(status: "done")
+          transition_running_task!(task, status: "done")
           # Advance workflow (release happens in ensure block)
           if task.parent_task_id.present?
             Collavre::Comments::WorkflowExecutor.new(task.parent_task).complete_subtask!(task)
@@ -332,6 +336,18 @@ module Collavre
     end
 
     private
+
+    # A terminal status can be written by Stop/StuckDetector after the service's
+    # last lifecycle checkpoint but before this job records its outcome. Lock
+    # and re-check the row so normal completion/retry cannot overwrite that
+    # external winner.
+    def transition_running_task!(task, **attributes)
+      task.with_lock do
+        raise CancelledError unless task.status == "running"
+
+        task.update!(attributes)
+      end
+    end
 
     # Create this dispatch's Task row, either admitted (`running`) or parked as
     # a `queued` waiter when the topic's concurrency slot is already taken.

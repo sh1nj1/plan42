@@ -56,6 +56,63 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal @agent.id, reply.user_id
   end
 
+  test "does not overwrite a task cancelled after the service returns" do
+    task = Task.create!(
+      name: "Completion race",
+      status: "pending",
+      agent: @agent,
+      creative: @creative,
+      trigger_event_name: "test_event",
+      trigger_event_payload: @context
+    )
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      task.update!(status: "cancelled")
+      "Late response"
+    end
+
+    AiAgentService.stub :new, ->(_task) { fake_service } do
+      AiAgentJob.perform_now(task)
+    end
+
+    assert_equal "cancelled", task.reload.status,
+                 "the job's done transition must not overwrite an external cancellation"
+  end
+
+  test "does not retry an empty workflow response after the subtask is cancelled" do
+    parent_task = Task.create!(
+      name: "Workflow parent",
+      status: "running",
+      agent: @agent,
+      creative: @creative
+    )
+    sub_task = Task.create!(
+      name: "Workflow completion race",
+      status: "pending",
+      agent: @agent,
+      creative: @creative,
+      parent_task: parent_task,
+      trigger_event_name: "workflow_subtask",
+      trigger_event_payload: @context
+    )
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      sub_task.update!(status: "cancelled")
+      ""
+    end
+
+    retry_scheduled = false
+    AiAgentJob.stub :set, ->(**) { retry_scheduled = true } do
+      AiAgentService.stub :new, ->(_task) { fake_service } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    assert_equal "cancelled", sub_task.reload.status,
+                 "the retry transition must not overwrite an external cancellation"
+    refute retry_scheduled, "a cancelled subtask must not schedule another attempt"
+  end
+
   test "handles service errors" do
     # Mock AiClient to raise error
     AiClient.stub :new, ->(*args) { raise StandardError, "AI Error" } do

@@ -132,7 +132,13 @@ module Collavre
       log_action("completion", { response: @streamer.content })
 
       finalized_comment = finalize_response
+      # Stop/failure can land while the finalizer persists and broadcasts the
+      # reply. Revalidate before dispatching that reply to other agents.
+      @lifecycle_manager.check_cancelled!(force: true)
       dispatch_a2a(finalized_comment) unless @finalizer&.review_flow
+      # A2A dispatch may itself perform I/O. Keep the normal return path from
+      # handing a stale "success" to AiAgentJob after a terminal transition.
+      @lifecycle_manager.check_cancelled!(force: true)
 
       @lifecycle_manager.broadcast_status("idle")
 
