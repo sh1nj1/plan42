@@ -335,6 +335,35 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert @task.task_actions.exists?(action_type: "cancelled")
   end
 
+  # StuckDetectorJob marks a hung task `failed` from another process while
+  # this worker is still streaming. The worker must notice at the next chunk
+  # and leave through the CancelledError recovery path instead of streaming
+  # on — in production a thread kept streaming for an hour after its row was
+  # already failed, holding one of the worker's threads the whole time.
+  test "stops streaming when the task was failed externally" do
+    task_id = @task.id
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("Partial ")
+      Task.find(task_id).update!(status: "failed")
+      block.call("content")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    with_immediate_cancel_checks do
+      assert_raises(Collavre::CancelledError) do
+        AiClient.stub :new, mock_client do
+          AiAgentService.new(@task).call
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status,
+      "the externally-written status must not be overwritten"
+    assert @task.task_actions.exists?(action_type: "cancelled")
+  end
+
   # The service is the only place that sees both the delivery record it wrote
   # and the client that failed to hand it over. AiClient#chat swallows the
   # provider error and the job then marks the task `done`, so unless the

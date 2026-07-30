@@ -11,6 +11,12 @@ module Collavre
       CANCEL_CHECK_INTERVAL = 1.0
       # Interval (in seconds) between agent_status heartbeats during streaming
       AGENT_STATUS_HEARTBEAT_INTERVAL = 3.0
+      # Statuses written to the row by another process while this worker is
+      # inside the provider call: user Stop -> cancelled, StuckDetectorJob ->
+      # failed. Both must stop this worker — a row already settled externally
+      # has nobody waiting on this turn, and streaming on holds a worker
+      # thread for the rest of the provider call.
+      TERMINAL_STATUSES = %w[cancelled failed].freeze
 
       def self.topic_id_for(task:, creative:)
         task.topic_id ||
@@ -46,13 +52,13 @@ module Collavre
         )
       end
 
-      # Check if task was cancelled, raise Collavre::CancelledError if so
+      # Check if task reached a terminal status, raise Collavre::CancelledError if so
       def check_cancelled!
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
 
         @last_cancel_check_at = now
-        raise Collavre::CancelledError if @task.reload.status == "cancelled"
+        raise Collavre::CancelledError if TERMINAL_STATUSES.include?(@task.reload.status)
       end
 
       # Send heartbeat if interval passed
