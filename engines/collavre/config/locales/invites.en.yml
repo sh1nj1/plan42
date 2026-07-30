@@ -10,6 +10,9 @@ en:
         prompt: To accept the invitation, please log in or sign up.
         login: Log in
         sign_up: Sign up
+        meta:
+          title: 'Invitation to "%{creative}"'
+          description: "%{inviter} invited you to collaborate on Collavre."
     invitation_mailer:
       invite:
         subject: You're invited to Collavre
