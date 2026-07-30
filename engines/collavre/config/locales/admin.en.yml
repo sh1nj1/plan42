@@ -41,6 +41,8 @@ en:
       llm_settings: "LLM Settings"
       llm_request_timeout_seconds: "Request Timeout (seconds)"
       llm_request_timeout_seconds_hint: "Maximum time to wait for LLM responses. Applies to all AI providers. Default: 1800 (30 minutes). Minimum: 30 seconds."
+      ai_agent_turn_deadline_seconds: "Agent Turn Deadline (seconds)"
+      ai_agent_turn_deadline_seconds_hint: "Maximum wall-clock time for one AI agent turn, covering all LLM calls and tool runs in the turn. Exceeding it fails the turn; partial replies are kept. Default: 3600 (1 hour). Minimum: 60 seconds."
       creative_display: "Creative Display"
       display_level: "Max Display Level"
       display_level_hint: "Maximum depth level for displaying creative trees. Default: 6"

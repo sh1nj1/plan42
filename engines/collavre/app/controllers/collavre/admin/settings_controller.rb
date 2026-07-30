@@ -24,6 +24,7 @@ module Collavre
 
         # LLM settings
         @llm_request_timeout_seconds = SystemSetting.llm_request_timeout_seconds
+        @ai_agent_turn_deadline_seconds = SystemSetting.ai_agent_turn_deadline_seconds
 
         # Rate limiting settings
         @password_reset_rate_limit = SystemSetting.password_reset_rate_limit
@@ -108,6 +109,7 @@ module Collavre
         @api_rate_limit = params[:api_rate_limit].to_i.positive? ? params[:api_rate_limit].to_i : SystemSetting::DEFAULT_API_RATE_LIMIT
         @api_rate_period_minutes = params[:api_rate_period_minutes].to_i.positive? ? params[:api_rate_period_minutes].to_i : SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES
         @llm_request_timeout_seconds = params[:llm_request_timeout_seconds].to_i.positive? ? params[:llm_request_timeout_seconds].to_i : SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
+        @ai_agent_turn_deadline_seconds = params[:ai_agent_turn_deadline_seconds].to_i.positive? ? params[:ai_agent_turn_deadline_seconds].to_i : SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS
         @enabled_auth_providers = params[:auth_providers] || []
         render :index, status: :unprocessable_entity
       end
@@ -130,7 +132,8 @@ module Collavre
           "password_reset_rate_period_minutes" => int_setting(:password_reset_rate_period_minutes, SystemSetting::DEFAULT_PASSWORD_RESET_RATE_PERIOD_MINUTES),
           "api_rate_limit" => int_setting(:api_rate_limit, SystemSetting::DEFAULT_API_RATE_LIMIT),
           "api_rate_period_minutes" => int_setting(:api_rate_period_minutes, SystemSetting::DEFAULT_API_RATE_PERIOD_MINUTES),
-          "llm_request_timeout_seconds" => int_setting(:llm_request_timeout_seconds, SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS, min: 30)
+          "llm_request_timeout_seconds" => int_setting(:llm_request_timeout_seconds, SystemSetting::DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS, min: 30),
+          "ai_agent_turn_deadline_seconds" => int_setting(:ai_agent_turn_deadline_seconds, SystemSetting::DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS, min: 60)
         }
       end
 

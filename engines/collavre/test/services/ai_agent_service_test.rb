@@ -452,6 +452,33 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_not Collavre::Orchestration::DeliveryRecord.handed_off?(@task.reload.trigger_event_payload)
   end
 
+  # llm_request_timeout_seconds bounds ONE provider request; a turn is a loop
+  # of requests (LLM -> tools -> LLM ...), so its wall clock is otherwise
+  # unbounded. With the deadline already in the past, the very next chunk
+  # must end the turn as failed through the cancellation recovery path.
+  test "fails the turn when the wall-clock deadline is exceeded" do
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("Partial ")
+      block.call("content")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    with_immediate_cancel_checks do
+      Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 0 do
+        assert_raises(Collavre::TurnDeadlineError) do
+          AiClient.stub :new, mock_client do
+            AiAgentService.new(@task).call
+          end
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    assert @task.task_actions.exists?(action_type: "cancelled")
+  end
+
   def with_immediate_cancel_checks
     manager = Collavre::AiAgent::AgentLifecycleManager
     original = manager::CANCEL_CHECK_INTERVAL

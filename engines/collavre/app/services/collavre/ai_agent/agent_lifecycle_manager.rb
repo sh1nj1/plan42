@@ -34,6 +34,7 @@ module Collavre
         @creative = creative
         @last_cancel_check_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @last_heartbeat_at = @last_cancel_check_at
+        @deadline_at = @last_cancel_check_at + SystemSetting.ai_agent_turn_deadline_seconds
       end
 
       # Broadcast agent status change
@@ -52,13 +53,26 @@ module Collavre
         )
       end
 
-      # Check if task reached a terminal status, raise Collavre::CancelledError if so
+      # Check if task reached a terminal status or overran its turn deadline,
+      # raise Collavre::CancelledError / Collavre::TurnDeadlineError if so
       def check_cancelled!
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         return if (now - @last_cancel_check_at) < CANCEL_CHECK_INTERVAL
 
         @last_cancel_check_at = now
         raise Collavre::CancelledError if TERMINAL_STATUSES.include?(@task.reload.status)
+
+        return if now < @deadline_at
+
+        # This worker is the only process that knows the turn overran, so it
+        # writes the terminal status itself before leaving through the
+        # cancellation path (which never overwrites a terminal status).
+        Rails.logger.warn(
+          "[AgentLifecycleManager] Task #{@task.id} exceeded turn deadline " \
+          "(#{SystemSetting.ai_agent_turn_deadline_seconds}s); failing"
+        )
+        @task.update!(status: "failed")
+        raise Collavre::TurnDeadlineError
       end
 
       # Send heartbeat if interval passed

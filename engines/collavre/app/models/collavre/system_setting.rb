@@ -42,6 +42,11 @@ module Collavre
     # Default LLM request timeout (seconds)
     DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 1800
 
+    # Default wall-clock deadline for one AI agent turn (seconds).
+    # A turn is the full LLM -> tools -> LLM loop; llm_request_timeout_seconds
+    # bounds only a single request inside it.
+    DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS = 3600
+
     # Default creative display settings (system-wide)
     DEFAULT_DISPLAY_LEVEL = 6
     DEFAULT_COMPLETION_MARK = ""
@@ -66,7 +71,7 @@ module Collavre
         password_reset_rate_limit password_reset_rate_period_minutes
         api_rate_limit api_rate_period_minutes auth_providers_disabled
         creatives_login_required home_page_path home_page_path_authenticated default_light_theme_id default_dark_theme_id
-        display_level completion_mark llm_request_timeout_seconds
+        display_level completion_mark llm_request_timeout_seconds ai_agent_turn_deadline_seconds
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -200,6 +205,12 @@ module Collavre
     def self.llm_request_timeout_seconds
       value = cached_value("llm_request_timeout_seconds")&.to_i
       value.nil? || value < 30 ? DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS : value
+    end
+
+    # AI agent turn wall-clock deadline (seconds)
+    def self.ai_agent_turn_deadline_seconds
+      value = cached_value("ai_agent_turn_deadline_seconds")&.to_i
+      value.nil? || value < 60 ? DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS : value
     end
   end
 end
