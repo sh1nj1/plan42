@@ -479,6 +479,43 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert @task.task_actions.exists?(action_type: "cancelled")
   end
 
+  # The delta callback above is the deadline's only checkpoint on the text
+  # path — and a tool-only turn has no text: AiClient skips contentless
+  # tool-call chunks above the yield, so the streaming block never runs. The
+  # service must hand the client its lifecycle check to run at the tool-call
+  # boundary; otherwise a looping tool-only turn outlives any deadline while
+  # holding its worker thread.
+  test "tool-only turns hit the deadline at the tool-call boundary" do
+    before_tool_call = nil
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      # A tool-only loop as AiClient drives it: no delta ever reaches the
+      # streaming block; the injected boundary check is all the turn crosses.
+      before_tool_call.call
+      block.call("never reached")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    build_client = lambda do |**kwargs|
+      before_tool_call = kwargs.fetch(:before_tool_call)
+      mock_client
+    end
+
+    with_immediate_cancel_checks do
+      Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 0 do
+        assert_raises(Collavre::TurnDeadlineError) do
+          AiClient.stub :new, build_client do
+            AiAgentService.new(@task).call
+          end
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    assert @task.task_actions.exists?(action_type: "cancelled")
+  end
+
   # A bare `update!(status: "failed")` on deadline would fire Task's
   # after_update_commit callback before mark_handed_off! ever runs (that
   # happens later, in execute_llm_conversation's ensure) — so the callback

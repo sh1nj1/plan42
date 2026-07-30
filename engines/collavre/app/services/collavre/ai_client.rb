@@ -88,7 +88,14 @@ module Collavre
     # for ephemeral, high-frequency calls on text the user has not submitted (e.g.
     # inline typo correction on debounced typing) so private drafts are never
     # written to server-side activity logs.
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true)
+    #
+    # before_tool_call: callable run before every tool execution, on every
+    # iteration of the request->tools->request loop. This is the only
+    # cancellation/deadline checkpoint a tool-only turn has: tool-call chunks
+    # carry no content, so #chat never yields them to the caller's streaming
+    # block, where the text path runs its check. A CancelledError raised here
+    # propagates out of #chat as a cancellation, not an "⚠️ AI Error" delta.
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true, before_tool_call: nil)
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
@@ -96,6 +103,7 @@ module Collavre
       @gateway_url = gateway_url
       @context = context
       @log_interactions = log_interactions
+      @before_tool_call = before_tool_call
       @last_input_tokens = 0
       @last_output_tokens = 0
       @last_handoff_failed = false
@@ -307,6 +315,10 @@ module Collavre
         session_id = build_session_id
         chat.with_headers("X-Session-Id" => session_id) if session_id
         chat.on_tool_call do |tool_call|
+          # Cancellation ahead of the approval gate: a turn that already
+          # reached a terminal status or its deadline must end, not park
+          # itself as pending approval for a tool it will never run.
+          @before_tool_call&.call
           check_tool_approval!(tool_call)
         end
         if tools.any?

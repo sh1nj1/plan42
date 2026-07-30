@@ -863,4 +863,74 @@ class AiClientTest < ActiveSupport::TestCase
                    "a stream that broke after #{what} must answer the same question the same way"
     end
   end
+
+  # A tool-only turn never reaches the caller's streaming block: tool-call
+  # chunks carry no content, and #chat skips empty deltas above the yield —
+  # so the terminal-status/deadline check AiAgentService runs there never
+  # runs. RubyLLM fires on_tool_call before every tool execution on every
+  # iteration of the request->tools->request loop, so that boundary is the
+  # one a tool-only turn is guaranteed to keep crossing. The injected check
+  # runs there, ahead of the approval gate: a turn that already ended must
+  # end, not park itself as pending approval for a tool it will never run.
+  test "runs the injected before_tool_call check ahead of the approval gate" do
+    order = []
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system",
+      llm_api_key: "api-key", before_tool_call: -> { order << :cancellation_check }
+    )
+    client.define_singleton_method(:check_tool_approval!) { |_tool_call| order << :approval_gate }
+
+    fake_chat = FakeConversation.new
+    tool_boundary = nil
+    fake_chat.define_singleton_method(:on_tool_call) { |&block| tool_boundary = block }
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      tool_boundary.call(OpenStruct.new(name: "creative_read", arguments: {}))
+      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+    end
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_stub = proc { |&block| block&.call(OpenStruct.new); mock_context }
+
+    RubyLLM.stub(:context, context_stub) do
+      client.chat([ { role: "user", parts: [ { text: "go" } ] } ]) { |_delta| nil }
+    end
+
+    assert_equal [ :cancellation_check, :approval_gate ], order
+  end
+
+  # The check ending the turn must leave #chat as the cancellation it is.
+  # The StandardError rescue would rewrite it into an "⚠️ AI Error" delta and
+  # end the turn normally — keeping the worker for the rest of the loop the
+  # check was meant to stop.
+  test "cancellation raised at the tool-call boundary propagates out of chat" do
+    client = AiClient.new(
+      vendor: "google", model: "gemini-pro", system_prompt: "system",
+      llm_api_key: "api-key", before_tool_call: -> { raise Collavre::TurnDeadlineError }
+    )
+
+    fake_chat = FakeConversation.new
+    tool_boundary = nil
+    fake_chat.define_singleton_method(:on_tool_call) { |&block| tool_boundary = block }
+    fake_chat.define_singleton_method(:complete) do |&block|
+      block.call(OpenStruct.new(content: nil))
+      tool_boundary.call(OpenStruct.new(name: "creative_read", arguments: {}))
+    end
+
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_stub = proc { |&block| block&.call(OpenStruct.new); mock_context }
+
+    yielded = []
+    assert_raises(Collavre::TurnDeadlineError) do
+      RubyLLM.stub(:context, context_stub) do
+        client.chat([ { role: "user", parts: [ { text: "go" } ] } ]) { |delta| yielded << delta }
+      end
+    end
+
+    assert_empty yielded, "the cancellation must not be rewritten into an error delta"
+    assert_predicate client, :handed_off?,
+      "premise: the tool-call chunk arrived, so the provider has the payload — the ending must read delivered"
+  end
 end
