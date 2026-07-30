@@ -74,6 +74,32 @@ module Collavre
 
         assert_equal @other_topic.id, broadcasts.first.last[:topic_id]
       end
+
+      test "deadline check preserves an external terminal transition that wins the row lock" do
+        task = Task.create!(
+          name: "Workflow response",
+          status: "running",
+          trigger_event_name: "workflow",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          agent: @agent
+        )
+        lifecycle = AgentLifecycleManager.new(task: task, agent: @agent, creative: @creative)
+        lifecycle.instance_variable_set(:@last_cancel_check_at, -Float::INFINITY)
+        lifecycle.instance_variable_set(:@deadline_at, -Float::INFINITY)
+
+        external_transition = lambda do |_task|
+          task.update!(status: "cancelled")
+          false
+        end
+
+        error = Orchestration::DeliveryRecord.stub(:fail_while_worker_settles!, external_transition) do
+          assert_raises(Collavre::CancelledError) { lifecycle.check_cancelled! }
+        end
+
+        assert_instance_of Collavre::CancelledError, error,
+                           "a lost deadline race must not be classified as TurnDeadlineError"
+        assert_equal "cancelled", task.reload.status
+      end
     end
   end
 end

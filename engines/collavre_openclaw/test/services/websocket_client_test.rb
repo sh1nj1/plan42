@@ -235,6 +235,68 @@ module CollavreOpenclaw
       assert_operator calls, :>=, 2, "lifecycle_check must re-fire between idle wait slices"
     end
 
+    test "chat_send passes lifecycle_check into the chat.send acknowledgement wait" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+      received_check = nil
+      check = -> { raise Collavre::CancelledError }
+      client.define_singleton_method(:send_rpc) do |_method, _params, request_id:, lifecycle_check: nil|
+        received_check = lifecycle_check
+        lifecycle_check&.call
+      end
+
+      assert_raises(Collavre::CancelledError) do
+        client.chat_send(
+          session_key: "test-session",
+          message: "Hello",
+          idempotency_key: "test-key",
+          lifecycle_check: check
+        )
+      end
+
+      assert_same check, received_check
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
+    test "send_rpc polls lifecycle_check while awaiting its response" do
+      client = WebsocketClient.new(user: @user)
+      check = -> { raise Collavre::CancelledError }
+
+      EmReactor.stub :next_tick, ->(*, &_block) { } do
+        assert_raises(Collavre::CancelledError) do
+          client.send(
+            :send_rpc,
+            "chat.send",
+            { sessionKey: "test-session" },
+            request_id: "rpc-request",
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_empty client.instance_variable_get(:@pending_requests)
+    end
+
+    test "lifecycle polling keeps the original total wait timeout" do
+      client = WebsocketClient.new(user: @user)
+      checks = 0
+
+      error = assert_raises(CollavreOpenclaw::TimeoutError) do
+        client.send(
+          :wait_with_lifecycle_poll,
+          Queue.new,
+          0,
+          "chat.send",
+          -> { checks += 1 }
+        )
+      end
+
+      assert_equal 1, checks
+      assert_match(/chat\.send timed out after 0s/, error.message)
+    end
+
     # Regression: duplicate_chat_event? must distinguish delta vs final with same seq.
     test "handle_chat_event does not dedup final event sharing seq with delta" do
       client = WebsocketClient.new(user: @user)

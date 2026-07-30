@@ -79,11 +79,17 @@ module Collavre
         # delivered. fail_while_worker_settles! marks the row so the callback
         # defers, and AiAgentJob's ensure settles it once the real handoff
         # evidence exists.
+        deadline_transitioned = Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        # Another process may have moved the row to a terminal status after
+        # the reload above but before the locked transition. Preserve that
+        # winner as an ordinary cancellation; classifying it as our deadline
+        # would make AiAgentJob fail a parent workflow that was just cancelled.
+        raise Collavre::CancelledError unless deadline_transitioned
+
         Rails.logger.warn(
           "[AgentLifecycleManager] Task #{@task.id} exceeded turn deadline " \
           "(#{@turn_deadline_seconds}s); failing"
         )
-        Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
         raise Collavre::TurnDeadlineError
       end
 

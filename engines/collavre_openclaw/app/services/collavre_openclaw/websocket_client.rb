@@ -187,7 +187,12 @@ module CollavreOpenclaw
       }
       rpc_params[:attachments] = attachments if attachments.present?
 
-      response = send_rpc("chat.send", rpc_params, request_id: rpc_request_id)
+      response = send_rpc(
+        "chat.send",
+        rpc_params,
+        request_id: rpc_request_id,
+        lifecycle_check: lifecycle_check
+      )
 
       # The EM thread already registered @pending_runs[actual_run_id] in
       # handle_response. Clean up the idempotency_key entry if a different
@@ -216,13 +221,11 @@ module CollavreOpenclaw
       loop do
         # The caller's block fires only on text deltas, and a run doing its
         # tool work on the gateway can emit none for the whole turn. This is
-        # the checkpoint that does not depend on text: once per consumed
-        # event (a flood of non-text events still crosses it) and, inside
-        # the wait below, once per idle slice (total silence still crosses
-        # it). A raise here unwinds through the adapter's CancelledError
-        # re-raise instead of holding this worker until read_timeout.
-        lifecycle_check&.call
-
+        # the checkpoint that does not depend on text: the wait below polls
+        # once before every event and once per idle slice, so both a flood of
+        # non-text events and total silence cross it. A raise unwinds through
+        # the adapter's CancelledError re-raise instead of holding this worker
+        # until read_timeout.
         event = wait_for_chat_event(run_queue, config.read_timeout, lifecycle_check)
 
         break if event[:done]
@@ -278,6 +281,7 @@ module CollavreOpenclaw
         @pending_runs.delete(actual_run_id) if actual_run_id
         # Also clean up idempotency_key if send_rpc failed before we got a runId
         @pending_runs.delete(idempotency_key) if idempotency_key
+        @rpc_run_registrations.delete(rpc_request_id) if rpc_request_id
 
         # Record completed runs so late-arriving events are suppressed
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -609,7 +613,9 @@ module CollavreOpenclaw
     # @param request_id [String, nil] Pre-generated request ID. Used by chat_send
     #   to correlate the RPC response with the run_queue for EM-thread runId
     #   registration (see handle_response). If nil, a random UUID is generated.
-    def send_rpc(method, params, request_id: nil)
+    # @param lifecycle_check [#call, nil] Optional cooperative cancellation
+    #   check polled while waiting for an RPC response.
+    def send_rpc(method, params, request_id: nil, lifecycle_check: nil)
       request_id ||= SecureRandom.uuid
       queue = Queue.new
 
@@ -626,13 +632,20 @@ module CollavreOpenclaw
         })
       end
 
-      result = wait_with_timeout(queue, config.read_timeout, method)
+      result = if lifecycle_check
+        wait_with_lifecycle_poll(queue, config.read_timeout, method, lifecycle_check)
+      else
+        wait_with_timeout(queue, config.read_timeout, method)
+      end
       if result[:error]
         raise RpcError, "#{method} failed: #{result[:error]}"
       end
       result[:payload]
     ensure
-      @mutex.synchronize { @pending_requests.delete(request_id) }
+      @mutex.synchronize do
+        @pending_requests.delete(request_id)
+        @rpc_run_registrations.delete(request_id)
+      end
     end
 
     def send_frame(frame)
@@ -720,15 +733,19 @@ module CollavreOpenclaw
     def wait_for_chat_event(queue, timeout_seconds, lifecycle_check)
       return wait_with_timeout(queue, timeout_seconds, "chat response") unless lifecycle_check
 
+      wait_with_lifecycle_poll(queue, timeout_seconds, "chat response", lifecycle_check)
+    end
+
+    def wait_with_lifecycle_poll(queue, timeout_seconds, operation, lifecycle_check)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
       loop do
+        lifecycle_check.call
+
         remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        raise TimeoutError, "chat response timed out after #{timeout_seconds}s" if remaining <= 0
+        raise TimeoutError, "#{operation} timed out after #{timeout_seconds}s" if remaining <= 0
 
         event = queue.pop(timeout: [ LIFECYCLE_POLL_INTERVAL, remaining ].min)
         return event if event
-
-        lifecycle_check.call
       end
     end
 
