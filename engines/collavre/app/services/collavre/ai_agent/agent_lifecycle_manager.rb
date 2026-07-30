@@ -34,7 +34,10 @@ module Collavre
         @creative = creative
         @last_cancel_check_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @last_heartbeat_at = @last_cancel_check_at
-        @deadline_at = @last_cancel_check_at + SystemSetting.ai_agent_turn_deadline_seconds
+        # Captured once so a setting changed mid-turn cannot make the deadline
+        # and the message that reports crossing it disagree about what fired.
+        @turn_deadline_seconds = SystemSetting.ai_agent_turn_deadline_seconds
+        @deadline_at = @last_cancel_check_at + @turn_deadline_seconds
       end
 
       # Broadcast agent status change
@@ -67,11 +70,20 @@ module Collavre
         # This worker is the only process that knows the turn overran, so it
         # writes the terminal status itself before leaving through the
         # cancellation path (which never overwrites a terminal status).
+        #
+        # Written the same way StuckDetector fails a row from outside its
+        # worker: mark_handed_off! has not run yet (it runs later, in
+        # execute_llm_conversation's ensure), so a bare `update!` would let
+        # Task's status callback decide off evidence this attempt has not
+        # written down yet and restore dispatches this turn actually
+        # delivered. fail_while_worker_settles! marks the row so the callback
+        # defers, and AiAgentJob's ensure settles it once the real handoff
+        # evidence exists.
         Rails.logger.warn(
           "[AgentLifecycleManager] Task #{@task.id} exceeded turn deadline " \
-          "(#{SystemSetting.ai_agent_turn_deadline_seconds}s); failing"
+          "(#{@turn_deadline_seconds}s); failing"
         )
-        @task.update!(status: "failed")
+        Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
         raise Collavre::TurnDeadlineError
       end
 

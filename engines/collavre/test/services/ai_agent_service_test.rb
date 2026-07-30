@@ -479,6 +479,45 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert @task.task_actions.exists?(action_type: "cancelled")
   end
 
+  # A bare `update!(status: "failed")` on deadline would fire Task's
+  # after_update_commit callback before mark_handed_off! ever runs (that
+  # happens later, in execute_llm_conversation's ensure) — so the callback
+  # would read a payload with no handoff evidence yet and restore a dispatch
+  # this turn actually delivered, producing a duplicate reply on a busy topic.
+  # The deadline path must instead go through
+  # Orchestration::DeliveryRecord.fail_while_worker_settles!, which marks the
+  # row so the callback defers the decision to AiAgentJob's ensure once real
+  # handoff evidence exists — see ai_agent_job.rb's worker_settling? branch.
+  test "does not restore a dropped dispatch at the moment the deadline fires" do
+    other_comment = @creative.comments.create!(content: "Second comment", user: @user)
+    assert Collavre::Orchestration::DeliveryRecord.claim_drop!(@task, other_comment.id),
+           "premise: another process refused a dispatch against this in-flight turn"
+
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &block|
+      block.call("Partial ")
+      block.call("content")
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    with_immediate_cancel_checks do
+      Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 0 do
+        assert_raises(Collavre::TurnDeadlineError) do
+          AiClient.stub :new, mock_client do
+            AiAgentService.new(@task).call
+          end
+        end
+      end
+    end
+
+    assert_equal "failed", @task.reload.status
+    assert Collavre::Orchestration::DeliveryRecord.worker_settling?(@task.trigger_event_payload),
+           "the deadline path must leave the worker-settling marker for AiAgentJob's ensure to resolve"
+    assert_empty Collavre::Orchestration::DeliveryRecord.restored_ids_in(@task.trigger_event_payload),
+                 "the dispatch must wait for the job's settle path, not be restored at deadline time"
+  end
+
   def with_immediate_cancel_checks
     manager = Collavre::AiAgent::AgentLifecycleManager
     original = manager::CANCEL_CHECK_INTERVAL
