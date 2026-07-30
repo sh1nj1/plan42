@@ -918,6 +918,42 @@ module CollavreOpenclaw
       assert_not fallback_called, "a lifecycle raise must unwind, not start an HTTP fallback"
     end
 
+    test "a non-cancellation lifecycle error does not start an HTTP fallback" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      lifecycle_error = RuntimeError.new("task reload failed")
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: -> { raise lifecycle_error }
+      )
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      original = CollavreOpenclaw.config.transport
+      CollavreOpenclaw.config.transport = "auto"
+      begin
+        client = Object.new
+        client.define_singleton_method(:chat_send) do |session_key:, message:, attachments:, on_run_id:, lifecycle_check: nil, &_blk|
+          on_run_id&.call("run-#{SecureRandom.hex(4)}")
+          lifecycle_check&.call
+        end
+        manager = Object.new
+        manager.define_singleton_method(:connection_for) { |_user| client }
+
+        raised = CollavreOpenclaw::ConnectionManager.stub(:instance, manager) do
+          assert_raises(RuntimeError) { adapter.chat(messages_data) { |_chunk| } }
+        end
+        assert_same lifecycle_error, raised
+      ensure
+        CollavreOpenclaw.config.transport = original
+      end
+
+      refute fallback_called,
+             "a lifecycle callback failure is not a WebSocket transport failure"
+    end
+
     # The HTTP transport has no event loop to poll from; its checkpoint is the
     # SSE parser, which runs for every received chunk — including comment/tool
     # events that never yield text to the caller's block.

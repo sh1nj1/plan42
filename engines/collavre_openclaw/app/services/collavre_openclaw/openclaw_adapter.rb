@@ -3,6 +3,16 @@ require "json"
 
 module CollavreOpenclaw
   class OpenclawAdapter
+    class LifecycleCheckError < StandardError
+      attr_reader :original
+
+      def initialize(original)
+        @original = original
+        super(original.message)
+        set_backtrace(original.backtrace)
+      end
+    end
+
     # Pure transport adapter for OpenClaw AI Gateway.
     # Session context filtering (full vs incremental) is handled upstream
     # by SessionContextResolver — this adapter sends exactly what it receives.
@@ -27,7 +37,7 @@ module CollavreOpenclaw
       @user = user
       @system_prompt = system_prompt
       @context = context
-      @lifecycle_check = lifecycle_check
+      @lifecycle_check = wrap_lifecycle_check(lifecycle_check)
       @last_handoff_failed = false
       @handed_off = false
     end
@@ -194,6 +204,12 @@ module CollavreOpenclaw
         # falling back to HTTP would issue a second provider request (and
         # repeat tool side effects) instead of releasing this worker.
         raise
+      rescue LifecycleCheckError => e
+        # A lifecycle poll is application control flow, not evidence that the
+        # WebSocket transport failed. In particular, falling back after the
+        # gateway acknowledged chat.send could submit the same tool-bearing
+        # payload twice. Restore the callback's original exception unchanged.
+        raise e.original
       rescue CollavreOpenclaw::ConnectionError,
              CollavreOpenclaw::TimeoutError => e
         Rails.logger.warn("[CollavreOpenclaw::WS] FALLBACK gateway=#{@user.gateway_url} reason=#{e.class}:#{e.message}")
@@ -378,6 +394,9 @@ module CollavreOpenclaw
         # Same contract as the WebSocket path: a cancelled/deadline-failed
         # turn must release the worker, not be rewritten as a provider error.
         raise
+      rescue LifecycleCheckError => e
+        # Do not rewrite application/lifecycle failures into provider text.
+        raise e.original
       rescue StandardError => e
         Rails.logger.error("[CollavreOpenclaw] HTTP chat error: #{e.message}\n" \
                            "#{e.backtrace.first(5).join("\n")}")
@@ -628,6 +647,18 @@ module CollavreOpenclaw
         @lifecycle_check&.call
         parse_sse_event(buffer, &block)
         buffer.clear
+      end
+    end
+
+    def wrap_lifecycle_check(check)
+      return nil unless check
+
+      lambda do |*args|
+        check.call(*args)
+      rescue Collavre::CancelledError
+        raise
+      rescue StandardError => e
+        raise LifecycleCheckError.new(e)
       end
     end
 

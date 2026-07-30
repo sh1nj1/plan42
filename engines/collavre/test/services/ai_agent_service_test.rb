@@ -506,6 +506,30 @@ class AiAgentServiceTest < ActiveSupport::TestCase
                "an externally failed turn must not enter response finalization"
   end
 
+  test "force-checks terminal status immediately before starting the provider call" do
+    task_id = @task.id
+    provider_called = false
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &_block|
+      provider_called = true
+      "must not run"
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = false
+
+    service = AiAgentService.new(@task)
+    service.define_singleton_method(:build_ai_client) do |_system_prompt|
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(Task.find(task_id))
+      mock_client
+    end
+
+    assert_raises(Collavre::CancelledError) { service.call }
+
+    refute provider_called,
+           "a task that ended during prompt preparation must not reach the provider"
+    assert_equal "failed", @task.reload.status
+  end
+
   test "rechecks terminal status after response finalization before A2A dispatch" do
     task_id = @task.id
     mock_client = Object.new

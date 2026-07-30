@@ -229,6 +229,11 @@ module Collavre
     end
 
     def stream_response(client, messages_data)
+      # Prompt/session preparation can take long enough for Stop or
+      # StuckDetector to end the task before the provider request begins.
+      # Bypass the new manager's initial polling throttle at this handoff
+      # boundary so a terminal turn cannot start remote tool side effects.
+      @lifecycle_manager.check_cancelled!(force: true)
       response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
         @streamer.append(delta)
