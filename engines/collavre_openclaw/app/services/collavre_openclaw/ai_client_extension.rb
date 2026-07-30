@@ -41,7 +41,8 @@ module CollavreOpenclaw
           user: user,
           system_prompt: resolved_system_prompt,
           context: context,
-          lifecycle_check: @before_tool_call
+          lifecycle_check: @before_tool_call,
+          request_timeout_seconds: @request_timeout_seconds
         )
 
         response_content = nil

@@ -101,6 +101,21 @@ module Collavre
         assert_equal "cancelled", task.reload.status
       end
 
+      test "reports a positive request budget bounded by the turn deadline" do
+        task = Task.create!(
+          name: "Deadline budget",
+          status: "running",
+          trigger_event_name: "workflow",
+          trigger_event_payload: { "creative" => { "id" => @creative.id } },
+          agent: @agent
+        )
+
+        SystemSetting.stub :ai_agent_turn_deadline_seconds, 60 do
+          lifecycle = AgentLifecycleManager.new(task: task, agent: @agent, creative: @creative)
+          assert_includes 1..60, lifecycle.remaining_deadline_seconds
+        end
+      end
+
       test "forced cancellation check bypasses the polling throttle" do
         task = Task.create!(
           name: "Workflow response",

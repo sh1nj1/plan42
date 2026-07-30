@@ -853,6 +853,26 @@ module CollavreOpenclaw
       assert_not fallback_called, "cancellation must unwind, not start an HTTP fallback"
     end
 
+    test "a non-cancellation streaming callback error does not start an HTTP fallback" do
+      adapter = http_adapter
+      callback_error = RuntimeError.new("task reload failed")
+      fallback_called = false
+      adapter.define_singleton_method(:chat_via_http) do |&_blk|
+        fallback_called = true
+        nil
+      end
+
+      raised = with_websocket_streaming(delta: "partial") do
+        assert_raises(RuntimeError) do
+          adapter.chat(messages_data) { |_chunk| raise callback_error }
+        end
+      end
+
+      assert_same callback_error, raised
+      refute fallback_called,
+             "an application callback failure is not a WebSocket transport failure"
+    end
+
     # Same turn-abort raise on the HTTP transport. The block raises only once —
     # in production check_cancelled! is throttled, so the "OpenClaw Error"
     # yielded by the rescue would not re-raise; without the re-raise the
@@ -970,6 +990,16 @@ module CollavreOpenclaw
 
       assert_operator checks, :>=, 1,
         "a chunk with no caller-visible text must still cross the lifecycle check"
+    end
+
+    test "the http connection timeout is capped by the remaining turn deadline" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        request_timeout_seconds: -> { 60.0 }
+      )
+
+      assert_equal 60.0, adapter.send(:build_connection).options.timeout
     end
 
     test "the http sse parser records handoff before lifecycle cancellation" do

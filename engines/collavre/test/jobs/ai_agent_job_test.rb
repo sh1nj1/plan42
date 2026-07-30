@@ -161,7 +161,8 @@ class AiAgentJobTest < ActiveJob::TestCase
     attr_reader :captured_system_prompt
     attr_reader :captured_context
 
-    def initialize(vendor:, model:, system_prompt:, llm_api_key:, gateway_url: nil, context: {}, before_tool_call: nil)
+    def initialize(vendor:, model:, system_prompt:, llm_api_key:, gateway_url: nil, context: {},
+                   before_tool_call: nil, request_timeout_seconds: nil)
       @captured_system_prompt = system_prompt
       @captured_context = context
     end

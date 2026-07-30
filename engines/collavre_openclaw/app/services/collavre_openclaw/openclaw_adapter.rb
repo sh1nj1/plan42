@@ -33,11 +33,12 @@ module CollavreOpenclaw
     # fires only on text, which a tool-only run never emits. A raise from it
     # (Collavre::CancelledError or a subclass) unwinds past both transports'
     # fallback rescues.
-    def initialize(user:, system_prompt:, context: {}, lifecycle_check: nil)
+    def initialize(user:, system_prompt:, context: {}, lifecycle_check: nil, request_timeout_seconds: nil)
       @user = user
       @system_prompt = system_prompt
       @context = context
       @lifecycle_check = wrap_lifecycle_check(lifecycle_check)
+      @request_timeout_seconds = request_timeout_seconds
       @last_handoff_failed = false
       @handed_off = false
     end
@@ -169,19 +170,19 @@ module CollavreOpenclaw
             if event[:text].present?
               response_content << event[:text]
               @handed_off = true
-              yield event[:text] if block_given?
+              emit_to_caller(event[:text], &block)
             end
           when "final"
             # If no deltas were streamed, final contains the full text
             if response_content.blank? && event[:text].present?
               response_content << event[:text]
               @handed_off = true
-              yield event[:text] if block_given?
+              emit_to_caller(event[:text], &block)
             end
           when "error"
             error_msg = event[:text] || "Unknown error"
             errored = true
-            yield "OpenClaw Error: #{error_msg}" if block_given?
+            emit_to_caller("OpenClaw Error: #{error_msg}", &block)
           when "aborted"
             # User or system aborted
           end
@@ -386,7 +387,7 @@ module CollavreOpenclaw
         stream_response(payload) do |chunk|
           response_content << chunk
           @handed_off = true
-          yield chunk if block_given?
+          emit_to_caller(chunk, &block)
         end
 
         response_content.presence
@@ -662,6 +663,19 @@ module CollavreOpenclaw
       end
     end
 
+    # Exceptions raised by the service's streaming callback are application
+    # control flow, not transport failures. Wrap them so the adapter's rescue
+    # chain cannot start an HTTP fallback after WebSocket handoff.
+    def emit_to_caller(value)
+      return unless block_given?
+
+      yield value
+    rescue Collavre::CancelledError
+      raise
+    rescue StandardError => e
+      raise LifecycleCheckError.new(e)
+    end
+
     def sse_data_event?(event_str)
       event_str.each_line.any? do |line|
         stripped = line.strip
@@ -698,7 +712,10 @@ module CollavreOpenclaw
 
     def build_connection
       Faraday.new do |builder|
-        builder.options.timeout = CollavreOpenclaw.config.read_timeout
+        builder.options.timeout = [
+          CollavreOpenclaw.config.read_timeout,
+          @request_timeout_seconds&.call
+        ].compact.min
         builder.options.open_timeout = CollavreOpenclaw.config.open_timeout
         builder.adapter Faraday.default_adapter
       end

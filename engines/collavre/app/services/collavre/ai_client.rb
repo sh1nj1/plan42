@@ -95,7 +95,8 @@ module Collavre
     # carry no content, so #chat never yields them to the caller's streaming
     # block, where the text path runs its check. A CancelledError raised here
     # propagates out of #chat as a cancellation, not an "⚠️ AI Error" delta.
-    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {}, log_interactions: true, before_tool_call: nil)
+    def initialize(vendor:, model:, system_prompt:, llm_api_key: nil, gateway_url: nil, context: {},
+                   log_interactions: true, before_tool_call: nil, request_timeout_seconds: nil)
       @vendor = vendor
       @model = model
       @system_prompt = system_prompt
@@ -104,6 +105,7 @@ module Collavre
       @context = context
       @log_interactions = log_interactions
       @before_tool_call = before_tool_call
+      @request_timeout_seconds = request_timeout_seconds
       @last_input_tokens = 0
       @last_output_tokens = 0
       @last_handoff_failed = false
@@ -306,11 +308,15 @@ module Collavre
       chat_opts[:provider] = provider if provider
       chat_opts[:assume_model_exists] = true if provider
 
-      # Apply current system timeout setting (picks up changes without restart)
-      RubyLLM.config.request_timeout = SystemSetting.llm_request_timeout_seconds
+      # RubyLLM::Context duplicates the global config. Set the timeout on that
+      # per-client copy so concurrent agent threads cannot overwrite one
+      # another's deadline cap.
+      ruby_llm_context = RubyLLM.context do |config|
+        context_block.call(config)
+        config.request_timeout = effective_request_timeout_seconds
+      end
 
-      RubyLLM.context(&context_block)
-             .chat(**chat_opts).tap do |chat|
+      ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         session_id = build_session_id
         chat.with_headers("X-Session-Id" => session_id) if session_id
@@ -323,12 +329,30 @@ module Collavre
           @before_tool_call&.call(true)
           check_tool_approval!(tool_call)
         end
+        if @request_timeout_seconds
+          chat.after_tool_result do |_result|
+            # A tool can consume much of the turn. Recheck the deadline and
+            # rebuild RubyLLM's provider connection with the new remaining
+            # timeout before the loop starts its next request.
+            @before_tool_call&.call(true)
+            ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
+            chat.with_context(ruby_llm_context)
+          end
+        end
         if tools.any?
           # Resolve tool names to classes using the gem's helper
           tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tools)
           chat.with_tools(*tool_classes, replace: true)
         end
       end
+    end
+
+    def effective_request_timeout_seconds
+      configured = SystemSetting.llm_request_timeout_seconds.to_f
+      remaining = @request_timeout_seconds&.call
+      return configured unless remaining
+
+      [ configured, remaining.to_f ].min.clamp(0.001, configured)
     end
 
     def build_session_id

@@ -93,6 +93,14 @@ module Collavre
         raise Collavre::TurnDeadlineError.new(@turn_deadline_seconds)
       end
 
+      # Bound a single silent provider request by the remaining wall-clock
+      # budget. Keep a tiny positive floor for transport APIs that reject zero;
+      # check_cancelled! remains the authority once that request returns.
+      def remaining_deadline_seconds
+        remaining = @deadline_at - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        [ remaining, 0.001 ].max
+      end
+
       # Send heartbeat if interval passed
       def heartbeat_if_needed
         now = Process.clock_gettime(Process::CLOCK_MONOTONIC)

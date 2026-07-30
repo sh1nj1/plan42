@@ -98,15 +98,23 @@ module Collavre
       end
 
       def stop!
-        # Cancel running sub-task if any
-        current_sub = @parent_task.sub_tasks.where(status: %w[running queued pending]).first
-        current_sub&.update!(status: "cancelled")
+        # Hold the parent lock from the child lookup through the parent state
+        # transition. Deadline reporting takes the same lock, so a Stop that
+        # began first cannot pause between those writes while the deadline path
+        # marks the workflow failed and posts a contradictory notice.
+        @parent_task.with_lock do
+          return false unless @parent_task.status == "running"
 
-        @state["current_creative_id"] = nil
-        @parent_task.update!(
-          status: "cancelled",
-          workflow_state: @state
-        )
+          @state = @parent_task.workflow_state || {}
+          current_sub = @parent_task.sub_tasks.where(status: %w[running queued pending]).first
+          current_sub&.update!(status: "cancelled")
+
+          @state["current_creative_id"] = nil
+          @parent_task.update!(
+            status: "cancelled",
+            workflow_state: @state
+          )
+        end
 
         post_notice(
           I18n.t("collavre.comments.work_command.workflow_stopped",
@@ -114,6 +122,7 @@ module Collavre
                  completed: (@state["completed_creative_ids"] || []).size,
                  remaining: (@state["pending_creative_ids"] || []).size)
         )
+        true
       end
 
       def resume!
