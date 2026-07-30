@@ -596,6 +596,35 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_equal "Turn exceeded the 0s deadline", deadline_action.payload["message"]
   end
 
+  test "handles a deadline raised while generating an approval summary" do
+    task = @task
+    deadline_error = Collavre::TurnDeadlineError.new(60)
+    tool_call = OpenStruct.new(name: "creative_update", arguments: { "id" => 1 }, id: "call-1")
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) do |_messages, tools: [], &_block|
+      raise Collavre::ApprovalPendingError.new(tool_call: tool_call, task: task)
+    end
+    mock_client.define_singleton_method(:ask) do |_prompt|
+      Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(task)
+      raise deadline_error
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    error = assert_raises(Collavre::TurnDeadlineError) do
+      AiClient.stub :new, mock_client do
+        AiAgentService.new(@task).call
+      end
+    end
+
+    assert_same deadline_error, error
+    assert_equal "failed", @task.reload.status
+    deadline_action = @task.task_actions.find_by!(action_type: "failed")
+    assert_equal "Turn exceeded the 60s deadline", deadline_action.payload["message"]
+    assert_not @task.task_actions.exists?(action_type: "approval_requested"),
+               "a turn that hit its deadline must not be parked for approval"
+  end
+
   # A bare `update!(status: "failed")` on deadline would fire Task's
   # after_update_commit callback before mark_handed_off! ever runs (that
   # happens later, in execute_llm_conversation's ensure) — so the callback

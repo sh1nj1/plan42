@@ -192,6 +192,43 @@ class AiClientTest < ActiveSupport::TestCase
     assert_same mock_context, fake_chat.context_set
   end
 
+  test "refreshes timeout and rechecks lifecycle when an approval summary request fails" do
+    remaining_seconds = 60.0
+    forced_checks = []
+    deadline_error = Collavre::TurnDeadlineError.new(60)
+    client = AiClient.new(
+      vendor: "google",
+      model: "gemini-pro",
+      system_prompt: nil,
+      llm_api_key: "api-key",
+      before_tool_call: lambda { |force|
+        forced_checks << force
+        raise deadline_error if forced_checks.size == 2
+      },
+      request_timeout_seconds: -> { remaining_seconds }
+    )
+    fake_chat = FakeConversation.new
+    fake_chat.define_singleton_method(:ask) { |_prompt| raise Faraday::TimeoutError, "summary timed out" }
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+    context_config = RubyLLM.config.dup
+    mock_context.define_singleton_method(:config) { context_config }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      conversation = client.send(:build_conversation)
+      client.instance_variable_set(:@conversation, conversation)
+    end
+
+    remaining_seconds = 5.0
+    error = assert_raises(Collavre::TurnDeadlineError) { client.ask("Summarize the tool call") }
+
+    assert_same deadline_error, error
+    assert_equal [ true, true ], forced_checks,
+                 "approval summaries must check both before the request and after a timeout"
+    assert_equal 5.0, context_config.request_timeout
+    assert_same mock_context, fake_chat.context_set
+  end
+
   test "build_conversation supplies a placeholder key for a keyless local gateway" do
     # Local OpenAI-compatible gateways (Ollama / LM Studio) need no real key, but
     # RubyLLM raises ConfigurationError if openai_api_key is blank. We inject a

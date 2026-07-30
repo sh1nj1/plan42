@@ -16,20 +16,22 @@ module Collavre
     end
 
     def call
-      Current.set(user: @agent) do
-        if @agent.claude_channel_agent?
-          delegate_to_claude_channel
-        else
-          execute_llm_conversation
+      begin
+        Current.set(user: @agent) do
+          if @agent.claude_channel_agent?
+            delegate_to_claude_channel
+          else
+            execute_llm_conversation
+          end
         end
+      rescue ApprovalPendingError => e
+        summary = generate_approval_summary(e)
+        AiAgent::ApprovalHandler.new(
+          task: @task, agent: @agent, context: @context,
+          creative: @creative, reply_comment: @reply_comment
+        ).handle(e, summary: summary)
+        raise
       end
-    rescue ApprovalPendingError => e
-      summary = generate_approval_summary(e)
-      AiAgent::ApprovalHandler.new(
-        task: @task, agent: @agent, context: @context,
-        creative: @creative, reply_comment: @reply_comment
-      ).handle(e, summary: summary)
-      raise
     rescue TurnDeadlineError => e
       handle_cancelled(
         action_type: "failed",

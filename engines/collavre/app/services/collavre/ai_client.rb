@@ -221,11 +221,18 @@ module Collavre
     def ask(prompt)
       return nil unless @conversation
 
+      refresh_turn_boundary!(@conversation)
       # Disable tool calls for summary generation to avoid recursive approval
       @conversation.with_tools(replace: true)
       response = @conversation.ask(prompt)
+      refresh_turn_boundary!(@conversation)
       response&.content&.strip.presence
+    rescue CancelledError
+      raise
     rescue StandardError => e
+      # A provider timeout at the turn boundary must become the deadline that
+      # caused it, not a missing summary followed by pending_approval.
+      refresh_turn_boundary!(@conversation)
       Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
       nil
     end
@@ -311,12 +318,12 @@ module Collavre
       # RubyLLM::Context duplicates the global config. Set the timeout on that
       # per-client copy so concurrent agent threads cannot overwrite one
       # another's deadline cap.
-      ruby_llm_context = RubyLLM.context do |config|
+      @ruby_llm_context = RubyLLM.context do |config|
         context_block.call(config)
         config.request_timeout = effective_request_timeout_seconds
       end
 
-      ruby_llm_context.chat(**chat_opts).tap do |chat|
+      @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         session_id = build_session_id
         chat.with_headers("X-Session-Id" => session_id) if session_id
@@ -334,9 +341,7 @@ module Collavre
             # A tool can consume much of the turn. Recheck the deadline and
             # rebuild RubyLLM's provider connection with the new remaining
             # timeout before the loop starts its next request.
-            @before_tool_call&.call(true)
-            ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
-            chat.with_context(ruby_llm_context)
+            refresh_turn_boundary!(chat)
           end
         end
         if tools.any?
@@ -345,6 +350,14 @@ module Collavre
           chat.with_tools(*tool_classes, replace: true)
         end
       end
+    end
+
+    def refresh_turn_boundary!(conversation)
+      @before_tool_call&.call(true)
+      return unless @request_timeout_seconds && @ruby_llm_context
+
+      @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
+      conversation.with_context(@ruby_llm_context)
     end
 
     def effective_request_timeout_seconds

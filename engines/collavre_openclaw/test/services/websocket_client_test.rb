@@ -360,6 +360,39 @@ module CollavreOpenclaw
       assert_empty client.instance_variable_get(:@rpc_run_registrations)
     end
 
+    test "chat_send preserves a concurrent acknowledgement across a lifecycle infrastructure error" do
+      client = WebsocketClient.new(user: @user)
+      client.define_singleton_method(:ensure_connected!) { nil }
+      client.define_singleton_method(:touch_activity!) { nil }
+
+      seen_run_ids = []
+      original_error = RuntimeError.new("task reload failed")
+      lifecycle_error = OpenclawAdapter::LifecycleCheckError.new(original_error)
+      check = lambda do
+        request_id = client.instance_variable_get(:@pending_requests).keys.first
+        client.send(:handle_response, request_id, true, { runId: "gateway-run-lifecycle-error" }, nil)
+        raise lifecycle_error
+      end
+
+      error = EmReactor.stub :next_tick, ->(*, &_block) { } do
+        assert_raises(OpenclawAdapter::LifecycleCheckError) do
+          client.chat_send(
+            session_key: "test-session",
+            message: "Hello",
+            idempotency_key: "test-key",
+            on_run_id: ->(run_id) { seen_run_ids << run_id },
+            lifecycle_check: check
+          )
+        end
+      end
+
+      assert_same lifecycle_error, error
+      assert_equal [ "gateway-run-lifecycle-error" ], seen_run_ids
+      assert_empty client.instance_variable_get(:@pending_requests)
+      assert_empty client.instance_variable_get(:@pending_runs)
+      assert_empty client.instance_variable_get(:@rpc_run_registrations)
+    end
+
     test "cancellation wins when an RPC error is queued during the lifecycle check" do
       client = WebsocketClient.new(user: @user)
       queue = Queue.new

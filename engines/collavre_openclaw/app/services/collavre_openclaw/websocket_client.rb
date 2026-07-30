@@ -766,11 +766,12 @@ module CollavreOpenclaw
 
         begin
           lifecycle_check.call
-        rescue Collavre::CancelledError => error
+        rescue StandardError => error
           # Close the narrow race where the response arrived while the
-          # lifecycle check was reading terminal state from the database. Only
-          # a successful response proves handoff; an RPC error must not replace
-          # the cancellation that just won.
+          # lifecycle check was reading terminal state from the database. This
+          # includes wrapped lifecycle infrastructure failures as well as
+          # cancellation. Only a successful response proves handoff; an RPC
+          # error must not replace the lifecycle failure that just won.
           result = pop_queue_nonblock(queue)
           if result&.dig(:ok)
             result[:deferred_lifecycle_error] = error
