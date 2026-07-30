@@ -74,6 +74,69 @@ class InvitationFlowTest < ActionDispatch::IntegrationTest
     assert_equal "read", share.permission
   end
 
+  test "public invitation signup accepts the user-provided email" do
+    inviter = User.create!(email: "public-inviter@example.com", password: TEST_PASSWORD, name: "Inviter")
+    creative = Creative.create!(user: inviter, description: "Public invite")
+    invitation = Invitation.create!(inviter: inviter, creative: creative, permission: :write)
+    token = invitation.generate_token_for(:invite)
+
+    get new_user_path(invite_token: token)
+
+    assert_response :success
+    assert_select 'input[name="user[email]"]', count: 1 do |inputs|
+      refute inputs.first.key?("readonly")
+    end
+
+    assert_difference("User.count", 1) do
+      post users_path, params: {
+        invite_token: token,
+        user: {
+          name: "Public Invitee",
+          email: "public-invitee@example.com",
+          password: TEST_PASSWORD,
+          password_confirmation: TEST_PASSWORD
+        }
+      }
+    end
+
+    invitee = User.find_by!(email: "public-invitee@example.com")
+    share = CreativeShare.find_by!(creative: creative, user: invitee)
+    assert_equal "write", share.permission
+    assert_not_nil invitation.reload.accepted_at
+  end
+
+  test "email-specific invitation signup keeps the invited email locked" do
+    inviter = User.create!(email: "specific-inviter@example.com", password: TEST_PASSWORD, name: "Inviter")
+    creative = Creative.create!(user: inviter, description: "Specific invite")
+    invitation = Invitation.create!(
+      email: "intended-invitee@example.com",
+      inviter: inviter,
+      creative: creative,
+      permission: :read
+    )
+    token = invitation.generate_token_for(:invite)
+
+    get new_user_path(invite_token: token)
+
+    assert_response :success
+    assert_select 'input[name="user[email]"][readonly="readonly"][value="intended-invitee@example.com"]', count: 1
+
+    assert_difference("User.count", 1) do
+      post users_path, params: {
+        invite_token: token,
+        user: {
+          name: "Intended Invitee",
+          email: "different@example.com",
+          password: TEST_PASSWORD,
+          password_confirmation: TEST_PASSWORD
+        }
+      }
+    end
+
+    assert User.exists?(email: "intended-invitee@example.com")
+    refute User.exists?(email: "different@example.com")
+  end
+
   test "invitation metadata is localized and strips markup from the creative title" do
     inviter = User.create!(email: "inviter-ko@example.com", password: TEST_PASSWORD, name: "초대자")
     creative = Creative.create!(user: inviter, description: "<strong>로드맵 &amp; 출시</strong>")
