@@ -11,7 +11,7 @@ module Collavre
       @user = Collavre::User.new
       if params[:invite_token].present?
         @invitation = Collavre::Invitation.find_by_token_for(:invite, params[:invite_token])
-        @user.email = @invitation&.email
+        @user.email = @invitation.email if @invitation&.email.present?
       end
     end
 
@@ -22,7 +22,7 @@ module Collavre
           invitation = Collavre::Invitation.find_by_token_for(:invite, params[:invite_token])
           if invitation
             @invitation = invitation
-            @user.email = invitation.email
+            @user.email = invitation.email if invitation.email.present?
           end
         end
         if @user.save
