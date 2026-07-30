@@ -959,6 +959,43 @@ module CollavreOpenclaw
       assert_predicate adapter, :handed_off?
     end
 
+    test "a successful http json response records handoff before lifecycle cancellation" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = nil
+      handed_off_at_check = false
+      check = lambda do
+        handed_off_at_check = adapter.handed_off?
+        raise Collavre::CancelledError
+      end
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: check
+      )
+
+      body = '{"choices":[{"message":{"content":"done"}}]}'
+      request = OpenStruct.new(headers: {}, options: OpenStruct.new)
+      request.define_singleton_method(:url) { |_endpoint| }
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&configure|
+        configure.call(request)
+        request.options.on_data.call(body, body.bytesize, OpenStruct.new(status: 200))
+        OpenStruct.new(
+          status: 200,
+          headers: { "content-type" => "application/json" },
+          body: body
+        )
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, { messages: [] }) { |_chunk| }
+      end
+
+      assert handed_off_at_check,
+             "a completed successful JSON response proves delivery before cancellation is observed"
+      assert_predicate adapter, :handed_off?
+    end
+
     test "the http sse parser checks lifecycle without treating a keepalive comment as handoff" do
       user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
       adapter = nil

@@ -544,9 +544,15 @@ module CollavreOpenclaw
           raise parse_error_message(response.status, error_body)
         end
 
+        json_response = response.headers["content-type"]&.include?("application/json")
+        # A completed successful JSON response proves the gateway accepted the
+        # payload just as an SSE data event does. Record that before the final
+        # lifecycle check, which may abort parsing because the task became
+        # terminal while this response was in flight.
+        @handed_off = true if json_response
         process_sse_buffer(buffer, final: true, &block)
 
-        if response.headers["content-type"]&.include?("application/json")
+        if json_response
           handle_json_response(response.body, &block)
         end
 
