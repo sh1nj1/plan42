@@ -1056,6 +1056,51 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal "failed", captured_task.reload.status
   end
 
+  test "turn deadline does not overwrite a parent workflow cancelled during unwind" do
+    parent_creative = Creative.create!(user: @owner, description: "Cancelled Deadline Parent")
+    parent_task = Task.create!(
+      name: "Cancelled Deadline Parent",
+      status: "running",
+      agent: @owner,
+      creative_id: parent_creative.id
+    )
+    sub_task = Task.create!(
+      name: "Cancelled deadline subtask",
+      status: "pending",
+      agent: @agent,
+      parent_task_id: parent_task.id,
+      creative_id: @creative.id,
+      trigger_event_payload: {
+        "creative" => { "id" => @creative.id },
+        "comment" => { "id" => @comment.id, "content" => "Cancelled deadline subtask" }
+      }
+    )
+
+    fake_service_class = Class.new do
+      define_method(:initialize) do |task, parent|
+        @task = task
+        @parent = parent
+      end
+      define_method(:call) do
+        Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
+        @parent.update!(status: "cancelled")
+        raise Collavre::TurnDeadlineError.new(3600)
+      end
+    end
+
+    executor_touched = false
+    Collavre::Comments::WorkflowExecutor.stub :new, ->(_parent) { executor_touched = true } do
+      Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task, parent_task) } do
+        AiAgentJob.perform_now(sub_task)
+      end
+    end
+
+    assert_equal "failed", sub_task.reload.status
+    assert_equal "cancelled", parent_task.reload.status,
+                 "an explicit parent cancellation must win over child deadline reporting"
+    refute executor_touched, "a cancelled parent must not receive a failure notice"
+  end
+
   # A resumed Task takes the branch above the agent_id guard, so the assignment
   # was rechecked only at enqueue time. Comments::ActionExecutor re-enqueues an
   # approved tool call with perform_later(task) and no check at all, and the

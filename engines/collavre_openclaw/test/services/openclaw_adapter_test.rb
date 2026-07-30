@@ -959,6 +959,29 @@ module CollavreOpenclaw
       assert_predicate adapter, :handed_off?
     end
 
+    test "the http sse parser checks lifecycle without treating a keepalive comment as handoff" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = nil
+      handed_off_at_check = nil
+      check = lambda do
+        handed_off_at_check = adapter.handed_off?
+        raise Collavre::CancelledError
+      end
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: check
+      )
+      buffer = +": ping\n\n"
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:process_sse_buffer, buffer) { |_chunk| flunk "no text to yield" }
+      end
+
+      assert_equal false, handed_off_at_check,
+                   "an SSE transport keepalive does not prove the agent received the payload"
+      assert_not adapter.handed_off?
+    end
+
     test "the http sse parser checks lifecycle before flushing a final partial event" do
       user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
       checks = 0

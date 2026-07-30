@@ -604,20 +604,29 @@ module CollavreOpenclaw
         # The HTTP transport has no event loop to poll from; this parser is
         # its one checkpoint that runs for every received chunk, including
         # tool/comment events that never yield text to the caller's block.
-        # Record delivery first: receiving a complete successful SSE event
-        # proves the gateway accepted the payload and may already have run
-        # tools, even when the event contains no caller-visible text.
-        @handed_off = true
-        @lifecycle_check&.call
         event_data = buffer.slice!(0, idx + 2)
+        # Record delivery first for application data: receiving a successful
+        # data event proves the gateway accepted the payload and may already
+        # have run tools, even when it contains no caller-visible text. SSE
+        # comments are transport keepalives, so they cross the lifecycle check
+        # without claiming the agent received anything.
+        @handed_off = true if sse_data_event?(event_data)
+        @lifecycle_check&.call
         parse_sse_event(event_data, &block)
       end
 
       if final && buffer.present?
-        @handed_off = true
+        @handed_off = true if sse_data_event?(buffer)
         @lifecycle_check&.call
         parse_sse_event(buffer, &block)
         buffer.clear
+      end
+    end
+
+    def sse_data_event?(event_str)
+      event_str.each_line.any? do |line|
+        stripped = line.strip
+        stripped.start_with?("data:") && stripped.delete_prefix("data:").strip.present?
       end
     end
 

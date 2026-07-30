@@ -279,11 +279,19 @@ module Collavre
         # dispatches needs nothing extra: fail_while_worker_settles! marked the
         # row, and the ensure below settles it.
         Rails.logger.info("AiAgentJob turn deadline exceeded for task #{task.id}")
-        if task.parent_task_id.present?
-          Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
-            task,
-            error_message: "Turn exceeded the #{e.deadline_seconds}s deadline"
-          )
+        if (parent_task = task.parent_task)
+          # The parent can be stopped independently while this exception
+          # unwinds. Serialize against that transition and report failure only
+          # while it is still the active workflow; an explicit cancellation
+          # that gets the lock first must remain the terminal result.
+          parent_task.with_lock do
+            next unless parent_task.status == "running"
+
+            Collavre::Comments::WorkflowExecutor.new(parent_task).fail_subtask!(
+              task,
+              error_message: "Turn exceeded the #{e.deadline_seconds}s deadline"
+            )
+          end
         end
       rescue CancelledError
         # Task status already set to "cancelled" by Comment callback
