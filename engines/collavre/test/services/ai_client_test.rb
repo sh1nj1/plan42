@@ -907,7 +907,8 @@ class AiClientTest < ActiveSupport::TestCase
   test "cancellation raised at the tool-call boundary propagates out of chat" do
     client = AiClient.new(
       vendor: "google", model: "gemini-pro", system_prompt: "system",
-      llm_api_key: "api-key", before_tool_call: -> { raise Collavre::TurnDeadlineError }
+      llm_api_key: "api-key",
+      before_tool_call: -> { raise Collavre::TurnDeadlineError.new(3600) }
     )
 
     fake_chat = FakeConversation.new
@@ -923,11 +924,12 @@ class AiClientTest < ActiveSupport::TestCase
     context_stub = proc { |&block| block&.call(OpenStruct.new); mock_context }
 
     yielded = []
-    assert_raises(Collavre::TurnDeadlineError) do
+    error = assert_raises(Collavre::TurnDeadlineError) do
       RubyLLM.stub(:context, context_stub) do
         client.chat([ { role: "user", parts: [ { text: "go" } ] } ]) { |delta| yielded << delta }
       end
     end
+    assert_equal 3600, error.deadline_seconds
 
     assert_empty yielded, "the cancellation must not be rewritten into an error delta"
     assert_predicate client, :handed_off?,

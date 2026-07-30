@@ -1007,17 +1007,20 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     # Mimic AgentLifecycleManager#check_cancelled!'s deadline exit: mark the
     # row failed under the worker-settling protocol, then raise.
+    captured_deadline = 3600
     fake_service_class = Class.new do
       define_method(:initialize) { |task| @task = task }
       define_method(:call) do
         Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
-        raise Collavre::TurnDeadlineError
+        raise Collavre::TurnDeadlineError.new(captured_deadline)
       end
     end
 
-    Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
-      Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task) } do
-        AiAgentJob.perform_now(sub_task)
+    Collavre::SystemSetting.stub :ai_agent_turn_deadline_seconds, 60 do
+      Collavre::Comments::WorkflowExecutor.stub :new, fake_executor do
+        Collavre::AiAgentService.stub :new, ->(task) { fake_service_class.new(task) } do
+          AiAgentJob.perform_now(sub_task)
+        end
       end
     end
 
@@ -1026,7 +1029,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_not_nil fail_called_with,
       "Expected WorkflowExecutor#fail_subtask! so the parent workflow fails instead of hanging"
     assert_equal sub_task.id, fail_called_with[:sub_task].id
-    assert_match(/deadline/i, fail_called_with[:error_message].to_s)
+    assert_equal "Turn exceeded the 3600s deadline", fail_called_with[:error_message]
   end
 
   test "turn deadline without a parent workflow does not touch WorkflowExecutor" do
@@ -1038,7 +1041,7 @@ class AiAgentJobTest < ActiveJob::TestCase
       define_method(:initialize) { |task| @task = task }
       define_method(:call) do
         Collavre::Orchestration::DeliveryRecord.fail_while_worker_settles!(@task)
-        raise Collavre::TurnDeadlineError
+        raise Collavre::TurnDeadlineError.new(3600)
       end
     end
 

@@ -10,5 +10,11 @@ module Collavre
   # AiAgentJob) already preserves partial content, keeps the row's terminal
   # status, releases the resource slot and drains the topic queue.
   class TurnDeadlineError < CancelledError
+    attr_reader :deadline_seconds
+
+    def initialize(deadline_seconds)
+      @deadline_seconds = deadline_seconds
+      super("Turn exceeded the #{deadline_seconds}s deadline")
+    end
   end
 end

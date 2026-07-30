@@ -267,7 +267,7 @@ module Collavre
         # Don't release resources yet - task will resume
         should_release = false
         Rails.logger.info("AiAgentJob paused for task #{task.id}: awaiting tool approval")
-      rescue TurnDeadlineError
+      rescue TurnDeadlineError => e
         # The deadline is the one terminal exit this worker inflicts on itself:
         # every external failer of a workflow subtask (StuckDetector, the
         # offline guards above, comment deletion) calls fail_subtask! at the
@@ -282,7 +282,7 @@ module Collavre
         if task.parent_task_id.present?
           Collavre::Comments::WorkflowExecutor.new(task.parent_task).fail_subtask!(
             task,
-            error_message: "Turn exceeded the #{SystemSetting.ai_agent_turn_deadline_seconds}s deadline"
+            error_message: "Turn exceeded the #{e.deadline_seconds}s deadline"
           )
         end
       rescue CancelledError

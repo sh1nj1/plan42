@@ -936,6 +936,29 @@ module CollavreOpenclaw
         "a chunk with no caller-visible text must still cross the lifecycle check"
     end
 
+    test "the http sse parser records handoff before lifecycle cancellation" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      adapter = nil
+      handed_off_at_check = false
+      check = lambda do
+        handed_off_at_check = adapter.handed_off?
+        raise Collavre::CancelledError
+      end
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: check
+      )
+      buffer = +"event: tool_use\ndata: {\"type\":\"tool_use\"}\n\n"
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:process_sse_buffer, buffer) { |_chunk| flunk "no text to yield" }
+      end
+
+      assert handed_off_at_check,
+             "a successful HTTP event proves delivery before cancellation is observed"
+      assert_predicate adapter, :handed_off?
+    end
+
     test "the http sse parser checks lifecycle before flushing a final partial event" do
       user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
       checks = 0

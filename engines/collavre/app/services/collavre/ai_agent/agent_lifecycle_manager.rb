@@ -90,7 +90,7 @@ module Collavre
           "[AgentLifecycleManager] Task #{@task.id} exceeded turn deadline " \
           "(#{@turn_deadline_seconds}s); failing"
         )
-        raise Collavre::TurnDeadlineError
+        raise Collavre::TurnDeadlineError.new(@turn_deadline_seconds)
       end
 
       # Send heartbeat if interval passed
