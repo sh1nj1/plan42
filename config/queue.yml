@@ -17,8 +17,8 @@ default: &default
     # Dedicated worker for AI agent turns (AiAgentJob). A turn streams from
     # the LLM for minutes, so these must not share threads with short jobs
     # (broadcasts, mailers, notifications) on the default worker. Thread
-    # count is the real execution capacity behind
-    # OrchestratorPolicy#max_concurrent_jobs — keep the two in sync.
+    # count sets execution capacity; the orchestrator's max_concurrent_jobs
+    # (admin-configurable, code default 5) gates admission—set both together.
     # Threads block on provider I/O (GVL released), so they are cheap; each
     # does hold one DB connection for its whole turn — see the pool sizing
     # in config/database.yml.
