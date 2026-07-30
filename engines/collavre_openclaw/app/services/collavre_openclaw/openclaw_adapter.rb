@@ -553,6 +553,12 @@ module CollavreOpenclaw
             if env&.status.nil? || (env.status >= 200 && env.status < 300)
               buffer << chunk
               process_sse_buffer(buffer, &block)
+              @handed_off = true if env&.response_headers&.[]("content-type")&.include?("application/json")
+              # A peer can keep the socket active indefinitely by sending an
+              # event without its terminating blank line. Completed events are
+              # checked inside the parser after handoff classification; poll
+              # here only when an unterminated fragment remains.
+              @lifecycle_check&.call if buffer.present?
             else
               buffer << chunk
             end

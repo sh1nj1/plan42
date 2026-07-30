@@ -992,6 +992,41 @@ module CollavreOpenclaw
         "a chunk with no caller-visible text must still cross the lifecycle check"
     end
 
+    test "the http stream polls lifecycle before an unterminated SSE event completes" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
+      checks = 0
+      adapter = OpenclawAdapter.new(
+        user: user, system_prompt: "Test", context: {},
+        lifecycle_check: lambda {
+          checks += 1
+          raise Collavre::CancelledError
+        }
+      )
+
+      request = OpenStruct.new(headers: {}, options: OpenStruct.new)
+      request.define_singleton_method(:url) { |_endpoint| }
+      on_data_returned = false
+      connection = Object.new
+      connection.define_singleton_method(:post) do |&configure|
+        configure.call(request)
+        body = +'data: {"type":"tool_use"'
+        request.options.on_data.call(body, body.bytesize, OpenStruct.new(status: 200))
+        on_data_returned = true
+        OpenStruct.new(status: 200, headers: { "content-type" => "text/event-stream" }, body: body)
+      end
+      adapter.define_singleton_method(:build_connection) { connection }
+
+      assert_raises(Collavre::CancelledError) do
+        adapter.send(:stream_response, { messages: [] }) { |_chunk| flunk "no text to yield" }
+      end
+
+      assert_equal 1, checks
+      assert_not on_data_returned,
+                 "lifecycle must be checked from on_data instead of waiting for response completion"
+      assert_not adapter.handed_off?,
+                 "an unterminated SSE fragment does not prove the agent accepted the payload"
+    end
+
     test "the http connection timeout is capped by the remaining turn deadline" do
       user = build_test_user(gateway_url: "https://test-gateway.com", llm_api_key: "test-key")
       adapter = OpenclawAdapter.new(
@@ -1044,7 +1079,11 @@ module CollavreOpenclaw
       connection = Object.new
       connection.define_singleton_method(:post) do |&configure|
         configure.call(request)
-        request.options.on_data.call(body, body.bytesize, OpenStruct.new(status: 200))
+        env = OpenStruct.new(
+          status: 200,
+          response_headers: { "content-type" => "application/json" }
+        )
+        request.options.on_data.call(body, body.bytesize, env)
         OpenStruct.new(
           status: 200,
           headers: { "content-type" => "application/json" },
