@@ -354,7 +354,11 @@ class CreativeTreeRow extends LitElement {
     // Toggle is now rendered outside
     const githubBadge = this._renderGithubBadge();
     const content = html`
-      <div class="creative-content" @click=${this._handleContentClick}>
+      <div
+        class="creative-content"
+        @click=${this._handleContentClick}
+        @mousedown=${this._handleContentMouseDown}
+      >
         ${githubBadge}${unsafeHTML(this.descriptionHtml || "")}
       </div>
     `;
@@ -613,6 +617,25 @@ class CreativeTreeRow extends LitElement {
     }
   }
 
+  // The tree wrapper's draggable="true" makes the browser treat mouse-drag as
+  // an HTML5 row-drag gesture, which kills native drag-to-select over the text.
+  // Drop the attribute while the pointer is down over the content so text
+  // selection works; row drag stays available from the rest of the row.
+  _handleContentMouseDown(event) {
+    if (this.selectMode) return; // select mode owns mousedown (row selection)
+    if (event.button !== 0) return;
+    const tree = this.querySelector(".creative-tree");
+    if (!tree || tree.getAttribute("draggable") !== "true") return;
+    tree.setAttribute("draggable", "false");
+    const restore = () => {
+      window.removeEventListener("mouseup", restore, true);
+      window.removeEventListener("dragend", restore, true);
+      tree.setAttribute("draggable", "true");
+    };
+    window.addEventListener("mouseup", restore, true);
+    window.addEventListener("dragend", restore, true);
+  }
+
   _handleContentClick(event) {
     // In select mode, block navigation — selection toggle is handled by
     // select_mode_controller's mousedown handler to avoid double-toggling.
@@ -631,6 +654,11 @@ class CreativeTreeRow extends LitElement {
       // Allow default behavior for these elements (e.g. download link, image click)
       return;
     }
+
+    // Releasing a drag-to-select gesture fires a click on this row; navigating
+    // away would destroy the selection the user just made.
+    const selection = window.getSelection && window.getSelection();
+    if (selection && !selection.isCollapsed) return;
 
     // If not interactive, navigate to the linkUrl
     if (this.linkUrl && this.linkUrl !== "#") {

@@ -1,0 +1,146 @@
+/**
+ * Text selection on the creative list.
+ *
+ * The `.creative-tree` wrapper carries `draggable="true"` so rows can be
+ * reordered, but a draggable ancestor makes the browser turn mousedown+move
+ * into an HTML5 drag gesture — native drag-to-select over the row text was
+ * impossible. The component now drops the attribute while the pointer is down
+ * over `.creative-content` (restoring it on mouseup/dragend), and skips the
+ * click-to-navigate behavior when the click ends with a non-collapsed text
+ * selection (navigating would destroy the selection the user just made).
+ */
+
+import { jest } from "@jest/globals";
+
+// The component calls `customElements.define(...)` at module-eval time and reads
+// `customElements` as a bare global. The jest environment only exposes it on
+// `window`, so bridge it before importing the component.
+beforeAll(() => {
+  if (typeof globalThis.customElements === "undefined") {
+    globalThis.customElements = window.customElements;
+  }
+});
+
+async function mountRow(props) {
+  await import("../creative_tree_row.js");
+  const el = document.createElement("creative-tree-row");
+  Object.assign(el, props);
+  document.body.appendChild(el);
+  await el.updateComplete;
+  return el;
+}
+
+function treeOf(el) {
+  return el.querySelector(".creative-tree");
+}
+
+function contentOf(el) {
+  return el.querySelector(".creative-content");
+}
+
+function mouseDown(target, opts = {}) {
+  target.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 0, ...opts }));
+}
+
+function mouseUpWindow() {
+  window.dispatchEvent(new window.MouseEvent("mouseup"));
+}
+
+function click(target) {
+  target.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
+afterEach(() => {
+  document.body.innerHTML = "";
+  jest.restoreAllMocks();
+  delete window.Turbo;
+});
+
+describe("creative-tree-row text selection", () => {
+  describe("draggable toggling on mousedown over content", () => {
+    test("left mousedown on content disables row drag until mouseup", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+      expect(tree.getAttribute("draggable")).toBe("true");
+
+      mouseDown(contentOf(el));
+      // With draggable off, the browser starts a text selection instead of a
+      // row drag, and drag_drop's handleDragStart guard ignores the row.
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      mouseUpWindow();
+      expect(tree.getAttribute("draggable")).toBe("true");
+    });
+
+    test("dragend also restores draggable (native selection drag path)", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      window.dispatchEvent(new window.Event("dragend"));
+      expect(tree.getAttribute("draggable")).toBe("true");
+
+      // The restore listeners are one-shot: a later unrelated mouseup must not
+      // touch the attribute again after it has been restored.
+      tree.setAttribute("draggable", "false");
+      mouseUpWindow();
+      expect(tree.getAttribute("draggable")).toBe("false");
+    });
+
+    test("non-left button keeps the row draggable", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+
+      mouseDown(contentOf(el), { button: 2 });
+      expect(treeOf(el).getAttribute("draggable")).toBe("true");
+    });
+
+    test("select mode leaves mousedown to the select-mode controller", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true, selectMode: true });
+      const tree = treeOf(el);
+      expect(tree.getAttribute("draggable")).toBe("true");
+
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("true");
+    });
+
+    test("mousedown is a no-op when the row is not currently draggable", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      // A second mousedown before mouseup (or any state where draggable is not
+      // "true") must not stack extra restore listeners or flip the attribute.
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      mouseUpWindow();
+      expect(tree.getAttribute("draggable")).toBe("true");
+    });
+  });
+
+  describe("click-to-navigate vs text selection", () => {
+    test("click with a non-collapsed selection does not navigate", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true, linkUrl: "/creatives/1" });
+      window.Turbo = { visit: jest.fn() };
+      jest.spyOn(window, "getSelection").mockReturnValue({ isCollapsed: false });
+
+      click(contentOf(el));
+
+      expect(window.Turbo.visit).not.toHaveBeenCalled();
+    });
+
+    test("plain click (collapsed selection) still navigates", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true, linkUrl: "/creatives/1" });
+      window.Turbo = { visit: jest.fn() };
+      jest.spyOn(window, "getSelection").mockReturnValue({ isCollapsed: true });
+
+      click(contentOf(el));
+
+      expect(window.Turbo.visit).toHaveBeenCalledWith("/creatives/1");
+    });
+  });
+});
