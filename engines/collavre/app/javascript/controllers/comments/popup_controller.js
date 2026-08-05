@@ -202,6 +202,16 @@ export default class extends Controller {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
     if (!button) return
+    if (event.detail?.workspaceSync && !this.isDocked()) {
+      const nextCreativeId = creativeId || button.dataset.creativeId || ''
+      if (
+        this.element.style.display === 'flex' &&
+        this.element.dataset.creativeId !== String(nextCreativeId)
+      ) {
+        this.close()
+      }
+      return
+    }
     if (!creativeId && button.dataset.workspaceNavigationState === 'true' && this.isDocked()) {
       this.resetDockedToEmpty()
       return

@@ -162,6 +162,58 @@ describe('CommentsPopupController', () => {
         expect(popup.style.display).toBe('flex')
     })
 
+    test('workspace navigation does not auto-open chat outside the docked layout', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        const open = jest.spyOn(controller, 'open')
+        popup.dataset.docked = 'true'
+        controller.dockedMediaQuery.matches = false
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(open).not.toHaveBeenCalled()
+        expect(popup.style.display).not.toBe('flex')
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123' },
+        }))
+        await Promise.resolve()
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+    })
+
+    test('workspace navigation closes an existing floating chat', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        controller.dockedMediaQuery.matches = false
+        await controller.open(triggerBtn)
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '456', workspaceSync: true },
+        }))
+
+        expect(popup.style.display).toBe('none')
+        expect(popup.dataset.creativeId).toBe('123')
+    })
+
+    test('late workspace sync keeps a manually opened chat for the same creative', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        controller.dockedMediaQuery.matches = false
+        await controller.open(triggerBtn)
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(popup.style.display).toBe('flex')
+        expect(popup.dataset.creativeId).toBe('123')
+    })
+
     test('destroying the active creative resets docked chat instead of collapsing it', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'

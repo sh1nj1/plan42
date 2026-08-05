@@ -213,6 +213,32 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_equal first_branch.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
   end
 
+  test "workspace navigation does not auto-open floating chat on mobile" do
+    resize_window_to(600, 900)
+    first_creative = Creative.create!(user: @user, description: "First mobile creative")
+    second_creative = Creative.create!(user: @user, description: "Second mobile creative")
+
+    visit collavre.creatives_path(id: first_creative.id)
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{first_creative.id}']",
+                    visible: :all, wait: 10
+    assert_no_selector "#comments-popup", visible: :visible
+
+    page.execute_script(<<~JS)
+      const link = document.createElement('a');
+      link.id = 'mobile-workspace-link';
+      link.href = '#{collavre.creatives_path(id: second_creative.id)}';
+      link.dataset.turboFrame = 'creative-workspace-content';
+      link.dataset.turboAction = 'advance';
+      link.textContent = 'Second mobile creative';
+      document.body.appendChild(link);
+    JS
+    find("#mobile-workspace-link").click
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{second_creative.id}']",
+                    visible: :all, wait: 10
+    assert_no_selector "#comments-popup", visible: :visible
+  end
+
   test "workspace frame history synchronizes leaf and root chat states" do
     resize_window_to(1440, 900)
     branch = Creative.create!(user: @user, description: "Leaf parent branch")

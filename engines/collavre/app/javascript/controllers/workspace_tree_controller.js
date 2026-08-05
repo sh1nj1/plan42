@@ -233,7 +233,7 @@ export default class extends Controller {
 
   openChat(link) {
     document.dispatchEvent(new CustomEvent('creative-comments-click', {
-      detail: { button: link, creativeId: link.dataset.creativeId },
+      detail: { button: link, creativeId: link.dataset.creativeId, workspaceSync: true },
     }))
   }
 

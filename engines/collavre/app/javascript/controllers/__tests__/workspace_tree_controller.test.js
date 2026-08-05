@@ -114,7 +114,7 @@ describe('WorkspaceTreeController', () => {
 
     expect(rootLink.classList.contains('is-current')).toBe(true)
     expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ creativeId: '1', button: rootLink }),
+      detail: expect.objectContaining({ creativeId: '1', button: rootLink, workspaceSync: true }),
     }))
 
     const frame = document.getElementById('creative-workspace-content')
@@ -143,7 +143,7 @@ describe('WorkspaceTreeController', () => {
 
     expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
     expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ creativeId: '3', button: state }),
+      detail: expect.objectContaining({ creativeId: '3', button: state, workspaceSync: true }),
     }))
 
     delete state.dataset.creativeId
@@ -153,7 +153,11 @@ describe('WorkspaceTreeController', () => {
 
     expect(document.querySelector('.creative-workspace-tree-link.is-current')).toBeNull()
     expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ creativeId: undefined, button: expect.any(HTMLElement) }),
+      detail: expect.objectContaining({
+        creativeId: undefined,
+        button: expect.any(HTMLElement),
+        workspaceSync: true,
+      }),
     }))
     expect(chatListener.mock.lastCall[0].detail.button.dataset.workspaceNavigationState).toBe('true')
     document.removeEventListener('creative-comments-click', chatListener)
