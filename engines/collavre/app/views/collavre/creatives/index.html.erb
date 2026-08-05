@@ -1,14 +1,15 @@
-<%= turbo_frame_tag "creative-workspace-content",
-                    target: "_top" do %>
-<%= tag.div id: "workspace-navigation-state-#{@parent_creative&.id || 'root'}",
-            hidden: true,
-            data: {
-              workspace_navigation_state: true,
-              creative_id: @parent_creative&.id,
-              creative_path: @workspace_path_ids,
-              creative_snippet: @parent_creative&.creative_snippet,
-              can_comment: @parent_creative&.has_permission?(Current.user, :feedback)
-            } %>
+<% creative_index_content = capture do %>
+<% if creative_workspace? %>
+  <%= tag.div id: "workspace-navigation-state-#{@parent_creative&.id || 'root'}",
+              hidden: true,
+              data: {
+                workspace_navigation_state: true,
+                creative_id: @parent_creative&.id,
+                creative_path: @workspace_path_ids,
+                creative_snippet: @parent_creative&.creative_snippet,
+                can_comment: @parent_creative&.has_permission?(Current.user, :feedback)
+              } %>
+<% end %>
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
 <% if authenticated? %>
   <%= turbo_stream_from Current.user, :creative_tree %>
@@ -265,4 +266,11 @@
   <%= render 'integration_modals', creative: current_creative %>
 <% end %>
 </div>
+<% end %>
+<% if creative_workspace? %>
+  <%= turbo_frame_tag "creative-workspace-content", target: "_top" do %>
+    <%= creative_index_content %>
+  <% end %>
+<% else %>
+  <%= creative_index_content %>
 <% end %>

@@ -66,6 +66,7 @@ module Collavre
     attribute :locale, :string
     attribute :system_admin, :boolean, default: false
     attribute :searchable, :boolean, default: false
+    attribute :creative_workspace_enabled, :boolean, default: false
 
     # Typo correction (2D gating: typing-device AND input-location must both be on).
     attribute :typo_correction_enabled, :boolean, default: true

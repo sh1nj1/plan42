@@ -71,7 +71,7 @@ module Collavre
     end
 
     def creative_workspace?
-      Current.user.present? &&
+      Current.user&.creative_workspace_enabled? &&
         controller_path == "collavre/creatives" &&
         action_name == "index" &&
         !@auto_fullscreen

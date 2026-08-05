@@ -2,7 +2,23 @@ require "test_helper"
 
 class CreativesControllerTest < ActionDispatch::IntegrationTest
   setup do
+    users(:one).update!(creative_workspace_enabled: true)
     sign_in_as(users(:one), password: "password")
+  end
+
+  test "creative workspace is disabled by default" do
+    users(:one).update!(creative_workspace_enabled: false)
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+
+    assert_response :success
+    assert_select "body.creative-workspace", count: 0
+    assert_select ".creative-workspace-shell", count: 0
+    assert_select "#creative-workspace-tree", count: 0
+    assert_select "turbo-frame#creative-workspace-content", count: 0
+    assert_select "[data-workspace-navigation-state]", count: 0
+    assert_select "#comments-popup[data-docked='false']", count: 1
   end
 
   test "creative pages render the three-column workspace shell" do

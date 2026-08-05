@@ -98,6 +98,7 @@ module Collavre
         :calendar_id,
         :timezone,
         :locale,
+        :creative_workspace_enabled,
         :typo_correction_enabled,
         :typo_correction_threshold,
         :typo_correction_on_soft_keyboard,

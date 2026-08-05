@@ -119,6 +119,9 @@ en:
       theme: Theme
       calendar_id: Calendar ID
       notifications_enabled: Enable notifications
+      creative_workspace:
+        enabled: Enable three-column creative workspace
+        description: Keep the creative tree mounted on the left, update creative content without a full page refresh, and dock chat on the right.
       locale: Language
       locales:
         en: English
