@@ -223,6 +223,65 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
   })
 
+  test('does not replace an explicitly opened chat during a background tree refresh', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Refreshed root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Current branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.querySelector('[data-creative-id="1"] > div > a').textContent).toBe('Refreshed root')
+    expect(chatListener).not.toHaveBeenCalled()
+
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', workspaceSync: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not dispatch stale frame chat state after a delayed initial tree load', async () => {
+    controller.disconnect()
+    application.stop()
+
+    let resolveFetch
+    fetchMock.mockReset()
+    fetchMock.mockReturnValue(new Promise((resolve) => {
+      resolveFetch = resolve
+    }))
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+
+    application = Application.start()
+    application.register('workspace-tree', WorkspaceTreeController)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    resolveFetch({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
+    controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')
+    expect(chatListener).not.toHaveBeenCalled()
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
   test('does not reopen an invalidated chat from stale frame state after tree refresh', async () => {
     const chatListener = jest.fn()
     document.addEventListener('creative-comments-click', chatListener)
@@ -237,12 +296,7 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => setTimeout(resolve, 120))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ creativeId: undefined, workspaceSync: true }),
-    }))
-    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ creativeId: '2' }),
-    }))
+    expect(chatListener).not.toHaveBeenCalled()
     expect(document.querySelector('.creative-workspace-tree-link.is-current')).toBeNull()
 
     chatListener.mockClear()

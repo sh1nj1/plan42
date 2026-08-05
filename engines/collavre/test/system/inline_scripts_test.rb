@@ -182,6 +182,25 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
   end
 
+  test "workspace tree refresh preserves an explicitly opened inbox chat" do
+    resize_window_to(1440, 900)
+    inbox = Creative.inbox_for(@user)
+    center_branch = Creative.create!(user: @user, description: "Workspace center branch")
+    Creative.create!(user: @user, parent: center_branch, description: "Workspace center child")
+
+    visit collavre.creatives_path(id: center_branch.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{center_branch.id}']", wait: 10
+    find(".inbox-menu-btn", match: :first).click
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+
+    refreshed_branch = Creative.create!(user: @user, description: "Refreshed workspace branch")
+    Creative.create!(user: @user, parent: refreshed_branch, description: "Refreshed workspace child")
+    page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
+
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{refreshed_branch.id}']", wait: 10
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+  end
+
   test "workspace tree navigation preserves the mounted tree and replaces only center content" do
     resize_window_to(1440, 900)
     first_branch = Creative.create!(user: @user, description: "First workspace branch")

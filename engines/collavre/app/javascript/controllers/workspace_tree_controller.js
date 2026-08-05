@@ -23,7 +23,7 @@ export default class extends Controller {
     document.addEventListener('creative-destroyed', this.queueRefresh)
     window.addEventListener('collavre:creative-drop-complete', this.queueRefresh)
     this.observeWorkspaceFrame()
-    this.load()
+    this.load({ syncChat: false })
   }
 
   disconnect() {
@@ -38,7 +38,7 @@ export default class extends Controller {
     window.removeEventListener('collavre:creative-drop-complete', this.queueRefresh)
   }
 
-  async load({ preserveState = false, showLoading = true } = {}) {
+  async load({ preserveState = false, showLoading = true, syncChat = true } = {}) {
     this.loadAbortController?.abort()
     this.loadAbortController = new AbortController()
     this.preservedBranchState = preserveState ? this.branchState() : new Map()
@@ -52,7 +52,7 @@ export default class extends Controller {
       if (!response.ok) throw new Error(`Failed to load workspace tree: ${response.status}`)
 
       const data = await response.json()
-      this.render(Array.isArray(data.creatives) ? data.creatives : [])
+      this.render(Array.isArray(data.creatives) ? data.creatives : [], { syncChat })
     } catch (error) {
       if (error.name === 'AbortError') return
       console.error(error)
@@ -60,18 +60,18 @@ export default class extends Controller {
     }
   }
 
-  render(nodes) {
+  render(nodes, { syncChat = true } = {}) {
     this.nodesData = nodes
     this.treeTarget.replaceChildren()
     if (nodes.length === 0) {
       this.showStatus(this.emptyTextValue)
-      this.syncFromWorkspaceFrame()
+      this.syncFromWorkspaceFrame(undefined, { syncChat })
       return
     }
 
     this.activeId = this.deepestVisiblePathId(nodes, this.currentPathValue)
     this.treeTarget.appendChild(this.buildList(nodes))
-    this.syncFromWorkspaceFrame()
+    this.syncFromWorkspaceFrame(undefined, { syncChat })
   }
 
   buildList(nodes) {
@@ -194,13 +194,13 @@ export default class extends Controller {
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     this.refreshTimeout = window.setTimeout(() => {
       this.refreshTimeout = null
-      this.load({ preserveState: true, showLoading: false })
+      this.load({ preserveState: true, showLoading: false, syncChat: false })
     }, 100)
   }
 
   syncFromWorkspaceFrame(
     frame = document.getElementById('creative-workspace-content'),
-    { authoritative = false } = {}
+    { authoritative = false, syncChat = true } = {}
   ) {
     if (!frame) return
 
@@ -211,13 +211,13 @@ export default class extends Controller {
     const locationCreativeId = this.creativeIdFromLocation()
     if (!stateCreativeId && (authoritative || !locationCreativeId)) {
       this.setActiveId(null)
-      this.openChat(this.rootState())
+      if (syncChat) this.openChat(this.rootState())
       return
     }
     if (!stateCreativeId || (!authoritative && stateCreativeId !== locationCreativeId)) return
     if (this.invalidatedCreativeIds.has(String(stateCreativeId))) {
       this.setActiveId(null)
-      this.openChat(this.rootState())
+      if (syncChat) this.openChat(this.rootState())
       return
     }
 
@@ -225,7 +225,7 @@ export default class extends Controller {
     const activeId = this.deepestVisiblePathId(this.nodesData || [], path)
     this.setActiveId(activeId)
 
-    this.openChat(state)
+    if (syncChat) this.openChat(state)
   }
 
   setActiveId(id) {
