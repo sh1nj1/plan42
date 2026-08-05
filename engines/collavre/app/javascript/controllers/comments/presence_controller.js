@@ -320,7 +320,9 @@ export default class extends Controller {
       }
 
       if (shareChange.has_access === false) {
-        document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+        document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+          detail: { creativeIds: [String(this.creativeId)] },
+        }))
         alertDialog(this.element.dataset.noPermissionText || 'No permission')
         if (this.popupController?.isDocked()) {
           this.popupController.resetDockedToEmpty()

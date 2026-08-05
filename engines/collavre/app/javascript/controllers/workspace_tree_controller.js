@@ -12,6 +12,7 @@ export default class extends Controller {
   }
 
   connect() {
+    this.invalidatedCreativeIds = new Set()
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleTurboRender = this.handleTurboRender.bind(this)
     this.queueRefresh = this.queueRefresh.bind(this)
@@ -157,6 +158,10 @@ export default class extends Controller {
     if (!this.isUnmodifiedPrimaryClick(event)) return
 
     const link = event.currentTarget
+    if (this.invalidatedCreativeIds.has(String(link.dataset.creativeId))) {
+      this.closePanel()
+      return
+    }
     this.setActiveId(link.dataset.creativeId)
     this.closePanel()
     this.openChat(link)
@@ -184,7 +189,8 @@ export default class extends Controller {
     this.frameObserver.observe(frame, { childList: true })
   }
 
-  queueRefresh() {
+  queueRefresh(event) {
+    this.rememberInvalidatedCreativeIds(event)
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     this.refreshTimeout = window.setTimeout(() => {
       this.refreshTimeout = null
@@ -209,6 +215,11 @@ export default class extends Controller {
       return
     }
     if (!stateCreativeId || (!authoritative && stateCreativeId !== locationCreativeId)) return
+    if (this.invalidatedCreativeIds.has(String(stateCreativeId))) {
+      this.setActiveId(null)
+      this.openChat(this.rootState())
+      return
+    }
 
     const path = this.parsePath(state.dataset.creativePath)
     const activeId = this.deepestVisiblePathId(this.nodesData || [], path)
@@ -268,6 +279,11 @@ export default class extends Controller {
       this.rootNavigationState.dataset.workspaceNavigationState = 'true'
     }
     return this.rootNavigationState
+  }
+
+  rememberInvalidatedCreativeIds(event) {
+    const creativeIds = event?.detail?.creativeIds || []
+    creativeIds.forEach((id) => this.invalidatedCreativeIds.add(String(id)))
   }
 
   parsePath(value) {

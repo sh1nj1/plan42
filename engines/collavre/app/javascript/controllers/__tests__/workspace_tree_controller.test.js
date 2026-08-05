@@ -223,6 +223,53 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
   })
 
+  test('does not reopen an invalidated chat from stale frame state after tree refresh', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: undefined, workspaceSync: true }),
+    }))
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    expect(document.querySelector('.creative-workspace-tree-link.is-current')).toBeNull()
+
+    chatListener.mockClear()
+    document.getElementById('creative-workspace-content')
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: undefined, workspaceSync: true }),
+    }))
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not optimistically open an invalidated tree link', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    controller.rememberInvalidatedCreativeIds({ detail: { creativeIds: ['1'] } })
+
+    rootLink.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, cancelable: true }))
+
+    expect(chatListener).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
   test('shows the empty state', async () => {
     const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
     const controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')

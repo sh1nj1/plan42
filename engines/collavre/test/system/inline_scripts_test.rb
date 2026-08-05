@@ -355,6 +355,27 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
   end
 
+  test "workspace tree refresh does not reopen a destroyed creative chat" do
+    resize_window_to(1440, 900)
+    branch = Creative.create!(user: @user, description: "Destroyed chat branch")
+    leaf = Creative.create!(user: @user, parent: branch, description: "Destroyed chat leaf")
+
+    visit collavre.creatives_path(id: leaf.id)
+    assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+
+    leaf.destroy!
+    page.execute_script(<<~JS)
+      document.dispatchEvent(new CustomEvent('creative-destroyed', {
+        detail: { creativeIds: ['#{leaf.id}'] }
+      }));
+      document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'));
+    JS
+
+    assert_selector "#comments-popup[data-creative-id='']", visible: :visible, wait: 10
+    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}']", wait: 10
+    assert_text I18n.t("collavre.creatives.workspace.select_chat")
+  end
+
   test "creative guide popover shows on help button click" do
     # Clear help_menu_link setting to ensure popover shows instead of redirect
     SystemSetting.find_by(key: "help_menu_link")&.destroy

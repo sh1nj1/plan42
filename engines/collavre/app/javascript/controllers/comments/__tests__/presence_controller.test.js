@@ -98,6 +98,9 @@ describe('CommentsPresenceController', () => {
     expect(resetDockedToEmpty).toHaveBeenCalled()
     expect(close).not.toHaveBeenCalled()
     expect(workspaceListener).toHaveBeenCalledTimes(1)
+    expect(workspaceListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: { creativeIds: ['123'] },
+    }))
     expect(global.fetch).not.toHaveBeenCalled()
     document.removeEventListener('workspace-tree:invalidate', workspaceListener)
   })
