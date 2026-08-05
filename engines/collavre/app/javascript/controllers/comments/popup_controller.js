@@ -32,6 +32,7 @@ export default class extends Controller {
     this.openFromUrlObserver = null
     this.openFromUrlTimeout = null
     this.dockedOpenTimeout = null
+    this.openGeneration = 0
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
     this.handleEditingStart = this.handleEditingStart.bind(this)
@@ -217,6 +218,8 @@ export default class extends Controller {
   }
 
   resetDockedToEmpty() {
+    this.openGeneration += 1
+
     if (this.dockedOpenTimeout) {
       window.clearTimeout(this.dockedOpenTimeout)
       this.dockedOpenTimeout = null
@@ -251,7 +254,11 @@ export default class extends Controller {
 
     if (this.element.style.display !== 'flex') return
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
-      this.close()
+      if (this.isDocked() && !this.isFullscreen()) {
+        this.resetDockedToEmpty()
+      } else {
+        this.close()
+      }
     }
   }
 
@@ -266,6 +273,7 @@ export default class extends Controller {
   }
 
   async open(button, { creativeId, highlightId } = {}) {
+    const openGeneration = ++this.openGeneration
     if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
@@ -284,7 +292,13 @@ export default class extends Controller {
     this.showPopup()
     this.updatePosition()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+    const opened = await this.notifyChildControllers({
+      creativeId: resolvedCreativeId,
+      canComment,
+      highlightId,
+      openGeneration,
+    })
+    if (!opened) return
 
     // Track in chat navigation history (skip if navigating via back/forward)
     if (!this._isNavigating) {
@@ -303,6 +317,7 @@ export default class extends Controller {
   }
 
   async openForCreative({ highlightId } = {}) {
+    const openGeneration = ++this.openGeneration
     if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
@@ -318,7 +333,13 @@ export default class extends Controller {
 
     this.showPopup()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+    const opened = await this.notifyChildControllers({
+      creativeId: resolvedCreativeId,
+      canComment,
+      highlightId,
+      openGeneration,
+    })
+    if (!opened) return
 
     // Track in chat navigation history
     if (!this._isNavigating) {
@@ -336,7 +357,7 @@ export default class extends Controller {
     }))
   }
 
-  async notifyChildControllers({ creativeId, canComment, highlightId }) {
+  async notifyChildControllers({ creativeId, canComment, highlightId, openGeneration }) {
     this.topicsController?.clearOverrideTopicId()
     // Drop the previous creative's topic selection from the form controller
     // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
@@ -370,6 +391,8 @@ export default class extends Controller {
       this.listController.suppressTopicChangeLoad = false
     }
 
+    if (openGeneration !== this.openGeneration) return false
+
     if (this.formController) {
       this.formController.onPopupOpened({ creativeId, canComment })
     }
@@ -389,6 +412,7 @@ export default class extends Controller {
     if (this.dropTriggerController) {
       this.dropTriggerController.onPopupOpened({ creativeId })
     }
+    return true
   }
 
   close() {
@@ -396,6 +420,8 @@ export default class extends Controller {
       this.toggleDocked()
       return
     }
+
+    this.openGeneration += 1
 
     this.closeChildControllers()
     this.dispatchPopupClosed()

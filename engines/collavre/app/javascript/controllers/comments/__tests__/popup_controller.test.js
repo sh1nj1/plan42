@@ -162,4 +162,68 @@ describe('CommentsPopupController', () => {
         expect(popup.style.display).toBe('flex')
     })
 
+    test('destroying the active creative resets docked chat instead of collapsing it', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.defaultTitle = 'Comments'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        controller.enterDockedMode()
+        const closeChildControllers = jest.spyOn(controller, 'closeChildControllers')
+
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+            detail: { creativeIds: ['123'] },
+        }))
+
+        expect(popup.dataset.creativeId).toBe('')
+        expect(controller.listTarget.textContent).toBe('Select a creative')
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(popup.style.display).toBe('flex')
+        expect(closeChildControllers).toHaveBeenCalled()
+    })
+
+    test('destroying the active creative closes a floating chat', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        await controller.open(triggerBtn)
+
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+            detail: { creativeIds: ['123'] },
+        }))
+
+        expect(popup.style.display).toBe('none')
+    })
+
+    test('destroying a creative invalidates its pending docked chat open', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.defaultTitle = 'Comments'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        controller.enterDockedMode()
+
+        let finishTopicsLoad
+        Object.defineProperty(controller, 'topicsController', {
+            configurable: true,
+            value: {
+                clearOverrideTopicId: jest.fn(),
+                onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+                onPopupClosed: jest.fn(),
+            },
+        })
+        const dispatchEvent = jest.spyOn(popup, 'dispatchEvent')
+        const pendingOpen = controller.open(triggerBtn)
+        await Promise.resolve()
+
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+            detail: { creativeIds: ['123'] },
+        }))
+        finishTopicsLoad()
+        await pendingOpen
+
+        expect(popup.dataset.creativeId).toBe('')
+        expect(dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'comments-popup:opened' }))
+    })
+
 })
