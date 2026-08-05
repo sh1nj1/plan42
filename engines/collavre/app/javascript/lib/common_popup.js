@@ -1,9 +1,15 @@
+import { escapeHtmlText } from '../utils/html_escape'
+
+// `renderItem` returns a *markup* string that setItems() assigns to innerHTML,
+// so every caller owns escaping whatever it interpolates. The built-in default
+// below only ever emits a plain label, so it escapes; overrides that splice in
+// user-controlled text (display names, MCP command labels) must do the same.
 export default class CommonPopup {
   constructor(element, { listElement, onSelect, renderItem, onClose, closeOnOutsideClick = true } = {}) {
     this.element = element
     this.listElement = listElement || element?.querySelector('[data-popup-list]') || element?.querySelector('ul')
     this.onSelect = onSelect || (() => { })
-    this.renderItem = renderItem || ((item) => item?.label || '')
+    this.renderItem = renderItem || ((item) => escapeHtmlText(item?.label || ''))
     this.onClose = onClose
     this.closeOnOutsideClick = closeOnOutsideClick
     this.items = []

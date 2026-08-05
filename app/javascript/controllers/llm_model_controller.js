@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import CommonPopup from 'collavre/lib/common_popup.js'
+import { escapeHtmlText } from 'collavre/utils/html_escape.js'
 
 export default class extends Controller {
     static targets = ['input']
@@ -17,7 +18,7 @@ export default class extends Controller {
 
         this.popup = new CommonPopup(this.menuElement, {
             listElement: this.listElement,
-            renderItem: (model) => `<div class="mention-item">${model}</div>`,
+            renderItem: (model) => `<div class="mention-item">${escapeHtmlText(model)}</div>`,
             onSelect: this.select.bind(this)
         })
     }

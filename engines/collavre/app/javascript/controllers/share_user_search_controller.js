@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import CommonPopup from '../lib/common_popup'
+import { escapeHtmlText, escapeHtmlAttr } from '../utils/html_escape'
 
 export default class extends Controller {
     static targets = ['input']
@@ -106,14 +107,15 @@ export default class extends Controller {
         const user = item.user
         const avatarUrl = user.avatar_url // if available, or we might need a placeholder
         // Safe guard avatar if not present. CommonPopup sends innerHTML, so we return a string.
-        // We can try to use a similar style to the mentions.
+        // label/value are a display name and an email, both user-supplied; the avatar URL sits
+        // in a double-quoted attribute, so it needs the attribute escaper rather than the text one.
 
         return `
       <div style="display: flex; align-items: center; gap: 8px; padding: 4px 8px;">
-        ${avatarUrl ? `<img src="${avatarUrl}" class="avatar size-20" style="width:20px;height:20px;border-radius:50%;">` : ''}
+        ${avatarUrl ? `<img src="${escapeHtmlAttr(avatarUrl)}" class="avatar size-20" style="width:20px;height:20px;border-radius:50%;">` : ''}
         <div style="display: flex; flex-direction: column;">
-          <span style="font-weight: 500;">${item.label}</span>
-          <span style="font-size: 0.85em; color: #666;">${item.value}</span>
+          <span style="font-weight: 500;">${escapeHtmlText(item.label)}</span>
+          <span style="font-size: 0.85em; color: #666;">${escapeHtmlText(item.value)}</span>
         </div>
       </div>
     `

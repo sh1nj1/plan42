@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import CommonPopup from '../lib/common_popup'
+import { escapeHtmlText } from '../utils/html_escape'
 
 export default class extends Controller {
     static targets = ['list']
@@ -48,8 +49,9 @@ export default class extends Controller {
         this.dispatch('close', { detail: { reason } })
     }
 
-    // Default renderer, can be overridden by extending class or passing a specific renderer
+    // Default renderer, can be overridden by extending class or passing a specific renderer.
+    // Emits plain text only, so it escapes; a subclass that returns real markup owns its own.
     renderItem(item) {
-        return item.label || item.value || JSON.stringify(item)
+        return escapeHtmlText(item.label || item.value || JSON.stringify(item))
     }
 }

@@ -1,6 +1,7 @@
 import CommonPopup from '../lib/common_popup'
 import { getCaretClientRect } from '../utils/caret_position'
 import CommandArgsForm from './command_args_form'
+import { escapeHtmlText } from '../utils/html_escape'
 
 let commandMenuInitialized = false
 
@@ -49,17 +50,20 @@ if (!commandMenuInitialized) {
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
+      // The command list is fetched from the server and includes registered MCP
+      // tools, whose label/description are supplied when the tool is registered
+      // rather than fixed by the app — so treat all four fields as untrusted.
       renderItem: (command) => {
         const aliasLabel = command.aliases?.length
-          ? `<span class="command-aliases">(${command.aliases.join(', ')})</span>`
+          ? `<span class="command-aliases">(${escapeHtmlText(command.aliases.join(', '))})</span>`
           : ''
-        const args = command.args ? `<span class="command-args">${command.args}</span>` : ''
+        const args = command.args ? `<span class="command-args">${escapeHtmlText(command.args)}</span>` : ''
         const description = command.description
-          ? `<div class="command-description">${command.description}</div>`
+          ? `<div class="command-description">${escapeHtmlText(command.description)}</div>`
           : ''
         return `
           <div class="command-item">
-            <span class="command-label">${command.label}</span>
+            <span class="command-label">${escapeHtmlText(command.label)}</span>
             ${aliasLabel}
             ${args}
           </div>
