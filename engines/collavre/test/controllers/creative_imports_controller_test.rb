@@ -31,6 +31,21 @@ class CreativeImportsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Invalid file type", json["error"]
   end
 
+  test "rejects legacy binary PowerPoint files" do
+    file = Rack::Test::UploadedFile.new(
+      file_fixture("invalid.txt"),
+      "application/vnd.ms-powerpoint",
+      original_filename: "legacy.ppt"
+    )
+
+    assert_no_difference("Creative.count") do
+      post collavre.creative_imports_path, params: { markdown: file }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal "Invalid file type", JSON.parse(response.body)["error"]
+  end
+
   test "returns unauthorized when user not signed in" do
     delete session_path
 

@@ -33,6 +33,7 @@ Gem::Specification.new do |spec|
 
   # Markdown rendering
   spec.add_dependency "commonmarker"           # GitHub-flavored Markdown to HTML
+  spec.add_dependency "rubyzip", "< 4.0"        # PPTX archive parsing
 
   # Integrations
   spec.add_dependency "httparty"               # HTTP client for link previews and APIs
@@ -51,6 +52,4 @@ Gem::Specification.new do |spec|
   # GitHub integration:
   #   gem "octokit"
   #
-  # PPT/PPTX import:
-  #   gem "rubyzip"
 end

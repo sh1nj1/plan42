@@ -1051,4 +1051,184 @@ creative-tree-row.is-being-edited .creative-tree {
     justify-content: center;
     box-shadow: var(--shadow-2);
 }
+/* ─── Imported PowerPoint slide ─── */
 
+.ppt-slide {
+    width: 100%;
+    max-width: 960px;
+    margin: var(--space-3, 12px) 0;
+    overflow: hidden;
+    border: var(--border-1, 1px) solid var(--border-color);
+    border-radius: var(--radius-2, 8px);
+    background: var(--surface-section);
+    color: var(--text-primary);
+}
+
+.ppt-slide--wide { aspect-ratio: 16 / 9; }
+.ppt-slide--standard { aspect-ratio: 4 / 3; }
+.ppt-slide--square { aspect-ratio: 1 / 1; }
+.ppt-slide--portrait { aspect-ratio: 3 / 4; }
+
+.ppt-slide-layout,
+.ppt-slide-group {
+    display: grid;
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+    grid-template-rows: repeat(24, minmax(0, 1fr));
+    width: 100%;
+    height: 100%;
+}
+
+.ppt-slide-element {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.ppt-slide-text,
+.ppt-slide-title {
+    padding: 0.2em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ppt-slide-text p,
+.ppt-slide-title p {
+    margin: 0;
+}
+
+.ppt-slide-title {
+    font-size: 1.35em;
+    font-weight: 700;
+}
+
+.ppt-slide-image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.ppt-slide-table,
+.ppt-slide-chart table {
+    width: 100%;
+    height: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.ppt-slide-table td,
+.ppt-slide-chart th,
+.ppt-slide-chart td {
+    border: var(--border-1, 1px) solid var(--border-color);
+    padding: 0.2em;
+    overflow-wrap: anywhere;
+}
+
+.ppt-slide-chart h3,
+.ppt-slide-notes h3 {
+    margin: 0 0 var(--space-2, 8px);
+}
+
+.ppt-slide-notes {
+    max-width: 960px;
+    margin-top: var(--space-2, 8px);
+    padding: var(--space-3, 12px);
+    border-left: var(--border-3, 3px) solid var(--border-color);
+}
+
+.ppt-col-1 { grid-column-start: 1; }
+.ppt-col-span-1 { grid-column-end: span 1; }
+.ppt-row-1 { grid-row-start: 1; }
+.ppt-row-span-1 { grid-row-end: span 1; }
+.ppt-col-2 { grid-column-start: 2; }
+.ppt-col-span-2 { grid-column-end: span 2; }
+.ppt-row-2 { grid-row-start: 2; }
+.ppt-row-span-2 { grid-row-end: span 2; }
+.ppt-col-3 { grid-column-start: 3; }
+.ppt-col-span-3 { grid-column-end: span 3; }
+.ppt-row-3 { grid-row-start: 3; }
+.ppt-row-span-3 { grid-row-end: span 3; }
+.ppt-col-4 { grid-column-start: 4; }
+.ppt-col-span-4 { grid-column-end: span 4; }
+.ppt-row-4 { grid-row-start: 4; }
+.ppt-row-span-4 { grid-row-end: span 4; }
+.ppt-col-5 { grid-column-start: 5; }
+.ppt-col-span-5 { grid-column-end: span 5; }
+.ppt-row-5 { grid-row-start: 5; }
+.ppt-row-span-5 { grid-row-end: span 5; }
+.ppt-col-6 { grid-column-start: 6; }
+.ppt-col-span-6 { grid-column-end: span 6; }
+.ppt-row-6 { grid-row-start: 6; }
+.ppt-row-span-6 { grid-row-end: span 6; }
+.ppt-col-7 { grid-column-start: 7; }
+.ppt-col-span-7 { grid-column-end: span 7; }
+.ppt-row-7 { grid-row-start: 7; }
+.ppt-row-span-7 { grid-row-end: span 7; }
+.ppt-col-8 { grid-column-start: 8; }
+.ppt-col-span-8 { grid-column-end: span 8; }
+.ppt-row-8 { grid-row-start: 8; }
+.ppt-row-span-8 { grid-row-end: span 8; }
+.ppt-col-9 { grid-column-start: 9; }
+.ppt-col-span-9 { grid-column-end: span 9; }
+.ppt-row-9 { grid-row-start: 9; }
+.ppt-row-span-9 { grid-row-end: span 9; }
+.ppt-col-10 { grid-column-start: 10; }
+.ppt-col-span-10 { grid-column-end: span 10; }
+.ppt-row-10 { grid-row-start: 10; }
+.ppt-row-span-10 { grid-row-end: span 10; }
+.ppt-col-11 { grid-column-start: 11; }
+.ppt-col-span-11 { grid-column-end: span 11; }
+.ppt-row-11 { grid-row-start: 11; }
+.ppt-row-span-11 { grid-row-end: span 11; }
+.ppt-col-12 { grid-column-start: 12; }
+.ppt-col-span-12 { grid-column-end: span 12; }
+.ppt-row-12 { grid-row-start: 12; }
+.ppt-row-span-12 { grid-row-end: span 12; }
+.ppt-col-13 { grid-column-start: 13; }
+.ppt-col-span-13 { grid-column-end: span 13; }
+.ppt-row-13 { grid-row-start: 13; }
+.ppt-row-span-13 { grid-row-end: span 13; }
+.ppt-col-14 { grid-column-start: 14; }
+.ppt-col-span-14 { grid-column-end: span 14; }
+.ppt-row-14 { grid-row-start: 14; }
+.ppt-row-span-14 { grid-row-end: span 14; }
+.ppt-col-15 { grid-column-start: 15; }
+.ppt-col-span-15 { grid-column-end: span 15; }
+.ppt-row-15 { grid-row-start: 15; }
+.ppt-row-span-15 { grid-row-end: span 15; }
+.ppt-col-16 { grid-column-start: 16; }
+.ppt-col-span-16 { grid-column-end: span 16; }
+.ppt-row-16 { grid-row-start: 16; }
+.ppt-row-span-16 { grid-row-end: span 16; }
+.ppt-col-17 { grid-column-start: 17; }
+.ppt-col-span-17 { grid-column-end: span 17; }
+.ppt-row-17 { grid-row-start: 17; }
+.ppt-row-span-17 { grid-row-end: span 17; }
+.ppt-col-18 { grid-column-start: 18; }
+.ppt-col-span-18 { grid-column-end: span 18; }
+.ppt-row-18 { grid-row-start: 18; }
+.ppt-row-span-18 { grid-row-end: span 18; }
+.ppt-col-19 { grid-column-start: 19; }
+.ppt-col-span-19 { grid-column-end: span 19; }
+.ppt-row-19 { grid-row-start: 19; }
+.ppt-row-span-19 { grid-row-end: span 19; }
+.ppt-col-20 { grid-column-start: 20; }
+.ppt-col-span-20 { grid-column-end: span 20; }
+.ppt-row-20 { grid-row-start: 20; }
+.ppt-row-span-20 { grid-row-end: span 20; }
+.ppt-col-21 { grid-column-start: 21; }
+.ppt-col-span-21 { grid-column-end: span 21; }
+.ppt-row-21 { grid-row-start: 21; }
+.ppt-row-span-21 { grid-row-end: span 21; }
+.ppt-col-22 { grid-column-start: 22; }
+.ppt-col-span-22 { grid-column-end: span 22; }
+.ppt-row-22 { grid-row-start: 22; }
+.ppt-row-span-22 { grid-row-end: span 22; }
+.ppt-col-23 { grid-column-start: 23; }
+.ppt-col-span-23 { grid-column-end: span 23; }
+.ppt-row-23 { grid-row-start: 23; }
+.ppt-row-span-23 { grid-row-end: span 23; }
+.ppt-col-24 { grid-column-start: 24; }
+.ppt-col-span-24 { grid-column-end: span 24; }
+.ppt-row-24 { grid-row-start: 24; }
+.ppt-row-span-24 { grid-row-end: span 24; }
