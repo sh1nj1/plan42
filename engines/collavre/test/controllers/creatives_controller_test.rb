@@ -30,7 +30,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "body.creative-workspace"
     assert_select ".creative-workspace-shell"
     assert_select "#creative-workspace-tree"
-    assert_select "turbo-frame#creative-workspace-content[target='_top'] [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
   end
 

@@ -50,8 +50,12 @@ export default class extends Controller {
     }
 
     onPopupClosed() {
+        this._loadTopicsVersion += 1
         this.unsubscribe()
         this.creativeIdValue = null
+        this.topics = []
+        this.mainTopicId = null
+        delete this.element.dataset.effectiveCreativeId
     }
 
     get creativeId() {

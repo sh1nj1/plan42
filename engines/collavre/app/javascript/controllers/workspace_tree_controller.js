@@ -97,6 +97,7 @@ export default class extends Controller {
       toggle.type = 'button'
       toggle.className = 'creative-workspace-tree-branch-toggle'
       toggle.setAttribute('aria-expanded', String(expanded))
+      toggle.setAttribute('aria-label', node.label)
       toggle.textContent = expanded ? '▾' : '▸'
       toggle.addEventListener('click', () => this.toggleBranch(item, toggle))
       row.appendChild(toggle)

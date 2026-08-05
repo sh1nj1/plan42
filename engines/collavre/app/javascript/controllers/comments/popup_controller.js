@@ -33,6 +33,7 @@ export default class extends Controller {
     this.openFromUrlTimeout = null
     this.dockedOpenTimeout = null
     this.openGeneration = 0
+    this._wakeLockRequest = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
     this.handleEditingStart = this.handleEditingStart.bind(this)
@@ -387,21 +388,29 @@ export default class extends Controller {
     // Without this, the topic change event fires loadInitialComments() before
     // onPopupOpened sets highlightAfterLoad, causing a race where the non-highlight
     // load can overwrite the deep-link highlight load.
-    if (this.listController) {
-      this.listController.creativeId = creativeId
-      this.listController.suppressTopicChangeLoad = true
+    const suppressedListController = this.listController
+    if (suppressedListController) {
+      suppressedListController.creativeId = creativeId
+      suppressedListController.suppressTopicChangeLoad = true
     }
 
     // Load topics first to establish context
-    if (this.topicsController) {
-      await this.topicsController.onPopupOpened({ creativeId })
-    }
-
-    if (this.listController) {
-      this.listController.suppressTopicChangeLoad = false
+    try {
+      if (this.topicsController) {
+        await this.topicsController.onPopupOpened({ creativeId })
+      }
+    } catch (error) {
+      if (openGeneration === this.openGeneration && suppressedListController) {
+        suppressedListController.suppressTopicChangeLoad = false
+      }
+      throw error
     }
 
     if (openGeneration !== this.openGeneration) return false
+
+    if (suppressedListController) {
+      suppressedListController.suppressTopicChangeLoad = false
+    }
 
     if (this.formController) {
       this.formController.onPopupOpened({ creativeId, canComment })
@@ -592,7 +601,10 @@ export default class extends Controller {
     if (!this.hasCloseButtonTarget) return
 
     if (!this.isDocked()) {
+      const label = this.element.dataset.closeLabel || ''
       this.closeButtonTarget.textContent = '×'
+      this.closeButtonTarget.setAttribute('aria-label', label)
+      this.closeButtonTarget.title = label
       return
     }
 
@@ -1578,10 +1590,24 @@ export default class extends Controller {
   }
 
   async _requestWakeLock() {
-    if (!this._shouldHoldWakeLock() || !('wakeLock' in navigator)) return
+    if (
+      !this._shouldHoldWakeLock() ||
+      !('wakeLock' in navigator) ||
+      this._wakeLock ||
+      this._wakeLockRequest
+    ) return
 
+    let request
     try {
-      const wakeLock = await navigator.wakeLock.request('screen')
+      request = navigator.wakeLock.request('screen')
+      this._wakeLockRequest = request
+      const wakeLock = await request
+      if (this._wakeLockRequest !== request) {
+        wakeLock.release()
+        return
+      }
+
+      this._wakeLockRequest = null
       if (!this._shouldHoldWakeLock()) {
         wakeLock.release()
         return
@@ -1589,9 +1615,10 @@ export default class extends Controller {
 
       this._wakeLock = wakeLock
       wakeLock.addEventListener('release', () => {
-        this._wakeLock = null
+        if (this._wakeLock === wakeLock) this._wakeLock = null
       })
     } catch (err) {
+      if (this._wakeLockRequest === request) this._wakeLockRequest = null
       // Wake lock request can fail (e.g. low battery, browser policy).
       // This is non-critical — just log and continue.
       console.debug('[chat] Wake lock request failed:', err.message)
@@ -1599,9 +1626,9 @@ export default class extends Controller {
   }
 
   _releaseWakeLock() {
-    if (this._wakeLock) {
-      this._wakeLock.release()
-      this._wakeLock = null
-    }
+    this._wakeLockRequest = null
+    const wakeLock = this._wakeLock
+    this._wakeLock = null
+    wakeLock?.release()
   }
 }

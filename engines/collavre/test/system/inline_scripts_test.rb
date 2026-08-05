@@ -239,6 +239,32 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_no_selector "#comments-popup", visible: :visible
   end
 
+  test "workspace breadcrumb and center rows preserve the mounted shell" do
+    resize_window_to(1440, 900)
+    branch = Creative.create!(user: @user, description: "Center navigation branch")
+    Creative.create!(user: @user, parent: branch, description: "Center navigation child")
+
+    visit collavre.creatives_path(id: branch.id)
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{branch.id}']",
+                    visible: :all, wait: 10
+    page.execute_script(<<~JS)
+      document.querySelector('[data-controller="workspace-tree"]')
+        .dataset.persistenceMarker = 'center-mounted';
+    JS
+
+    find(".creative-breadcrumb-link", text: I18n.t("collavre.creatives.index.root_breadcrumb")).click
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state]:not([data-creative-id])",
+                    visible: :all, wait: 10
+    assert_equal "center-mounted", find("[data-controller='workspace-tree']")["data-persistence-marker"]
+
+    find("creative-tree-row[creative-id='#{branch.id}'] .creative-content").click
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{branch.id}']",
+                    visible: :all, wait: 10
+    assert_equal "center-mounted", find("[data-controller='workspace-tree']")["data-persistence-marker"]
+  end
+
   test "workspace frame history synchronizes leaf and root chat states" do
     resize_window_to(1440, 900)
     branch = Creative.create!(user: @user, description: "Leaf parent branch")

@@ -211,8 +211,16 @@ body.creative-workspace .creative-content {
         transition: transform 0.2s var(--ease-out-2);
     }
 
+    .creative-workspace-tree-region > aside {
+        visibility: hidden;
+    }
+
     .creative-workspace-tree-region.is-open {
         transform: translateX(0);
+    }
+
+    .creative-workspace-tree-region.is-open > aside {
+        visibility: visible;
     }
 
     .creative-workspace-tree-toggle {

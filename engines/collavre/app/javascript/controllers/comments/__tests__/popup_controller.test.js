@@ -126,6 +126,20 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
+    test('restores the floating close button label after leaving docked mode', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.closeLabel = 'Close chat'
+        controller.enterDockedMode()
+        controller.dockedMediaQuery.matches = false
+
+        controller.syncDockedUI()
+
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Close chat')
+        expect(controller.closeButtonTarget.title).toBe('Close chat')
+    })
+
     test('empty docked workspace does not request a wake lock', () => {
         const popup = document.getElementById('comments-popup')
         const requestWakeLock = jest.spyOn(controller, '_requestWakeLock')
@@ -176,7 +190,31 @@ describe('CommentsPopupController', () => {
         await Promise.resolve()
 
         expect(release).toHaveBeenCalledTimes(1)
-        expect(controller._wakeLock).toBeUndefined()
+        expect(controller._wakeLock).toBeNull()
+        delete navigator.wakeLock
+    })
+
+    test('deduplicates concurrent wake lock requests', async () => {
+        const popup = document.getElementById('comments-popup')
+        const wakeLock = { release: jest.fn(), addEventListener: jest.fn() }
+        let finishRequest
+        Object.defineProperty(navigator, 'wakeLock', {
+            configurable: true,
+            value: {
+                request: jest.fn(() => new Promise(resolve => { finishRequest = resolve })),
+            },
+        })
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+
+        const firstRequest = controller._requestWakeLock()
+        const secondRequest = controller._requestWakeLock()
+
+        expect(navigator.wakeLock.request).toHaveBeenCalledTimes(1)
+        finishRequest(wakeLock)
+        await Promise.all([firstRequest, secondRequest])
+        expect(controller._wakeLock).toBe(wakeLock)
         delete navigator.wakeLock
     })
 
@@ -330,6 +368,47 @@ describe('CommentsPopupController', () => {
 
         expect(popup.dataset.creativeId).toBe('')
         expect(dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'comments-popup:opened' }))
+    })
+
+    test('an obsolete open does not clear the current topic suppression guard', async () => {
+        const listController = {
+            creativeId: null,
+            suppressTopicChangeLoad: false,
+            onPopupOpened: jest.fn(),
+        }
+        const pendingTopics = new Map()
+        const topicsController = {
+            clearOverrideTopicId: jest.fn(),
+            currentTopicId: '7',
+            onPopupOpened: jest.fn(({ creativeId }) => new Promise(resolve => {
+                pendingTopics.set(creativeId, resolve)
+            })),
+        }
+        Object.defineProperty(controller, 'listController', { configurable: true, value: listController })
+        Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+
+        controller.openGeneration = 1
+        const firstOpen = controller.notifyChildControllers({
+            creativeId: '123', canComment: true, openGeneration: 1,
+        })
+        await Promise.resolve()
+
+        controller.openGeneration = 2
+        const secondOpen = controller.notifyChildControllers({
+            creativeId: '456', canComment: true, openGeneration: 2,
+        })
+        await Promise.resolve()
+
+        pendingTopics.get('123')()
+        expect(await firstOpen).toBe(false)
+        expect(listController.suppressTopicChangeLoad).toBe(true)
+
+        pendingTopics.get('456')()
+        expect(await secondOpen).toBe(true)
+        expect(listController.suppressTopicChangeLoad).toBe(false)
+        expect(listController.onPopupOpened).toHaveBeenCalledWith({
+            creativeId: '456', highlightId: undefined, topicId: '7',
+        })
     })
 
 })

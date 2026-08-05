@@ -6,13 +6,14 @@ module Collavre
         @view_context = view_context
         @max_level = max_level
         @children_index = ChildrenIndex.new(user: user, show_archived: false)
+        @permission_rank = {}
       end
 
       def build(collection, level: 1)
         creatives = Array(collection)
         return [] if creatives.empty? || level > max_level
 
-        children_index.index(creatives)
+        prepare_level(creatives)
         branches = creatives.select { |creative| children_index.has_children?(creative) }
         children_index.load(branches)
 
@@ -21,7 +22,7 @@ module Collavre
             id: creative.id,
             label: view_context.strip_tags(creative.effective_description).squish,
             snippet: creative.creative_snippet,
-            can_comment: creative.has_permission?(@user, :feedback),
+            can_comment: allowed?(creative, :feedback),
             url: view_context.collavre.creatives_path(id: creative.id),
             children: build(children_index.children_for(creative), level: level + 1)
           }
@@ -30,7 +31,26 @@ module Collavre
 
       private
 
-      attr_reader :children_index, :max_level, :view_context
+      attr_reader :children_index, :max_level, :user, :view_context
+
+      def prepare_level(creatives)
+        ActiveRecord::Associations::Preloader.new(records: creatives, associations: :origin).call
+        preload_permissions(creatives)
+        children_index.index(creatives)
+      end
+
+      def preload_permissions(creatives)
+        pending = creatives.reject { |creative| @permission_rank.key?(creative.id) }
+        return if pending.empty?
+
+        ranks = PermissionFilter.new(user: user).ranks_for(pending.map(&:id))
+        pending.each { |creative| @permission_rank[creative.id] = ranks[creative.id] }
+      end
+
+      def allowed?(creative, permission)
+        rank = @permission_rank[creative.id]
+        rank.present? && rank >= CreativeShare.permissions.fetch(permission.to_s)
+      end
     end
   end
 end

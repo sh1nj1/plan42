@@ -56,6 +56,30 @@ module Creatives
       assert_empty nodes.first[:children]
     end
 
+    test "batches linked origins and permission ranks for each level" do
+      shells = 4.times.map do |index|
+        origin = Creative.create!(user: users(:two), description: "Shared root #{index}")
+        Creative.create!(user: users(:two), parent: origin, description: "Shared child #{index}")
+        CreativeShare.create!(creative: origin, user: @user, permission: :feedback)
+        origin.create_linked_creative_for_user(@user)
+        Creative.find_by!(user: @user, origin: origin)
+      end
+      shell_ids = shells.map(&:id)
+      fresh_shells = Creative.where(id: shell_ids).order(:id).to_a
+      queries = []
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        sql = payload[:sql]
+        queries << sql unless payload[:cached] || payload[:name] == "SCHEMA"
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
+        build_tree(fresh_shells)
+      end
+
+      per_node_queries = queries.grep(/(?:collavre_creatives|creative_shares_cache).*LIMIT 1/i)
+      assert_empty per_node_queries, "expected batched workspace tree reads, got:\n#{per_node_queries.join("\n")}"
+    end
+
     private
 
     def build_tree(creatives, max_level: 6)

@@ -26,6 +26,8 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.highlightCreativeId = null
+    this._loadCommentsVersion = 0
     this.markReadTimeout = null
     this.prevMsgNavigator = new PrevMessageNavigator()
 
@@ -83,11 +85,16 @@ export default class extends Controller {
     // During notifyChildControllers, topic loading fires change events before
     // onPopupOpened sets up highlightAfterLoad. Suppress these to avoid a
     // race where a non-highlight load overwrites the deep-link highlight load.
-    if (this.suppressTopicChangeLoad || (this.highlightAfterLoad && !this.initialLoadComplete)) {
+    if (this.suppressTopicChangeLoad) {
       this.currentTopicId = nextTopicId
       return
     }
     this.currentTopicId = nextTopicId
+    // A user-selected topic supersedes any outstanding deep-link window.
+    // The old request is discarded by the topic/version guards below, while
+    // this replacement load starts from the selected topic's latest messages.
+    this.highlightAfterLoad = null
+    this.highlightCreativeId = null
     this.resetToLatest()
   }
 
@@ -128,10 +135,15 @@ export default class extends Controller {
   }
 
   onPopupOpened({ creativeId, highlightId, topicId } = {}) {
+    const normalizedCreativeId = String(creativeId || '')
+    const pendingHighlight = String(this.highlightCreativeId || '') === normalizedCreativeId
+      ? this.highlightAfterLoad
+      : null
     this.creativeId = creativeId
     this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
-    this.highlightAfterLoad = highlightId || this.highlightAfterLoad || this.deepLinkCommentId
+    this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
+    this.highlightCreativeId = this.highlightAfterLoad ? normalizedCreativeId : null
 
     if (topicId !== undefined) {
       this.currentTopicId = topicId
@@ -151,6 +163,11 @@ export default class extends Controller {
       window.clearTimeout(this.markReadTimeout)
       this.markReadTimeout = null
     }
+    this._loadCommentsVersion += 1
+    this.creativeId = null
+    this.highlightAfterLoad = null
+    this.highlightCreativeId = null
+    this.suppressTopicChangeLoad = false
     this.resetState()
     this.listTarget.innerHTML = ''
     this.initialLoadComplete = false
@@ -182,6 +199,7 @@ export default class extends Controller {
     // The list is about to be replaced wholesale; any anchor we hold is stale.
     this.prevMsgNavigator.reset()
 
+    const requestVersion = ++this._loadCommentsVersion
     const params = {}
     if (this.highlightAfterLoad) {
       params.around_comment_id = this.highlightAfterLoad
@@ -194,6 +212,7 @@ export default class extends Controller {
       // Discard stale responses if creative or topic changed while fetching.
       // This prevents a race condition where switching creatives causes
       // the old creative's comments to overwrite the new creative's list.
+      if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
       if (String(this.currentTopicId || "") !== String(requestTopicId)) return
 
@@ -207,6 +226,7 @@ export default class extends Controller {
         this.allNewerLoaded = false // We are likely in middle
         this.highlightComment(this.highlightAfterLoad)
         this.highlightAfterLoad = null
+        this.highlightCreativeId = null
       } else {
         // Standard load -> Scroll to bottom (latest)
         this.scrollToBottom()
@@ -221,6 +241,9 @@ export default class extends Controller {
       this.markCommentsRead()
 
     }).catch((error) => {
+      if (requestVersion !== this._loadCommentsVersion) return
+      if (this.creativeId !== requestCreativeId) return
+      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
       this.listTarget.innerHTML = `<div class="comments-list-error">${error.message}</div>`
     })
   }

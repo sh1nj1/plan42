@@ -86,6 +86,7 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('[data-creative-id="2"] a').getAttribute('aria-current')).toBe('page')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboAction).toBe('advance')
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
   })
 
   test('toggles branches and the medium-width panel', () => {

@@ -18,10 +18,16 @@ module Creatives
       reveal = RevealPathResolver.new([ creative.id ], user: user).call[creative.id]
       return renderable_ids(origin_path) if reveal.blank?
 
-      anchor_index = origin_path.rindex { |id| reveal.key?(id) }
-      return renderable_ids(origin_path) unless anchor_index
+      reveal_paths = origin_path.filter_map { |id| [ id, reveal.fetch(id) ] if reveal.key?(id) }
+      renderable_reveal_ids = renderable_ids(reveal_paths.flat_map(&:last).uniq).to_set
+      anchor = reveal_paths.reverse.find do |_id, path|
+        path.all? { |id| renderable_reveal_ids.include?(id) }
+      end
+      return renderable_ids(origin_path) unless anchor
 
-      reveal.fetch(origin_path[anchor_index]) + renderable_ids(origin_path.drop(anchor_index + 1))
+      anchor_id, reveal_path = anchor
+      anchor_index = origin_path.index(anchor_id)
+      reveal_path + renderable_ids(origin_path.drop(anchor_index + 1))
     end
 
     private

@@ -57,6 +57,21 @@ module Creatives
       assert_equal [ branch_folder.id, branch_shell.id, leaf.id ], resolve(leaf)
     end
 
+    test "rejects a reveal path through a linked shell whose origin is no longer readable" do
+      restricted = Creative.create!(user: users(:two), description: "Revoked origin")
+      shared_leaf = Creative.create!(user: users(:two), parent: restricted, description: "Directly shared leaf")
+      ancestor_share = CreativeShare.create!(creative: restricted, user: @user, permission: :read)
+      restricted.create_linked_creative_for_user(@user)
+      stale_shell = Creative.find_by!(user: @user, origin: restricted)
+      ancestor_share.destroy!
+      CreativeShare.create!(creative: shared_leaf, user: @user, permission: :read)
+
+      path = resolve(shared_leaf)
+
+      assert_equal [ shared_leaf.id ], path
+      assert_not_includes path, stale_shell.id
+    end
+
     private
 
     def resolve(creative)

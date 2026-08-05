@@ -81,7 +81,7 @@
           </button>
         <% end %>
         <% if @parent_creative.present? %>
-          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' do %>
+          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item', form: { data: { turbo_frame: '_top' } } do %>
             <span aria-hidden="true"><%= svg_tag 'slide.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.slide_view') %>
           <% end %>
         <% end %>
@@ -268,7 +268,7 @@
 </div>
 <% end %>
 <% if creative_workspace? %>
-  <%= turbo_frame_tag "creative-workspace-content", target: "_top" do %>
+  <%= turbo_frame_tag "creative-workspace-content" do %>
     <%= creative_index_content %>
   <% end %>
 <% else %>
