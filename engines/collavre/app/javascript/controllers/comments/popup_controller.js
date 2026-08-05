@@ -522,7 +522,7 @@ export default class extends Controller {
     } else if (this.isMobile()) {
       this.element.classList.add('open')
     }
-    this._requestWakeLock()
+    this._syncWakeLock()
   }
 
   isFullscreen() {
@@ -582,6 +582,7 @@ export default class extends Controller {
 
     this.element.classList.toggle('docked-collapsed')
     this.syncDockedUI()
+    this._syncWakeLock()
     if (!this.element.classList.contains('docked-collapsed')) {
       requestAnimationFrame(() => this.listController?.scrollToBottom())
     }
@@ -743,7 +744,7 @@ export default class extends Controller {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
       // Re-acquire wake lock — released automatically when tab loses visibility
-      this._requestWakeLock()
+      this._syncWakeLock()
     }
   }
 
@@ -1559,12 +1560,35 @@ export default class extends Controller {
   // is open.  The browser automatically releases the lock when the tab
   // loses visibility, so we re-acquire it in handleVisibilityChange().
 
+  _shouldHoldWakeLock() {
+    if (this.element.style.display !== 'flex') return false
+    if (this.isFullscreen()) return true
+    if (!this.isDocked()) return true
+
+    return Boolean(this.element.dataset.creativeId) &&
+      !this.element.classList.contains('docked-collapsed')
+  }
+
+  _syncWakeLock() {
+    if (this._shouldHoldWakeLock()) {
+      this._requestWakeLock()
+    } else {
+      this._releaseWakeLock()
+    }
+  }
+
   async _requestWakeLock() {
-    if (!('wakeLock' in navigator)) return
+    if (!this._shouldHoldWakeLock() || !('wakeLock' in navigator)) return
 
     try {
-      this._wakeLock = await navigator.wakeLock.request('screen')
-      this._wakeLock.addEventListener('release', () => {
+      const wakeLock = await navigator.wakeLock.request('screen')
+      if (!this._shouldHoldWakeLock()) {
+        wakeLock.release()
+        return
+      }
+
+      this._wakeLock = wakeLock
+      wakeLock.addEventListener('release', () => {
         this._wakeLock = null
       })
     } catch (err) {

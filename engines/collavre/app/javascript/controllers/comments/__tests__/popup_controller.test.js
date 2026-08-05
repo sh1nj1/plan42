@@ -126,6 +126,60 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
+    test('empty docked workspace does not request a wake lock', () => {
+        const popup = document.getElementById('comments-popup')
+        const requestWakeLock = jest.spyOn(controller, '_requestWakeLock')
+        const releaseWakeLock = jest.spyOn(controller, '_releaseWakeLock')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = ''
+
+        controller.enterDockedMode()
+
+        expect(requestWakeLock).not.toHaveBeenCalled()
+        expect(releaseWakeLock).toHaveBeenCalled()
+    })
+
+    test('collapsing docked chat releases wake lock and expanding reacquires it', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        controller.enterDockedMode()
+        const requestWakeLock = jest.spyOn(controller, '_requestWakeLock')
+        const releaseWakeLock = jest.spyOn(controller, '_releaseWakeLock')
+
+        controller.toggleDocked()
+
+        expect(releaseWakeLock).toHaveBeenCalledTimes(1)
+        expect(requestWakeLock).not.toHaveBeenCalled()
+
+        controller.toggleDocked()
+
+        expect(requestWakeLock).toHaveBeenCalledTimes(1)
+    })
+
+    test('pending wake lock is released if docked chat collapses before acquisition', async () => {
+        const popup = document.getElementById('comments-popup')
+        const release = jest.fn()
+        let finishRequest
+        Object.defineProperty(navigator, 'wakeLock', {
+            configurable: true,
+            value: {
+                request: jest.fn(() => new Promise(resolve => { finishRequest = resolve })),
+            },
+        })
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        controller.enterDockedMode()
+
+        controller.toggleDocked()
+        finishRequest({ release, addEventListener: jest.fn() })
+        await Promise.resolve()
+
+        expect(release).toHaveBeenCalledTimes(1)
+        expect(controller._wakeLock).toBeUndefined()
+        delete navigator.wakeLock
+    })
+
     test('docked chat forwards a comment deep link without starting a second open', async () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
