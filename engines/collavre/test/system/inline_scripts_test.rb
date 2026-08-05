@@ -154,6 +154,123 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
   end
 
+  test "workspace tree navigation preserves the mounted tree and replaces only center content" do
+    resize_window_to(1440, 900)
+    first_branch = Creative.create!(user: @user, description: "First workspace branch")
+    Creative.create!(user: @user, parent: first_branch, description: "First child")
+    second_branch = Creative.create!(user: @user, description: "Second workspace branch")
+    Creative.create!(user: @user, parent: second_branch, description: "Second child")
+
+    visit collavre.creatives_path(id: first_branch.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{second_branch.id}']", wait: 10
+    page.execute_script(<<~JS)
+      document.querySelector('[data-controller="workspace-tree"]')
+        .dataset.persistenceMarker = 'mounted';
+    JS
+
+    find(".creative-workspace-tree-link[data-creative-id='#{second_branch.id}']").click
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{second_branch.id}']",
+                    visible: :all, wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{second_branch.id}'].is-current"
+    assert_equal "mounted", find("[data-controller='workspace-tree']")["data-persistence-marker"]
+    assert_equal second_branch.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+
+    page.go_back
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{first_branch.id}']",
+                    visible: :all, wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{first_branch.id}'].is-current"
+    assert_equal "mounted", find("[data-controller='workspace-tree']")["data-persistence-marker"]
+    assert_equal first_branch.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+  end
+
+  test "workspace frame history synchronizes leaf and root chat states" do
+    resize_window_to(1440, 900)
+    branch = Creative.create!(user: @user, description: "Leaf parent branch")
+    leaf = Creative.create!(user: @user, parent: branch, description: "Leaf workspace creative")
+    other_branch = Creative.create!(user: @user, description: "Other workspace branch")
+    Creative.create!(user: @user, parent: other_branch, description: "Other child")
+
+    visit collavre.creatives_path(id: leaf.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{other_branch.id}']", wait: 10
+    assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+
+    find(".creative-workspace-tree-link[data-creative-id='#{other_branch.id}']").click
+    assert_equal other_branch.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+    assert_current_path collavre.creatives_path(id: other_branch.id)
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{other_branch.id}']",
+                    visible: :all, wait: 10
+
+    page.go_back
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{leaf.id}']",
+                    visible: :all, wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}'].is-current"
+    assert_equal leaf.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
+
+    visit collavre.creatives_path
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{other_branch.id}']", wait: 10
+    find(".creative-workspace-tree-link[data-creative-id='#{other_branch.id}']").click
+    assert_current_path collavre.creatives_path(id: other_branch.id)
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{other_branch.id}']",
+                    visible: :all, wait: 10
+
+    page.go_back
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state]", visible: :all, wait: 10
+    assert_selector "#comments-popup[data-creative-id='']", visible: :visible, wait: 10
+    assert_text I18n.t("collavre.creatives.workspace.select_chat")
+  end
+
+  test "workspace frame clears persistent navigation after an inaccessible selection" do
+    resize_window_to(1440, 900)
+    branch = Creative.create!(user: @user, description: "Visible workspace branch")
+    Creative.create!(user: @user, parent: branch, description: "Visible child")
+    inaccessible = Creative.create!(user: users(:two), description: "Private workspace creative")
+
+    visit collavre.creatives_path(id: branch.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{branch.id}'].is-current", wait: 10
+    page.execute_script(<<~JS)
+      const link = document.createElement('a');
+      link.id = 'inaccessible-workspace-link';
+      link.href = '#{collavre.creatives_path(id: inaccessible.id)}';
+      link.dataset.turboFrame = 'creative-workspace-content';
+      link.dataset.turboAction = 'advance';
+      link.textContent = 'Private target';
+      document.body.appendChild(link);
+    JS
+
+    find("#inaccessible-workspace-link").click
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state]:not([data-creative-id])",
+                    visible: :all, wait: 10
+    assert_no_selector ".creative-workspace-tree-link.is-current"
+    assert_selector "#comments-popup[data-creative-id='']", visible: :visible, wait: 10
+    assert_text I18n.t("collavre.creatives.workspace.select_chat")
+  end
+
+  test "workspace tree refreshes first-child and last-child structural changes" do
+    resize_window_to(1440, 900)
+    stable_branch = Creative.create!(user: @user, description: "Stable workspace branch")
+    Creative.create!(user: @user, parent: stable_branch, description: "Stable child")
+    changing_creative = Creative.create!(user: @user, description: "Changing workspace creative")
+
+    visit collavre.creatives_path(id: stable_branch.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{stable_branch.id}']", wait: 10
+    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']"
+
+    child = Creative.create!(user: @user, parent: changing_creative, description: "Temporary child")
+    page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
+
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
+
+    child.destroy!
+    page.execute_script("document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))")
+
+    assert_no_selector ".creative-workspace-tree-link[data-creative-id='#{changing_creative.id}']", wait: 10
+  end
+
   test "creative guide popover shows on help button click" do
     # Clear help_menu_link setting to ensure popover shows instead of redirect
     SystemSetting.find_by(key: "help_menu_link")&.destroy

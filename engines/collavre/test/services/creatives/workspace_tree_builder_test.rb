@@ -7,8 +7,8 @@ module Creatives
         ActionController::Base.helpers.strip_tags(value)
       end
 
-      def creative_path(creative)
-        "/creatives/#{creative.id}"
+      def creatives_path(id:)
+        "/creatives?id=#{id}"
       end
 
       def collavre
@@ -31,7 +31,9 @@ module Creatives
 
       assert_equal [ root.id ], nodes.pluck(:id)
       assert_equal "Root", nodes.first[:label]
-      assert_equal "/creatives/#{root.id}", nodes.first[:url]
+      assert_equal root.creative_snippet, nodes.first[:snippet]
+      assert nodes.first[:can_comment]
+      assert_equal "/creatives?id=#{root.id}", nodes.first[:url]
       assert_equal [ branch.id ], nodes.first[:children].pluck(:id)
       assert_empty nodes.first[:children].first[:children]
     end

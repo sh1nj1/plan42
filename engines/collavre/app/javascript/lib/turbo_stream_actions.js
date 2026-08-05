@@ -48,6 +48,7 @@ registerStreamAction("refresh_creative_tree", function () {
 
     // Update ancestor progress for all actions
     updateAncestorProgress(creative.ancestors)
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
 })
 
 function handleCreated(creative) {

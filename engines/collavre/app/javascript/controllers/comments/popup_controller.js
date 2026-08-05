@@ -201,6 +201,10 @@ export default class extends Controller {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
     if (!button) return
+    if (!creativeId && button.dataset.workspaceNavigationState === 'true' && this.isDocked()) {
+      this.resetDockedToEmpty()
+      return
+    }
     if (
       this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
@@ -210,6 +214,32 @@ export default class extends Controller {
       return
     }
     this.open(button, { creativeId })
+  }
+
+  resetDockedToEmpty() {
+    if (this.dockedOpenTimeout) {
+      window.clearTimeout(this.dockedOpenTimeout)
+      this.dockedOpenTimeout = null
+    }
+
+    this.currentButton = null
+    this.element.dataset.creativeId = ''
+    this.element.dataset.canComment = 'false'
+    this.element.dataset.creativeSnippet = ''
+    this.titleTarget.textContent = this.element.dataset.defaultTitle || ''
+    this._clearChatActiveRow()
+    this._hideNavDropdown()
+
+    if (this.listController) this.listController.creativeId = null
+    this.closeChildControllers()
+    this.formController?.setCommentPermission(false)
+    this.element.querySelector('#comment-topics')?.replaceChildren()
+    if (this.hasListTarget) {
+      this.listTarget.classList.add('docked-empty')
+      this.listTarget.textContent = this.element.dataset.dockedEmptyText || ''
+    }
+    this.showPopup()
+    this.dispatchPopupClosed()
   }
 
   handleCreativeDestroyed(event) {
@@ -367,35 +397,8 @@ export default class extends Controller {
       return
     }
 
-    if (this.presenceController) {
-      this.presenceController.onPopupClosed()
-    }
-    if (this.formController) {
-      this.formController.onPopupClosed()
-    }
-    if (this.listController) {
-      this.listController.onPopupClosed()
-    }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupClosed()
-    }
-    if (this.topicsController) {
-      this.topicsController.onPopupClosed()
-    }
-    if (this.contextsController) {
-      this.contextsController.onPopupClosed()
-    }
-    if (this.dropTriggerController) {
-      this.dropTriggerController.onPopupClosed()
-    }
-
-    // Dispatch event for integrations
-    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
-      bubbles: true,
-      detail: {
-        badgeContainer: this.element.querySelector('[data-integration-badges]')
-      }
-    }))
+    this.closeChildControllers()
+    this.dispatchPopupClosed()
 
     // Exit fullscreen state if active
     if (this.isFullscreen()) {
@@ -436,6 +439,25 @@ export default class extends Controller {
     this.element.style.bottom = ''
     this.element.style.position = ''
     delete this.element.dataset.resized
+  }
+
+  closeChildControllers() {
+    this.presenceController?.onPopupClosed()
+    this.formController?.onPopupClosed()
+    this.listController?.onPopupClosed()
+    this.mentionMenuController?.onPopupClosed()
+    this.topicsController?.onPopupClosed()
+    this.contextsController?.onPopupClosed()
+    this.dropTriggerController?.onPopupClosed()
+  }
+
+  dispatchPopupClosed() {
+    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
+      bubbles: true,
+      detail: {
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
   }
 
   prepareSize() {

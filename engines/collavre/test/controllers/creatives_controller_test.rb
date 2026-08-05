@@ -14,6 +14,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "body.creative-workspace"
     assert_select ".creative-workspace-shell"
     assert_select "#creative-workspace-tree"
+    assert_select "turbo-frame#creative-workspace-content[target='_top'] [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
   end
 
@@ -29,7 +30,32 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     ids = payload.fetch("creatives").pluck("id")
     assert_includes ids, branch.id
     refute_includes ids, leaf.id
+    branch_payload = payload.fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
+    assert_equal branch.creative_snippet, branch_payload.fetch("snippet")
+    assert branch_payload.fetch("can_comment")
     assert_equal "no-cache", response.headers["Cache-Control"]
+  end
+
+  test "workspace frame requests render only the replaceable creative content" do
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select ".creative-workspace-shell", count: 0
+  end
+
+  test "workspace frame falls back to root without exposing an inaccessible creative" do
+    inaccessible = Creative.create!(user: users(:two), description: "Private workspace creative")
+
+    get creatives_path(id: inaccessible.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state]:not([data-creative-id])"
+    assert_select "[data-workspace-navigation-state][data-creative-path='[]']"
+    assert_not_includes response.body, inaccessible.description
   end
 
   test "title row emits markdown editor flag so cached rich rows reopen in Lexical" do

@@ -12,21 +12,41 @@ export default class extends Controller {
   }
 
   connect() {
-    this.abortController = new AbortController()
+    this.handleFrameLoad = this.handleFrameLoad.bind(this)
+    this.handleTurboRender = this.handleTurboRender.bind(this)
+    this.queueRefresh = this.queueRefresh.bind(this)
+    document.addEventListener('turbo:frame-load', this.handleFrameLoad)
+    document.addEventListener('turbo:frame-render', this.handleFrameLoad)
+    document.addEventListener('turbo:render', this.handleTurboRender)
+    document.addEventListener('workspace-tree:invalidate', this.queueRefresh)
+    document.addEventListener('creative-destroyed', this.queueRefresh)
+    window.addEventListener('collavre:creative-drop-complete', this.queueRefresh)
+    this.observeWorkspaceFrame()
     this.load()
   }
 
   disconnect() {
-    this.abortController?.abort()
+    this.loadAbortController?.abort()
+    this.frameObserver?.disconnect()
+    if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
+    document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
+    document.removeEventListener('turbo:frame-render', this.handleFrameLoad)
+    document.removeEventListener('turbo:render', this.handleTurboRender)
+    document.removeEventListener('workspace-tree:invalidate', this.queueRefresh)
+    document.removeEventListener('creative-destroyed', this.queueRefresh)
+    window.removeEventListener('collavre:creative-drop-complete', this.queueRefresh)
   }
 
-  async load() {
-    this.showStatus(this.loadingTextValue)
+  async load({ preserveState = false, showLoading = true } = {}) {
+    this.loadAbortController?.abort()
+    this.loadAbortController = new AbortController()
+    this.preservedBranchState = preserveState ? this.branchState() : new Map()
+    if (showLoading) this.showStatus(this.loadingTextValue)
 
     try {
       const response = await fetch(this.urlValue, {
         headers: { Accept: 'application/json' },
-        signal: this.abortController.signal,
+        signal: this.loadAbortController.signal,
       })
       if (!response.ok) throw new Error(`Failed to load workspace tree: ${response.status}`)
 
@@ -35,19 +55,22 @@ export default class extends Controller {
     } catch (error) {
       if (error.name === 'AbortError') return
       console.error(error)
-      this.showStatus(this.errorTextValue)
+      if (showLoading) this.showStatus(this.errorTextValue)
     }
   }
 
   render(nodes) {
+    this.nodesData = nodes
     this.treeTarget.replaceChildren()
     if (nodes.length === 0) {
       this.showStatus(this.emptyTextValue)
+      this.syncFromWorkspaceFrame()
       return
     }
 
-    this.activeId = this.deepestVisiblePathId(nodes)
+    this.activeId = this.deepestVisiblePathId(nodes, this.currentPathValue)
     this.treeTarget.appendChild(this.buildList(nodes))
+    this.syncFromWorkspaceFrame()
   }
 
   buildList(nodes) {
@@ -66,7 +89,8 @@ export default class extends Controller {
     const row = document.createElement('div')
     row.className = 'creative-workspace-tree-row'
     const children = Array.isArray(node.children) ? node.children : []
-    const expanded = children.length > 0 && this.currentPathValue.map(String).includes(String(node.id))
+    const savedExpanded = this.preservedBranchState?.get(String(node.id))
+    const expanded = children.length > 0 && (savedExpanded ?? this.currentPathValue.map(String).includes(String(node.id)))
 
     if (children.length > 0) {
       const toggle = document.createElement('button')
@@ -87,11 +111,16 @@ export default class extends Controller {
     link.href = node.url
     link.textContent = node.label
     link.className = 'creative-workspace-tree-link'
+    link.dataset.turboFrame = 'creative-workspace-content'
+    link.dataset.turboAction = 'advance'
+    link.dataset.creativeId = String(node.id)
+    link.dataset.creativeSnippet = node.snippet || node.label
+    link.dataset.canComment = String(node.can_comment === true)
     if (String(node.id) === String(this.activeId)) {
       link.classList.add('is-current')
       link.setAttribute('aria-current', 'page')
     }
-    link.addEventListener('click', () => this.closePanel())
+    link.addEventListener('click', (event) => this.selectNode(event))
     row.appendChild(link)
     item.appendChild(row)
 
@@ -123,7 +152,137 @@ export default class extends Controller {
     this.panelToggleTarget.setAttribute('aria-expanded', 'false')
   }
 
-  deepestVisiblePathId(nodes) {
+  selectNode(event) {
+    if (!this.isUnmodifiedPrimaryClick(event)) return
+
+    const link = event.currentTarget
+    this.setActiveId(link.dataset.creativeId)
+    this.closePanel()
+    this.openChat(link)
+  }
+
+  handleFrameLoad(event) {
+    if (event.target.id !== 'creative-workspace-content') return
+
+    this.syncFromWorkspaceFrame(event.target, { authoritative: event.type === 'turbo:frame-load' })
+  }
+
+  handleTurboRender() {
+    requestAnimationFrame(() => {
+      if (this.element.isConnected) this.syncFromWorkspaceFrame()
+    })
+  }
+
+  observeWorkspaceFrame() {
+    const frame = document.getElementById('creative-workspace-content')
+    if (!frame) return
+
+    this.frameObserver = new MutationObserver(() => {
+      if (this.element.isConnected) this.syncFromWorkspaceFrame(frame)
+    })
+    this.frameObserver.observe(frame, { childList: true })
+  }
+
+  queueRefresh() {
+    if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
+    this.refreshTimeout = window.setTimeout(() => {
+      this.refreshTimeout = null
+      this.load({ preserveState: true, showLoading: false })
+    }, 100)
+  }
+
+  syncFromWorkspaceFrame(
+    frame = document.getElementById('creative-workspace-content'),
+    { authoritative = false } = {}
+  ) {
+    if (!frame) return
+
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    if (!state) return
+
+    const stateCreativeId = state.dataset.creativeId
+    const locationCreativeId = this.creativeIdFromLocation()
+    if (!stateCreativeId && (authoritative || !locationCreativeId)) {
+      this.setActiveId(null)
+      this.openChat(this.rootState())
+      return
+    }
+    if (!stateCreativeId || (!authoritative && stateCreativeId !== locationCreativeId)) return
+
+    const path = this.parsePath(state.dataset.creativePath)
+    const activeId = this.deepestVisiblePathId(this.nodesData || [], path)
+    this.setActiveId(activeId)
+
+    this.openChat(state)
+  }
+
+  setActiveId(id) {
+    this.treeTarget.querySelectorAll('.creative-workspace-tree-link.is-current').forEach((link) => {
+      link.classList.remove('is-current')
+      link.removeAttribute('aria-current')
+    })
+
+    this.activeId = null
+    const link = id && this.linkForId(id)
+    if (!link) return
+
+    link.classList.add('is-current')
+    link.setAttribute('aria-current', 'page')
+    this.activeId = String(id)
+  }
+
+  openChat(link) {
+    document.dispatchEvent(new CustomEvent('creative-comments-click', {
+      detail: { button: link, creativeId: link.dataset.creativeId },
+    }))
+  }
+
+  linkForId(id) {
+    return [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
+      .find((item) => item.dataset.creativeId === String(id))
+      ?.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-link')
+  }
+
+  branchState() {
+    return new Map(
+      [...this.treeTarget.querySelectorAll('.creative-workspace-tree-branch-toggle')]
+        .map((toggle) => [
+          toggle.closest('.creative-workspace-tree-item')?.dataset.creativeId,
+          toggle.getAttribute('aria-expanded') === 'true',
+        ])
+        .filter(([id]) => id)
+    )
+  }
+
+  creativeIdFromLocation() {
+    const queryId = new URLSearchParams(window.location.search).get('id')
+    if (queryId) return queryId
+
+    return window.location.pathname.match(/\/creatives\/(\d+)/)?.[1]
+  }
+
+  rootState() {
+    if (!this.rootNavigationState) {
+      this.rootNavigationState = document.createElement('div')
+      this.rootNavigationState.dataset.workspaceNavigationState = 'true'
+    }
+    return this.rootNavigationState
+  }
+
+  parsePath(value) {
+    try {
+      const parsed = JSON.parse(value || '[]')
+      return Array.isArray(parsed) ? parsed : []
+    } catch (_error) {
+      return []
+    }
+  }
+
+  isUnmodifiedPrimaryClick(event) {
+    return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+  }
+
+  deepestVisiblePathId(nodes, path = []) {
     const visibleIds = new Set()
     const collect = (items) => items.forEach((item) => {
       visibleIds.add(String(item.id))
@@ -131,7 +290,7 @@ export default class extends Controller {
     })
     collect(nodes)
 
-    return [...this.currentPathValue].reverse().find((id) => visibleIds.has(String(id)))
+    return [...path].reverse().find((id) => visibleIds.has(String(id)))
   }
 
   showStatus(text) {

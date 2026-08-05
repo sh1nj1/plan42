@@ -1,14 +1,7 @@
-<%
-  current_path_ids = if @parent_creative
-    @parent_creative.ancestors.reverse.pluck(:id) + [@parent_creative.id]
-  else
-    []
-  end
-%>
 <section class="creative-workspace-tree-region"
          data-controller="workspace-tree"
          data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"
-         data-workspace-tree-current-path-value="<%= current_path_ids.to_json %>"
+         data-workspace-tree-current-path-value="<%= @workspace_path_ids.to_json %>"
          data-workspace-tree-loading-text-value="<%= t('app.loading') %>"
          data-workspace-tree-empty-text-value="<%= t('collavre.creatives.workspace.empty') %>"
          data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>">

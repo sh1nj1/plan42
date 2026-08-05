@@ -20,7 +20,9 @@ module Collavre
           {
             id: creative.id,
             label: view_context.strip_tags(creative.effective_description).squish,
-            url: view_context.collavre.creative_path(creative),
+            snippet: creative.creative_snippet,
+            can_comment: creative.has_permission?(@user, :feedback),
+            url: view_context.collavre.creatives_path(id: creative.id),
             children: build(children_index.children_for(creative), level: level + 1)
           }
         end

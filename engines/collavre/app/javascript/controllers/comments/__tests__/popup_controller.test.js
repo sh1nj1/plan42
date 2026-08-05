@@ -142,4 +142,24 @@ describe('CommentsPopupController', () => {
         expect(openFromUrl).not.toHaveBeenCalled()
     })
 
+    test('root workspace navigation resets docked chat to its empty state', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.defaultTitle = 'Comments'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        const state = document.createElement('div')
+        state.dataset.workspaceNavigationState = 'true'
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: state, creativeId: undefined },
+        }))
+
+        expect(popup.dataset.creativeId).toBe('')
+        expect(controller.titleTarget.textContent).toBe('Comments')
+        expect(controller.listTarget.textContent).toBe('Select a creative')
+        expect(controller.listTarget.classList.contains('docked-empty')).toBe(true)
+        expect(popup.style.display).toBe('flex')
+    })
+
 })

@@ -31,6 +31,10 @@ module Collavre
           end
           @creatives = []  # CSR will fetch via JSON
           @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+          @workspace_path_ids = Creatives::WorkspacePathResolver.new(
+            creative: @parent_creative,
+            user: Current.user
+          ).call
         end
         format.json do
           # Full query only for JSON requests

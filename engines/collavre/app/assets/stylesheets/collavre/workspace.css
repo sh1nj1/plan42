@@ -23,6 +23,11 @@ body.creative-workspace > nav {
     overflow: auto;
 }
 
+#creative-workspace-content {
+    display: block;
+    min-width: 0;
+}
+
 body.creative-workspace .creative-content {
     min-width: 0;
     max-width: none;

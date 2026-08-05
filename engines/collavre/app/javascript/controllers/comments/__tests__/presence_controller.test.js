@@ -64,19 +64,21 @@ describe('CommentsPresenceController', () => {
     })
 
     expect(setCommentPermission).toHaveBeenCalledWith(false)
-    expect(loadParticipantsSpy).toHaveBeenCalledWith({ closeOnForbidden: false })
+    expect(loadParticipantsSpy).toHaveBeenCalledWith()
     expect(close).not.toHaveBeenCalled()
   })
 
-  test('closes popup when affected user loses access', async () => {
+  test('clears docked chat and invalidates the workspace tree when access is revoked', async () => {
     const close = jest.fn()
-    jest.spyOn(controller, 'popupController', 'get').mockReturnValue({ close })
-    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
-
-    global.fetch.mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: 'No permission' }),
+    const resetDockedToEmpty = jest.fn()
+    const workspaceListener = jest.fn()
+    document.addEventListener('workspace-tree:invalidate', workspaceListener)
+    jest.spyOn(controller, 'popupController', 'get').mockReturnValue({
+      close,
+      isDocked: () => true,
+      resetDockedToEmpty,
     })
+    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
 
     controller.handlePresenceMessage({
       shares_changed: {
@@ -93,7 +95,34 @@ describe('CommentsPresenceController', () => {
     // alertDialog renders an in-app modal (replacing native alert for the
     // Tauri webview); assert the message surfaced there instead.
     expect(document.querySelector('.confirm-dialog-message')?.textContent).toBe('No permission')
+    expect(resetDockedToEmpty).toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    expect(workspaceListener).toHaveBeenCalledTimes(1)
+    expect(global.fetch).not.toHaveBeenCalled()
+    document.removeEventListener('workspace-tree:invalidate', workspaceListener)
+  })
+
+  test('closes a floating popup immediately when access is revoked', () => {
+    const close = jest.fn()
+    jest.spyOn(controller, 'popupController', 'get').mockReturnValue({
+      close,
+      isDocked: () => false,
+      resetDockedToEmpty: jest.fn(),
+    })
+    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
+
+    controller.handlePresenceMessage({
+      shares_changed: {
+        user_id: 7,
+        has_access: false,
+        can_comment: false,
+        has_access_changed: true,
+        can_comment_changed: true,
+      },
+    })
+
     expect(close).toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   test('keeps popup open for unaffected users and only refreshes participants', () => {
