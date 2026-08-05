@@ -4,6 +4,7 @@
  */
 
 import { Application } from '@hotwired/stimulus'
+import { jest } from '@jest/globals'
 import CommentsPopupController from '../popup_controller'
 
 describe('CommentsPopupController', () => {
@@ -109,6 +110,36 @@ describe('CommentsPopupController', () => {
         await controller.openForCreative()
 
         expect(popup.dataset.autoFocusOnOpen).toBe('true')
+    })
+
+    test('docked chat opens by default and close collapses instead of hiding it', async () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.collapseDockedLabel = 'Collapse chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+
+        controller.enterDockedMode()
+        controller.close()
+
+        expect(popup.style.display).toBe('flex')
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
+    })
+
+    test('docked chat forwards a comment deep link without starting a second open', async () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        window.history.replaceState({}, '', '/creatives/123/comments/456')
+        const openForCreative = jest.spyOn(controller, 'openForCreative').mockResolvedValue()
+        const openFromUrl = jest.spyOn(controller, 'openFromUrl')
+
+        controller.enterDockedMode()
+        await new Promise(resolve => requestAnimationFrame(resolve))
+        await new Promise(resolve => setTimeout(resolve, 110))
+
+        expect(openForCreative).toHaveBeenCalledWith({ highlightId: '456' })
+        expect(openFromUrl).not.toHaveBeenCalled()
     })
 
 })

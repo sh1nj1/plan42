@@ -55,6 +55,18 @@ module Collavre
           @allowed_creative_ids = index_result.allowed_creative_ids
           @progress_map = index_result.progress_map
 
+          if params[:workspace_tree] == "1"
+            expires_now
+            render json: {
+              creatives: Collavre::Creatives::WorkspaceTreeBuilder.new(
+                user: Current.user,
+                view_context: view_context,
+                max_level: Collavre::SystemSetting.display_level
+              ).build(index_result.creatives)
+            }
+            return
+          end
+
           # Set filtered_progress on parent creative if progress_map is available
           if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)
             @parent_creative.filtered_progress = @progress_map[@parent_creative.id.to_s]

@@ -145,7 +145,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
     visit root_path
 
-    assert_no_selector "#comments-popup", visible: :visible
+    assert_selector "#comments-popup[data-docked='true']", visible: :visible
+    assert_text I18n.t("collavre.creatives.workspace.select_chat")
 
     find(".inbox-menu-btn", match: :first).click
 
@@ -449,7 +450,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
     end
   end
 
-  test "inbox button can toggle comments popup without duplicate bindings" do
+  test "inbox button keeps docked comments open without duplicate bindings" do
     inbox = Creative.inbox_for(@user)
 
     visit root_path
@@ -459,7 +460,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
     find(".inbox-menu-btn", match: :first).click
-    assert_no_selector "#comments-popup", visible: :visible, wait: 5
+    assert_selector "#comments-popup", visible: :visible, wait: 5
+    assert_equal inbox.id.to_s, find("#comments-popup", visible: :visible)["data-creative-id"]
 
     find(".inbox-menu-btn", match: :first).click
     assert_selector "#comments-popup", visible: :visible, wait: 5

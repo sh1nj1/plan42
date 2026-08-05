@@ -26,6 +26,7 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.markReadTimeout = null
     this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
@@ -54,7 +55,7 @@ export default class extends Controller {
     // If we have a creativeId from data attribute or parent (unlikely directly on list, 
     // usually set via onPopupOpened), try loading.
     // If not, onPopupOpened will trigger it.
-    if (this.element.dataset.creativeId) {
+    if (this.element.dataset.creativeId && this.element.dataset.docked !== 'true') {
       this.creativeId = this.element.dataset.creativeId
       this.loadInitialComments()
     }
@@ -73,18 +74,25 @@ export default class extends Controller {
   }
 
   handleTopicChange(event) {
+    const nextTopicId = event.detail.topicId
+    if (
+      this.currentTopicId !== undefined &&
+      String(this.currentTopicId || '') === String(nextTopicId || '')
+    ) return
+
     // During notifyChildControllers, topic loading fires change events before
     // onPopupOpened sets up highlightAfterLoad. Suppress these to avoid a
     // race where a non-highlight load overwrites the deep-link highlight load.
-    if (this.suppressTopicChangeLoad) {
-      this.currentTopicId = event.detail.topicId
+    if (this.suppressTopicChangeLoad || (this.highlightAfterLoad && !this.initialLoadComplete)) {
+      this.currentTopicId = nextTopicId
       return
     }
-    this.currentTopicId = event.detail.topicId
+    this.currentTopicId = nextTopicId
     this.resetToLatest()
   }
 
   disconnect() {
+    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     this.listTarget.removeEventListener('scroll', this.handleScroll)
     PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
       this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
@@ -121,8 +129,9 @@ export default class extends Controller {
 
   onPopupOpened({ creativeId, highlightId, topicId } = {}) {
     this.creativeId = creativeId
+    this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
-    this.highlightAfterLoad = highlightId || this.deepLinkCommentId
+    this.highlightAfterLoad = highlightId || this.highlightAfterLoad || this.deepLinkCommentId
 
     if (topicId !== undefined) {
       this.currentTopicId = topicId
@@ -138,6 +147,10 @@ export default class extends Controller {
   }
 
   onPopupClosed() {
+    if (this.markReadTimeout) {
+      window.clearTimeout(this.markReadTimeout)
+      this.markReadTimeout = null
+    }
     this.resetState()
     this.listTarget.innerHTML = ''
     this.initialLoadComplete = false
@@ -370,14 +383,19 @@ export default class extends Controller {
 
   markCommentsRead() {
     if (!this.creativeId) return
-    window.setTimeout(() => {
+    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
+    const creativeId = this.creativeId
+    this.markReadTimeout = window.setTimeout(() => {
+      this.markReadTimeout = null
+      if (!this.element.isConnected || this.creativeId !== creativeId) return
+
       fetch('/comment_read_pointers/update', {
         method: 'POST',
         headers: {
           'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ creative_id: this.creativeId }),
+        body: JSON.stringify({ creative_id: creativeId }),
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
   }

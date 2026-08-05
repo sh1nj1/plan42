@@ -5,6 +5,33 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "creative pages render the three-column workspace shell" do
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+
+    assert_response :success
+    assert_select "body.creative-workspace"
+    assert_select ".creative-workspace-shell"
+    assert_select "#creative-workspace-tree"
+    assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
+  end
+
+  test "workspace tree JSON returns branches without leaf roots" do
+    branch = Creative.create!(user: users(:one), description: "Workspace branch")
+    Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
+    leaf = Creative.create!(user: users(:one), description: "Workspace leaf")
+
+    get creatives_path(format: :json, workspace_tree: 1)
+
+    assert_response :success
+    payload = JSON.parse(response.body)
+    ids = payload.fetch("creatives").pluck("id")
+    assert_includes ids, branch.id
+    refute_includes ids, leaf.id
+    assert_equal "no-cache", response.headers["Cache-Control"]
+  end
+
   test "title row emits markdown editor flag so cached rich rows reopen in Lexical" do
     rich = Creative.create!(
       user: users(:one), content_type_input: "markdown", markdown_editor: "rich", markdown_source: "# hi"

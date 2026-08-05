@@ -18,7 +18,7 @@ export default class extends Controller {
         this.topicsSubscription = null
         this._loadTopicsVersion = 0
         // Initial load if creativeId is available (e.g. from dataset if set server-side)
-        if (this.creativeId) {
+        if (this.creativeId && this.element.dataset.docked !== 'true') {
             this.loadTopics()
             this.subscribe()
         }

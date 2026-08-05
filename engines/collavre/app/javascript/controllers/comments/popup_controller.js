@@ -31,6 +31,7 @@ export default class extends Controller {
     this.touchStartY = null
     this.openFromUrlObserver = null
     this.openFromUrlTimeout = null
+    this.dockedOpenTimeout = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
     this.handleEditingStart = this.handleEditingStart.bind(this)
@@ -48,6 +49,7 @@ export default class extends Controller {
     this.handlePopupWheel = this.handlePopupWheel.bind(this)
     this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
     this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
+    this.handleDockedMediaChange = this.handleDockedMediaChange.bind(this)
     this._longPressTimer = null
     this._longPressTriggered = false
     this._isNavigating = false
@@ -64,6 +66,16 @@ export default class extends Controller {
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('popstate', this.handlePopState)
     document.addEventListener('keydown', this.handleChatNavKeydown)
+    this.dockedMediaQuery = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 768px)')
+      : {
+          matches: window.innerWidth >= 768,
+          addEventListener() {},
+          removeEventListener() {},
+        }
+    if (this.element.dataset.docked === 'true') {
+      this.dockedMediaQuery.addEventListener('change', this.handleDockedMediaChange)
+    }
 
     // Long press on nav buttons
     this._setupNavLongPress()
@@ -115,6 +127,8 @@ export default class extends Controller {
       this._syncFullscreenUI(true)
       // Defer to ensure all sibling controllers are connected
       requestAnimationFrame(() => this.openForCreative())
+    } else if (this.isDocked()) {
+      this.enterDockedMode()
     } else {
       this.openFromUrl()
     }
@@ -123,6 +137,7 @@ export default class extends Controller {
   disconnect() {
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
+    if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     document.removeEventListener('creative-editing:start', this.handleEditingStart)
@@ -133,6 +148,7 @@ export default class extends Controller {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('popstate', this.handlePopState)
     document.removeEventListener('keydown', this.handleChatNavKeydown)
+    this.dockedMediaQuery?.removeEventListener('change', this.handleDockedMediaChange)
     document.removeEventListener('click', this.handleDropdownOutsideClick)
     this._clearLongPressTimer()
     if (this.hasHeaderTarget) {
@@ -189,6 +205,7 @@ export default class extends Controller {
       this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
+      if (this.isDocked()) return
       this.close()
       return
     }
@@ -219,6 +236,7 @@ export default class extends Controller {
   }
 
   async open(button, { creativeId, highlightId } = {}) {
+    if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
@@ -254,7 +272,8 @@ export default class extends Controller {
     }))
   }
 
-  async openForCreative() {
+  async openForCreative({ highlightId } = {}) {
+    if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
     const snippet = this.element.dataset.creativeSnippet || ''
@@ -269,7 +288,7 @@ export default class extends Controller {
 
     this.showPopup()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
 
     // Track in chat navigation history
     if (!this._isNavigating) {
@@ -343,6 +362,11 @@ export default class extends Controller {
   }
 
   close() {
+    if (this.isDocked() && !this.isFullscreen()) {
+      this.toggleDocked()
+      return
+    }
+
     if (this.presenceController) {
       this.presenceController.onPopupClosed()
     }
@@ -415,6 +439,8 @@ export default class extends Controller {
   }
 
   prepareSize() {
+    if (this.isDocked()) return
+
     const stored = window.localStorage.getItem(SIZE_STORAGE_KEY)
     if (!stored) return
     try {
@@ -432,7 +458,10 @@ export default class extends Controller {
 
   showPopup() {
     this.element.style.display = 'flex'
-    if (this.isMobile()) {
+    if (this.isDocked()) {
+      this.element.classList.add('docked')
+      this.syncDockedUI()
+    } else if (this.isMobile()) {
       this.element.classList.add('open')
     }
     this._requestWakeLock()
@@ -446,8 +475,79 @@ export default class extends Controller {
     return window.innerWidth <= 600
   }
 
+  isDocked() {
+    return this.element.dataset.docked === 'true' && this.dockedMediaQuery?.matches === true
+  }
+
+  enterDockedMode() {
+    const el = this.element
+    if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
+    el.classList.add('docked')
+    el.classList.remove('open')
+    el.style.position = ''
+    el.style.top = ''
+    el.style.left = ''
+    el.style.right = ''
+    el.style.bottom = ''
+    el.style.width = ''
+    el.style.height = ''
+    delete el.dataset.resized
+    this.showPopup()
+
+    if (el.dataset.creativeId) {
+      requestAnimationFrame(() => {
+        this.dockedOpenTimeout = window.setTimeout(() => {
+          this.dockedOpenTimeout = null
+          if (!this.element.isConnected || !this.isDocked()) return
+
+          this.openForCreative({ highlightId: this.commentIdFromUrl() })
+        }, 0)
+      })
+    } else if (this.hasListTarget) {
+      this.listTarget.classList.add('docked-empty')
+      this.listTarget.textContent = el.dataset.dockedEmptyText || ''
+    }
+  }
+
+  handleDockedMediaChange(event) {
+    if (event.matches) {
+      this.enterDockedMode()
+    } else {
+      this.element.classList.remove('docked', 'docked-collapsed')
+      this.syncDockedUI()
+      this.close()
+    }
+  }
+
+  toggleDocked() {
+    if (!this.isDocked()) return
+
+    this.element.classList.toggle('docked-collapsed')
+    this.syncDockedUI()
+    if (!this.element.classList.contains('docked-collapsed')) {
+      requestAnimationFrame(() => this.listController?.scrollToBottom())
+    }
+  }
+
+  syncDockedUI() {
+    if (!this.hasCloseButtonTarget) return
+
+    if (!this.isDocked()) {
+      this.closeButtonTarget.textContent = '×'
+      return
+    }
+
+    const collapsed = this.element.classList.contains('docked-collapsed')
+    const label = collapsed
+      ? (this.element.dataset.expandDockedLabel || '')
+      : (this.element.dataset.collapseDockedLabel || '')
+    this.closeButtonTarget.textContent = collapsed ? '‹' : '›'
+    this.closeButtonTarget.setAttribute('aria-label', label)
+    this.closeButtonTarget.title = label
+  }
+
   updatePosition() {
-    if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
+    if (this.isDocked() || this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
     const popupWidth = this.element.offsetWidth
     const popupHeight = this.element.offsetHeight
@@ -473,6 +573,8 @@ export default class extends Controller {
   }
 
   startResize(event, direction) {
+    if (this.isDocked()) return
+
     event.preventDefault()
     const rect = this.element.getBoundingClientRect()
     this.resizeStartX = event.clientX
@@ -799,6 +901,34 @@ export default class extends Controller {
         return
       }
 
+      if (this.isDocked()) {
+        el.style.transition = 'none'
+        el.dataset.fullscreen = 'false'
+        document.body.classList.remove('chat-fullscreen')
+        el.style.position = ''
+        el.style.top = ''
+        el.style.left = ''
+        el.style.right = ''
+        el.style.bottom = ''
+        el.style.width = ''
+        el.style.height = ''
+        this._savedStyles = null
+        this._syncFullscreenUI(false)
+        this.syncDockedUI()
+        el.offsetHeight // eslint-disable-line no-unused-expressions
+        el.style.transition = ''
+
+        let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+        if (backUrl) {
+          const url = new URL(backUrl, window.location.origin)
+          url.searchParams.set('open_comments', 'true')
+          window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
+        }
+        this._previousUrl = null
+        requestAnimationFrame(() => this.listController?.scrollToBottom())
+        return
+      }
+
       // Desktop: animated exit to target position
       // Calculate target position using viewport-relative coords (popup is position: fixed)
       let finalTop = ''      // px string (viewport-relative)
@@ -976,6 +1106,10 @@ export default class extends Controller {
       el.dataset.fullscreen = isFs ? 'true' : 'false'
       document.body.classList.toggle('chat-fullscreen', isFs)
       this._syncFullscreenUI(isFs)
+      if (!isFs && this.isDocked()) {
+        el.style.display = 'flex'
+        this.syncDockedUI()
+      }
 
       if (!isFs && this._savedStyles) {
         Object.assign(el.style, this._savedStyles)
@@ -998,10 +1132,10 @@ export default class extends Controller {
       this.exitFullscreenIconTarget.style.display = entering ? '' : 'none'
     }
     if (this.hasLeftHandleTarget) {
-      this.leftHandleTarget.style.display = entering ? 'none' : ''
+      this.leftHandleTarget.style.display = entering || this.isDocked() ? 'none' : ''
     }
     if (this.hasRightHandleTarget) {
-      this.rightHandleTarget.style.display = entering ? 'none' : ''
+      this.rightHandleTarget.style.display = entering || this.isDocked() ? 'none' : ''
     }
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.style.display = entering ? 'none' : ''
@@ -1012,11 +1146,11 @@ export default class extends Controller {
         : (this.element.dataset.fullscreenLabel || 'Full screen')
       this.fullscreenButtonTarget.setAttribute('aria-label', label)
     }
+    if (!entering) this.syncDockedUI()
   }
 
-  openFromUrl() {
+  commentIdFromUrl() {
     const params = new URLSearchParams(window.location.search)
-    const openComments = params.get('open_comments') === 'true'
     let commentId = params.get('comment_id')
     if (!commentId) {
       const pathCommentMatch = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)
@@ -1030,6 +1164,14 @@ export default class extends Controller {
         commentId = hashMatch[1]
       }
     }
+
+    return commentId || undefined
+  }
+
+  openFromUrl() {
+    const params = new URLSearchParams(window.location.search)
+    const openComments = params.get('open_comments') === 'true'
+    const commentId = this.commentIdFromUrl()
 
     let creativeId = params.get('id')
     if (!creativeId) {
