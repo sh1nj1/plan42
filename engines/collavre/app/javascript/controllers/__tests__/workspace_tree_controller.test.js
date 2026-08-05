@@ -346,6 +346,95 @@ describe('WorkspaceTreeController', () => {
     document.removeEventListener('creative-comments-click', chatListener)
   })
 
+  test('restores a re-shared creative after a successful tree refresh proves access', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Re-shared branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    document.getElementById('creative-workspace-content')
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', workspaceSync: true }),
+    }))
+    expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not restore access from a tree request started before invalidation', async () => {
+    let resolveStaleFetch
+    fetchMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveStaleFetch = resolve
+    }))
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+    const staleLoad = controller.load({ showLoading: false, syncChat: false })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    resolveStaleFetch({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Stale root',
+          url: '/creatives?id=1',
+          children: [{ id: 2, label: 'Stale branch', url: '/creatives?id=2', children: [] }],
+        }],
+      }),
+    })
+    await staleLoad
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+  })
+
+  test('keeps destroyed creatives invalidated when a stale tree response contains them', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    document.getElementById('creative-workspace-content')
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: undefined, workspaceSync: true }),
+    }))
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
   test('does not optimistically open an invalidated tree link', () => {
     const chatListener = jest.fn()
     document.addEventListener('creative-comments-click', chatListener)

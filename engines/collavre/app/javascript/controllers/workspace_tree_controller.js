@@ -13,6 +13,8 @@ export default class extends Controller {
 
   connect() {
     this.invalidatedCreativeIds = new Set()
+    this.destroyedCreativeIds = new Set()
+    this.invalidationGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleTurboRender = this.handleTurboRender.bind(this)
     this.queueRefresh = this.queueRefresh.bind(this)
@@ -41,6 +43,7 @@ export default class extends Controller {
   async load({ preserveState = false, showLoading = true, syncChat = true } = {}) {
     this.loadAbortController?.abort()
     this.loadAbortController = new AbortController()
+    const invalidationGeneration = this.invalidationGeneration
     this.preservedBranchState = preserveState ? this.branchState() : new Map()
     if (showLoading) this.showStatus(this.loadingTextValue)
 
@@ -52,7 +55,9 @@ export default class extends Controller {
       if (!response.ok) throw new Error(`Failed to load workspace tree: ${response.status}`)
 
       const data = await response.json()
-      this.render(Array.isArray(data.creatives) ? data.creatives : [], { syncChat })
+      const nodes = Array.isArray(data.creatives) ? data.creatives : []
+      if (invalidationGeneration === this.invalidationGeneration) this.restoreReadableCreativeIds(nodes)
+      this.render(nodes, { syncChat })
     } catch (error) {
       if (error.name === 'AbortError') return
       console.error(error)
@@ -303,7 +308,22 @@ export default class extends Controller {
 
   rememberInvalidatedCreativeIds(event) {
     const creativeIds = event?.detail?.creativeIds || []
-    creativeIds.forEach((id) => this.invalidatedCreativeIds.add(String(id)))
+    if (creativeIds.length > 0) this.invalidationGeneration += 1
+    creativeIds.forEach((id) => {
+      const creativeId = String(id)
+      this.invalidatedCreativeIds.add(creativeId)
+      if (event?.type === 'creative-destroyed') this.destroyedCreativeIds.add(creativeId)
+    })
+  }
+
+  restoreReadableCreativeIds(nodes) {
+    const remaining = [...nodes]
+    while (remaining.length > 0) {
+      const node = remaining.pop()
+      const creativeId = String(node.id)
+      if (!this.destroyedCreativeIds.has(creativeId)) this.invalidatedCreativeIds.delete(creativeId)
+      if (Array.isArray(node.children)) remaining.push(...node.children)
+    }
   }
 
   parsePath(value) {
