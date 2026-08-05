@@ -326,6 +326,29 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_text I18n.t("collavre.creatives.workspace.select_chat")
   end
 
+  test "workspace frame reloads the docked chat for a same-creative comment link" do
+    resize_window_to(1440, 900)
+    creative = Creative.create!(user: @user, description: "Workspace comment link creative")
+    Comment.create!(creative: creative, user: @user, content: "Earlier workspace comment")
+    target_comment = Comment.create!(creative: creative, user: @user, content: "Target workspace comment")
+
+    visit collavre.creatives_path(id: creative.id)
+    assert_selector "#comments-popup[data-creative-id='#{creative.id}']", visible: :visible, wait: 10
+    page.execute_script(<<~JS)
+      document.querySelector('[data-controller="workspace-tree"]')
+        .dataset.persistenceMarker = 'comment-link-mounted';
+      window.Turbo.visit(#{collavre.creative_comment_path(creative, target_comment).to_json}, {
+        action: 'advance',
+        frame: 'creative-workspace-content'
+      });
+    JS
+
+    assert_selector "#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{creative.id}']",
+                    visible: :all, wait: 10
+    assert_selector "#comment_#{target_comment.id}[data-highlighted='true']", wait: 10
+    assert_equal "comment-link-mounted", find("[data-controller='workspace-tree']")["data-persistence-marker"]
+  end
+
   test "workspace frame clears persistent navigation after an inaccessible selection" do
     resize_window_to(1440, 900)
     branch = Creative.create!(user: @user, description: "Visible workspace branch")

@@ -225,7 +225,11 @@ export default class extends Controller {
     const activeId = this.deepestVisiblePathId(this.nodesData || [], path)
     this.setActiveId(activeId)
 
-    if (syncChat) this.openChat(state)
+    if (syncChat) {
+      this.openChat(state, {
+        highlightId: authoritative ? this.commentIdFromLocation() : undefined,
+      })
+    }
   }
 
   setActiveId(id) {
@@ -243,9 +247,14 @@ export default class extends Controller {
     this.activeId = String(id)
   }
 
-  openChat(link) {
+  openChat(link, { highlightId } = {}) {
     document.dispatchEvent(new CustomEvent('creative-comments-click', {
-      detail: { button: link, creativeId: link.dataset.creativeId, workspaceSync: true },
+      detail: {
+        button: link,
+        creativeId: link.dataset.creativeId,
+        workspaceSync: true,
+        highlightId,
+      },
     }))
   }
 
@@ -271,6 +280,17 @@ export default class extends Controller {
     if (queryId) return queryId
 
     return window.location.pathname.match(/\/creatives\/(\d+)/)?.[1]
+  }
+
+  commentIdFromLocation() {
+    const params = new URLSearchParams(window.location.search)
+    const queryCommentId = params.get('comment_id') || params.get('highlight_comment_id')
+    if (queryCommentId) return queryCommentId
+
+    const pathCommentId = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)?.[1]
+    if (pathCommentId) return pathCommentId
+
+    return window.location.hash.match(/comment_(\d+)/)?.[1]
   }
 
   rootState() {

@@ -164,6 +164,41 @@ describe('WorkspaceTreeController', () => {
     document.removeEventListener('creative-comments-click', chatListener)
   })
 
+  test('forwards comment targets only from authoritative frame loads', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives/2/comments/456')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-render', { bubbles: true }))
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', highlightId: undefined }),
+    }))
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', highlightId: '456' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('extracts query, path, and hash comment targets from workspace URLs', () => {
+    window.history.replaceState({}, '', '/creatives?id=2&comment_id=456')
+    expect(controller.commentIdFromLocation()).toBe('456')
+
+    window.history.replaceState({}, '', '/creatives?id=2&highlight_comment_id=567')
+    expect(controller.commentIdFromLocation()).toBe('567')
+
+    window.history.replaceState({}, '', '/creatives/2/comments/678')
+    expect(controller.commentIdFromLocation()).toBe('678')
+
+    window.history.replaceState({}, '', '/creatives?id=2#comment_789')
+    expect(controller.commentIdFromLocation()).toBe('789')
+
+    window.history.replaceState({}, '', '/creatives?id=2')
+    expect(controller.commentIdFromLocation()).toBeUndefined()
+  })
+
   test('trusts the completed frame response when an inaccessible id falls back to root', () => {
     const chatListener = jest.fn()
     document.addEventListener('creative-comments-click', chatListener)

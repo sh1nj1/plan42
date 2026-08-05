@@ -202,6 +202,7 @@ export default class extends Controller {
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
+    const highlightId = event.detail?.highlightId
     if (!button) return
     if (event.detail?.workspaceSync && !this.isDocked()) {
       const nextCreativeId = creativeId || button.dataset.creativeId || ''
@@ -221,11 +222,18 @@ export default class extends Controller {
       this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
-      if (this.isDocked()) return
+      if (this.isDocked()) {
+        if (event.detail?.workspaceSync && highlightId) {
+          this.open(button, { creativeId, highlightId })
+        }
+        return
+      }
       this.close()
       return
     }
-    this.open(button, { creativeId })
+    const openOptions = { creativeId }
+    if (highlightId) openOptions.highlightId = highlightId
+    this.open(button, openOptions)
   }
 
   resetDockedToEmpty() {

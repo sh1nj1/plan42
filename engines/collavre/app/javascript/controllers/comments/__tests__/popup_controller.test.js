@@ -234,6 +234,68 @@ describe('CommentsPopupController', () => {
         expect(openFromUrl).not.toHaveBeenCalled()
     })
 
+    test('same-creative workspace deep links refresh the docked chat highlight', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, {
+            creativeId: '123',
+            highlightId: '456',
+        })
+    })
+
+    test('same-creative workspace sync without a deep link keeps the docked chat', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(open).not.toHaveBeenCalled()
+        expect(popup.dataset.creativeId).toBe('123')
+    })
+
+    test('workspace deep links pass the highlight when switching creatives', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '999'
+        popup.style.display = 'flex'
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, {
+            creativeId: '123',
+            highlightId: '456',
+        })
+    })
+
     test('root workspace navigation resets docked chat to its empty state', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
