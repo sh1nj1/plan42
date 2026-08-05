@@ -208,11 +208,28 @@
 .search-popup-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-border);
   font-size: var(--text-0, 0.875rem);
   color: var(--text-secondary);
+}
+
+.search-popup-reset-btn {
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-2, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.search-popup-reset-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .search-popup-footer-hints {
