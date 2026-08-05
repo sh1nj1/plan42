@@ -231,6 +231,8 @@ export default class extends Controller {
   resetDockedToEmpty() {
     this.openGeneration += 1
 
+    if (this.isFullscreen()) this._exitFullscreenState()
+
     if (this.dockedOpenTimeout) {
       window.clearTimeout(this.dockedOpenTimeout)
       this.dockedOpenTimeout = null
@@ -445,30 +447,7 @@ export default class extends Controller {
     this.closeChildControllers()
     this.dispatchPopupClosed()
 
-    // Exit fullscreen state if active
-    if (this.isFullscreen()) {
-      this.element.dataset.fullscreen = 'false'
-      document.body.classList.remove('chat-fullscreen')
-      this._syncFullscreenUI(false)
-      this._savedStyles = null
-
-      // Navigate back from fullscreen URL — use replaceState to consume the
-      // fullscreen history entry instead of pushing a new one, preventing a
-      // stale fullscreen entry from being reached via the Back button.
-      const creativeId = this.element.dataset.creativeId
-      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-      if (backUrl) {
-        const url = new URL(backUrl, window.location.origin)
-        // Strip comment auto-open markers so a refresh after close doesn't
-        // re-open the popup (handles ?open_comments, ?comment_id, #comment_*).
-        url.searchParams.delete('open_comments')
-        url.searchParams.delete('comment_id')
-        const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
-        url.hash = url.hash.replace(/^#comment_\d+$/, '')
-        window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
-      }
-      this._previousUrl = null
-    }
+    this._exitFullscreenState()
 
     this._clearChatActiveRow()
     this._hideNavDropdown()
@@ -484,6 +463,47 @@ export default class extends Controller {
     this.element.style.bottom = ''
     this.element.style.position = ''
     delete this.element.dataset.resized
+  }
+
+  _exitFullscreenState() {
+    if (!this.isFullscreen()) return
+
+    if (this._enterCleanupTimer) {
+      window.clearTimeout(this._enterCleanupTimer)
+      this._enterCleanupTimer = null
+    }
+    if (this._enterCleanupFn) {
+      this.element.removeEventListener('transitionend', this._enterCleanupFn)
+      this._enterCleanupFn = null
+    }
+
+    this.element.dataset.fullscreen = 'false'
+    document.body.classList.remove('chat-fullscreen')
+    this._syncFullscreenUI(false)
+    this._savedStyles = null
+    this.element.style.transition = ''
+    this.element.style.position = ''
+    this.element.style.top = ''
+    this.element.style.left = ''
+    this.element.style.right = ''
+    this.element.style.bottom = ''
+    this.element.style.width = ''
+    this.element.style.height = ''
+    this.element.style.transform = ''
+
+    // Consume the fullscreen history entry and remove markers that could
+    // reopen the invalidated chat after a reset or close.
+    const creativeId = this.element.dataset.creativeId
+    const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+    if (backUrl) {
+      const url = new URL(backUrl, window.location.origin)
+      url.searchParams.delete('open_comments')
+      url.searchParams.delete('comment_id')
+      const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
+      url.hash = url.hash.replace(/^#comment_\d+$/, '')
+      window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
+    }
+    this._previousUrl = null
   }
 
   closeChildControllers() {

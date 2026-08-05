@@ -254,6 +254,33 @@ describe('CommentsPopupController', () => {
         expect(popup.style.display).toBe('flex')
     })
 
+    test('resetting a fullscreen docked chat exits fullscreen before showing empty state', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.fullscreen = 'true'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        popup.style.display = 'flex'
+        popup.style.position = 'fixed'
+        popup.style.width = '100%'
+        popup.style.height = '100%'
+        document.body.classList.add('chat-fullscreen')
+        window.history.replaceState({}, '', '/creatives/123/comments/fullscreen')
+        controller._previousUrl = '/creatives/123'
+
+        controller.resetDockedToEmpty()
+
+        expect(popup.dataset.fullscreen).toBe('false')
+        expect(document.body.classList.contains('chat-fullscreen')).toBe(false)
+        expect(popup.dataset.creativeId).toBe('')
+        expect(controller.listTarget.textContent).toBe('Select a creative')
+        expect(popup.style.display).toBe('flex')
+        expect(popup.style.position).toBe('')
+        expect(popup.style.width).toBe('')
+        expect(popup.style.height).toBe('')
+        expect(window.location.pathname).toBe('/creatives/123')
+    })
+
     test('workspace navigation does not auto-open chat outside the docked layout', async () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
