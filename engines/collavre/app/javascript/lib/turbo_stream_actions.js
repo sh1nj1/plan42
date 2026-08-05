@@ -290,6 +290,14 @@ function handleUpdated(creative) {
 }
 
 function handleDestroyed(creative) {
+    const creativeIds = [creative.id, creative.origin_id]
+        .filter((id) => id != null)
+        .map(String)
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+        detail: { creativeIds: [...new Set(creativeIds)] }
+    }))
+
     const rows = findRowsForCreative(creative.id, creative.origin_id)
 
     if (rows.length === 0) return // Row not visible on this page
