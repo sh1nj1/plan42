@@ -378,6 +378,87 @@ describe('WorkspaceTreeController', () => {
     document.removeEventListener('creative-comments-click', chatListener)
   })
 
+  test('restores a re-granted leaf creative from an authoritative frame response', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', children: [] }],
+      }),
+    })
+
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+
+    chatListener.mockClear()
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { bubbles: true }))
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(false)
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', workspaceSync: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('does not restore a leaf from a frame request started before invalidation', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { bubbles: true }))
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('never restores destroyed creatives from an authoritative frame response', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    document.dispatchEvent(new CustomEvent('creative-destroyed', {
+      detail: { creativeIds: ['2'] },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    chatListener.mockClear()
+    const frame = document.getElementById('creative-workspace-content')
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { bubbles: true }))
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(controller.invalidatedCreativeIds.has('2')).toBe(true)
+    expect(chatListener).not.toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2' }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
   test('does not restore access from a tree request started before invalidation', async () => {
     let resolveStaleFetch
     fetchMock.mockReturnValueOnce(new Promise((resolve) => {

@@ -16,8 +16,10 @@ export default class extends Controller {
     this.destroyedCreativeIds = new Set()
     this.invalidationGeneration = 0
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
+    this.handleFrameRequest = this.handleFrameRequest.bind(this)
     this.handleTurboRender = this.handleTurboRender.bind(this)
     this.queueRefresh = this.queueRefresh.bind(this)
+    document.addEventListener('turbo:before-fetch-request', this.handleFrameRequest)
     document.addEventListener('turbo:frame-load', this.handleFrameLoad)
     document.addEventListener('turbo:frame-render', this.handleFrameLoad)
     document.addEventListener('turbo:render', this.handleTurboRender)
@@ -32,6 +34,7 @@ export default class extends Controller {
     this.loadAbortController?.abort()
     this.frameObserver?.disconnect()
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
+    document.removeEventListener('turbo:before-fetch-request', this.handleFrameRequest)
     document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
     document.removeEventListener('turbo:frame-render', this.handleFrameLoad)
     document.removeEventListener('turbo:render', this.handleTurboRender)
@@ -178,6 +181,12 @@ export default class extends Controller {
     this.syncFromWorkspaceFrame(event.target, { authoritative: event.type === 'turbo:frame-load' })
   }
 
+  handleFrameRequest(event) {
+    if (event.target.id !== 'creative-workspace-content') return
+
+    this.frameRequestGeneration = this.invalidationGeneration
+  }
+
   handleTurboRender() {
     requestAnimationFrame(() => {
       if (this.element.isConnected) this.syncFromWorkspaceFrame()
@@ -220,6 +229,7 @@ export default class extends Controller {
       return
     }
     if (!stateCreativeId || (!authoritative && stateCreativeId !== locationCreativeId)) return
+    if (authoritative) this.restoreCreativeIdFromFrameResponse(stateCreativeId)
     if (this.invalidatedCreativeIds.has(String(stateCreativeId))) {
       this.setActiveId(null)
       if (syncChat) this.openChat(this.rootState())
@@ -314,6 +324,16 @@ export default class extends Controller {
       this.invalidatedCreativeIds.add(creativeId)
       if (event?.type === 'creative-destroyed') this.destroyedCreativeIds.add(creativeId)
     })
+  }
+
+  restoreCreativeIdFromFrameResponse(creativeId) {
+    const id = String(creativeId)
+    if (this.destroyedCreativeIds.has(id)) return
+    // Only a frame request started after the latest invalidation proves current access;
+    // leaf creatives never appear in the workspace tree payload, so this is their only restore path.
+    if (this.frameRequestGeneration !== this.invalidationGeneration) return
+
+    this.invalidatedCreativeIds.delete(id)
   }
 
   restoreReadableCreativeIds(nodes) {
