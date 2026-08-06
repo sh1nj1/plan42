@@ -9,6 +9,8 @@ import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
 import { CreativeSaveQueue } from './creative_save_queue'
+import { createListenerRegistry } from './dom_listener_registry'
+import { createDelegatedClickHandler } from './creative_row_editor_delegated_clicks'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
@@ -46,8 +48,7 @@ import {
 const application = window.Stimulus
 
 let initialized = false;
-let creativeEditClickHandler = null;
-let addCreativeShortcutHandler = null;
+const globalListeners = createListenerRegistry();
 
 function deleteAttachment(signedId) {
   if (!signedId) return;
@@ -65,13 +66,14 @@ export function initializeCreativeRowEditor() {
   initialized = true;
 
   document.addEventListener('turbo:load', function () {
+    globalListeners.releaseAll();
     const template = document.getElementById('inline-edit-form');
     if (!template) return;
 
     initializeEventListeners();
 
     // Listen for attachment deletions from queue manager
-    window.addEventListener('api-queue-attachments-deleted', (event) => {
+    globalListeners.add(window, 'api-queue-attachments-deleted', (event) => {
       const attachmentIds = event.detail?.attachmentIds;
       if (attachmentIds && attachmentIds.length > 0) {
         attachmentIds.forEach(deleteAttachment);
@@ -79,7 +81,7 @@ export function initializeCreativeRowEditor() {
     });
 
     // Listen for failed requests to prevent silent data loss
-    window.addEventListener('api-queue-request-failed', (event) => {
+    globalListeners.add(window, 'api-queue-request-failed', (event) => {
       const { item, error } = event.detail;
       console.error('Queue request failed permanently:', item, error);
 
@@ -226,7 +228,7 @@ export function initializeCreativeRowEditor() {
     }
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
-    document.addEventListener('turbo:before-cache', () => stopEditingPing());
+    globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
 
     const destroyedCreativeIds = new Set();
 
@@ -575,112 +577,32 @@ export function initializeCreativeRowEditor() {
     }
 
     function initializeEventListeners() {
-      if (!creativeEditClickHandler) {
-        creativeEditClickHandler = function (e) {
-          const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
-          if (!tree) return;
-          e.preventDefault();
-          handleEditButtonClick(tree);
-        };
-        document.addEventListener('creative-edit-click', creativeEditClickHandler);
-      }
-
-      if (!addCreativeShortcutHandler) {
-        addCreativeShortcutHandler = function (event) {
-          if (event.defaultPrevented || event.isComposing) return;
-          if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-          const target = event.target;
-          const interactiveSelector = 'input, textarea, select, button, a, [contenteditable="true"], [data-lexical-editor-root]';
-          if (target && target.closest && target.closest(interactiveSelector)) return;
-          if (target && target.isContentEditable) return;
-          const addButton = document.querySelector('.creative-actions-row .add-creative-btn, .creative-actions-row .new-root-creative-btn');
-          if (!addButton) return;
-          event.preventDefault();
-          addButton.click();
-        };
-        document.addEventListener('keydown', addCreativeShortcutHandler);
-      }
-
-      document.body.addEventListener('click', function (e) {
-        // Delegated event for .edit-inline-btn
-        const editBtn = e.target.closest('.edit-inline-btn');
-        if (editBtn) {
-          e.preventDefault();
-          const tree = editBtn.closest('.creative-tree');
-          if (!tree) return;
-          handleEditButtonClick(tree);
-          return; // Event handled
-        }
-
-        // Delegated event for .add-creative-btn
-        const addBtn = e.target.closest('.add-creative-btn:not(#inline-add):not(#inline-level-down):not(#inline-level-up)');
-        if (addBtn) {
-          e.preventDefault();
-          if (template.style.display === 'block') {
-            hideCurrent();
-            return;
-          }
-          const tree = addBtn.closest('.creative-tree');
-          let parentId, container, insertBefore, beforeId = '';
-          if (tree) {
-            parentId = tree.dataset.id;
-            container = tree.querySelector('.creative-children');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = 'creative-children';
-              container.id = 'creative-children-' + parentId;
-              tree.appendChild(container);
-            }
-            insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          } else {
-            parentId = addBtn.dataset.parentId || '';
-            const rootContainer = document.getElementById('creatives');
-            container = rootContainer;
-            insertBefore = rootContainer.firstElementChild;
-            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          }
-          startNew(parentId, container, insertBefore, beforeId);
-          return; // Event handled
-        }
-
-
-        // Delegated event for .new-root-creative-btn
-        const newRootBtn = e.target.closest('.new-root-creative-btn');
-        if (newRootBtn) {
-          e.preventDefault();
-          const container = document.getElementById('creatives');
-          if (!container) return;
-
-          if (template.style.display === 'block') {
-            hideCurrent();
-            return;
-          }
-          const insertBefore = container.firstElementChild;
-          const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          startNew('', container, insertBefore, beforeId);
-          return; // Event handled
-        }
-
-        // Delegated event for .append-parent-btn
-        const appendParentBtn = e.target.closest('.append-parent-btn');
-        if (appendParentBtn) {
-          e.preventDefault();
-          const targetId = appendParentBtn.dataset.childId;
-          const target = document.getElementById('creative-' + targetId);
-          if (!target) return;
-          const container = target.parentNode;
-          startNew(
-            container.id.startsWith('creative-children-') ? container.id.replace('creative-children-', '') : '',
-            container,
-            target,
-            targetId,
-            '',
-            targetId
-          );
-          return; // Event handled
-        }
+      globalListeners.add(document, 'creative-edit-click', function (event) {
+        const tree = event.detail?.treeElement || event.detail?.button?.closest('.creative-tree');
+        if (!tree) return;
+        event.preventDefault();
+        handleEditButtonClick(tree);
       });
+
+      globalListeners.add(document, 'keydown', function (event) {
+        if (event.defaultPrevented || event.isComposing) return;
+        if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const target = event.target;
+        const interactiveSelector = 'input, textarea, select, button, a, [contenteditable="true"], [data-lexical-editor-root]';
+        if (target && target.closest && target.closest(interactiveSelector)) return;
+        if (target && target.isContentEditable) return;
+        const addButton = document.querySelector('.creative-actions-row .add-creative-btn, .creative-actions-row .new-root-creative-btn');
+        if (!addButton) return;
+        event.preventDefault();
+        addButton.click();
+      });
+
+      globalListeners.add(document.body, 'click', createDelegatedClickHandler({
+        template,
+        startNew,
+        hideCurrent,
+        handleEditButtonClick,
+      }));
     }
 
     function hideRow(tree) {
