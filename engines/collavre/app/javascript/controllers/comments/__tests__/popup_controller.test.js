@@ -126,6 +126,23 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
+    test('docked close button keeps the original close icon when toggling collapse/expand', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.collapseDockedLabel = 'Collapse chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+
+        controller.enterDockedMode()
+        controller.syncDockedUI()
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
+
+        controller.toggleDocked()
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
+    })
+
     test('restores the floating close button label after leaving docked mode', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'

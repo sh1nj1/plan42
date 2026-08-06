@@ -640,7 +640,7 @@ export default class extends Controller {
     const label = collapsed
       ? (this.element.dataset.expandDockedLabel || '')
       : (this.element.dataset.collapseDockedLabel || '')
-    this.closeButtonTarget.textContent = collapsed ? '‹' : '›'
+    this.closeButtonTarget.textContent = '×'
     this.closeButtonTarget.setAttribute('aria-label', label)
     this.closeButtonTarget.title = label
   }
