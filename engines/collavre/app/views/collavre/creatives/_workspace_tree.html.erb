@@ -1,3 +1,4 @@
+<%= turbo_stream_from Current.user, :creative_tree %>
 <section class="creative-workspace-tree-region"
          data-controller="workspace-tree"
          data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"

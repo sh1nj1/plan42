@@ -6,6 +6,11 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  def creative_tree_stream_selector
+    signed_name = Turbo::StreamsChannel.signed_stream_name([ users(:one), :creative_tree ])
+    "turbo-cable-stream-source[signed-stream-name='#{signed_name}']"
+  end
+
   test "creative workspace is disabled by default" do
     users(:one).update!(creative_workspace_enabled: false)
     creative = creatives(:root_parent)
@@ -19,6 +24,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content", count: 0
     assert_select "[data-workspace-navigation-state]", count: 0
     assert_select "#comments-popup[data-docked='false']", count: 1
+    assert_select creative_tree_stream_selector, count: 1
   end
 
   test "creative pages render the three-column workspace shell" do
@@ -33,6 +39,8 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
+    assert_select ".creative-workspace-shell #{creative_tree_stream_selector}", count: 1
+    assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 
   test "workspace tree JSON returns branches without leaf roots" do
@@ -62,6 +70,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
     assert_select ".creative-workspace-shell", count: 0
+    assert_select creative_tree_stream_selector, count: 0
   end
 
   test "workspace frame falls back to root without exposing an inaccessible creative" do

@@ -11,7 +11,9 @@
               } %>
 <% end %>
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-<% if authenticated? %>
+<%# In workspace mode the creative-tree stream source lives in the persistent
+    shell (_workspace_tree) so center-frame swaps never drop the subscription %>
+<% if authenticated? && !creative_workspace? %>
   <%= turbo_stream_from Current.user, :creative_tree %>
 <% end %>
 <% if @auto_fullscreen %>
