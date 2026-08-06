@@ -40,6 +40,11 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
     assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
     assert_select ".creative-workspace-shell #{creative_tree_stream_selector}", count: 1
+    # The stream source must not be a direct grid child of the shell: grid
+    # auto-placement would give it its own implicit row and push all three
+    # columns down, leaving a blank band under the top nav.
+    assert_select ".creative-workspace-shell > #{creative_tree_stream_selector}", count: 0
+    assert_select ".creative-workspace-tree-region #{creative_tree_stream_selector}", count: 1
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 

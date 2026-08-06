@@ -1,4 +1,3 @@
-<%= turbo_stream_from Current.user, :creative_tree %>
 <section class="creative-workspace-tree-region"
          data-controller="workspace-tree"
          data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"
@@ -6,6 +5,10 @@
          data-workspace-tree-loading-text-value="<%= t('app.loading') %>"
          data-workspace-tree-empty-text-value="<%= t('collavre.creatives.workspace.empty') %>"
          data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>">
+  <%# Keep the stream source inside the tree region: as a direct child of the
+      grid shell it would become a grid item with its own implicit row and
+      push all three columns down. %>
+  <%= turbo_stream_from Current.user, :creative_tree %>
   <button type="button"
           class="creative-workspace-tree-toggle"
           data-workspace-tree-target="panelToggle"
