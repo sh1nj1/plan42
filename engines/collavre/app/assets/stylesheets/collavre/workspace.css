@@ -5,7 +5,7 @@ body.creative-workspace {
 
 .creative-workspace-shell {
     display: grid;
-    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(320px, 420px);
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(0, 1fr);
     flex: 1;
     width: 100%;
     min-height: 0;
@@ -183,7 +183,7 @@ body.creative-workspace .creative-content {
 
 @media (min-width: 768px) and (max-width: 1279px) {
     .creative-workspace-shell {
-        grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
 
     .creative-workspace-shell > main {
