@@ -539,6 +539,21 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_not @regular_user.reload.creative_workspace_enabled?
   end
 
+  test "profile shows the creative workspace explanation as a tooltip instead of inline text" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+
+    description = I18n.t("collavre.users.creative_workspace.description")
+
+    assert_select "input[name=?][type='checkbox'][title=?]",
+                  "user[creative_workspace_enabled]", description
+    assert_select "label[for='user_creative_workspace_enabled'][title=?]", description
+    assert_select "small", text: description, count: 0
+  end
+
   test "admin link appears in profile for system admin" do
     sign_in_as(@admin, password: "password")
     get collavre.user_path(@admin)
