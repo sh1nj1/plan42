@@ -238,8 +238,9 @@
         content_tag(:p, text, style: 'text-align: center;')
       end
     # data-creatives-empty-state marks the placeholder so client-side row insertion
-    # (inline editor / websocket broadcast) can drop it as soon as the tree is no
-    # longer empty, and restore it when the last row is removed.
+    # (inline editor / websocket broadcast) can hide it as soon as the tree is no
+    # longer empty, and show it again when the last row is removed.
+    # See app/javascript/modules/creative_tree_empty_state.js.
     empty_html = content_tag(:div, empty_body, data: { creatives_empty_state: '' })
   end
   # Only pass filter parameters to avoid unnecessary params in URL

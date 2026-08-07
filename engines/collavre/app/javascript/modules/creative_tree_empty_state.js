@@ -8,31 +8,40 @@
 // container, so without an explicit hook the placeholder stays visible next to the
 // freshly created row.
 //
-// hideTreeEmptyState() drops the placeholder as soon as a row lands; restoreTreeEmptyState()
-// puts it back when the last row leaves (abandoned new row, delete, broadcast destroy)
-// using the original markup cached on the container by the tree controller value.
+// hideTreeEmptyState() hides the placeholder as soon as a row lands;
+// restoreTreeEmptyState() shows it again when the last row leaves.
+//
+// The placeholder is toggled rather than removed and re-created: keeping the original
+// node means no markup has to be cached and re-parsed as HTML (which would both
+// re-introduce an HTML sink and lose the server-rendered button_to CSRF token in the
+// "request permission" variant of the placeholder).
 const EMPTY_STATE_SELECTOR = '[data-creatives-empty-state]';
-// Stimulus value attribute on #creatives (creatives--tree controller, emptyHtml value).
-// Read via getAttribute because the `creatives--tree` identifier does not survive the
-// dataset camelCase mapping in a usable form.
-const EMPTY_HTML_ATTRIBUTE = 'data-creatives--tree-empty-html-value';
 
 export function creativeTreeContainer() {
   return document.getElementById('creatives');
 }
 
+function emptyStateElements(container) {
+  if (!container || !container.querySelectorAll) return [];
+  return Array.from(container.querySelectorAll(EMPTY_STATE_SELECTOR));
+}
+
 export function hideTreeEmptyState(container = creativeTreeContainer()) {
-  if (!container || !container.querySelectorAll) return;
-  container.querySelectorAll(EMPTY_STATE_SELECTOR).forEach((element) => element.remove());
+  emptyStateElements(container).forEach((element) => {
+    element.hidden = true;
+    // Belt and braces: `hidden` is a UA-stylesheet rule that any `display` rule
+    // on the element would win over.
+    element.style.display = 'none';
+  });
 }
 
 export function restoreTreeEmptyState(container = creativeTreeContainer()) {
   if (!container || !container.querySelector) return;
-  // Still populated (or the placeholder is already back) — nothing to restore.
+  // Still populated — the placeholder stays hidden.
   if (container.querySelector('creative-tree-row')) return;
-  if (container.querySelector(EMPTY_STATE_SELECTOR)) return;
 
-  const html = container.getAttribute(EMPTY_HTML_ATTRIBUTE);
-  if (!html) return;
-  container.insertAdjacentHTML('beforeend', html);
+  emptyStateElements(container).forEach((element) => {
+    element.hidden = false;
+    element.style.removeProperty('display');
+  });
 }

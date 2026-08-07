@@ -10,12 +10,12 @@ import {
 const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
 
 function renderEmptyTree() {
-  document.body.innerHTML = `
-    <div id="creatives" data-creatives--tree-empty-html-value='${EMPTY_HTML}'>
-      ${EMPTY_HTML}
-    </div>
-  `
+  document.body.innerHTML = `<div id="creatives">${EMPTY_HTML}</div>`
   return document.getElementById('creatives')
+}
+
+function placeholder(container) {
+  return container.querySelector('[data-creatives-empty-state]')
 }
 
 afterEach(() => {
@@ -32,16 +32,21 @@ test('creativeTreeContainer returns null when the tree is not on the page', () =
   expect(creativeTreeContainer()).toBeNull()
 })
 
-test('hideTreeEmptyState removes the placeholder', () => {
+test('hideTreeEmptyState hides the placeholder', () => {
   const container = renderEmptyTree()
+
   hideTreeEmptyState(container)
-  expect(container.querySelector('[data-creatives-empty-state]')).toBeNull()
+
+  expect(placeholder(container).hidden).toBe(true)
+  expect(placeholder(container).style.display).toBe('none')
 })
 
 test('hideTreeEmptyState defaults to #creatives when no container is passed', () => {
   const container = renderEmptyTree()
+
   hideTreeEmptyState()
-  expect(container.querySelector('[data-creatives-empty-state]')).toBeNull()
+
+  expect(placeholder(container).hidden).toBe(true)
 })
 
 test('hideTreeEmptyState is a no-op without a tree container', () => {
@@ -50,28 +55,28 @@ test('hideTreeEmptyState is a no-op without a tree container', () => {
   expect(() => hideTreeEmptyState(null)).not.toThrow()
 })
 
-test('restoreTreeEmptyState re-renders the placeholder once the tree is empty', () => {
+test('restoreTreeEmptyState shows the placeholder again once the tree is empty', () => {
   const container = renderEmptyTree()
   hideTreeEmptyState(container)
 
   restoreTreeEmptyState(container)
 
-  const placeholder = container.querySelector('[data-creatives-empty-state]')
-  expect(placeholder).not.toBeNull()
-  expect(placeholder.textContent).toContain('No sub-creatives found.')
+  expect(placeholder(container).hidden).toBe(false)
+  expect(placeholder(container).style.display).toBe('')
+  expect(placeholder(container).textContent).toContain('No sub-creatives found.')
 })
 
-test('restoreTreeEmptyState does nothing while rows remain', () => {
+test('restoreTreeEmptyState keeps the placeholder hidden while rows remain', () => {
   const container = renderEmptyTree()
   hideTreeEmptyState(container)
-  container.innerHTML = '<creative-tree-row creative-id="7"></creative-tree-row>'
+  container.insertAdjacentHTML('beforeend', '<creative-tree-row creative-id="7"></creative-tree-row>')
 
   restoreTreeEmptyState(container)
 
-  expect(container.querySelector('[data-creatives-empty-state]')).toBeNull()
+  expect(placeholder(container).hidden).toBe(true)
 })
 
-test('restoreTreeEmptyState does not duplicate an existing placeholder', () => {
+test('restoreTreeEmptyState does not duplicate the placeholder', () => {
   const container = renderEmptyTree()
 
   restoreTreeEmptyState(container)
@@ -79,7 +84,7 @@ test('restoreTreeEmptyState does not duplicate an existing placeholder', () => {
   expect(container.querySelectorAll('[data-creatives-empty-state]')).toHaveLength(1)
 })
 
-test('restoreTreeEmptyState is a no-op when no cached markup exists', () => {
+test('restoreTreeEmptyState is a no-op when the tree has no placeholder', () => {
   document.body.innerHTML = '<div id="creatives"></div>'
   const container = document.getElementById('creatives')
 
