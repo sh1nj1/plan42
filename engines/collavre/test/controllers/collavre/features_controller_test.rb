@@ -24,6 +24,18 @@ module Collavre
       end
     end
 
+    # The call to action carries a directional glyph. It belongs to the translated
+    # string so a translator can reorder or drop it, rather than being concatenated
+    # in the view where they cannot reach it.
+    test "index renders the card call to action entirely from i18n" do
+      get "/features"
+
+      assert_response :success
+      assert_includes @response.body, escaped("collavre.features.index.card_more")
+      assert_includes I18n.t("collavre.features.index.card_more"), "→"
+      assert_includes I18n.t("collavre.features.index.card_more", locale: :ko), "→"
+    end
+
     test "index is readable without signing in" do
       get "/features"
 

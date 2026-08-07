@@ -11,6 +11,7 @@ ko:
         subtitle: "첫 메시지를 보내기 전에 알아두면 좋은 것들."
         meta_title: "기능"
         meta_description: "멘션, 슬래시 명령어, 채팅 컨텍스트, 자동화 트리거, 토픽, 공유 — Collavre 채팅으로 할 수 있는 것들."
+        card_more: "자세히 보기 →"
       show:
         tips: "팁"
       pages:

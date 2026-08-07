@@ -11,6 +11,7 @@ en:
         subtitle: "The things worth knowing about before your first message."
         meta_title: "Features"
         meta_description: "Mentions, slash commands, chat context, automation triggers, topics, and sharing — everything Collavre's chat can do."
+        card_more: "Learn more →"
       show:
         tips: "Tips"
       pages:
