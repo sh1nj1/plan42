@@ -8,7 +8,7 @@
     visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :command_menu }
   end
 %>
-<div id="no-comments" data-controller="comments--feature-cards">
+<div id="no-comments" class="comments-placeholder" data-controller="comments--feature-cards comments--placeholder">
   <template data-comments--feature-cards-target="minimalTemplate">
     <%= render partial: "collavre/comments/empty_state_minimal" %>
   </template>

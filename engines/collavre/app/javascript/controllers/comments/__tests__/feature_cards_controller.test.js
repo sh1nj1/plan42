@@ -220,23 +220,4 @@ describe('FeatureCardsController', () => {
     document.body.removeChild(form)
   })
 
-  test('removes itself when a comment is appended to the list by a Turbo Stream', async () => {
-    // Comment#broadcast_create appends straight into #comments-list; nothing on
-    // that path calls comments--form#removePlaceholder.
-    const comment = document.createElement('div')
-    comment.className = 'comment-item'
-    container.appendChild(comment)
-
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(container.querySelector('#no-comments')).toBeNull()
-  })
-
-  test('stays put when a non-comment node is appended to the list', async () => {
-    container.appendChild(document.createElement('div'))
-
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(container.querySelector('#no-comments')).not.toBeNull()
-  })
 })

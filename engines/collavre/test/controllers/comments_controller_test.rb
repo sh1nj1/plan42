@@ -1136,4 +1136,33 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, %(data-key="mention_agent")
     assert_not_includes @response.body, 'id="no-topic-comments"'
   end
+
+  # A comment from another participant arrives as a Turbo Stream append into
+  # #comments-list and never reaches comments--form#removePlaceholder, so every
+  # empty-list state has to clear itself via comments--placeholder.
+  test "index wires the discovery cards to the placeholder controller" do
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, %(data-controller="comments--feature-cards comments--placeholder")
+  end
+
+  test "index wires the no-results message to the placeholder controller" do
+    get creative_comments_path(@creative), params: { search: "no such comment exists" }
+
+    assert_response :success
+    assert_includes @response.body,
+                    %(<div id="no-search-results" class="comments-placeholder" data-controller="comments--placeholder">)
+  end
+
+  test "index wires the topic-empty message to the placeholder controller" do
+    @creative.comments.create!(content: "Main lane comment", user: @user)
+    empty_topic = @creative.topics.create!(name: "Fresh", user: @user)
+
+    get creative_comments_path(@creative), params: { topic_id: empty_topic.id }
+
+    assert_response :success
+    assert_includes @response.body,
+                    %(<div id="no-topic-comments" class="comments-placeholder" data-controller="comments--placeholder">)
+  end
 end

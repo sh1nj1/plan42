@@ -17,29 +17,8 @@ export default class extends Controller {
     this._pendingDismissals = new Set()
   }
 
-  connect() {
-    // The local submit path clears this placeholder itself
-    // (comments--form#removePlaceholder), but a comment written by another
-    // participant arrives as a Turbo Stream append straight into
-    // #comments-list (Comment#broadcast_create) and touches nothing else.
-    // Without this, the whole discovery grid — including advice for starting a
-    // conversation — keeps sitting above a live one until the list reloads.
-    const list = this.element.parentElement
-    if (!list) return
-
-    this._listObserver = new MutationObserver((mutations) => {
-      const commentArrived = mutations.some((mutation) =>
-        [ ...mutation.addedNodes ].some((node) => node.nodeType === 1 && node.matches(".comment-item")),
-      )
-      if (commentArrived) this.element.remove()
-    })
-    this._listObserver.observe(list, { childList: true })
-  }
-
-  disconnect() {
-    this._listObserver?.disconnect()
-    this._listObserver = null
-  }
+  // Clearing this element when a comment arrives is comments--placeholder's
+  // job — every empty-list placeholder needs it, not just the cards.
 
   dismiss(event) {
     const key = event.currentTarget.dataset.key
