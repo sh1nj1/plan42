@@ -1268,3 +1268,18 @@ creative-tree-row.is-being-edited .creative-tree {
     50% { opacity: 0.35; }
 }
 
+/* --- Unauthenticated variant: sign up / log in --- */
+.creative-empty-state-loggedout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.creative-empty-state-loggedout-message {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 340px;
+}
+

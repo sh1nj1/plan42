@@ -82,7 +82,7 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     refute_includes response.body, html_t("collavre.creatives.index.request_permission")
   end
 
-  test "unauthenticated visitor at root sees no CTAs" do
+  test "unauthenticated visitor at root sees sign up / log in CTAs" do
     sign_out
 
     get creatives_path
@@ -90,9 +90,15 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     assert_response :success
     refute_match(/class="[^"]*\bnew-root-creative-btn\b/, response.body)
     refute_includes response.body, html_t("collavre.creatives.index.empty_state_add_creative")
+    refute_includes response.body, html_t("collavre.creatives.index.empty_state_readonly_message")
+    assert_includes response.body, html_t("collavre.creatives.index.empty_state_loggedout_message")
+    assert_includes response.body, html_t("collavre.users.new.sign_up")
+    assert_includes response.body, html_t("app.sign_in")
+    assert_includes response.body, new_user_path
+    assert_includes response.body, new_session_path
   end
 
-  test "unauthenticated visitor on a publicly-shared childless creative sees no CTAs" do
+  test "unauthenticated visitor on a publicly-shared childless creative sees sign up / log in CTAs" do
     creative = creatives(:childless_creative)
     perform_enqueued_jobs do
       Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :read)
@@ -106,5 +112,10 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     refute_includes response.body, html_t("collavre.creatives.index.empty_state_readonly_message")
     refute_includes response.body, html_t("collavre.creatives.index.empty_state_add_sub_creative")
     refute_match(/add-creative-btn--cta/, response.body)
+    assert_includes response.body, html_t("collavre.creatives.index.empty_state_loggedout_message")
+    assert_includes response.body, html_t("collavre.users.new.sign_up")
+    assert_includes response.body, html_t("app.sign_in")
+    assert_includes response.body, new_user_path
+    assert_includes response.body, new_session_path
   end
 end

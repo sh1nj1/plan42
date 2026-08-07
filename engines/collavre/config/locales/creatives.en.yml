@@ -56,6 +56,7 @@ en:
         empty_state_add_sub_creative: Add sub-creative
         empty_state_readonly_message: You don't have write access to add sub-creatives here.
         empty_state_request_pending: Access requested · awaiting owner approval
+        empty_state_loggedout_message: Sign up or log in to add sub-creatives.
         link_loading: Loading…
         link_expand: Expand
         search_placeholder: Search creatives...
