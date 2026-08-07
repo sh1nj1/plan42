@@ -90,7 +90,8 @@ if ! (
 	continue
       fi
 
-      if [ "$remote_sha" = "$ZERO_SHA" ]; then
+      if [ "$remote_sha" = "$ZERO_SHA" ] ||
+	! git rev-parse --verify --quiet "$remote_sha^{commit}" >/dev/null; then
 	DEFAULT_BASE_REF=$(resolve_default_base_ref "$local_commit") || exit 1
 	if [ "$(git cat-file -t "$DEFAULT_BASE_REF" 2>/dev/null)" = "tree" ]; then
 	    base_sha="$DEFAULT_BASE_REF"
