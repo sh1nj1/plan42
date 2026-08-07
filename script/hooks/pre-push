@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -o pipefail
+
 echo "🔍 Running pre-push checks..."
 
 # Colors
@@ -8,23 +10,59 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 1. Rubocop auto-fix
-echo -e "${YELLOW}▶ Running Rubocop...${NC}"
-./bin/rubocop -a
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Rubocop failed. Please fix the issues and try again.${NC}"
-    exit 1
+# 1. Rubocop auto-fix for changed Ruby files
+ZERO_SHA="0000000000000000000000000000000000000000"
+REMOTE_NAME="${1:-origin}"
+DEFAULT_BASE_REF="${PRE_PUSH_BASE_REF:-$REMOTE_NAME/main}"
+HEAD_SHA=$(git rev-parse HEAD) || exit 1
+CHANGED_FILES=$(
+    while read -r _local_ref local_sha _remote_ref remote_sha; do
+      [ "$local_sha" = "$ZERO_SHA" ] && continue
+      if [ "$local_sha" != "$HEAD_SHA" ]; then
+	echo -e "${RED}❌ Rubocop can only check the currently checked-out ref.${NC}" >&2
+	exit 1
+      fi
+
+      if [ "$remote_sha" = "$ZERO_SHA" ]; then
+	base_sha=$(git merge-base "$DEFAULT_BASE_REF" "$local_sha") || exit 1
+      else
+	base_sha="$remote_sha"
+      fi
+
+      git diff --name-only --diff-filter=ACMR "$base_sha" "$local_sha" || exit 1
+    done | sort -u
+) || exit 1
+RUBOCOP_FILES=()
+
+while IFS= read -r file; do
+    case "$file" in
+      *.rb|*.rake|*.gemspec|Gemfile|*/Gemfile|Rakefile|*/Rakefile)
+	[ -f "$file" ] && RUBOCOP_FILES+=("$file")
+	;;
+    esac
+done <<< "$CHANGED_FILES"
+
+if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
+    echo -e "${YELLOW}▶ Running Rubocop on ${#RUBOCOP_FILES[@]} changed file(s)...${NC}"
+    ./bin/rubocop -a "${RUBOCOP_FILES[@]}"
+    if [ $? -ne 0 ]; then
+	echo -e "${RED}❌ Rubocop failed. Please fix the issues and try again.${NC}"
+	exit 1
+    fi
+    echo -e "${GREEN}✓ Rubocop passed${NC}"
+else
+    echo -e "${GREEN}✓ No changed Ruby files to lint${NC}"
 fi
-echo -e "${GREEN}✓ Rubocop passed${NC}"
 
 # 2. Run tests
-echo -e "${YELLOW}▶ Running tests...${NC}"
-RAILS_ENV=test rake test
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Tests failed. Please fix and try again.${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ All tests passed${NC}"
+# Temporarily disabled for pre-push because CI runs the full test suite.
+# echo -e "${YELLOW}▶ Running tests...${NC}"
+# RAILS_ENV=test rake test
+# if [ $? -ne 0 ]; then
+#     echo -e "${RED}❌ Tests failed. Please fix and try again.${NC}"
+#     exit 1
+# fi
+# echo -e "${GREEN}✓ All tests passed${NC}"
 
 # 3. Check for dead code (unused methods, variables)
 echo -e "${YELLOW}▶ Checking for dead code...${NC}"
