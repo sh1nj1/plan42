@@ -177,7 +177,7 @@ module Tools
       if include_comments
         result[:recent_comments] = creative.comments.order(created_at: :desc).limit(3).map do |comment|
           {
-            content: ActionView::Base.full_sanitizer.sanitize(comment.content).strip.truncate(200),
+            content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
             user: comment.user&.display_name || comment.user&.name,
             created_at: comment.created_at&.iso8601
           }

@@ -151,7 +151,7 @@ module Collavre
 
       def creative_markdown_link(target_creative = creative)
         path = Collavre::Engine.routes.url_helpers.creative_path(target_creative, open_comments: true)
-        "[#{target_creative.creative_snippet}](#{path})"
+        "[#{target_creative.creative_snippet_markdown}](#{path})"
       end
 
       def inbox_comment_link

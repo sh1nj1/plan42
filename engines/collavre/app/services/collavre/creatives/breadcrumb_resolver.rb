@@ -84,7 +84,7 @@ module Creatives
     end
 
     def ancestor_label(creative)
-      creative.effective_description(nil, false).to_s.gsub(/\s+/, " ").strip
+      Collavre::HtmlText.label(creative.effective_description(nil, true))
     end
   end
 end

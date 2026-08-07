@@ -213,7 +213,7 @@ module Collavre
         if (is_admin || is_creative_owner) && !is_owner && @comment.user.present? && !@comment.user.ai_user?
           inbox_creative = Creative.inbox_for(@comment.user)
           creative_path = Collavre::Engine.routes.url_helpers.creative_path(@creative, open_comments: true)
-          creative_link = "[#{@creative.creative_snippet}](#{creative_path})"
+          creative_link = "[#{@creative.creative_snippet_markdown}](#{creative_path})"
           msg = I18n.t(
             "inbox.comment_deleted_by_admin",
             admin_name: Current.user.name,
