@@ -55,6 +55,45 @@ module Collavre
       assert_includes keys, :mention_agent, "the core cards should all have built-in guides"
     end
 
+    # feature_path would raise UrlGenerationError for a key the features route
+    # cannot accept, turning an extension's typo into a 500 on the public hub and
+    # on every user's empty chat. Catch it where the author will see it.
+    test "a key the features route cannot accept is rejected at registration" do
+      error = assert_raises(ArgumentError) do
+        Collavre::FeatureCardRegistry.register(:"vendor-card", {
+          title_key: "collavre.comments.empty_state.cards.add_user.title",
+          description_key: "collavre.comments.empty_state.cards.add_user.description",
+          guide: true
+        })
+      end
+
+      assert_match(/built-in guide page/, error.message)
+    ensure
+      Collavre::FeatureCardRegistry.unregister(:"vendor-card")
+    end
+
+    test "an unroutable key is fine when the card supplies its own guide_url" do
+      card = Collavre::FeatureCardRegistry.register(:"vendor-card", {
+        title_key: "collavre.comments.empty_state.cards.add_user.title",
+        description_key: "collavre.comments.empty_state.cards.add_user.description",
+        guide: true,
+        guide_url: "https://example.com/docs"
+      })
+
+      assert card.guide_link?
+      assert_not card.builtin_guide?
+    ensure
+      Collavre::FeatureCardRegistry.unregister(:"vendor-card")
+    end
+
+    test "the route constraint and the registration check use the same format" do
+      route = Collavre::Engine.routes.routes.find { |r| r.name == "feature" }
+
+      assert_equal Collavre::FeatureCard::GUIDE_KEY_FORMAT,
+                   route.path.requirements[:key],
+                   "routes.rb must reuse GUIDE_KEY_FORMAT so the two cannot drift"
+    end
+
     test "every core card registered by the engine has a built-in guide page" do
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 

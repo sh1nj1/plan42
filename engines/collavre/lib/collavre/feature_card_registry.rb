@@ -91,6 +91,14 @@ module Collavre
 
   # Represents a registered feature card
   class FeatureCard
+    # A card with a built-in guide has its key placed in a URL by
+    # collavre.feature_path, so it has to satisfy the :key constraint on the
+    # features route. config/routes.rb uses this verbatim; Rails rejects anchors
+    # in a routing requirement and anchors the segment itself, so the anchored
+    # form below is what validation compares against.
+    GUIDE_KEY_FORMAT = /[a-z0-9_]+/
+    GUIDE_KEY_FORMAT_ANCHORED = /\A#{GUIDE_KEY_FORMAT.source}\z/
+
     attr_reader :key, :icon, :title_key, :description_key, :action, :guide_url
 
     def initialize(key, config)
@@ -126,6 +134,17 @@ module Collavre
     def validate!
       raise ArgumentError, "FeatureCard must have a :title_key" unless @title_key.present?
       raise ArgumentError, "FeatureCard must have a :description_key" unless @description_key.present?
+
+      # Reject an unroutable key at registration rather than at render. A key the
+      # features route cannot accept would otherwise raise UrlGenerationError from
+      # feature_path, turning an extension's typo into a 500 on a user's empty
+      # chat and on the public hub. Fail loudly at boot, where the author sees it.
+      return unless @guide && !guide_url?
+      return if @key.to_s.match?(GUIDE_KEY_FORMAT_ANCHORED)
+
+      raise ArgumentError,
+            "FeatureCard key #{@key.inspect} cannot use the built-in guide page: " \
+            "keys must match #{GUIDE_KEY_FORMAT_ANCHORED.inspect}. Supply a :guide_url instead."
     end
   end
 end
