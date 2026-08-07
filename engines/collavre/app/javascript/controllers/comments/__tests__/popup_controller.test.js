@@ -126,7 +126,7 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
-    test('docked close button keeps the original close icon when toggling collapse/expand', () => {
+    test('docked close button keeps the close icon while expanded and shows a chevron when collapsed', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
         popup.dataset.collapseDockedLabel = 'Collapse chat'
@@ -135,12 +135,39 @@ describe('CommentsPopupController', () => {
         controller.enterDockedMode()
         controller.syncDockedUI()
         expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
 
         controller.toggleDocked()
         expect(popup.classList.contains('docked-collapsed')).toBe(true)
-        expect(controller.closeButtonTarget.textContent).toBe('×')
+        const icon = controller.closeButtonTarget.querySelector('svg')
+        expect(icon).not.toBeNull()
+        expect(icon.getAttribute('aria-hidden')).toBe('true')
+        expect(controller.closeButtonTarget.textContent.trim()).toBe('')
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
+
+        controller.toggleDocked()
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
+    })
+
+    test('leaving docked mode while collapsed restores the close glyph', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.closeLabel = 'Close chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        expect(controller.closeButtonTarget.querySelector('svg')).not.toBeNull()
+
+        controller.dockedMediaQuery.matches = false
+        controller.syncDockedUI()
+
+        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeButtonTarget.textContent).toBe('×')
     })
 
     test('restores the floating close button label after leaving docked mode', () => {
