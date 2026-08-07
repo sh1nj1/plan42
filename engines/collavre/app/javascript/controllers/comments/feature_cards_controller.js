@@ -23,7 +23,7 @@ export default class extends Controller {
   }
 
   restoreAll() {
-    csrfFetch("/notices", { method: "DELETE" })
+    return csrfFetch("/notices", { method: "DELETE" })
       .then((response) => {
         if (!response.ok) return
         this._reloadComments()
@@ -57,7 +57,10 @@ export default class extends Controller {
 
   _reloadComments() {
     const popup = this.element.closest("#comments-popup")
-    const listController = popup && window.Stimulus?.getControllerForElementAndIdentifier(popup, "comments--list")
+    // Resolve through this controller's own Stimulus application rather than a
+    // `window.Stimulus` global — embedding hosts register controllers on a local
+    // application (see engines/collavre/docs/installation.md) and never expose it.
+    const listController = popup && this.application.getControllerForElementAndIdentifier(popup, "comments--list")
     listController?.loadInitialComments()
   }
 }

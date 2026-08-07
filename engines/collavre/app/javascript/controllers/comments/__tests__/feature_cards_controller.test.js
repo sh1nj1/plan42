@@ -3,7 +3,7 @@
  */
 
 import { jest } from '@jest/globals'
-import { Application } from '@hotwired/stimulus'
+import { Application, Controller } from '@hotwired/stimulus'
 import FeatureCardsController from '../feature_cards_controller'
 
 describe('FeatureCardsController', () => {
@@ -87,6 +87,38 @@ describe('FeatureCardsController', () => {
     controller.restoreAll()
 
     expect(fetchMock).toHaveBeenCalledWith('/notices', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  test('restoreAll reloads comments via this.application, without a window.Stimulus global', async () => {
+    // Embedding hosts register controllers on a local application and never
+    // assign window.Stimulus (see engines/collavre/docs/installation.md).
+    delete window.Stimulus
+
+    const popup = document.createElement('div')
+    popup.id = 'comments-popup'
+    popup.setAttribute('data-controller', 'comments--list')
+    container.querySelector('#no-comments').replaceWith(popup)
+    popup.innerHTML = FIXTURE
+
+    const loadInitialComments = jest.fn()
+    application.register(
+      'comments--list',
+      class extends Controller {
+        loadInitialComments = loadInitialComments
+      },
+    )
+    await new Promise((r) => setTimeout(r, 0))
+
+    const cardsController = application.getControllerForElementAndIdentifier(
+      popup.querySelector('#no-comments'),
+      'comments--feature-cards',
+    )
+    // csrfFetch reads X-CSRF-Token off the response, so the mock needs headers.
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: new Headers() })
+
+    await cardsController.restoreAll()
+
+    expect(loadInitialComments).toHaveBeenCalledTimes(1)
   })
 
   test('openCommandMenu focuses the textarea, inserts "/" and dispatches input', () => {
