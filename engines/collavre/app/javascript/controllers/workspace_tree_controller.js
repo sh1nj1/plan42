@@ -422,10 +422,21 @@ export default class extends Controller {
   }
 
   captureViewState(focusCreativeId) {
-    const focusedItem = document.activeElement?.closest?.('.creative-workspace-tree-item')
+    const focusedControl = document.activeElement?.closest?.(
+      '.creative-workspace-tree-branch-toggle, .creative-workspace-tree-link'
+    )
+    const focusedItem = focusedControl?.closest('.creative-workspace-tree-item')
+    let focusControl = null
+    if (focusCreativeId || focusedControl?.classList.contains('creative-workspace-tree-branch-toggle')) {
+      focusControl = 'toggle'
+    } else if (focusedControl) {
+      focusControl = 'link'
+    }
+
     return {
       scrollTop: this.treeTarget.scrollTop,
       focusCreativeId: focusCreativeId || focusedItem?.dataset.creativeId,
+      focusControl,
     }
   }
 
@@ -433,12 +444,15 @@ export default class extends Controller {
     if (!viewState) return
 
     this.treeTarget.scrollTop = viewState.scrollTop
-    if (!viewState.focusCreativeId) return
+    if (!viewState.focusCreativeId || !viewState.focusControl) return
 
     const item = [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
       .find((candidate) => candidate.dataset.creativeId === String(viewState.focusCreativeId))
-    const toggle = item?.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-branch-toggle')
-    toggle?.focus({ preventScroll: true })
+    const selector = viewState.focusControl === 'toggle'
+      ? '.creative-workspace-tree-branch-toggle'
+      : '.creative-workspace-tree-link'
+    const control = item?.querySelector(`:scope > .creative-workspace-tree-row > ${selector}`)
+    control?.focus({ preventScroll: true })
   }
 
   setTreeBusy(busy) {

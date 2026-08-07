@@ -120,6 +120,24 @@ describe('WorkspaceTreeController', () => {
     expect(panelToggle.closest('section').classList.contains('is-open')).toBe(false)
   })
 
+  test('preserves link focus across background tree refreshes', async () => {
+    let rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    rootLink.focus()
+
+    await controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    expect(document.activeElement).toBe(rootLink)
+
+    let leafLink = document.querySelector('[data-creative-id="2"] a')
+    leafLink.focus()
+
+    await controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    leafLink = document.querySelector('[data-creative-id="2"] a')
+    expect(document.activeElement).toBe(leafLink)
+  })
+
   test('keeps the rendered branch state when a lazy reload fails', async () => {
     fetchMock.mockRejectedValueOnce(new Error('offline'))
     jest.spyOn(console, 'error').mockImplementation(() => {})
