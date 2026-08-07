@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
+import chatDrafts from '../../lib/chat_drafts'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
@@ -116,7 +117,10 @@ export default class extends Controller {
     }
 
     document.querySelectorAll('form[action="/session"]').forEach((form) => {
-      form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
+      form.addEventListener('submit', () => {
+        window.localStorage.removeItem(SIZE_STORAGE_KEY)
+        chatDrafts.clearAll()
+      })
     })
 
     if (this.element.dataset.autoFullscreen === 'true') {

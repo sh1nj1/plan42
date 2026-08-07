@@ -13,6 +13,8 @@ describe('CommentsPopupController', () => {
     let controller
 
     beforeEach(() => {
+        window.localStorage.clear()
+        document.body.dataset.currentUserId = '9'
         container = document.createElement('div')
         container.innerHTML = `
       <div id="comments-popup" data-controller="comments--popup" data-fullscreen-url-template="/creatives/__CREATIVE_ID__/comments/fullscreen" style="width: 300px; height: 400px; position: absolute;">
@@ -24,6 +26,7 @@ describe('CommentsPopupController', () => {
         <div data-comments--popup-target="rightHandle"></div>
       </div>
       <button id="trigger-btn" data-creative-id="123" data-can-comment="true">Open</button>
+      <form id="logout-form" action="/session"></form>
     `
         document.body.appendChild(container)
 
@@ -41,6 +44,7 @@ describe('CommentsPopupController', () => {
 
     afterEach(() => {
         document.body.innerHTML = ''
+        delete document.body.dataset.currentUserId
         application.stop()
     })
 
@@ -599,6 +603,18 @@ describe('CommentsPopupController', () => {
         expect(listController.onPopupOpened).toHaveBeenCalledWith({
             creativeId: '456', highlightId: undefined, topicId: '7',
         })
+    })
+
+    test('logout submit clears popup size and chat drafts from localStorage', () => {
+        window.localStorage.setItem('commentsPopupSize', '{"w":300}')
+        window.localStorage.setItem('collavre_chat_drafts_9', '{"77":{"text":"x","updatedAt":1}}')
+
+        document.getElementById('logout-form').dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true }),
+        )
+
+        expect(window.localStorage.getItem('commentsPopupSize')).toBeNull()
+        expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
     })
 
 })
