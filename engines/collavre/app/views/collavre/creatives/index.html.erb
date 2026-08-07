@@ -240,6 +240,12 @@
       empty_html = render('empty_state', root: params[:id].blank?, can_add: can_add, creative: @parent_creative)
     end
   end
+  # Distinct fallback for when the async tree fetch itself fails (non-2xx,
+  # JSON parse failure, or a non-transient network error after retries are
+  # exhausted). Must NOT include Add/Import CTAs: the request never actually
+  # confirmed the tree is empty, so offering creation actions here would
+  # mislead a user whose workspace already has creatives.
+  error_html = content_tag(:p, t('.load_error'), class: 'creative-tree-error', style: 'text-align: center;')
   # Only pass filter parameters to avoid unnecessary params in URL
   tree_params = params.to_unsafe_h.slice(
     "id", "tags", "min_progress", "max_progress", "search", "comment",
@@ -256,6 +262,7 @@
         controller: 'creatives--tree creatives--sync',
         'creatives--tree-url-value': tree_url,
         'creatives--tree-empty-html-value': empty_html.to_s,
+        'creatives--tree-error-html-value': error_html.to_s,
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),

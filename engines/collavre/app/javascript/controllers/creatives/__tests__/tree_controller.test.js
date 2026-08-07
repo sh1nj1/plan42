@@ -268,3 +268,94 @@ describe('CreativesTreeController Chats pagination (load more)', () => {
     application.stop()
   })
 })
+
+describe('CreativesTreeController error state vs genuine-empty state', () => {
+  let originalFetch
+
+  const installControllerWithStates = () => {
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute(
+      'data-creatives--tree-empty-html-value',
+      '<div class="creative-empty-state"><button class="new-root-creative-btn">Add</button></div>'
+    )
+    container.setAttribute(
+      'data-creatives--tree-error-html-value',
+      '<p class="creative-tree-error">Could not load the creative tree.</p>'
+    )
+    document.body.appendChild(container)
+
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+
+    return { container, application }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('a non-2xx response renders the distinct error state, not the actionable empty-state CTAs', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    })
+
+    const { container, application } = installControllerWithStates()
+    await flush()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.creative-tree-error')).not.toBeNull()
+    expect(container.querySelector('.creative-empty-state')).toBeNull()
+    expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    application.stop()
+  })
+
+  test('a JSON parse failure renders the distinct error state, not the actionable empty-state CTAs', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected token in JSON')
+      },
+    })
+
+    const { container, application } = installControllerWithStates()
+    await flush()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.creative-tree-error')).not.toBeNull()
+    expect(container.querySelector('.creative-empty-state')).toBeNull()
+    expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    application.stop()
+  })
+
+  test('a genuinely empty tree (successful response, zero creatives) still shows the actionable empty state', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    const { container, application } = installControllerWithStates()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
+    expect(container.querySelector('.creative-tree-error')).toBeNull()
+
+    application.stop()
+  })
+})

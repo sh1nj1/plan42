@@ -49,6 +49,7 @@ ko:
         no_creatives: 크리에이티브가 없습니다.
         no_sub_creatives: 하위 크리에이티브가 없습니다.
         no_search_results: 검색 결과가 없습니다.
+        load_error: 크리에이티브 트리를 불러오지 못했습니다.
         empty_state_heading_root: 크리에이티브가 없습니다
         empty_state_heading_sub: 아직 하위 크리에이티브가 없습니다
         empty_state_concept_title: "💡 크리에이티브란?"

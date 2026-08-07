@@ -8,6 +8,7 @@ export default class extends Controller {
   static values = {
     url: String,
     emptyHtml: String,
+    errorHtml: String,
   }
 
   connect() {
@@ -187,7 +188,7 @@ export default class extends Controller {
         }
         console.error(error)
         this.hideLoadingIndicator()
-        this.showEmptyState()
+        this.showErrorState()
       })
   }
 
@@ -341,6 +342,19 @@ export default class extends Controller {
 
   showEmptyState() {
     const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
+    this.element.innerHTML = html
+    this.markContentLoaded()
+    document.documentElement.classList.add('creative-alignment-ready')
+  }
+
+  // Distinct from showEmptyState(): used when the tree fetch itself fails
+  // (non-2xx, JSON parse failure, or a non-transient network error after
+  // retries are exhausted). The request never actually confirmed the tree is
+  // empty, so this must NOT render the Add/Import creation CTAs — a workspace
+  // that genuinely has creatives would otherwise look empty and invite
+  // duplicate creation.
+  showErrorState() {
+    const html = this.hasErrorHtmlValue ? this.errorHtmlValue : ''
     this.element.innerHTML = html
     this.markContentLoaded()
     document.documentElement.classList.add('creative-alignment-ready')
