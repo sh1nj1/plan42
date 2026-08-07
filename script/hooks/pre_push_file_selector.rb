@@ -14,16 +14,16 @@ class PrePushFileSelector
 
   def test_files(changed_files)
     candidates = changed_files.flat_map { |path| test_candidates(path) }
-    existing_files(candidates)
+    existing_paths(candidates)
   end
 
   private
 
   def test_candidates(path)
-    return [ path ] if path.match?(%r{(?:^|/)test/.+_test\.rb\z})
-
     prefix, relative_path, engine_name = split_engine_path(path)
     test_root = "#{prefix}test"
+    return [ path ] if path.match?(%r{(?:^|/)test/.+_test\.rb\z})
+    return [ test_root ] if shared_test_infrastructure?(relative_path)
 
     case relative_path
     when %r{\Aapp/(.+)\.rb\z}
@@ -34,7 +34,7 @@ class PrePushFileSelector
         path_parts.delete_at(1)
         candidates << "#{test_root}/#{path_parts.join('/')}_test.rb"
       end
-      candidates
+      app_path.start_with?("controllers/") ? include_test_variants(candidates) : candidates
     when %r{\Alib/tasks/(.+)\.rake\z}
       [ "#{test_root}/lib/#{Regexp.last_match(1)}_task_test.rb" ]
     when %r{\Alib/(.+)\.rb\z}
@@ -58,6 +58,22 @@ class PrePushFileSelector
     return [ "", path, nil ] unless match
 
     [ match[1], match[2], match[1].split("/")[1] ]
+  end
+
+  def shared_test_infrastructure?(path)
+    path == "test/test_helper.rb" || path.start_with?("test/support/")
+  end
+
+  def include_test_variants(paths)
+    paths.flat_map do |path|
+      pattern = path.sub(/_test\.rb\z/, "_*_test.rb")
+      variants = Dir.glob(File.join(@root, pattern)).map { |file| file.delete_prefix("#{@root}/") }
+      [ path, *variants ]
+    end
+  end
+
+  def existing_paths(paths)
+    paths.uniq.sort.select { |path| File.exist?(File.join(@root, path)) }
   end
 
   def existing_files(paths)

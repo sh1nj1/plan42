@@ -2,6 +2,21 @@
 
 require "shellwords"
 
+module TestAllTask
+  module_function
+
+  def requested_test_paths
+    value = ENV["TEST"].to_s
+    return if value.empty?
+
+    Shellwords.split(value)
+  end
+
+  def run_tests(test_paths)
+    system("bin/rails", "test", *test_paths)
+  end
+end
+
 namespace :test do
   # Clear existing tasks to avoid conflicts/duplication
   Rake::Task["test:all"].clear if Rake::Task.task_defined?("test:all")
@@ -27,16 +42,9 @@ namespace :test do
     end
   end
 
-  def self.requested_test_paths
-    value = ENV["TEST"].to_s
-    return if value.empty?
-
-    Shellwords.split(value)
-  end
-
   desc "Run all tests (host app + engines) excluding system tests. Use E=engine1,engine2 to exclude engines."
   task all: :environment do
-    test_paths = requested_test_paths
+    test_paths = TestAllTask.requested_test_paths
     test_roots = filter_engine_roots([ "test" ] + Dir.glob("engines/*/test")) if test_paths.nil?
     test_paths ||= []
 
@@ -62,7 +70,7 @@ namespace :test do
     if test_paths.any?
       puts "\n=== Running tests: #{test_paths.join(' ')} ==="
       # Run all collected paths in a single process
-      system("bin/rails", "test", *test_paths) || exit(1)
+      TestAllTask.run_tests(test_paths) || exit(1)
     else
       puts "\n=== No tests found ==="
     end
