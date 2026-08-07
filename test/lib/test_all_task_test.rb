@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "fileutils"
 require "rake"
+require "tmpdir"
 
 class TestAllTaskTest < ActiveSupport::TestCase
   setup do
@@ -42,6 +44,24 @@ class TestAllTaskTest < ActiveSupport::TestCase
     )
   end
 
+  test "expands requested suite roots without system tests" do
+    Dir.mktmpdir do |directory|
+      test_root = File.join(directory, "test")
+      model_root = File.join(test_root, "models")
+      system_root = File.join(test_root, "system")
+      create_files(
+        File.join(test_root, "top_level_test.rb"),
+        File.join(model_root, "user_test.rb"),
+        File.join(system_root, "browser_test.rb")
+      )
+
+      assert_equal(
+        [ File.join(test_root, "top_level_test.rb"), model_root ],
+        TestAllTask.expand_requested_paths([ test_root, File.join(system_root, "browser_test.rb") ])
+      )
+    end
+  end
+
   test "test all task runs only requested paths" do
     ENV["TEST"] = "test/models/user_test.rb test/lib/token_test.rb"
     requested_paths = nil
@@ -51,5 +71,15 @@ class TestAllTaskTest < ActiveSupport::TestCase
     end
 
     assert_equal [ "test/models/user_test.rb", "test/lib/token_test.rb" ], requested_paths
+  end
+
+
+  private
+
+  def create_files(*paths)
+    paths.each do |path|
+      FileUtils.mkdir_p(File.dirname(path))
+      FileUtils.touch(path)
+    end
   end
 end

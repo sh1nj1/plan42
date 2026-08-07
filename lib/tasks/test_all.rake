@@ -12,6 +12,21 @@ module TestAllTask
     Shellwords.split(value)
   end
 
+  def expand_requested_paths(paths)
+    paths.flat_map do |path|
+      next [] if system_test_path?(path)
+      next [ path ] unless File.directory?(path)
+
+      Dir.glob("#{path}/*_test.rb") + Dir.glob("#{path}/*").select do |child|
+        File.directory?(child) && File.basename(child) != "system"
+      end
+    end.uniq
+  end
+
+  def system_test_path?(path)
+    path.match?(%r{(?:\A|/)test/system(?:/|\z)})
+  end
+
   def run_tests(test_paths)
     system("bin/rails", "test", *test_paths)
   end
@@ -46,6 +61,7 @@ namespace :test do
   task all: :environment do
     test_paths = TestAllTask.requested_test_paths
     test_roots = filter_engine_roots([ "test" ] + Dir.glob("engines/*/test")) if test_paths.nil?
+    test_paths = TestAllTask.expand_requested_paths(test_paths) if test_paths
     test_paths ||= []
 
     if excluded_engines.any?
