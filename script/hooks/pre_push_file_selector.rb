@@ -23,7 +23,7 @@ class PrePushFileSelector
     prefix, relative_path, engine_name = split_engine_path(path)
     test_root = "#{prefix}test"
     return [ path ] if path.match?(%r{(?:^|/)test/.+_test\.rb\z})
-    return [ test_root ] if shared_test_infrastructure?(relative_path)
+    return shared_test_roots(prefix, test_root, relative_path) if shared_test_infrastructure?(relative_path)
 
     case relative_path
     when %r{\Aapp/(.+)\.rb\z}
@@ -34,7 +34,7 @@ class PrePushFileSelector
         path_parts.delete_at(1)
         candidates << "#{test_root}/#{path_parts.join('/')}_test.rb"
       end
-      app_path.start_with?("controllers/") ? include_test_variants(candidates) : candidates
+      include_test_variants(candidates)
     when %r{\Alib/tasks/(.+)\.rake\z}
       [ "#{test_root}/lib/#{Regexp.last_match(1)}_task_test.rb" ]
     when %r{\Alib/(.+)\.rb\z}
@@ -61,7 +61,21 @@ class PrePushFileSelector
   end
 
   def shared_test_infrastructure?(path)
-    path == "test/test_helper.rb" || path.start_with?("test/support/")
+    path == "test/test_helper.rb" || path.start_with?("test/support/", "test/fixtures/")
+  end
+
+  def shared_test_roots(prefix, test_root, relative_path)
+    return all_test_roots if prefix.empty? || relative_path.start_with?("test/fixtures/")
+
+    [ test_root ]
+  end
+
+  def all_test_roots
+    engine_test_roots = Dir.glob(File.join(@root, "engines/*/test"))
+      .select { |path| File.directory?(path) }
+      .map { |path| path.delete_prefix("#{@root}/") }
+
+    [ "test", *engine_test_roots ]
   end
 
   def include_test_variants(paths)

@@ -94,24 +94,52 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
     assert_equal [ "test/lib/clean_task_test.rb" ], selected
   end
 
-  test "selects the affected suite for shared test infrastructure" do
+  test "selects every suite for host shared test infrastructure" do
     create_files(
       "test/test_helper.rb",
       "test/support/authentication_helper.rb",
       "engines/collavre/test/test_helper.rb",
-      "engines/collavre/test/support/integration_helper.rb"
+      "engines/collavre/test/support/integration_helper.rb",
+      "engines/collavre_notion/test/test_helper.rb"
     )
 
     selected = @selector.test_files(
       [
         "test/test_helper.rb",
-        "test/support/authentication_helper.rb",
+        "test/support/authentication_helper.rb"
+      ]
+    )
+
+    assert_equal [ "engines/collavre/test", "engines/collavre_notion/test", "test" ], selected
+  end
+
+  test "selects only the affected engine suite for engine shared support" do
+    create_files(
+      "engines/collavre/test/test_helper.rb",
+      "engines/collavre/test/support/integration_helper.rb",
+      "engines/collavre_notion/test/test_helper.rb"
+    )
+
+    selected = @selector.test_files(
+      [
         "engines/collavre/test/test_helper.rb",
         "engines/collavre/test/support/integration_helper.rb"
       ]
     )
 
-    assert_equal [ "engines/collavre/test", "test" ], selected
+    assert_equal [ "engines/collavre/test" ], selected
+  end
+
+  test "selects every suite when fixtures change" do
+    create_files(
+      "test/test_helper.rb",
+      "engines/collavre/test/fixtures/users.yml",
+      "engines/collavre_notion/test/test_helper.rb"
+    )
+
+    selected = @selector.test_files([ "engines/collavre/test/fixtures/users.yml" ])
+
+    assert_equal [ "engines/collavre/test", "engines/collavre_notion/test", "test" ], selected
   end
 
   test "includes controller test variants" do
@@ -131,6 +159,35 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
         "engines/collavre/test/controllers/creatives_controller_public_export_test.rb",
         "engines/collavre/test/controllers/creatives_controller_test.rb",
         "engines/collavre/test/controllers/creatives_controller_update_test.rb"
+      ],
+      selected
+    )
+  end
+
+  test "includes model and job test variants" do
+    create_files(
+      "engines/collavre/test/models/creative_test.rb",
+      "engines/collavre/test/models/creative_linked_test.rb",
+      "engines/collavre/test/models/creative_security_test.rb",
+      "engines/collavre/test/models/unrelated_test.rb",
+      "engines/collavre/test/jobs/ai_agent_job_test.rb",
+      "engines/collavre/test/jobs/ai_agent_job_queue_test.rb"
+    )
+
+    selected = @selector.test_files(
+      [
+        "engines/collavre/app/models/collavre/creative.rb",
+        "engines/collavre/app/jobs/collavre/ai_agent_job.rb"
+      ]
+    )
+
+    assert_equal(
+      [
+        "engines/collavre/test/jobs/ai_agent_job_queue_test.rb",
+        "engines/collavre/test/jobs/ai_agent_job_test.rb",
+        "engines/collavre/test/models/creative_linked_test.rb",
+        "engines/collavre/test/models/creative_security_test.rb",
+        "engines/collavre/test/models/creative_test.rb"
       ],
       selected
     )
