@@ -234,6 +234,51 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
     assert_equal [ "test/lib/kamal_deploy_config_test.rb" ], selected
   end
 
+  test "includes i18n completeness checks for scanned source and locale changes" do
+    create_files("test/i18n_completeness_test.rb")
+
+    selected = @selector.test_files(
+      [
+        "app/views/home/index.html.erb",
+        "engines/collavre/app/models/collavre/creative.rb",
+        "config/initializers/locales.rb",
+        "engines/collavre/config/locales/en.yml"
+      ]
+    )
+
+    assert_equal [ "test/i18n_completeness_test.rb" ], selected
+  end
+
+  test "maps directly tested deployment and GitHub scripts" do
+    create_files(
+      "test/lib/kamal_post_deploy_hook_test.rb",
+      "test/lib/reprovision_github_webhooks_script_test.rb"
+    )
+
+    selected = @selector.test_files(
+      [
+        ".kamal/hooks/post-deploy",
+        "script/reprovision_github_webhooks",
+        "script/verify_github_repository_link_identity"
+      ]
+    )
+
+    assert_equal(
+      [ "test/lib/kamal_post_deploy_hook_test.rb", "test/lib/reprovision_github_webhooks_script_test.rb" ],
+      selected
+    )
+  end
+
+  test "maps FCM configuration files to their shared initializer test" do
+    create_files("test/config/initializers/fcm_initializer_test.rb")
+
+    selected = @selector.test_files(
+      [ "config/initializers/fcm.rb", "config/fcm_configuration.rb" ]
+    )
+
+    assert_equal [ "test/config/initializers/fcm_initializer_test.rb" ], selected
+  end
+
   private
 
   def create_files(*paths)

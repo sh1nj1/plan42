@@ -14,6 +14,7 @@ class PrePushFileSelector
 
   def test_files(changed_files)
     candidates = changed_files.flat_map { |path| test_candidates(path) }
+    candidates << "test/i18n_completeness_test.rb" if changed_files.any? { |path| i18n_dependency?(path) }
     existing_paths(candidates)
   end
 
@@ -26,6 +27,13 @@ class PrePushFileSelector
     return shared_test_roots(prefix, test_root, relative_path) if shared_test_infrastructure?(relative_path)
     return hook_tests(relative_path) if relative_path.start_with?("script/hooks/")
     return [ "test/lib/kamal_deploy_config_test.rb" ] if relative_path == "config/deploy.yml"
+    return [ "test/lib/kamal_post_deploy_hook_test.rb" ] if relative_path == ".kamal/hooks/post-deploy"
+    if relative_path.match?(%r{\Ascript/(?:reprovision_github_webhooks|verify_github_repository_link_identity)\z})
+      return [ "test/lib/reprovision_github_webhooks_script_test.rb" ]
+    end
+    if [ "config/initializers/fcm.rb", "config/fcm_configuration.rb" ].include?(relative_path)
+      return [ "test/config/initializers/fcm_initializer_test.rb" ]
+    end
 
     case relative_path
     when %r{\Aapp/(.+)\.rb\z}
@@ -72,6 +80,11 @@ class PrePushFileSelector
 
   def shared_test_infrastructure?(path)
     path == "test/test_helper.rb" || path.start_with?("test/support/", "test/fixtures/")
+  end
+
+  def i18n_dependency?(path)
+    path.match?(%r{\A(?:app|engines/collavre/app|config/initializers)/.*\.(?:rb|erb)\z}) ||
+      path.match?(%r{(?:\A|/)config/locales/})
   end
 
   def hook_tests(path)
