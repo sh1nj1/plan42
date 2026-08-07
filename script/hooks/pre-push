@@ -33,8 +33,9 @@ else
 fi
 HEAD_SHA=$(git rev-parse HEAD) || exit 1
 CHANGED_FILES=$(
-    while read -r _local_ref local_sha _remote_ref remote_sha; do
+    while read -r local_ref local_sha _remote_ref remote_sha; do
       [ "$local_sha" = "$ZERO_SHA" ] && continue
+      [[ "$local_ref" == refs/tags/* ]] && continue
       local_commit=$(git rev-parse "$local_sha^{}") || exit 1
       if [ "$local_commit" != "$HEAD_SHA" ]; then
 	echo -e "${RED}❌ Rubocop can only check the currently checked-out ref.${NC}" >&2
@@ -52,12 +53,13 @@ CHANGED_FILES=$(
 ) || exit 1
 RUBOCOP_FILES=()
 
+if ! RUBOCOP_TARGET_FILES=$(./bin/rubocop --list-target-files); then
+    echo -e "${RED}❌ Failed to determine Rubocop target files.${NC}" >&2
+    exit 1
+fi
+
 while IFS= read -r file; do
-    case "$file" in
-      *.rb|*.rake|*.ru|*.gemspec|Gemfile|*/Gemfile|Rakefile|*/Rakefile)
-	[ -f "$file" ] && RUBOCOP_FILES+=("$file")
-	;;
-    esac
+    grep -Fqx -- "$file" <<< "$RUBOCOP_TARGET_FILES" && RUBOCOP_FILES+=("$file")
 done <<< "$CHANGED_FILES"
 
 if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
