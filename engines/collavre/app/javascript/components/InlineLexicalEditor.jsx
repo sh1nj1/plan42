@@ -19,7 +19,7 @@ import {
   registerCodeHighlighting
 } from "@lexical/code"
 import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
-import { $createLinkNode, LinkNode, AutoLinkNode } from "@lexical/link"
+import { LinkNode, AutoLinkNode } from "@lexical/link"
 import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
@@ -70,6 +70,7 @@ import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
 import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 import { CreativeLinkNode } from "../lib/lexical/creative_link_node"
 import { registerCreativeLinkTrigger } from "../lib/lexical/creative_link_trigger"
+import { $createToolbarLinkNode, $findLinkNode } from "../lib/lexical/link_toolbar"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -579,7 +580,6 @@ function Toolbar() {
   }, [editor])
 
   const toggleLink = useCallback(() => {
-    let hasLink = false
     let selectionText = ""
     let isRange = false
     let url = ""
@@ -591,17 +591,10 @@ function Toolbar() {
       isRange = true
       selectionText = selection.getTextContent()
 
-      const nodes = selection.getNodes()
-      const nodeWithLink = nodes.find((node) => {
-        if (node.getType() === "link") return true
-        const parent = node.getParent()
-        return parent?.getType() === "link"
-      })
+      const nodeWithLink = $findLinkNode(selection.getNodes())
 
       if (nodeWithLink) {
-        hasLink = true
-        const linkNode = nodeWithLink.getType() === "link" ? nodeWithLink : nodeWithLink.getParent()
-        url = linkNode.getURL()
+        url = nodeWithLink.getURL()
       }
     })
 
@@ -880,23 +873,17 @@ function Toolbar() {
               if (!selection) return
 
               // Check if we are editing an existing link
-              const nodes = selection.getNodes()
-              const nodeWithLink = nodes.find((node) => {
-                if (node.getType() === "link") return true
-                const parent = node.getParent()
-                return parent?.getType() === "link"
-              })
+              const nodeWithLink = $findLinkNode(selection.getNodes())
 
               if (nodeWithLink) {
                 // UPDATE MODE
-                const linkNode = nodeWithLink.getType() === "link" ? nodeWithLink : nodeWithLink.getParent()
-                const newLink = $createLinkNode(finalUrl)
+                const newLink = $createToolbarLinkNode(finalUrl)
                 newLink.append($createTextNode(finalLabel))
-                linkNode.replace(newLink)
+                nodeWithLink.replace(newLink)
                 newLink.select()
               } else {
                 // CREATE MODE
-                const newLink = $createLinkNode(finalUrl)
+                const newLink = $createToolbarLinkNode(finalUrl)
                 newLink.append($createTextNode(finalLabel))
 
                 if ($isRangeSelection(selection) && !selection.isCollapsed()) {
