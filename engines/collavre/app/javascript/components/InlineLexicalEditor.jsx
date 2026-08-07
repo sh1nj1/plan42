@@ -19,7 +19,7 @@ import {
   registerCodeHighlighting
 } from "@lexical/code"
 import { ListItemNode, ListNode, $isListItemNode, $isListNode, INSERT_ORDERED_LIST_COMMAND, INSERT_UNORDERED_LIST_COMMAND } from "@lexical/list"
-import { $createLinkNode, LinkNode, AutoLinkNode, TOGGLE_LINK_COMMAND } from "@lexical/link"
+import { $createLinkNode, LinkNode, AutoLinkNode } from "@lexical/link"
 import { TableNode, TableRowNode, TableCellNode, INSERT_TABLE_COMMAND } from "@lexical/table"
 import { TablePlugin } from "@lexical/react/LexicalTablePlugin"
 import TableHoverActionsPlugin from "./plugins/table_hover_actions_plugin"
@@ -68,6 +68,8 @@ import { $convertToMarkdownString } from "@lexical/markdown"
 import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
 import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
+import { CreativeLinkNode } from "../lib/lexical/creative_link_node"
+import { registerCreativeLinkTrigger } from "../lib/lexical/creative_link_trigger"
 
 const URL_MATCHERS = [
   createLinkMatcherWithRegExp(/https?:\/\/[^\s<]+/gi, (text) => text)
@@ -288,6 +290,24 @@ function LinkAttributesPlugin() {
       })
     })
   }, [editor])
+
+  return null
+}
+
+function CreativeLinkTriggerPlugin() {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => registerCreativeLinkTrigger(editor, ({ anchorRect, onSelect, onClose }) => {
+    const modal = document.getElementById("link-creative-modal")
+    const controller = modal && window.Stimulus?.getControllerForElementAndIdentifier(
+      modal,
+      "link-creative"
+    )
+    if (!controller) return false
+
+    controller.open(anchorRect, onSelect, onClose, { allowCreate: true })
+    return true
+  }), [editor])
 
   return null
 }
@@ -1013,6 +1033,7 @@ function EditorInner({
         <TrailingParagraphPlugin />
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
+        <CreativeLinkTriggerPlugin />
         <ReadyPlugin onReady={onReady} />
         <FileUploadPlugin
           onUploadStateChange={onUploadStateChange}
@@ -1081,6 +1102,7 @@ export default function InlineLexicalEditor({
         ListNode,
         LinkNode,
         AutoLinkNode,
+        CreativeLinkNode,
         ImageNode,
         AttachmentNode,
         VideoNode,

@@ -39,9 +39,11 @@ export default class extends CommonPopupController {
         super.disconnect()
     }
 
-    open(anchorRect, onSelectCallback, onCloseCallback) {
+    open(anchorRect, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
+        this._allowCreate = allowCreate
+        this._creating = false
         this._mode = 'tree'
         this._rootNodes = null
         this._activeEl = null
@@ -295,12 +297,11 @@ export default class extends CommonPopupController {
 
     _renderSearchResults(results) {
         this.listTarget.innerHTML = ''
-        if (!results || results.length === 0) {
-            this._renderMessage(this._text('noResultsText'))
-            return
-        }
+        const query = this.inputTarget.value.trim()
+        const list = Array.isArray(results) ? results : []
+        if (list.length === 0) this._appendMessage(this._text('noResultsText'))
 
-        results.forEach((result) => {
+        list.forEach((result) => {
             const li = document.createElement('li')
             li.className = 'link-result-item'
             li.setAttribute('data-pick-row', '')
@@ -321,7 +322,32 @@ export default class extends CommonPopupController {
 
             this.listTarget.appendChild(li)
         })
+
+        const exactMatch = list.some((result) =>
+            String(result.description || '').trim().toLocaleLowerCase() === query.toLocaleLowerCase()
+        )
+        if (this._allowCreate && query && !exactMatch) {
+            this.listTarget.appendChild(this._buildCreateItem(query))
+        }
         this._resetActive()
+    }
+
+    _buildCreateItem(query) {
+        const li = document.createElement('li')
+        li.className = 'link-result-item link-create-item'
+        li.setAttribute('data-pick-row', '')
+        li.dataset.create = 'true'
+        li.dataset.query = query
+
+        const label = document.createElement('div')
+        label.className = 'link-result-label'
+        label.textContent = this._text('createText').replace('%{query}', query)
+        li.appendChild(label)
+
+        li.addEventListener('mouseenter', () => this._setActive(li))
+        li.addEventListener('mousedown', (event) => event.preventDefault())
+        li.addEventListener('click', () => this._activateRow(li))
+        return li
     }
 
     _buildBreadcrumb(result) {
@@ -446,6 +472,10 @@ export default class extends CommonPopupController {
 
     _activateRow(row) {
         if (!row || !row.hasAttribute('data-pick-row')) return
+        if (row.dataset.create === 'true') {
+            this._createCreative(row.dataset.query)
+            return
+        }
         // For a linked-creative shell row, emit the effective origin id, not the
         // shell id: consumers use the selected id as the new link's origin, and
         // linking to the shell (rather than the real shared creative) would make
@@ -456,6 +486,22 @@ export default class extends CommonPopupController {
         const labelEl = row.querySelector('.link-tree-label, .link-result-label')
         const label = labelEl ? labelEl.textContent : ''
         this.select({ id, label })
+    }
+
+    _createCreative(query) {
+        if (this._creating || !query) return
+        this._creating = true
+        this._renderMessage(this._text('creatingText'))
+
+        creativesApi.createFromTitle(query)
+            .then((creative) => {
+                if (!creative?.id) throw new Error('Creative creation returned no id')
+                this.select({ id: creative.id, label: query })
+            })
+            .catch(() => {
+                this._creating = false
+                this._renderMessage(this._text('createFailedText'))
+            })
     }
 
     // Override select to invoke callback
@@ -500,11 +546,15 @@ export default class extends CommonPopupController {
 
     _renderMessage(text) {
         this.listTarget.innerHTML = ''
+        this._appendMessage(text)
+        this._activeEl = null
+    }
+
+    _appendMessage(text) {
         const li = document.createElement('li')
         li.className = 'link-popup-message'
         li.textContent = text
         this.listTarget.appendChild(li)
-        this._activeEl = null
     }
 
     _text(key) {
@@ -513,6 +563,9 @@ export default class extends CommonPopupController {
             noResultsText: this.element.dataset.linkCreativeNoResultsText,
             emptyText: this.element.dataset.linkCreativeEmptyText,
             expandText: this.element.dataset.linkCreativeExpandText,
+            createText: this.element.dataset.linkCreativeCreateText,
+            creatingText: this.element.dataset.linkCreativeCreatingText,
+            createFailedText: this.element.dataset.linkCreativeCreateFailedText,
         }
         return map[key] || ''
     }

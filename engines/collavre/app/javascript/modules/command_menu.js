@@ -1,6 +1,7 @@
 import CommonPopup from '../lib/common_popup'
 import { getCaretClientRect } from '../utils/caret_position'
 import CommandArgsForm from './command_args_form'
+import { openCreativeLinkPicker } from './creative_link_picker'
 
 let commandMenuInitialized = false
 
@@ -175,33 +176,9 @@ if (!commandMenuInitialized) {
     }
 
     function openCreativePicker(textarea) {
-      const modal = document.getElementById('link-creative-modal')
-      if (!modal) return
-
-      const controller = window.Stimulus?.getControllerForElementAndIdentifier(modal, 'link-creative')
-      if (!controller) return
-
-      // Clear the command text (e.g. "/crea", "/creative") from textarea
-      clearCommandText()
-
-      const caretRect = getCaretClientRect(textarea) || textarea.getBoundingClientRect()
-      controller.open(
-        caretRect,
-        (item) => {
-          // Insert markdown link at cursor position
-          const link = `[${item.label}](/creatives/${item.id})`
-          const curPos = textarea.selectionStart
-          const beforeCur = textarea.value.slice(0, curPos)
-          const afterCur = textarea.value.slice(curPos)
-          textarea.value = beforeCur + link + ' ' + afterCur
-          const newPos = curPos + link.length + 1
-          textarea.setSelectionRange(newPos, newPos)
-          textarea.focus()
-        },
-        () => {
-          textarea.focus()
-        }
-      )
+      openCreativeLinkPicker(textarea, {
+        triggerRange: { start: 0, end: textarea.selectionStart },
+      })
     }
 
     textarea.addEventListener('keydown', function (event) {

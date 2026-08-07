@@ -50,6 +50,24 @@ export function search(query, { simple = false } = {}) {
   }).then((response) => response.json())
 }
 
+export function createFromTitle(title) {
+  const body = new FormData()
+  body.append('creative[description]', title)
+  body.append('creative[content_type_input]', 'markdown')
+  body.append('creative[markdown_source]', title)
+  body.append('creative[markdown_editor]', 'rich')
+
+  return csrfFetch('/creatives', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body,
+  }).then((response) => {
+    if (!response.ok) throw new Error(`Failed to create creative: ${response.status}`)
+    invalidateWorkspaceTreeOnSuccess(response)
+    return response.json()
+  })
+}
+
 export function save(action, method, form) {
   return csrfFetch(action, {
     method,
@@ -113,6 +131,7 @@ const creativesApi = {
   loadChildren,
   browse,
   search,
+  createFromTitle,
   save,
   linkExisting,
   destroy,

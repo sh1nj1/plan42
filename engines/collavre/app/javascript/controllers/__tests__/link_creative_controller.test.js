@@ -6,11 +6,13 @@ import { jest } from '@jest/globals'
 
 const browse = jest.fn()
 const search = jest.fn()
+const createFromTitle = jest.fn()
 
 jest.unstable_mockModule('../../lib/api/creatives', () => ({
-  default: { browse, search },
+  default: { browse, search, createFromTitle },
   browse,
   search,
+  createFromTitle,
 }))
 
 const { Application } = await import('@hotwired/stimulus')
@@ -24,7 +26,10 @@ const installController = async () => {
          data-link-creative-loading-text="Loading…"
          data-link-creative-no-results-text="No results"
          data-link-creative-empty-text="Empty"
-         data-link-creative-expand-text="Expand">
+         data-link-creative-expand-text="Expand"
+         data-link-creative-create-text="Create “%{query}”"
+         data-link-creative-creating-text="Creating…"
+         data-link-creative-create-failed-text="Create failed">
       <button type="button" class="popup-close-btn" data-link-creative-target="close">&times;</button>
       <input type="text" data-link-creative-target="input">
       <ul class="common-popup-list link-creative-list" data-popup-list data-link-creative-target="list"></ul>
@@ -150,6 +155,82 @@ describe('LinkCreativeController picker', () => {
     const crumbs = result.querySelectorAll('.link-crumb')
     expect(Array.from(crumbs).map((c) => c.textContent)).toEqual(['Root', 'Mid'])
 
+    application.stop()
+  })
+
+  test('creates a creative from a non-matching query when creation is enabled', async () => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([])
+    createFromTitle.mockResolvedValue({ id: 23 })
+    const onSelect = jest.fn()
+
+    const { application, controller } = await installController()
+    controller.open(rect, onSelect, jest.fn(), { allowCreate: true })
+    await flush()
+
+    controller.inputTarget.value = 'Missing page'
+    controller.search()
+    await flush()
+
+    const createItem = document.querySelector('.link-create-item')
+    expect(createItem.textContent).toBe('Create “Missing page”')
+    createItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flush()
+
+    expect(createFromTitle).toHaveBeenCalledWith('Missing page')
+    expect(onSelect).toHaveBeenCalledWith({ id: 23, label: 'Missing page' })
+    application.stop()
+  })
+
+  test('does not offer creation for an exact case-insensitive match', async () => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([{ id: 9, description: 'Existing Page', path: [] }])
+
+    const { application, controller } = await installController()
+    controller.open(rect, jest.fn(), jest.fn(), { allowCreate: true })
+    await flush()
+
+    controller.inputTarget.value = 'existing page'
+    controller.search()
+    await flush()
+
+    expect(document.querySelector('.link-create-item')).toBeNull()
+    application.stop()
+  })
+
+  test('keeps creation disabled for existing picker consumers', async () => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([])
+
+    const { application, controller } = await installController()
+    controller.open(rect, jest.fn(), jest.fn())
+    await flush()
+
+    controller.inputTarget.value = 'Missing page'
+    controller.search()
+    await flush()
+
+    expect(document.querySelector('.link-create-item')).toBeNull()
+    expect(document.querySelector('.link-popup-message').textContent).toBe('No results')
+    application.stop()
+  })
+
+  test('shows the localized failure message when creation fails', async () => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([])
+    createFromTitle.mockRejectedValue(new Error('network down'))
+
+    const { application, controller } = await installController()
+    controller.open(rect, jest.fn(), jest.fn(), { allowCreate: true })
+    await flush()
+
+    controller.inputTarget.value = 'Missing page'
+    controller.search()
+    await flush()
+    document.querySelector('.link-create-item').click()
+    await flush()
+
+    expect(document.querySelector('.link-popup-message').textContent).toBe('Create failed')
     application.stop()
   })
 

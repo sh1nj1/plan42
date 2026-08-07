@@ -3,6 +3,7 @@ import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
 import { isSelectionAtDocumentStart, isSelectionAtDocumentEnd } from '../lib/lexical/selection_boundary'
 import { createInlineEditor } from './lexical_inline_editor'
+import { markdownCreativeCommandRange, openCreativeLinkPicker } from './creative_link_picker'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
@@ -1895,6 +1896,9 @@ function setupEditorSession() {
       markdownPreviewTimer = setTimeout(() => {
         if (markdownPreview) markdownPreview.innerHTML = renderMarkdown(md);
       }, 300);
+
+      const triggerRange = markdownCreativeCommandRange(md, markdownTextarea.selectionStart);
+      if (triggerRange) openCreativeLinkPicker(markdownTextarea, { triggerRange });
     }
 
     // Intercepts Shift+Enter via capture-phase keydown on Lexical's root element.
