@@ -9,6 +9,7 @@ import { jest } from '@jest/globals'
 // of that path.
 const createInlineEditorMock = jest.fn()
 const saveMock = jest.fn()
+const alertDialogMock = jest.fn(() => Promise.resolve())
 
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
   createInlineEditor: createInlineEditorMock,
@@ -19,6 +20,13 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
     get: jest.fn(() => Promise.resolve({})),
     children: jest.fn(() => Promise.resolve([])),
   },
+}))
+// creativesApi.save bypasses the api queue, so a failure here can only be
+// surfaced by an explicit alertDialog() call from the editor.
+jest.unstable_mockModule('../../lib/utils/dialog', () => ({
+  alertDialog: alertDialogMock,
+  confirmDialog: jest.fn(() => Promise.resolve(true)),
+  promptDialog: jest.fn(() => Promise.resolve(null)),
 }))
 
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
@@ -135,6 +143,7 @@ describe('empty-state recovery when the first inline save fails', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
     saveMock.mockReset()
+    alertDialogMock.mockClear()
     buildEditorDom(document.getElementById('center-frame'))
     initializeCreativeRowEditor()
     document.getElementById('metadata-popup').style.display = 'none'
@@ -155,6 +164,33 @@ describe('empty-state recovery when the first inline save fails', () => {
     return emptyState
   }
 
+  // A row that already exists on the server, i.e. one that renders a
+  // `.creative-row` and carries a creative id.
+  function appendExistingRow(id) {
+    const rowComponent = document.createElement('creative-tree-row')
+    rowComponent.dataset.descriptionRawHtml = '<p>existing</p>'
+    rowComponent.dataset.progressValue = '0'
+    // The stub only renders its .creative-tree child once connected.
+    document.getElementById('creatives').appendChild(rowComponent)
+    const tree = rowComponent.querySelector('.creative-tree')
+    tree.id = `creative-${id}`
+    tree.dataset.id = String(id)
+    const row = document.createElement('div')
+    row.className = 'creative-row'
+    tree.appendChild(row)
+    return { tree, row }
+  }
+
+  function unsavedRowTree() {
+    const rows = Array.from(document.querySelectorAll('#creatives creative-tree-row'))
+    const unsaved = rows.find((el) => !el.querySelector('.creative-row'))
+    return unsaved ? unsaved.querySelector('.creative-tree') : null
+  }
+
+  function saveStatus() {
+    return document.getElementById('inline-save-status').dataset.state
+  }
+
   test('hides the empty state while the first inline row is being created', async () => {
     const emptyState = await startFirstRowWithContent()
 
@@ -162,7 +198,7 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
   })
 
-  test('restores the empty state when the first save rejects', async () => {
+  test('keeps the failed first draft and its editor open when the save rejects on close', async () => {
     saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
     const emptyState = await startFirstRowWithContent()
 
@@ -170,10 +206,71 @@ describe('empty-state recovery when the first inline save fails', () => {
     await flush()
 
     expect(saveMock).toHaveBeenCalledTimes(1)
-    // Without recovery both the card and the unsaved row are invisible, leaving
-    // the tree blank with no way back.
-    expect(emptyState.style.display).toBe('')
-    expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(0)
+    // The draft is the user's only copy of what they typed, so it must survive
+    // the failure. The row therefore stays and the empty-state card stays hidden
+    // behind it — the editor is visible on top of it, so nothing is blank.
+    expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+    expect(emptyState.style.display).toBe('none')
+
+    const template = document.getElementById('inline-edit-form')
+    expect(template.style.display).toBe('block')
+    expect(template.parentElement).toBe(unsavedRowTree())
+    expect(saveStatus()).toBe('error')
+  })
+
+  test('keeps the failed first draft when the save resolves with a non-ok response', async () => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+    const emptyState = await startFirstRowWithContent()
+
+    document.getElementById('inline-close').click()
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(1)
+    expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+    expect(emptyState.style.display).toBe('none')
+
+    const template = document.getElementById('inline-edit-form')
+    expect(template.style.display).toBe('block')
+    expect(template.parentElement).toBe(unsavedRowTree())
+    expect(saveStatus()).toBe('error')
+  })
+
+  test('re-arms the pending save so closing again retries the failed first draft', async () => {
+    saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+    await startFirstRowWithContent()
+
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(saveMock).toHaveBeenCalledTimes(1)
+
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(saveMock).toHaveBeenCalledTimes(2)
+  })
+
+  test('drops the row but alerts the user when the first save fails while switching rows', async () => {
+    saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+    const emptyState = await startFirstRowWithContent()
+    const { tree: existingTree, row: existingRow } = appendExistingRow(42)
+
+    // Switching reassigns currentTree and moves the shared template onto the
+    // other row right after the await, so the draft cannot be kept on screen.
+    // It must at least not disappear silently.
+    document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: existingTree } }))
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(1)
+    expect(unsavedRowTree()).toBeNull()
+    expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+    expect(alertDialogMock).toHaveBeenCalledTimes(1)
+    expect(alertDialogMock.mock.calls[0][0]).toMatch(/failed to save/i)
+    // Real rows remain, so the empty-state card must stay hidden.
+    expect(emptyState.style.display).toBe('none')
+
+    const template = document.getElementById('inline-edit-form')
+    expect(template.style.display).toBe('block')
+    expect(template.parentElement).toBe(existingTree)
+    expect(existingRow.style.display).toBe('none')
   })
 
   test('still restores the empty state when the blank first row is cancelled', async () => {

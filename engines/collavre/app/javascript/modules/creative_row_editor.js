@@ -605,7 +605,7 @@ function setupEditorSession() {
         return;
       }
       if (currentTree) {
-        await hideCurrent(false);
+        await hideCurrent(false, { switching: true });
       }
       currentTree = tree;
       currentRowElement = treeRowElement(tree);
@@ -914,7 +914,22 @@ function setupEditorSession() {
       }
     }
 
-    function hideCurrent(event) {
+    // The save request resolves with the raw Response (see creativesApi.save),
+    // so an HTTP error arrives on the *fulfilled* path with `ok === false` — it
+    // is just as much a failure as a rejection. Everything else that reaches
+    // here is a success: performSave returns null for empty content and
+    // finalizeHide substitutes Promise.resolve() when no save was needed, both
+    // of which settle as undefined.
+    function isFailedSaveResult(result) {
+      return !!result && typeof result === 'object' && result.ok === false;
+    }
+
+    // `switching` marks the calls that immediately open another row: the caller
+    // reassigns currentTree and moves the shared template as soon as the
+    // returned promise settles. It is deliberately a separate option rather
+    // than another meaning for the `event === false` argument, which only
+    // suppresses preventDefault().
+    function hideCurrent(event, { switching = false } = {}) {
       if (event?.preventDefault) {
         event.preventDefault();
       }
@@ -935,10 +950,58 @@ function setupEditorSession() {
       tree.draggable = true;
       updateActionButtonStates();
 
+      // A failed save leaves the editor hidden and currentTree cleared, so the
+      // DOM has to be reconciled here. For a row that was never persisted the
+      // buffer in the editor is the user's only copy of what they typed, and
+      // dropping the row would destroy it — silently, because saveForm's own
+      // 'error' status is gated on `tree === currentTree` (already null by now)
+      // and creativesApi.save calls csrfFetch directly, bypassing the api queue
+      // whose 'api-queue-request-failed' listener is what normally alerts the
+      // user. So: keep the draft, or if that is impossible, say so out loud.
+      const recoverFromFailedSave = function () {
+        if (!(wasNew && !form.dataset.creativeId)) {
+          // Persisted rows still hold their content server-side; just make the
+          // row visible again so the tree isn't left blank.
+          if (tree.querySelector('.creative-row')) showRow(tree);
+          return;
+        }
+
+        if (switching) {
+          // The caller reassigns currentTree and reattaches the shared template
+          // to another row the moment this settles, so re-showing the editor
+          // here would only leave an invisible phantom row behind: a
+          // <creative-tree-row> with no .creative-row (that markup is inserted
+          // on a successful save) and no editor, with the empty-state card
+          // hidden behind it. Drop the row as before, but surface the loss.
+          removeTreeElement(tree);
+          restoreEmptyStateIfEmpty();
+          alertDialog('Failed to save changes. Please check your connection and try again.');
+          return;
+        }
+
+        // Not switching: nothing else is about to claim the editor, so re-bind
+        // it to the row the draft was typed in and re-arm the save so the next
+        // close (or any other flush) retries instead of discarding it. Mirrors
+        // what the api-queue failure listener does for queued requests.
+        currentTree = tree;
+        currentRowElement = treeRowElement(tree) || currentRowElement;
+        tree.draggable = false;
+        attachTemplate(tree);
+        template.style.display = 'block';
+        isDirty = true;
+        pendingSave = true;
+        setSaveStatus('error');
+        updateActionButtonStates();
+      };
+
       const finalizeHide = function () {
         template.style.display = 'none';
         const p = (pendingSave || saveQueue.saving) ? saveForm(tree, parentId) : Promise.resolve();
-        return p.then(() => {
+        return p.then((result) => {
+          if (isFailedSaveResult(result)) {
+            recoverFromFailedSave();
+            return;
+          }
           if (wasNew && !form.dataset.creativeId) {
             removeTreeElement(tree);
             restoreEmptyStateIfEmpty();
@@ -952,22 +1015,10 @@ function setupEditorSession() {
             refreshRow(tree);
           }
         }, () => {
-          // A rejected save (network failure) still leaves the editor hidden and
-          // currentTree cleared, so the DOM has to be reconciled here too. Without
-          // this an unsaved first row stays in #creatives — invisible, since its
-          // .creative-row is only inserted on a successful save — while the
-          // empty-state card stays hidden behind it, blanking the tree with no way
-          // back. The failure itself is already surfaced by saveForm's 'error'
-          // save status and the api queue's failure listener, and every
-          // hideCurrent() caller is fire-and-forget, so rethrowing here would only
-          // strand an unhandled rejection and abort the row switch in
+          // Every hideCurrent() caller is fire-and-forget, so rethrowing here
+          // would only strand an unhandled rejection and abort the row switch in
           // handleEditButtonClick().
-          if (wasNew && !form.dataset.creativeId) {
-            removeTreeElement(tree);
-            restoreEmptyStateIfEmpty();
-          } else if (tree.querySelector('.creative-row')) {
-            showRow(tree);
-          }
+          recoverFromFailedSave();
         });
       };
 
@@ -1692,7 +1743,7 @@ function setupEditorSession() {
       };
 
       if (currentTree) {
-        return Promise.resolve(hideCurrent(false)).then(performStart);
+        return Promise.resolve(hideCurrent(false, { switching: true })).then(performStart);
       }
 
       return performStart();
