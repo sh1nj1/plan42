@@ -1563,12 +1563,17 @@ function setupEditorSession() {
     // `application`, which is captured at import time and so is undefined whenever
     // this module is loaded before the host app starts Stimulus. The archive handler
     // resolves its controller the same way.
+    //
+    // requestReload(), not load(): a reload replaces the whole container, so it
+    // detaches whichever row the editor is currently sitting on together with the
+    // unsaved draft in it. The controller knows whether a row is being edited and
+    // holds the refetch until it is not.
     function reloadCreativeTree() {
       const container = document.getElementById('creatives');
       if (!container) return false;
       const controller = window.Stimulus?.getControllerForElementAndIdentifier?.(container, 'creatives--tree');
-      if (typeof controller?.load !== 'function') return false;
-      controller.load();
+      if (typeof controller?.requestReload !== 'function') return false;
+      controller.requestReload();
       return true;
     }
 
@@ -2064,14 +2069,17 @@ function setupEditorSession() {
                 if (childrenContainer) childrenContainer.remove();
                 removeTreeElement(row);
               } else {
-                // Restoring: reload tree to show updated state
-                const treeEl = document.querySelector('[data-controller="creatives--tree"]');
-                if (treeEl) {
-                  treeEl.innerHTML = '';
-                  delete treeEl.dataset.loaded;
-                  const ctrl = window.Stimulus?.getControllerForElementAndIdentifier(treeEl, 'creatives--tree');
-                  if (ctrl) ctrl.load();
-                }
+                // Restoring: only the server knows where the row belongs in the
+                // tree now, so refetch. Nothing is cleared here on the way: this
+                // request has been in flight for an unbounded time and the user
+                // may well have opened another row and started typing, and wiping
+                // the container would take that row — and the editor attached
+                // inside it — out of the document, discarding the newer draft.
+                // reloadCreativeTree() hands the timing to the tree controller,
+                // which defers the re-render until editing stops; load() then
+                // replaces the container itself, so clearing it first was only
+                // ever a blank flash.
+                reloadCreativeTree();
               }
             };
             // The pending edit was already flushed and the editor closed above, so

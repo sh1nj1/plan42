@@ -513,3 +513,89 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     application.stop()
   })
 })
+
+// A reload replaces the whole container, so it takes the row an open editor is
+// attached to out of the document — along with the unsaved draft inside it.
+// Callers that reload in response to a request they fired earlier (archive /
+// unarchive, delete-with-promoted-children) can land at any moment, including
+// while the user has moved on and is editing a different row, so they go through
+// requestReload() rather than load().
+describe('CreativesTreeController requestReload', () => {
+  let originalFetch
+
+  // Stimulus connects asynchronously, so the controller instance only exists after
+  // a turn of the real event loop — hence fake timers are switched on afterwards,
+  // once connect()'s own initial load() is out of the way and can be stubbed out.
+  const installConnected = async () => {
+    const { container, application } = installController()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    const load = jest.spyOn(controller, 'load').mockImplementation(() => {})
+    jest.useFakeTimers()
+    return { container, application, controller, load }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+    global.fetch = originalFetch
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('reloads when no editor is open', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.requestReload()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('defers the reload while a row is being edited', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
+  test('runs the deferred reload once editing stops', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('does not reload on editing:stop when nothing was requested', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+    expect(controller).toBeDefined()
+
+    application.stop()
+  })
+})

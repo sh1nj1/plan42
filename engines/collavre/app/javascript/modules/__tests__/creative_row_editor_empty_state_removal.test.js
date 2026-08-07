@@ -55,8 +55,11 @@ function installTemplateOnly() {
 // can be observed. Resolved through window.Stimulus on each call, as the archive
 // handler does.
 function stubTreeController() {
-  const calls = { load: 0 }
-  const controller = { load() { calls.load += 1 } }
+  const calls = { load: 0, requestReload: 0 }
+  const controller = {
+    load() { calls.load += 1 },
+    requestReload() { calls.requestReload += 1 },
+  }
   window.Stimulus = {
     getControllerForElementAndIdentifier: (element, identifier) => (
       element === document.getElementById('creatives') && identifier === 'creatives--tree' ? controller : null
@@ -232,7 +235,10 @@ describe('empty state after the last creative is removed', () => {
     await flush()
 
     expect(destroyMock).toHaveBeenCalledWith('42', false)
-    expect(calls.load).toBe(1)
+    // requestReload(), not load(): move(1) has just put the editor on the next
+    // row, so an unconditional re-render would detach it mid-edit.
+    expect(calls.requestReload).toBe(1)
+    expect(calls.load).toBe(0)
   })
 
   test('does not refetch when the deleted row has no children to promote', async () => {
@@ -244,7 +250,7 @@ describe('empty state after the last creative is removed', () => {
     document.getElementById('inline-delete').click()
     await flush()
 
-    expect(calls.load).toBe(0)
+    expect(calls.requestReload).toBe(0)
   })
 
   test('does not refetch when "delete with children" removes them too', async () => {
@@ -259,7 +265,7 @@ describe('empty state after the last creative is removed', () => {
     await flush()
 
     expect(destroyMock).toHaveBeenCalledWith('42', true)
-    expect(calls.load).toBe(0)
+    expect(calls.requestReload).toBe(0)
   })
 
   test('keeps the editor open on the next row when one remains', async () => {

@@ -51,13 +51,7 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
-    this._handleSyncRefetch = () => {
-      if (this._editing) {
-        this._pendingRefetch = true
-        return
-      }
-      this.debouncedLoad()
-    }
+    this._handleSyncRefetch = () => this.requestReload()
     document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
     this._setupArchiveToggle()
   }
@@ -152,6 +146,25 @@ export default class extends Controller {
   debouncedLoad() {
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     this._debouncedLoadTimer = setTimeout(() => this.load(), 300)
+  }
+
+  // Editing-aware reload — the entry point for anything that wants the tree
+  // refetched in response to something that already happened elsewhere (the sync
+  // channel, an archive/unarchive that landed, a delete that promoted children to
+  // the root). load() replaces the whole container, which takes the row an open
+  // editor is attached to out of the document along with the unsaved draft inside
+  // it; those callers can land at any moment, including long after the user has
+  // moved on to editing a different row. So the reload waits for
+  // `creative-editing:stop`, which _handleEditStop drains.
+  //
+  // Call load() directly only for reloads the user just asked for and is waiting
+  // on (filter change, archive toggle), where re-rendering is the point.
+  requestReload() {
+    if (this._editing) {
+      this._pendingRefetch = true
+      return
+    }
+    this.debouncedLoad()
   }
 
   load() {

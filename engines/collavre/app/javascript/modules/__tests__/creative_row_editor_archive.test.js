@@ -144,22 +144,51 @@ test('archiving one of several rows leaves the placeholder off the page', async 
   expect(placeholder()).toBeNull()
 })
 
-test('restoring an archived row reloads the tree instead of removing it', async () => {
+// Stimulus renders `data-controller="creatives--tree creatives--sync"` on #creatives,
+// so the fixture carries both identifiers: an exact-match attribute selector for the
+// first one alone does not match that, which is how the reload came to be skipped
+// entirely in the browser.
+function stubTreeController() {
+  const treeEl = container()
+  treeEl.setAttribute('data-controller', 'creatives--tree creatives--sync')
+  treeEl.dataset.loaded = 'true'
+  const requestReload = jest.fn()
+  const load = jest.fn()
+  window.Stimulus = {
+    getControllerForElementAndIdentifier: jest.fn((el, identifier) =>
+      el === treeEl && identifier === 'creatives--tree' ? { requestReload, load } : null,
+    ),
+  }
+  return { treeEl, requestReload, load }
+}
+
+test('restoring an archived row asks the tree controller for an editing-aware reload', async () => {
   renderTree(['42'])
   document.querySelector('creative-tree-row[creative-id="42"]').setAttribute('archived', '')
-  const treeEl = container()
-  treeEl.setAttribute('data-controller', 'creatives--tree')
-  treeEl.dataset.loaded = 'true'
-  const load = jest.fn()
-  window.Stimulus = { getControllerForElementAndIdentifier: jest.fn(() => ({ load })) }
+  const { requestReload, load } = stubTreeController()
 
   await archiveCreative('42')
 
   expect(unarchive).toHaveBeenCalledWith('42')
   expect(archive).not.toHaveBeenCalled()
-  expect(load).toHaveBeenCalledTimes(1)
-  expect(treeEl.dataset.loaded).toBeUndefined()
-  expect(treeEl.innerHTML).toBe('')
+  expect(requestReload).toHaveBeenCalledTimes(1)
+  // load() bypasses the controller's `_editing` guard, so it must not be used here.
+  expect(load).not.toHaveBeenCalled()
+})
+
+// The unarchive request is in flight for an unbounded time, so the user can open
+// another row and start typing before it lands. Wiping the container here would
+// take that row — and the editor attached inside it — out of the document, losing
+// the newer draft. Deciding when it is safe to re-render is the controller's job.
+test('restoring an archived row does not wipe the tree itself', async () => {
+  renderTree(['42'])
+  document.querySelector('creative-tree-row[creative-id="42"]').setAttribute('archived', '')
+  const { treeEl } = stubTreeController()
+
+  await archiveCreative('42')
+
+  expect(treeEl.querySelector('creative-tree-row')).not.toBeNull()
+  expect(treeEl.dataset.loaded).toBe('true')
 })
 
 test('flushes a pending edit before dropping the archived row', async () => {
@@ -226,16 +255,12 @@ test('alerts and leaves the row alone when the archive request rejects', async (
 test('alerts with the restore message and skips the reload when unarchive fails', async () => {
   renderTree(['42'])
   document.querySelector('creative-tree-row[creative-id="42"]').setAttribute('archived', '')
-  const treeEl = container()
-  treeEl.setAttribute('data-controller', 'creatives--tree')
-  treeEl.dataset.loaded = 'true'
-  const load = jest.fn()
-  window.Stimulus = { getControllerForElementAndIdentifier: jest.fn(() => ({ load })) }
+  const { treeEl, requestReload } = stubTreeController()
   unarchive.mockResolvedValueOnce({ ok: false })
 
   await archiveCreative('42')
 
-  expect(load).not.toHaveBeenCalled()
+  expect(requestReload).not.toHaveBeenCalled()
   expect(treeEl.dataset.loaded).toBe('true')
   expect(alertDialog).toHaveBeenCalledWith(RESTORE_FAILED_MESSAGE)
 })
