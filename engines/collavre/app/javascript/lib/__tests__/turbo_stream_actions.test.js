@@ -12,6 +12,25 @@ jest.unstable_mockModule('../../creatives/tree_renderer', () => ({
 }))
 
 await import('../turbo_stream_actions')
+const { createRow } = await import('../../creatives/tree_renderer')
+
+const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
+
+// Mirrors creatives/index.html.erb: title row above the tree container with the
+// server-rendered placeholder inside it.
+function renderEmptyTreeForParent(parentId) {
+  document.body.innerHTML = `
+    <creative-tree-row is-title creative-id="${parentId}"></creative-tree-row>
+    <div id="creatives">${EMPTY_HTML}</div>
+  `
+  createRow.mockImplementation((creative) => {
+    const row = document.createElement('creative-tree-row')
+    row.setAttribute('creative-id', String(creative.id))
+    row.setAttribute('parent-id', String(creative.parent_id))
+    return row
+  })
+  return document.getElementById('creatives')
+}
 
 function dispatchCreativeTreeStream(payload) {
   fakeTurbo.StreamActions.refresh_creative_tree.call({
@@ -51,4 +70,52 @@ test('remote destroyed streams deduplicate identical effective and origin IDs', 
   expect(listener).toHaveBeenCalledWith(expect.objectContaining({
     detail: { creativeIds: ['123'] },
   }))
+})
+
+test('remote created streams clear the empty-state placeholder', () => {
+  const container = renderEmptyTreeForParent(42)
+
+  dispatchCreativeTreeStream({
+    action: 'created',
+    creative: { id: 7, parent_id: 42, level: 2, sequence: 0 },
+  })
+
+  expect(container.querySelector('creative-tree-row[creative-id="7"]')).not.toBeNull()
+  expect(container.querySelector('[data-creatives-empty-state]').hidden).toBe(true)
+})
+
+test('remote destroyed streams restore the empty-state placeholder for the last row', () => {
+  const container = renderEmptyTreeForParent(42)
+  dispatchCreativeTreeStream({
+    action: 'created',
+    creative: { id: 7, parent_id: 42, level: 2, sequence: 0 },
+  })
+
+  dispatchCreativeTreeStream({
+    action: 'destroyed',
+    creative: { id: 7, parent_id: 42 },
+  })
+
+  expect(container.querySelector('creative-tree-row')).toBeNull()
+  expect(container.querySelector('[data-creatives-empty-state]').hidden).toBe(false)
+})
+
+test('remote destroyed streams keep the placeholder hidden while rows remain', () => {
+  const container = renderEmptyTreeForParent(42)
+  dispatchCreativeTreeStream({
+    action: 'created',
+    creative: { id: 7, parent_id: 42, level: 2, sequence: 0 },
+  })
+  dispatchCreativeTreeStream({
+    action: 'created',
+    creative: { id: 8, parent_id: 42, level: 2, sequence: 1 },
+  })
+
+  dispatchCreativeTreeStream({
+    action: 'destroyed',
+    creative: { id: 7, parent_id: 42 },
+  })
+
+  expect(container.querySelector('creative-tree-row[creative-id="8"]')).not.toBeNull()
+  expect(container.querySelector('[data-creatives-empty-state]').hidden).toBe(true)
 })

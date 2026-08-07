@@ -1,5 +1,6 @@
 import { Turbo } from "@hotwired/turbo-rails"
 import { createRow, applyRowProperties } from "../creatives/tree_renderer"
+import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
 function registerStreamAction(name, handler) {
@@ -84,6 +85,8 @@ function handleCreated(creative) {
 
         const newRow = createRow(adjustedCreative)
         insertAtCorrectPosition(newRow, adjustedCreative, targetContainer)
+        // The tree is no longer empty — drop the "no sub-creatives" placeholder.
+        hideTreeEmptyState(treeContainer)
     }
     // If no targetContainer found, the creative is relevant but we can't determine
     // the exact insertion point — it will appear on next page load.
@@ -324,6 +327,8 @@ function handleDestroyed(creative) {
         }
     }
 
+    // Last row gone — bring the placeholder back.
+    restoreTreeEmptyState()
 }
 
 function updateProgressForRow(row, progress, progressText) {

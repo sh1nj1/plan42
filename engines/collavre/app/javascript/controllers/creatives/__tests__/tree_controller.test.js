@@ -18,6 +18,7 @@ jest.unstable_mockModule('../../../utils/emoji_parser', () => ({
 const { Application } = await import('@hotwired/stimulus')
 const TreeController = (await import('../tree_controller')).default
 const { appendCreativeNodes } = await import('../../../creatives/tree_renderer')
+const { restoreTreeEmptyState } = await import('../../../modules/creative_tree_empty_state')
 
 const TRANSIENT_RETRY_DELAYS = [200, 600]
 
@@ -266,5 +267,130 @@ describe('CreativesTreeController Chats pagination (load more)', () => {
     expect(appendCreativeNodes).not.toHaveBeenCalled()
 
     application.stop()
+  })
+
+  // Deleting every row that is currently on screen does not mean the feed is
+  // empty when further pages are still queued behind the sentinel. Restoring the
+  // placeholder there both lies and outlives the append, leaving "No creatives
+  // found." sitting above the rows the next page brings in.
+  describe('empty-state placeholder vs. queued pages', () => {
+    const installEmptyStateTemplate = () => {
+      const template = document.createElement('template')
+      template.id = 'creatives-empty-state-template'
+      template.innerHTML = '<p data-creatives-empty-state>No creatives found.</p>'
+      document.body.appendChild(template)
+      return template
+    }
+
+    test('suppresses the placeholder while the feed has more pages queued', async () => {
+      installEmptyStateTemplate()
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+
+      const { container, application } = installController()
+      await flush()
+      await flush()
+
+      expect(container.hasAttribute('data-creatives-pagination-pending')).toBe(true)
+
+      // The user batch-deletes every rendered row; removeTreeElement asks for the
+      // placeholder back.
+      restoreTreeEmptyState(container)
+
+      expect(container.querySelector('[data-creatives-empty-state]')).toBeNull()
+
+      application.stop()
+    })
+
+    test('restores the placeholder once the last page lands and nothing is left', async () => {
+      installEmptyStateTemplate()
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ creatives: [], pagination: { has_more: false, next_page: null } }),
+        })
+
+      const { container, application } = installController()
+      await flush()
+      await flush()
+
+      restoreTreeEmptyState(container)
+      expect(container.querySelector('[data-creatives-empty-state]')).toBeNull()
+
+      MockIntersectionObserver.instances[0].triggerIntersect()
+      await flush()
+      await flush()
+
+      expect(container.hasAttribute('data-creatives-pagination-pending')).toBe(false)
+      const placeholder = container.querySelector('[data-creatives-empty-state]')
+      expect(placeholder).not.toBeNull()
+      expect(placeholder.hidden).toBe(false)
+
+      application.stop()
+    })
+
+    test('hides a placeholder that is on screen when the next page is appended', async () => {
+      installEmptyStateTemplate()
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ creatives: [{ id: 2 }], pagination: { has_more: true, next_page: 3 } }),
+        })
+
+      const { container, application } = installController()
+      await flush()
+      await flush()
+
+      // Belt and braces: a placeholder that got in anyway (a path that predates
+      // the pending marker) must not survive the append.
+      const stray = document.createElement('p')
+      stray.setAttribute('data-creatives-empty-state', '')
+      container.appendChild(stray)
+
+      MockIntersectionObserver.instances[0].triggerIntersect()
+      await flush()
+      await flush()
+
+      expect(appendCreativeNodes).toHaveBeenCalledTimes(1)
+      expect(stray.hidden).toBe(true)
+
+      application.stop()
+    })
+
+    test('clears the pending marker when a fresh load tears pagination down', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 1 }], pagination: { has_more: true, next_page: 2 } }),
+      })
+
+      const { container, application } = installController()
+      await flush()
+      await flush()
+      expect(container.hasAttribute('data-creatives-pagination-pending')).toBe(true)
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ creatives: [{ id: 9 }] }),
+      })
+      application.getControllerForElementAndIdentifier(container, 'creatives--tree').load()
+      await flush()
+      await flush()
+
+      expect(container.hasAttribute('data-creatives-pagination-pending')).toBe(false)
+
+      application.stop()
+    })
   })
 })

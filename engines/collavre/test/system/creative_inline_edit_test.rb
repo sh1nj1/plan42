@@ -174,6 +174,32 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: ActionController::Base.helpers.strip_tags(existing_child.description)
   end
 
+  test "hides the empty state placeholder once a sub-creative is added" do
+    visit collavre.creative_path(@root_creative)
+
+    assert_selector "#creatives [data-creatives-empty-state]", wait: 5
+
+    find(".creative-actions-row .add-creative-btn").click
+    fill_inline_editor("First child")
+    close_inline_editor
+
+    assert_selector "#creatives > creative-tree-row .creative-row", text: "First child", wait: 5
+    assert_no_selector "#creatives [data-creatives-empty-state]"
+  end
+
+  test "keeps the empty state template available after the tree renders rows" do
+    Creative.create!(description: "Existing child", user: @user, parent: @root_creative)
+
+    visit collavre.creative_path(@root_creative)
+
+    assert_selector "#creatives > creative-tree-row .creative-row", text: "Existing child", wait: 5
+    assert_no_selector "#creatives [data-creatives-empty-state]"
+    # Rendering the tree wipes #creatives, so the placeholder inside it is gone by
+    # now. The template sits outside the container and survives, which is what
+    # restoreTreeEmptyState() clones from when the last row is removed.
+    assert_selector "template#creatives-empty-state-template", visible: :all, count: 1
+  end
+
   test "does not duplicate attachments when re-editing inline creative" do
     fixture_path = Rails.root.join("test/fixtures/files/small.png")
 
