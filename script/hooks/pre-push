@@ -14,15 +14,41 @@ NC='\033[0m' # No Color
 ZERO_SHA="0000000000000000000000000000000000000000"
 REMOTE_NAME="${1:-origin}"
 REMOTE_URL="${2:-}"
+REPO_ROOT=$(git rev-parse --show-toplevel) || exit 1
+
+resolve_remote_base_ref() {
+    local remote="$1"
+    local local_commit="$2"
+    local candidate
+
+    for candidate in "refs/remotes/$remote/HEAD" "refs/remotes/$remote/main"; do
+	if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null &&
+	    git merge-base "$candidate" "$local_commit" >/dev/null 2>&1; then
+	    echo "$candidate"
+	    return
+	fi
+    done
+
+    if git rev-parse --verify --quiet "refs/heads/main^{commit}" >/dev/null &&
+	[ "$(git rev-parse refs/heads/main)" != "$local_commit" ] &&
+	git merge-base refs/heads/main "$local_commit" >/dev/null 2>&1; then
+	echo "refs/heads/main"
+	return
+    fi
+
+    git hash-object -t tree /dev/null
+}
 
 resolve_default_base_ref() {
+    local local_commit="$1"
+
     if [ -n "${PRE_PUSH_BASE_REF:-}" ]; then
 	echo "$PRE_PUSH_BASE_REF"
 	return
     fi
 
     if git remote get-url "$REMOTE_NAME" >/dev/null 2>&1; then
-	echo "$REMOTE_NAME/main"
+	resolve_remote_base_ref "$REMOTE_NAME" "$local_commit"
 	return
     fi
 
@@ -39,7 +65,7 @@ resolve_default_base_ref() {
 	return 1
     fi
 
-    echo "$matched_remote/main"
+    resolve_remote_base_ref "$matched_remote" "$local_commit"
 }
 
 HEAD_SHA=$(git rev-parse HEAD) || exit 1
@@ -54,8 +80,12 @@ CHANGED_FILES=$(
       fi
 
       if [ "$remote_sha" = "$ZERO_SHA" ]; then
-	DEFAULT_BASE_REF=$(resolve_default_base_ref) || exit 1
-	base_sha=$(git merge-base "$DEFAULT_BASE_REF" "$local_commit") || exit 1
+	DEFAULT_BASE_REF=$(resolve_default_base_ref "$local_commit") || exit 1
+	if [ "$(git cat-file -t "$DEFAULT_BASE_REF" 2>/dev/null)" = "tree" ]; then
+	    base_sha="$DEFAULT_BASE_REF"
+	else
+	    base_sha=$(git merge-base "$DEFAULT_BASE_REF" "$local_commit") || exit 1
+	fi
       else
 	base_sha="$remote_sha"
       fi
@@ -70,8 +100,13 @@ if ! RUBOCOP_TARGET_FILES=$(./bin/rubocop --list-target-files); then
     exit 1
 fi
 
+NORMALIZED_RUBOCOP_TARGET_FILES=""
+while IFS= read -r target_file; do
+    NORMALIZED_RUBOCOP_TARGET_FILES+="${target_file#"$REPO_ROOT"/}"$'\n'
+done <<< "$RUBOCOP_TARGET_FILES"
+
 while IFS= read -r file; do
-    grep -Fqx -- "$file" <<< "$RUBOCOP_TARGET_FILES" && RUBOCOP_FILES+=("$file")
+    grep -Fqx -- "$file" <<< "$NORMALIZED_RUBOCOP_TARGET_FILES" && RUBOCOP_FILES+=("$file")
 done <<< "$CHANGED_FILES"
 
 if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
