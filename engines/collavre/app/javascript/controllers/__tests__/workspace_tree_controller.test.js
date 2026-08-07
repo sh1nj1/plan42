@@ -529,6 +529,49 @@ describe('WorkspaceTreeController', () => {
     document.removeEventListener('creative-comments-click', chatListener)
   })
 
+  test('reloads the center frame when a history restore renders mismatched state', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBe(window.location.href)
+  })
+
+  test('reloads the center frame when a history restore renders no navigation state', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    frame.innerHTML = ''
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBe(window.location.href)
+  })
+
+  test('leaves the center frame alone when a restore matches the URL', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBeUndefined()
+  })
+
+  test('does not reload the frame for non-restore visits with transient mismatches', async () => {
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'advance' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(frame.src).toBeUndefined()
+  })
+
   test('shows the empty state', async () => {
     const controllerElement = document.querySelector('[data-controller="workspace-tree"]')
     const controller = application.getControllerForElementAndIdentifier(controllerElement, 'workspace-tree')

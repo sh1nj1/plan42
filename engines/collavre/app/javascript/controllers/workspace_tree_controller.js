@@ -1,5 +1,11 @@
 import { Controller } from '@hotwired/stimulus'
 
+// Module-scoped: a history restore replaces the whole body, swapping this
+// controller's instance mid-visit. The instance that observes turbo:visit is
+// not necessarily the one that observes the subsequent turbo:render, so the
+// visit action must outlive any single instance.
+let lastVisitAction = null
+
 export default class extends Controller {
   static targets = ['tree', 'panelToggle']
 
@@ -18,7 +24,11 @@ export default class extends Controller {
     this.handleFrameLoad = this.handleFrameLoad.bind(this)
     this.handleFrameRequest = this.handleFrameRequest.bind(this)
     this.handleTurboRender = this.handleTurboRender.bind(this)
+    this.handleVisitStart = this.handleVisitStart.bind(this)
+    this.handlePopState = this.handlePopState.bind(this)
     this.queueRefresh = this.queueRefresh.bind(this)
+    window.addEventListener('popstate', this.handlePopState)
+    document.addEventListener('turbo:visit', this.handleVisitStart)
     document.addEventListener('turbo:before-fetch-request', this.handleFrameRequest)
     document.addEventListener('turbo:frame-load', this.handleFrameLoad)
     document.addEventListener('turbo:frame-render', this.handleFrameLoad)
@@ -27,6 +37,15 @@ export default class extends Controller {
     document.addEventListener('creative-destroyed', this.queueRefresh)
     window.addEventListener('collavre:creative-drop-complete', this.queueRefresh)
     this.observeWorkspaceFrame()
+    // A restore render may reconnect this controller after turbo:render has
+    // already fired on the previous, now-disconnected instance's listeners.
+    // Re-check the action when the frame callback runs: a newer visit may
+    // have started in between and supersedes the restore.
+    if (lastVisitAction === 'restore') {
+      requestAnimationFrame(() => {
+        if (lastVisitAction === 'restore') this.ensureFrameMatchesLocation()
+      })
+    }
     this.load({ syncChat: false })
   }
 
@@ -34,6 +53,9 @@ export default class extends Controller {
     this.loadAbortController?.abort()
     this.frameObserver?.disconnect()
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
+    if (this.popStateSyncTimer) window.clearTimeout(this.popStateSyncTimer)
+    window.removeEventListener('popstate', this.handlePopState)
+    document.removeEventListener('turbo:visit', this.handleVisitStart)
     document.removeEventListener('turbo:before-fetch-request', this.handleFrameRequest)
     document.removeEventListener('turbo:frame-load', this.handleFrameLoad)
     document.removeEventListener('turbo:frame-render', this.handleFrameLoad)
@@ -187,10 +209,54 @@ export default class extends Controller {
     this.frameRequestGeneration = this.invalidationGeneration
   }
 
+  handleVisitStart(event) {
+    lastVisitAction = event.detail?.action
+  }
+
+  // Turbo only performs a restore visit when the popped entry still carries
+  // its own history state; entries whose state was overwritten (or dropped)
+  // pop with the URL changing but nothing re-rendering. Watch popstate
+  // directly and, once no Turbo visit is processing the traversal, converge
+  // the frame onto the URL.
+  handlePopState() {
+    if (this.popStateSyncTimer) window.clearTimeout(this.popStateSyncTimer)
+    this.popStateSyncTimer = window.setTimeout(() => {
+      this.popStateSyncTimer = null
+      if (window.Turbo?.navigator?.currentVisit) return
+      this.ensureFrameMatchesLocation()
+    }, 150)
+  }
+
   handleTurboRender() {
     requestAnimationFrame(() => {
+      // The restore check must run even from an instance the render just
+      // disconnected — it only reads the current document and URL.
+      if (lastVisitAction === 'restore') this.ensureFrameMatchesLocation()
       if (this.element.isConnected) this.syncFromWorkspaceFrame()
     })
+  }
+
+  // History restore visits render a cached page snapshot. The snapshot can
+  // predate the workspace frame's final content for that history entry, so a
+  // back/forward restore may leave the center frame showing a different
+  // creative than the URL. Reload the frame from the URL as the source of
+  // truth; the resulting authoritative turbo:frame-load resynchronizes the
+  // tree and docked chat.
+  ensureFrameMatchesLocation() {
+    const frame = document.getElementById('creative-workspace-content')
+    if (!frame) return
+
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    const stateCreativeId = state?.dataset?.creativeId || null
+    const locationCreativeId = this.creativeIdFromLocation() || null
+    if (state && stateCreativeId === locationCreativeId) return
+
+    const target = window.location.href
+    if (frame.src === target && typeof frame.reload === 'function') {
+      frame.reload()
+    } else {
+      frame.src = target
+    }
   }
 
   observeWorkspaceFrame() {

@@ -48,7 +48,25 @@ import {
 const application = window.Stimulus
 
 let initialized = false;
+// The template node the current editor session was built against. Workspace
+// frame swaps replace the template without firing turbo:load, so the session
+// must be rebuilt whenever a different template node is in the document.
+let activeTemplate = null;
+let destroyActiveEditor = null;
 const globalListeners = createListenerRegistry();
+
+function teardownEditorSession() {
+  globalListeners.releaseAll();
+  if (destroyActiveEditor) {
+    try {
+      destroyActiveEditor();
+    } catch (e) {
+      console.error('CreativeRowEditor: Failed to destroy inline editor', e);
+    }
+    destroyActiveEditor = null;
+  }
+  activeTemplate = null;
+}
 
 function deleteAttachment(signedId) {
   if (!signedId) return;
@@ -62,13 +80,22 @@ function deleteAttachment(signedId) {
 }
 
 export function initializeCreativeRowEditor() {
+  // Rebuild the session on every call: the Stimulus wrapper controller
+  // reconnects whenever the workspace center frame swaps its content, which
+  // is the only lifecycle signal for non-promoted frame navigations.
+  setupEditorSession();
   if (initialized) return;
   initialized = true;
 
-  document.addEventListener('turbo:load', function () {
-    globalListeners.releaseAll();
+  document.addEventListener('turbo:load', setupEditorSession);
+}
+
+function setupEditorSession() {
     const template = document.getElementById('inline-edit-form');
+    if (template && template === activeTemplate) return;
+    teardownEditorSession();
     if (!template) return;
+    activeTemplate = template;
 
     initializeEventListeners();
 
@@ -183,6 +210,9 @@ export function initializeCreativeRowEditor() {
           onEnterKey: handleEditorEnterKey,
           onUploadStateChange: handleUploadStateChange
         });
+        destroyActiveEditor = () => {
+          if (lexicalEditor && typeof lexicalEditor.destroy === 'function') lexicalEditor.destroy();
+        };
       } catch (e) {
         console.error('CreativeRowEditor: Failed to create inline editor', e);
       }
@@ -2066,5 +2096,4 @@ export function initializeCreativeRowEditor() {
         }
       });
     }
-  });
 }
