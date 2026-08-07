@@ -4,6 +4,7 @@
 
 import { jest } from '@jest/globals'
 import {
+  escapeMarkdownLabel,
   insertMarkdownCreativeLink,
   markdownCreativeCommandRange,
   openCreativeLinkPicker,
@@ -34,6 +35,17 @@ describe('creative link picker helpers', () => {
     expect(inputListener).toHaveBeenCalledTimes(1)
   })
 
+  test('escapes Markdown constructs in the selected Creative label', () => {
+    const textarea = document.createElement('textarea')
+
+    expect(escapeMarkdownLabel('a\\`*_[]()<>~b')).toBe('a\\\\\\`\\*\\_\\[\\]\\(\\)\\<\\>\\~b')
+    expect(insertMarkdownCreativeLink(textarea, {
+      id: 12,
+      label: 'x](https://evil.example)',
+    })).toBe(true)
+    expect(textarea.value).toBe('[x\\]\\(https://evil.example\\)](/creatives/12) ')
+  })
+
   test('removes the trigger and opens the shared picker with creation enabled', () => {
     document.body.innerHTML = '<div id="link-creative-modal"></div><textarea id="editor">/creative</textarea>'
     const textarea = document.getElementById('editor')
@@ -51,6 +63,10 @@ describe('creative link picker helpers', () => {
     expect(textarea.value).toBe('')
     expect(controller.open).toHaveBeenCalledTimes(1)
     expect(controller.open.mock.calls[0][3]).toEqual({ allowCreate: true })
+
+    textarea.blur()
+    controller.open.mock.calls[0][2]()
+    expect(document.activeElement).toBe(textarea)
 
     controller.open.mock.calls[0][1]({ id: 18, label: 'Created' })
     expect(textarea.value).toBe('[Created](/creatives/18) ')

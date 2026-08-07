@@ -99,4 +99,35 @@ describe('creative link [[ trigger', () => {
     expect(openPicker).toHaveBeenCalledTimes(1)
     unregister()
   })
+
+  test('clears a dismissed trigger after editing away and opens for a new trigger', async () => {
+    const editor = createTestEditor()
+    const openPicker = jest.fn(() => true)
+    const unregister = registerCreativeLinkTrigger(editor, openPicker)
+
+    let textNode = null
+    editor.update(() => {
+      const paragraph = $createParagraphNode()
+      textNode = $createTextNode('[[')
+      paragraph.append(textNode)
+      $getRoot().append(paragraph)
+      textNode.selectEnd()
+    }, { discrete: true })
+    await flush()
+    openPicker.mock.calls[0][0].onClose()
+
+    editor.update(() => {
+      textNode.getLatest().setTextContent('plain')
+      textNode.getLatest().selectEnd()
+    }, { discrete: true })
+    await flush()
+    editor.update(() => {
+      textNode.getLatest().setTextContent('plain [[')
+      textNode.getLatest().selectEnd()
+    }, { discrete: true })
+    await flush()
+
+    expect(openPicker).toHaveBeenCalledTimes(2)
+    unregister()
+  })
 })

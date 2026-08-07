@@ -19,6 +19,7 @@ export default class extends CommonPopupController {
         super.connect()
         this._debounceTimer = null
         this._searchToken = 0
+        this._openGeneration = 0
         this._mode = 'tree'
         this._rootNodes = null
         this._activeEl = null
@@ -40,6 +41,7 @@ export default class extends CommonPopupController {
     }
 
     open(anchorRect, onSelectCallback, onCloseCallback, { allowCreate = false } = {}) {
+        this._openGeneration++
         this.onSelectCallback = onSelectCallback
         this.onCloseCallback = onCloseCallback
         this._allowCreate = allowCreate
@@ -60,6 +62,7 @@ export default class extends CommonPopupController {
     }
 
     close() {
+        this._openGeneration++
         this._clearDebounce()
         super.close()
     }
@@ -491,14 +494,17 @@ export default class extends CommonPopupController {
     _createCreative(query) {
         if (this._creating || !query) return
         this._creating = true
+        const openGeneration = this._openGeneration
         this._renderMessage(this._text('creatingText'))
 
         creativesApi.createFromTitle(query)
             .then((creative) => {
+                if (openGeneration !== this._openGeneration) return
                 if (!creative?.id) throw new Error('Creative creation returned no id')
                 this.select({ id: creative.id, label: query })
             })
             .catch(() => {
+                if (openGeneration !== this._openGeneration) return
                 this._creating = false
                 this._renderMessage(this._text('createFailedText'))
             })

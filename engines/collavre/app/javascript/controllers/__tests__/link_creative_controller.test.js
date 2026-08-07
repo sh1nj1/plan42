@@ -234,6 +234,36 @@ describe('LinkCreativeController picker', () => {
     application.stop()
   })
 
+  test('ignores a stale creation response after the picker is reopened', async () => {
+    browse.mockResolvedValue([])
+    search.mockResolvedValue([])
+    let resolveCreation
+    createFromTitle.mockReturnValue(new Promise((resolve) => {
+      resolveCreation = resolve
+    }))
+    const firstOnSelect = jest.fn()
+    const secondOnSelect = jest.fn()
+
+    const { application, controller } = await installController()
+    controller.open(rect, firstOnSelect, jest.fn(), { allowCreate: true })
+    await flush()
+    controller.inputTarget.value = 'First page'
+    controller.search()
+    await flush()
+    document.querySelector('.link-create-item').click()
+
+    controller.close()
+    controller.open(rect, secondOnSelect, jest.fn(), { allowCreate: true })
+    await flush()
+    resolveCreation({ id: 23 })
+    await flush()
+
+    expect(firstOnSelect).not.toHaveBeenCalled()
+    expect(secondOnSelect).not.toHaveBeenCalled()
+    expect(controller.popup.isOpen()).toBe(true)
+    application.stop()
+  })
+
   test('masks restricted ancestors in the breadcrumb and keeps them non-clickable', async () => {
     browse.mockResolvedValue([])
     search.mockResolvedValue([

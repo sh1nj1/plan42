@@ -1,5 +1,11 @@
 import { getCaretClientRect } from '../utils/caret_position'
 
+const MARKDOWN_SPECIAL = /[\\`*_\[\]()<>~]/g
+
+export function escapeMarkdownLabel(label) {
+  return String(label || '').replace(MARKDOWN_SPECIAL, (character) => `\\${character}`)
+}
+
 export function markdownCreativeCommandRange(value, caretPosition) {
   const beforeCaret = String(value || '').slice(0, caretPosition)
   const match = beforeCaret.match(/(?:^|\n)(\/creative)$/)
@@ -15,7 +21,7 @@ export function insertMarkdownCreativeLink(textarea, item) {
   if (!textarea || !item?.id) return false
 
   const position = textarea.selectionStart
-  const link = `[${item.label}](/creatives/${item.id})`
+  const link = `[${escapeMarkdownLabel(item.label)}](/creatives/${item.id})`
   textarea.setRangeText(`${link} `, position, textarea.selectionEnd, 'end')
   textarea.dispatchEvent(new Event('input', { bubbles: true }))
   textarea.focus()
