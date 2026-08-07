@@ -216,7 +216,7 @@
 <%
   empty_html = nil
   if (@creatives || []).blank?
-    if params[:search].present?
+    if any_filter_active?
       empty_html = content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
     elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read)
       message = content_tag(:p, t('.no_permission'), style: 'text-align: center;')

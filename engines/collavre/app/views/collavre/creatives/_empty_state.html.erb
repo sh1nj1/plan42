@@ -62,7 +62,7 @@
   <% if can_add %>
     <div class="creative-empty-state-actions">
       <div class="creative-empty-state-actions-row">
-        <%= render 'add_button', label: add_label, shortcut_hint: 'Enter' %>
+        <%= render 'add_button', label: add_label, shortcut_hint: t('collavre.creatives.index.empty_state_add_shortcut') %>
         <button type="button" class="btn btn-secondary" data-action="click->creatives--import#toggle">
           <span aria-hidden="true"><%= svg_tag 'arrow-down.svg', width: 14, height: 14 %></span>
           <%= t('collavre.creatives.index.import_markdown') %>

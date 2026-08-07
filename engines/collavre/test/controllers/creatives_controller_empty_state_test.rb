@@ -71,6 +71,28 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     refute_includes response.body, html_t("collavre.creatives.index.empty_state_concept_title")
   end
 
+  test "non-search filter with zero results shows no-results message, not the actionable empty state" do
+    sign_in_as(users(:one), password: "password")
+
+    get creatives_path(min_progress: 101)
+
+    assert_response :success
+    assert_includes response.body, html_t("collavre.creatives.index.no_search_results")
+    refute_includes response.body, html_t("collavre.creatives.index.empty_state_heading_root")
+    refute_includes response.body, html_t("collavre.creatives.index.empty_state_concept_title")
+  end
+
+  test "assignee_id filter with zero results shows no-results message, not the actionable empty state" do
+    sign_in_as(users(:one), password: "password")
+
+    get creatives_path(assignee_id: users(:one).id)
+
+    assert_response :success
+    assert_includes response.body, html_t("collavre.creatives.index.no_search_results")
+    refute_includes response.body, html_t("collavre.creatives.index.empty_state_heading_root")
+    refute_includes response.body, html_t("collavre.creatives.index.empty_state_concept_title")
+  end
+
   test "requesting an unreadable or nonexistent id still renders the generic sub-creatives text without crashing" do
     sign_in_as(users(:one), password: "password")
 
@@ -80,6 +102,16 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     assert_includes response.body, html_t("collavre.creatives.index.empty_state_heading_sub")
     refute_includes response.body, html_t("collavre.creatives.index.empty_state_readonly_message")
     refute_includes response.body, html_t("collavre.creatives.index.request_permission")
+  end
+
+  test "root empty state sources the Add button's kbd shortcut hint from i18n, not a hardcoded literal" do
+    sign_in_as(users(:one), password: "password")
+    I18n.backend.store_translations(:en, collavre: { creatives: { index: { empty_state_add_shortcut: "TestShortcut" } } })
+
+    get creatives_path
+
+    assert_response :success
+    assert_includes response.body, "<kbd class=\"add-creative-btn-kbd\">TestShortcut</kbd>"
   end
 
   test "unauthenticated visitor at root sees sign up / log in CTAs" do

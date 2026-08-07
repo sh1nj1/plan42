@@ -43,7 +43,7 @@ class CreativesControllerRequestPermissionTest < ActionDispatch::IntegrationTest
     expected_short_title = ApplicationController.helpers.strip_tags(creative.effective_origin.description).truncate(10)
     expected_link = "[#{expected_short_title}](#{Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)})"
     expected_message = I18n.t(
-      "inbox.permission_requested",
+      "inbox.write_permission_requested",
       user: users(:two).display_name,
       short_title: expected_link,
       locale: users(:one).locale || "en"
@@ -64,6 +64,17 @@ class CreativesControllerRequestPermissionTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
+
+    comment = Comment.order(:created_at).last
+    expected_short_title = ApplicationController.helpers.strip_tags(creative.effective_origin.description).truncate(10)
+    expected_link = "[#{expected_short_title}](#{Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)})"
+    expected_message = I18n.t(
+      "inbox.write_permission_requested",
+      user: users(:two).display_name,
+      short_title: expected_link,
+      locale: users(:one).locale || "en"
+    )
+    assert_equal expected_message, comment.content
   end
 
   test "requester with zero access can still request permission (existing behavior preserved)" do
@@ -75,5 +86,16 @@ class CreativesControllerRequestPermissionTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
+
+    comment = Comment.order(:created_at).last
+    expected_short_title = ApplicationController.helpers.strip_tags(creative.effective_origin.description).truncate(10)
+    expected_link = "[#{expected_short_title}](#{Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)})"
+    expected_message = I18n.t(
+      "inbox.permission_requested",
+      user: users(:two).display_name,
+      short_title: expected_link,
+      locale: users(:one).locale || "en"
+    )
+    assert_equal expected_message, comment.content
   end
 end

@@ -577,6 +577,8 @@ module Collavre
         ).to_h
       end
 
+      helper_method :any_filter_active?
+
       def any_filter_active?
         params[:tags].present? ||
           params[:min_progress].present? ||

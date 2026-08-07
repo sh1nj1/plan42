@@ -54,6 +54,7 @@ en:
         empty_state_concept_caption: One block plays all three roles — document, task, and conversation. Stacked as a tree, it becomes a document-shaped project with automatic progress rollup.
         empty_state_add_creative: Add creative
         empty_state_add_sub_creative: Add sub-creative
+        empty_state_add_shortcut: Enter
         empty_state_readonly_message: You don't have write access to add sub-creatives here.
         empty_state_request_pending: Access requested · awaiting owner approval
         empty_state_loggedout_message: Sign up or log in to add sub-creatives.
