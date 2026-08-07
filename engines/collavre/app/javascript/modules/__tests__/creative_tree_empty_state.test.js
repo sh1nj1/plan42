@@ -5,6 +5,7 @@ import {
   creativeTreeContainer,
   hideTreeEmptyState,
   restoreTreeEmptyState,
+  PAGINATION_PENDING_ATTRIBUTE,
 } from '../creative_tree_empty_state'
 
 const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
@@ -149,4 +150,37 @@ test('restoreTreeEmptyState is a no-op without a tree container', () => {
   document.body.innerHTML = ''
   expect(() => restoreTreeEmptyState()).not.toThrow()
   expect(() => restoreTreeEmptyState(null)).not.toThrow()
+})
+
+// Paginated "Chats" feed: an empty container is not an empty result set while the
+// load-more sentinel still has pages to fetch.
+test('restoreTreeEmptyState stays out of the way while more pages are queued', () => {
+  const container = renderRenderedTree()
+  container.setAttribute(PAGINATION_PENDING_ATTRIBUTE, 'true')
+
+  restoreTreeEmptyState(container)
+
+  expect(placeholder(container)).toBeNull()
+})
+
+test('restoreTreeEmptyState leaves an existing placeholder hidden while more pages are queued', () => {
+  const container = renderEmptyTree()
+  hideTreeEmptyState(container)
+  container.setAttribute(PAGINATION_PENDING_ATTRIBUTE, 'true')
+
+  restoreTreeEmptyState(container)
+
+  expect(placeholder(container).hidden).toBe(true)
+})
+
+test('restoreTreeEmptyState restores once the pending-pages marker is cleared', () => {
+  const container = renderRenderedTree()
+  container.setAttribute(PAGINATION_PENDING_ATTRIBUTE, 'true')
+  restoreTreeEmptyState(container)
+  container.removeAttribute(PAGINATION_PENDING_ATTRIBUTE)
+
+  restoreTreeEmptyState(container)
+
+  expect(placeholder(container)).not.toBeNull()
+  expect(placeholder(container).hidden).toBe(false)
 })

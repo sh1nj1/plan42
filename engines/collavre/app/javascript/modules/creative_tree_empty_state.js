@@ -22,8 +22,15 @@
 // pristine copy outside the container; restoreTreeEmptyState() clones it when the
 // tree empties out and nothing is left to un-hide. Cloning a <template> is not an
 // HTML sink — the browser parsed the markup at page load, server-side-escaped.
+//
+// One more wrinkle: the "Chats" feed is paginated, so an empty container does not
+// mean an empty result set — there may be further pages waiting behind the
+// load-more sentinel. tree_controller marks the container with
+// data-creatives-pagination-pending while that is the case, and restoreTreeEmptyState()
+// stays out of the way until the last page has landed.
 const EMPTY_STATE_SELECTOR = '[data-creatives-empty-state]';
 const EMPTY_STATE_TEMPLATE_ID = 'creatives-empty-state-template';
+export const PAGINATION_PENDING_ATTRIBUTE = 'data-creatives-pagination-pending';
 
 export function creativeTreeContainer() {
   return document.getElementById('creatives');
@@ -53,6 +60,10 @@ export function restoreTreeEmptyState(container = creativeTreeContainer()) {
   if (!container || !container.querySelector) return;
   // Still populated — the placeholder stays hidden.
   if (container.querySelector('creative-tree-row')) return;
+  // Rendered rows are gone but the feed has further pages queued: the list is not
+  // empty, it is just between pages. Showing "No creatives found." here would both
+  // lie and survive the append, sitting above the rows the next page brings in.
+  if (container.hasAttribute && container.hasAttribute(PAGINATION_PENDING_ATTRIBUTE)) return;
 
   const existing = emptyStateElements(container);
   if (existing.length > 0) {
