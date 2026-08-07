@@ -222,13 +222,24 @@ export default class extends Controller {
   }
 
   handleStashDraft(event) {
-    this._stashedDraft = event.detail?.draft || null
+    const draft = event.detail?.draft || null
+    // Tagged with the conversation it was typed in: the popup reuses this one
+    // controller for every creative, so a stash left over from another one must
+    // not be handed back here.
+    this._stashedDraft = draft ? { draft, creativeId: this.creativeId } : null
   }
 
   _restoreStashedDraft(submittedText) {
-    const draft = this._stashedDraft
+    const stashed = this._stashedDraft
     this._stashedDraft = null
-    if (!draft) return
+    if (!stashed) return
+    // Switching creatives calls onPopupOpened on this same instance (there is
+    // no disconnect between conversations), so a send that settles after the
+    // switch would drop the previous conversation's draft into the new one.
+    // The draft belongs to a conversation that is no longer on screen; discard
+    // it rather than misfile it.
+    if (String(stashed.creativeId ?? '') !== String(this.creativeId ?? '')) return
+    const draft = stashed.draft
     // Two boxes are safe to overwrite: an empty one (the success path runs
     // resetForm) and one still holding exactly what we submitted (the failure
     // path never clears it, so the command text is left sitting there). Any

@@ -18,8 +18,15 @@ const buildController = () => {
   Object.defineProperty(controller, 'textareaTarget', { get: () => textarea })
   controller._autoResize = jest.fn()
   controller._updateSubmitButton = jest.fn()
+  controller.creativeId = '7'
 
   return { controller, textarea }
+}
+
+// The stash is tagged with the creative it was typed in, so tests build it the
+// way handleStashDraft does rather than assigning a bare string.
+const stash = (controller, draft) => {
+  controller._stashedDraft = { draft, creativeId: controller.creativeId }
 }
 
 describe('CommentsFormController stashed draft', () => {
@@ -30,7 +37,7 @@ describe('CommentsFormController stashed draft', () => {
       new CustomEvent('comments--form:stash-draft', { detail: { draft: 'roadmap notes' } }),
     )
 
-    expect(controller._stashedDraft).toBe('roadmap notes')
+    expect(controller._stashedDraft).toEqual({ draft: 'roadmap notes', creativeId: '7' })
   })
 
   test('receives the event dispatched on the textarea, which bubbles to the popup', () => {
@@ -51,12 +58,12 @@ describe('CommentsFormController stashed draft', () => {
       }),
     )
 
-    expect(controller._stashedDraft).toBe('roadmap notes')
+    expect(controller._stashedDraft).toEqual({ draft: 'roadmap notes', creativeId: '7' })
   })
 
   test('restores the draft into the textarea the send cleared', () => {
     const { controller, textarea } = buildController()
-    controller._stashedDraft = 'roadmap notes'
+    stash(controller, 'roadmap notes')
 
     // The success path runs resetForm() before .finally(), so the box is empty.
     textarea.value = ''
@@ -69,7 +76,7 @@ describe('CommentsFormController stashed draft', () => {
 
   test('does not clobber text the user typed while the command was in flight', () => {
     const { controller, textarea } = buildController()
-    controller._stashedDraft = 'roadmap notes'
+    stash(controller, 'roadmap notes')
 
     textarea.value = 'something else entirely'
     controller._restoreStashedDraft('/calendar 2026-08-14')
@@ -82,7 +89,7 @@ describe('CommentsFormController stashed draft', () => {
     // still sitting there. Matching it proves the user has not typed since,
     // which makes the box safe to hand the draft back into.
     const { controller, textarea } = buildController()
-    controller._stashedDraft = 'roadmap notes'
+    stash(controller, 'roadmap notes')
 
     textarea.value = '/calendar 2026-08-14'
     controller._restoreStashedDraft('/calendar 2026-08-14')
@@ -96,7 +103,7 @@ describe('CommentsFormController stashed draft', () => {
     // handleSend's .catch reinstates the backed-up quote text before .finally,
     // so the box holds something other than what was submitted.
     const { controller, textarea } = buildController()
-    controller._stashedDraft = 'roadmap notes'
+    stash(controller, 'roadmap notes')
 
     textarea.value = '> quoted review text\n\nmy reply'
     controller._restoreStashedDraft('/calendar 2026-08-14')
@@ -106,7 +113,7 @@ describe('CommentsFormController stashed draft', () => {
 
   test('consumes the stash so a later send does not resurrect it', () => {
     const { controller, textarea } = buildController()
-    controller._stashedDraft = 'roadmap notes'
+    stash(controller, 'roadmap notes')
 
     controller._restoreStashedDraft()
     expect(controller._stashedDraft).toBeNull()
