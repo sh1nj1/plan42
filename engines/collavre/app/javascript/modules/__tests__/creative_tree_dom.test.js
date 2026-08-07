@@ -422,4 +422,28 @@ describe('removeTreeElement', () => {
   test('no-ops on nullish tree', () => {
     expect(() => removeTreeElement(null)).not.toThrow();
   });
+
+  test('restores the empty-state placeholder once the last row is gone', () => {
+    const emptyHtml = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>';
+    root.setAttribute('data-creatives--tree-empty-html-value', emptyHtml);
+    const { row, tree } = makeRow(1);
+    root.appendChild(row);
+
+    removeTreeElement(tree);
+
+    expect(root.querySelector('[data-creatives-empty-state]')).not.toBeNull();
+  });
+
+  test('leaves the placeholder off while other rows remain', () => {
+    const emptyHtml = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>';
+    root.setAttribute('data-creatives--tree-empty-html-value', emptyHtml);
+    const { row: first, tree } = makeRow(1);
+    const { row: second } = makeRow(2);
+    root.appendChild(first);
+    root.appendChild(second);
+
+    removeTreeElement(tree);
+
+    expect(root.querySelector('[data-creatives-empty-state]')).toBeNull();
+  });
 });

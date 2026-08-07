@@ -174,6 +174,19 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-row", text: ActionController::Base.helpers.strip_tags(existing_child.description)
   end
 
+  test "hides the empty state placeholder once a sub-creative is added" do
+    visit collavre.creative_path(@root_creative)
+
+    assert_selector "#creatives [data-creatives-empty-state]", wait: 5
+
+    find(".creative-actions-row .add-creative-btn").click
+    fill_inline_editor("First child")
+    close_inline_editor
+
+    assert_selector "#creatives > creative-tree-row .creative-row", text: "First child", wait: 5
+    assert_no_selector "#creatives [data-creatives-empty-state]"
+  end
+
   test "does not duplicate attachments when re-editing inline creative" do
     fixture_path = Rails.root.join("test/fixtures/files/small.png")
 

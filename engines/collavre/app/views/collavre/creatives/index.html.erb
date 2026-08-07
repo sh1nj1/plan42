@@ -226,16 +226,21 @@
 <%
   empty_html = nil
   if (@creatives || []).blank?
-    if params[:search].present?
-      empty_html = content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
-    elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read)
-      message = content_tag(:p, t('.no_permission'), style: 'text-align: center;')
-      action = content_tag(:div, button_to(t('.request_permission'), request_permission_creative_path(@creative), method: :post), style: 'text-align: center;')
-      empty_html = message + action
-    else
-      text = params[:id] ? t('.no_sub_creatives') : t('.no_creatives')
-      empty_html = content_tag(:p, text, style: 'text-align: center;')
-    end
+    empty_body =
+      if params[:search].present?
+        content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
+      elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read)
+        message = content_tag(:p, t('.no_permission'), style: 'text-align: center;')
+        action = content_tag(:div, button_to(t('.request_permission'), request_permission_creative_path(@creative), method: :post), style: 'text-align: center;')
+        message + action
+      else
+        text = params[:id] ? t('.no_sub_creatives') : t('.no_creatives')
+        content_tag(:p, text, style: 'text-align: center;')
+      end
+    # data-creatives-empty-state marks the placeholder so client-side row insertion
+    # (inline editor / websocket broadcast) can drop it as soon as the tree is no
+    # longer empty, and restore it when the last row is removed.
+    empty_html = content_tag(:div, empty_body, data: { creatives_empty_state: '' })
   end
   # Only pass filter parameters to avoid unnecessary params in URL
   tree_params = params.to_unsafe_h.slice(

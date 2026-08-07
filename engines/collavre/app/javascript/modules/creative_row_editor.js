@@ -44,6 +44,7 @@ import {
   updateRowFromData,
   inlinePayloadFromTree,
 } from './creative_inline_payload'
+import { hideTreeEmptyState } from './creative_tree_empty_state'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
 
@@ -1592,6 +1593,8 @@ function setupEditorSession() {
         } else {
           targetContainer.appendChild(rowComponent);
         }
+        // A row now occupies the tree — the "no sub-creatives" placeholder must go.
+        hideTreeEmptyState();
 
         const finalizeSetup = () => {
           const newTree = rowComponent.querySelector('.creative-tree');
