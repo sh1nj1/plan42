@@ -59,9 +59,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance']"
   end
 
-  test "workspace tree JSON returns branches without leaf roots" do
+  test "workspace tree JSON returns collapsed branches without leaf roots" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
-    Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
+    child = Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
+    Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
     leaf = Creative.create!(user: users(:one), description: "Workspace leaf")
 
     get creatives_path(format: :json, workspace_tree: 1)
@@ -75,7 +76,32 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
     assert_equal branch.creative_snippet, branch_payload.fetch("snippet")
     assert branch_payload.fetch("can_comment")
+    assert branch_payload.fetch("has_children")
+    assert_empty branch_payload.fetch("children")
     assert_equal "no-cache", response.headers["Cache-Control"]
+
+    get creatives_path(format: :json, workspace_tree: 1, expand: [ branch.id ])
+
+    assert_response :success
+    expanded_branch = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    assert_equal [ child.id ], expanded_branch.fetch("children").pluck("id")
+  end
+
+  test "workspace tree JSON ignores invalid and excessive expansion ids" do
+    branch = Creative.create!(user: users(:one), description: "Limited branch")
+    child = Creative.create!(user: users(:one), parent: branch, description: "Limited child")
+    Creative.create!(user: users(:one), parent: child, description: "Limited leaf")
+    excessive_ids = Array.new(Collavre::CreativesController::WORKSPACE_TREE_EXPANSION_LIMIT) { |index| 1_000_000 + index }
+
+    get creatives_path(
+      format: :json,
+      workspace_tree: 1,
+      expand: [ "invalid", *excessive_ids, branch.id ]
+    )
+
+    assert_response :success
+    branch_payload = JSON.parse(response.body).fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    assert_empty branch_payload.fetch("children")
   end
 
   test "workspace frame requests render only the replaceable creative content" do

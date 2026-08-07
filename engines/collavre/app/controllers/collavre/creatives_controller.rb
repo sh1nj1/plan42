@@ -1,5 +1,7 @@
 module Collavre
   class CreativesController < ApplicationController
+    WORKSPACE_TREE_EXPANSION_LIMIT = 100
+
     include Collavre::Concerns::SlideViewable
     include Collavre::Concerns::Exportable
     include Collavre::Concerns::TreeManageable
@@ -67,7 +69,7 @@ module Collavre
               creatives: Collavre::Creatives::WorkspaceTreeBuilder.new(
                 user: Current.user,
                 view_context: view_context,
-                max_level: Collavre::SystemSetting.display_level
+                expanded_ids: workspace_tree_expanded_ids
               ).build(index_result.creatives)
             }
             return
@@ -593,6 +595,13 @@ module Collavre
           :assignee_id, :unassigned, :show_archived, :page, :per_page,
           tags: []
         ).to_h
+      end
+
+      def workspace_tree_expanded_ids
+        permitted = params.permit(expand: [])[:expand]
+        Array(permitted).filter_map { |id| Integer(id, exception: false) }
+          .uniq
+          .first(WORKSPACE_TREE_EXPANSION_LIMIT)
       end
 
       helper_method :any_filter_active?

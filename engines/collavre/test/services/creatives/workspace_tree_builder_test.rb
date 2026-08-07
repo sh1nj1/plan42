@@ -21,20 +21,32 @@ module Creatives
       @view_context = FakeViewContext.new
     end
 
-    test "returns only readable creatives that have children" do
+    test "returns only readable branches without loading their children" do
       root = Creative.create!(user: @user, description: "<strong>Root</strong>")
       branch = Creative.create!(user: @user, parent: root, description: "Branch")
       Creative.create!(user: @user, parent: branch, description: "Leaf")
-      Creative.create!(user: @user, description: "Root leaf")
+      root_leaf = Creative.create!(user: @user, description: "Root leaf")
 
-      nodes = build_tree([ root ] + Creative.where(description: "Root leaf").to_a)
+      nodes = build_tree([ root, root_leaf ])
 
       assert_equal [ root.id ], nodes.pluck(:id)
       assert_equal "Root", nodes.first[:label]
       assert_equal root.creative_snippet, nodes.first[:snippet]
       assert nodes.first[:can_comment]
       assert_equal "/creatives?id=#{root.id}", nodes.first[:url]
+      assert nodes.first[:has_children]
+      assert_empty nodes.first[:children]
+    end
+
+    test "loads only requested branches" do
+      root = Creative.create!(user: @user, description: "Root")
+      branch = Creative.create!(user: @user, parent: root, description: "Branch")
+      Creative.create!(user: @user, parent: branch, description: "Leaf")
+
+      nodes = build_tree([ root ], expanded_ids: [ root.id ])
+
       assert_equal [ branch.id ], nodes.first[:children].pluck(:id)
+      refute nodes.first[:children].first[:has_children]
       assert_empty nodes.first[:children].first[:children]
     end
 
@@ -45,15 +57,35 @@ module Creatives
       assert_empty build_tree([ root ])
     end
 
-    test "stops recursion at the configured display level" do
+    test "expands requested paths beyond the former display level" do
       root = Creative.create!(user: @user, description: "Level 1")
-      branch = Creative.create!(user: @user, parent: root, description: "Level 2")
-      Creative.create!(user: @user, parent: branch, description: "Level 3")
+      path = [ root ]
+      6.times do |index|
+        path << Creative.create!(user: @user, parent: path.last, description: "Level #{index + 2}")
+      end
+      Creative.create!(user: @user, parent: path.last, description: "Leaf")
 
-      nodes = build_tree([ root ], max_level: 1)
+      nodes = build_tree([ root ], expanded_ids: path.map(&:id))
 
-      assert_equal [ root.id ], nodes.pluck(:id)
-      assert_empty nodes.first[:children]
+      rendered_ids = []
+      remaining = nodes
+      until remaining.empty?
+        rendered_ids << remaining.first.fetch(:id)
+        remaining = remaining.first.fetch(:children)
+      end
+      assert_equal path.map(&:id), rendered_ids
+    end
+
+    test "stops linked shell cycles without hiding the shell" do
+      origin = Creative.create!(user: @user, description: "Cyclic origin")
+      shell = Creative.create!(user: @user, parent: origin, origin: origin, description: "Cyclic shell")
+
+      nodes = build_tree([ origin ], expanded_ids: [ origin.id, shell.id ])
+
+      assert_equal [ origin.id ], nodes.pluck(:id)
+      assert_equal [ shell.id ], nodes.first.fetch(:children).pluck(:id)
+      refute nodes.first.fetch(:children).first.fetch(:has_children)
+      assert_empty nodes.first.fetch(:children).first.fetch(:children)
     end
 
     test "batches linked origins and permission ranks for each level" do
@@ -73,20 +105,22 @@ module Creatives
       end
 
       ActiveSupport::Notifications.subscribed(callback, "sql.active_record") do
-        build_tree(fresh_shells)
+        build_tree(fresh_shells, expanded_ids: shell_ids)
       end
 
-      per_node_queries = queries.grep(/(?:collavre_creatives|creative_shares_cache).*LIMIT 1/i)
+      child_scans = queries.grep(/SELECT "creatives"\."id", "creatives"\."parent_id".*WHERE "creatives"\."parent_id"/i)
+      per_node_queries = queries.grep(/(?:FROM "creatives"|creative_shares_cache).*LIMIT 1/i)
+      assert_equal 2, child_scans.size, "expected one child scan per inspected level"
       assert_empty per_node_queries, "expected batched workspace tree reads, got:\n#{per_node_queries.join("\n")}"
     end
 
     private
 
-    def build_tree(creatives, max_level: 6)
+    def build_tree(creatives, expanded_ids: [])
       Collavre::Creatives::WorkspaceTreeBuilder.new(
         user: @user,
         view_context: @view_context,
-        max_level: max_level
+        expanded_ids: expanded_ids
       ).build(creatives)
     end
   end
