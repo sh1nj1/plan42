@@ -113,6 +113,9 @@ ko:
       theme: 테마
       calendar_id: 캘린더 ID
       notifications_enabled: 알림 사용
+      creative_workspace:
+        enabled: 3단 크리에이티브 작업 공간 사용
+        description: 왼쪽 크리에이티브 트리를 유지하고 전체 페이지 새로고침 없이 중앙 내용을 전환하며 오른쪽에 채팅을 표시합니다.
       locale: 언어
       locales:
         en: 영어

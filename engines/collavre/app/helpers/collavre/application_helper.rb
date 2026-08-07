@@ -15,6 +15,7 @@ module Collavre
       collavre/org_chart
       collavre/popup
       collavre/comments_popup
+      collavre/workspace
       collavre/tables
       collavre/code_highlight
       collavre/comment_versions
@@ -67,6 +68,13 @@ module Collavre
       else
         "light-mode" # Custom theme: neutralize OS dark mode
       end
+    end
+
+    def creative_workspace?
+      Current.user&.creative_workspace_enabled? &&
+        controller_path == "collavre/creatives" &&
+        action_name == "index" &&
+        !@auto_fullscreen
     end
 
     # Renders CSS for admin-configured default themes (light/dark mode)

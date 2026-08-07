@@ -928,6 +928,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_07_050000) do
     t.string "calendar_id"
     t.datetime "created_at", null: false
     t.integer "created_by_id"
+    t.boolean "creative_workspace_enabled", default: false, null: false
     t.json "dismissed_notices"
     t.string "email", null: false
     t.datetime "email_verified_at"

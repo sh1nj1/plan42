@@ -26,6 +26,9 @@ export default class extends Controller {
     this.movingComments = false
     this.manualSearchQuery = null
     this.initialLoadComplete = false
+    this.highlightCreativeId = null
+    this._loadCommentsVersion = 0
+    this.markReadTimeout = null
     this.prevMsgNavigator = new PrevMessageNavigator()
 
     this.handleScroll = this.handleScroll.bind(this)
@@ -54,7 +57,7 @@ export default class extends Controller {
     // If we have a creativeId from data attribute or parent (unlikely directly on list, 
     // usually set via onPopupOpened), try loading.
     // If not, onPopupOpened will trigger it.
-    if (this.element.dataset.creativeId) {
+    if (this.element.dataset.creativeId && this.element.dataset.docked !== 'true') {
       this.creativeId = this.element.dataset.creativeId
       this.loadInitialComments()
     }
@@ -73,18 +76,30 @@ export default class extends Controller {
   }
 
   handleTopicChange(event) {
+    const nextTopicId = event.detail.topicId
+    if (
+      this.currentTopicId !== undefined &&
+      String(this.currentTopicId || '') === String(nextTopicId || '')
+    ) return
+
     // During notifyChildControllers, topic loading fires change events before
     // onPopupOpened sets up highlightAfterLoad. Suppress these to avoid a
     // race where a non-highlight load overwrites the deep-link highlight load.
     if (this.suppressTopicChangeLoad) {
-      this.currentTopicId = event.detail.topicId
+      this.currentTopicId = nextTopicId
       return
     }
-    this.currentTopicId = event.detail.topicId
+    this.currentTopicId = nextTopicId
+    // A user-selected topic supersedes any outstanding deep-link window.
+    // The old request is discarded by the topic/version guards below, while
+    // this replacement load starts from the selected topic's latest messages.
+    this.highlightAfterLoad = null
+    this.highlightCreativeId = null
     this.resetToLatest()
   }
 
   disconnect() {
+    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
     this.listTarget.removeEventListener('scroll', this.handleScroll)
     PREV_MSG_USER_INPUT_EVENTS.forEach((name) => {
       this.listTarget.removeEventListener(name, this.handlePrevMsgUserInput)
@@ -120,9 +135,15 @@ export default class extends Controller {
   }
 
   onPopupOpened({ creativeId, highlightId, topicId } = {}) {
+    const normalizedCreativeId = String(creativeId || '')
+    const pendingHighlight = String(this.highlightCreativeId || '') === normalizedCreativeId
+      ? this.highlightAfterLoad
+      : null
     this.creativeId = creativeId
+    this.initialLoadComplete = false
     // highlightId from popup args takes precedence, else fallback to URL param if first load
-    this.highlightAfterLoad = highlightId || this.deepLinkCommentId
+    this.highlightAfterLoad = highlightId || pendingHighlight || this.deepLinkCommentId
+    this.highlightCreativeId = this.highlightAfterLoad ? normalizedCreativeId : null
 
     if (topicId !== undefined) {
       this.currentTopicId = topicId
@@ -138,6 +159,15 @@ export default class extends Controller {
   }
 
   onPopupClosed() {
+    if (this.markReadTimeout) {
+      window.clearTimeout(this.markReadTimeout)
+      this.markReadTimeout = null
+    }
+    this._loadCommentsVersion += 1
+    this.creativeId = null
+    this.highlightAfterLoad = null
+    this.highlightCreativeId = null
+    this.suppressTopicChangeLoad = false
     this.resetState()
     this.listTarget.innerHTML = ''
     this.initialLoadComplete = false
@@ -169,6 +199,7 @@ export default class extends Controller {
     // The list is about to be replaced wholesale; any anchor we hold is stale.
     this.prevMsgNavigator.reset()
 
+    const requestVersion = ++this._loadCommentsVersion
     const params = {}
     if (this.highlightAfterLoad) {
       params.around_comment_id = this.highlightAfterLoad
@@ -181,6 +212,7 @@ export default class extends Controller {
       // Discard stale responses if creative or topic changed while fetching.
       // This prevents a race condition where switching creatives causes
       // the old creative's comments to overwrite the new creative's list.
+      if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
       if (String(this.currentTopicId || "") !== String(requestTopicId)) return
 
@@ -194,6 +226,7 @@ export default class extends Controller {
         this.allNewerLoaded = false // We are likely in middle
         this.highlightComment(this.highlightAfterLoad)
         this.highlightAfterLoad = null
+        this.highlightCreativeId = null
       } else {
         // Standard load -> Scroll to bottom (latest)
         this.scrollToBottom()
@@ -208,6 +241,9 @@ export default class extends Controller {
       this.markCommentsRead()
 
     }).catch((error) => {
+      if (requestVersion !== this._loadCommentsVersion) return
+      if (this.creativeId !== requestCreativeId) return
+      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
       this.listTarget.innerHTML = `<div class="comments-list-error">${error.message}</div>`
     })
   }
@@ -370,14 +406,19 @@ export default class extends Controller {
 
   markCommentsRead() {
     if (!this.creativeId) return
-    window.setTimeout(() => {
+    if (this.markReadTimeout) window.clearTimeout(this.markReadTimeout)
+    const creativeId = this.creativeId
+    this.markReadTimeout = window.setTimeout(() => {
+      this.markReadTimeout = null
+      if (!this.element.isConnected || this.creativeId !== creativeId) return
+
       fetch('/comment_read_pointers/update', {
         method: 'POST',
         headers: {
           'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ creative_id: this.creativeId }),
+        body: JSON.stringify({ creative_id: creativeId }),
       }).catch(() => { /* ignore — creative may have been deleted */ })
     }, 2000);
   }

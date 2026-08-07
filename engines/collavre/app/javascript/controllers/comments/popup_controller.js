@@ -6,6 +6,13 @@ const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
 const LONG_PRESS_MS = 500
 
+// A collapsed docked chat shrinks to a 3rem rail where the close button is the
+// only visible control, so it acts as the expand affordance and shows a chevron
+// instead of the close glyph. Matched to the tree chevrons
+// (link_creative_controller.js) so the affordance reads the same everywhere.
+const EXPAND_CHEVRON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M15 6L9 12L15 18"/></svg>'
+
 export default class extends Controller {
   static targets = [
     'title',
@@ -31,6 +38,9 @@ export default class extends Controller {
     this.touchStartY = null
     this.openFromUrlObserver = null
     this.openFromUrlTimeout = null
+    this.dockedOpenTimeout = null
+    this.openGeneration = 0
+    this._wakeLockRequest = null
     this.handleCreativeClick = this.handleCreativeClick.bind(this)
     this.handleCreativeDestroyed = this.handleCreativeDestroyed.bind(this)
     this.handleEditingStart = this.handleEditingStart.bind(this)
@@ -48,6 +58,7 @@ export default class extends Controller {
     this.handlePopupWheel = this.handlePopupWheel.bind(this)
     this.handleChatNavKeydown = this.handleChatNavKeydown.bind(this)
     this.handleDropdownOutsideClick = this.handleDropdownOutsideClick.bind(this)
+    this.handleDockedMediaChange = this.handleDockedMediaChange.bind(this)
     this._longPressTimer = null
     this._longPressTriggered = false
     this._isNavigating = false
@@ -64,6 +75,16 @@ export default class extends Controller {
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('popstate', this.handlePopState)
     document.addEventListener('keydown', this.handleChatNavKeydown)
+    this.dockedMediaQuery = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(min-width: 768px)')
+      : {
+          matches: window.innerWidth >= 768,
+          addEventListener() {},
+          removeEventListener() {},
+        }
+    if (this.element.dataset.docked === 'true') {
+      this.dockedMediaQuery.addEventListener('change', this.handleDockedMediaChange)
+    }
 
     // Long press on nav buttons
     this._setupNavLongPress()
@@ -115,6 +136,8 @@ export default class extends Controller {
       this._syncFullscreenUI(true)
       // Defer to ensure all sibling controllers are connected
       requestAnimationFrame(() => this.openForCreative())
+    } else if (this.isDocked()) {
+      this.enterDockedMode()
     } else {
       this.openFromUrl()
     }
@@ -123,6 +146,7 @@ export default class extends Controller {
   disconnect() {
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
+    if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
     document.removeEventListener(CREATIVE_CLICK_EVENT, this.handleCreativeClick)
     document.removeEventListener(CREATIVE_DESTROYED_EVENT, this.handleCreativeDestroyed)
     document.removeEventListener('creative-editing:start', this.handleEditingStart)
@@ -133,6 +157,7 @@ export default class extends Controller {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('popstate', this.handlePopState)
     document.removeEventListener('keydown', this.handleChatNavKeydown)
+    this.dockedMediaQuery?.removeEventListener('change', this.handleDockedMediaChange)
     document.removeEventListener('click', this.handleDropdownOutsideClick)
     this._clearLongPressTimer()
     if (this.hasHeaderTarget) {
@@ -184,15 +209,77 @@ export default class extends Controller {
   handleCreativeClick(event) {
     const button = event.detail?.button
     const creativeId = event.detail?.creativeId
+    const highlightId = event.detail?.highlightId
     if (!button) return
+    if (event.detail?.workspaceSync && !this.isDocked()) {
+      const nextCreativeId = creativeId || button.dataset.creativeId || ''
+      if (
+        this.element.style.display === 'flex' &&
+        this.element.dataset.creativeId !== String(nextCreativeId)
+      ) {
+        this.close()
+      }
+      return
+    }
+    if (!creativeId && button.dataset.workspaceNavigationState === 'true' && this.isDocked()) {
+      this.resetDockedToEmpty()
+      return
+    }
+    // A collapsed docked chat is a 3rem rail, so an explicit chat-icon click has
+    // to expand it. Workspace tree navigation must not: the user collapsed the
+    // chat on purpose and moving around the tree should leave it that way.
+    const userRequestedOpen = !event.detail?.workspaceSync
     if (
       this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
+      if (this.isDocked()) {
+        if (userRequestedOpen) {
+          // Already loaded for this creative — expand only, so the draft and
+          // subscriptions survive.
+          this.expandDocked()
+        } else if (highlightId) {
+          this.open(button, { creativeId, highlightId })
+        }
+        return
+      }
       this.close()
       return
     }
-    this.open(button, { creativeId })
+    if (userRequestedOpen) this.expandDocked()
+    const openOptions = { creativeId }
+    if (highlightId) openOptions.highlightId = highlightId
+    this.open(button, openOptions)
+  }
+
+  resetDockedToEmpty() {
+    this.openGeneration += 1
+
+    if (this.isFullscreen()) this._exitFullscreenState()
+
+    if (this.dockedOpenTimeout) {
+      window.clearTimeout(this.dockedOpenTimeout)
+      this.dockedOpenTimeout = null
+    }
+
+    this.currentButton = null
+    this.element.dataset.creativeId = ''
+    this.element.dataset.canComment = 'false'
+    this.element.dataset.creativeSnippet = ''
+    this.titleTarget.textContent = this.element.dataset.defaultTitle || ''
+    this._clearChatActiveRow()
+    this._hideNavDropdown()
+
+    if (this.listController) this.listController.creativeId = null
+    this.closeChildControllers()
+    this.formController?.setCommentPermission(false)
+    this.element.querySelector('#comment-topics')?.replaceChildren()
+    if (this.hasListTarget) {
+      this.listTarget.classList.add('docked-empty')
+      this.listTarget.textContent = this.element.dataset.dockedEmptyText || ''
+    }
+    this.showPopup()
+    this.dispatchPopupClosed()
   }
 
   handleCreativeDestroyed(event) {
@@ -204,7 +291,11 @@ export default class extends Controller {
 
     if (this.element.style.display !== 'flex') return
     if (destroyedIds.includes(this.element.dataset.creativeId)) {
-      this.close()
+      if (this.isDocked() && !this.isFullscreen()) {
+        this.resetDockedToEmpty()
+      } else {
+        this.close()
+      }
     }
   }
 
@@ -219,6 +310,8 @@ export default class extends Controller {
   }
 
   async open(button, { creativeId, highlightId } = {}) {
+    const openGeneration = ++this.openGeneration
+    if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
@@ -236,7 +329,13 @@ export default class extends Controller {
     this.showPopup()
     this.updatePosition()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment, highlightId })
+    const opened = await this.notifyChildControllers({
+      creativeId: resolvedCreativeId,
+      canComment,
+      highlightId,
+      openGeneration,
+    })
+    if (!opened) return
 
     // Track in chat navigation history (skip if navigating via back/forward)
     if (!this._isNavigating) {
@@ -254,7 +353,9 @@ export default class extends Controller {
     }))
   }
 
-  async openForCreative() {
+  async openForCreative({ highlightId } = {}) {
+    const openGeneration = ++this.openGeneration
+    if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
     const snippet = this.element.dataset.creativeSnippet || ''
@@ -269,7 +370,13 @@ export default class extends Controller {
 
     this.showPopup()
 
-    await this.notifyChildControllers({ creativeId: resolvedCreativeId, canComment })
+    const opened = await this.notifyChildControllers({
+      creativeId: resolvedCreativeId,
+      canComment,
+      highlightId,
+      openGeneration,
+    })
+    if (!opened) return
 
     // Track in chat navigation history
     if (!this._isNavigating) {
@@ -287,7 +394,7 @@ export default class extends Controller {
     }))
   }
 
-  async notifyChildControllers({ creativeId, canComment, highlightId }) {
+  async notifyChildControllers({ creativeId, canComment, highlightId, openGeneration }) {
     this.topicsController?.clearOverrideTopicId()
     // Drop the previous creative's topic selection from the form controller
     // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
@@ -307,18 +414,28 @@ export default class extends Controller {
     // Without this, the topic change event fires loadInitialComments() before
     // onPopupOpened sets highlightAfterLoad, causing a race where the non-highlight
     // load can overwrite the deep-link highlight load.
-    if (this.listController) {
-      this.listController.creativeId = creativeId
-      this.listController.suppressTopicChangeLoad = true
+    const suppressedListController = this.listController
+    if (suppressedListController) {
+      suppressedListController.creativeId = creativeId
+      suppressedListController.suppressTopicChangeLoad = true
     }
 
     // Load topics first to establish context
-    if (this.topicsController) {
-      await this.topicsController.onPopupOpened({ creativeId })
+    try {
+      if (this.topicsController) {
+        await this.topicsController.onPopupOpened({ creativeId })
+      }
+    } catch (error) {
+      if (openGeneration === this.openGeneration && suppressedListController) {
+        suppressedListController.suppressTopicChangeLoad = false
+      }
+      throw error
     }
 
-    if (this.listController) {
-      this.listController.suppressTopicChangeLoad = false
+    if (openGeneration !== this.openGeneration) return false
+
+    if (suppressedListController) {
+      suppressedListController.suppressTopicChangeLoad = false
     }
 
     if (this.formController) {
@@ -340,63 +457,21 @@ export default class extends Controller {
     if (this.dropTriggerController) {
       this.dropTriggerController.onPopupOpened({ creativeId })
     }
+    return true
   }
 
   close() {
-    if (this.presenceController) {
-      this.presenceController.onPopupClosed()
-    }
-    if (this.formController) {
-      this.formController.onPopupClosed()
-    }
-    if (this.listController) {
-      this.listController.onPopupClosed()
-    }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupClosed()
-    }
-    if (this.topicsController) {
-      this.topicsController.onPopupClosed()
-    }
-    if (this.contextsController) {
-      this.contextsController.onPopupClosed()
-    }
-    if (this.dropTriggerController) {
-      this.dropTriggerController.onPopupClosed()
+    if (this.isDocked() && !this.isFullscreen()) {
+      this.toggleDocked()
+      return
     }
 
-    // Dispatch event for integrations
-    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
-      bubbles: true,
-      detail: {
-        badgeContainer: this.element.querySelector('[data-integration-badges]')
-      }
-    }))
+    this.openGeneration += 1
 
-    // Exit fullscreen state if active
-    if (this.isFullscreen()) {
-      this.element.dataset.fullscreen = 'false'
-      document.body.classList.remove('chat-fullscreen')
-      this._syncFullscreenUI(false)
-      this._savedStyles = null
+    this.closeChildControllers()
+    this.dispatchPopupClosed()
 
-      // Navigate back from fullscreen URL — use replaceState to consume the
-      // fullscreen history entry instead of pushing a new one, preventing a
-      // stale fullscreen entry from being reached via the Back button.
-      const creativeId = this.element.dataset.creativeId
-      const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
-      if (backUrl) {
-        const url = new URL(backUrl, window.location.origin)
-        // Strip comment auto-open markers so a refresh after close doesn't
-        // re-open the popup (handles ?open_comments, ?comment_id, #comment_*).
-        url.searchParams.delete('open_comments')
-        url.searchParams.delete('comment_id')
-        const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
-        url.hash = url.hash.replace(/^#comment_\d+$/, '')
-        window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
-      }
-      this._previousUrl = null
-    }
+    this._exitFullscreenState()
 
     this._clearChatActiveRow()
     this._hideNavDropdown()
@@ -414,7 +489,69 @@ export default class extends Controller {
     delete this.element.dataset.resized
   }
 
+  _exitFullscreenState() {
+    if (!this.isFullscreen()) return
+
+    if (this._enterCleanupTimer) {
+      window.clearTimeout(this._enterCleanupTimer)
+      this._enterCleanupTimer = null
+    }
+    if (this._enterCleanupFn) {
+      this.element.removeEventListener('transitionend', this._enterCleanupFn)
+      this._enterCleanupFn = null
+    }
+
+    this.element.dataset.fullscreen = 'false'
+    document.body.classList.remove('chat-fullscreen')
+    this._syncFullscreenUI(false)
+    this._savedStyles = null
+    this.element.style.transition = ''
+    this.element.style.position = ''
+    this.element.style.top = ''
+    this.element.style.left = ''
+    this.element.style.right = ''
+    this.element.style.bottom = ''
+    this.element.style.width = ''
+    this.element.style.height = ''
+    this.element.style.transform = ''
+
+    // Consume the fullscreen history entry and remove markers that could
+    // reopen the invalidated chat after a reset or close.
+    const creativeId = this.element.dataset.creativeId
+    const backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+    if (backUrl) {
+      const url = new URL(backUrl, window.location.origin)
+      url.searchParams.delete('open_comments')
+      url.searchParams.delete('comment_id')
+      const cleanPath = url.pathname.replace(/\/comments\/\d+$/, '')
+      url.hash = url.hash.replace(/^#comment_\d+$/, '')
+      window.history.replaceState({ fullscreen: false }, '', cleanPath + url.search + url.hash)
+    }
+    this._previousUrl = null
+  }
+
+  closeChildControllers() {
+    this.presenceController?.onPopupClosed()
+    this.formController?.onPopupClosed()
+    this.listController?.onPopupClosed()
+    this.mentionMenuController?.onPopupClosed()
+    this.topicsController?.onPopupClosed()
+    this.contextsController?.onPopupClosed()
+    this.dropTriggerController?.onPopupClosed()
+  }
+
+  dispatchPopupClosed() {
+    this.element.dispatchEvent(new CustomEvent('comments-popup:closed', {
+      bubbles: true,
+      detail: {
+        badgeContainer: this.element.querySelector('[data-integration-badges]')
+      }
+    }))
+  }
+
   prepareSize() {
+    if (this.isDocked()) return
+
     const stored = window.localStorage.getItem(SIZE_STORAGE_KEY)
     if (!stored) return
     try {
@@ -432,10 +569,13 @@ export default class extends Controller {
 
   showPopup() {
     this.element.style.display = 'flex'
-    if (this.isMobile()) {
+    if (this.isDocked()) {
+      this.element.classList.add('docked')
+      this.syncDockedUI()
+    } else if (this.isMobile()) {
       this.element.classList.add('open')
     }
-    this._requestWakeLock()
+    this._syncWakeLock()
   }
 
   isFullscreen() {
@@ -446,8 +586,99 @@ export default class extends Controller {
     return window.innerWidth <= 600
   }
 
+  isDocked() {
+    return this.element.dataset.docked === 'true' && this.dockedMediaQuery?.matches === true
+  }
+
+  enterDockedMode() {
+    const el = this.element
+    if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
+    el.classList.add('docked')
+    el.classList.remove('open')
+    el.style.position = ''
+    el.style.top = ''
+    el.style.left = ''
+    el.style.right = ''
+    el.style.bottom = ''
+    el.style.width = ''
+    el.style.height = ''
+    delete el.dataset.resized
+    this.showPopup()
+
+    if (el.dataset.creativeId) {
+      requestAnimationFrame(() => {
+        this.dockedOpenTimeout = window.setTimeout(() => {
+          this.dockedOpenTimeout = null
+          if (!this.element.isConnected || !this.isDocked()) return
+
+          this.openForCreative({ highlightId: this.commentIdFromUrl() })
+        }, 0)
+      })
+    } else if (this.hasListTarget) {
+      this.listTarget.classList.add('docked-empty')
+      this.listTarget.textContent = el.dataset.dockedEmptyText || ''
+    }
+  }
+
+  handleDockedMediaChange(event) {
+    if (event.matches) {
+      this.enterDockedMode()
+    } else {
+      this.element.classList.remove('docked', 'docked-collapsed')
+      this.syncDockedUI()
+      this.close()
+    }
+  }
+
+  toggleDocked() {
+    if (!this.isDocked()) return
+
+    if (this.element.classList.contains('docked-collapsed')) {
+      this.expandDocked()
+      return
+    }
+
+    this.element.classList.add('docked-collapsed')
+    this.syncDockedUI()
+    this._syncWakeLock()
+  }
+
+  expandDocked() {
+    if (!this.isDocked()) return
+    if (!this.element.classList.contains('docked-collapsed')) return
+
+    this.element.classList.remove('docked-collapsed')
+    this.syncDockedUI()
+    this._syncWakeLock()
+    requestAnimationFrame(() => this.listController?.scrollToBottom())
+  }
+
+  syncDockedUI() {
+    if (!this.hasCloseButtonTarget) return
+
+    if (!this.isDocked()) {
+      const label = this.element.dataset.closeLabel || ''
+      this.closeButtonTarget.textContent = '×'
+      this.closeButtonTarget.setAttribute('aria-label', label)
+      this.closeButtonTarget.title = label
+      return
+    }
+
+    const collapsed = this.element.classList.contains('docked-collapsed')
+    const label = collapsed
+      ? (this.element.dataset.expandDockedLabel || '')
+      : (this.element.dataset.collapseDockedLabel || '')
+    if (collapsed) {
+      this.closeButtonTarget.innerHTML = EXPAND_CHEVRON
+    } else {
+      this.closeButtonTarget.textContent = '×'
+    }
+    this.closeButtonTarget.setAttribute('aria-label', label)
+    this.closeButtonTarget.title = label
+  }
+
   updatePosition() {
-    if (this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
+    if (this.isDocked() || this.isFullscreen() || !this.currentButton || this.isMobile() || this.element.dataset.resized === 'true') return
     const rect = this.currentButton.getBoundingClientRect()
     const popupWidth = this.element.offsetWidth
     const popupHeight = this.element.offsetHeight
@@ -473,6 +704,8 @@ export default class extends Controller {
   }
 
   startResize(event, direction) {
+    if (this.isDocked()) return
+
     event.preventDefault()
     const rect = this.element.getBoundingClientRect()
     this.resizeStartX = event.clientX
@@ -583,7 +816,7 @@ export default class extends Controller {
     if (!document.hidden && this.element.style.display === 'flex') {
       this.listController?.loadInitialComments()
       // Re-acquire wake lock — released automatically when tab loses visibility
-      this._requestWakeLock()
+      this._syncWakeLock()
     }
   }
 
@@ -799,6 +1032,34 @@ export default class extends Controller {
         return
       }
 
+      if (this.isDocked()) {
+        el.style.transition = 'none'
+        el.dataset.fullscreen = 'false'
+        document.body.classList.remove('chat-fullscreen')
+        el.style.position = ''
+        el.style.top = ''
+        el.style.left = ''
+        el.style.right = ''
+        el.style.bottom = ''
+        el.style.width = ''
+        el.style.height = ''
+        this._savedStyles = null
+        this._syncFullscreenUI(false)
+        this.syncDockedUI()
+        el.offsetHeight // eslint-disable-line no-unused-expressions
+        el.style.transition = ''
+
+        let backUrl = this._previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+        if (backUrl) {
+          const url = new URL(backUrl, window.location.origin)
+          url.searchParams.set('open_comments', 'true')
+          window.history.pushState({ fullscreen: false }, '', url.pathname + url.search)
+        }
+        this._previousUrl = null
+        requestAnimationFrame(() => this.listController?.scrollToBottom())
+        return
+      }
+
       // Desktop: animated exit to target position
       // Calculate target position using viewport-relative coords (popup is position: fixed)
       let finalTop = ''      // px string (viewport-relative)
@@ -976,6 +1237,10 @@ export default class extends Controller {
       el.dataset.fullscreen = isFs ? 'true' : 'false'
       document.body.classList.toggle('chat-fullscreen', isFs)
       this._syncFullscreenUI(isFs)
+      if (!isFs && this.isDocked()) {
+        el.style.display = 'flex'
+        this.syncDockedUI()
+      }
 
       if (!isFs && this._savedStyles) {
         Object.assign(el.style, this._savedStyles)
@@ -998,10 +1263,10 @@ export default class extends Controller {
       this.exitFullscreenIconTarget.style.display = entering ? '' : 'none'
     }
     if (this.hasLeftHandleTarget) {
-      this.leftHandleTarget.style.display = entering ? 'none' : ''
+      this.leftHandleTarget.style.display = entering || this.isDocked() ? 'none' : ''
     }
     if (this.hasRightHandleTarget) {
-      this.rightHandleTarget.style.display = entering ? 'none' : ''
+      this.rightHandleTarget.style.display = entering || this.isDocked() ? 'none' : ''
     }
     if (this.hasCloseButtonTarget) {
       this.closeButtonTarget.style.display = entering ? 'none' : ''
@@ -1012,11 +1277,11 @@ export default class extends Controller {
         : (this.element.dataset.fullscreenLabel || 'Full screen')
       this.fullscreenButtonTarget.setAttribute('aria-label', label)
     }
+    if (!entering) this.syncDockedUI()
   }
 
-  openFromUrl() {
+  commentIdFromUrl() {
     const params = new URLSearchParams(window.location.search)
-    const openComments = params.get('open_comments') === 'true'
     let commentId = params.get('comment_id')
     if (!commentId) {
       const pathCommentMatch = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)
@@ -1030,6 +1295,14 @@ export default class extends Controller {
         commentId = hashMatch[1]
       }
     }
+
+    return commentId || undefined
+  }
+
+  openFromUrl() {
+    const params = new URLSearchParams(window.location.search)
+    const openComments = params.get('open_comments') === 'true'
+    const commentId = this.commentIdFromUrl()
 
     let creativeId = params.get('id')
     if (!creativeId) {
@@ -1359,15 +1632,53 @@ export default class extends Controller {
   // is open.  The browser automatically releases the lock when the tab
   // loses visibility, so we re-acquire it in handleVisibilityChange().
 
-  async _requestWakeLock() {
-    if (!('wakeLock' in navigator)) return
+  _shouldHoldWakeLock() {
+    if (this.element.style.display !== 'flex') return false
+    if (this.isFullscreen()) return true
+    if (!this.isDocked()) return true
 
+    return Boolean(this.element.dataset.creativeId) &&
+      !this.element.classList.contains('docked-collapsed')
+  }
+
+  _syncWakeLock() {
+    if (this._shouldHoldWakeLock()) {
+      this._requestWakeLock()
+    } else {
+      this._releaseWakeLock()
+    }
+  }
+
+  async _requestWakeLock() {
+    if (
+      !this._shouldHoldWakeLock() ||
+      !('wakeLock' in navigator) ||
+      this._wakeLock ||
+      this._wakeLockRequest
+    ) return
+
+    let request
     try {
-      this._wakeLock = await navigator.wakeLock.request('screen')
-      this._wakeLock.addEventListener('release', () => {
-        this._wakeLock = null
+      request = navigator.wakeLock.request('screen')
+      this._wakeLockRequest = request
+      const wakeLock = await request
+      if (this._wakeLockRequest !== request) {
+        wakeLock.release()
+        return
+      }
+
+      this._wakeLockRequest = null
+      if (!this._shouldHoldWakeLock()) {
+        wakeLock.release()
+        return
+      }
+
+      this._wakeLock = wakeLock
+      wakeLock.addEventListener('release', () => {
+        if (this._wakeLock === wakeLock) this._wakeLock = null
       })
     } catch (err) {
+      if (this._wakeLockRequest === request) this._wakeLockRequest = null
       // Wake lock request can fail (e.g. low battery, browser policy).
       // This is non-critical — just log and continue.
       console.debug('[chat] Wake lock request failed:', err.message)
@@ -1375,9 +1686,9 @@ export default class extends Controller {
   }
 
   _releaseWakeLock() {
-    if (this._wakeLock) {
-      this._wakeLock.release()
-      this._wakeLock = null
-    }
+    this._wakeLockRequest = null
+    const wakeLock = this._wakeLock
+    this._wakeLock = null
+    wakeLock?.release()
   }
 }
