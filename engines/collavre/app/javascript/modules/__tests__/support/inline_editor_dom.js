@@ -99,14 +99,32 @@ export function defineTreeRowStub() {
 
 // The markup `_empty_state.html.erb` renders as the sole child of #creatives,
 // reduced to the parts the editor interacts with.
+//
+// The `data-creatives-empty-state` wrapper is what makes this a placeholder as far
+// as `creative_tree_empty_state.js` is concerned — that module hides and restores
+// the wrapper, not the card inside it — so the fixture has to carry it or the
+// hide/restore calls silently find nothing. `index.html.erb` also emits a pristine
+// copy in a `<template>` outside the container, which `restoreTreeEmptyState()`
+// clones when the tree render has wiped the original away; mirror that here so the
+// restore path is exercised as it is in the browser.
 export function renderEmptyState() {
   const creatives = document.getElementById('creatives')
-  creatives.innerHTML = `
-    <div class="creative-empty-state">
-      <button type="button" class="new-root-creative-btn">Add</button>
+  const markup = `
+    <div data-creatives-empty-state>
+      <div class="creative-empty-state">
+        <button type="button" class="new-root-creative-btn">Add</button>
+      </div>
     </div>
   `
-  return creatives.querySelector('.creative-empty-state')
+  creatives.innerHTML = markup
+
+  document.getElementById('creatives-empty-state-template')?.remove()
+  const template = document.createElement('template')
+  template.id = 'creatives-empty-state-template'
+  template.innerHTML = markup
+  document.body.appendChild(template)
+
+  return creatives.querySelector('[data-creatives-empty-state]')
 }
 
 // A row that already exists on the server, i.e. one that renders a

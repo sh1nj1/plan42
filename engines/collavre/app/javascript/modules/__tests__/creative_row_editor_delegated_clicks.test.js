@@ -11,7 +11,6 @@ function session(template = document.getElementById('inline-edit-form')) {
     startNew: jest.fn(),
     hideCurrent: jest.fn(),
     handleEditButtonClick: jest.fn(),
-    hideRootEmptyState: jest.fn(() => false),
   };
 }
 
@@ -100,30 +99,6 @@ describe('createDelegatedClickHandler', () => {
       document.getElementById('creative-10'),
       '10'
     );
-  });
-
-  test('inserts at the end when the root empty state is hidden by the session', () => {
-    const currentSession = session();
-    currentSession.hideRootEmptyState.mockReturnValue(true);
-    document.body.addEventListener('click', createDelegatedClickHandler(currentSession), { once: true });
-
-    document.querySelector('.new-root-creative-btn').click();
-
-    expect(currentSession.hideRootEmptyState).toHaveBeenCalledWith(document.getElementById('creatives'));
-    expect(currentSession.startNew).toHaveBeenCalledWith('', document.getElementById('creatives'), null, '');
-  });
-
-  test('uses the root container for an add button outside a tree when the empty state is hidden', () => {
-    const currentSession = session();
-    currentSession.hideRootEmptyState.mockReturnValue(true);
-    const handler = createDelegatedClickHandler(currentSession);
-    const button = document.querySelector('body > .add-creative-btn');
-
-    button.addEventListener('click', handler, { once: true });
-    button.click();
-
-    expect(currentSession.hideRootEmptyState).toHaveBeenCalledWith(document.getElementById('creatives'));
-    expect(currentSession.startNew).toHaveBeenCalledWith('', document.getElementById('creatives'), null, '');
   });
 
   test('closes the current form instead of opening another one', () => {

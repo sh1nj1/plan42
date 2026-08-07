@@ -44,6 +44,7 @@ import {
   updateRowFromData,
   inlinePayloadFromTree,
 } from './creative_inline_payload'
+import { hideTreeEmptyState } from './creative_tree_empty_state'
 // Import Stimulus application from the global window (set by host app)
 const application = window.Stimulus
 
@@ -666,7 +667,6 @@ function setupEditorSession() {
         startNew,
         hideCurrent,
         handleEditButtonClick,
-        hideRootEmptyState,
       }));
     }
 
@@ -899,42 +899,6 @@ function setupEditorSession() {
       });
     }
 
-    // The empty-state card (see _empty_state.html.erb) is rendered as the sole
-    // child of #creatives when there are zero real rows. Starting an inline
-    // "new creative" editor there must hide that card — otherwise it stays
-    // visible underneath the editor — and appending the new row is equivalent
-    // to inserting before it once it's hidden, since it's always the sole child.
-    function hideRootEmptyState(rootContainer) {
-      const emptyState = rootContainer?.firstElementChild;
-      if (!emptyState || !emptyState.classList?.contains('creative-empty-state')) return false;
-      emptyState.style.display = 'none';
-      return true;
-    }
-
-    // Brings the empty state back whenever a removal leaves no rows under
-    // #creatives — a cancelled first draft, but also deleting or archiving the
-    // last remaining creative. Without this the container is left holding
-    // nothing but the display:none card (or nothing at all) and the page reads
-    // as broken rather than empty.
-    function restoreEmptyStateIfEmpty() {
-      const rootContainer = document.getElementById('creatives');
-      if (!rootContainer || rootContainer.querySelector('creative-tree-row')) return;
-
-      const emptyState = rootContainer.querySelector('.creative-empty-state');
-      if (emptyState) {
-        emptyState.style.display = '';
-        return;
-      }
-      // The card is only in the DOM when the page was rendered for an empty
-      // tree; once the tree controller has rendered real rows it is gone. Hand
-      // back to that controller rather than re-rendering its markup here: it
-      // owns the empty state for a server-confirmed-empty response, so this
-      // stays in step with it (including the "no results" variant it renders
-      // under an active filter) and no HTML is assembled in this module.
-      const treeController = window.Stimulus?.getControllerForElementAndIdentifier?.(rootContainer, 'creatives--tree');
-      treeController?.showEmptyState?.();
-    }
-
     // The save request resolves with the raw Response (see creativesApi.save),
     // so an HTTP error arrives on the *fulfilled* path with `ok === false` — it
     // is just as much a failure as a rejection. Everything else that reaches
@@ -1028,8 +992,9 @@ function setupEditorSession() {
             return SAVE_FAILED;
           }
           if (wasNew && !form.dataset.creativeId) {
+            // removeTreeElement() restores the placeholder when this leaves the
+            // tree empty — see creative_tree_dom.js.
             removeTreeElement(tree);
-            restoreEmptyStateIfEmpty();
           } else if (!tree.querySelector('.creative-row')) {
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) {
@@ -1581,6 +1546,32 @@ function setupEditorSession() {
       updateActionButtonStates();
     }
 
+    // Mirrors move(1)'s own lookup, so "would move(1) actually move?" is answered
+    // by the same question move() asks rather than by a list captured earlier.
+    function hasNextTree(tree) {
+      const trees = Array.from(document.querySelectorAll('.creative-tree'));
+      const index = trees.indexOf(tree);
+      return index !== -1 && !!trees[index + 1];
+    }
+
+    // Root-level equivalent of refreshChildren(parentTree): the server is the only
+    // place that knows what the root tree looks like now, so ask the tree controller
+    // to refetch it. Returns false when the controller is not reachable, leaving the
+    // caller's DOM as-is.
+    //
+    // Looks `window.Stimulus` up on each call rather than using the module-level
+    // `application`, which is captured at import time and so is undefined whenever
+    // this module is loaded before the host app starts Stimulus. The archive handler
+    // resolves its controller the same way.
+    function reloadCreativeTree() {
+      const container = document.getElementById('creatives');
+      if (!container) return false;
+      const controller = window.Stimulus?.getControllerForElementAndIdentifier?.(container, 'creatives--tree');
+      if (typeof controller?.load !== 'function') return false;
+      controller.load();
+      return true;
+    }
+
     function deleteCurrent(withChildren) {
       if (!currentTree || !form.dataset.creativeId) return;
       const id = form.dataset.creativeId;
@@ -1615,6 +1606,16 @@ function setupEditorSession() {
         }));
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
+        // "Delete only this" does not delete the children: DestroyService#reparent_children
+        // promotes them to the deleted creative's parent. When there is a parent row we
+        // refetch it below and the promoted children come back under it. When there is
+        // not — a top-level creative — they are promoted to the root, and the only copy
+        // of them in the DOM is inside the children container we are about to drop. That
+        // would leave the tree looking empty, and hand restoreTreeEmptyState() an empty
+        // container to put the "no creatives yet" card into, while the server still holds
+        // the promoted rows. Refetch the root tree instead.
+        const promotesChildrenToRoot = !withChildren && !parentTree &&
+          !!childrenTree?.querySelector('creative-tree-row');
         if (!withChildren && childrenTree && parentTree) {
           refreshChildren(parentTree).then(() => {
             if (parentTree) refreshRow(parentTree);
@@ -1625,9 +1626,22 @@ function setupEditorSession() {
         // Clear dirty state so move() doesn't try to save the just-deleted creative
         isDirty = false;
         pendingSave = null;
-        move(1);
+        // move(1) is a no-op when the deleted row was the last one: it bails on the
+        // missing target and leaves currentTree pointing at the row we are about to
+        // detach, with the inline template still attached to it and still displayed.
+        // The next Add click would then see display === 'block', read it as "close the
+        // open editor" and flush a save/refresh for a creative that no longer exists —
+        // so the restored CTA would need two clicks to create anything. Close the
+        // editor outright, as the archive path already does.
+        if (hasNextTree(tree)) {
+          move(1);
+        } else {
+          closeEditor();
+        }
+        // removeTreeElement() restores the empty-state placeholder if this leaves the
+        // tree with no rows (creative_tree_dom.js).
         removeTreeElement(tree);
-        restoreEmptyStateIfEmpty();
+        if (promotesChildrenToRoot) reloadCreativeTree();
       });
     }
 
@@ -1709,6 +1723,8 @@ function setupEditorSession() {
         } else {
           targetContainer.appendChild(rowComponent);
         }
+        // A row now occupies the tree — the "no sub-creatives" placeholder must go.
+        hideTreeEmptyState();
 
         const finalizeSetup = () => {
           const newTree = rowComponent.querySelector('.creative-tree');
@@ -1997,13 +2013,15 @@ function setupEditorSession() {
         if (await confirmDialog(confirmMsg)) {
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
-            if (res.ok) {
+            if (!res.ok) return;
+            const applyToView = function () {
               if (!isArchived) {
-                // Archiving: remove from view
+                // Archiving: remove from view. Creative#archive! is an update_all,
+                // so it fires no destroy broadcast — this is the only chance to
+                // bring the empty-state placeholder back when the last row goes.
                 const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenContainer) childrenContainer.remove();
-                if (row) row.remove();
-                restoreEmptyStateIfEmpty();
+                removeTreeElement(row);
               } else {
                 // Restoring: reload tree to show updated state
                 const treeEl = document.querySelector('[data-controller="creatives--tree"]');
@@ -2014,8 +2032,30 @@ function setupEditorSession() {
                   if (ctrl) ctrl.load();
                 }
               }
-              closeEditor();
-            }
+            };
+            // The editor is bound to the row this action is about to drop (or to a
+            // tree about to be re-rendered), so close it first. This used to call a
+            // `closeEditor()` that exists nowhere in the module: it threw a
+            // ReferenceError and left the editor open over the archived row.
+            //
+            // The server-side change has already landed here, so the view has to
+            // follow even when that close fails: letting a failure break the chain
+            // would strand the archived row on screen with nothing to repair it,
+            // since an update_all archive broadcasts no destroy either.
+            //
+            // `switching: true` because this behaves like a row switch rather than
+            // a plain close — the row the editor is bound to is about to be
+            // detached, so a failed flush cannot simply leave the draft open on it.
+            // It gets the user the alert; SAVE_FAILED then means the recovery
+            // re-opened the editor on that doomed row, so close it back down before
+            // applyToView() removes the row out from under it.
+            return Promise.resolve()
+              .then(() => hideCurrent(undefined, { switching: true }))
+              .then(result => { if (result === SAVE_FAILED) closeEditor(); })
+              .catch(err => {
+                console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
+              })
+              .then(applyToView);
           });
         }
       });

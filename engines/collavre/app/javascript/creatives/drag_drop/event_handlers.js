@@ -28,6 +28,7 @@ import { sendNewOrder, sendLinkedCreative, sendTopicMove } from '../../lib/api/d
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
+import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state';
 
 const childZoneRatio = 0.3;
 const coordPrecision = 5;
@@ -367,6 +368,9 @@ function removeDroppedCreative({ creativeId, treeId }) {
   targetRow.remove();
 
   syncParentHasChildren(parentId);
+  // Dropping the last row into another window empties this tree, and the move
+  // is not a destroy — no broadcast repairs the placeholder here.
+  restoreTreeEmptyState();
 }
 
 function syncSourceWindowDrop(detail) {

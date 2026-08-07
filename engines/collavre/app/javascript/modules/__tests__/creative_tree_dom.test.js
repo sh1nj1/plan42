@@ -422,4 +422,34 @@ describe('removeTreeElement', () => {
   test('no-ops on nullish tree', () => {
     expect(() => removeTreeElement(null)).not.toThrow();
   });
+
+  function addHiddenEmptyState() {
+    root.insertAdjacentHTML(
+      'beforeend',
+      '<div data-creatives-empty-state="" hidden><p>No sub-creatives found.</p></div>'
+    );
+    return root.querySelector('[data-creatives-empty-state]');
+  }
+
+  test('restores the empty-state placeholder once the last row is gone', () => {
+    const placeholder = addHiddenEmptyState();
+    const { row, tree } = makeRow(1);
+    root.appendChild(row);
+
+    removeTreeElement(tree);
+
+    expect(placeholder.hidden).toBe(false);
+  });
+
+  test('leaves the placeholder hidden while other rows remain', () => {
+    const placeholder = addHiddenEmptyState();
+    const { row: first, tree } = makeRow(1);
+    const { row: second } = makeRow(2);
+    root.appendChild(first);
+    root.appendChild(second);
+
+    removeTreeElement(tree);
+
+    expect(placeholder.hidden).toBe(true);
+  });
 });

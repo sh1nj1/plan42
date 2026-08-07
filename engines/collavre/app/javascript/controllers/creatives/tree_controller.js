@@ -1,14 +1,23 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, appendCreativeNodes, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { parseEmojis } from '../../utils/emoji_parser'
+import {
+  hideTreeEmptyState,
+  restoreTreeEmptyState,
+  PAGINATION_PENDING_ATTRIBUTE,
+} from '../../modules/creative_tree_empty_state'
 
 const TREE_RETRY_DELAYS_MS = [200, 600]
 
 export default class extends Controller {
   static values = {
     url: String,
-    emptyHtml: String,
-    errorHtml: String,
+    // Neither fallback is an HTML string any more: showEmptyState() clones the
+    // server-rendered <template>, and the load-error fallback is a bare
+    // translated sentence the client wraps in a <p> itself. Reading markup back
+    // out of a data attribute and assigning it is an innerHTML sink as far as
+    // CodeQL (js/xss-through-dom) is concerned, and neither needs to be one.
+    errorText: String,
   }
 
   connect() {
@@ -222,6 +231,9 @@ export default class extends Controller {
     this._pagination = pagination || null
     if (!this._pagination || !this._pagination.has_more) return
     if (typeof IntersectionObserver === 'undefined') return
+    // Deleting every rendered row does not empty the feed while further pages are
+    // queued, so suppress the empty-state placeholder until the last page lands.
+    this.element.setAttribute(PAGINATION_PENDING_ATTRIBUTE, 'true')
     this._createSentinel()
   }
 
@@ -267,6 +279,9 @@ export default class extends Controller {
         this._hideLoadMoreIndicator()
         const nodes = Array.isArray(data?.creatives) ? data.creatives : []
         if (nodes.length > 0) {
+          // Belt and braces alongside the pagination-pending guard: a placeholder
+          // that slipped through must never sit above the rows being appended.
+          hideTreeEmptyState(this.element)
           appendCreativeNodes(this.element, nodes)
           dispatchCreativeTreeUpdated(this.element)
           this.queueAlignmentUpdate()
@@ -277,6 +292,10 @@ export default class extends Controller {
           this._repositionSentinel()
         } else {
           this._teardownPagination()
+          // Last page in, and the rows that were on screen when it was requested
+          // may since have been deleted. Nothing is pending any more, so an empty
+          // container now genuinely is an empty feed.
+          restoreTreeEmptyState(this.element)
         }
       })
       .catch((error) => {
@@ -299,6 +318,7 @@ export default class extends Controller {
   }
 
   _teardownPagination() {
+    this.element.removeAttribute(PAGINATION_PENDING_ATTRIBUTE)
     if (this._loadMoreAbort) {
       this._loadMoreAbort.abort()
       this._loadMoreAbort = null
@@ -341,8 +361,11 @@ export default class extends Controller {
   }
 
   showEmptyState() {
-    const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
-    this.element.innerHTML = html
+    // The placeholder comes from the server-rendered <template> rather than an
+    // HTML string on a data attribute: no innerHTML sink, and the button_to CSRF
+    // token in the "request permission" variant survives.
+    this.element.replaceChildren()
+    restoreTreeEmptyState(this.element)
     this.markContentLoaded()
     document.documentElement.classList.add('creative-alignment-ready')
   }
@@ -354,8 +377,14 @@ export default class extends Controller {
   // that genuinely has creatives would otherwise look empty and invite
   // duplicate creation.
   showErrorState() {
-    const html = this.hasErrorHtmlValue ? this.errorHtmlValue : ''
-    this.element.innerHTML = html
+    this.element.replaceChildren()
+    if (this.hasErrorTextValue && this.errorTextValue) {
+      const message = document.createElement('p')
+      message.className = 'creative-tree-error'
+      message.style.textAlign = 'center'
+      message.textContent = this.errorTextValue
+      this.element.appendChild(message)
+    }
     this.markContentLoaded()
     document.documentElement.classList.add('creative-alignment-ready')
   }

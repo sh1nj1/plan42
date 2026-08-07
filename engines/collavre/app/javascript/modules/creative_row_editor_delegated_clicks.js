@@ -42,7 +42,7 @@ export function createDelegatedClickHandler(session) {
         parentId = addBtn.dataset.parentId || '';
         container = document.getElementById('creatives');
         if (!container) return;
-        insertBefore = session.hideRootEmptyState(container) ? null : container.firstElementChild;
+        insertBefore = container.firstElementChild;
         beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
       }
 
@@ -61,7 +61,7 @@ export function createDelegatedClickHandler(session) {
         return;
       }
 
-      const insertBefore = session.hideRootEmptyState(container) ? null : container.firstElementChild;
+      const insertBefore = container.firstElementChild;
       const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
       session.startNew('', container, insertBefore, beforeId);
       return;
