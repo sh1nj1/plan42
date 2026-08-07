@@ -66,6 +66,7 @@ PATH
       nokogiri
       rails (>= 8.0)
       ruby_llm
+      rubyzip (< 4.0)
       stimulus-rails
       turbo-rails
       view_component

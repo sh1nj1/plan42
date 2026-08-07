@@ -60,6 +60,8 @@ en:
         import_uploading: Uploading...
         import_success: Import successful! Reloading...
         import_failed: Import failed.
+        imported_chart: Chart
+        imported_speaker_notes: Speaker notes
         export_markdown: Export to Markdown
         export_failed: Failed to export
         only_markdown: Only markdown (.md) or PowerPoint (.pptx) files are allowed.

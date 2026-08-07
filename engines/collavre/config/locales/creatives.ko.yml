@@ -55,6 +55,8 @@ ko:
         import_uploading: 업로드 중...
         import_success: 가져오기 성공! 새로고침 중...
         import_failed: 가져오기 실패
+        imported_chart: 차트
+        imported_speaker_notes: 발표자 노트
         export_markdown: 마크다운 내보내기
         export_failed: 내보내기에 실패했습니다
         only_markdown: 마크다운(.md) 또는 파워포인트(.pptx) 파일만 가능합니다.

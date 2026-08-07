@@ -64,7 +64,7 @@ export default class extends Controller {
   async handleFile(file) {
     const lower = file.name.toLowerCase()
     const isMarkdown = lower.endsWith('.md')
-    const isPpt = lower.endsWith('.ppt') || lower.endsWith('.pptx')
+    const isPpt = lower.endsWith('.pptx')
 
     if (!isMarkdown && !isPpt) {
       alertDialog(this.onlyMarkdownValue)
