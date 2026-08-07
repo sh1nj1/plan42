@@ -96,6 +96,29 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
     assert_equal [ "engines/collavre/test/models/collavre/indexed_json_columns_test.rb" ], selected
   end
 
+  test "maps shared Collavre namespaces in extension engines" do
+    create_files("engines/collavre_plan/test/models/plan_test.rb")
+
+    selected = @selector.test_files(
+      [ "engines/collavre_plan/app/models/collavre/plan.rb" ]
+    )
+
+    assert_equal [ "engines/collavre_plan/test/models/plan_test.rb" ], selected
+  end
+
+  test "maps controllers to flattened test layouts" do
+    create_files("engines/collavre_completion_api/test/controllers/api/v1/completions_controller_test.rb")
+
+    selected = @selector.test_files(
+      [ "engines/collavre_completion_api/app/controllers/collavre_completion_api/api/v1/chat/completions_controller.rb" ]
+    )
+
+    assert_equal(
+      [ "engines/collavre_completion_api/test/controllers/api/v1/completions_controller_test.rb" ],
+      selected
+    )
+  end
+
   test "maps changed Rake tasks to task tests" do
     create_files("test/lib/clean_task_test.rb")
 

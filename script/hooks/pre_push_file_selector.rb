@@ -49,6 +49,7 @@ class PrePushFileSelector
         path_parts.delete_at(1)
         candidates << "#{test_root}/#{path_parts.join('/')}_test.rb"
       end
+      candidates.concat(basename_test_variants(test_root, app_path))
       include_test_variants(candidates)
     when %r{\Aapp/views/(.+)/(_?[^/]+?)(?:\.[^.]+)*\.erb\z}
       view_path = Regexp.last_match(1)
@@ -113,6 +114,19 @@ class PrePushFileSelector
       pattern = path.sub(/_test\.rb\z/, "_*_test.rb")
       variants = Dir.glob(File.join(@root, pattern)).map { |file| file.delete_prefix("#{@root}/") }
       [ path, *variants ]
+    end
+  end
+
+  def basename_test_variants(test_root, app_path)
+    test_type = app_path.split("/").first
+    basename = File.basename(app_path)
+    patterns = [
+      "#{test_root}/#{test_type}/**/#{basename}_test.rb",
+      "#{test_root}/#{test_type}/**/#{basename}_*_test.rb"
+    ]
+
+    patterns.flat_map do |pattern|
+      Dir.glob(File.join(@root, pattern)).map { |file| file.delete_prefix("#{@root}/") }
     end
   end
 
