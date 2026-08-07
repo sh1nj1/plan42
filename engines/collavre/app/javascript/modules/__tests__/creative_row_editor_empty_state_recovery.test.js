@@ -349,6 +349,67 @@ describe('empty-state recovery when the first inline save fails', () => {
       }
     })
 
+    test('blocks opening another row while the close flush is in flight', async () => {
+      let rejectSave
+      saveMock.mockImplementation(() => new Promise((_, reject) => { rejectSave = reject }))
+      const { tree: firstTree } = appendExistingRow(42)
+      const { tree: secondTree, row: secondRow } = appendExistingRow(43)
+
+      document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: firstTree } }))
+      await flush()
+      document.getElementById('inline-creative-description').value = '<p>outgoing draft</p>'
+      const textarea = document.getElementById('markdown-editor-textarea')
+      textarea.value = 'outgoing draft'
+      textarea.dispatchEvent(new Event('input'))
+
+      document.getElementById('inline-close').click()
+      await flush()
+      document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: secondTree } }))
+      await flush()
+
+      const template = document.getElementById('inline-edit-form')
+      expect(template.parentElement).toBe(firstTree)
+      expect(template.style.display).toBe('none')
+      expect(secondRow.style.display).toBe('')
+
+      rejectSave(new Error('network down'))
+      await flush()
+
+      expect(template.parentElement).toBe(firstTree)
+      expect(template.style.display).toBe('block')
+      expect(document.getElementById('inline-creative-description').value).toBe('<p>outgoing draft</p>')
+    })
+
+    test('blocks starting a new row while the close flush is in flight', async () => {
+      let settleSave
+      saveMock.mockImplementation(() => new Promise((resolve) => { settleSave = resolve }))
+      const { tree } = appendExistingRow(42)
+      const addButton = document.createElement('button')
+      addButton.type = 'button'
+      addButton.className = 'new-root-creative-btn'
+      document.body.appendChild(addButton)
+
+      document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
+      await flush()
+      document.getElementById('inline-creative-description').value = '<p>outgoing draft</p>'
+      const textarea = document.getElementById('markdown-editor-textarea')
+      textarea.value = 'outgoing draft'
+      textarea.dispatchEvent(new Event('input'))
+
+      document.getElementById('inline-close').click()
+      await flush()
+      addButton.click()
+      await flush()
+
+      expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+
+      settleSave({ ok: true, text: () => Promise.resolve('{}') })
+      await flush()
+
+      expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+      expect(document.getElementById('inline-edit-form').style.display).toBe('none')
+    })
+
     test('never announces the stop when the flush is rejected', async () => {
       saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
       const presence = recordPresence()

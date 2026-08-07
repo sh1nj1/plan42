@@ -256,6 +256,11 @@ function setupEditorSession() {
     let uploadCompletionPromise = null;
     let resolveUploadCompletion = null;
     let addNewInProgress = false;
+    // hideCurrent() clears currentTree and hides the shared form before its
+    // close save settles. Without a separate transition guard, that temporary
+    // "no editor" state lets another row or Add reuse the form while the old
+    // save still owns its completion and recovery callbacks.
+    let closeSaveInProgress = false;
     let originalContent = '';
     let originalProgress = 0;
     let originalOriginId = '';
@@ -621,6 +626,10 @@ function setupEditorSession() {
 
     async function handleEditButtonClick(tree) {
       if (!tree) return;
+      // Do not let a second session take over the shared form while an earlier
+      // close still owns it. The initiating switch continues below after its
+      // own hideCurrent() resolves; only later, competing clicks are ignored.
+      if (closeSaveInProgress) return;
 
       if (currentTree === tree) {
         await hideCurrent();
@@ -933,6 +942,7 @@ function setupEditorSession() {
       const tree = currentTree;
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
+      closeSaveInProgress = true;
 
       const editCreativeId = form.dataset.creativeId;
 
@@ -1032,11 +1042,8 @@ function setupEditorSession() {
         });
       };
 
-      if (uploadsPending) {
-        return waitForUploads().then(finalizeHide);
-      }
-
-      return finalizeHide();
+      const closePromise = uploadsPending ? waitForUploads().then(finalizeHide) : finalizeHide();
+      return Promise.resolve(closePromise).finally(() => { closeSaveInProgress = false; });
     }
 
     // Tears the session down for a row that is already gone from the DOM, so
@@ -1700,6 +1707,10 @@ function setupEditorSession() {
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
+      // The close save still owns the shared form and may need to recover it on
+      // failure. Starting a new row here would replace that buffer and let the
+      // stale completion mutate the newer session.
+      if (closeSaveInProgress) return;
       resetOriginTracking();
       const performStart = () => {
         let targetContainer = container || document.getElementById('creatives');
