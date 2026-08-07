@@ -234,6 +234,19 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
     assert_equal [ "test/lib/kamal_deploy_config_test.rb" ], selected
   end
 
+  test "selects the affected suite when routes change" do
+    create_files(
+      "test/controllers/home_controller_test.rb",
+      "engines/collavre/test/controllers/creatives_controller_test.rb"
+    )
+
+    selected = @selector.test_files(
+      [ "config/routes.rb", "engines/collavre/config/routes.rb" ]
+    )
+
+    assert_equal [ "engines/collavre/test", "test" ], selected
+  end
+
   test "includes i18n completeness checks for scanned source and locale changes" do
     create_files("test/i18n_completeness_test.rb")
 

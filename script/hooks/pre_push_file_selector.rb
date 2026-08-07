@@ -26,6 +26,7 @@ class PrePushFileSelector
     return [ path ] if path.match?(%r{(?:^|/)test/.+_test\.rb\z})
     return shared_test_roots(prefix, test_root, relative_path) if shared_test_infrastructure?(relative_path)
     return hook_tests(relative_path) if relative_path.start_with?("script/hooks/")
+    return [ test_root ] if relative_path == "config/routes.rb"
     return [ "test/lib/kamal_deploy_config_test.rb" ] if relative_path == "config/deploy.yml"
     return [ "test/lib/kamal_post_deploy_hook_test.rb" ] if relative_path == ".kamal/hooks/post-deploy"
     if relative_path.match?(%r{\Ascript/(?:reprovision_github_webhooks|verify_github_repository_link_identity)\z})
