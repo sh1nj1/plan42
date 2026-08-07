@@ -257,6 +257,7 @@ en:
         restore_cards: Show tips again
         dismiss: Dismiss
         learn_more: Learn more
+        no_search_results: No messages match your search.
         cards:
           mention_agent:
             title: Mention teammates & agents

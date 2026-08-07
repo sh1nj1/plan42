@@ -107,4 +107,24 @@ describe('FeatureCardsController', () => {
 
     document.body.removeChild(form)
   })
+
+  test('openCommandMenu preserves an in-progress draft instead of overwriting it', () => {
+    const form = document.createElement('form')
+    form.id = 'new-comment-form'
+    const textarea = document.createElement('textarea')
+    textarea.value = 'unsent draft'
+    form.appendChild(textarea)
+    document.body.appendChild(form)
+
+    const inputHandler = jest.fn()
+    textarea.addEventListener('input', inputHandler)
+
+    controller.openCommandMenu()
+
+    expect(textarea.value).toBe('unsent draft')
+    expect(document.activeElement).toBe(textarea)
+    expect(inputHandler).not.toHaveBeenCalled()
+
+    document.body.removeChild(form)
+  })
 })

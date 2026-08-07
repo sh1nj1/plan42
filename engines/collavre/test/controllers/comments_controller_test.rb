@@ -1078,4 +1078,26 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.minimal_prompt")
     assert_not_includes @response.body, "feature-card-grid"
   end
+
+  test "index hides the add_user card for a user without admin permission" do
+    non_admin = users(:two)
+    grant_read_access_to_other_user(user: non_admin, permission: :feedback)
+    delete session_path
+    post session_path, params: { email: non_admin.email, password: "password" }
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="add_user")
+    assert_includes @response.body, %(data-key="slash_command")
+  end
+
+  test "index shows a no-results message instead of feature cards when a search has no matches" do
+    get creative_comments_path(@creative), params: { search: "no such comment exists" }
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-search-results"'
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.no_search_results")
+    assert_not_includes @response.body, 'id="no-comments"'
+  end
 end

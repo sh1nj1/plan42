@@ -36,6 +36,15 @@ export default class extends Controller {
     if (!textarea) return
 
     textarea.focus()
+
+    // Don't clobber a draft the user already started typing — the command
+    // menu only opens for "/" at the very start of the message anyway, so
+    // there's nothing useful to trigger once there's other content.
+    if (textarea.value.trim().length > 0) {
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+      return
+    }
+
     textarea.value = "/"
     textarea.setSelectionRange(1, 1)
     textarea.dispatchEvent(new Event("input", { bubbles: true }))

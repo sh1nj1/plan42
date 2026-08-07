@@ -1,6 +1,9 @@
 <%
   dismissed = (Current.user.dismissed_notices || []).map(&:to_s)
   visible_cards = Collavre::FeatureCardRegistry.all.reject { |card| dismissed.include?(card.key.to_s) }
+  unless creative.has_permission?(Current.user, :admin)
+    visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :share_modal }
+  end
 %>
 <div id="no-comments" data-controller="comments--feature-cards">
   <template data-comments--feature-cards-target="minimalTemplate">

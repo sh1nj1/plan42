@@ -136,6 +136,7 @@ module Collavre
         render partial: "collavre/comments/list", locals: {
           comments: @comments,
           creative: @creative,
+          search: params[:search],
           read_receipts: read_receipts,
           present_user_ids: present_user_ids,
           current_topic_id: effective_topic_id
