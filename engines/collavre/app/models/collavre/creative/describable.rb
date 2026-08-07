@@ -42,12 +42,12 @@ module Collavre
         if html
           description_val&.to_s || ""
         else
-          ActionController::Base.helpers.strip_tags(description_val&.to_s || "")
+          Collavre::HtmlText.plain(description_val)
         end
       end
 
       def creative_snippet
-        CGI.unescapeHTML(ActionController::Base.helpers.strip_tags(effective_origin.description || "")).truncate(24, omission: "...")
+        Collavre::HtmlText.truncated_label(effective_origin.description, 24)
       end
 
       # Read-only-source creatives reject any description change

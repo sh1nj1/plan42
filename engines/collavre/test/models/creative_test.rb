@@ -144,6 +144,55 @@ class CreativeTest < ActiveSupport::TestCase
     assert_equal "Hello world", plain_text.strip
   end
 
+  test "effective_description decodes character references when html flag is false" do
+    creative = Creative.new(description: "<p>A &amp; B &lt;x&gt; and more</p>")
+
+    plain_text = creative.effective_description(nil, false)
+
+    refute_includes plain_text, "&nbsp;"
+    refute_includes plain_text, "&amp;"
+    assert_equal "A & B <x> and more", plain_text
+  end
+
+  test "creative_snippet decodes the nbsp reference emitted by tag stripping" do
+    creative = Creative.new(description: "<p>label shows</p>")
+
+    snippet = creative.creative_snippet
+
+    refute_includes snippet, "&nbsp;"
+    assert_equal "label shows", snippet
+  end
+
+  test "creative_snippet decodes ampersands and angle brackets" do
+    creative = Creative.new(description: "<p>A &amp; B &lt;x&gt;</p>")
+
+    assert_equal "A & B <x>", creative.creative_snippet
+  end
+
+  test "creative_snippet counts decoded characters against the 24 char cap" do
+    # 15 visible characters, but the three separators are non-breaking spaces
+    # that tag stripping re-encodes as the 6-character `&nbsp;` — 30 characters
+    # encoded. Counting the encoded form truncates a title that comfortably fits.
+    creative = Creative.new(description: "<p>#{Array.new(4) { |i| "ab#{i}" }.join(" ")}</p>")
+
+    snippet = creative.creative_snippet
+
+    refute_includes snippet, "..."
+    assert_equal "ab0 ab1 ab2 ab3", snippet
+  end
+
+  test "creative_snippet collapses newlines into single spaces" do
+    creative = Creative.new(description: "<p>first</p>\n<p>second</p>")
+
+    assert_equal "first second", creative.creative_snippet
+  end
+
+  test "creative_snippet truncates long descriptions to 24 characters" do
+    creative = Creative.new(description: "<p>#{'x' * 100}</p>")
+
+    assert_equal "#{'x' * 21}...", creative.creative_snippet
+  end
+
   test "assigns parent user when parent present" do
     owner = User.create!(email: "creative-owner@example.com", password: TEST_PASSWORD, name: "Owner")
     Current.session = Struct.new(:user).new(owner)

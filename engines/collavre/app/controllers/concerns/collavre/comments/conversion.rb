@@ -36,7 +36,7 @@ module Collavre
       end
 
       def build_convert_system_message(creative)
-        title = helpers.strip_tags(creative.description).to_s.strip
+        title = Collavre::HtmlText.label(creative.description)
         title = I18n.t("collavre.comments.convert_system_message_default_title") if title.blank?
         url = creative_path(creative)
         I18n.t("collavre.comments.convert_system_message", title: title, url: url)

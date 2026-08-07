@@ -9,7 +9,7 @@ module Collavre
           return head :unprocessable_entity
         end
 
-        short_title = helpers.strip_tags(creative.effective_origin.description).truncate(10)
+        short_title = Collavre::HtmlText.truncated_label(creative.effective_origin.description, 10)
         creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
         creative_link = "[#{short_title}](#{creative_path})"
 
