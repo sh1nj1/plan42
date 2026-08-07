@@ -273,8 +273,7 @@ function setupEditorSession() {
     // Announces that a creative is being edited and keeps re-announcing it: the
     // sync controller expires the lock when the pings stop, so a single event
     // is not enough. Every path that puts the editor on a persisted row must go
-    // through this — including recoverFromFailedSave(), which reopens it after
-    // hideCurrent() has already announced the stop.
+    // through this.
     function startEditingPresence(creativeId) {
       const parsedId = parseInt(creativeId, 10);
       if (Number.isNaN(parsedId)) return;
@@ -935,12 +934,26 @@ function setupEditorSession() {
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
 
-      // Notify sync controller that editing stopped
-      stopEditingPing();
       const editCreativeId = form.dataset.creativeId;
-      document.dispatchEvent(new CustomEvent('creative-editing:stop', {
-        detail: { creativeId: editCreativeId ? parseInt(editCreativeId, 10) : null }
-      }));
+
+      // Announcing "editing stopped" is what releases the row to everything
+      // that defers work while it is being edited — the sync controller's lock,
+      // and the tree controller, which holds a pending reload and drains it into
+      // a 300ms debounce on this event. So it must not be said until the row is
+      // genuinely released, which is only once the flush below has succeeded.
+      // Saying it up front (as this used to) handed out the all-clear while the
+      // editor still held the user's text: a save slower than that debounce let
+      // the deferred reload replace the whole container, taking the row and the
+      // editor attached inside it out of the document, and
+      // recoverFromFailedSave() then re-attached the editor to a detached row.
+      // On failure it is never announced at all — the editor stays open on the
+      // row, so presence was never interrupted and there is nothing to restore.
+      const releaseEditingPresence = function () {
+        stopEditingPing();
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: editCreativeId ? parseInt(editCreativeId, 10) : null }
+        }));
+      };
 
       currentTree = null;
       currentRowElement = null;
@@ -972,11 +985,10 @@ function setupEditorSession() {
         pendingSave = true;
         setSaveStatus('error');
         updateActionButtonStates();
-        // The row is being edited again, but hideCurrent() already announced
-        // the stop and killed the ping before the flush ran. Leaving it that
-        // way would tell collaborators the row is free while the rejected draft
-        // is still open in it, inviting a concurrent edit that overwrites it.
-        startEditingPresence(form.dataset.creativeId);
+        // Nothing to do about presence here: releaseEditingPresence() is only
+        // called on the success path, so the ping never stopped and the row was
+        // never announced as free. That also covers a never-persisted draft,
+        // which has no id to re-announce with.
 
         if (switching) {
           // The caller was about to open another row; it aborts on this result,
@@ -997,6 +1009,7 @@ function setupEditorSession() {
             recoverFromFailedSave();
             return SAVE_FAILED;
           }
+          releaseEditingPresence();
           if (wasNew && !form.dataset.creativeId) {
             // removeTreeElement() restores the placeholder when this leaves the
             // tree empty — see creative_tree_dom.js.
@@ -1383,14 +1396,14 @@ function setupEditorSession() {
         }
       }
 
-      // Notify editing stopped on previous creative
-      stopEditingPing();
-      const prevEditId = prev.dataset?.id || form.dataset?.creativeId;
-      if (prevEditId) {
-        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
-          detail: { creativeId: parseInt(prevEditId, 10) }
-        }));
-      }
+      // Editing is NOT announced as stopped here. Both branches below end in
+      // startNew(), which flushes the previous row through hideCurrent() and
+      // announces the stop itself once that flush succeeds. Doing it here as
+      // well released the row while the flush was still in flight — the same
+      // window that let a deferred tree reload delete the open editor — and,
+      // for a row that had never been persisted, said nothing at all because
+      // there was no id to report. addChild() has always relied on hideCurrent()
+      // for this.
 
       const handleAddNew = () => {
         const prevCreativeId = prev.dataset.id;

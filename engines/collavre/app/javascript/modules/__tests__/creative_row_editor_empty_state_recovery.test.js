@@ -286,12 +286,17 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(alertDialogMock).not.toHaveBeenCalled()
   })
 
-  // hideCurrent() announces that editing stopped before it flushes the save.
-  // When the flush fails the editor is put back on the row, so that
-  // announcement is now wrong: collaborators would be told the row is free
-  // while the rejected draft is still open in it, and a concurrent edit could
-  // overwrite it.
-  describe('editing presence after a recovered save failure', () => {
+  // hideCurrent() has to announce that editing stopped, but *when* decides
+  // whether the draft survives. It used to announce it up front, before
+  // awaiting the save it is about to flush. Everything that defers work while a
+  // row is being edited — the tree controller holds a reload and drains it on
+  // that stop, then waits out a 300ms debounce — therefore got the all-clear
+  // while the editor was still holding the user's text. A save slower than that
+  // debounce let the reload replace the whole container, taking the row and the
+  // editor attached inside it out of the document; recoverFromFailedSave() then
+  // re-attached the editor to a row that was no longer in the page. The row is
+  // released only once the flush has actually succeeded.
+  describe('editing presence across the flush', () => {
     function recordPresence() {
       const events = []
       const record = (event) => events.push(`${event.type}:${event.detail?.creativeId}`)
@@ -306,12 +311,80 @@ describe('empty-state recovery when the first inline save fails', () => {
       }
     }
 
-    test('re-announces the row as being edited', async () => {
-      saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
-      const { tree } = appendExistingRow(42)
+    async function closeRowWithEdit(id = 42) {
+      const { tree } = appendExistingRow(id)
+      document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
+      await flush()
+
+      const textarea = document.getElementById('markdown-editor-textarea')
+      textarea.value = 'edited'
+      textarea.dispatchEvent(new Event('input'))
+
+      document.getElementById('inline-close').click()
+      await flush()
+      return tree
+    }
+
+    test('holds the stop until an in-flight flush settles', async () => {
+      let settleSave
+      saveMock.mockImplementation(() => new Promise((resolve) => { settleSave = resolve }))
       const presence = recordPresence()
 
       try {
+        await closeRowWithEdit()
+
+        // The save is still in flight and the editor still owns the row, so
+        // nothing may act on "editing stopped" yet.
+        expect(presence.events).toEqual(['creative-editing:start:42'])
+
+        settleSave({ ok: true, text: () => Promise.resolve('{}') })
+        await flush()
+
+        expect(presence.events).toEqual([
+          'creative-editing:start:42',
+          'creative-editing:stop:42',
+        ])
+      } finally {
+        presence.stop()
+      }
+    })
+
+    test('never announces the stop when the flush is rejected', async () => {
+      saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+      const presence = recordPresence()
+
+      try {
+        await closeRowWithEdit()
+
+        // The editor is back on the row with the rejected draft, so the row was
+        // never released — announcing a stop here would both tell collaborators
+        // it is free and let a deferred reload delete what is still open in it.
+        expect(presence.events).toEqual(['creative-editing:start:42'])
+      } finally {
+        presence.stop()
+      }
+    })
+
+    test('never announces the stop when the flush comes back non-OK', async () => {
+      saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+      const presence = recordPresence()
+
+      try {
+        await closeRowWithEdit()
+
+        expect(presence.events).toEqual(['creative-editing:start:42'])
+      } finally {
+        presence.stop()
+      }
+    })
+
+    test('holds the stop when the flush is reached through the add button', async () => {
+      let settleSave
+      saveMock.mockImplementation(() => new Promise((resolve) => { settleSave = resolve }))
+      const presence = recordPresence()
+
+      try {
+        const { tree } = appendExistingRow(42)
         document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
         await flush()
 
@@ -319,20 +392,44 @@ describe('empty-state recovery when the first inline save fails', () => {
         textarea.value = 'edited'
         textarea.dispatchEvent(new Event('input'))
 
-        document.getElementById('inline-close').click()
+        // addNew() used to announce the stop itself, before handing the flush to
+        // startNew() → hideCurrent(), which reopened the very window this closes.
+        document.getElementById('inline-add').click()
         await flush()
 
-        expect(presence.events).toEqual([
+        expect(presence.events).toEqual(['creative-editing:start:42'])
+
+        settleSave({ ok: true, text: () => Promise.resolve('{}') })
+        await flush()
+
+        expect(presence.events.slice(0, 2)).toEqual([
           'creative-editing:start:42',
           'creative-editing:stop:42',
-          'creative-editing:start:42',
         ])
       } finally {
         presence.stop()
       }
     })
 
-    test('restarts the periodic ping so presence does not lapse', async () => {
+    test('keeps a never-persisted draft announced as being edited', async () => {
+      saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+      const presence = recordPresence()
+
+      try {
+        await startFirstRowWithContent()
+        document.getElementById('inline-close').click()
+        await flush()
+
+        // startNew() announces the row with a null id and there is nothing to
+        // ping for, so a stop here could never be taken back: the deferred
+        // reload would fire on a draft that only exists in the editor.
+        expect(presence.events).toEqual(['creative-editing:start:null'])
+      } finally {
+        presence.stop()
+      }
+    })
+
+    test('keeps the periodic ping running through a failed flush', async () => {
       jest.useFakeTimers()
       saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
       const { tree } = appendExistingRow(42)
