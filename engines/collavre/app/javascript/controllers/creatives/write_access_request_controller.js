@@ -22,7 +22,14 @@ export default class extends Controller {
     this.buttonTarget.disabled = true
     try {
       const response = await csrfFetch(this.urlValue, { method: 'POST' })
-      if (response.ok) {
+      if (response.redirected) {
+        // fetch() follows redirects by default, so an expired session sends
+        // this POST to the sign-in page instead of the permission endpoint —
+        // the final response is a 200 for the login form, not a request
+        // confirmation. Send the browser to the page it actually landed on
+        // rather than claiming the request went through.
+        this.redirectToSignIn(response.url)
+      } else if (response.ok) {
         this.showPending()
       } else {
         this.buttonTarget.disabled = false
@@ -37,5 +44,9 @@ export default class extends Controller {
     if (this.hasPendingTarget) {
       this.pendingTarget.hidden = false
     }
+  }
+
+  redirectToSignIn(url) {
+    window.location.href = url
   }
 }

@@ -78,4 +78,28 @@ describe('CreativesWriteAccessRequestController', () => {
     expect(button.hidden).toBe(false)
     expect(button.disabled).toBe(false)
   })
+
+  test('on a followed redirect to the sign-in page (expired session), navigates there instead of showing pending', async () => {
+    // fetch() follows redirects by default, so when the session has expired,
+    // Authentication#request_authentication redirects to the sign-in page and
+    // the browser lands on a 200 OK response for the login form itself. `ok`
+    // is therefore true even though no permission request was ever created —
+    // `redirected` is what actually distinguishes this from a real success.
+    const redirectSpy = jest
+      .spyOn(WriteAccessRequestController.prototype, 'redirectToSignIn')
+      .mockImplementation(() => {})
+
+    csrfFetch.mockResolvedValue({ ok: true, redirected: true, url: 'http://localhost/session/new' })
+
+    button.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(redirectSpy).toHaveBeenCalledWith('http://localhost/session/new')
+    expect(button.hidden).toBe(false)
+    const pending = container.querySelector('[data-creatives--write-access-request-target="pending"]')
+    expect(pending.hidden).toBe(true)
+
+    redirectSpy.mockRestore()
+  })
 })
