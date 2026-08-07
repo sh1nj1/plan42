@@ -4,6 +4,9 @@
   unless creative.has_permission?(Current.user, :admin)
     visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :share_modal }
   end
+  unless creative.has_permission?(Current.user, :feedback)
+    visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :command_menu }
+  end
 %>
 <div id="no-comments" data-controller="comments--feature-cards">
   <template data-comments--feature-cards-target="minimalTemplate">

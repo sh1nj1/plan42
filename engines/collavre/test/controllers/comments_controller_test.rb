@@ -1092,6 +1092,19 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, %(data-key="slash_command")
   end
 
+  test "index hides the slash_command card for a user without feedback permission" do
+    read_only = users(:two)
+    grant_read_access_to_other_user(user: read_only, permission: :read)
+    delete session_path
+    post session_path, params: { email: read_only.email, password: "password" }
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="slash_command")
+    assert_includes @response.body, %(data-key="topic_management")
+  end
+
   test "index shows a no-results message instead of feature cards when a search has no matches" do
     get creative_comments_path(@creative), params: { search: "no such comment exists" }
 
