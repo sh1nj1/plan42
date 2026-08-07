@@ -535,6 +535,17 @@ export default class extends Controller {
 
     // Deduplication: If manually appended by form_controller, block the stream echo.
     if (event.target.action === 'append') {
+      // A search-filtered list is the result set of a query, and the match runs
+      // server-side over the raw content. A live append carries no verdict on
+      // whether it matches, so letting it in drops an unrelated message into the
+      // results — and, when there were none, takes the "no results" notice with
+      // it (comments--placeholder clears on any .comment-item arriving). Blocked
+      // like history mode below; the next search or reset re-queries the server.
+      if (this.manualSearchQuery) {
+        event.preventDefault()
+        return
+      }
+
       const templateContent = event.target.templateContent || event.target.querySelector('template')?.content
       const firstChild = templateContent?.firstElementChild
 
