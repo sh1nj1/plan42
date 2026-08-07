@@ -951,6 +951,23 @@ function setupEditorSession() {
             showRow(tree);
             refreshRow(tree);
           }
+        }, () => {
+          // A rejected save (network failure) still leaves the editor hidden and
+          // currentTree cleared, so the DOM has to be reconciled here too. Without
+          // this an unsaved first row stays in #creatives — invisible, since its
+          // .creative-row is only inserted on a successful save — while the
+          // empty-state card stays hidden behind it, blanking the tree with no way
+          // back. The failure itself is already surfaced by saveForm's 'error'
+          // save status and the api queue's failure listener, and every
+          // hideCurrent() caller is fire-and-forget, so rethrowing here would only
+          // strand an unhandled rejection and abort the row switch in
+          // handleEditButtonClick().
+          if (wasNew && !form.dataset.creativeId) {
+            removeTreeElement(tree);
+            restoreEmptyStateIfEmpty();
+          } else if (tree.querySelector('.creative-row')) {
+            showRow(tree);
+          }
         });
       };
 
