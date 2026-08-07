@@ -341,10 +341,16 @@ function setupEditorSession() {
       }
     }
 
+    // The server's answer, carried on the row by TreeBuilder's `has_children`. It is
+    // set whether or not the children have been fetched, so it is the only reliable
+    // source for a collapsed node — its children container is rendered empty with
+    // `data-loaded="false"` until the user expands it.
+    function rowFlagHasChildren(row) {
+      return !!(row && (row.hasChildren || row.getAttribute?.('has-children')));
+    }
+
     function currentRowHasChildren() {
-      const row = currentRowElement || (currentTree ? treeRowElement(currentTree) : null);
-      if (!row) return false;
-      return !!(row.hasChildren || row.getAttribute?.('has-children'));
+      return rowFlagHasChildren(currentRowElement || (currentTree ? treeRowElement(currentTree) : null));
     }
 
     function activateMarkdownMode(source) {
@@ -1619,8 +1625,17 @@ function setupEditorSession() {
         // would leave the tree looking empty, and hand restoreTreeEmptyState() an empty
         // container to put the "no creatives yet" card into, while the server still holds
         // the promoted rows. Refetch the root tree instead.
+        //
+        // Whether there are children to promote is the server's answer, carried on
+        // the row's `has-children` flag — not "does the DOM hold a child row". A
+        // collapsed node gets a children container that TreeBuilder marks
+        // `loaded: false` and leaves empty until the user expands it, so asking the
+        // container would say "no children" for every tree the user never opened.
+        // The container is still consulted as well, because a child inserted
+        // client-side is in the DOM before any flag round-trips.
         const promotesChildrenToRoot = !withChildren && !parentTree &&
-          !!childrenTree?.querySelector('creative-tree-row');
+          (rowFlagHasChildren(treeRowElement(tree)) ||
+            !!childrenTree?.querySelector('creative-tree-row'));
         if (!withChildren && childrenTree && parentTree) {
           refreshChildren(parentTree).then(() => {
             if (parentTree) refreshRow(parentTree);

@@ -68,17 +68,42 @@ function stubTreeController() {
   return calls
 }
 
-// A child row nested under `parentId`, in the children container the delete path
-// inspects.
-function appendChildRow(parentId, childId) {
+// The children container for `parentId`, plus the `has-children` flag the server
+// puts on the row itself. TreeBuilder emits both together: the flag records that
+// children exist, the container is where they render.
+function childrenContainerFor(parentId) {
+  const rowComponent = document.getElementById(`creative-${parentId}`).closest('creative-tree-row')
+  rowComponent.hasChildren = true
+  rowComponent.setAttribute('has-children', '')
+
   let children = document.getElementById(`creative-children-${parentId}`)
   if (!children) {
     children = document.createElement('div')
     children.className = 'creative-children'
     children.id = `creative-children-${parentId}`
+    children.dataset.expanded = 'true'
+    children.dataset.loaded = 'true'
     document.getElementById(`creative-${parentId}`).appendChild(children)
   }
-  return appendExistingRow(childId, children)
+  return children
+}
+
+// A child row nested under `parentId`, in the children container the delete path
+// inspects.
+function appendChildRow(parentId, childId) {
+  return appendExistingRow(childId, childrenContainerFor(parentId))
+}
+
+// What TreeBuilder#children_container_payload emits for a row whose children have
+// never been expanded: `has-children` on the row, but a container with
+// `loaded: false` and no rows inside it yet.
+function appendCollapsedChildren(parentId) {
+  const children = childrenContainerFor(parentId)
+  children.dataset.expanded = 'false'
+  children.dataset.loaded = 'false'
+  children.dataset.loadUrl = `/creatives/${parentId}/children`
+  children.style.display = 'none'
+  return children
 }
 
 async function openEditorOn(tree) {
@@ -241,6 +266,27 @@ describe('empty state after the last creative is removed', () => {
     expect(calls.load).toBe(0)
   })
 
+  test('refetches the root tree when the promoted children were never expanded', async () => {
+    // A collapsed row still gets a children container, but TreeBuilder marks it
+    // `loaded: false` and leaves it empty — the children only arrive when the user
+    // expands it. The relationship is recorded on the row's `has-children` flag
+    // instead, so that is what the delete path has to consult. Looking for a
+    // rendered `creative-tree-row` sees nothing here and would skip the refetch,
+    // leaving the actionable empty card over children the server just promoted.
+    renderEmptyState()
+    const calls = stubTreeController()
+    const { tree } = appendExistingRow(42)
+    appendCollapsedChildren(42)
+
+    await openEditorOn(tree)
+    document.getElementById('inline-delete').click()
+    await flush()
+
+    expect(destroyMock).toHaveBeenCalledWith('42', false)
+    expect(calls.requestReload).toBe(1)
+    expect(calls.load).toBe(0)
+  })
+
   test('does not refetch when the deleted row has no children to promote', async () => {
     renderEmptyState()
     const calls = stubTreeController()
@@ -259,6 +305,23 @@ describe('empty state after the last creative is removed', () => {
     const calls = stubTreeController()
     const { tree } = appendExistingRow(42)
     appendChildRow(42, 43)
+
+    await openEditorOn(tree)
+    document.getElementById('inline-delete-with-children').click()
+    await flush()
+
+    expect(destroyMock).toHaveBeenCalledWith('42', true)
+    expect(calls.requestReload).toBe(0)
+  })
+
+  test('does not refetch when "delete with children" removes collapsed children', async () => {
+    // Same as above, but reached through the `has-children` flag rather than
+    // rendered rows: the flag must not pull the refetch into a branch that has
+    // nothing to preserve.
+    renderEmptyState()
+    const calls = stubTreeController()
+    const { tree } = appendExistingRow(42)
+    appendCollapsedChildren(42)
 
     await openEditorOn(tree)
     document.getElementById('inline-delete-with-children').click()
