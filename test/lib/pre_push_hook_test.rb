@@ -52,6 +52,32 @@ class PrePushHookTest < ActiveSupport::TestCase
     assert_includes "#{stdout}\n#{stderr}", "Unable to determine changed files"
   end
 
+  test "fails when the file selector fails" do
+    create_file("script/hooks/pre_push_file_selector.rb", "raise \"selector failure\"\n")
+
+    stdout, stderr, status = run_hook(
+      "refs/heads/topic #{@local_sha} refs/heads/topic #{"0" * 40}\n"
+    )
+
+    refute status.success?
+    assert_includes "#{stdout}\n#{stderr}", "Unable to select changed files for Rubocop"
+  end
+
+  test "fails when related test selection fails" do
+    create_file("script/hooks/pre_push_file_selector.rb", <<~RUBY)
+      exit 0 if ARGV.first == "rubocop"
+
+      raise "test selector failure"
+    RUBY
+
+    stdout, stderr, status = run_hook(
+      "refs/heads/topic #{@local_sha} refs/heads/topic #{"0" * 40}\n"
+    )
+
+    refute status.success?
+    assert_includes "#{stdout}\n#{stderr}", "Unable to select related tests"
+  end
+
   private
 
   def copy_hook(path)

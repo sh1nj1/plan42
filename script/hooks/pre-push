@@ -85,9 +85,14 @@ while IFS= read -r file; do
 done <<< "$CHANGED_FILE_OUTPUT"
 
 RUBOCOP_FILES=()
+if ! RUBOCOP_FILE_OUTPUT=$(printf '%s\n' "${CHANGED_FILES[@]}" | ruby script/hooks/pre_push_file_selector.rb rubocop); then
+    echo -e "${RED}❌ Unable to select changed files for Rubocop.${NC}"
+    exit 1
+fi
+
 while IFS= read -r file; do
     [ -n "$file" ] && RUBOCOP_FILES+=("$file")
-done < <(printf '%s\n' "${CHANGED_FILES[@]}" | ruby script/hooks/pre_push_file_selector.rb rubocop)
+done <<< "$RUBOCOP_FILE_OUTPUT"
 
 # 1. Rubocop auto-fix for changed Ruby files
 if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
@@ -104,9 +109,14 @@ fi
 
 # 2. Run tests related to changed source files
 RELATED_TESTS=()
+if ! RELATED_TEST_OUTPUT=$(printf '%s\n' "${CHANGED_FILES[@]}" | ruby script/hooks/pre_push_file_selector.rb tests); then
+    echo -e "${RED}❌ Unable to select related tests.${NC}"
+    exit 1
+fi
+
 while IFS= read -r file; do
     [ -n "$file" ] && RELATED_TESTS+=("$file")
-done < <(printf '%s\n' "${CHANGED_FILES[@]}" | ruby script/hooks/pre_push_file_selector.rb tests)
+done <<< "$RELATED_TEST_OUTPUT"
 
 if [ ${#RELATED_TESTS[@]} -gt 0 ]; then
     printf -v TEST_PATHS '%q ' "${RELATED_TESTS[@]}"

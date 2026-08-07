@@ -76,6 +76,24 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
     )
   end
 
+  test "maps namespaced engine lib source to an unnamespaced test" do
+    create_files("engines/collavre_openclaw/test/lib/configuration_test.rb")
+
+    selected = @selector.test_files(
+      [ "engines/collavre_openclaw/lib/collavre_openclaw/configuration.rb" ]
+    )
+
+    assert_equal [ "engines/collavre_openclaw/test/lib/configuration_test.rb" ], selected
+  end
+
+  test "maps changed Rake tasks to task tests" do
+    create_files("test/lib/clean_task_test.rb")
+
+    selected = @selector.test_files([ "lib/tasks/clean.rake" ])
+
+    assert_equal [ "test/lib/clean_task_test.rb" ], selected
+  end
+
   private
 
   def create_files(*paths)

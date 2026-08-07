@@ -35,8 +35,17 @@ class PrePushFileSelector
         candidates << "#{test_root}/#{path_parts.join('/')}_test.rb"
       end
       candidates
+    when %r{\Alib/tasks/(.+)\.rake\z}
+      [ "#{test_root}/lib/#{Regexp.last_match(1)}_task_test.rb" ]
     when %r{\Alib/(.+)\.rb\z}
-      [ "#{test_root}/lib/#{Regexp.last_match(1)}_test.rb" ]
+      lib_path = Regexp.last_match(1)
+      candidates = [ "#{test_root}/lib/#{lib_path}_test.rb" ]
+      path_parts = lib_path.split("/")
+      if path_parts.first == engine_name
+        path_parts.shift
+        candidates << "#{test_root}/lib/#{path_parts.join('/')}_test.rb"
+      end
+      candidates
     when %r{\A(config|db)/(.+)\.rb\z}
       [ "#{test_root}/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}_test.rb" ]
     else
