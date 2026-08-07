@@ -8,7 +8,7 @@
     <div class="landing-container feature-guide-container">
       <nav class="feature-guide-breadcrumb">
         <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
-        <span aria-hidden="true">/</span>
+        <span aria-hidden="true"><%= t('collavre.features.nav.separator') %></span>
         <%= link_to t('collavre.features.nav.all'), collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
       </nav>
 

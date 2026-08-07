@@ -84,6 +84,18 @@ module Collavre
       end
     end
 
+    test "slash command guide describes the creative picker separately in both locales" do
+      {
+        en: [ "/creative works differently", "Creative picker", "inserts your selection as a link in the draft", "send the message yourself" ],
+        ko: [ "/creative는 다르게 동작", "Creative 선택 창", "링크를 초안에 삽입", "사용자가 직접 메시지를 전송" ]
+      }.each do |locale, phrases|
+        get "/features/slash_command", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "agent and compress tips describe the routing and permission fallbacks in both locales" do
       {
         en: [ "primary agent", "routing rules", "comment permission", "policy primary agent" ],
@@ -194,6 +206,17 @@ module Collavre
       assert_response :success
       assert_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :ko)
       assert_not_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :en)
+    end
+
+    test "show renders the breadcrumb separator from i18n in both locales" do
+      %i[en ko].each do |locale|
+        get "/features/mention_agent", params: { locale: locale }
+
+        assert_response :success
+        assert_select ".feature-guide-breadcrumb span[aria-hidden='true']",
+                      text: I18n.t("collavre.features.nav.separator", locale: locale),
+                      count: 1
+      end
     end
 
     test "guide navigation preserves the selected locale" do

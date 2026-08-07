@@ -6,6 +6,7 @@ en:
         landing: "Home"
         all: "All features"
         all_arrow: "← All features"
+        separator: "/"
       index:
         title: "Features"
         subtitle: "The things worth knowing about before your first message."
@@ -36,7 +37,7 @@ en:
           meta_description: "Collavre slash commands: /calendar, /topic, /work, /compress, /creative, and MCP tools."
           sections:
             - heading: "How it works"
-              body: "Type / at the start of a message and a menu of available commands appears. Pick one and a small form collects its arguments, so you do not have to memorize the argument order. Commands are submitted like messages and their result lands in the thread."
+              body: "Type / at the start of a message and a menu of available commands appears. Commands that need arguments open a small form, so you do not have to memorize the argument order; they are submitted like messages and their result lands in the thread. /creative works differently: it opens a Creative picker and inserts your selection as a link in the draft, which you can continue editing before you send the message yourself."
             - heading: "Built-in commands"
               body: "/calendar (also /cal) creates a local calendar event from a date and a memo, accepting relative dates like tomorrow, +3days, or +mon. When Google Calendar is connected, Collavre also attempts to sync the event there. /topic starts a new topic and can assign a primary agent to it. /work walks the child Creatives depth-first and has an agent execute a task on each. /compress summarizes the current topic's messages and removes the originals. /creative inserts a link to another Creative, which in an AI chat also injects that Creative and descendants up to the agent's configured child-depth limit as context."
             - heading: "MCP tools"
