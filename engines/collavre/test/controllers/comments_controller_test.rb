@@ -1113,4 +1113,27 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.no_search_results")
     assert_not_includes @response.body, 'id="no-comments"'
   end
+
+  test "index shows a topic-empty message instead of feature cards for an empty topic in an existing conversation" do
+    @creative.comments.create!(content: "Main lane comment", user: @user)
+    empty_topic = @creative.topics.create!(name: "Fresh", user: @user)
+
+    get creative_comments_path(@creative), params: { topic_id: empty_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-topic-comments"'
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.no_topic_comments")
+    assert_not_includes @response.body, 'id="no-comments"'
+  end
+
+  test "index still shows feature cards for an empty topic when the creative has no comments at all" do
+    empty_topic = @creative.topics.create!(name: "Fresh", user: @user)
+
+    get creative_comments_path(@creative), params: { topic_id: empty_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-comments"'
+    assert_includes @response.body, %(data-key="mention_agent")
+    assert_not_includes @response.body, 'id="no-topic-comments"'
+  end
 end

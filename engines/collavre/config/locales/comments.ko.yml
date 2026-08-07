@@ -256,6 +256,7 @@ ko:
         dismiss: 닫기
         learn_more: 자세히 보기
         no_search_results: 검색 결과에 해당하는 메시지가 없습니다.
+        no_topic_comments: 이 토픽에는 아직 메시지가 없습니다.
         cards:
           mention_agent:
             title: 팀원 · 에이전트 멘션

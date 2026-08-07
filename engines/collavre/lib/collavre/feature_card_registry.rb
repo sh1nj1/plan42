@@ -12,7 +12,7 @@ module Collavre
   #     title_key: "collavre.comments.empty_state.cards.add_user.title",
   #     description_key: "collavre.comments.empty_state.cards.add_user.description",
   #     action: { type: :share_modal },
-  #     guide_enabled: false
+  #     guide_url: "/guides/add-user"
   #   })
   class FeatureCardRegistry
     include Singleton
@@ -29,7 +29,9 @@ module Collavre
     # @option config [String] :title_key i18n key for the card title
     # @option config [String] :description_key i18n key for the card description
     # @option config [Hash] :action Optional { type:, label_key: } describing a call-to-action button
-    # @option config [Boolean] :guide_enabled Whether the "learn more" link is active (default false)
+    # @option config [String] :guide_url Optional URL for the "learn more" link. The link is
+    #   only rendered when this is present — there is no engine-provided guide route yet, so a
+    #   card that wants one has to supply its own path.
     def register(key, config)
       card = FeatureCard.new(key, config)
       @mutex.synchronize do
@@ -80,7 +82,7 @@ module Collavre
 
   # Represents a registered feature card
   class FeatureCard
-    attr_reader :key, :icon, :title_key, :description_key, :action, :guide_enabled
+    attr_reader :key, :icon, :title_key, :description_key, :action, :guide_url
 
     def initialize(key, config)
       @key = key.to_sym
@@ -88,13 +90,13 @@ module Collavre
       @title_key = config[:title_key]
       @description_key = config[:description_key]
       @action = config[:action]
-      @guide_enabled = config.fetch(:guide_enabled, false)
+      @guide_url = config[:guide_url]
 
       validate!
     end
 
-    def guide_enabled?
-      @guide_enabled
+    def guide_url?
+      @guide_url.present?
     end
 
     private

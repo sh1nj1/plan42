@@ -8,6 +8,15 @@ import csrfFetch from "../../lib/api/csrf_fetch"
 export default class extends Controller {
   static targets = ["grid", "card", "minimalTemplate"]
 
+  initialize() {
+    // Dismissals are optimistic: the card disappears immediately and the POST
+    // is sent in the background. Dismissing the last card reveals the restore
+    // button right away, so a fast user can click restore while a dismissal is
+    // still in flight. Track them so restoreAll can wait, otherwise a late
+    // dismissal lands after the DELETE and silently re-hides that card.
+    this._pendingDismissals = new Set()
+  }
+
   dismiss(event) {
     const key = event.currentTarget.dataset.key
     if (!key) return
@@ -19,11 +28,14 @@ export default class extends Controller {
       this._showMinimal()
     }
 
-    csrfFetch(`/notices/${encodeURIComponent(key)}/dismiss`, { method: "POST" }).catch(() => {})
+    const request = csrfFetch(`/notices/${encodeURIComponent(key)}/dismiss`, { method: "POST" }).catch(() => {})
+    this._pendingDismissals.add(request)
+    request.finally(() => this._pendingDismissals.delete(request))
   }
 
   restoreAll() {
-    return csrfFetch("/notices", { method: "DELETE" })
+    return Promise.all([ ...this._pendingDismissals ])
+      .then(() => csrfFetch("/notices", { method: "DELETE" }))
       .then((response) => {
         if (!response.ok) return
         this._reloadComments()

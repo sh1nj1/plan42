@@ -160,46 +160,40 @@ module Collavre
         Collavre::FeatureCardRegistry.register(:mention_agent, {
           icon: "🤖",
           title_key: "collavre.comments.empty_state.cards.mention_agent.title",
-          description_key: "collavre.comments.empty_state.cards.mention_agent.description",
-          guide_enabled: false
+          description_key: "collavre.comments.empty_state.cards.mention_agent.description"
         })
 
         Collavre::FeatureCardRegistry.register(:slash_command, {
           icon: "⚡",
           title_key: "collavre.comments.empty_state.cards.slash_command.title",
           description_key: "collavre.comments.empty_state.cards.slash_command.description",
-          action: { type: :command_menu, label_key: "collavre.comments.empty_state.cards.slash_command.action" },
-          guide_enabled: false
+          action: { type: :command_menu, label_key: "collavre.comments.empty_state.cards.slash_command.action" }
         })
 
         Collavre::FeatureCardRegistry.register(:chat_context, {
           icon: "🔗",
           title_key: "collavre.comments.empty_state.cards.chat_context.title",
-          description_key: "collavre.comments.empty_state.cards.chat_context.description",
-          guide_enabled: false
+          description_key: "collavre.comments.empty_state.cards.chat_context.description"
         })
 
         Collavre::FeatureCardRegistry.register(:automation_trigger, {
           icon: "⚙️",
           title_key: "collavre.comments.empty_state.cards.automation_trigger.title",
-          description_key: "collavre.comments.empty_state.cards.automation_trigger.description",
-          guide_enabled: false
+          description_key: "collavre.comments.empty_state.cards.automation_trigger.description"
         })
 
         Collavre::FeatureCardRegistry.register(:topic_management, {
           icon: "🗂️",
           title_key: "collavre.comments.empty_state.cards.topic_management.title",
           description_key: "collavre.comments.empty_state.cards.topic_management.description",
-          action: { type: :topic_list, label_key: "collavre.comments.empty_state.cards.topic_management.action" },
-          guide_enabled: false
+          action: { type: :topic_list, label_key: "collavre.comments.empty_state.cards.topic_management.action" }
         })
 
         Collavre::FeatureCardRegistry.register(:add_user, {
           icon: "👥",
           title_key: "collavre.comments.empty_state.cards.add_user.title",
           description_key: "collavre.comments.empty_state.cards.add_user.description",
-          action: { type: :share_modal, label_key: "collavre.comments.empty_state.cards.add_user.action" },
-          guide_enabled: false
+          action: { type: :share_modal, label_key: "collavre.comments.empty_state.cards.add_user.action" }
         })
       end
     end

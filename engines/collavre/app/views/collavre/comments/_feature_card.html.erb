@@ -25,7 +25,7 @@
       </button>
     <% end %>
   <% end %>
-  <% if card.guide_enabled? %>
-    <%= link_to t("collavre.comments.empty_state.learn_more"), collavre.feature_path(card.key), class: "feature-card-guide-link" %>
+  <% if card.guide_url? %>
+    <%= link_to t("collavre.comments.empty_state.learn_more"), card.guide_url, class: "feature-card-guide-link" %>
   <% end %>
 </div>

@@ -79,12 +79,12 @@ describe('FeatureCardsController', () => {
     expect(container.querySelector('.chat-empty-restore-btn')).not.toBeNull()
   })
 
-  test('restoreAll issues a DELETE to the notices endpoint', () => {
-    const fetchMock = jest.fn().mockResolvedValue({ ok: true })
+  test('restoreAll issues a DELETE to the notices endpoint', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, headers: new Headers() })
     global.fetch = fetchMock
     controller._reloadComments = jest.fn()
 
-    controller.restoreAll()
+    await controller.restoreAll()
 
     expect(fetchMock).toHaveBeenCalledWith('/notices', expect.objectContaining({ method: 'DELETE' }))
   })
@@ -119,6 +119,40 @@ describe('FeatureCardsController', () => {
     await cardsController.restoreAll()
 
     expect(loadInitialComments).toHaveBeenCalledTimes(1)
+  })
+
+  test('restoreAll waits for in-flight dismissals before issuing the DELETE', async () => {
+    // Dismissing the last card reveals the restore button immediately, so the
+    // user can click it while the dismiss POSTs are still in flight. If the
+    // DELETE lands first, the late dismissal wins and the card stays hidden.
+    const dismissResolvers = []
+    const fetchMock = jest.fn((url) => {
+      if (url.includes('/dismiss')) {
+        return new Promise((resolve) => {
+          dismissResolvers.push(() => resolve({ ok: true, headers: new Headers() }))
+        })
+      }
+      return Promise.resolve({ ok: true, headers: new Headers() })
+    })
+    global.fetch = fetchMock
+    controller._reloadComments = jest.fn()
+
+    container.querySelector('[data-key="slash_command"].feature-card-dismiss').click()
+    container.querySelector('[data-key="add_user"].feature-card-dismiss').click()
+    expect(dismissResolvers).toHaveLength(2)
+
+    const restored = controller.restoreAll()
+    await new Promise((r) => setTimeout(r, 0))
+
+    const deleteCalls = () =>
+      fetchMock.mock.calls.filter(([url, opts]) => url === '/notices' && opts?.method === 'DELETE')
+    expect(deleteCalls()).toHaveLength(0)
+
+    dismissResolvers.forEach((resolve) => resolve())
+    await restored
+
+    expect(deleteCalls()).toHaveLength(1)
+    expect(controller._reloadComments).toHaveBeenCalledTimes(1)
   })
 
   test('openCommandMenu focuses the textarea, inserts "/" and dispatches input', () => {
