@@ -18,9 +18,9 @@ export default class extends Controller {
     // out of a data attribute and assigning it is an innerHTML sink as far as
     // CodeQL (js/xss-through-dom) is concerned, and neither needs to be one.
     errorText: String,
-    // Accessible name for the loading placeholder. Server-supplied so it is
-    // translated like everything else; the literal below is only a fallback for
-    // contexts that render the controller without the value (tests, extensions).
+    // Accessible name for a loading placeholder built by this controller.
+    // Renderers that do not provide a translated server placeholder must pass
+    // this value so extensions cannot expose a hardcoded label in another locale.
     loadingText: String,
   }
 
@@ -472,7 +472,9 @@ export default class extends Controller {
 
   loadingLabel() {
     if (this.hasLoadingTextValue && this.loadingTextValue) return this.loadingTextValue
-    return 'Loading creatives'
+    throw new Error(
+      'creatives--tree requires a translated loadingText value when no server loading placeholder is present',
+    )
   }
 
   hideLoadingIndicator() {

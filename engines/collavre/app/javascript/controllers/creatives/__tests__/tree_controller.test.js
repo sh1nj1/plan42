@@ -33,6 +33,7 @@ const installController = () => {
   const container = document.createElement('div')
   container.setAttribute('data-controller', 'creatives--tree')
   container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+  container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
   document.body.appendChild(container)
 
   const application = Application.start()
@@ -412,6 +413,7 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     const container = document.createElement('div')
     container.setAttribute('data-controller', 'creatives--tree')
     container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
     container.setAttribute(
       'data-creatives--tree-error-text-value',
       'Could not load the creative tree.'
@@ -645,7 +647,7 @@ describe('CreativesTreeController server-rendered loading placeholder', () => {
     application.stop()
   })
 
-  test('falls back to an English label when no loading text value is supplied', async () => {
+  test('requires a translated label when no server placeholder is available', async () => {
     let resolveFetch
     global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
 
@@ -655,10 +657,10 @@ describe('CreativesTreeController server-rendered loading placeholder', () => {
     container.replaceChildren()
     const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
     controller.loadingIndicator = null
-    controller.showLoadingIndicator()
-
-    expect(container.querySelector('[data-creatives-tree-loading]').getAttribute('aria-label'))
-      .toBe('Loading creatives')
+    expect(() => controller.showLoadingIndicator()).toThrow(
+      'creatives--tree requires a translated loadingText value when no server loading placeholder is present',
+    )
+    expect(container.querySelector('[data-creatives-tree-loading]')).toBeNull()
 
     resolveFetch({ ok: true, json: async () => ({ creatives: [] }) })
     application.stop()
