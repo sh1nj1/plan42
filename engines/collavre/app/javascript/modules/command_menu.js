@@ -33,6 +33,18 @@ if (!commandMenuInitialized) {
       },
       onSubmit: (commandText) => {
         popupMenu.hide()
+        // clearCommandText() stripped only the "/" token, so anything still in
+        // the box is the draft the user had typed before opening the menu. The
+        // command is submitted on its own, so the draft cannot ride along with
+        // it — hand it to the form controller, which puts it back once the send
+        // settles, rather than dropping it on the floor here.
+        const draft = textarea.value
+        if (draft.trim()) {
+          textarea.dispatchEvent(new CustomEvent('comments--form:stash-draft', {
+            bubbles: true,
+            detail: { draft }
+          }))
+        }
         textarea.value = commandText
         textarea.dispatchEvent(new Event('input', { bubbles: true }))
         // Trigger form submission directly

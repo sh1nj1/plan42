@@ -1047,4 +1047,132 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "no-cache", response.headers["Pragma"]
     assert_equal "0", response.headers["Expires"]
   end
+
+  test "index shows feature discovery cards when there are no comments" do
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-comments"'
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.title")
+    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+      assert_includes @response.body, %(data-key="#{key}")
+    end
+  end
+
+  test "index hides dismissed feature cards but keeps the rest" do
+    @user.update!(dismissed_notices: [ "slash_command" ])
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="slash_command")
+    assert_includes @response.body, %(data-key="add_user")
+  end
+
+  test "index shows the minimal empty state once every card is dismissed" do
+    @user.update!(dismissed_notices: %w[mention_agent slash_command chat_context automation_trigger topic_management add_user])
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.minimal_prompt")
+    assert_not_includes @response.body, "feature-card-grid"
+  end
+
+  test "index hides the add_user card for a user without admin permission" do
+    non_admin = users(:two)
+    grant_read_access_to_other_user(user: non_admin, permission: :feedback)
+    delete session_path
+    post session_path, params: { email: non_admin.email, password: "password" }
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="add_user")
+    assert_includes @response.body, %(data-key="slash_command")
+  end
+
+  test "index hides the slash_command card for a user without feedback permission" do
+    read_only = users(:two)
+    grant_read_access_to_other_user(user: read_only, permission: :read)
+    delete session_path
+    post session_path, params: { email: read_only.email, password: "password" }
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="slash_command")
+    assert_includes @response.body, %(data-key="topic_management")
+  end
+
+  test "index hides the slash_command card for an archived creative even for the owner" do
+    @creative.update!(archived_at: Time.current)
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="slash_command")
+    assert_includes @response.body, %(data-key="topic_management")
+  end
+
+  test "index shows a no-results message instead of feature cards when a search has no matches" do
+    get creative_comments_path(@creative), params: { search: "no such comment exists" }
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-search-results"'
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.no_search_results")
+    assert_not_includes @response.body, 'id="no-comments"'
+  end
+
+  test "index shows a topic-empty message instead of feature cards for an empty topic in an existing conversation" do
+    @creative.comments.create!(content: "Main lane comment", user: @user)
+    empty_topic = @creative.topics.create!(name: "Fresh", user: @user)
+
+    get creative_comments_path(@creative), params: { topic_id: empty_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-topic-comments"'
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.no_topic_comments")
+    assert_not_includes @response.body, 'id="no-comments"'
+  end
+
+  test "index still shows feature cards for an empty topic when the creative has no comments at all" do
+    empty_topic = @creative.topics.create!(name: "Fresh", user: @user)
+
+    get creative_comments_path(@creative), params: { topic_id: empty_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-comments"'
+    assert_includes @response.body, %(data-key="mention_agent")
+    assert_not_includes @response.body, 'id="no-topic-comments"'
+  end
+
+  # A comment from another participant arrives as a Turbo Stream append into
+  # #comments-list and never reaches comments--form#removePlaceholder, so every
+  # empty-list state has to clear itself via comments--placeholder.
+  test "index wires the discovery cards to the placeholder controller" do
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, %(data-controller="comments--feature-cards comments--placeholder")
+  end
+
+  test "index wires the no-results message to the placeholder controller" do
+    get creative_comments_path(@creative), params: { search: "no such comment exists" }
+
+    assert_response :success
+    assert_includes @response.body,
+                    %(<div id="no-search-results" class="comments-placeholder" data-controller="comments--placeholder">)
+  end
+
+  test "index wires the topic-empty message to the placeholder controller" do
+    @creative.comments.create!(content: "Main lane comment", user: @user)
+    empty_topic = @creative.topics.create!(name: "Fresh", user: @user)
+
+    get creative_comments_path(@creative), params: { topic_id: empty_topic.id }
+
+    assert_response :success
+    assert_includes @response.body,
+                    %(<div id="no-topic-comments" class="comments-placeholder" data-controller="comments--placeholder">)
+  end
 end

@@ -1,0 +1,29 @@
+<%
+  dismissed = (Current.user.dismissed_notices || []).map(&:to_s)
+  visible_cards = Collavre::FeatureCardRegistry.all.reject { |card| dismissed.include?(card.key.to_s) }
+  unless creative.has_permission?(Current.user, :admin)
+    visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :share_modal }
+  end
+  # A command is submitted as a comment, so the card only leads somewhere when
+  # CommentsController#create would accept one: it rejects an archived Creative
+  # outright, and a viewer without :feedback after that.
+  if creative.archived? || !creative.has_permission?(Current.user, :feedback)
+    visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :command_menu }
+  end
+%>
+<div id="no-comments" class="comments-placeholder" data-controller="comments--feature-cards comments--placeholder">
+  <template data-comments--feature-cards-target="minimalTemplate">
+    <%= render partial: "collavre/comments/empty_state_minimal" %>
+  </template>
+
+  <% if visible_cards.any? %>
+    <p class="feature-cards-title"><%= t("collavre.comments.empty_state.title") %></p>
+    <div class="feature-card-grid" data-comments--feature-cards-target="grid">
+      <% visible_cards.each do |card| %>
+        <%= render partial: "collavre/comments/feature_card", locals: { creative: creative, card: card } %>
+      <% end %>
+    </div>
+  <% else %>
+    <%= render partial: "collavre/comments/empty_state_minimal" %>
+  <% end %>
+</div>

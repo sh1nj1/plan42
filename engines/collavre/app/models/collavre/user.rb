@@ -89,6 +89,7 @@ module Collavre
     attribute :gateway_url, :string
     attribute :tools, :json, default: -> { [] }
     attribute :agent_conf, :string
+    attribute :dismissed_notices, :json, default: -> { [] }
 
     # Default context settings for AI agents
     AGENT_CONF_DEFAULTS = {

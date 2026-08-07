@@ -4,7 +4,11 @@
   <% comments.each do |comment| %>
     <%= render partial: 'collavre/comments/comment', locals: { comment: comment, read_by_users: read_receipts&.[](comment.id), present_user_ids: present_user_ids, current_topic_id: current_topic_id } %>
   <% end %>
+<% elsif local_assigns[:search].present? %>
+  <%= render partial: 'collavre/comments/no_search_results' %>
+<% elsif local_assigns[:creative_has_comments] %>
+  <%= render partial: 'collavre/comments/no_topic_comments' %>
 <% else %>
-  <div id="no-comments"><%= t('collavre.comments.no_comments') %></div>
+  <%= render partial: 'collavre/comments/empty_state', locals: { creative: creative } %>
 <% end %>
 

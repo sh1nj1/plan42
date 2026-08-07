@@ -2088,3 +2088,115 @@ li:hover .topic-create-option {
     color: var(--text-muted);
     font-size: 0.85em;
 }
+
+/* Empty chat state — feature discovery cards */
+#no-comments {
+    padding: 24px 16px;
+}
+
+.feature-cards-title {
+    margin: 0 0 12px;
+    color: var(--text-muted);
+    font-size: 0.9em;
+    text-align: center;
+}
+
+.feature-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    max-width: 560px;
+    margin: 0 auto;
+}
+
+.feature-card {
+    position: relative;
+    padding: 14px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-section);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.feature-card-dismiss {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 1.1em;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: var(--radius-1);
+}
+
+.feature-card-dismiss:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.feature-card-icon {
+    font-size: 1.4em;
+}
+
+.feature-card-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.feature-card-description {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
+.feature-card-action {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-2);
+    background: var(--surface-btn);
+    color: var(--text-on-btn);
+    font-size: 0.85em;
+    cursor: pointer;
+}
+
+.feature-card-action:hover {
+    background: var(--surface-hover);
+}
+
+.feature-card-guide-link {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    text-decoration: underline;
+}
+
+.chat-empty-minimal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-muted);
+}
+
+.chat-empty-restore-btn {
+    border: 1px solid var(--border-color);
+    background: var(--surface-btn);
+    color: var(--text-muted);
+    border-radius: var(--radius-round);
+    width: 20px;
+    height: 20px;
+    line-height: 1;
+    cursor: pointer;
+    font-size: 0.75em;
+}
+
+.chat-empty-restore-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+}

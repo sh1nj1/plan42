@@ -107,6 +107,13 @@ export default class extends Controller {
 
     this.handleListLoaded = () => this._updateInboxReplyMode()
     this.element.addEventListener('comments--list:loaded', this.handleListLoaded)
+
+    // A slash command with an input schema takes over the textarea and submits
+    // itself (modules/command_menu.js), so a draft the user had already typed
+    // cannot go out with it. The menu hands the draft over here instead of
+    // discarding it, and we put it back once the send settles.
+    this.handleStashDraft = this.handleStashDraft.bind(this)
+    this.element.addEventListener('comments--form:stash-draft', this.handleStashDraft)
   }
 
   handleTopicChange(event) {
@@ -142,6 +149,7 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
     this.element.removeEventListener('comments--list:loaded', this.handleListLoaded)
+    this.element.removeEventListener('comments--form:stash-draft', this.handleStashDraft)
   }
 
   get listController() {
@@ -213,6 +221,39 @@ export default class extends Controller {
     this.focusTextarea()
   }
 
+  handleStashDraft(event) {
+    const draft = event.detail?.draft || null
+    // Tagged with the conversation it was typed in: the popup reuses this one
+    // controller for every creative, so a stash left over from another one must
+    // not be handed back here.
+    this._stashedDraft = draft ? { draft, creativeId: this.creativeId } : null
+  }
+
+  _restoreStashedDraft(submittedText) {
+    const stashed = this._stashedDraft
+    this._stashedDraft = null
+    if (!stashed) return
+    // Switching creatives calls onPopupOpened on this same instance (there is
+    // no disconnect between conversations), so a send that settles after the
+    // switch would drop the previous conversation's draft into the new one.
+    // The draft belongs to a conversation that is no longer on screen; discard
+    // it rather than misfile it.
+    if (String(stashed.creativeId ?? '') !== String(this.creativeId ?? '')) return
+    const draft = stashed.draft
+    // Two boxes are safe to overwrite: an empty one (the success path runs
+    // resetForm) and one still holding exactly what we submitted (the failure
+    // path never clears it, so the command text is left sitting there). Any
+    // other content is text the user typed while the request was in flight, or
+    // a review quote the failure path restored, and must not be clobbered.
+    const current = this.textareaTarget.value
+    if (current.trim().length > 0 && current !== submittedText) return
+    this.textareaTarget.value = draft
+    // Resize and re-enable send directly rather than dispatching `input`, which
+    // would re-open the command menu for a draft that starts with "/".
+    this._autoResize()
+    this._updateSubmitButton()
+  }
+
   resetForm() {
     this.formTarget.reset()
     this.editingId = null
@@ -224,7 +265,7 @@ export default class extends Controller {
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
-    this.textareaTarget.placeholder = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Reset textarea height after clearing content
     this.textareaTarget.style.height = 'auto'
   }
@@ -280,6 +321,11 @@ export default class extends Controller {
     }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
+
+    // Captured after the review-quote rewrite above, so it is the exact content
+    // going to the server. _restoreStashedDraft compares against it to tell a
+    // failure that left the command text behind from text typed mid-flight.
+    const submittedText = this.textareaTarget.value
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -376,6 +422,7 @@ export default class extends Controller {
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
+        this._restoreStashedDraft(submittedText)
       })
   }
 
@@ -767,7 +814,7 @@ export default class extends Controller {
     this.textareaTarget.value = ''
 
     if (store.isEmpty) {
-      this.textareaTarget.placeholder = ''
+      this.textareaTarget.placeholder = this._defaultPlaceholder()
     } else if (!store.hasActive) {
       this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     }
@@ -924,7 +971,7 @@ export default class extends Controller {
         store.remove(quote.id)
         if (wasActive) this.textareaTarget.value = ''
         if (store.isEmpty) {
-          this.textareaTarget.placeholder = ''
+          this.textareaTarget.placeholder = this._defaultPlaceholder()
         } else if (!store.hasActive) {
           this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
         }
@@ -961,6 +1008,10 @@ export default class extends Controller {
 
   _getI18nText(key, fallback) {
     return this.element.dataset[key] || fallback
+  }
+
+  _defaultPlaceholder() {
+    return this._getI18nText('chatInputHint', 'Type a message, or use / for commands')
   }
 
   // --- Inbox inline reply mode ---
@@ -1038,7 +1089,7 @@ export default class extends Controller {
     this._reviewStore.clear()
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
-    this.textareaTarget.placeholder = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Re-apply inbox reply mode indicator if we're in inbox System topic
     if (this._isInboxSystemTopic) {
       requestAnimationFrame(() => this._updateInboxReplyMode())
@@ -1053,6 +1104,20 @@ export default class extends Controller {
     const doc = parser.parseFromString(html, 'text/html')
     const commentElement = doc.querySelector('.comment-item')
     if (!commentElement) return
+
+    // A search-filtered list is the result set of a server-side query, and a
+    // freshly posted comment carries no verdict on whether it matches. Splicing
+    // it in drops an unrelated message among the results and — when there were
+    // none — takes the "no results" notice with it, since removePlaceholder
+    // below clears whatever empty state is on screen. Leave search and reload
+    // the live list instead, the same exit the history-mode branch takes.
+    // Edits are exempt: that comment is already in the result set, matching the
+    // stream path, which blocks `append` but never `replace`/`remove`.
+    const listCtrl = this.listController
+    if (!replaceExisting && listCtrl?.manualSearchQuery) {
+      listCtrl.resetToLatest()
+      return
+    }
 
     this.removePlaceholder()
 
@@ -1071,7 +1136,9 @@ export default class extends Controller {
 
   removePlaceholder() {
     const listElement = document.getElementById('comments-list')
-    const placeholder = listElement?.querySelector('#no-comments')
-    if (placeholder) placeholder.remove()
+    // Every empty-list state carries .comments-placeholder: the discovery
+    // cards (#no-comments), the topic-empty notice, and the no-search-results
+    // notice. Any of them can be on screen when the user posts.
+    listElement?.querySelectorAll('.comments-placeholder').forEach((el) => el.remove())
   }
 }
