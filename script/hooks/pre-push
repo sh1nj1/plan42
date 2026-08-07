@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -o pipefail
+
 echo "🔍 Running pre-push checks..."
 
 # Colors
@@ -8,23 +10,97 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 1. Rubocop auto-fix
-echo -e "${YELLOW}▶ Running Rubocop...${NC}"
-./bin/rubocop -a
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Rubocop failed. Please fix the issues and try again.${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ Rubocop passed${NC}"
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT" || exit 1
 
-# 2. Run tests
-echo -e "${YELLOW}▶ Running tests...${NC}"
-RAILS_ENV=test rake test
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Tests failed. Please fix and try again.${NC}"
-    exit 1
+ZERO_SHA="0000000000000000000000000000000000000000"
+REMOTE_NAME="${1:-origin}"
+PUSH_UPDATES=$(cat)
+RANGES=()
+RECEIVED_UPDATE=false
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ -z "$local_sha" ] && continue
+    RECEIVED_UPDATE=true
+
+    # Deleting a remote ref has no source files to check.
+    [ "$local_sha" = "$ZERO_SHA" ] && continue
+
+    if [ -n "${PRE_PUSH_BASE_REF:-}" ]; then
+      RANGES+=("${PRE_PUSH_BASE_REF}..${local_sha}")
+    elif [ "$remote_sha" != "$ZERO_SHA" ]; then
+      RANGES+=("${remote_sha}..${local_sha}")
+    else
+      base_ref=""
+      for candidate in "$REMOTE_NAME/HEAD" "$REMOTE_NAME/main" "$REMOTE_NAME/master"; do
+	if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+	  base_ref="$candidate"
+	  break
+	fi
+      done
+
+      if [ -n "$base_ref" ]; then
+	base_sha=$(git merge-base "$local_sha" "$base_ref") || exit 1
+      else
+	base_sha=$(git hash-object -t tree /dev/null) || exit 1
+      fi
+      RANGES+=("${base_sha}..${local_sha}")
+    fi
+done <<< "$PUSH_UPDATES"
+
+# Keep the hook useful when it is run directly from the command line.
+if [ "$RECEIVED_UPDATE" = false ]; then
+    base_ref="${PRE_PUSH_BASE_REF:-$REMOTE_NAME/main}"
+    if git rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null; then
+      RANGES+=("${base_ref}..HEAD")
+    fi
 fi
-echo -e "${GREEN}✓ All tests passed${NC}"
+
+CHANGED_FILES=()
+while IFS= read -r file; do
+    [ -n "$file" ] && CHANGED_FILES+=("$file")
+done < <(
+    for range in "${RANGES[@]}"; do
+      git diff --name-only --diff-filter=ACMRD "$range"
+    done | sort -u
+)
+
+RUBOCOP_FILES=()
+while IFS= read -r file; do
+    [ -n "$file" ] && RUBOCOP_FILES+=("$file")
+done < <(printf '%s\n' "${CHANGED_FILES[@]}" | ruby script/hooks/pre_push_file_selector.rb rubocop)
+
+# 1. Rubocop auto-fix for changed Ruby files
+if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
+    echo -e "${YELLOW}▶ Running Rubocop on ${#RUBOCOP_FILES[@]} changed file(s)...${NC}"
+    ./bin/rubocop -a "${RUBOCOP_FILES[@]}"
+    if [ $? -ne 0 ]; then
+      echo -e "${RED}❌ Rubocop failed. Please fix the issues and try again.${NC}"
+      exit 1
+    fi
+    echo -e "${GREEN}✓ Rubocop passed${NC}"
+else
+    echo -e "${GREEN}✓ No changed Ruby files to lint${NC}"
+fi
+
+# 2. Run tests related to changed source files
+RELATED_TESTS=()
+while IFS= read -r file; do
+    [ -n "$file" ] && RELATED_TESTS+=("$file")
+done < <(printf '%s\n' "${CHANGED_FILES[@]}" | ruby script/hooks/pre_push_file_selector.rb tests)
+
+if [ ${#RELATED_TESTS[@]} -gt 0 ]; then
+    printf -v TEST_PATHS '%q ' "${RELATED_TESTS[@]}"
+    echo -e "${YELLOW}▶ Running ${#RELATED_TESTS[@]} related test file(s)...${NC}"
+    RAILS_ENV=test TEST="$TEST_PATHS" rake test
+    if [ $? -ne 0 ]; then
+      echo -e "${RED}❌ Tests failed. Please fix and try again.${NC}"
+      exit 1
+    fi
+    echo -e "${GREEN}✓ Related tests passed${NC}"
+else
+    echo -e "${GREEN}✓ No related tests found (the full suite runs in CI)${NC}"
+fi
 
 # 3. Check for dead code (unused methods, variables)
 echo -e "${YELLOW}▶ Checking for dead code...${NC}"

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 namespace :test do
   # Clear existing tasks to avoid conflicts/duplication
   Rake::Task["test:all"].clear if Rake::Task.task_defined?("test:all")
@@ -25,16 +27,24 @@ namespace :test do
     end
   end
 
+  def self.requested_test_paths
+    value = ENV["TEST"].to_s
+    return if value.empty?
+
+    Shellwords.split(value)
+  end
+
   desc "Run all tests (host app + engines) excluding system tests. Use E=engine1,engine2 to exclude engines."
   task all: :environment do
-    test_roots = filter_engine_roots([ "test" ] + Dir.glob("engines/*/test"))
-    test_paths = []
+    test_paths = requested_test_paths
+    test_roots = filter_engine_roots([ "test" ] + Dir.glob("engines/*/test")) if test_paths.nil?
+    test_paths ||= []
 
     if excluded_engines.any?
       puts "\n=== Excluding engines: #{excluded_engines.join(', ')} ==="
     end
 
-    test_roots.each do |root|
+    Array(test_roots).each do |root|
       next unless Dir.exist?(root)
 
       # Add top-level test files (e.g. test/foo_test.rb)
@@ -52,7 +62,7 @@ namespace :test do
     if test_paths.any?
       puts "\n=== Running tests: #{test_paths.join(' ')} ==="
       # Run all collected paths in a single process
-      system("bin/rails test #{test_paths.join(' ')}") || exit(1)
+      system("bin/rails", "test", *test_paths) || exit(1)
     else
       puts "\n=== No tests found ==="
     end
