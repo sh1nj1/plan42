@@ -95,7 +95,9 @@
                   data-confirm="<%= t('collavre.creatives.index.archive_confirm') %>"
                   data-archive-label="<%= t('collavre.creatives.index.archive') %>"
                   data-restore-label="<%= t('collavre.creatives.index.unarchive') %>"
-                  data-restore-confirm="<%= t('collavre.creatives.index.unarchive_confirm', default: 'Restore this creative?') %>">
+                  data-restore-confirm="<%= t('collavre.creatives.index.unarchive_confirm', default: 'Restore this creative?') %>"
+                  data-failure-message="<%= t('collavre.creatives.index.archive_failed_alert') %>"
+                  data-restore-failure-message="<%= t('collavre.creatives.index.unarchive_failed_alert') %>">
             <%= t('collavre.creatives.index.archive') %>
           </button>
           <button type="button"

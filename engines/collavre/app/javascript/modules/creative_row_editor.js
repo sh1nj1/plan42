@@ -2029,9 +2029,32 @@ function setupEditorSession() {
           });
           if (flushed === SAVE_FAILED) return;
 
+          // The flush above already closed the editor, so a failed request has to
+          // say so: the row is still there unarchived, the editor is unexpectedly
+          // gone, and nothing else reports it — creativesApi goes straight to
+          // csrfFetch, bypassing the api queue whose failure listener would
+          // otherwise alert. The draft is not at risk (the flush persisted it), so
+          // this reports rather than recovers. Reopening the editor was considered
+          // and rejected: the request is in flight for an unbounded time, and the
+          // user may well have opened another row by the time it fails — stealing
+          // the shared editor back would then discard a newer draft to undo a
+          // cosmetic surprise.
+          const reportFailure = function (err) {
+            if (err) console.error('CreativeRowEditor: archive request failed', err);
+            // Localized in the ERB and carried on the button, like data-confirm.
+            // No literal fallback here, deliberately: an English string baked into
+            // the module is exactly what this project's i18n rule forbids.
+            const message = isArchived
+              ? archiveBtn.dataset.restoreFailureMessage
+              : archiveBtn.dataset.failureMessage;
+            if (message) alertDialog(message);
+          };
+
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
-            if (!res.ok) return;
+            // csrfFetch resolves for any HTTP status, so a non-OK response is a
+            // failure that arrives on the fulfilled path.
+            if (!res || !res.ok) return reportFailure();
             const applyToView = function () {
               if (!isArchived) {
                 // Archiving: remove from view. Creative#archive! is an update_all,
@@ -2054,7 +2077,7 @@ function setupEditorSession() {
             // The pending edit was already flushed and the editor closed above, so
             // the view can just follow the server.
             applyToView();
-          });
+          }, reportFailure);
         }
       });
     }

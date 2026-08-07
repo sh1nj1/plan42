@@ -27,7 +27,11 @@ export const DIV_IDS = [
   'inline-save-status', 'metadata-popup',
 ]
 
-export function buildEditorDom(container, { saveFailedMessage } = {}) {
+export function buildEditorDom(container, {
+  saveFailedMessage,
+  archiveFailedMessage,
+  restoreFailedMessage,
+} = {}) {
   const template = document.createElement('div')
   template.id = 'inline-edit-form'
   template.style.display = 'none'
@@ -70,6 +74,12 @@ export function buildEditorDom(container, { saveFailedMessage } = {}) {
     const button = document.createElement('button')
     button.type = 'button'
     button.id = id
+    if (id === 'inline-archive') {
+      // Same reason as saveFailedMessage above: the archive/restore failure
+      // strings are localized in the ERB and read back off the button.
+      if (archiveFailedMessage) button.dataset.failureMessage = archiveFailedMessage
+      if (restoreFailedMessage) button.dataset.restoreFailureMessage = restoreFailedMessage
+    }
     form.appendChild(button)
   })
   DIV_IDS.forEach((id) => {

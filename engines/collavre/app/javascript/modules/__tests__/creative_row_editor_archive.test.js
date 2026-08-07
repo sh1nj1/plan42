@@ -53,6 +53,8 @@ const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found
 
 // Non-English on purpose: a literal baked into the module would fail the assertion.
 const SAVE_FAILED_MESSAGE = '저장하지 못했습니다.'
+const ARCHIVE_FAILED_MESSAGE = '아카이브하지 못했습니다.'
+const RESTORE_FAILED_MESSAGE = '복원하지 못했습니다.'
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -68,7 +70,7 @@ function rowMarkup(id) {
 
 // Post-client-render state: tree_controller wiped #creatives and rendered rows
 // into it, so only the out-of-container template holds a pristine placeholder.
-function renderTree(rowIds) {
+function renderTree(rowIds, editorOverrides = {}) {
   document.body.innerHTML = `
     <template id="creatives-empty-state-template">${EMPTY_HTML}</template>
     <div id="creatives">${rowIds.map(rowMarkup).join('')}</div>
@@ -76,6 +78,9 @@ function renderTree(rowIds) {
   `
   const template = buildEditorDom(document.getElementById('center-frame'), {
     saveFailedMessage: SAVE_FAILED_MESSAGE,
+    archiveFailedMessage: ARCHIVE_FAILED_MESSAGE,
+    restoreFailedMessage: RESTORE_FAILED_MESSAGE,
+    ...editorOverrides,
   })
   initializeCreativeRowEditor()
   return template
@@ -187,6 +192,64 @@ test('does not archive when the pending save fails, and keeps the draft', async 
   expect(alertDialog).toHaveBeenCalledWith(SAVE_FAILED_MESSAGE)
   // The editor is still open on the row, holding the rejected draft.
   expect(template.style.display).toBe('block')
+})
+
+// The flush happens before the request, so by the time the request itself fails
+// the editor is already closed and currentTree cleared. The row is untouched and
+// the draft is safely on the server, but the handler used to `return` on a non-OK
+// response and had no rejection handler at all, so the action just evaporated:
+// editor unexpectedly closed, row still unarchived, nothing said.
+test('alerts and leaves the row alone when the archive request returns non-OK', async () => {
+  renderTree(['42'])
+  archive.mockResolvedValueOnce({ ok: false })
+
+  await archiveCreative('42')
+
+  expect(archive).toHaveBeenCalledWith('42')
+  expect(container().querySelectorAll('creative-tree-row')).toHaveLength(1)
+  expect(placeholder()).toBeNull()
+  expect(alertDialog).toHaveBeenCalledWith(ARCHIVE_FAILED_MESSAGE)
+})
+
+// An unhandled rejection here fails the test run, which is the other half of
+// what this covers.
+test('alerts and leaves the row alone when the archive request rejects', async () => {
+  renderTree(['42'])
+  archive.mockRejectedValueOnce(new Error('network down'))
+
+  await archiveCreative('42')
+
+  expect(container().querySelectorAll('creative-tree-row')).toHaveLength(1)
+  expect(alertDialog).toHaveBeenCalledWith(ARCHIVE_FAILED_MESSAGE)
+})
+
+test('alerts with the restore message and skips the reload when unarchive fails', async () => {
+  renderTree(['42'])
+  document.querySelector('creative-tree-row[creative-id="42"]').setAttribute('archived', '')
+  const treeEl = container()
+  treeEl.setAttribute('data-controller', 'creatives--tree')
+  treeEl.dataset.loaded = 'true'
+  const load = jest.fn()
+  window.Stimulus = { getControllerForElementAndIdentifier: jest.fn(() => ({ load })) }
+  unarchive.mockResolvedValueOnce({ ok: false })
+
+  await archiveCreative('42')
+
+  expect(load).not.toHaveBeenCalled()
+  expect(treeEl.dataset.loaded).toBe('true')
+  expect(alertDialog).toHaveBeenCalledWith(RESTORE_FAILED_MESSAGE)
+})
+
+// Mirrors the save-failure alert: the string only exists in the ERB, so nothing
+// is shown when the attribute is missing rather than falling back to a literal.
+test('shows no alert when the localized archive failure message is absent', async () => {
+  renderTree(['42'], { archiveFailedMessage: undefined, restoreFailedMessage: undefined })
+  archive.mockResolvedValueOnce({ ok: false })
+
+  await archiveCreative('42')
+
+  expect(alertDialog).not.toHaveBeenCalled()
+  expect(container().querySelectorAll('creative-tree-row')).toHaveLength(1)
 })
 
 test('declining the archive confirmation leaves the row in place', async () => {
