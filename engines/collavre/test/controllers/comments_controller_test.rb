@@ -1072,6 +1072,16 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "index keeps the engine mount prefix in feature guide links" do
+    get creative_comments_path(@creative), env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :success
+    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+      assert_includes @response.body, %(href="/collavre/features/#{key}?locale=en"),
+                      "expected the #{key} card guide to retain the mount prefix"
+    end
+  end
+
   test "index hides dismissed feature cards but keeps the rest" do
     @user.update!(dismissed_notices: [ "slash_command" ])
 

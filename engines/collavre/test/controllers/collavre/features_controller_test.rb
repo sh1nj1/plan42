@@ -101,8 +101,8 @@ module Collavre
 
     test "mention guide renders discoverability and creative permission distinctions in both locales" do
       {
-        en: [ "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
-        ko: [ "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
+        en: [ "whitespace or one of : . , ;", "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
+        ko: [ "공백 뒤, 또는 : . , ; 중 하나 뒤", "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
       }.each do |locale, phrases|
         get "/features/mention_agent", params: { locale: locale }
 
@@ -211,6 +211,31 @@ module Collavre
       assert_response :success
       assert_select "a[href=?]", "/landing?locale=ko"
       assert_select "a[href=?]", "/features?locale=ko", count: 2
+    end
+
+    test "guide navigation preserves the engine mount prefix" do
+      request_env = { "SCRIPT_NAME" => "/collavre" }
+
+      get "/features", params: { locale: "ko" }, env: request_env
+
+      assert_response :success
+      assert_select "a[href=?]", "/collavre/landing?locale=ko"
+      assert_select "a[href=?]", "/collavre/users/new?locale=ko"
+      GUIDE_KEYS.each do |key|
+        assert_select "a[href=?]", "/collavre/features/#{key}?locale=ko"
+      end
+
+      get "/features/mention_agent", params: { locale: "ko" }, env: request_env
+
+      assert_response :success
+      assert_select "a[href=?]", "/collavre/landing?locale=ko"
+      assert_select "a[href=?]", "/collavre/features?locale=ko", count: 2
+
+      get "/landing", params: { locale: "ko" }, env: request_env
+
+      assert_response :success
+      assert_select "a[href=?]", "/collavre/features?locale=ko",
+                    text: I18n.t("collavre.landing.features.explore", locale: :ko)
     end
 
     test "topic guide shows the required mention colon in both locales" do

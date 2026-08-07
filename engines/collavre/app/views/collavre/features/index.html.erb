@@ -7,7 +7,7 @@
   <section class="landing-section landing-features">
     <div class="landing-container">
       <nav class="feature-guide-breadcrumb">
-        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale) %>
+        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale, script_name: request.script_name) %>
       </nav>
 
       <h1 class="landing-section-title"><%= t('collavre.features.index.title') %></h1>
@@ -15,7 +15,7 @@
 
       <div class="landing-features-grid">
         <% @cards.each do |card| %>
-          <%= link_to collavre.feature_path(card.key, locale: I18n.locale), class: "landing-feature-card feature-guide-link-card" do %>
+          <%= link_to collavre.feature_path(card.key, locale: I18n.locale, script_name: request.script_name), class: "landing-feature-card feature-guide-link-card" do %>
             <div class="landing-feature-icon" aria-hidden="true"><%= card.icon %></div>
             <h2><%= t(card.title_key) %></h2>
             <p><%= t(card.description_key) %></p>
@@ -30,7 +30,7 @@
     <div class="landing-container">
       <h2 class="landing-cta-title"><%= t('collavre.landing.cta.title') %></h2>
       <p class="landing-cta-sub"><%= t('collavre.landing.cta.subtitle') %></p>
-      <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path(locale: I18n.locale), class: "landing-btn landing-btn-lg" %>
+      <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path(locale: I18n.locale, script_name: request.script_name), class: "landing-btn landing-btn-lg" %>
     </div>
   </section>
 
