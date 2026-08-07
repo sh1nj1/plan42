@@ -1083,7 +1083,7 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-empty-state-heading {
-    font-size: var(--text-1);
+    font-size: var(--text-3);
     font-weight: var(--weight-6);
     color: var(--text-primary);
     margin: 0 0 var(--space-4);
@@ -1101,7 +1101,7 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-empty-state-concept-title {
-    font-size: var(--text-0);
+    font-size: var(--text-1);
     font-weight: var(--weight-6);
     color: var(--text-primary);
     margin-bottom: var(--space-3);
@@ -1120,7 +1120,9 @@ creative-tree-row.is-being-edited .creative-tree {
     flex-direction: column;
     align-items: center;
     gap: 5px;
-    width: 84px;
+    /* Wide enough that the longest label ("실행 가능한 작업 (진행률)") wraps to two
+       lines at --text-0 instead of shredding into a four-line stack. */
+    width: 108px;
 }
 
 .creative-empty-state-facet-chip {
@@ -1141,10 +1143,12 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-empty-state-facet-label {
-    font-size: var(--text-00);
+    font-size: var(--text-0);
     color: var(--text-muted);
     line-height: 1.3;
     text-align: center;
+    /* Korean breaks mid-word by default; wrap at spaces instead. */
+    word-break: keep-all;
 }
 
 .creative-empty-state-op {
@@ -1179,13 +1183,13 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-empty-state-block-label {
-    font-size: var(--text-00);
+    font-size: var(--text-0);
     font-weight: var(--weight-6);
     color: var(--text-primary);
 }
 
 .creative-empty-state-concept-caption {
-    font-size: var(--text-0);
+    font-size: var(--text-1);
     color: var(--text-muted);
     line-height: 1.55;
     margin: var(--space-3) 0 0;
