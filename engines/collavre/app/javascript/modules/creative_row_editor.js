@@ -256,6 +256,11 @@ function setupEditorSession() {
     let uploadCompletionPromise = null;
     let resolveUploadCompletion = null;
     let addNewInProgress = false;
+    // hideCurrent() clears currentTree and hides the shared form before its
+    // close save settles. Without a separate transition guard, that temporary
+    // "no editor" state lets another row or Add reuse the form while the old
+    // save still owns its completion and recovery callbacks.
+    let closeSaveInProgress = false;
     let originalContent = '';
     let originalProgress = 0;
     let originalOriginId = '';
@@ -268,6 +273,21 @@ function setupEditorSession() {
         clearInterval(editingPingInterval);
         editingPingInterval = null;
       }
+    }
+
+    // Announces that a creative is being edited and keeps re-announcing it: the
+    // sync controller expires the lock when the pings stop, so a single event
+    // is not enough. Every path that puts the editor on a persisted row must go
+    // through this.
+    function startEditingPresence(creativeId) {
+      const parsedId = parseInt(creativeId, 10);
+      if (Number.isNaN(parsedId)) return;
+      const announce = () => document.dispatchEvent(new CustomEvent('creative-editing:start', {
+        detail: { creativeId: parsedId }
+      }));
+      announce();
+      stopEditingPing();
+      editingPingInterval = setInterval(announce, 3000);
     }
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
@@ -325,10 +345,16 @@ function setupEditorSession() {
       }
     }
 
+    // The server's answer, carried on the row by TreeBuilder's `has_children`. It is
+    // set whether or not the children have been fetched, so it is the only reliable
+    // source for a collapsed node — its children container is rendered empty with
+    // `data-loaded="false"` until the user expands it.
+    function rowFlagHasChildren(row) {
+      return !!(row && (row.hasChildren || row.getAttribute?.('has-children')));
+    }
+
     function currentRowHasChildren() {
-      const row = currentRowElement || (currentTree ? treeRowElement(currentTree) : null);
-      if (!row) return false;
-      return !!(row.hasChildren || row.getAttribute?.('has-children'));
+      return rowFlagHasChildren(currentRowElement || (currentTree ? treeRowElement(currentTree) : null));
     }
 
     function activateMarkdownMode(source) {
@@ -600,13 +626,20 @@ function setupEditorSession() {
 
     async function handleEditButtonClick(tree) {
       if (!tree) return;
+      // Do not let a second session take over the shared form while an earlier
+      // close still owns it. The initiating switch continues below after its
+      // own hideCurrent() resolves; only later, competing clicks are ignored.
+      if (closeSaveInProgress) return;
 
       if (currentTree === tree) {
         await hideCurrent();
         return;
       }
       if (currentTree) {
-        await hideCurrent(false);
+        // A failed save keeps the editor on the outgoing row with the draft the
+        // server rejected; loadCreative() below would replace the shared form
+        // buffer and destroy it, so the switch is abandoned instead.
+        if (await hideCurrent(false, { switching: true }) === SAVE_FAILED) return;
       }
       currentTree = tree;
       currentRowElement = treeRowElement(tree);
@@ -619,19 +652,7 @@ function setupEditorSession() {
       updateActionButtonStates();
 
       // Notify sync controller that editing started + periodic ping
-      const editCreativeId = form.dataset.creativeId || currentRowElement?.getAttribute('creative-id');
-      if (editCreativeId) {
-        const parsedId = parseInt(editCreativeId, 10);
-        document.dispatchEvent(new CustomEvent('creative-editing:start', {
-          detail: { creativeId: parsedId }
-        }));
-        if (editingPingInterval) clearInterval(editingPingInterval);
-        editingPingInterval = setInterval(() => {
-          document.dispatchEvent(new CustomEvent('creative-editing:start', {
-            detail: { creativeId: parsedId }
-          }));
-        }, 3000);
-      }
+      startEditingPresence(form.dataset.creativeId || currentRowElement?.getAttribute('creative-id'));
     }
 
     function initializeEventListeners() {
@@ -892,7 +913,28 @@ function setupEditorSession() {
       });
     }
 
-    function hideCurrent(event) {
+    // The save request resolves with the raw Response (see creativesApi.save),
+    // so an HTTP error arrives on the *fulfilled* path with `ok === false` — it
+    // is just as much a failure as a rejection. Everything else that reaches
+    // here is a success: performSave returns null for empty content and
+    // finalizeHide substitutes Promise.resolve() when no save was needed, both
+    // of which settle as undefined.
+    function isFailedSaveResult(result) {
+      return !!result && typeof result === 'object' && result.ok === false;
+    }
+
+    // Resolved by hideCurrent() when the flush-on-close save failed and the
+    // editor was left open on the outgoing row with the user's draft.
+    const SAVE_FAILED = 'save-failed';
+
+    // `switching` marks the calls that immediately open another row: the caller
+    // reassigns currentTree and moves the shared template as soon as the
+    // returned promise settles. It is deliberately a separate option rather
+    // than another meaning for the `event === false` argument, which only
+    // suppresses preventDefault(). Those callers MUST abort when hideCurrent
+    // resolves with SAVE_FAILED — the editor is still bound to the outgoing row
+    // holding the unsaved draft, and switching anyway would overwrite it.
+    function hideCurrent(event, { switching = false } = {}) {
       if (event?.preventDefault) {
         event.preventDefault();
       }
@@ -900,24 +942,87 @@ function setupEditorSession() {
       const tree = currentTree;
       const parentId = parentInput.value;
       const wasNew = !form.dataset.creativeId;
+      closeSaveInProgress = true;
 
-      // Notify sync controller that editing stopped
-      stopEditingPing();
       const editCreativeId = form.dataset.creativeId;
-      document.dispatchEvent(new CustomEvent('creative-editing:stop', {
-        detail: { creativeId: editCreativeId ? parseInt(editCreativeId, 10) : null }
-      }));
+
+      // Announcing "editing stopped" is what releases the row to everything
+      // that defers work while it is being edited — the sync controller's lock,
+      // and the tree controller, which holds a pending reload and drains it into
+      // a 300ms debounce on this event. So it must not be said until the row is
+      // genuinely released, which is only once the flush below has succeeded.
+      // Saying it up front (as this used to) handed out the all-clear while the
+      // editor still held the user's text: a save slower than that debounce let
+      // the deferred reload replace the whole container, taking the row and the
+      // editor attached inside it out of the document, and
+      // recoverFromFailedSave() then re-attached the editor to a detached row.
+      // On failure it is never announced at all — the editor stays open on the
+      // row, so presence was never interrupted and there is nothing to restore.
+      const releaseEditingPresence = function () {
+        stopEditingPing();
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: editCreativeId ? parseInt(editCreativeId, 10) : null }
+        }));
+      };
 
       currentTree = null;
       currentRowElement = null;
       tree.draggable = true;
       updateActionButtonStates();
 
+      // A failed save leaves the editor hidden and currentTree cleared, so the
+      // DOM has to be reconciled here. The buffer in the editor is the user's
+      // only copy of what they typed — the server rejected it, and for an
+      // existing row loadCreative() would overwrite the buffer with the stored
+      // copy the moment another row is opened. Losing it would also be silent,
+      // because saveForm's own 'error' status is gated on `tree === currentTree`
+      // (already null by now) and creativesApi.save calls csrfFetch directly,
+      // bypassing the api queue whose 'api-queue-request-failed' listener is
+      // what normally alerts the user. So the draft is always kept: the editor
+      // is re-bound to the row it was typed in, whether or not that row was ever
+      // persisted, and the save is re-armed so the next close retries it.
+      const recoverFromFailedSave = function () {
+        currentTree = tree;
+        currentRowElement = treeRowElement(tree) || currentRowElement;
+        tree.draggable = false;
+        attachTemplate(tree);
+        template.style.display = 'block';
+        // The rendered row stays hidden underneath, as it is while editing —
+        // the editor is visible on top of it, so nothing is blank. The
+        // empty-state card likewise stays hidden: the row still exists.
+        hideRow(tree);
+        isDirty = true;
+        pendingSave = true;
+        setSaveStatus('error');
+        updateActionButtonStates();
+        // Nothing to do about presence here: releaseEditingPresence() is only
+        // called on the success path, so the ping never stopped and the row was
+        // never announced as free. That also covers a never-persisted draft,
+        // which has no id to re-announce with.
+
+        if (switching) {
+          // The caller was about to open another row; it aborts on this result,
+          // so the editor keeps the draft. Without an alert that click would
+          // look like it did nothing, so say why out loud. The localized string
+          // is carried on the form's data-* attribute (set in the ERB) because
+          // plain JS can't call the i18n `t()` helper.
+          const message = form.dataset.saveFailedMessage;
+          if (message) alertDialog(message);
+        }
+      };
+
       const finalizeHide = function () {
         template.style.display = 'none';
         const p = (pendingSave || saveQueue.saving) ? saveForm(tree, parentId) : Promise.resolve();
-        return p.then(() => {
+        return p.then((result) => {
+          if (isFailedSaveResult(result)) {
+            recoverFromFailedSave();
+            return SAVE_FAILED;
+          }
+          releaseEditingPresence();
           if (wasNew && !form.dataset.creativeId) {
+            // removeTreeElement() restores the placeholder when this leaves the
+            // tree empty — see creative_tree_dom.js.
             removeTreeElement(tree);
           } else if (!tree.querySelector('.creative-row')) {
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
@@ -928,14 +1033,39 @@ function setupEditorSession() {
             showRow(tree);
             refreshRow(tree);
           }
+        }, () => {
+          // Rethrowing here would only strand an unhandled rejection: the
+          // callers that must react to a failed save read the resolved value
+          // instead, and the rest are fire-and-forget.
+          recoverFromFailedSave();
+          return SAVE_FAILED;
         });
       };
 
-      if (uploadsPending) {
-        return waitForUploads().then(finalizeHide);
-      }
+      const closePromise = uploadsPending ? waitForUploads().then(finalizeHide) : finalizeHide();
+      return Promise.resolve(closePromise).finally(() => { closeSaveInProgress = false; });
+    }
 
-      return finalizeHide();
+    // Tears the session down for a row that is already gone from the DOM, so
+    // hideCurrent() is not usable: its flush would try to save — and then
+    // re-show and refresh — a detached row. The archive handler has always
+    // called this, but it was never defined anywhere in the module, so
+    // archiving threw a ReferenceError inside its .then() and silently left the
+    // editor bound to the removed row.
+    function closeEditor() {
+      isDirty = false;
+      pendingSave = null;
+      stopEditingPing();
+      const editCreativeId = form.dataset.creativeId;
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
+      currentTree = null;
+      currentRowElement = null;
+      template.style.display = 'none';
+      updateActionButtonStates();
     }
 
     function loadCreative(tree) {
@@ -1234,19 +1364,7 @@ function setupEditorSession() {
           loadCreative(target);
           focusAfterMove();
           // Notify editing started on new creative + start ping
-          const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
-          if (newCreativeId) {
-            const parsedNewId = parseInt(newCreativeId, 10);
-            document.dispatchEvent(new CustomEvent('creative-editing:start', {
-              detail: { creativeId: parsedNewId }
-            }));
-            stopEditingPing();
-            editingPingInterval = setInterval(() => {
-              document.dispatchEvent(new CustomEvent('creative-editing:start', {
-                detail: { creativeId: parsedNewId }
-              }));
-            }, 3000);
-          }
+          startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
         });
       } else {
         // For existing creatives, show the row and refresh if needed
@@ -1256,19 +1374,7 @@ function setupEditorSession() {
         loadCreative(target);
         focusAfterMove();
         // Notify editing started on new creative + start ping
-        const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
-        if (newCreativeId) {
-          const parsedNewId = parseInt(newCreativeId, 10);
-          document.dispatchEvent(new CustomEvent('creative-editing:start', {
-            detail: { creativeId: parsedNewId }
-          }));
-          stopEditingPing();
-          editingPingInterval = setInterval(() => {
-            document.dispatchEvent(new CustomEvent('creative-editing:start', {
-              detail: { creativeId: parsedNewId }
-            }));
-          }, 3000);
-        }
+        startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
       }
       updateActionButtonStates();
     }
@@ -1297,14 +1403,14 @@ function setupEditorSession() {
         }
       }
 
-      // Notify editing stopped on previous creative
-      stopEditingPing();
-      const prevEditId = prev.dataset?.id || form.dataset?.creativeId;
-      if (prevEditId) {
-        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
-          detail: { creativeId: parseInt(prevEditId, 10) }
-        }));
-      }
+      // Editing is NOT announced as stopped here. Both branches below end in
+      // startNew(), which flushes the previous row through hideCurrent() and
+      // announces the stop itself once that flush succeeds. Doing it here as
+      // well released the row while the flush was still in flight — the same
+      // window that let a deferred tree reload delete the open editor — and,
+      // for a row that had never been persisted, said nothing at all because
+      // there was no id to report. addChild() has always relied on hideCurrent()
+      // for this.
 
       const handleAddNew = () => {
         const prevCreativeId = prev.dataset.id;
@@ -1466,6 +1572,52 @@ function setupEditorSession() {
       updateActionButtonStates();
     }
 
+    // Mirrors move(1)'s own lookup, so "would move(1) actually move?" is answered
+    // by the same question move() asks rather than by a list captured earlier.
+    function hasNextTree(tree) {
+      const trees = Array.from(document.querySelectorAll('.creative-tree'));
+      const index = trees.indexOf(tree);
+      return index !== -1 && !!trees[index + 1];
+    }
+
+    // Root-level equivalent of refreshChildren(parentTree): the server is the only
+    // place that knows what the root tree looks like now, so ask the tree controller
+    // to refetch it. Returns false when the controller is not reachable, leaving the
+    // caller's DOM as-is.
+    //
+    // Looks `window.Stimulus` up on each call rather than using the module-level
+    // `application`, which is captured at import time and so is undefined whenever
+    // this module is loaded before the host app starts Stimulus. The archive handler
+    // resolves its controller the same way.
+    //
+    // requestReload(), not load(): a reload replaces the whole container, so it
+    // detaches whichever row the editor is currently sitting on together with the
+    // unsaved draft in it. The controller knows whether a row is being edited and
+    // holds the refetch until it is not.
+    function creativeTreeController() {
+      const container = document.getElementById('creatives');
+      if (!container) return null;
+      return window.Stimulus?.getControllerForElementAndIdentifier?.(container, 'creatives--tree') || null;
+    }
+
+    function reloadCreativeTree() {
+      const controller = creativeTreeController();
+      if (typeof controller?.requestReload !== 'function') return false;
+      controller.requestReload();
+      return true;
+    }
+
+    // A successful close releases any pending tree reload, but archive still has
+    // to land before that reload is safe: otherwise it can render the pre-archive
+    // server state and replace the row reference the response handler later removes.
+    function holdCreativeTreeReload() {
+      const controller = creativeTreeController();
+      if (typeof controller?.beginReloadHold !== 'function' ||
+          typeof controller?.endReloadHold !== 'function') return function () {};
+      controller.beginReloadHold();
+      return function () { controller.endReloadHold(); };
+    }
+
     function deleteCurrent(withChildren) {
       if (!currentTree || !form.dataset.creativeId) return;
       const id = form.dataset.creativeId;
@@ -1500,6 +1652,25 @@ function setupEditorSession() {
         }));
         const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
         const childrenTree = document.getElementById("creative-children-" + id)
+        // "Delete only this" does not delete the children: DestroyService#reparent_children
+        // promotes them to the deleted creative's parent. When there is a parent row we
+        // refetch it below and the promoted children come back under it. When there is
+        // not — a top-level creative — they are promoted to the root, and the only copy
+        // of them in the DOM is inside the children container we are about to drop. That
+        // would leave the tree looking empty, and hand restoreTreeEmptyState() an empty
+        // container to put the "no creatives yet" card into, while the server still holds
+        // the promoted rows. Refetch the root tree instead.
+        //
+        // Whether there are children to promote is the server's answer, carried on
+        // the row's `has-children` flag — not "does the DOM hold a child row". A
+        // collapsed node gets a children container that TreeBuilder marks
+        // `loaded: false` and leaves empty until the user expands it, so asking the
+        // container would say "no children" for every tree the user never opened.
+        // The container is still consulted as well, because a child inserted
+        // client-side is in the DOM before any flag round-trips.
+        const promotesChildrenToRoot = !withChildren && !parentTree &&
+          (rowFlagHasChildren(treeRowElement(tree)) ||
+            !!childrenTree?.querySelector('creative-tree-row'));
         if (!withChildren && childrenTree && parentTree) {
           refreshChildren(parentTree).then(() => {
             if (parentTree) refreshRow(parentTree);
@@ -1510,8 +1681,22 @@ function setupEditorSession() {
         // Clear dirty state so move() doesn't try to save the just-deleted creative
         isDirty = false;
         pendingSave = null;
-        move(1);
+        // move(1) is a no-op when the deleted row was the last one: it bails on the
+        // missing target and leaves currentTree pointing at the row we are about to
+        // detach, with the inline template still attached to it and still displayed.
+        // The next Add click would then see display === 'block', read it as "close the
+        // open editor" and flush a save/refresh for a creative that no longer exists —
+        // so the restored CTA would need two clicks to create anything. Close the
+        // editor outright, as the archive path already does.
+        if (hasNextTree(tree)) {
+          move(1);
+        } else {
+          closeEditor();
+        }
+        // removeTreeElement() restores the empty-state placeholder if this leaves the
+        // tree with no rows (creative_tree_dom.js).
         removeTreeElement(tree);
+        if (promotesChildrenToRoot) reloadCreativeTree();
       });
     }
 
@@ -1537,6 +1722,10 @@ function setupEditorSession() {
     }
 
     function startNew(parentId, container, insertBefore, beforeId = '', afterId = '', childId = '') {
+      // The close save still owns the shared form and may need to recover it on
+      // failure. Starting a new row here would replace that buffer and let the
+      // stale completion mutate the newer session.
+      if (closeSaveInProgress) return;
       resetOriginTracking();
       const performStart = () => {
         let targetContainer = container || document.getElementById('creatives');
@@ -1654,7 +1843,10 @@ function setupEditorSession() {
       };
 
       if (currentTree) {
-        return Promise.resolve(hideCurrent(false)).then(performStart);
+        // Same as handleEditButtonClick: don't strand the rejected draft by
+        // moving the editor onto a brand-new row.
+        return Promise.resolve(hideCurrent(false, { switching: true }))
+          .then((result) => (result === SAVE_FAILED ? undefined : performStart()));
       }
 
       return performStart();
@@ -1878,45 +2070,107 @@ function setupEditorSession() {
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
         if (await confirmDialog(confirmMsg)) {
+          const releaseTreeReload = holdCreativeTreeReload();
+          // Flush the editor BEFORE the archive request goes out, not after it has
+          // landed. The row is about to be removed (or the tree re-rendered), so a
+          // failed flush has nowhere safe to leave the draft once the server-side
+          // change is done — the previous ordering had to choose between stranding
+          // the archived row on screen and discarding the user's unsaved edits.
+          // Flushing first makes the failure recoverable: nothing has changed on the
+          // server yet, so the whole action is simply abandoned.
+          //
+          // `switching: true` because the editor cannot just stay quietly open here:
+          // the user asked for something that is now not happening, so they get the
+          // alert. recoverFromFailedSave() keeps the draft in the editor on this row,
+          // which is what that alert promises — and, because we abort, stays true.
+          const flushed = await hideCurrent(undefined, { switching: true }).catch(err => {
+            console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
+            return SAVE_FAILED;
+          });
+          if (flushed === SAVE_FAILED) {
+            releaseTreeReload();
+            return;
+          }
+
+          // The flush above already closed the editor, so a failed request has to
+          // say so: the row is still there unarchived, the editor is unexpectedly
+          // gone, and nothing else reports it — creativesApi goes straight to
+          // csrfFetch, bypassing the api queue whose failure listener would
+          // otherwise alert. The draft is not at risk (the flush persisted it), so
+          // this reports rather than recovers. Reopening the editor was considered
+          // and rejected: the request is in flight for an unbounded time, and the
+          // user may well have opened another row by the time it fails — stealing
+          // the shared editor back would then discard a newer draft to undo a
+          // cosmetic surprise.
+          const reportFailure = function (err) {
+            if (err) console.error('CreativeRowEditor: archive request failed', err);
+            // Localized in the ERB and carried on the button, like data-confirm.
+            // No literal fallback here, deliberately: an English string baked into
+            // the module is exactly what this project's i18n rule forbids.
+            const message = isArchived
+              ? archiveBtn.dataset.restoreFailureMessage
+              : archiveBtn.dataset.failureMessage;
+            if (message) alertDialog(message);
+          };
+
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
-            if (!res.ok) return;
+            // csrfFetch resolves for any HTTP status, so a non-OK response is a
+            // failure that arrives on the fulfilled path.
+            if (!res || !res.ok) return reportFailure();
+            // The pre-flush closed the editor before the request went out, but it
+            // left the row on screen and clickable, and the request is in flight
+            // for an unbounded time. So the user can reopen that row — or one of
+            // its children — and start typing again before this lands. The editor
+            // template is attached *inside* the row it is bound to, so dropping
+            // this subtree would take that newer draft out of the document with
+            // no flush and no feedback, which is the same silent loss the
+            // pre-flush was introduced to stop.
+            const editorIsInsideArchivedSubtree = function () {
+              if (!currentTree) return false;
+              const editedRow = treeRowElement(currentTree) || currentTree;
+              if (row && (row === editedRow || row.contains(editedRow))) return true;
+              const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
+              return !!childrenContainer?.contains(editedRow);
+            };
+
             const applyToView = function () {
               if (!isArchived) {
                 // Archiving: remove from view. Creative#archive! is an update_all,
                 // so it fires no destroy broadcast — this is the only chance to
                 // bring the empty-state placeholder back when the last row goes.
+                if (editorIsInsideArchivedSubtree()) {
+                  // Hand the timing to the tree controller instead of removing
+                  // anything here: it holds the refetch until editing stops, so
+                  // the draft stays in the editor and the archived row goes away
+                  // once the user is done with it. If there is no controller to
+                  // ask, the row is deliberately left in place anyway — a stale
+                  // row that the next reload corrects is a far smaller failure
+                  // than deleting what the user is typing.
+                  reloadCreativeTree();
+                  return;
+                }
                 const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenContainer) childrenContainer.remove();
                 removeTreeElement(row);
               } else {
-                // Restoring: reload tree to show updated state
-                const treeEl = document.querySelector('[data-controller="creatives--tree"]');
-                if (treeEl) {
-                  treeEl.innerHTML = '';
-                  delete treeEl.dataset.loaded;
-                  const ctrl = window.Stimulus?.getControllerForElementAndIdentifier(treeEl, 'creatives--tree');
-                  if (ctrl) ctrl.load();
-                }
+                // Restoring: only the server knows where the row belongs in the
+                // tree now, so refetch. Nothing is cleared here on the way: this
+                // request has been in flight for an unbounded time and the user
+                // may well have opened another row and started typing, and wiping
+                // the container would take that row — and the editor attached
+                // inside it — out of the document, discarding the newer draft.
+                // reloadCreativeTree() hands the timing to the tree controller,
+                // which defers the re-render until editing stops; load() then
+                // replaces the container itself, so clearing it first was only
+                // ever a blank flash.
+                reloadCreativeTree();
               }
             };
-            // The editor is bound to the row this action is about to drop (or to a
-            // tree about to be re-rendered), so close it first. This used to call a
-            // `closeEditor()` that exists nowhere in the module: it threw a
-            // ReferenceError and left the editor open over the archived row.
-            //
-            // The server-side change has already landed here, so the view has to
-            // follow even when that close fails. hideCurrent() flushes a pending
-            // edit through saveForm(), which rethrows when the request fails (a
-            // dropped connection, say); letting that rejection break the chain
-            // would strand the archived row on screen with nothing to repair it,
-            // since an update_all archive broadcasts no destroy either. It hides
-            // the template and clears currentTree before the save is awaited, so
-            // the editor is already closed on this path.
-            return Promise.resolve().then(hideCurrent).catch(err => {
-              console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
-            }).then(applyToView);
-          });
+            // The pending edit was already flushed and the editor closed above, so
+            // the view can just follow the server.
+            applyToView();
+          }, reportFailure).finally(releaseTreeReload);
         }
       });
     }

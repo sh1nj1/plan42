@@ -53,6 +53,22 @@ en:
         no_creatives: No creatives found.
         no_sub_creatives: No sub-creatives found.
         no_search_results: No creatives match your search.
+        load_error: Could not load the creative tree.
+        empty_state_heading_root: No creatives yet
+        empty_state_heading_sub: No sub-creatives yet
+        empty_state_concept_title: "💡 What's a creative?"
+        empty_state_facet_doc: Tree-structured document piece
+        empty_state_facet_task: Actionable task (progress)
+        empty_state_facet_chat: Discussion channel
+        empty_state_block_label: One creative block
+        empty_state_concept_caption: One block plays all three roles — document, task, and conversation. Stacked as a tree, it becomes a document-shaped project with automatic progress rollup.
+        empty_state_add_creative: Add creative
+        empty_state_add_sub_creative: Add sub-creative
+        empty_state_add_shortcut: Enter
+        empty_state_readonly_message: You don't have write access to add sub-creatives here.
+        empty_state_request_pending: Access requested · awaiting owner approval
+        empty_state_request_failed: Could not request access. Please try again.
+        empty_state_loggedout_message: Sign up or log in to add sub-creatives.
         link_loading: Loading…
         link_expand: Expand
         search_placeholder: Search creatives...
@@ -127,6 +143,9 @@ en:
         progress_complete: Complete
         progress_incomplete: Incomplete
         progress_complete_children_alert: Marking this creative complete will also mark all child creatives complete.
+        save_failed_alert: Failed to save changes. Your edits are still open in the editor. Please check your connection and try again.
+        archive_failed_alert: Failed to archive this creative. Nothing was changed. Please check your connection and try again.
+        unarchive_failed_alert: Failed to restore this creative. Nothing was changed. Please check your connection and try again.
         mark_complete: Mark as complete
         mark_incomplete: Mark as incomplete
         set_plan_title: Set Plan for Selected Creative

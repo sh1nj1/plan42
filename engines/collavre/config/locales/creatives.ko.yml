@@ -49,6 +49,22 @@ ko:
         no_creatives: 크리에이티브가 없습니다.
         no_sub_creatives: 하위 크리에이티브가 없습니다.
         no_search_results: 검색 결과가 없습니다.
+        load_error: 크리에이티브 트리를 불러오지 못했습니다.
+        empty_state_heading_root: 크리에이티브가 없습니다
+        empty_state_heading_sub: 아직 하위 크리에이티브가 없습니다
+        empty_state_concept_title: "💡 크리에이티브란?"
+        empty_state_facet_doc: 트리 구조 문서 조각
+        empty_state_facet_task: 실행 가능한 작업 (진행률)
+        empty_state_facet_chat: 관련 대화 채널
+        empty_state_block_label: 크리에이티브 1블록
+        empty_state_concept_caption: 하나의 블록이 문서·작업·대화 역할을 동시에 합니다. 트리로 쌓으면 진행률이 자동 집계되는 문서형 프로젝트가 됩니다.
+        empty_state_add_creative: 크리에이티브 추가
+        empty_state_add_sub_creative: 하위 크리에이티브 추가
+        empty_state_add_shortcut: Enter
+        empty_state_readonly_message: 이 크리에이티브에 쓰기 권한이 없어 하위 항목을 추가할 수 없습니다.
+        empty_state_request_pending: 권한 요청됨 · 소유자 승인 대기 중
+        empty_state_request_failed: 권한을 요청하지 못했습니다. 다시 시도해 주세요.
+        empty_state_loggedout_message: 하위 크리에이티브를 추가하려면 회원가입 또는 로그인하세요.
         link_loading: 불러오는 중…
         link_expand: 펼치기
         recommend_parent: 카테고리 추천
@@ -115,6 +131,9 @@ ko:
         progress_complete: 완료
         progress_incomplete: 미완료
         progress_complete_children_alert: 하위 크리에이티브도 모두 완료로 표시됩니다.
+        save_failed_alert: 변경사항을 저장하지 못했습니다. 수정한 내용은 편집기에 그대로 남아 있습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.
+        archive_failed_alert: 아카이브하지 못했습니다. 변경된 내용은 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.
+        unarchive_failed_alert: 복원하지 못했습니다. 변경된 내용은 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.
         mark_complete: 완료로 표시
         mark_incomplete: 미완료로 표시
         set_plan_title: 선택된 크리에이티브에 대한 계획 설정

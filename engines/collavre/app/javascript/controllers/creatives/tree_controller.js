@@ -12,12 +12,19 @@ const TREE_RETRY_DELAYS_MS = [200, 600]
 export default class extends Controller {
   static values = {
     url: String,
+    // Neither fallback is an HTML string any more: showEmptyState() clones the
+    // server-rendered <template>, and the load-error fallback is a bare
+    // translated sentence the client wraps in a <p> itself. Reading markup back
+    // out of a data attribute and assigning it is an innerHTML sink as far as
+    // CodeQL (js/xss-through-dom) is concerned, and neither needs to be one.
+    errorText: String,
   }
 
   connect() {
     this.abortController = null
     this.loadingIndicator = null
     this._editing = false
+    this._reloadHoldCount = 0
     this._pagination = null
     this._sentinel = null
     this._sentinelObserver = null
@@ -31,10 +38,7 @@ export default class extends Controller {
       this._editing = false
       // Apply any pending sync data that was deferred while editing
       this._applyPendingSyncData()
-      if (this._pendingRefetch) {
-        this._pendingRefetch = false
-        this.debouncedLoad()
-      }
+      this._drainPendingReload()
     }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
@@ -45,13 +49,7 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
-    this._handleSyncRefetch = () => {
-      if (this._editing) {
-        this._pendingRefetch = true
-        return
-      }
-      this.debouncedLoad()
-    }
+    this._handleSyncRefetch = () => this.requestReload()
     document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
     this._setupArchiveToggle()
   }
@@ -145,7 +143,57 @@ export default class extends Controller {
 
   debouncedLoad() {
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
-    this._debouncedLoadTimer = setTimeout(() => this.load(), 300)
+    this._debouncedLoadTimer = setTimeout(() => {
+      // Re-check rather than trusting the check requestReload() already made.
+      // Switching rows is a `creative-editing:stop` immediately followed by a
+      // `creative-editing:start`, so a refetch drained on the stop is still
+      // sitting in this debounce window when the next row opens — and load()
+      // replaces the whole container, which would take that row, the editor
+      // attached inside it and the unsaved draft out of the document. Re-pend
+      // instead of dropping it: the reload is still owed, just not yet safe.
+      if (this._editing || this._reloadHoldCount > 0) {
+        this._pendingRefetch = true
+        return
+      }
+      this.load()
+    }, 300)
+  }
+
+  // Editing-aware reload — the entry point for anything that wants the tree
+  // refetched in response to something that already happened elsewhere (the sync
+  // channel, an archive/unarchive that landed, a delete that promoted children to
+  // the root). load() replaces the whole container, which takes the row an open
+  // editor is attached to out of the document along with the unsaved draft inside
+  // it; those callers can land at any moment, including long after the user has
+  // moved on to editing a different row. So the reload waits for
+  // `creative-editing:stop`, which _handleEditStop drains.
+  //
+  // Call load() directly only for reloads the user just asked for and is waiting
+  // on (filter change, archive toggle), where re-rendering is the point.
+  requestReload() {
+    if (this._editing || this._reloadHoldCount > 0) {
+      this._pendingRefetch = true
+      return
+    }
+    this.debouncedLoad()
+  }
+
+  // Keep editing-aware reloads pending while an operation is between its local
+  // edit flush and its server response. The counter makes overlapping requests
+  // release independently without allowing an early reload between them.
+  beginReloadHold() {
+    this._reloadHoldCount += 1
+  }
+
+  endReloadHold() {
+    if (this._reloadHoldCount > 0) this._reloadHoldCount -= 1
+    this._drainPendingReload()
+  }
+
+  _drainPendingReload() {
+    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0) return
+    this._pendingRefetch = false
+    this.debouncedLoad()
   }
 
   load() {
@@ -191,7 +239,7 @@ export default class extends Controller {
         }
         console.error(error)
         this.hideLoadingIndicator()
-        this.showEmptyState()
+        this.showErrorState()
       })
   }
 
@@ -360,6 +408,25 @@ export default class extends Controller {
     // token in the "request permission" variant survives.
     this.element.replaceChildren()
     restoreTreeEmptyState(this.element)
+    this.markContentLoaded()
+    document.documentElement.classList.add('creative-alignment-ready')
+  }
+
+  // Distinct from showEmptyState(): used when the tree fetch itself fails
+  // (non-2xx, JSON parse failure, or a non-transient network error after
+  // retries are exhausted). The request never actually confirmed the tree is
+  // empty, so this must NOT render the Add/Import creation CTAs — a workspace
+  // that genuinely has creatives would otherwise look empty and invite
+  // duplicate creation.
+  showErrorState() {
+    this.element.replaceChildren()
+    if (this.hasErrorTextValue && this.errorTextValue) {
+      const message = document.createElement('p')
+      message.className = 'creative-tree-error'
+      message.style.textAlign = 'center'
+      message.textContent = this.errorTextValue
+      this.element.appendChild(message)
+    }
     this.markContentLoaded()
     document.documentElement.classList.add('creative-alignment-ready')
   }

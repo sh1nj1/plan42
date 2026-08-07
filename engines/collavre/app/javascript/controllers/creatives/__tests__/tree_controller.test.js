@@ -394,3 +394,306 @@ describe('CreativesTreeController Chats pagination (load more)', () => {
     })
   })
 })
+
+describe('CreativesTreeController error state vs genuine-empty state', () => {
+  let originalFetch
+
+  const installControllerWithStates = () => {
+    // Mirrors index.html.erb: the actionable empty state lives in the server-rendered
+    // <template> that showEmptyState() clones, while the load-error fallback is a bare
+    // translated sentence the controller wraps in a <p> itself.
+    const template = document.createElement('template')
+    template.id = 'creatives-empty-state-template'
+    template.innerHTML =
+      '<div data-creatives-empty-state><div class="creative-empty-state">' +
+      '<button class="new-root-creative-btn">Add</button></div></div>'
+    document.body.appendChild(template)
+
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute(
+      'data-creatives--tree-error-text-value',
+      'Could not load the creative tree.'
+    )
+    document.body.appendChild(container)
+
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+
+    return { container, application }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('a non-2xx response renders the distinct error state, not the actionable empty-state CTAs', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    })
+
+    const { container, application } = installControllerWithStates()
+    await flush()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.creative-tree-error')).not.toBeNull()
+    expect(container.querySelector('.creative-empty-state')).toBeNull()
+    expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    application.stop()
+  })
+
+  test('a JSON parse failure renders the distinct error state, not the actionable empty-state CTAs', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError('Unexpected token in JSON')
+      },
+    })
+
+    const { container, application } = installControllerWithStates()
+    await flush()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.creative-tree-error')).not.toBeNull()
+    expect(container.querySelector('.creative-empty-state')).toBeNull()
+    expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    application.stop()
+  })
+
+  test('the error fallback renders its value as text, never as markup', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+
+    const { container, application } = installControllerWithStates()
+    container.setAttribute(
+      'data-creatives--tree-error-text-value',
+      '<img src=x onerror="window.__xss = true">'
+    )
+    await flush()
+    await flush()
+    await flush()
+
+    const message = container.querySelector('.creative-tree-error')
+    expect(message).not.toBeNull()
+    // Parsed as markup this would be an <img>; as text it is just the literal string.
+    expect(message.querySelector('img')).toBeNull()
+    expect(message.textContent).toBe('<img src=x onerror="window.__xss = true">')
+
+    application.stop()
+  })
+
+  test('a genuinely empty tree (successful response, zero creatives) still shows the actionable empty state', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ creatives: [] }),
+    })
+
+    const { container, application } = installControllerWithStates()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
+    expect(container.querySelector('.creative-tree-error')).toBeNull()
+
+    application.stop()
+  })
+})
+
+// A reload replaces the whole container, so it takes the row an open editor is
+// attached to out of the document — along with the unsaved draft inside it.
+// Callers that reload in response to a request they fired earlier (archive /
+// unarchive, delete-with-promoted-children) can land at any moment, including
+// while the user has moved on and is editing a different row, so they go through
+// requestReload() rather than load().
+describe('CreativesTreeController requestReload', () => {
+  let originalFetch
+
+  // Stimulus connects asynchronously, so the controller instance only exists after
+  // a turn of the real event loop — hence fake timers are switched on afterwards,
+  // once connect()'s own initial load() is out of the way and can be stubbed out.
+  const installConnected = async () => {
+    const { container, application } = installController()
+    await flush()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    const load = jest.spyOn(controller, 'load').mockImplementation(() => {})
+    jest.useFakeTimers()
+    return { container, application, controller, load }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+    global.fetch = originalFetch
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('reloads when no editor is open', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.requestReload()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('defers the reload while a row is being edited', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
+  test('runs the deferred reload once editing stops', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('does not reload on editing:stop when nothing was requested', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+    expect(controller).toBeDefined()
+
+    application.stop()
+  })
+
+  // Switching rows is a stop immediately followed by a start, so a refetch drained
+  // on the stop is still sitting in the 300ms debounce when the next row opens.
+  // Checking _editing only at requestReload() time would let that timer fire and
+  // re-render the tree out from under the newly opened editor, taking the row it
+  // is attached to — and the draft inside it — out of the document.
+  test('keeps the deferred reload pending across a row switch', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+
+    // The switch: the outgoing row stops, the incoming row starts, both well
+    // inside the debounce window.
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
+  test('runs the reload once the row opened by the switch is closed', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(300)
+
+    // Still exactly once: re-pending must not double-book the refetch.
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  // The re-check must not swallow the request: an editor that opens after the
+  // timer has already fired is a separate matter, but one that opens during the
+  // window has to leave the refetch queued rather than cancelled.
+  test('re-arms the pending flag when the timer fires mid-edit', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    jest.advanceTimersByTime(300)
+    expect(load).not.toHaveBeenCalled()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('keeps a pending reload held after editing stops until the operation finishes', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.beginReloadHold()
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    controller.endReloadHold()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('coalesces reloads across overlapping operation holds', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.beginReloadHold()
+    controller.beginReloadHold()
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+
+    controller.endReloadHold()
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    controller.endReloadHold()
+    jest.advanceTimersByTime(300)
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+})

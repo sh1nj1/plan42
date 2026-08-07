@@ -29,6 +29,10 @@
      data-creatives--import-dragover-class="dragover">
   <% current_creative = @parent_creative || @creative %>
   <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>
+  <%# Reused for the header Add button, the Import menu item, and the empty-state
+      CTAs: root level is always addable for authenticated users; a nested level
+      additionally requires write permission on @parent_creative. %>
+  <% can_add = authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
 
   <div class="creative-actions-row">
     <%# Left: breadcrumb ancestry %>
@@ -50,7 +54,7 @@
     <%# Right: primary actions + overflow %>
     <div class="creative-header-actions">
       <%# Add button (always visible) %>
-      <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+      <%= render 'add_button' if can_add %>
 
       <%# Expand/collapse toggle (always visible) %>
       <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">
@@ -88,7 +92,7 @@
           <% end %>
         <% end %>
         <div class="creative-overflow-divider"></div>
-        <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+        <% if can_add %>
           <button type="button" id="import-markdown-btn" class="popup-menu-item" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle">
             <span aria-hidden="true"><%= svg_tag 'arrow-down.svg', width: 16, height: 16 %></span> <%= t('.import_markdown') %>
           </button>
@@ -225,21 +229,27 @@
 
 <%
   empty_body =
-    if params[:search].present?
+    if any_filter_active?
       content_tag(:p, t('.no_search_results'), style: 'text-align: center;')
     elsif params[:id] && @creative && !@creative.has_permission?(Current.user, :read)
       message = content_tag(:p, t('.no_permission'), style: 'text-align: center;')
       action = content_tag(:div, button_to(t('.request_permission'), request_permission_creative_path(@creative), method: :post), style: 'text-align: center;')
       message + action
     else
-      text = params[:id] ? t('.no_sub_creatives') : t('.no_creatives')
-      content_tag(:p, text, style: 'text-align: center;')
+      render('empty_state', root: params[:id].blank?, can_add: can_add, creative: @parent_creative)
     end
   # data-creatives-empty-state marks the placeholder so client-side row insertion
   # (inline editor / websocket broadcast) can hide it as soon as the tree is no
   # longer empty, and show it again when the last row is removed.
   # See app/javascript/modules/creative_tree_empty_state.js.
   empty_html = content_tag(:div, empty_body, data: { creatives_empty_state: '' })
+  # Distinct fallback for when the async tree fetch itself fails (non-2xx,
+  # JSON parse failure, or a non-transient network error after retries are
+  # exhausted). Must NOT include the Add/Import CTAs the empty state carries:
+  # the request never confirmed the tree is empty, so offering creation actions
+  # here would mislead a user whose workspace already has creatives. Passed as
+  # text, not markup — the client builds the element, so there is no HTML sink.
+  error_text = t('.load_error')
   # Only pass filter parameters to avoid unnecessary params in URL
   tree_params = params.to_unsafe_h.slice(
     "id", "tags", "min_progress", "max_progress", "search", "comment",
@@ -263,6 +273,7 @@
       data: {
         controller: 'creatives--tree creatives--sync',
         'creatives--tree-url-value': tree_url,
+        'creatives--tree-error-text-value': error_text,
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),

@@ -386,8 +386,12 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     get creatives_path(id: creatives(:childless_creative).id)
 
     assert_response :success
+    # The wrapper is what creative_tree_empty_state.js hides and restores; the
+    # empty-state card (with its Add/Import CTAs) is what it now wraps, in place
+    # of the plain "no sub-creatives" sentence.
     assert_select "#creatives > div[data-creatives-empty-state]", count: 1 do
-      assert_select "p", text: I18n.t("collavre.creatives.index.no_sub_creatives")
+      assert_select ".creative-empty-state-heading",
+        text: I18n.t("collavre.creatives.index.empty_state_heading_sub")
     end
   end
 
@@ -402,7 +406,9 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#creatives template#creatives-empty-state-template", count: 0
     template = css_select("template#creatives-empty-state-template").first
     assert_includes template.to_html, "data-creatives-empty-state"
-    assert_includes template.to_html, I18n.t("collavre.creatives.index.no_sub_creatives")
+    # The plain "no sub-creatives" sentence was replaced by the empty-state card;
+    # its heading is what the placeholder carries now.
+    assert_includes template.to_html, I18n.t("collavre.creatives.index.empty_state_heading_sub")
   end
 
   test "index no longer passes empty-state markup as a controller value" do

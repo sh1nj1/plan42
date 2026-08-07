@@ -10,6 +10,7 @@ import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
+import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
 import CommentsPresenceController from "./comments/presence_controller"
@@ -92,6 +93,7 @@ export function registerControllers(application) {
   application.register("creatives--row-editor", CreativesRowEditorController)
   application.register("creatives--tree", CreativesTreeController)
   application.register("creatives--sync", CreativesSyncController)
+  application.register("creatives--write-access-request", CreativesWriteAccessRequestController)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
   application.register("comments--presence", CommentsPresenceController)

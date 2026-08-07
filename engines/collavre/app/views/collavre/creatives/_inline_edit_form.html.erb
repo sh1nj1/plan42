@@ -1,5 +1,6 @@
 <div id="inline-edit-form" class="inline-edit-form-shell" style="display:none;">
-  <form id="inline-edit-form-element" method="post">
+  <form id="inline-edit-form-element" method="post"
+        data-save-failed-message="<%= t('collavre.creatives.index.save_failed_alert') %>">
     <input type="hidden" id="inline-method" name="_method" value="patch" />
     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
     <input type="hidden" id="inline-creative-description" name="creative[description]" />
@@ -94,7 +95,9 @@
                   data-confirm="<%= t('collavre.creatives.index.archive_confirm') %>"
                   data-archive-label="<%= t('collavre.creatives.index.archive') %>"
                   data-restore-label="<%= t('collavre.creatives.index.unarchive') %>"
-                  data-restore-confirm="<%= t('collavre.creatives.index.unarchive_confirm', default: 'Restore this creative?') %>">
+                  data-restore-confirm="<%= t('collavre.creatives.index.unarchive_confirm', default: 'Restore this creative?') %>"
+                  data-failure-message="<%= t('collavre.creatives.index.archive_failed_alert') %>"
+                  data-restore-failure-message="<%= t('collavre.creatives.index.unarchive_failed_alert') %>">
             <%= t('collavre.creatives.index.archive') %>
           </button>
           <button type="button"
