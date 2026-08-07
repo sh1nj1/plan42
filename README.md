@@ -107,8 +107,9 @@ Stated up front, because you would find them anyway:
 
 ```bash
 bin/dev                                   # dev server on :3000
-./script/install-hooks.sh                 # pre-push: rubocop, tests, i18n + dead-code checks
-bin/rake test && bin/rails test:system    # host app + every engine
+./script/install-hooks.sh                 # pre-push: changed-file RuboCop, i18n + dead-code checks
+./bin/rubocop -a                         # full lint required before PR
+bin/rake test && bin/rails test:system   # tests required before PR; pre-push tests are temporarily disabled
 ```
 
 System tests run headless by default; `SYSTEM_TEST_DRIVER=chrome bin/rails test:system`
