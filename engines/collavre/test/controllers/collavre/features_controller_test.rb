@@ -111,6 +111,23 @@ module Collavre
       end
     end
 
+    test "trigger and sharing guides render their input and mention permission limits in both locales" do
+      {
+        en: [ "first 24 visible characters", "not the full description", "comment permission or higher", "read-only collaborator" ],
+        ko: [ "처음 24자", "전체 설명이 아니라", "댓글 이상의 권한", "읽기 전용 참여자" ]
+      }.each do |locale, phrases|
+        responses = %w[automation_trigger add_user].map do |key|
+          get "/features/#{key}", params: { locale: locale }
+
+          assert_response :success
+          @response.body
+        end
+        rendered_copy = responses.join(" ")
+
+        phrases.each { |phrase| assert_includes rendered_copy, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "feature pages render the complete localized footer sentence" do
       { "/features" => :en, "/features/mention_agent" => :ko }.each do |path, locale|
         get path, params: { locale: locale }

@@ -72,7 +72,7 @@ en:
               body: "A trigger needs an AI agent with write permission on the container. Without one, the drop is recorded but nothing runs, and Collavre says so in the thread rather than failing quietly."
           tips:
             - "An agent claiming DONE is verified against the actions it was asked to take; unfinished work is sent back for another iteration."
-            - "Give the container a description that reads as an instruction — that description is the agent's brief on every drop."
+            - "Keep the decisive instruction in the first 24 visible characters of the container description: the trigger message receives only that snippet, not the full description."
         topic_management:
           title: "Topics"
           tagline: "Split one chat into parallel conversations that do not interrupt each other."
@@ -93,7 +93,7 @@ en:
           meta_description: "Share a Collavre Creative with teammates or AI agents and control what they can do."
           sections:
             - heading: "How it works"
-              body: "Sharing a Creative grants access to it and everything below it, so you share at the level the person actually works at rather than one Creative at a time. Everyone shared on a Creative can be mentioned in its chat."
+              body: "Sharing a Creative grants access to it and everything below it, so you share at the level the person actually works at rather than one Creative at a time. The Creative owner and people shared with comment permission or higher can be mentioned in its chat. A read-only collaborator is mentionable only if they are globally searchable."
             - heading: "Permission levels"
               body: "Access is graded: reading, commenting, writing, and administering are separate. A reviewer who should comment but not restructure gets comment access; an agent that only summarizes does not need write. Only an admin on a Creative can change who is shared on it."
             - heading: "AI agents are participants too"
