@@ -1137,8 +1137,8 @@ export default class extends Controller {
   removePlaceholder() {
     const listElement = document.getElementById('comments-list')
     // Every empty-list state carries .comments-placeholder: the discovery
-    // cards (#no-comments), the topic-empty notice, and the no-search-results
-    // notice. Any of them can be on screen when the user posts.
+    // cards (#no-comments) and the no-search-results notice. Either can be on
+    // screen when the user posts.
     listElement?.querySelectorAll('.comments-placeholder').forEach((el) => el.remove())
   }
 }

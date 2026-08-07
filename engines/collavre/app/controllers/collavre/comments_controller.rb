@@ -137,11 +137,6 @@ module Collavre
           comments: @comments,
           creative: @creative,
           search: params[:search],
-          # An empty topic inside a conversation that already has messages is not a
-          # new conversation, so it must not get the "get started" discovery cards.
-          # Short-circuits on the loaded window, so the extra EXISTS only runs when
-          # the rendered list is actually empty.
-          creative_has_comments: @comments.any? || visible_scope.exists?,
           read_receipts: read_receipts,
           present_user_ids: present_user_ids,
           current_topic_id: effective_topic_id
