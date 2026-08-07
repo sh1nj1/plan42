@@ -36,7 +36,7 @@ RUBOCOP_FILES=()
 
 while IFS= read -r file; do
     case "$file" in
-      *.rb|*.rake|*.gemspec|Gemfile|*/Gemfile|Rakefile|*/Rakefile)
+      *.rb|*.rake|*.ru|*.gemspec|Gemfile|*/Gemfile|Rakefile|*/Rakefile)
 	[ -f "$file" ] && RUBOCOP_FILES+=("$file")
 	;;
     esac
@@ -44,7 +44,7 @@ done <<< "$CHANGED_FILES"
 
 if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
     echo -e "${YELLOW}▶ Running Rubocop on ${#RUBOCOP_FILES[@]} changed file(s)...${NC}"
-    ./bin/rubocop -a "${RUBOCOP_FILES[@]}"
+    ./bin/rubocop -a --force-exclusion "${RUBOCOP_FILES[@]}"
     if [ $? -ne 0 ]; then
 	echo -e "${RED}❌ Rubocop failed. Please fix the issues and try again.${NC}"
 	exit 1
