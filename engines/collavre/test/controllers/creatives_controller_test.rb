@@ -48,6 +48,17 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
   end
 
+  test "workspace breadcrumb root and ancestor links advance browser history" do
+    ancestor = creatives(:unconvert_target)
+    child = creatives(:unconvert_child_two)
+
+    get creatives_path(id: child.id)
+
+    assert_response :success
+    assert_select "a.creative-breadcrumb-link[href='#{creatives_path}'][data-turbo-action='advance']"
+    assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance']"
+  end
+
   test "workspace tree JSON returns branches without leaf roots" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
     Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
