@@ -2011,6 +2011,24 @@ function setupEditorSession() {
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
         if (await confirmDialog(confirmMsg)) {
+          // Flush the editor BEFORE the archive request goes out, not after it has
+          // landed. The row is about to be removed (or the tree re-rendered), so a
+          // failed flush has nowhere safe to leave the draft once the server-side
+          // change is done — the previous ordering had to choose between stranding
+          // the archived row on screen and discarding the user's unsaved edits.
+          // Flushing first makes the failure recoverable: nothing has changed on the
+          // server yet, so the whole action is simply abandoned.
+          //
+          // `switching: true` because the editor cannot just stay quietly open here:
+          // the user asked for something that is now not happening, so they get the
+          // alert. recoverFromFailedSave() keeps the draft in the editor on this row,
+          // which is what that alert promises — and, because we abort, stays true.
+          const flushed = await hideCurrent(undefined, { switching: true }).catch(err => {
+            console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
+            return SAVE_FAILED;
+          });
+          if (flushed === SAVE_FAILED) return;
+
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
             if (!res.ok) return;
@@ -2033,29 +2051,9 @@ function setupEditorSession() {
                 }
               }
             };
-            // The editor is bound to the row this action is about to drop (or to a
-            // tree about to be re-rendered), so close it first. This used to call a
-            // `closeEditor()` that exists nowhere in the module: it threw a
-            // ReferenceError and left the editor open over the archived row.
-            //
-            // The server-side change has already landed here, so the view has to
-            // follow even when that close fails: letting a failure break the chain
-            // would strand the archived row on screen with nothing to repair it,
-            // since an update_all archive broadcasts no destroy either.
-            //
-            // `switching: true` because this behaves like a row switch rather than
-            // a plain close — the row the editor is bound to is about to be
-            // detached, so a failed flush cannot simply leave the draft open on it.
-            // It gets the user the alert; SAVE_FAILED then means the recovery
-            // re-opened the editor on that doomed row, so close it back down before
-            // applyToView() removes the row out from under it.
-            return Promise.resolve()
-              .then(() => hideCurrent(undefined, { switching: true }))
-              .then(result => { if (result === SAVE_FAILED) closeEditor(); })
-              .catch(err => {
-                console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
-              })
-              .then(applyToView);
+            // The pending edit was already flushed and the editor closed above, so
+            // the view can just follow the server.
+            applyToView();
           });
         }
       });

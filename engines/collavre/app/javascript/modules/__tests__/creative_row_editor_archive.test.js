@@ -168,16 +168,13 @@ test('flushes a pending edit before dropping the archived row', async () => {
   expect(placeholder()).not.toBeNull()
 })
 
-// The archive request has already landed on the server by the time the editor is
-// flushed, and an update_all archive broadcasts no destroy, so a failed flush must
-// not leave the archived row on screen with nothing to repair it.
-//
-// A failed flush no longer rejects — saveForm() surfaces it through the save status
-// and an alert rather than rethrowing (rethrowing only stranded an unhandled
-// rejection and aborted the caller mid-switch). So the feedback to assert on here is
-// the alert, not a console.error; and because the row is about to be detached, the
-// editor must end up closed rather than re-opened on it by the recovery path.
-test('still removes the archived row when the pending save fails', async () => {
+// The pending edit is flushed before the archive request goes out, so a failed
+// flush aborts the whole action while the server is still untouched. That is what
+// makes the alert honest: it tells the user their edits are still open, and they
+// are — the row stays, the editor stays on it with the draft, and nothing was
+// archived. Doing it the other way round forced a choice between stranding the
+// archived row on screen and silently discarding the draft.
+test('does not archive when the pending save fails, and keeps the draft', async () => {
   const template = renderTree(['42'])
   save.mockRejectedValueOnce(new Error('network down'))
   openEditorWithPendingEdit('42')
@@ -185,11 +182,11 @@ test('still removes the archived row when the pending save fails', async () => {
   await archiveCreative('42')
 
   expect(save).toHaveBeenCalledTimes(1)
-  expect(container().querySelector('creative-tree-row')).toBeNull()
-  expect(placeholder()).not.toBeNull()
-  expect(placeholder().hidden).toBe(false)
+  expect(archive).not.toHaveBeenCalled()
+  expect(container().querySelector('creative-tree-row')).not.toBeNull()
   expect(alertDialog).toHaveBeenCalledWith(SAVE_FAILED_MESSAGE)
-  expect(template.style.display).toBe('none')
+  // The editor is still open on the row, holding the rejected draft.
+  expect(template.style.display).toBe('block')
 })
 
 test('declining the archive confirmation leaves the row in place', async () => {
