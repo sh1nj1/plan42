@@ -82,7 +82,7 @@ en:
             - heading: "How it works"
               body: "A topic is a named thread inside a Creative's chat. Messages sent in a topic stay in that topic, so a long-running investigation and a quick question can share a Creative without shuffling into one another. The topic list shows every topic on the Creative, including archived ones."
             - heading: "Topics and agents"
-              body: "A topic can have a primary agent, which is the agent that answers in it — /topic \"name\" @agent: sets both at once. This is how one Creative can host several agents working in parallel, each in its own topic, without them reading each other's turns."
+              body: "A topic can have a primary agent as its sole ambient responder: without an explicit mention, that agent answers even if another agent's routing rules match. Explicitly mentioning another agent invites that agent instead. /topic \"name\" @agent: creates the topic and sets its primary agent at once. This is how one Creative can host several agents working in parallel, each in its own topic, without them reading each other's turns."
             - heading: "Keeping topics small"
               body: "/compress summarizes a topic's messages and removes the originals, leaving the conclusion behind. Long-lived topics stay useful instead of becoming an archive nobody scrolls."
           tips:

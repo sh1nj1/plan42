@@ -210,6 +210,18 @@ module Collavre
       end
     end
 
+    test "topic guide distinguishes the ambient primary agent from an explicit mention in both locales" do
+      {
+        en: [ "sole ambient responder", "Explicitly mentioning another agent invites that agent instead" ],
+        ko: [ "멘션 없는 메시지에 단독으로 답하는", "명시적으로 멘션하면 그 에이전트가 대신 답합니다" ]
+      }.each do |locale, phrases|
+        get "/features/topic_management", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "show 404s for a key that is not registered" do
       get "/features/not_a_feature"
 
