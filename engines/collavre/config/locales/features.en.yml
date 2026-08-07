@@ -38,7 +38,7 @@ en:
             - heading: "How it works"
               body: "Type / at the start of a message and a menu of available commands appears. Pick one and a small form collects its arguments, so you do not have to memorize the argument order. Commands are submitted like messages and their result lands in the thread."
             - heading: "Built-in commands"
-              body: "/calendar (also /cal) creates a local calendar event from a date and a memo, accepting relative dates like tomorrow, +3days, or +mon. When Google Calendar is connected, Collavre also attempts to sync the event there. /topic starts a new topic and can assign a primary agent to it. /work walks the child Creatives depth-first and has an agent execute a task on each. /compress summarizes the current topic's messages and removes the originals. /creative inserts a link to another Creative, which in an AI chat also injects that Creative's tree as context."
+              body: "/calendar (also /cal) creates a local calendar event from a date and a memo, accepting relative dates like tomorrow, +3days, or +mon. When Google Calendar is connected, Collavre also attempts to sync the event there. /topic starts a new topic and can assign a primary agent to it. /work walks the child Creatives depth-first and has an agent execute a task on each. /compress summarizes the current topic's messages and removes the originals. /creative inserts a link to another Creative, which in an AI chat also injects that Creative and descendants up to the agent's configured child-depth limit as context."
             - heading: "MCP tools"
               body: "MCP tools registered in your workspace show up in the same menu below the built-in commands and run through the same command form. The tools you see depend on which ones are registered and which ones you have permission to use."
           tips:
@@ -51,13 +51,14 @@ en:
           meta_description: "Attach other Creatives as context so AI agents in a Collavre chat can reference them."
           sections:
             - heading: "How it works"
-              body: "Attach another Creative as context and the agents in this chat can read it — its description and its subtree — as part of answering. The link is live, so editing the source Creative changes what the agent sees on the next message. Nothing is copied into the conversation."
+              body: "Attach another Creative as context and the agents in this chat can read its description and descendants up to each agent's configured child-depth limit as part of answering. The link is live, so editing the source Creative changes what the agent sees on the next message. Nothing is copied into the conversation."
             - heading: "Context is inherited"
               body: "A Creative inherits the contexts attached to its parents. Attaching your team's conventions once near the top of a tree means every chat underneath already knows them, and you are not re-pasting the same brief into every thread."
             - heading: "Linking inline"
-              body: "The /creative command inserts a link to another Creative in the message itself. In an AI chat, that linked Creative's tree is injected as context for that exchange — useful for a one-off reference you do not want permanently attached."
+              body: "The /creative command inserts a link to another Creative in the message itself. In an AI chat, that linked Creative is injected with descendants up to the same configured depth for that exchange — useful for a one-off reference you do not want permanently attached."
           tips:
             - "Context is what an agent reads, not what it may change — sharing governs write access separately."
+            - "Each agent has a configured child-depth limit: six descendant levels by default, while zero includes only the referenced Creative. Deeper descendants are not sent to that agent."
             - "Attach the narrowest Creative that answers the question; a large subtree costs the agent attention it could spend on your actual request."
         automation_trigger:
           title: "Automation triggers"

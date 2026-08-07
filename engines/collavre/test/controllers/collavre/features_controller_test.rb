@@ -111,6 +111,30 @@ module Collavre
       end
     end
 
+    test "context guide renders the configured child-depth limit in both locales" do
+      {
+        en: [ "same configured depth", "six descendant levels by default", "zero includes only the referenced Creative" ],
+        ko: [ "같은 설정 깊이", "기본값은 하위 6단계", "0이면 참조한 Creative만 포함" ]
+      }.each do |locale, phrases|
+        get "/features/chat_context", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
+    test "slash command guide applies the configured child-depth limit to creative links in both locales" do
+      {
+        en: "agent's configured child-depth limit",
+        ko: "에이전트에 설정된 하위 깊이 한도"
+      }.each do |locale, phrase|
+        get "/features/slash_command", params: { locale: locale }
+
+        assert_response :success
+        assert_includes @response.body, ERB::Util.html_escape(phrase)
+      end
+    end
+
     test "trigger and sharing guides render their input and mention permission limits in both locales" do
       {
         en: [ "first 24 visible characters", "not the full description", "comment permission or higher", "read-only collaborator" ],
