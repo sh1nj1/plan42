@@ -142,6 +142,7 @@ en:
         progress_complete: Complete
         progress_incomplete: Incomplete
         progress_complete_children_alert: Marking this creative complete will also mark all child creatives complete.
+        save_failed_alert: Failed to save changes. Your edits are still open in the editor. Please check your connection and try again.
         mark_complete: Mark as complete
         mark_incomplete: Mark as incomplete
         set_plan_title: Set Plan for Selected Creative

@@ -605,7 +605,10 @@ function setupEditorSession() {
         return;
       }
       if (currentTree) {
-        await hideCurrent(false, { switching: true });
+        // A failed save keeps the editor on the outgoing row with the draft the
+        // server rejected; loadCreative() below would replace the shared form
+        // buffer and destroy it, so the switch is abandoned instead.
+        if (await hideCurrent(false, { switching: true }) === SAVE_FAILED) return;
       }
       currentTree = tree;
       currentRowElement = treeRowElement(tree);
@@ -924,11 +927,17 @@ function setupEditorSession() {
       return !!result && typeof result === 'object' && result.ok === false;
     }
 
+    // Resolved by hideCurrent() when the flush-on-close save failed and the
+    // editor was left open on the outgoing row with the user's draft.
+    const SAVE_FAILED = 'save-failed';
+
     // `switching` marks the calls that immediately open another row: the caller
     // reassigns currentTree and moves the shared template as soon as the
     // returned promise settles. It is deliberately a separate option rather
     // than another meaning for the `event === false` argument, which only
-    // suppresses preventDefault().
+    // suppresses preventDefault(). Those callers MUST abort when hideCurrent
+    // resolves with SAVE_FAILED — the editor is still bound to the outgoing row
+    // holding the unsaved draft, and switching anyway would overwrite it.
     function hideCurrent(event, { switching = false } = {}) {
       if (event?.preventDefault) {
         event.preventDefault();
@@ -951,47 +960,40 @@ function setupEditorSession() {
       updateActionButtonStates();
 
       // A failed save leaves the editor hidden and currentTree cleared, so the
-      // DOM has to be reconciled here. For a row that was never persisted the
-      // buffer in the editor is the user's only copy of what they typed, and
-      // dropping the row would destroy it — silently, because saveForm's own
-      // 'error' status is gated on `tree === currentTree` (already null by now)
-      // and creativesApi.save calls csrfFetch directly, bypassing the api queue
-      // whose 'api-queue-request-failed' listener is what normally alerts the
-      // user. So: keep the draft, or if that is impossible, say so out loud.
+      // DOM has to be reconciled here. The buffer in the editor is the user's
+      // only copy of what they typed — the server rejected it, and for an
+      // existing row loadCreative() would overwrite the buffer with the stored
+      // copy the moment another row is opened. Losing it would also be silent,
+      // because saveForm's own 'error' status is gated on `tree === currentTree`
+      // (already null by now) and creativesApi.save calls csrfFetch directly,
+      // bypassing the api queue whose 'api-queue-request-failed' listener is
+      // what normally alerts the user. So the draft is always kept: the editor
+      // is re-bound to the row it was typed in, whether or not that row was ever
+      // persisted, and the save is re-armed so the next close retries it.
       const recoverFromFailedSave = function () {
-        if (!(wasNew && !form.dataset.creativeId)) {
-          // Persisted rows still hold their content server-side; just make the
-          // row visible again so the tree isn't left blank.
-          if (tree.querySelector('.creative-row')) showRow(tree);
-          return;
-        }
-
-        if (switching) {
-          // The caller reassigns currentTree and reattaches the shared template
-          // to another row the moment this settles, so re-showing the editor
-          // here would only leave an invisible phantom row behind: a
-          // <creative-tree-row> with no .creative-row (that markup is inserted
-          // on a successful save) and no editor, with the empty-state card
-          // hidden behind it. Drop the row as before, but surface the loss.
-          removeTreeElement(tree);
-          restoreEmptyStateIfEmpty();
-          alertDialog('Failed to save changes. Please check your connection and try again.');
-          return;
-        }
-
-        // Not switching: nothing else is about to claim the editor, so re-bind
-        // it to the row the draft was typed in and re-arm the save so the next
-        // close (or any other flush) retries instead of discarding it. Mirrors
-        // what the api-queue failure listener does for queued requests.
         currentTree = tree;
         currentRowElement = treeRowElement(tree) || currentRowElement;
         tree.draggable = false;
         attachTemplate(tree);
         template.style.display = 'block';
+        // The rendered row stays hidden underneath, as it is while editing —
+        // the editor is visible on top of it, so nothing is blank. The
+        // empty-state card likewise stays hidden: the row still exists.
+        hideRow(tree);
         isDirty = true;
         pendingSave = true;
         setSaveStatus('error');
         updateActionButtonStates();
+
+        if (switching) {
+          // The caller was about to open another row; it aborts on this result,
+          // so the editor keeps the draft. Without an alert that click would
+          // look like it did nothing, so say why out loud. The localized string
+          // is carried on the form's data-* attribute (set in the ERB) because
+          // plain JS can't call the i18n `t()` helper.
+          const message = form.dataset.saveFailedMessage;
+          if (message) alertDialog(message);
+        }
       };
 
       const finalizeHide = function () {
@@ -1000,7 +1002,7 @@ function setupEditorSession() {
         return p.then((result) => {
           if (isFailedSaveResult(result)) {
             recoverFromFailedSave();
-            return;
+            return SAVE_FAILED;
           }
           if (wasNew && !form.dataset.creativeId) {
             removeTreeElement(tree);
@@ -1015,10 +1017,11 @@ function setupEditorSession() {
             refreshRow(tree);
           }
         }, () => {
-          // Every hideCurrent() caller is fire-and-forget, so rethrowing here
-          // would only strand an unhandled rejection and abort the row switch in
-          // handleEditButtonClick().
+          // Rethrowing here would only strand an unhandled rejection: the
+          // callers that must react to a failed save read the resolved value
+          // instead, and the rest are fire-and-forget.
           recoverFromFailedSave();
+          return SAVE_FAILED;
         });
       };
 
@@ -1743,7 +1746,10 @@ function setupEditorSession() {
       };
 
       if (currentTree) {
-        return Promise.resolve(hideCurrent(false, { switching: true })).then(performStart);
+        // Same as handleEditButtonClick: don't strand the rejected draft by
+        // moving the editor onto a brand-new row.
+        return Promise.resolve(hideCurrent(false, { switching: true }))
+          .then((result) => (result === SAVE_FAILED ? undefined : performStart()));
       }
 
       return performStart();

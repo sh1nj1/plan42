@@ -44,6 +44,10 @@ const HIDDEN_INPUT_IDS = [
 ]
 const DIV_IDS = ['markdown-editor-wrapper', 'markdown-preview', 'inline-progress-value', 'inline-save-status', 'metadata-popup']
 
+// Stands in for t('collavre.creatives.index.save_failed_alert'); deliberately
+// not English so a hardcoded literal in the module would fail the assertion.
+const SAVE_FAILED_MESSAGE = '저장하지 못했습니다'
+
 function buildEditorDom(container) {
   const template = document.createElement('div')
   template.id = 'inline-edit-form'
@@ -52,6 +56,9 @@ function buildEditorDom(container) {
   const form = document.createElement('form')
   form.id = 'inline-edit-form-element'
   form.action = '/creatives'
+  // Mirrors the ERB: plain JS can't call `t()`, so the localized save-failure
+  // message rides on the form's data-* attribute.
+  form.dataset.saveFailedMessage = SAVE_FAILED_MESSAGE
   template.appendChild(form)
 
   HIDDEN_INPUT_IDS.forEach((id) => {
@@ -248,29 +255,106 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(saveMock).toHaveBeenCalledTimes(2)
   })
 
-  test('drops the row but alerts the user when the first save fails while switching rows', async () => {
+  test('abandons the row switch and keeps the draft when the first save fails', async () => {
     saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
     const emptyState = await startFirstRowWithContent()
     const { tree: existingTree, row: existingRow } = appendExistingRow(42)
 
-    // Switching reassigns currentTree and moves the shared template onto the
-    // other row right after the await, so the draft cannot be kept on screen.
-    // It must at least not disappear silently.
     document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: existingTree } }))
     await flush()
 
     expect(saveMock).toHaveBeenCalledTimes(1)
-    expect(unsavedRowTree()).toBeNull()
-    expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
-    expect(alertDialogMock).toHaveBeenCalledTimes(1)
-    expect(alertDialogMock.mock.calls[0][0]).toMatch(/failed to save/i)
+    // The switch must not go through: opening the other row would run
+    // loadCreative() over the shared form buffer, destroying the draft.
+    const draftTree = unsavedRowTree()
+    expect(draftTree).not.toBeNull()
+    const template = document.getElementById('inline-edit-form')
+    expect(template.style.display).toBe('block')
+    expect(template.parentElement).toBe(draftTree)
+    expect(saveStatus()).toBe('error')
+    // The row the user clicked stays untouched — still rendered, not edited.
+    expect(existingRow.style.display).toBe('')
+    expect(existingTree.contains(template)).toBe(false)
     // Real rows remain, so the empty-state card must stay hidden.
     expect(emptyState.style.display).toBe('none')
+    // The aborted click would otherwise look like it did nothing.
+    expect(alertDialogMock).toHaveBeenCalledTimes(1)
+    expect(alertDialogMock.mock.calls[0][0]).toBe(SAVE_FAILED_MESSAGE)
+  })
 
+  test('abandons the switch and keeps an existing row edit when its save fails', async () => {
+    const { tree: firstTree, row: firstRow } = appendExistingRow(42)
+    const { tree: secondTree, row: secondRow } = appendExistingRow(43)
+
+    document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: firstTree } }))
+    await flush()
+
+    const textarea = document.getElementById('markdown-editor-textarea')
+    textarea.value = 'edited but never persisted'
+    textarea.dispatchEvent(new Event('input'))
+
+    saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+    document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: secondTree } }))
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(1)
+    // The rejected PATCH means the server still holds the old copy; the buffer
+    // is the only place the user's edit exists, so the editor must stay on the
+    // outgoing row instead of loading creative 43 over it.
+    const template = document.getElementById('inline-edit-form')
+    expect(template.style.display).toBe('block')
+    expect(template.parentElement).toBe(firstTree)
+    expect(firstRow.style.display).toBe('none')
+    expect(secondRow.style.display).toBe('')
+    expect(saveStatus()).toBe('error')
+    expect(alertDialogMock).toHaveBeenCalledTimes(1)
+    expect(alertDialogMock.mock.calls[0][0]).toBe(SAVE_FAILED_MESSAGE)
+  })
+
+  test('does not start another new row when the outgoing draft fails to save', async () => {
+    const { tree: existingTree } = appendExistingRow(42)
+    // `.append-parent-btn` is the route into startNew() that does not
+    // toggle-close the editor first — the add buttons return early when the
+    // template is already open, so they never reach the switching flush.
+    const appendBtn = document.createElement('button')
+    appendBtn.type = 'button'
+    appendBtn.className = 'append-parent-btn'
+    appendBtn.dataset.childId = '42'
+    document.body.appendChild(appendBtn)
+
+    document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: existingTree } }))
+    await flush()
+    const textarea = document.getElementById('markdown-editor-textarea')
+    textarea.value = 'edited but never persisted'
+    textarea.dispatchEvent(new Event('input'))
+
+    saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+    appendBtn.click()
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(1)
+    // No second row: startNew() aborted instead of moving the shared template
+    // onto a brand-new row and stranding the rejected draft.
+    expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
     const template = document.getElementById('inline-edit-form')
     expect(template.style.display).toBe('block')
     expect(template.parentElement).toBe(existingTree)
-    expect(existingRow.style.display).toBe('none')
+    expect(saveStatus()).toBe('error')
+    expect(alertDialogMock.mock.calls[0][0]).toBe(SAVE_FAILED_MESSAGE)
+  })
+
+  test('omits the alert when no localized message is available', async () => {
+    delete document.getElementById('inline-edit-form-element').dataset.saveFailedMessage
+    saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+    await startFirstRowWithContent()
+    const { tree: existingTree } = appendExistingRow(42)
+
+    document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: existingTree } }))
+    await flush()
+
+    // No English fallback baked into the module.
+    expect(alertDialogMock).not.toHaveBeenCalled()
+    expect(saveStatus()).toBe('error')
   })
 
   test('still restores the empty state when the blank first row is cancelled', async () => {
@@ -286,20 +370,9 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(0)
   })
 
-  test('brings an existing row back into view when its save rejects', async () => {
+  test('keeps an existing row in the editor when closing it fails to save', async () => {
     saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
-
-    const rowComponent = document.createElement('creative-tree-row')
-    rowComponent.dataset.descriptionRawHtml = '<p>existing</p>'
-    rowComponent.dataset.progressValue = '0'
-    // The stub only renders its .creative-tree child once connected.
-    document.getElementById('creatives').appendChild(rowComponent)
-    const tree = rowComponent.querySelector('.creative-tree')
-    tree.id = 'creative-42'
-    tree.dataset.id = '42'
-    const row = document.createElement('div')
-    row.className = 'creative-row'
-    tree.appendChild(row)
+    const { tree, row } = appendExistingRow(42)
 
     document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
     await flush()
@@ -314,6 +387,15 @@ describe('empty-state recovery when the first inline save fails', () => {
 
     expect(saveMock).toHaveBeenCalledTimes(1)
     expect(document.getElementById('creative-42')).not.toBeNull()
-    expect(row.style.display).toBe('')
+    // Closing must not discard the rejected edit either: the editor stays open
+    // on the row (so the rendered row stays hidden underneath) with the save
+    // re-armed, rather than reverting to the stale server copy.
+    const template = document.getElementById('inline-edit-form')
+    expect(template.style.display).toBe('block')
+    expect(template.parentElement).toBe(tree)
+    expect(row.style.display).toBe('none')
+    expect(saveStatus()).toBe('error')
+    // Not a switch — the visible error status is the feedback, no modal.
+    expect(alertDialogMock).not.toHaveBeenCalled()
   })
 })
