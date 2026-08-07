@@ -24,6 +24,7 @@ export default class extends Controller {
     this.abortController = null
     this.loadingIndicator = null
     this._editing = false
+    this._reloadHoldCount = 0
     this._pagination = null
     this._sentinel = null
     this._sentinelObserver = null
@@ -37,10 +38,7 @@ export default class extends Controller {
       this._editing = false
       // Apply any pending sync data that was deferred while editing
       this._applyPendingSyncData()
-      if (this._pendingRefetch) {
-        this._pendingRefetch = false
-        this.debouncedLoad()
-      }
+      this._drainPendingReload()
     }
     document.documentElement.classList.remove('creative-alignment-ready')
     if (!this.hasCachedContent()) {
@@ -153,7 +151,7 @@ export default class extends Controller {
       // replaces the whole container, which would take that row, the editor
       // attached inside it and the unsaved draft out of the document. Re-pend
       // instead of dropping it: the reload is still owed, just not yet safe.
-      if (this._editing) {
+      if (this._editing || this._reloadHoldCount > 0) {
         this._pendingRefetch = true
         return
       }
@@ -173,10 +171,28 @@ export default class extends Controller {
   // Call load() directly only for reloads the user just asked for and is waiting
   // on (filter change, archive toggle), where re-rendering is the point.
   requestReload() {
-    if (this._editing) {
+    if (this._editing || this._reloadHoldCount > 0) {
       this._pendingRefetch = true
       return
     }
+    this.debouncedLoad()
+  }
+
+  // Keep editing-aware reloads pending while an operation is between its local
+  // edit flush and its server response. The counter makes overlapping requests
+  // release independently without allowing an early reload between them.
+  beginReloadHold() {
+    this._reloadHoldCount += 1
+  }
+
+  endReloadHold() {
+    if (this._reloadHoldCount > 0) this._reloadHoldCount -= 1
+    this._drainPendingReload()
+  }
+
+  _drainPendingReload() {
+    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0) return
+    this._pendingRefetch = false
     this.debouncedLoad()
   }
 

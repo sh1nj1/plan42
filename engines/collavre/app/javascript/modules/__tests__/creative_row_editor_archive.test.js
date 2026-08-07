@@ -154,12 +154,16 @@ function stubTreeController() {
   treeEl.dataset.loaded = 'true'
   const requestReload = jest.fn()
   const load = jest.fn()
+  const beginReloadHold = jest.fn()
+  const endReloadHold = jest.fn()
   window.Stimulus = {
     getControllerForElementAndIdentifier: jest.fn((el, identifier) =>
-      el === treeEl && identifier === 'creatives--tree' ? { requestReload, load } : null,
+      el === treeEl && identifier === 'creatives--tree'
+        ? { requestReload, load, beginReloadHold, endReloadHold }
+        : null,
     ),
   }
-  return { treeEl, requestReload, load }
+  return { treeEl, requestReload, load, beginReloadHold, endReloadHold }
 }
 
 test('restoring an archived row asks the tree controller for an editing-aware reload', async () => {
@@ -202,6 +206,26 @@ test('flushes a pending edit before dropping the archived row', async () => {
   expect(placeholder()).not.toBeNull()
 })
 
+test('holds deferred tree reloads until the archive response is applied', async () => {
+  renderTree(['42'])
+  openEditorWithPendingEdit('42')
+  const { beginReloadHold, endReloadHold } = stubTreeController()
+  let settleArchive
+  archive.mockReturnValueOnce(new Promise((resolve) => { settleArchive = resolve }))
+
+  await archiveCreative('42')
+
+  expect(beginReloadHold).toHaveBeenCalledTimes(1)
+  expect(archive).toHaveBeenCalledWith('42')
+  expect(endReloadHold).not.toHaveBeenCalled()
+
+  settleArchive({ ok: true })
+  await flush()
+  await flush()
+
+  expect(endReloadHold).toHaveBeenCalledTimes(1)
+})
+
 // The pending edit is flushed before the archive request goes out, so a failed
 // flush aborts the whole action while the server is still untouched. That is what
 // makes the alert honest: it tells the user their edits are still open, and they
@@ -210,6 +234,7 @@ test('flushes a pending edit before dropping the archived row', async () => {
 // archived row on screen and silently discarding the draft.
 test('does not archive when the pending save fails, and keeps the draft', async () => {
   const template = renderTree(['42'])
+  const { beginReloadHold, endReloadHold } = stubTreeController()
   save.mockRejectedValueOnce(new Error('network down'))
   openEditorWithPendingEdit('42')
 
@@ -219,6 +244,8 @@ test('does not archive when the pending save fails, and keeps the draft', async 
   expect(archive).not.toHaveBeenCalled()
   expect(container().querySelector('creative-tree-row')).not.toBeNull()
   expect(alertDialog).toHaveBeenCalledWith(SAVE_FAILED_MESSAGE)
+  expect(beginReloadHold).toHaveBeenCalledTimes(1)
+  expect(endReloadHold).toHaveBeenCalledTimes(1)
   // The editor is still open on the row, holding the rejected draft.
   expect(template.style.display).toBe('block')
 })

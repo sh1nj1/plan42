@@ -1594,13 +1594,28 @@ function setupEditorSession() {
     // detaches whichever row the editor is currently sitting on together with the
     // unsaved draft in it. The controller knows whether a row is being edited and
     // holds the refetch until it is not.
-    function reloadCreativeTree() {
+    function creativeTreeController() {
       const container = document.getElementById('creatives');
-      if (!container) return false;
-      const controller = window.Stimulus?.getControllerForElementAndIdentifier?.(container, 'creatives--tree');
+      if (!container) return null;
+      return window.Stimulus?.getControllerForElementAndIdentifier?.(container, 'creatives--tree') || null;
+    }
+
+    function reloadCreativeTree() {
+      const controller = creativeTreeController();
       if (typeof controller?.requestReload !== 'function') return false;
       controller.requestReload();
       return true;
+    }
+
+    // A successful close releases any pending tree reload, but archive still has
+    // to land before that reload is safe: otherwise it can render the pre-archive
+    // server state and replace the row reference the response handler later removes.
+    function holdCreativeTreeReload() {
+      const controller = creativeTreeController();
+      if (typeof controller?.beginReloadHold !== 'function' ||
+          typeof controller?.endReloadHold !== 'function') return function () {};
+      controller.beginReloadHold();
+      return function () { controller.endReloadHold(); };
     }
 
     function deleteCurrent(withChildren) {
@@ -2055,6 +2070,7 @@ function setupEditorSession() {
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
         if (await confirmDialog(confirmMsg)) {
+          const releaseTreeReload = holdCreativeTreeReload();
           // Flush the editor BEFORE the archive request goes out, not after it has
           // landed. The row is about to be removed (or the tree re-rendered), so a
           // failed flush has nowhere safe to leave the draft once the server-side
@@ -2071,7 +2087,10 @@ function setupEditorSession() {
             console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
             return SAVE_FAILED;
           });
-          if (flushed === SAVE_FAILED) return;
+          if (flushed === SAVE_FAILED) {
+            releaseTreeReload();
+            return;
+          }
 
           // The flush above already closed the editor, so a failed request has to
           // say so: the row is still there unarchived, the editor is unexpectedly
@@ -2151,7 +2170,7 @@ function setupEditorSession() {
             // The pending edit was already flushed and the editor closed above, so
             // the view can just follow the server.
             applyToView();
-          }, reportFailure);
+          }, reportFailure).finally(releaseTreeReload);
         }
       });
     }

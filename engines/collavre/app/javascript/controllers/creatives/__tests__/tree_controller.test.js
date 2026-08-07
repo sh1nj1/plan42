@@ -658,4 +658,42 @@ describe('CreativesTreeController requestReload', () => {
 
     application.stop()
   })
+
+  test('keeps a pending reload held after editing stops until the operation finishes', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.beginReloadHold()
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    controller.endReloadHold()
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('coalesces reloads across overlapping operation holds', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.beginReloadHold()
+    controller.beginReloadHold()
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+
+    controller.endReloadHold()
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    controller.endReloadHold()
+    jest.advanceTimersByTime(300)
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
 })
