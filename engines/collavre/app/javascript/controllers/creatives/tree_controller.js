@@ -145,7 +145,20 @@ export default class extends Controller {
 
   debouncedLoad() {
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
-    this._debouncedLoadTimer = setTimeout(() => this.load(), 300)
+    this._debouncedLoadTimer = setTimeout(() => {
+      // Re-check rather than trusting the check requestReload() already made.
+      // Switching rows is a `creative-editing:stop` immediately followed by a
+      // `creative-editing:start`, so a refetch drained on the stop is still
+      // sitting in this debounce window when the next row opens — and load()
+      // replaces the whole container, which would take that row, the editor
+      // attached inside it and the unsaved draft out of the document. Re-pend
+      // instead of dropping it: the reload is still owed, just not yet safe.
+      if (this._editing) {
+        this._pendingRefetch = true
+        return
+      }
+      this.load()
+    }, 300)
   }
 
   // Editing-aware reload — the entry point for anything that wants the tree

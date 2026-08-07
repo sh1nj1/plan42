@@ -598,4 +598,64 @@ describe('CreativesTreeController requestReload', () => {
 
     application.stop()
   })
+
+  // Switching rows is a stop immediately followed by a start, so a refetch drained
+  // on the stop is still sitting in the 300ms debounce when the next row opens.
+  // Checking _editing only at requestReload() time would let that timer fire and
+  // re-render the tree out from under the newly opened editor, taking the row it
+  // is attached to — and the draft inside it — out of the document.
+  test('keeps the deferred reload pending across a row switch', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+
+    // The switch: the outgoing row stops, the incoming row starts, both well
+    // inside the debounce window.
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
+  test('runs the reload once the row opened by the switch is closed', async () => {
+    const { application, controller, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(300)
+
+    // Still exactly once: re-pending must not double-book the refetch.
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  // The re-check must not swallow the request: an editor that opens after the
+  // timer has already fired is a separate matter, but one that opens during the
+  // window has to leave the refetch queued rather than cancelled.
+  test('re-arms the pending flag when the timer fires mid-edit', async () => {
+    const { application, controller, load } = await installConnected()
+
+    controller.requestReload()
+    document.dispatchEvent(new CustomEvent('creative-editing:start'))
+    jest.advanceTimersByTime(300)
+    expect(load).not.toHaveBeenCalled()
+
+    document.dispatchEvent(new CustomEvent('creative-editing:stop'))
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
 })

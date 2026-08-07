@@ -277,6 +277,81 @@ test('shows no alert when the localized archive failure message is absent', asyn
   expect(container().querySelectorAll('creative-tree-row')).toHaveLength(1)
 })
 
+// The pre-flush closes the editor before the request goes out, and the row stays
+// on screen and clickable while it is in flight. Nothing stops the user reopening
+// that very row and typing again — and the editor template is attached *inside*
+// the row, so removing the row on success takes the newer draft out of the
+// document with no flush and no feedback.
+test('does not remove the archived row when the editor was reopened on it', async () => {
+  const template = renderTree(['42'])
+  const { requestReload } = stubTreeController()
+  let settleArchive
+  archive.mockReturnValueOnce(new Promise((resolve) => { settleArchive = resolve }))
+
+  await archiveCreative('42')
+  expect(archive).toHaveBeenCalledWith('42')
+
+  // Still in flight: the user reopens the same row and starts a new draft.
+  openEditorWithPendingEdit('42')
+
+  settleArchive({ ok: true })
+  await flush()
+  await flush()
+
+  expect(container().querySelector('creative-tree-row[creative-id="42"]')).not.toBeNull()
+  expect(template.style.display).toBe('block')
+  // Handed to the editing-aware reload instead, which holds the re-render until
+  // the user closes the editor.
+  expect(requestReload).toHaveBeenCalledTimes(1)
+})
+
+// The guard is about the draft, not about archiving being slow: an editor sitting
+// on some other row is unaffected by removing this one, so that still happens
+// immediately rather than waiting for the user to finish an unrelated edit.
+test('still removes the archived row when the editor was reopened elsewhere', async () => {
+  renderTree(['42', '43'])
+  const { requestReload } = stubTreeController()
+  let settleArchive
+  archive.mockReturnValueOnce(new Promise((resolve) => { settleArchive = resolve }))
+
+  await archiveCreative('42')
+  openEditorWithPendingEdit('43')
+
+  settleArchive({ ok: true })
+  await flush()
+  await flush()
+
+  expect(container().querySelector('creative-tree-row[creative-id="42"]')).toBeNull()
+  expect(container().querySelector('creative-tree-row[creative-id="43"]')).not.toBeNull()
+  expect(requestReload).not.toHaveBeenCalled()
+})
+
+// Archiving a parent drops its children container too, so an editor reopened on a
+// child row is in exactly the same danger as one on the row itself.
+test('does not remove the archived subtree when the editor was reopened on a child', async () => {
+  renderTree(['42'])
+  container().insertAdjacentHTML('beforeend',
+    `<div class="creative-children" id="creative-children-42">${
+      '<creative-tree-row creative-id="99" data-description-raw-html="hi" data-progress-value="0">' +
+      '<div class="creative-tree" id="creative-99" data-id="99" data-level="2"></div>' +
+      '</creative-tree-row>'
+    }</div>`)
+  const { requestReload } = stubTreeController()
+  let settleArchive
+  archive.mockReturnValueOnce(new Promise((resolve) => { settleArchive = resolve }))
+
+  await archiveCreative('42')
+  openEditorWithPendingEdit('99')
+
+  settleArchive({ ok: true })
+  await flush()
+  await flush()
+
+  expect(document.getElementById('creative-children-42')).not.toBeNull()
+  expect(container().querySelector('creative-tree-row[creative-id="42"]')).not.toBeNull()
+  expect(requestReload).toHaveBeenCalledTimes(1)
+})
+
 test('declining the archive confirmation leaves the row in place', async () => {
   confirmDialog.mockResolvedValueOnce(false)
   renderTree(['42'])

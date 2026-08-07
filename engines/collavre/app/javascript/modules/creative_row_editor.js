@@ -2075,11 +2075,38 @@ function setupEditorSession() {
             // csrfFetch resolves for any HTTP status, so a non-OK response is a
             // failure that arrives on the fulfilled path.
             if (!res || !res.ok) return reportFailure();
+            // The pre-flush closed the editor before the request went out, but it
+            // left the row on screen and clickable, and the request is in flight
+            // for an unbounded time. So the user can reopen that row — or one of
+            // its children — and start typing again before this lands. The editor
+            // template is attached *inside* the row it is bound to, so dropping
+            // this subtree would take that newer draft out of the document with
+            // no flush and no feedback, which is the same silent loss the
+            // pre-flush was introduced to stop.
+            const editorIsInsideArchivedSubtree = function () {
+              if (!currentTree) return false;
+              const editedRow = treeRowElement(currentTree) || currentTree;
+              if (row && (row === editedRow || row.contains(editedRow))) return true;
+              const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
+              return !!childrenContainer?.contains(editedRow);
+            };
+
             const applyToView = function () {
               if (!isArchived) {
                 // Archiving: remove from view. Creative#archive! is an update_all,
                 // so it fires no destroy broadcast — this is the only chance to
                 // bring the empty-state placeholder back when the last row goes.
+                if (editorIsInsideArchivedSubtree()) {
+                  // Hand the timing to the tree controller instead of removing
+                  // anything here: it holds the refetch until editing stops, so
+                  // the draft stays in the editor and the archived row goes away
+                  // once the user is done with it. If there is no controller to
+                  // ask, the row is deliberately left in place anyway — a stale
+                  // row that the next reload corrects is a far smaller failure
+                  // than deleting what the user is typing.
+                  reloadCreativeTree();
+                  return;
+                }
                 const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenContainer) childrenContainer.remove();
                 removeTreeElement(row);
