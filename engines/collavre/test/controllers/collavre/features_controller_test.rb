@@ -117,6 +117,15 @@ module Collavre
       assert_not_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :en)
     end
 
+    test "topic guide shows the required mention colon in both locales" do
+      { en: '/topic "name" @agent:', ko: '/topic "이름" @에이전트:' }.each do |locale, command|
+        get "/features/topic_management", params: { locale: locale }
+
+        assert_response :success
+        assert_includes @response.body, ERB::Util.html_escape(command)
+      end
+    end
+
     test "show 404s for a key that is not registered" do
       get "/features/not_a_feature"
 

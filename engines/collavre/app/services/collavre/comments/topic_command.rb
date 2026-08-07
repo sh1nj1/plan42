@@ -21,7 +21,7 @@ module Collavre
 
       attr_reader :comment, :user, :creative, :url_helpers
 
-      # /topic "topic name" @agent_name
+      # /topic "topic name" @agent_name:
       # /topic "topic name"
       COMMAND_PATTERN = /\A\/topic\b/i.freeze
 
@@ -87,7 +87,7 @@ module Collavre
         # only authorizes the comment at :feedback, so the command has to apply
         # the same gate itself — otherwise commenting access would be enough to
         # decide a topic's routing. Checked before the new/existing split because
-        # `/topic "new name" @agent` persists an exclusive assignment just as
+        # `/topic "new name" @agent:` persists an exclusive assignment just as
         # much as moving one on a topic that already exists.
         if assigns_primary_agent?(existing_topic, primary_agent) &&
            !creative.has_permission?(user, :write)

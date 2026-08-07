@@ -40,7 +40,7 @@ module Collavre
     # pinned agent is not permitted to answer, and every other agent is excluded
     # by the assignment. User.mentionable_for and the agent palette both surface
     # searchable agents regardless of creative access, so this is reachable from
-    # plain drag-and-drop or `/topic "name" @agent`, not just a crafted request.
+    # plain drag-and-drop or `/topic "name" @agent:`, not just a crafted request.
     #
     # This deliberately mirrors BOTH predicates Matcher applies before it will
     # route to a primary agent — #has_creative_permission? and
@@ -50,7 +50,7 @@ module Collavre
     # every inbox topic while Matcher confines it to its own session topic.
     # Pinning one on an ordinary inbox topic would therefore silence the topic
     # for everyone, and it is reachable by plain drag-and-drop (the agent is
-    # created_by the user, so the palette lists it) or by `/topic "Main" @agent`
+    # created_by the user, so the palette lists it) or by `/topic "Main" @agent:`
     # (the inbox share puts it in User.mentionable_for regardless of searchable).
     #
     # Returns nil when assignable, otherwise a symbol naming the reason, so
