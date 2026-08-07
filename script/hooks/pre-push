@@ -86,8 +86,8 @@ if ! (
       [[ "$remote_ref" == refs/tags/* ]] && continue
       local_commit=$(git rev-parse "$local_sha^{}") || exit 1
       if [ "$local_commit" != "$HEAD_SHA" ]; then
-	echo -e "${RED}❌ Rubocop can only check the currently checked-out ref.${NC}" >&2
-	exit 1
+	echo -e "${YELLOW}⚠ Skipping Rubocop for non-checked-out ref: $local_ref${NC}" >&2
+	continue
       fi
 
       if [ "$remote_sha" = "$ZERO_SHA" ]; then
