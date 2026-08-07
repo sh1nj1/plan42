@@ -4,6 +4,7 @@ import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
 import { alertDialog } from '../../lib/utils/dialog'
+import chatDrafts from '../../lib/chat_drafts'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -89,6 +90,17 @@ export default class extends Controller {
     }
     this.textareaTarget.addEventListener('input', this._autoResize)
 
+    // Draft persistence: debounce-save unsent input per chat.
+    // _activeDraftKey always identifies the chat whose text is in the textarea.
+    this._activeDraftKey = null
+    this._draftSaveTimer = null
+    this._handleDraftInput = () => {
+      if (this.editingId || this._stashedDraft || !this._activeDraftKey) return
+      clearTimeout(this._draftSaveTimer)
+      this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
+    }
+    this.textareaTarget.addEventListener('input', this._handleDraftInput)
+
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         this.presenceController?.cancelAllAgentTasks()
@@ -117,6 +129,14 @@ export default class extends Controller {
   }
 
   handleTopicChange(event) {
+    // This event fires before onPopupOpened during a chat switch, while the
+    // textarea still contains the outgoing chat's text. Flush before re-keying.
+    const nextDraftKey =
+      this.element.dataset.effectiveCreativeId || this.element.dataset.creativeId || null
+    if (String(this._activeDraftKey || '') !== String(nextDraftKey || '')) {
+      this._flushDraftSave()
+      this._activeDraftKey = nextDraftKey ? String(nextDraftKey) : null
+    }
     this.currentTopicId = event.detail.topicId
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
@@ -132,6 +152,8 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this._flushDraftSave()
+    this.textareaTarget.removeEventListener('input', this._handleDraftInput)
     this.formTarget.removeEventListener('submit', this.handleSubmit)
     this.submitTarget.removeEventListener('click', this.handleSend)
     this.submitTarget.removeEventListener('pointerup', this.handlePointerSend)
@@ -172,9 +194,12 @@ export default class extends Controller {
     if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
+    this._restoreDraft()
   }
 
   onPopupClosed() {
+    this._flushDraftSave()
+    this._activeDraftKey = null
     this.stopSpeechRecognition()
     this.resetForm()
   }
@@ -183,6 +208,7 @@ export default class extends Controller {
     this.formTarget.style.display = canComment ? '' : 'none'
 
     if (!canComment) {
+      this._flushDraftSave()
       this.stopSpeechRecognition()
       this.resetForm()
       return
@@ -208,6 +234,7 @@ export default class extends Controller {
   }
 
   startEditing({ id, content, private: isPrivate }) {
+    this._flushDraftSave()
     this.editingId = id
     this.textareaTarget.value = content || ''
     if (this.privateCheckboxTarget) {
@@ -223,6 +250,7 @@ export default class extends Controller {
 
   handleStashDraft(event) {
     const draft = event.detail?.draft || null
+    if (draft) this._flushDraftSave()
     // Tagged with the conversation it was typed in: the popup reuses this one
     // controller for every creative, so a stash left over from another one must
     // not be handed back here.
@@ -252,6 +280,7 @@ export default class extends Controller {
     // would re-open the command menu for a draft that starts with "/".
     this._autoResize()
     this._updateSubmitButton()
+    this._saveDraftNow()
   }
 
   resetForm() {
@@ -268,6 +297,28 @@ export default class extends Controller {
     this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Reset textarea height after clearing content
     this.textareaTarget.style.height = 'auto'
+  }
+
+  _saveDraftNow() {
+    if (!this._activeDraftKey || this.editingId || this._stashedDraft) return
+    chatDrafts.set(this._activeDraftKey, this.textareaTarget.value)
+  }
+
+  _flushDraftSave() {
+    clearTimeout(this._draftSaveTimer)
+    this._draftSaveTimer = null
+    this._saveDraftNow()
+  }
+
+  _restoreDraft() {
+    if (!this._activeDraftKey || this.editingId) return
+    if (this.textareaTarget.value.trim()) return
+
+    const draft = chatDrafts.get(this._activeDraftKey)
+    if (draft) {
+      this.textareaTarget.value = draft
+      requestAnimationFrame(() => this._autoResize())
+    }
   }
 
   setSendingState(isSending) {
@@ -372,9 +423,12 @@ export default class extends Controller {
         const wasEditing = this.editingId
         this.resetForm()
         if (wasEditing) {
+          this._restoreDraft()
           // If editing, just replace the item in place
           this.renderCommentHtml(html, { replaceExisting: true })
         } else {
+          clearTimeout(this._draftSaveTimer)
+          if (this._activeDraftKey) chatDrafts.clear(this._activeDraftKey)
           // New Comment:
           // 1. If we are in "History Mode" (scrolled up), sending a message should jump us to the latest.
           // 2. Ideally, we just reload the "Latest" page to ensure sync and Live Mode.
@@ -440,6 +494,7 @@ export default class extends Controller {
   handleCancel(event) {
     event.preventDefault()
     this.resetForm()
+    this._restoreDraft()
   }
 
   handleSearch(event) {
