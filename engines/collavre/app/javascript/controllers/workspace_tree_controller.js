@@ -406,15 +406,32 @@ export default class extends Controller {
       this.expandedCreativeIds.add(id)
       changed = true
     })
-    this.trimExpandedCreativeIds(new Set(path.map(String)))
+    this.trimExpandedCreativeIds(path)
     return changed
   }
 
-  trimExpandedCreativeIds(protectedIds = new Set(this.currentPathValue.map(String))) {
+  // `protectedPath` is ordered root-first. The server descends only through
+  // expanded ancestors, so once the path itself has to be trimmed the set must
+  // keep a connected root-to-descendant prefix: evicting the root would collapse
+  // the whole tree instead of leaving the first MAX_EXPANDED_BRANCHES levels.
+  trimExpandedCreativeIds(protectedPath = this.currentPathValue) {
+    const orderedProtectedIds = protectedPath.map(String)
+    const protectedIds = new Set(orderedProtectedIds)
     while (this.expandedCreativeIds.size > MAX_EXPANDED_BRANCHES) {
-      const evictedId = [...this.expandedCreativeIds].find((id) => !protectedIds.has(id))
-      this.expandedCreativeIds.delete(evictedId || this.expandedCreativeIds.values().next().value)
+      const evictedId =
+        [...this.expandedCreativeIds].find((id) => !protectedIds.has(id)) ??
+        this.deepestExpandedId(orderedProtectedIds)
+      if (!evictedId) return
+
+      this.expandedCreativeIds.delete(evictedId)
     }
+  }
+
+  deepestExpandedId(orderedIds) {
+    for (let index = orderedIds.length - 1; index >= 0; index -= 1) {
+      if (this.expandedCreativeIds.has(orderedIds[index])) return orderedIds[index]
+    }
+    return null
   }
 
   samePath(left, right) {

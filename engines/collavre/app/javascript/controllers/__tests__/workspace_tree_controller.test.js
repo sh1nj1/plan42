@@ -201,9 +201,31 @@ describe('WorkspaceTreeController', () => {
     controller.addExpandedPath(Array.from({ length: 101 }, (_value, index) => index + 1000))
 
     expect(controller.expandedCreativeIds.size).toBe(100)
-    expect(controller.expandedCreativeIds.has('1000')).toBe(false)
-    expect(controller.expandedCreativeIds.has('1100')).toBe(true)
     expect(new URL(controller.workspaceTreeUrl(), window.location.origin).searchParams.getAll('expand[]')).toHaveLength(100)
+  })
+
+  test('keeps a connected root prefix when the whole path exceeds the expansion bound', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+
+    const path = Array.from({ length: 101 }, (_value, index) => index + 1000)
+    controller.addExpandedPath(path)
+
+    // Lazy traversal descends only through expanded ancestors, so dropping the
+    // root would collapse the whole tree instead of showing the first 100 levels.
+    expect([...controller.expandedCreativeIds]).toEqual(path.slice(0, 100).map(String))
+  })
+
+  test('evicts unrelated branches before trimming the current path', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+    controller.expandedCreativeIds.add('9000')
+    controller.expandedCreativeIds.add('9001')
+
+    const path = Array.from({ length: 100 }, (_value, index) => index + 1000)
+    controller.addExpandedPath(path)
+
+    expect([...controller.expandedCreativeIds]).toEqual(path.map(String))
   })
 
   test('keeps the mounted tree state and switches chat while the center frame navigates', () => {
