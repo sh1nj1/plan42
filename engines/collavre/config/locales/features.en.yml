@@ -27,9 +27,9 @@ en:
             - heading: "Who can be mentioned"
               body: "Anyone shared on this Creative. If the name you want does not resolve, they have not been given access yet — share the Creative with them first, or add an AI agent from the same dialog."
           tips:
-            - "Without a mention, a message is just a note in the thread — no agent will pick it up."
-            - "Only one agent answers per message. To ask two agents the same question, send it twice."
-            - "Agents inherit the permissions they were shared with, so an agent without write access can read and reply but cannot change anything."
+            - "Without a mention, the topic's primary agent responds when one is assigned. Otherwise, agents whose routing rules match may respond; if neither applies, the message remains a note."
+            - "An @mention routes exclusively to one participant. To ask two agents the same question, send it twice."
+            - "An agent needs comment permission to read and reply. Write permission is additionally required to change the Creative itself."
         slash_command:
           title: "Slash commands"
           tagline: "Type / in the message box to run something instead of saying something."
@@ -43,7 +43,7 @@ en:
               body: "Connected MCP tools show up in the same menu below the built-in commands, so a Notion or Slack action is invoked exactly like /calendar is. Which tools appear depends on which integrations you have access to."
           tips:
             - "Whatever you had typed is kept — the command is prepended to your draft, not written over it."
-            - "/compress only works inside a topic, and needs an AI agent assigned to that topic."
+            - "/compress requires a topic, write permission, and an available AI agent. Collavre tries the topic's primary agent, the policy primary agent, then any AI agent shared on the Creative with comment permission."
             - "Commands are submitted as messages, so they need comment permission, and they are unavailable on an archived Creative."
         chat_context:
           title: "Chat context"
@@ -86,7 +86,7 @@ en:
               body: "/compress summarizes a topic's messages and removes the originals, leaving the conclusion behind. Long-lived topics stay useful instead of becoming an archive nobody scrolls."
           tips:
             - "Archive a topic when it is finished — it stays readable but leaves the active list."
-            - "Compressing needs write permission and an agent assigned to the topic."
+            - "Compressing requires write permission and an available AI agent. Collavre tries the topic's primary agent, the policy primary agent, then any AI agent shared on the Creative with comment permission."
         add_user:
           title: "Add people"
           tagline: "Bring a teammate or an AI agent into this Creative."

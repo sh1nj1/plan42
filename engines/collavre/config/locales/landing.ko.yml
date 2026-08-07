@@ -61,4 +61,4 @@ ko:
         subtitle: "AI 기반 컨텍스트로 작업을 정리하세요."
         start: "시작하기"
       footer:
-        rights: "모든 권리 보유."
+        copyright: "© %{year} %{app_name}. 모든 권리 보유."

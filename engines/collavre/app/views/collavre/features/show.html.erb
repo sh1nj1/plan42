@@ -46,7 +46,7 @@
 
   <footer class="landing-footer">
     <div class="landing-container landing-footer-inner">
-      <p class="landing-footer-copy">© <%= Date.today.year %> <%= t('app.name') %>. <%= t('collavre.landing.footer.rights') %></p>
+      <p class="landing-footer-copy"><%= t('collavre.landing.footer.copyright', year: Date.today.year, app_name: t('app.name')) %></p>
     </div>
   </footer>
 </div>

@@ -10,12 +10,22 @@ module Collavre
       I18n.t("collavre.landing.demo.video", locale: locale)
     end
 
+    def footer_copy(locale)
+      I18n.t(
+        "collavre.landing.footer.copyright",
+        locale: locale,
+        year: Date.today.year,
+        app_name: I18n.t("app.name", locale: locale)
+      )
+    end
+
     test "embeds the English demo video URL from the locale config" do
       get "/landing"
       assert_response :success
 
       assert_includes response.body, demo_video(:en)
       assert_not_includes response.body, demo_video(:ko)
+      assert_includes response.body, footer_copy(:en)
     end
 
     test "embeds the Korean demo video URL when locale is ko" do
@@ -24,6 +34,7 @@ module Collavre
 
       assert_includes response.body, demo_video(:ko)
       assert_not_includes response.body, demo_video(:en)
+      assert_includes response.body, footer_copy(:ko)
     end
 
     test "the configured demo URL is a full absolute URL, not a host-relative path" do

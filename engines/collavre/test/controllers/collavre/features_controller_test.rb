@@ -70,6 +70,36 @@ module Collavre
       tips.each { |tip| assert_includes @response.body, ERB::Util.html_escape(tip) }
     end
 
+    test "agent and compress tips describe the routing and permission fallbacks in both locales" do
+      {
+        en: [ "primary agent", "routing rules", "comment permission", "policy primary agent" ],
+        ko: [ "주 담당 에이전트", "라우팅 규칙", "댓글 권한", "정책의 주 담당 에이전트" ]
+      }.each do |locale, phrases|
+        copy = [
+          *I18n.t("collavre.features.pages.mention_agent.tips", locale: locale),
+          *I18n.t("collavre.features.pages.slash_command.tips", locale: locale),
+          *I18n.t("collavre.features.pages.topic_management.tips", locale: locale)
+        ].join(" ")
+
+        phrases.each { |phrase| assert_includes copy, phrase }
+      end
+    end
+
+    test "feature pages render the complete localized footer sentence" do
+      { "/features" => :en, "/features/mention_agent" => :ko }.each do |path, locale|
+        get path, params: { locale: locale }
+
+        expected = I18n.t(
+          "collavre.landing.footer.copyright",
+          locale: locale,
+          year: Date.today.year,
+          app_name: I18n.t("app.name", locale: locale)
+        )
+        assert_response :success
+        assert_includes @response.body, ERB::Util.html_escape(expected)
+      end
+    end
+
     test "show uses the page title and description for meta tags rather than the landing copy" do
       get "/features/mention_agent"
 
