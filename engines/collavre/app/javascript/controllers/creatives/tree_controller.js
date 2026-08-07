@@ -1,13 +1,13 @@
 import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, appendCreativeNodes, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { parseEmojis } from '../../utils/emoji_parser'
+import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state'
 
 const TREE_RETRY_DELAYS_MS = [200, 600]
 
 export default class extends Controller {
   static values = {
     url: String,
-    emptyHtml: String,
   }
 
   connect() {
@@ -340,8 +340,11 @@ export default class extends Controller {
   }
 
   showEmptyState() {
-    const html = this.hasEmptyHtmlValue ? this.emptyHtmlValue : ''
-    this.element.innerHTML = html
+    // The placeholder comes from the server-rendered <template> rather than an
+    // HTML string on a data attribute: no innerHTML sink, and the button_to CSRF
+    // token in the "request permission" variant survives.
+    this.element.replaceChildren()
+    restoreTreeEmptyState(this.element)
     this.markContentLoaded()
     document.documentElement.classList.add('creative-alignment-ready')
   }

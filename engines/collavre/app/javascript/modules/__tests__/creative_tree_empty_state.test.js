@@ -9,8 +9,17 @@ import {
 
 const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found.</p></div>'
 
+const EMPTY_TEMPLATE = `<template id="creatives-empty-state-template">${EMPTY_HTML}</template>`
+
 function renderEmptyTree() {
   document.body.innerHTML = `<div id="creatives">${EMPTY_HTML}</div>`
+  return document.getElementById('creatives')
+}
+
+// The state after a client-side tree render: rows replaced the whole container,
+// so the server-rendered placeholder is gone and only the template survives.
+function renderRenderedTree(innerHtml = '') {
+  document.body.innerHTML = `${EMPTY_TEMPLATE}<div id="creatives">${innerHtml}</div>`
   return document.getElementById('creatives')
 }
 
@@ -84,13 +93,56 @@ test('restoreTreeEmptyState does not duplicate the placeholder', () => {
   expect(container.querySelectorAll('[data-creatives-empty-state]')).toHaveLength(1)
 })
 
-test('restoreTreeEmptyState is a no-op when the tree has no placeholder', () => {
+test('restoreTreeEmptyState is a no-op when neither placeholder nor template exists', () => {
   document.body.innerHTML = '<div id="creatives"></div>'
   const container = document.getElementById('creatives')
 
   restoreTreeEmptyState(container)
 
   expect(container.innerHTML).toBe('')
+})
+
+test('restoreTreeEmptyState clones the template when the tree render wiped the container', () => {
+  const container = renderRenderedTree()
+
+  restoreTreeEmptyState(container)
+
+  const restored = placeholder(container)
+  expect(restored).not.toBeNull()
+  expect(restored.hidden).toBe(false)
+  expect(restored.textContent).toContain('No sub-creatives found.')
+})
+
+test('restoreTreeEmptyState does not clone the template while rows remain', () => {
+  const container = renderRenderedTree('<creative-tree-row creative-id="7"></creative-tree-row>')
+
+  restoreTreeEmptyState(container)
+
+  expect(placeholder(container)).toBeNull()
+})
+
+test('restoreTreeEmptyState does not clone the template when a placeholder is already present', () => {
+  document.body.innerHTML = `${EMPTY_TEMPLATE}<div id="creatives">${EMPTY_HTML}</div>`
+  const container = document.getElementById('creatives')
+  hideTreeEmptyState(container)
+
+  restoreTreeEmptyState(container)
+
+  expect(container.querySelectorAll('[data-creatives-empty-state]')).toHaveLength(1)
+  expect(placeholder(container).hidden).toBe(false)
+})
+
+test('cloning the template leaves the template itself untouched', () => {
+  const container = renderRenderedTree()
+
+  restoreTreeEmptyState(container)
+  hideTreeEmptyState(container)
+  container.replaceChildren()
+  restoreTreeEmptyState(container)
+
+  // A second restore after a second wipe must still produce a visible placeholder:
+  // hideTreeEmptyState() must not have mutated the template's own copy.
+  expect(placeholder(container).hidden).toBe(false)
 })
 
 test('restoreTreeEmptyState is a no-op without a tree container', () => {
