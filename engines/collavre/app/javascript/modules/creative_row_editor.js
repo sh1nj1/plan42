@@ -1880,12 +1880,19 @@ function setupEditorSession() {
         if (await confirmDialog(confirmMsg)) {
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
-            if (res.ok) {
+            if (!res.ok) return;
+            // The editor is bound to the row this action is about to drop (or to a
+            // tree about to be re-rendered), so close it first. This used to call a
+            // `closeEditor()` that exists nowhere in the module: it threw a
+            // ReferenceError and left the editor open over the archived row.
+            return Promise.resolve(hideCurrent()).then(() => {
               if (!isArchived) {
-                // Archiving: remove from view
+                // Archiving: remove from view. Creative#archive! is an update_all,
+                // so it fires no destroy broadcast — this is the only chance to
+                // bring the empty-state placeholder back when the last row goes.
                 const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenContainer) childrenContainer.remove();
-                if (row) row.remove();
+                removeTreeElement(row);
               } else {
                 // Restoring: reload tree to show updated state
                 const treeEl = document.querySelector('[data-controller="creatives--tree"]');
@@ -1896,8 +1903,7 @@ function setupEditorSession() {
                   if (ctrl) ctrl.load();
                 }
               }
-              closeEditor();
-            }
+            });
           });
         }
       });
