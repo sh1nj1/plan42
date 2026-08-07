@@ -1047,4 +1047,35 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "no-cache", response.headers["Pragma"]
     assert_equal "0", response.headers["Expires"]
   end
+
+  test "index shows feature discovery cards when there are no comments" do
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, 'id="no-comments"'
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.title")
+    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+      assert_includes @response.body, %(data-key="#{key}")
+    end
+  end
+
+  test "index hides dismissed feature cards but keeps the rest" do
+    @user.update!(dismissed_notices: [ "slash_command" ])
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="slash_command")
+    assert_includes @response.body, %(data-key="add_user")
+  end
+
+  test "index shows the minimal empty state once every card is dismissed" do
+    @user.update!(dismissed_notices: %w[mention_agent slash_command chat_context automation_trigger topic_management add_user])
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.minimal_prompt")
+    assert_not_includes @response.body, "feature-card-grid"
+  end
 end

@@ -1,0 +1,31 @@
+<div class="feature-card" data-key="<%= card.key %>" data-comments--feature-cards-target="card">
+  <button type="button" class="feature-card-dismiss"
+          data-action="click->comments--feature-cards#dismiss"
+          data-key="<%= card.key %>"
+          title="<%= t("collavre.comments.empty_state.dismiss") %>"
+          aria-label="<%= t("collavre.comments.empty_state.dismiss") %>">&times;</button>
+  <div class="feature-card-icon" aria-hidden="true"><%= card.icon %></div>
+  <div class="feature-card-title"><%= t(card.title_key) %></div>
+  <p class="feature-card-description"><%= t(card.description_key) %></p>
+  <% if card.action.present? %>
+    <% case card.action[:type]
+    when :command_menu %>
+      <button type="button" class="feature-card-action" data-action="click->comments--feature-cards#openCommandMenu">
+        <%= t(card.action[:label_key]) %>
+      </button>
+    <% when :topic_list %>
+      <button type="button" class="feature-card-action" data-action="click->comments--topics#openTopicListPopup">
+        <%= t(card.action[:label_key]) %>
+      </button>
+    <% when :share_modal %>
+      <button type="button" class="feature-card-action"
+              data-action="click->share-modal#open"
+              data-share-modal-url-param="<%= collavre.creative_creative_shares_path(creative) %>">
+        <%= t(card.action[:label_key]) %>
+      </button>
+    <% end %>
+  <% end %>
+  <% if card.guide_enabled? %>
+    <%= link_to t("collavre.comments.empty_state.learn_more"), collavre.feature_path(card.key), class: "feature-card-guide-link" %>
+  <% end %>
+</div>

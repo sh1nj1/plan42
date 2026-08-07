@@ -43,7 +43,6 @@ en:
       invalid_topic: Topic does not belong to this creative.
       comments: Comments
       delete_confirm: Are you sure you want to delete this comment?
-      no_comments: No comments yet.
       anonymous: Anonymous
       add_comment: Add Comment
       update_comment: Update Comment
@@ -251,6 +250,35 @@ en:
         delete: Delete
         delete_confirm: Delete this image?
         counter: "%{current} / %{total}"
+      chat_input_hint: "Type a message, or use / for commands"
+      empty_state:
+        title: Get started
+        minimal_prompt: Start a conversation
+        restore_cards: Show tips again
+        dismiss: Dismiss
+        learn_more: Learn more
+        cards:
+          mention_agent:
+            title: Mention teammates & agents
+            description: "Use @name: to ask a question or loop someone in."
+          slash_command:
+            title: Slash commands
+            description: Type / to see available commands like /calendar or /topic.
+            action: View commands
+          chat_context:
+            title: Chat context
+            description: Link another Creative as context so agents can reference it here.
+          automation_trigger:
+            title: Automation triggers
+            description: Drop actions and agent triggers can react automatically to new messages.
+          topic_management:
+            title: Topics
+            description: Split this chat into topics to keep conversations organized.
+            action: View topics
+          add_user:
+            title: Add people
+            description: Invite teammates or AI agents to this conversation.
+            action: Add user
     channels:
       detach: "Detach"
     calendar_events:

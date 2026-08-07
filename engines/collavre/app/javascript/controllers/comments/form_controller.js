@@ -224,7 +224,7 @@ export default class extends Controller {
     this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
-    this.textareaTarget.placeholder = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Reset textarea height after clearing content
     this.textareaTarget.style.height = 'auto'
   }
@@ -767,7 +767,7 @@ export default class extends Controller {
     this.textareaTarget.value = ''
 
     if (store.isEmpty) {
-      this.textareaTarget.placeholder = ''
+      this.textareaTarget.placeholder = this._defaultPlaceholder()
     } else if (!store.hasActive) {
       this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     }
@@ -924,7 +924,7 @@ export default class extends Controller {
         store.remove(quote.id)
         if (wasActive) this.textareaTarget.value = ''
         if (store.isEmpty) {
-          this.textareaTarget.placeholder = ''
+          this.textareaTarget.placeholder = this._defaultPlaceholder()
         } else if (!store.hasActive) {
           this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
         }
@@ -961,6 +961,10 @@ export default class extends Controller {
 
   _getI18nText(key, fallback) {
     return this.element.dataset[key] || fallback
+  }
+
+  _defaultPlaceholder() {
+    return this._getI18nText('chatInputHint', 'Type a message, or use / for commands')
   }
 
   // --- Inbox inline reply mode ---
@@ -1038,7 +1042,7 @@ export default class extends Controller {
     this._reviewStore.clear()
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
-    this.textareaTarget.placeholder = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
     // Re-apply inbox reply mode indicator if we're in inbox System topic
     if (this._isInboxSystemTopic) {
       requestAnimationFrame(() => this._updateInboxReplyMode())

@@ -1,0 +1,20 @@
+<%
+  dismissed = (Current.user.dismissed_notices || []).map(&:to_s)
+  visible_cards = Collavre::FeatureCardRegistry.all.reject { |card| dismissed.include?(card.key.to_s) }
+%>
+<div id="no-comments" data-controller="comments--feature-cards">
+  <template data-comments--feature-cards-target="minimalTemplate">
+    <%= render partial: "collavre/comments/empty_state_minimal" %>
+  </template>
+
+  <% if visible_cards.any? %>
+    <p class="feature-cards-title"><%= t("collavre.comments.empty_state.title") %></p>
+    <div class="feature-card-grid" data-comments--feature-cards-target="grid">
+      <% visible_cards.each do |card| %>
+        <%= render partial: "collavre/comments/feature_card", locals: { creative: creative, card: card } %>
+      <% end %>
+    </div>
+  <% else %>
+    <%= render partial: "collavre/comments/empty_state_minimal" %>
+  <% end %>
+</div>

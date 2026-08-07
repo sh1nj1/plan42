@@ -143,6 +143,8 @@ Collavre::Engine.routes.draw do
   post "/creative_expanded_states/toggle", to: "user_creative_preferences#toggle"
   patch "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", as: :update_last_topic
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
+  post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
+  delete "/notices", to: "notices#restore_all", as: :restore_notices
 
   # Agent API (Claude Channel MCP plugin)
   namespace :api do
