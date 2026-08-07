@@ -149,8 +149,8 @@ module Collavre
 
     test "mention guide renders discoverability and creative permission distinctions in both locales" do
       {
-        en: [ "whitespace or one of : . , ;", "very start of a message only", "without a colon", "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
-        ko: [ "공백 뒤, 또는 : . , ; 중 하나 뒤", "메시지 맨 앞에서는", "콜론 없는 멘션", "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
+        en: [ "whitespace or one of : . , ;", "very start of a message only", "only for AI routing", "canonical @name: form", "does not create a teammate notification", "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
+        ko: [ "공백 뒤, 또는 : . , ; 중 하나 뒤", "메시지 맨 앞에서는", "AI 라우팅에만 사용", "@이름: 표준 형식", "팀원 멘션 알림은 만들지 않습니다", "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
       }.each do |locale, phrases|
         get "/features/mention_agent", params: { locale: locale }
 
