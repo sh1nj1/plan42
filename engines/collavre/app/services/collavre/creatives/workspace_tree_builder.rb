@@ -20,7 +20,7 @@ module Collavre
         branches.map do |creative|
           {
             id: creative.id,
-            label: view_context.strip_tags(creative.effective_description).squish,
+            label: Collavre::HtmlText.label(creative.effective_description),
             snippet: creative.creative_snippet,
             can_comment: allowed?(creative, :feedback),
             url: view_context.collavre.creatives_path(id: creative.id),

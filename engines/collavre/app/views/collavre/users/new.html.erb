@@ -3,7 +3,7 @@
 <% if defined?(@invitation) && @invitation.present? %>
   <p>
     <strong><%= t('collavre.creatives.index.share_creative') %>:</strong>
-    <%= strip_tags(@invitation.creative.effective_origin.description) %>
+    <%= Collavre::HtmlText.label(@invitation.creative.effective_origin.description) %>
   </p>
 <% end %>
 

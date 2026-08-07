@@ -14,7 +14,7 @@ module Collavre
         # from-zero access request so the owner knows which one it is.
         already_has_read_access = creative.has_permission?(Current.user, :read)
 
-        short_title = helpers.strip_tags(creative.effective_origin.description).truncate(10)
+        short_title = Collavre::HtmlText.markdown_label(creative.effective_origin.description, 10)
         creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
         creative_link = "[#{short_title}](#{creative_path})"
 

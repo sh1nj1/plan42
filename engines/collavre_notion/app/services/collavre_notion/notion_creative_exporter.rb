@@ -185,8 +185,8 @@ module CollavreNotion
     end
 
     def extract_text_content(html)
-      # Remove HTML tags and get plain text
-      ActionView::Base.full_sanitizer.sanitize(html).strip
+      # Remove HTML tags and decode character references
+      Collavre::HtmlText.plain(html).strip
     end
 
     def create_heading_block(text, level)

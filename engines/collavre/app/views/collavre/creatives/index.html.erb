@@ -44,10 +44,10 @@
       <% if @parent_creative %>
         <% @parent_creative.ancestors.reverse.each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" title="<%= strip_tags(ancestor.effective_description) %>"><%= truncate(strip_tags(ancestor.effective_description), length: 20) %></a>
+          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
         <% end %>
         <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace"><%= truncate(strip_tags(@parent_creative.effective_description), length: 30) %></a>
+        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace"><%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %></a>
       <% end %>
     </div>
 
@@ -162,7 +162,7 @@
 
 <% if @parent_creative %>
   <% content_for :head do %>
-    <meta property="og:title" content="<%= strip_tags(@parent_creative.effective_origin.description) %>">
+    <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
   <% end %>
   <% title_templates = [
         content_tag(:template, data: { part: "description" }) { sanitize @parent_creative.effective_description },
