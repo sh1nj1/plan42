@@ -35,18 +35,19 @@ HEAD_SHA=$(git rev-parse HEAD) || exit 1
 CHANGED_FILES=$(
     while read -r _local_ref local_sha _remote_ref remote_sha; do
       [ "$local_sha" = "$ZERO_SHA" ] && continue
-      if [ "$local_sha" != "$HEAD_SHA" ]; then
+      local_commit=$(git rev-parse "$local_sha^{}") || exit 1
+      if [ "$local_commit" != "$HEAD_SHA" ]; then
 	echo -e "${RED}❌ Rubocop can only check the currently checked-out ref.${NC}" >&2
 	exit 1
       fi
 
       if [ "$remote_sha" = "$ZERO_SHA" ]; then
-	base_sha=$(git merge-base "$DEFAULT_BASE_REF" "$local_sha") || exit 1
+	base_sha=$(git merge-base "$DEFAULT_BASE_REF" "$local_commit") || exit 1
       else
 	base_sha="$remote_sha"
       fi
 
-      git diff --name-only --diff-filter=ACMR "$base_sha" "$local_sha" || exit 1
+      git diff --name-only --diff-filter=ACMR "$base_sha" "$local_commit" || exit 1
     done | sort -u
 ) || exit 1
 RUBOCOP_FILES=()
