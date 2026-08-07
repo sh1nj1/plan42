@@ -214,6 +214,27 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('will fail')
   })
 
+  test('send completion after a chat switch clears only the submitted chat draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'send from 77')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+    typeInto(controller.textareaTarget, 'draft for 88')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(chatDrafts.get('88')).toBe('draft for 88')
+    expect(controller.textareaTarget.value).toBe('draft for 88')
+  })
+
   test('editing a comment preserves the draft and suspends draft saving', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'my draft')

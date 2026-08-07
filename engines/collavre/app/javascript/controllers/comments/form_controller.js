@@ -377,6 +377,7 @@ export default class extends Controller {
     // going to the server. _restoreStashedDraft compares against it to tell a
     // failure that left the command text behind from text typed mid-flight.
     const submittedText = this.textareaTarget.value
+    const submittedDraftKey = this._activeDraftKey
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -421,6 +422,11 @@ export default class extends Controller {
       })
       .then((html) => {
         const wasEditing = this.editingId
+        const switchedChats =
+          submittedDraftKey &&
+          this._activeDraftKey &&
+          String(submittedDraftKey) !== String(this._activeDraftKey)
+        if (switchedChats) this._flushDraftSave()
         this.resetForm()
         if (wasEditing) {
           this._restoreDraft()
@@ -428,7 +434,8 @@ export default class extends Controller {
           this.renderCommentHtml(html, { replaceExisting: true })
         } else {
           clearTimeout(this._draftSaveTimer)
-          if (this._activeDraftKey) chatDrafts.clear(this._activeDraftKey)
+          if (submittedDraftKey) chatDrafts.clear(submittedDraftKey)
+          if (switchedChats) this._restoreDraft()
           // New Comment:
           // 1. If we are in "History Mode" (scrolled up), sending a message should jump us to the latest.
           // 2. Ideally, we just reload the "Latest" page to ensure sync and Live Mode.
