@@ -70,6 +70,20 @@ module Collavre
       tips.each { |tip| assert_includes @response.body, ERB::Util.html_escape(tip) }
     end
 
+    test "slash command guide distinguishes local calendar events and registered MCP tools in both locales" do
+      {
+        en: [ "local calendar event", "Google Calendar is connected", "MCP tools registered in your workspace" ],
+        ko: [ "로컬 캘린더 일정", "Google Calendar가 연결", "워크스페이스에 등록된 MCP 도구" ]
+      }.each do |locale, phrases|
+        get "/features/slash_command", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+        assert_not_includes @response.body, "Notion"
+        assert_not_includes @response.body, "Slack"
+      end
+    end
+
     test "agent and compress tips describe the routing and permission fallbacks in both locales" do
       {
         en: [ "primary agent", "routing rules", "comment permission", "policy primary agent" ],
@@ -127,6 +141,23 @@ module Collavre
       assert_response :success
       assert_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :ko)
       assert_not_includes @response.body, escaped("collavre.features.pages.topic_management.tagline", locale: :en)
+    end
+
+    test "guide navigation preserves the selected locale" do
+      get "/features", params: { locale: "ko" }
+
+      assert_response :success
+      assert_select "a[href=?]", "/landing?locale=ko"
+      assert_select "a[href=?]", "/users/new?locale=ko"
+      GUIDE_KEYS.each do |key|
+        assert_select "a[href=?]", "/features/#{key}?locale=ko"
+      end
+
+      get "/features/mention_agent", params: { locale: "ko" }
+
+      assert_response :success
+      assert_select "a[href=?]", "/landing?locale=ko"
+      assert_select "a[href=?]", "/features?locale=ko", count: 2
     end
 
     test "topic guide shows the required mention colon in both locales" do
@@ -196,12 +227,12 @@ module Collavre
       Collavre::FeatureCardRegistry.unregister(:bare_card)
     end
 
-    test "landing links to the features hub" do
-      get "/landing"
+    test "landing links to the features hub and preserves the selected locale" do
+      get "/landing", params: { locale: "ko" }
 
       assert_response :success
-      assert_includes @response.body, "/features"
-      assert_includes @response.body, escaped("collavre.landing.features.explore")
+      assert_select "a[href=?]", "/features?locale=ko",
+                    text: I18n.t("collavre.landing.features.explore", locale: :ko)
     end
   end
 end

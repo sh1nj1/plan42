@@ -27,7 +27,7 @@ class FeatureGuideTest < ApplicationSystemTestCase
     visit collavre.features_path
 
     assert_text I18n.t("collavre.features.index.card_more")
-    find("a[href$='/features/mention_agent']").click
+    find("a[href^='/features/mention_agent']").click
 
     assert_selector "h1", text: I18n.t("collavre.features.pages.mention_agent.title")
   end

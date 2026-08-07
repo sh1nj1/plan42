@@ -1067,8 +1067,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.learn_more")
     %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
-      assert_includes @response.body, %(href="/features/#{key}"),
-                      "expected the #{key} card to link its guide"
+      assert_includes @response.body, %(href="/features/#{key}?locale=en"),
+                      "expected the #{key} card to link its guide in the active locale"
     end
   end
 

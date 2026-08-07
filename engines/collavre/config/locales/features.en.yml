@@ -38,9 +38,9 @@ en:
             - heading: "How it works"
               body: "Type / at the start of a message and a menu of available commands appears. Pick one and a small form collects its arguments, so you do not have to memorize the argument order. Commands are submitted like messages and their result lands in the thread."
             - heading: "Built-in commands"
-              body: "/calendar (also /cal) creates a Google Calendar event from a date and a memo, accepting relative dates like tomorrow, +3days, or +mon. /topic starts a new topic and can assign a primary agent to it. /work walks the child Creatives depth-first and has an agent execute a task on each. /compress summarizes the current topic's messages and removes the originals. /creative inserts a link to another Creative, which in an AI chat also injects that Creative's tree as context."
-            - heading: "Tools from your integrations"
-              body: "Connected MCP tools show up in the same menu below the built-in commands, so a Notion or Slack action is invoked exactly like /calendar is. Which tools appear depends on which integrations you have access to."
+              body: "/calendar (also /cal) creates a local calendar event from a date and a memo, accepting relative dates like tomorrow, +3days, or +mon. When Google Calendar is connected, Collavre also attempts to sync the event there. /topic starts a new topic and can assign a primary agent to it. /work walks the child Creatives depth-first and has an agent execute a task on each. /compress summarizes the current topic's messages and removes the originals. /creative inserts a link to another Creative, which in an AI chat also injects that Creative's tree as context."
+            - heading: "MCP tools"
+              body: "MCP tools registered in your workspace show up in the same menu below the built-in commands and run through the same command form. The tools you see depend on which ones are registered and which ones you have permission to use."
           tips:
             - "Whatever you had typed is kept — the command is prepended to your draft, not written over it."
             - "/compress requires a topic, write permission, and an available AI agent. Collavre tries the topic's primary agent, the policy primary agent, then any AI agent shared on the Creative with comment permission."

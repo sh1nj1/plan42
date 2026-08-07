@@ -7,9 +7,9 @@
   <article class="landing-section">
     <div class="landing-container feature-guide-container">
       <nav class="feature-guide-breadcrumb">
-        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path %>
+        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path(locale: I18n.locale) %>
         <span aria-hidden="true">/</span>
-        <%= link_to t('collavre.features.nav.all'), collavre.features_path %>
+        <%= link_to t('collavre.features.nav.all'), collavre.features_path(locale: I18n.locale) %>
       </nav>
 
       <header class="feature-guide-header">
@@ -39,7 +39,7 @@
       <% end %>
 
       <p class="feature-guide-back">
-        <%= link_to t('collavre.features.nav.all_arrow'), collavre.features_path, class: "landing-btn landing-btn-ghost" %>
+        <%= link_to t('collavre.features.nav.all_arrow'), collavre.features_path(locale: I18n.locale), class: "landing-btn landing-btn-ghost" %>
       </p>
     </div>
   </article>

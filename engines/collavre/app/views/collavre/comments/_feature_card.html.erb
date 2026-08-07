@@ -29,7 +29,7 @@
     <%# collavre.feature_path keeps the engine's mount prefix; a vendor card's own
         :guide_url is used verbatim since it may point outside this app. %>
     <%= link_to t("collavre.comments.empty_state.learn_more"),
-                card.guide_url.presence || collavre.feature_path(card.key),
+                card.guide_url.presence || collavre.feature_path(card.key, locale: I18n.locale),
                 class: "feature-card-guide-link" %>
   <% end %>
 </div>
