@@ -22,7 +22,7 @@ en:
           meta_description: "Use @name: to direct a message at a teammate or an AI agent in a Collavre chat."
           sections:
             - heading: "How it works"
-              body: "Start a message with @name: — the name of a mentionable person or AI agent, followed by a colon. Everything after the colon is the message addressed to them. The @ may open the message or follow whitespace or one of : . , ;. Other mid-word @ signs, such as those in email addresses, are not mentions."
+              body: "Use @name: — the name of a mentionable person or AI agent followed by a colon — to address everything after the colon to them. This canonical form may open the message or follow whitespace or one of : . , ;. At the very start of a message only, @name followed by whitespace also counts without a colon, so @Agent do this routes the message to Agent. Other mid-word @ signs, such as those in email addresses, are not mentions."
             - heading: "People and agents behave the same way"
               body: "A mentioned teammate gets a notification. A mentioned AI agent with comment permission reads the chat, the Creative it belongs to, and any attached context, then replies in the thread. Both are addressed with the same syntax, so you do not have to remember which participants are human."
             - heading: "Who can be mentioned"
@@ -43,7 +43,7 @@ en:
             - heading: "MCP tools"
               body: "MCP tools registered in your workspace show up in the same menu below the built-in commands and run through the same command form. The tools you see depend on which ones are registered and which ones you have permission to use."
           tips:
-            - "Whatever you had typed is kept — the command is prepended to your draft, not written over it."
+            - "Whatever you had typed is kept. A form-backed command temporarily stashes the draft, submits the command alone, and restores the draft after the send settles. Commands without a form stay in the message box for you to edit and send."
             - "/compress requires a topic, write permission, and an available AI agent. Collavre tries the topic's primary agent, the policy primary agent, then any AI agent shared on the Creative with comment permission."
             - "Commands are submitted as messages, so they generally need comment permission, and they are unavailable on an archived Creative. Assigning, replacing, or releasing a /topic primary agent additionally requires write permission."
         chat_context:

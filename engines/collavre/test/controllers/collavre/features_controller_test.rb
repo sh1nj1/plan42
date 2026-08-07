@@ -96,6 +96,18 @@ module Collavre
       end
     end
 
+    test "slash command guide describes form command draft stashing in both locales" do
+      {
+        en: [ "form-backed command", "stashes the draft", "submits the command alone", "restores the draft" ],
+        ko: [ "인자 폼이 있는 명령", "초안을 잠시 보관", "명령만 따로 전송", "초안을 복원" ]
+      }.each do |locale, phrases|
+        get "/features/slash_command", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "slash command guide describes which creatives work skips in both locales" do
       {
         en: [ "each eligible one", "already complete", "have an active task" ],
@@ -137,8 +149,8 @@ module Collavre
 
     test "mention guide renders discoverability and creative permission distinctions in both locales" do
       {
-        en: [ "whitespace or one of : . , ;", "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
-        ko: [ "공백 뒤, 또는 : . , ; 중 하나 뒤", "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
+        en: [ "whitespace or one of : . , ;", "very start of a message only", "without a colon", "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
+        ko: [ "공백 뒤, 또는 : . , ; 중 하나 뒤", "메시지 맨 앞에서는", "콜론 없는 멘션", "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
       }.each do |locale, phrases|
         get "/features/mention_agent", params: { locale: locale }
 
