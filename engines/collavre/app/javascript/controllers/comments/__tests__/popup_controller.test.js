@@ -317,6 +317,63 @@ describe('CommentsPopupController', () => {
         expect(popup.dataset.creativeId).toBe('123')
     })
 
+    test('chat icon expands a collapsed docked chat showing the same creative', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.collapseDockedLabel = 'Collapse chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123' },
+        }))
+
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
+        // The chat is already loaded for this creative — expanding must not
+        // reload it, which would drop the draft and subscriptions.
+        expect(open).not.toHaveBeenCalled()
+    })
+
+    test('chat icon expands a collapsed docked chat when switching creatives', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '999'
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123' },
+        }))
+
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+    })
+
+    test('workspace navigation keeps a collapsed docked chat collapsed', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '999'
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+    })
+
     test('workspace deep links pass the highlight when switching creatives', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')

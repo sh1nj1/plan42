@@ -225,12 +225,20 @@ export default class extends Controller {
       this.resetDockedToEmpty()
       return
     }
+    // A collapsed docked chat is a 3rem rail, so an explicit chat-icon click has
+    // to expand it. Workspace tree navigation must not: the user collapsed the
+    // chat on purpose and moving around the tree should leave it that way.
+    const userRequestedOpen = !event.detail?.workspaceSync
     if (
       this.element.style.display === 'flex' &&
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
       if (this.isDocked()) {
-        if (event.detail?.workspaceSync && highlightId) {
+        if (userRequestedOpen) {
+          // Already loaded for this creative — expand only, so the draft and
+          // subscriptions survive.
+          this.expandDocked()
+        } else if (highlightId) {
           this.open(button, { creativeId, highlightId })
         }
         return
@@ -238,6 +246,7 @@ export default class extends Controller {
       this.close()
       return
     }
+    if (userRequestedOpen) this.expandDocked()
     const openOptions = { creativeId }
     if (highlightId) openOptions.highlightId = highlightId
     this.open(button, openOptions)
@@ -624,12 +633,24 @@ export default class extends Controller {
   toggleDocked() {
     if (!this.isDocked()) return
 
-    this.element.classList.toggle('docked-collapsed')
+    if (this.element.classList.contains('docked-collapsed')) {
+      this.expandDocked()
+      return
+    }
+
+    this.element.classList.add('docked-collapsed')
     this.syncDockedUI()
     this._syncWakeLock()
-    if (!this.element.classList.contains('docked-collapsed')) {
-      requestAnimationFrame(() => this.listController?.scrollToBottom())
-    }
+  }
+
+  expandDocked() {
+    if (!this.isDocked()) return
+    if (!this.element.classList.contains('docked-collapsed')) return
+
+    this.element.classList.remove('docked-collapsed')
+    this.syncDockedUI()
+    this._syncWakeLock()
+    requestAnimationFrame(() => this.listController?.scrollToBottom())
   }
 
   syncDockedUI() {
