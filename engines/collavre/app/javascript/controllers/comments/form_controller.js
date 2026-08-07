@@ -1058,6 +1058,20 @@ export default class extends Controller {
     const commentElement = doc.querySelector('.comment-item')
     if (!commentElement) return
 
+    // A search-filtered list is the result set of a server-side query, and a
+    // freshly posted comment carries no verdict on whether it matches. Splicing
+    // it in drops an unrelated message among the results and — when there were
+    // none — takes the "no results" notice with it, since removePlaceholder
+    // below clears whatever empty state is on screen. Leave search and reload
+    // the live list instead, the same exit the history-mode branch takes.
+    // Edits are exempt: that comment is already in the result set, matching the
+    // stream path, which blocks `append` but never `replace`/`remove`.
+    const listCtrl = this.listController
+    if (!replaceExisting && listCtrl?.manualSearchQuery) {
+      listCtrl.resetToLatest()
+      return
+    }
+
     this.removePlaceholder()
 
     const existing = listElement.querySelector(`#${commentElement.id}`)
