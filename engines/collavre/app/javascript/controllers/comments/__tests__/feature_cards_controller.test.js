@@ -174,7 +174,13 @@ describe('FeatureCardsController', () => {
     document.body.removeChild(form)
   })
 
-  test('openCommandMenu preserves an in-progress draft instead of overwriting it', () => {
+  // modules/command_menu.js only opens the menu when the text before the caret
+  // matches this — i.e. a "/" token at the very start of the message.
+  const MENU_TRIGGER = /^\/([^\s/]*)$/
+  const triggerQuery = (textarea) =>
+    textarea.value.slice(0, textarea.selectionStart).match(MENU_TRIGGER)?.[1]
+
+  test('openCommandMenu keeps an in-progress draft and still opens the menu', () => {
     const form = document.createElement('form')
     form.id = 'new-comment-form'
     const textarea = document.createElement('textarea')
@@ -187,9 +193,29 @@ describe('FeatureCardsController', () => {
 
     controller.openCommandMenu()
 
-    expect(textarea.value).toBe('unsent draft')
+    // The draft survives, prefixed by the "/" the menu needs to trigger.
+    expect(textarea.value).toBe('/unsent draft')
     expect(document.activeElement).toBe(textarea)
-    expect(inputHandler).not.toHaveBeenCalled()
+    expect(inputHandler).toHaveBeenCalledTimes(1)
+    // Caret sits right after the injected "/", so the unfiltered list shows
+    // rather than the menu trying to match "unsent draft" as a command name.
+    expect(triggerQuery(textarea)).toBe('')
+
+    document.body.removeChild(form)
+  })
+
+  test('openCommandMenu keeps a partial command as the menu filter', () => {
+    const form = document.createElement('form')
+    form.id = 'new-comment-form'
+    const textarea = document.createElement('textarea')
+    textarea.value = '/top'
+    form.appendChild(textarea)
+    document.body.appendChild(form)
+
+    controller.openCommandMenu()
+
+    expect(textarea.value).toBe('/top')
+    expect(triggerQuery(textarea)).toBe('top')
 
     document.body.removeChild(form)
   })

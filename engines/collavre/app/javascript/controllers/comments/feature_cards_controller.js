@@ -49,16 +49,18 @@ export default class extends Controller {
 
     textarea.focus()
 
-    // Don't clobber a draft the user already started typing — the command
-    // menu only opens for "/" at the very start of the message anyway, so
-    // there's nothing useful to trigger once there's other content.
-    if (textarea.value.trim().length > 0) {
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length)
-      return
-    }
+    // The menu only triggers on a "/" token at the very start of the message
+    // (see modules/command_menu.js), so opening it means putting a "/" there.
+    // Prepend instead of overwriting so a draft the user already started is
+    // kept — identical to them moving the caret home and typing "/".
+    const hadSlash = textarea.value.startsWith("/")
+    if (!hadSlash) textarea.value = `/${textarea.value}`
 
-    textarea.value = "/"
-    textarea.setSelectionRange(1, 1)
+    // The menu filters on the text between "/" and the caret. Park the caret
+    // right after the "/" we injected so the full list shows; if the user had
+    // already typed their own "/to", keep their partial query and pre-filter.
+    const caret = hadSlash ? textarea.value.match(/^\/[^\s/]*/)[0].length : 1
+    textarea.setSelectionRange(caret, caret)
     textarea.dispatchEvent(new Event("input", { bubbles: true }))
   }
 
