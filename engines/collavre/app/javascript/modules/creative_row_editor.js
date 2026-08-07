@@ -269,6 +269,22 @@ function setupEditorSession() {
       }
     }
 
+    // Announces that a creative is being edited and keeps re-announcing it: the
+    // sync controller expires the lock when the pings stop, so a single event
+    // is not enough. Every path that puts the editor on a persisted row must go
+    // through this — including recoverFromFailedSave(), which reopens it after
+    // hideCurrent() has already announced the stop.
+    function startEditingPresence(creativeId) {
+      const parsedId = parseInt(creativeId, 10);
+      if (Number.isNaN(parsedId)) return;
+      const announce = () => document.dispatchEvent(new CustomEvent('creative-editing:start', {
+        detail: { creativeId: parsedId }
+      }));
+      announce();
+      stopEditingPing();
+      editingPingInterval = setInterval(announce, 3000);
+    }
+
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
 
@@ -621,19 +637,7 @@ function setupEditorSession() {
       updateActionButtonStates();
 
       // Notify sync controller that editing started + periodic ping
-      const editCreativeId = form.dataset.creativeId || currentRowElement?.getAttribute('creative-id');
-      if (editCreativeId) {
-        const parsedId = parseInt(editCreativeId, 10);
-        document.dispatchEvent(new CustomEvent('creative-editing:start', {
-          detail: { creativeId: parsedId }
-        }));
-        if (editingPingInterval) clearInterval(editingPingInterval);
-        editingPingInterval = setInterval(() => {
-          document.dispatchEvent(new CustomEvent('creative-editing:start', {
-            detail: { creativeId: parsedId }
-          }));
-        }, 3000);
-      }
+      startEditingPresence(form.dataset.creativeId || currentRowElement?.getAttribute('creative-id'));
     }
 
     function initializeEventListeners() {
@@ -907,14 +911,28 @@ function setupEditorSession() {
       return true;
     }
 
-    // Restores the empty-state card once the last unsaved new row is cancelled
-    // and no real rows remain under #creatives.
+    // Brings the empty state back whenever a removal leaves no rows under
+    // #creatives — a cancelled first draft, but also deleting or archiving the
+    // last remaining creative. Without this the container is left holding
+    // nothing but the display:none card (or nothing at all) and the page reads
+    // as broken rather than empty.
     function restoreEmptyStateIfEmpty() {
       const rootContainer = document.getElementById('creatives');
-      const emptyState = rootContainer?.querySelector('.creative-empty-state');
-      if (emptyState && !rootContainer.querySelector('creative-tree-row')) {
+      if (!rootContainer || rootContainer.querySelector('creative-tree-row')) return;
+
+      const emptyState = rootContainer.querySelector('.creative-empty-state');
+      if (emptyState) {
         emptyState.style.display = '';
+        return;
       }
+      // The card is only in the DOM when the page was rendered for an empty
+      // tree; once the tree controller renders real rows it is gone. Re-render
+      // it from the same markup that controller uses for a server-confirmed
+      // empty response, which the ERB carries on the container. Reading the
+      // attribute directly rather than via dataset: the Stimulus value name
+      // contains `--`, which does not survive the dataset camelization.
+      const html = rootContainer.getAttribute('data-creatives--tree-empty-html-value');
+      if (html) rootContainer.insertAdjacentHTML('beforeend', html);
     }
 
     // The save request resolves with the raw Response (see creativesApi.save),
@@ -984,6 +1002,11 @@ function setupEditorSession() {
         pendingSave = true;
         setSaveStatus('error');
         updateActionButtonStates();
+        // The row is being edited again, but hideCurrent() already announced
+        // the stop and killed the ping before the flush ran. Leaving it that
+        // way would tell collaborators the row is free while the rejected draft
+        // is still open in it, inviting a concurrent edit that overwrites it.
+        startEditingPresence(form.dataset.creativeId);
 
         if (switching) {
           // The caller was about to open another row; it aborts on this result,
@@ -1030,6 +1053,28 @@ function setupEditorSession() {
       }
 
       return finalizeHide();
+    }
+
+    // Tears the session down for a row that is already gone from the DOM, so
+    // hideCurrent() is not usable: its flush would try to save — and then
+    // re-show and refresh — a detached row. The archive handler has always
+    // called this, but it was never defined anywhere in the module, so
+    // archiving threw a ReferenceError inside its .then() and silently left the
+    // editor bound to the removed row.
+    function closeEditor() {
+      isDirty = false;
+      pendingSave = null;
+      stopEditingPing();
+      const editCreativeId = form.dataset.creativeId;
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
+      currentTree = null;
+      currentRowElement = null;
+      template.style.display = 'none';
+      updateActionButtonStates();
     }
 
     function loadCreative(tree) {
@@ -1328,19 +1373,7 @@ function setupEditorSession() {
           loadCreative(target);
           focusAfterMove();
           // Notify editing started on new creative + start ping
-          const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
-          if (newCreativeId) {
-            const parsedNewId = parseInt(newCreativeId, 10);
-            document.dispatchEvent(new CustomEvent('creative-editing:start', {
-              detail: { creativeId: parsedNewId }
-            }));
-            stopEditingPing();
-            editingPingInterval = setInterval(() => {
-              document.dispatchEvent(new CustomEvent('creative-editing:start', {
-                detail: { creativeId: parsedNewId }
-              }));
-            }, 3000);
-          }
+          startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
         });
       } else {
         // For existing creatives, show the row and refresh if needed
@@ -1350,19 +1383,7 @@ function setupEditorSession() {
         loadCreative(target);
         focusAfterMove();
         // Notify editing started on new creative + start ping
-        const newCreativeId = target.dataset?.id || currentRowElement?.getAttribute('creative-id');
-        if (newCreativeId) {
-          const parsedNewId = parseInt(newCreativeId, 10);
-          document.dispatchEvent(new CustomEvent('creative-editing:start', {
-            detail: { creativeId: parsedNewId }
-          }));
-          stopEditingPing();
-          editingPingInterval = setInterval(() => {
-            document.dispatchEvent(new CustomEvent('creative-editing:start', {
-              detail: { creativeId: parsedNewId }
-            }));
-          }, 3000);
-        }
+        startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
       }
       updateActionButtonStates();
     }
@@ -1606,6 +1627,7 @@ function setupEditorSession() {
         pendingSave = null;
         move(1);
         removeTreeElement(tree);
+        restoreEmptyStateIfEmpty();
       });
     }
 
@@ -1981,6 +2003,7 @@ function setupEditorSession() {
                 const childrenContainer = document.getElementById(`creative-children-${creativeId}`);
                 if (childrenContainer) childrenContainer.remove();
                 if (row) row.remove();
+                restoreEmptyStateIfEmpty();
               } else {
                 // Restoring: reload tree to show updated state
                 const treeEl = document.querySelector('[data-controller="creatives--tree"]');

@@ -31,109 +31,13 @@ jest.unstable_mockModule('../../lib/utils/dialog', () => ({
 
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
 
-const BUTTON_IDS = [
-  'inline-metadata-btn', 'inline-toggle-markdown', 'inline-move-up', 'inline-move-down',
-  'inline-add', 'inline-level-down', 'inline-level-up', 'inline-archive', 'inline-delete',
-  'inline-delete-with-children', 'inline-link', 'inline-unconvert', 'inline-unlink',
-  'inline-close', 'inline-recommend-parent', 'metadata-popup-close', 'metadata-save-btn',
-]
-const HIDDEN_INPUT_IDS = [
-  'inline-method', 'inline-creative-description', 'inline-content-type',
-  'inline-markdown-editor', 'inline-markdown-source', 'inline-parent-id',
-  'inline-before-id', 'inline-after-id', 'inline-child-id', 'inline-origin-id',
-]
-const DIV_IDS = ['markdown-editor-wrapper', 'markdown-preview', 'inline-progress-value', 'inline-save-status', 'metadata-popup']
+const {
+  buildEditorDom, defineTreeRowStub, renderEmptyState, appendExistingRow, flush,
+} = await import('./support/inline_editor_dom')
 
 // Stands in for t('collavre.creatives.index.save_failed_alert'); deliberately
 // not English so a hardcoded literal in the module would fail the assertion.
 const SAVE_FAILED_MESSAGE = '저장하지 못했습니다'
-
-function buildEditorDom(container) {
-  const template = document.createElement('div')
-  template.id = 'inline-edit-form'
-  template.style.display = 'none'
-
-  const form = document.createElement('form')
-  form.id = 'inline-edit-form-element'
-  form.action = '/creatives'
-  // Mirrors the ERB: plain JS can't call `t()`, so the localized save-failure
-  // message rides on the form's data-* attribute.
-  form.dataset.saveFailedMessage = SAVE_FAILED_MESSAGE
-  template.appendChild(form)
-
-  HIDDEN_INPUT_IDS.forEach((id) => {
-    const input = document.createElement('input')
-    input.type = 'hidden'
-    input.id = id
-    form.appendChild(input)
-  })
-  const progress = document.createElement('input')
-  progress.type = 'checkbox'
-  progress.id = 'inline-creative-progress'
-  form.appendChild(progress)
-
-  const editorRoot = document.createElement('div')
-  editorRoot.id = 'lexical-inline-editor'
-  editorRoot.dataset.lexicalEditorRoot = ''
-  form.appendChild(editorRoot)
-
-  const markdownTextarea = document.createElement('textarea')
-  markdownTextarea.id = 'markdown-editor-textarea'
-  form.appendChild(markdownTextarea)
-  const metadataTextarea = document.createElement('textarea')
-  metadataTextarea.id = 'metadata-yaml-editor'
-  form.appendChild(metadataTextarea)
-  const suggestions = document.createElement('select')
-  suggestions.id = 'parent-suggestions'
-  form.appendChild(suggestions)
-
-  BUTTON_IDS.forEach((id) => {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.id = id
-    form.appendChild(button)
-  })
-  DIV_IDS.forEach((id) => {
-    const div = document.createElement('div')
-    div.id = id
-    form.appendChild(div)
-  })
-  container.appendChild(template)
-  return template
-}
-
-// The real <creative-tree-row> is a Lit component; startNew() only needs it to
-// expose a `.creative-tree` child, which is what the browser component renders.
-// A brand-new row has no `.creative-row` yet — that markup only appears after a
-// successful save inserts it — so the stub deliberately omits it.
-function defineTreeRowStub() {
-  if (customElements.get('creative-tree-row')) return
-  customElements.define('creative-tree-row', class extends HTMLElement {
-    connectedCallback() {
-      if (this.querySelector('.creative-tree')) return
-      const tree = document.createElement('div')
-      tree.className = 'creative-tree'
-      this.appendChild(tree)
-    }
-  })
-}
-
-function renderEmptyState() {
-  const creatives = document.getElementById('creatives')
-  creatives.innerHTML = `
-    <div class="creative-empty-state">
-      <button type="button" class="new-root-creative-btn">Add</button>
-    </div>
-  `
-  return creatives.querySelector('.creative-empty-state')
-}
-
-// Lets queued microtasks and the rAF-deferred finalizeSetup() in startNew() run.
-function flush() {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => setTimeout(resolve, 0))
-  })
-}
 
 describe('empty-state recovery when the first inline save fails', () => {
   beforeAll(() => {
@@ -151,7 +55,7 @@ describe('empty-state recovery when the first inline save fails', () => {
     document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
     saveMock.mockReset()
     alertDialogMock.mockClear()
-    buildEditorDom(document.getElementById('center-frame'))
+    buildEditorDom(document.getElementById('center-frame'), { saveFailedMessage: SAVE_FAILED_MESSAGE })
     initializeCreativeRowEditor()
     document.getElementById('metadata-popup').style.display = 'none'
   })
@@ -169,23 +73,6 @@ describe('empty-state recovery when the first inline save fails', () => {
     textarea.dispatchEvent(new Event('input'))
 
     return emptyState
-  }
-
-  // A row that already exists on the server, i.e. one that renders a
-  // `.creative-row` and carries a creative id.
-  function appendExistingRow(id) {
-    const rowComponent = document.createElement('creative-tree-row')
-    rowComponent.dataset.descriptionRawHtml = '<p>existing</p>'
-    rowComponent.dataset.progressValue = '0'
-    // The stub only renders its .creative-tree child once connected.
-    document.getElementById('creatives').appendChild(rowComponent)
-    const tree = rowComponent.querySelector('.creative-tree')
-    tree.id = `creative-${id}`
-    tree.dataset.id = String(id)
-    const row = document.createElement('div')
-    row.className = 'creative-row'
-    tree.appendChild(row)
-    return { tree, row }
   }
 
   function unsavedRowTree() {
@@ -397,5 +284,78 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(saveStatus()).toBe('error')
     // Not a switch — the visible error status is the feedback, no modal.
     expect(alertDialogMock).not.toHaveBeenCalled()
+  })
+
+  // hideCurrent() announces that editing stopped before it flushes the save.
+  // When the flush fails the editor is put back on the row, so that
+  // announcement is now wrong: collaborators would be told the row is free
+  // while the rejected draft is still open in it, and a concurrent edit could
+  // overwrite it.
+  describe('editing presence after a recovered save failure', () => {
+    function recordPresence() {
+      const events = []
+      const record = (event) => events.push(`${event.type}:${event.detail?.creativeId}`)
+      document.addEventListener('creative-editing:start', record)
+      document.addEventListener('creative-editing:stop', record)
+      return {
+        events,
+        stop: () => {
+          document.removeEventListener('creative-editing:start', record)
+          document.removeEventListener('creative-editing:stop', record)
+        },
+      }
+    }
+
+    test('re-announces the row as being edited', async () => {
+      saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+      const { tree } = appendExistingRow(42)
+      const presence = recordPresence()
+
+      try {
+        document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
+        await flush()
+
+        const textarea = document.getElementById('markdown-editor-textarea')
+        textarea.value = 'edited'
+        textarea.dispatchEvent(new Event('input'))
+
+        document.getElementById('inline-close').click()
+        await flush()
+
+        expect(presence.events).toEqual([
+          'creative-editing:start:42',
+          'creative-editing:stop:42',
+          'creative-editing:start:42',
+        ])
+      } finally {
+        presence.stop()
+      }
+    })
+
+    test('restarts the periodic ping so presence does not lapse', async () => {
+      jest.useFakeTimers()
+      saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
+      const { tree } = appendExistingRow(42)
+      const presence = recordPresence()
+
+      try {
+        document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
+        await jest.advanceTimersByTimeAsync(20)
+
+        const textarea = document.getElementById('markdown-editor-textarea')
+        textarea.value = 'edited'
+        textarea.dispatchEvent(new Event('input'))
+
+        document.getElementById('inline-close').click()
+        await jest.advanceTimersByTimeAsync(20)
+
+        const beforeTick = presence.events.length
+        await jest.advanceTimersByTimeAsync(3100)
+        expect(presence.events.slice(beforeTick)).toEqual(['creative-editing:start:42'])
+      } finally {
+        presence.stop()
+        jest.useRealTimers()
+      }
+    })
   })
 })
