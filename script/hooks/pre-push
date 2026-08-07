@@ -18,8 +18,23 @@ REMOTE_NAME="${1:-origin}"
 PUSH_UPDATES=$(cat)
 RANGES=()
 RECEIVED_UPDATE=false
+EMPTY_TREE_SHA=$(git hash-object -t tree /dev/null) || exit 1
 
-while read -r _local_ref local_sha _remote_ref remote_sha; do
+fallback_base_sha() {
+    local local_sha="$1"
+    shift
+
+    for candidate in "$@"; do
+      [ -z "$candidate" ] && continue
+      if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
+	git merge-base "$local_sha" "$candidate" && return
+      fi
+    done
+
+    printf '%s\n' "$EMPTY_TREE_SHA"
+}
+
+while read -r _local_ref local_sha remote_ref remote_sha; do
     [ -z "$local_sha" ] && continue
     RECEIVED_UPDATE=true
 
@@ -29,21 +44,20 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     if [ -n "${PRE_PUSH_BASE_REF:-}" ]; then
       RANGES+=("${PRE_PUSH_BASE_REF}..${local_sha}")
     elif [ "$remote_sha" != "$ZERO_SHA" ]; then
-      RANGES+=("${remote_sha}..${local_sha}")
-    else
-      base_ref=""
-      for candidate in "$REMOTE_NAME/HEAD" "$REMOTE_NAME/main" "$REMOTE_NAME/master"; do
-	if git rev-parse --verify --quiet "$candidate^{commit}" >/dev/null; then
-	  base_ref="$candidate"
-	  break
-	fi
-      done
-
-      if [ -n "$base_ref" ]; then
-	base_sha=$(git merge-base "$local_sha" "$base_ref") || exit 1
+      if git rev-parse --verify --quiet "$remote_sha^{commit}" >/dev/null; then
+	base_sha="$remote_sha"
       else
-	base_sha=$(git hash-object -t tree /dev/null) || exit 1
+	tracking_ref=""
+	case "$remote_ref" in
+	  refs/heads/*) tracking_ref="refs/remotes/$REMOTE_NAME/${remote_ref#refs/heads/}" ;;
+	esac
+
+	echo -e "${YELLOW}⚠ Remote tip is unavailable locally; comparing from the closest local base.${NC}"
+	base_sha=$(fallback_base_sha "$local_sha" "$tracking_ref" "$REMOTE_NAME/HEAD" "$REMOTE_NAME/main" "$REMOTE_NAME/master") || exit 1
       fi
+      RANGES+=("${base_sha}..${local_sha}")
+    else
+      base_sha=$(fallback_base_sha "$local_sha" "$REMOTE_NAME/HEAD" "$REMOTE_NAME/main" "$REMOTE_NAME/master") || exit 1
       RANGES+=("${base_sha}..${local_sha}")
     fi
 done <<< "$PUSH_UPDATES"
@@ -57,13 +71,18 @@ if [ "$RECEIVED_UPDATE" = false ]; then
 fi
 
 CHANGED_FILES=()
+if ! CHANGED_FILE_OUTPUT=$(
+    for range in "${RANGES[@]}"; do
+      git diff --name-only --diff-filter=ACMRD "$range" || exit 1
+    done | sort -u
+); then
+    echo -e "${RED}❌ Unable to determine changed files. Fetch the remote branch and try again.${NC}"
+    exit 1
+fi
+
 while IFS= read -r file; do
     [ -n "$file" ] && CHANGED_FILES+=("$file")
-done < <(
-    for range in "${RANGES[@]}"; do
-      git diff --name-only --diff-filter=ACMRD "$range"
-    done | sort -u
-)
+done <<< "$CHANGED_FILE_OUTPUT"
 
 RUBOCOP_FILES=()
 while IFS= read -r file; do
