@@ -1,8 +1,8 @@
 import { Controller } from "@hotwired/stimulus"
 
 // Shared behaviour for every "the list is empty" placeholder rendered inside
-// #comments-list (the discovery cards, the topic-empty notice, the no-search-
-// results notice). The local submit path clears them itself
+// #comments-list (the discovery cards and the no-search-results notice). The
+// local submit path clears them itself
 // (comments--form#removePlaceholder), but a comment written by another
 // participant arrives as a Turbo Stream append straight into #comments-list
 // (Comment#broadcast_create) and touches nothing else. Without this, an

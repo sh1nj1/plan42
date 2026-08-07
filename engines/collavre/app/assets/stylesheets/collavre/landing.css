@@ -16,9 +16,12 @@
   scroll-behavior: smooth;
 }
 
-.landing-page nav {
-  display: none; /* hide app navigation */
-}
+/* This file is linked only from layouts/collavre/landing.html.erb, which renders
+   `<main><%= yield %></main>` and no app navigation — that lives in the host's
+   application layout, which never loads this stylesheet. So a blanket
+   `.landing-page nav { display: none }` could only ever hide a <nav> authored by
+   a landing-layout view (the feature-guide breadcrumbs), which is the opposite
+   of what it was for. Removed rather than narrowed. */
 
 .landing {
   font-family: var(--font-sans);
@@ -336,6 +339,7 @@
   margin-bottom: var(--space-3);
 }
 
+.landing-feature-card h2,
 .landing-feature-card h3 {             /* L3 */
   font-size: var(--text-3);
   font-weight: var(--weight-6);
@@ -597,3 +601,104 @@ body.dark-mode .landing-shot-dark { display: block; }
 .landing-hero-sub { animation-delay: 0.1s; }
 .landing-hero-brand { animation-delay: 0.2s; }
 .landing-hero-actions { animation-delay: 0.3s; }
+
+/* ─── Feature Guides (/features, /features/:key) ─────────────────────────────
+   The public long-form counterpart to the empty-chat feature cards. Shares the
+   landing layout and tokens so a guide reached from a shared link reads as the
+   same product surface as the landing page it sits beside. */
+.landing-features-more {
+  margin-top: var(--space-6);
+  text-align: center;
+}
+
+.feature-guide-breadcrumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-size: var(--text-1);
+  color: var(--text-muted);
+  margin-bottom: var(--space-6);
+}
+
+.feature-guide-breadcrumb a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.feature-guide-breadcrumb a:hover {
+  color: var(--color-active);
+  text-decoration: underline;
+}
+
+/* The whole card is the link, so strip the anchor's own presentation and let
+   .landing-feature-card keep supplying it. */
+.feature-guide-link-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.feature-guide-more {
+  display: inline-block;
+  margin-top: var(--space-3);
+  font-size: var(--text-1);
+  font-weight: var(--weight-6);
+  color: var(--color-active);
+}
+
+/* A guide is read top to bottom rather than scanned, so it drops the centered
+   landing rhythm for a single measured column. */
+.feature-guide-container {
+  max-width: 720px;
+}
+
+.feature-guide-header {
+  text-align: center;
+  margin-bottom: var(--space-8);
+}
+
+.feature-guide-title {                  /* L2 */
+  font-size: var(--text-5);
+  font-weight: var(--weight-7);
+  margin-bottom: var(--space-3);
+}
+
+.feature-guide-tagline {                /* L4 */
+  font-size: var(--text-3);
+  color: var(--text-muted);
+  line-height: var(--leading-2);
+}
+
+.feature-guide-section {
+  margin-bottom: var(--space-7);
+}
+
+.feature-guide-heading {                /* L3 */
+  font-size: var(--text-3);
+  font-weight: var(--weight-6);
+  margin-bottom: var(--space-3);
+}
+
+.feature-guide-body {                   /* L4 */
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  line-height: var(--leading-3);
+}
+
+.feature-guide-tips {
+  padding-left: var(--space-5);
+  margin: 0;
+}
+
+.feature-guide-tips li {                /* L4 */
+  font-size: var(--text-2);
+  color: var(--text-muted);
+  line-height: var(--leading-3);
+  margin-bottom: var(--space-2);
+}
+
+.feature-guide-back {
+  text-align: center;
+  margin-top: var(--space-8);
+}

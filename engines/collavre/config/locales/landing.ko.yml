@@ -23,6 +23,7 @@ ko:
       features:
         title: "하나의 살아있는 트리로"
         subtitle: "한 번만 쓰세요. 모든 블록이 문서이자 일감이자 대화입니다 — 셀프호스트로 자신의 DB에 쌓이는 하나의 SSOT를, 그대로 AI 에이전트에 주입합니다."
+        explore: "전체 기능 살펴보기 →"
         tree:
           title: "계층형 블록"
           desc: "작업을 트리로 구성하세요. 드래그, 링크, 재사용이 자유롭고 진행률은 자동 계산됩니다."
@@ -60,4 +61,4 @@ ko:
         subtitle: "AI 기반 컨텍스트로 작업을 정리하세요."
         start: "시작하기"
       footer:
-        rights: "모든 권리 보유."
+        copyright: "© %{year} %{app_name}. 모든 권리 보유."

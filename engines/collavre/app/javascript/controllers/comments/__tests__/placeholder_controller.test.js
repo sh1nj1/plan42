@@ -9,10 +9,9 @@ describe('PlaceholderController', () => {
   let application
   let list
 
-  // The three empty-list states rendered by collavre/comments/_list.html.erb.
+  // The two empty-list states rendered by collavre/comments/_list.html.erb.
   const PLACEHOLDERS = [
     { id: 'no-comments', label: 'discovery cards' },
-    { id: 'no-topic-comments', label: 'topic-empty notice' },
     { id: 'no-search-results', label: 'no-search-results notice' },
   ]
 
@@ -54,20 +53,20 @@ describe('PlaceholderController', () => {
   })
 
   test('stays put when a non-comment node is appended to the list', async () => {
-    mount('no-topic-comments')
+    mount('no-comments')
     await new Promise((r) => setTimeout(r, 0))
 
     list.appendChild(document.createElement('div'))
     await new Promise((r) => setTimeout(r, 0))
 
-    expect(list.querySelector('#no-topic-comments')).not.toBeNull()
+    expect(list.querySelector('#no-comments')).not.toBeNull()
   })
 
   test('stops observing once disconnected', async () => {
-    mount('no-topic-comments')
+    mount('no-comments')
     await new Promise((r) => setTimeout(r, 0))
 
-    const placeholder = list.querySelector('#no-topic-comments')
+    const placeholder = list.querySelector('#no-comments')
     placeholder.removeAttribute('data-controller')
     await new Promise((r) => setTimeout(r, 0))
 
@@ -75,6 +74,6 @@ describe('PlaceholderController', () => {
 
     // Detached from its controller, the element is left alone — proving the
     // observer is torn down rather than leaking past disconnect().
-    expect(list.querySelector('#no-topic-comments')).not.toBeNull()
+    expect(list.querySelector('#no-comments')).not.toBeNull()
   })
 })

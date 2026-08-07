@@ -23,6 +23,7 @@ en:
       features:
         title: "Everything in one living tree"
         subtitle: "Write it once. Every block is a doc, a task, and a discussion at the same time — one source of truth, self-hosted in your own database, that you inject straight into your AI agents."
+        explore: "Explore all features →"
         tree:
           title: "Hierarchical blocks"
           desc: "Organize work as a tree. Drag, link, and reuse blocks across projects. Progress rolls up automatically."
@@ -60,4 +61,4 @@ en:
         subtitle: "Start organizing your work with AI-powered context."
         start: "Get Started"
       footer:
-        rights: "All rights reserved."
+        copyright: "© %{year} %{app_name}. All rights reserved."

@@ -1,11 +1,16 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title><%= t('app.name') %> — <%= t('collavre.landing.meta.title') %></title>
+    <%# The feature guide pages share this layout but need their own title and
+        description for search results and shared links, so both fall back to the
+        landing copy rather than being hardcoded to it. %>
+    <% page_title = content_for(:page_title).presence || t('collavre.landing.meta.title') %>
+    <% page_description = content_for(:page_description).presence || t('collavre.landing.meta.description') %>
+    <title><%= t('app.name') %> — <%= page_title %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta name="description" content="<%= t('collavre.landing.meta.description') %>">
-    <meta property="og:title" content="<%= t('app.name') %> — <%= t('collavre.landing.meta.title') %>">
-    <meta property="og:description" content="<%= t('collavre.landing.meta.description') %>">
+    <meta name="description" content="<%= page_description %>">
+    <meta property="og:title" content="<%= t('app.name') %> — <%= page_title %>">
+    <meta property="og:description" content="<%= page_description %>">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
 

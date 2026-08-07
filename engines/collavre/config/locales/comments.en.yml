@@ -259,7 +259,6 @@ en:
         dismiss: Dismiss
         learn_more: Learn more
         no_search_results: No messages match your search.
-        no_topic_comments: No messages in this topic yet.
         cards:
           mention_agent:
             title: Mention teammates & agents
