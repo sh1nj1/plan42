@@ -24,6 +24,8 @@ class PrePushFileSelector
     test_root = "#{prefix}test"
     return [ path ] if path.match?(%r{(?:^|/)test/.+_test\.rb\z})
     return shared_test_roots(prefix, test_root, relative_path) if shared_test_infrastructure?(relative_path)
+    return hook_tests(relative_path) if relative_path.start_with?("script/hooks/")
+    return [ "test/lib/kamal_deploy_config_test.rb" ] if relative_path == "config/deploy.yml"
 
     case relative_path
     when %r{\Aapp/(.+)\.rb\z}
@@ -34,7 +36,15 @@ class PrePushFileSelector
         path_parts.delete_at(1)
         candidates << "#{test_root}/#{path_parts.join('/')}_test.rb"
       end
+      if path_parts[1] == "concerns" && path_parts[2] == engine_name
+        path_parts.delete_at(1)
+        candidates << "#{test_root}/#{path_parts.join('/')}_test.rb"
+      end
       include_test_variants(candidates)
+    when %r{\Aapp/views/(.+)/(_?[^/]+?)(?:\.[^.]+)*\.erb\z}
+      view_path = Regexp.last_match(1)
+      template_name = Regexp.last_match(2).delete_prefix("_")
+      [ "#{test_root}/views/#{view_path}/#{template_name}_test.rb" ]
     when %r{\Alib/tasks/(.+)\.rake\z}
       [ "#{test_root}/lib/#{Regexp.last_match(1)}_task_test.rb" ]
     when %r{\Alib/(.+)\.rb\z}
@@ -62,6 +72,12 @@ class PrePushFileSelector
 
   def shared_test_infrastructure?(path)
     path == "test/test_helper.rb" || path.start_with?("test/support/", "test/fixtures/")
+  end
+
+  def hook_tests(path)
+    tests = [ "test/lib/pre_push_hook_test.rb" ]
+    tests << "test/lib/pre_push_file_selector_test.rb" if path.end_with?("pre_push_file_selector.rb")
+    tests
   end
 
   def shared_test_roots(prefix, test_root, relative_path)

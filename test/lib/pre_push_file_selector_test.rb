@@ -86,6 +86,16 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
     assert_equal [ "engines/collavre_openclaw/test/lib/configuration_test.rb" ], selected
   end
 
+  test "maps namespaced engine concerns to their existing test layout" do
+    create_files("engines/collavre/test/models/collavre/indexed_json_columns_test.rb")
+
+    selected = @selector.test_files(
+      [ "engines/collavre/app/models/concerns/collavre/indexed_json_columns.rb" ]
+    )
+
+    assert_equal [ "engines/collavre/test/models/collavre/indexed_json_columns_test.rb" ], selected
+  end
+
   test "maps changed Rake tasks to task tests" do
     create_files("test/lib/clean_task_test.rb")
 
@@ -191,6 +201,37 @@ class PrePushFileSelectorTest < ActiveSupport::TestCase
       ],
       selected
     )
+  end
+
+  test "maps view templates and partials to view tests" do
+    create_files("engines/collavre_linear/test/views/collavre_linear/integrations/modal_test.rb")
+
+    selected = @selector.test_files(
+      [ "engines/collavre_linear/app/views/collavre_linear/integrations/_modal.html.erb" ]
+    )
+
+    assert_equal [ "engines/collavre_linear/test/views/collavre_linear/integrations/modal_test.rb" ], selected
+  end
+
+  test "maps hook changes to the hook regression tests" do
+    create_files(
+      "test/lib/pre_push_hook_test.rb",
+      "test/lib/pre_push_file_selector_test.rb"
+    )
+
+    selected = @selector.test_files(
+      [ "script/hooks/pre-push", "script/hooks/pre_push_file_selector.rb" ]
+    )
+
+    assert_equal [ "test/lib/pre_push_file_selector_test.rb", "test/lib/pre_push_hook_test.rb" ], selected
+  end
+
+  test "maps deploy configuration changes to the Kamal configuration test" do
+    create_files("test/lib/kamal_deploy_config_test.rb")
+
+    selected = @selector.test_files([ "config/deploy.yml" ])
+
+    assert_equal [ "test/lib/kamal_deploy_config_test.rb" ], selected
   end
 
   private
