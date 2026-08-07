@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../../lib/api/csrf_fetch'
+import { alertDialog } from '../../lib/utils/dialog'
 
 // Powers the "Request write access" CTA in the creative tree's empty state
 // (see engines/collavre/app/views/collavre/creatives/_empty_state.html.erb).
@@ -13,7 +14,7 @@ import csrfFetch from '../../lib/api/csrf_fetch'
 // see the PR description for the alternatives considered.
 export default class extends Controller {
   static targets = ['button', 'pending']
-  static values = { url: String }
+  static values = { url: String, failureMessage: String }
 
   async request(event) {
     event.preventDefault()
@@ -32,11 +33,16 @@ export default class extends Controller {
       } else if (response.ok) {
         this.showPending()
       } else {
-        this.buttonTarget.disabled = false
+        this.reportFailure()
       }
     } catch {
-      this.buttonTarget.disabled = false
+      this.reportFailure()
     }
+  }
+
+  reportFailure() {
+    this.buttonTarget.disabled = false
+    if (this.hasFailureMessageValue) alertDialog(this.failureMessageValue)
   }
 
   showPending() {

@@ -5,22 +5,27 @@
 import { jest } from '@jest/globals'
 
 const csrfFetch = jest.fn()
+const alertDialog = jest.fn(() => Promise.resolve())
 
 jest.unstable_mockModule('../../../lib/api/csrf_fetch', () => ({
   default: csrfFetch,
+}))
+jest.unstable_mockModule('../../../lib/utils/dialog', () => ({
+  alertDialog,
 }))
 
 const { Application } = await import('@hotwired/stimulus')
 const WriteAccessRequestController = (await import('../write_access_request_controller')).default
 
 describe('CreativesWriteAccessRequestController', () => {
+  const failureMessage = '권한을 요청하지 못했습니다.'
   let application
   let container
   let button
 
   function markup() {
     return `
-      <div data-controller="creatives--write-access-request" data-creatives--write-access-request-url-value="/creatives/1/request_permission">
+      <div data-controller="creatives--write-access-request" data-creatives--write-access-request-url-value="/creatives/1/request_permission" data-creatives--write-access-request-failure-message-value="${failureMessage}">
         <button type="button" data-creatives--write-access-request-target="button" data-action="click->creatives--write-access-request#request">Request write access</button>
         <span data-creatives--write-access-request-target="pending" hidden>Access requested</span>
       </div>
@@ -29,6 +34,7 @@ describe('CreativesWriteAccessRequestController', () => {
 
   beforeEach(() => {
     csrfFetch.mockReset()
+    alertDialog.mockClear()
     document.body.innerHTML = markup()
     container = document.querySelector('[data-controller="creatives--write-access-request"]')
     button = container.querySelector('[data-creatives--write-access-request-target="button"]')
@@ -66,6 +72,7 @@ describe('CreativesWriteAccessRequestController', () => {
     expect(button.disabled).toBe(false)
     const pending = container.querySelector('[data-creatives--write-access-request-target="pending"]')
     expect(pending.hidden).toBe(true)
+    expect(alertDialog).toHaveBeenCalledWith(failureMessage)
   })
 
   test('on network error, re-enables the button', async () => {
@@ -77,6 +84,19 @@ describe('CreativesWriteAccessRequestController', () => {
 
     expect(button.hidden).toBe(false)
     expect(button.disabled).toBe(false)
+    expect(alertDialog).toHaveBeenCalledWith(failureMessage)
+  })
+
+  test('does not fall back to hardcoded copy when no localized failure message is rendered', async () => {
+    container.removeAttribute('data-creatives--write-access-request-failure-message-value')
+    csrfFetch.mockResolvedValue({ ok: false })
+
+    button.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(button.disabled).toBe(false)
+    expect(alertDialog).not.toHaveBeenCalled()
   })
 
   test('on a followed redirect to the sign-in page (expired session), navigates there instead of showing pending', async () => {

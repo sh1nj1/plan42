@@ -56,6 +56,7 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     assert_includes response.body, html_t("collavre.creatives.index.empty_state_readonly_message")
     assert_includes response.body, html_t("collavre.creatives.index.request_permission")
     assert_includes response.body, request_permission_creative_path(creative)
+    assert_includes response.body, "data-creatives--write-access-request-failure-message-value=\"#{html_t('collavre.creatives.index.empty_state_request_failed')}\""
     refute_includes response.body, html_t("collavre.creatives.index.empty_state_add_sub_creative")
     refute_match(/add-creative-btn--cta/, response.body)
   end

@@ -63,6 +63,7 @@ ko:
         empty_state_add_shortcut: Enter
         empty_state_readonly_message: 이 크리에이티브에 쓰기 권한이 없어 하위 항목을 추가할 수 없습니다.
         empty_state_request_pending: 권한 요청됨 · 소유자 승인 대기 중
+        empty_state_request_failed: 권한을 요청하지 못했습니다. 다시 시도해 주세요.
         empty_state_loggedout_message: 하위 크리에이티브를 추가하려면 회원가입 또는 로그인하세요.
         link_loading: 불러오는 중…
         link_expand: 펼치기
