@@ -69,10 +69,21 @@ resolve_default_base_ref() {
 }
 
 HEAD_SHA=$(git rev-parse HEAD) || exit 1
-CHANGED_FILES=$(
-    while read -r local_ref local_sha _remote_ref remote_sha; do
+CHANGED_FILES_FILE=""
+RUBOCOP_FILES_FILE=""
+cleanup_temp_files() {
+    [ -z "$CHANGED_FILES_FILE" ] || rm -f "$CHANGED_FILES_FILE"
+    [ -z "$RUBOCOP_FILES_FILE" ] || rm -f "$RUBOCOP_FILES_FILE"
+}
+trap cleanup_temp_files EXIT
+
+CHANGED_FILES_FILE=$(mktemp "${TMPDIR:-/tmp}/pre-push-changed.XXXXXX") || exit 1
+RUBOCOP_FILES_FILE=$(mktemp "${TMPDIR:-/tmp}/pre-push-rubocop.XXXXXX") || exit 1
+
+if ! (
+    while read -r local_ref local_sha remote_ref remote_sha; do
       [ "$local_sha" = "$ZERO_SHA" ] && continue
-      [[ "$local_ref" == refs/tags/* ]] && continue
+      [[ "$remote_ref" == refs/tags/* ]] && continue
       local_commit=$(git rev-parse "$local_sha^{}") || exit 1
       if [ "$local_commit" != "$HEAD_SHA" ]; then
 	echo -e "${RED}❌ Rubocop can only check the currently checked-out ref.${NC}" >&2
@@ -90,9 +101,11 @@ CHANGED_FILES=$(
 	base_sha="$remote_sha"
       fi
 
-      git diff --name-only --diff-filter=ACMR "$base_sha" "$local_commit" || exit 1
-    done | sort -u
-) || exit 1
+      git diff --name-only --diff-filter=ACMR -z "$base_sha" "$local_commit" || exit 1
+    done
+) > "$CHANGED_FILES_FILE"; then
+    exit 1
+fi
 RUBOCOP_FILES=()
 
 if ! RUBOCOP_TARGET_FILES=$(./bin/rubocop --list-target-files); then
@@ -100,15 +113,28 @@ if ! RUBOCOP_TARGET_FILES=$(./bin/rubocop --list-target-files); then
     exit 1
 fi
 
-NORMALIZED_RUBOCOP_TARGET_FILES=""
-while IFS= read -r target_file; do
-    NORMALIZED_RUBOCOP_TARGET_FILES+="${target_file#"$REPO_ROOT"/}"$'\n'
-done <<< "$RUBOCOP_TARGET_FILES"
+if ! ruby -e '
+repo_root = "#{ARGV.shift}/"
+changed_files_path = ARGV.shift
+targets = STDIN.each_line(chomp: true).to_h do |path|
+  [path.delete_prefix(repo_root).b, true]
+end
 
-while IFS= read -r file; do
-    [ -z "$file" ] && continue
-    grep -Fqx -- "$file" <<< "$NORMALIZED_RUBOCOP_TARGET_FILES" && RUBOCOP_FILES+=("$file")
-done <<< "$CHANGED_FILES"
+seen = {}
+File.binread(changed_files_path).split("\0").each do |path|
+  next unless targets[path] && !seen[path]
+
+  seen[path] = true
+  $stdout.write(path, "\0")
+end
+' "$REPO_ROOT" "$CHANGED_FILES_FILE" <<< "$RUBOCOP_TARGET_FILES" > "$RUBOCOP_FILES_FILE"; then
+    echo -e "${RED}❌ Failed to match changed Rubocop target files.${NC}" >&2
+    exit 1
+fi
+
+while IFS= read -r -d '' file; do
+    RUBOCOP_FILES+=("$file")
+done < "$RUBOCOP_FILES_FILE"
 
 if [ ${#RUBOCOP_FILES[@]} -gt 0 ]; then
     echo -e "${YELLOW}▶ Running Rubocop on ${#RUBOCOP_FILES[@]} changed file(s)...${NC}"
