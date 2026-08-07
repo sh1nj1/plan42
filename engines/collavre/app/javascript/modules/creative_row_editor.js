@@ -926,13 +926,13 @@ function setupEditorSession() {
         return;
       }
       // The card is only in the DOM when the page was rendered for an empty
-      // tree; once the tree controller renders real rows it is gone. Re-render
-      // it from the same markup that controller uses for a server-confirmed
-      // empty response, which the ERB carries on the container. Reading the
-      // attribute directly rather than via dataset: the Stimulus value name
-      // contains `--`, which does not survive the dataset camelization.
-      const html = rootContainer.getAttribute('data-creatives--tree-empty-html-value');
-      if (html) rootContainer.insertAdjacentHTML('beforeend', html);
+      // tree; once the tree controller has rendered real rows it is gone. Hand
+      // back to that controller rather than re-rendering its markup here: it
+      // owns the empty state for a server-confirmed-empty response, so this
+      // stays in step with it (including the "no results" variant it renders
+      // under an active filter) and no HTML is assembled in this module.
+      const treeController = window.Stimulus?.getControllerForElementAndIdentifier?.(rootContainer, 'creatives--tree');
+      treeController?.showEmptyState?.();
     }
 
     // The save request resolves with the raw Response (see creativesApi.save),

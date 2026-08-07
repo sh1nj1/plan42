@@ -35,13 +35,28 @@ const {
   buildEditorDom, defineTreeRowStub, renderEmptyState, appendExistingRow, flush,
 } = await import('./support/inline_editor_dom')
 
-// Stands in for the `data-creatives--tree-empty-html-value` the ERB puts on
-// #creatives: the same markup the tree controller re-renders for a
-// server-confirmed-empty response.
+// The markup the real creatives--tree controller writes in showEmptyState(),
+// rendered from its emptyHtmlValue. Deliberately not English so a literal
+// baked into the module would fail the assertion.
 const EMPTY_HTML = '<div class="creative-empty-state"><button type="button" class="new-root-creative-btn">추가</button></div>'
 
-function setEmptyHtmlValue(html = EMPTY_HTML) {
-  document.getElementById('creatives').setAttribute('data-creatives--tree-empty-html-value', html)
+// Stands in for the connected creatives--tree Stimulus controller. The editor
+// must hand the empty state back to it rather than assembling the markup
+// itself, so this records that it was asked to.
+function stubTreeController() {
+  const calls = { showEmptyState: 0 }
+  const controller = {
+    showEmptyState() {
+      calls.showEmptyState += 1
+      document.getElementById('creatives').innerHTML = EMPTY_HTML
+    },
+  }
+  window.Stimulus = {
+    getControllerForElementAndIdentifier: (element, identifier) => (
+      element === document.getElementById('creatives') && identifier === 'creatives--tree' ? controller : null
+    ),
+  }
+  return calls
 }
 
 async function openEditorOn(tree) {
@@ -63,6 +78,7 @@ describe('empty state after the last creative is removed', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
+    delete window.Stimulus
     destroyMock.mockReset()
     destroyMock.mockImplementation(() => Promise.resolve({ ok: true }))
     archiveMock.mockReset()
@@ -104,24 +120,24 @@ describe('empty state after the last creative is removed', () => {
     expect(emptyState.style.display).toBe('')
   })
 
-  test('renders the empty state from the tree markup when no card is in the DOM', async () => {
+  test('asks the tree controller to render the empty state when no card is in the DOM', async () => {
     // A workspace that loaded with rows never had the card rendered — the tree
     // controller replaced the server-rendered empty HTML with the real tree.
-    setEmptyHtmlValue()
+    const calls = stubTreeController()
     const { tree } = appendExistingRow(42)
 
     await openEditorOn(tree)
     document.getElementById('inline-delete').click()
     await flush()
 
+    expect(calls.showEmptyState).toBe(1)
     const restored = document.querySelector('#creatives .creative-empty-state')
     expect(restored).not.toBeNull()
-    expect(restored.style.display).toBe('')
     expect(restored.querySelector('.new-root-creative-btn').textContent).toBe('추가')
   })
 
   test('leaves the tree alone while other rows remain', async () => {
-    setEmptyHtmlValue()
+    const calls = stubTreeController()
     const { tree } = appendExistingRow(42)
     appendExistingRow(43)
 
@@ -130,11 +146,12 @@ describe('empty state after the last creative is removed', () => {
     await flush()
 
     expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+    expect(calls.showEmptyState).toBe(0)
     expect(document.querySelector('#creatives .creative-empty-state')).toBeNull()
   })
 
   test('does not re-render the empty state when the archive request fails', async () => {
-    setEmptyHtmlValue()
+    const calls = stubTreeController()
     archiveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
     const { tree } = appendExistingRow(42)
 
@@ -144,6 +161,7 @@ describe('empty state after the last creative is removed', () => {
 
     // The row is still there, so there is nothing to replace it with.
     expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
+    expect(calls.showEmptyState).toBe(0)
     expect(document.querySelector('#creatives .creative-empty-state')).toBeNull()
   })
 })
