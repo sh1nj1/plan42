@@ -18,6 +18,10 @@ export default class extends Controller {
     // out of a data attribute and assigning it is an innerHTML sink as far as
     // CodeQL (js/xss-through-dom) is concerned, and neither needs to be one.
     errorText: String,
+    // Accessible name for a loading placeholder built by this controller.
+    // Renderers that do not provide a translated server placeholder must pass
+    // this value so extensions cannot expose a hardcoded label in another locale.
+    loadingText: String,
   }
 
   connect() {
@@ -433,24 +437,44 @@ export default class extends Controller {
 
   showLoadingIndicator() {
     if (!this.loadingIndicator) {
-      const indicator = document.createElement('div')
-      indicator.className = 'creative-tree-loading-placeholder'
-      indicator.setAttribute('role', 'status')
-      indicator.setAttribute('aria-live', 'polite')
-      indicator.setAttribute('aria-label', 'Loading creatives')
-      indicator.innerHTML = `
-        <span class="creative-loading-indicator" aria-hidden="true">
-          <span class="creative-loading-dot">.</span>
-          <span class="creative-loading-dot">.</span>
-          <span class="creative-loading-dot">.</span>
-        </span>
-      `
-      this.loadingIndicator = indicator
+      // The first load's placeholder is already in the DOM: index.html.erb renders
+      // it inside #creatives so the initial paint says "loading" rather than
+      // flashing the empty state until Stimulus boots. Adopt that node instead of
+      // building a replacement — swapping it out would blank the container for a
+      // frame, which is the flicker this whole arrangement exists to avoid.
+      this.loadingIndicator =
+        this.element.querySelector(':scope > [data-creatives-tree-loading]') || this.buildLoadingIndicator()
     }
     this.clearLoadedState()
-    this.element.innerHTML = ''
-    this.element.appendChild(this.loadingIndicator)
+    // replaceChildren over `innerHTML = ''` + appendChild: the adopted placeholder
+    // is a child of the container, so wiping first would detach the very node
+    // being re-inserted.
+    this.element.replaceChildren(this.loadingIndicator)
     this.startAnimation()
+  }
+
+  buildLoadingIndicator() {
+    const indicator = document.createElement('div')
+    indicator.className = 'creative-tree-loading-placeholder'
+    indicator.setAttribute('data-creatives-tree-loading', '')
+    indicator.setAttribute('role', 'status')
+    indicator.setAttribute('aria-live', 'polite')
+    indicator.setAttribute('aria-label', this.loadingLabel())
+    indicator.innerHTML = `
+      <span class="creative-loading-indicator" aria-hidden="true">
+        <span class="creative-loading-dot">.</span>
+        <span class="creative-loading-dot">.</span>
+        <span class="creative-loading-dot">.</span>
+      </span>
+    `
+    return indicator
+  }
+
+  loadingLabel() {
+    if (this.hasLoadingTextValue && this.loadingTextValue) return this.loadingTextValue
+    throw new Error(
+      'creatives--tree requires a translated loadingText value when no server loading placeholder is present',
+    )
   }
 
   hideLoadingIndicator() {

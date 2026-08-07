@@ -430,6 +430,30 @@ creative-tree-row.show-edit .creative-row {
     color: var(--text-muted);
     font-size: 1.2em;
     letter-spacing: 2px;
+
+    /*
+     * Hold the dots back for the first ~180ms. Most tree fetches resolve well
+     * inside that window, and an indicator that appears and vanishes again is
+     * itself the flicker we are trying to remove; a slow fetch still gets
+     * feedback.
+     *
+     * Deliberately animated *up* from transparent rather than declaring
+     * `opacity: 0` on the element: where animations are suppressed
+     * (reduced-motion overrides, headless test harnesses) the placeholder falls
+     * back to fully visible instead of disappearing altogether.
+     */
+    animation: creative-tree-loading-fade-in 300ms ease-out;
+}
+
+@keyframes creative-tree-loading-fade-in {
+    0%,
+    60% {
+        opacity: 0;
+    }
+
+    100% {
+        opacity: 1;
+    }
 }
 
 .creative-tree-loading-placeholder .creative-loading-indicator {

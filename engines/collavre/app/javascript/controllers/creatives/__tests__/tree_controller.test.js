@@ -33,6 +33,7 @@ const installController = () => {
   const container = document.createElement('div')
   container.setAttribute('data-controller', 'creatives--tree')
   container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+  container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
   document.body.appendChild(container)
 
   const application = Application.start()
@@ -412,6 +413,7 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     const container = document.createElement('div')
     container.setAttribute('data-controller', 'creatives--tree')
     container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', 'Loading creatives')
     container.setAttribute(
       'data-creatives--tree-error-text-value',
       'Could not load the creative tree.'
@@ -510,6 +512,180 @@ describe('CreativesTreeController error state vs genuine-empty state', () => {
     expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
     expect(container.querySelector('.creative-tree-error')).toBeNull()
 
+    application.stop()
+  })
+})
+
+// The empty state used to be server-rendered inside #creatives, so the browser
+// painted "No sub-creatives yet" the moment the HTML landed — before Stimulus had
+// booted, let alone before the tree fetch had confirmed anything. index.html.erb
+// now renders the loading placeholder there instead, and the controller adopts
+// that node rather than replacing it.
+describe('CreativesTreeController server-rendered loading placeholder', () => {
+  let originalFetch
+
+  const SERVER_PLACEHOLDER_HTML =
+    '<div class="creative-tree-loading-placeholder" data-creatives-tree-loading role="status"' +
+    ' aria-live="polite" aria-label="크리에이티브를 불러오는 중">' +
+    '<span class="creative-loading-indicator" aria-hidden="true">' +
+    '<span class="creative-loading-dot">.</span>' +
+    '<span class="creative-loading-dot">.</span>' +
+    '<span class="creative-loading-dot">.</span>' +
+    '</span></div>'
+
+  const installWithServerPlaceholder = ({ placeholder = true } = {}) => {
+    const template = document.createElement('template')
+    template.id = 'creatives-empty-state-template'
+    template.innerHTML =
+      '<div data-creatives-empty-state><div class="creative-empty-state">' +
+      '<button class="new-root-creative-btn">Add</button></div></div>'
+    document.body.appendChild(template)
+
+    const container = document.createElement('div')
+    container.setAttribute('data-controller', 'creatives--tree')
+    container.setAttribute('data-creatives--tree-url-value', '/creatives?format=json&id=991')
+    container.setAttribute('data-creatives--tree-loading-text-value', '크리에이티브를 불러오는 중')
+    if (placeholder) container.innerHTML = SERVER_PLACEHOLDER_HTML
+    document.body.appendChild(container)
+
+    const serverNode = container.querySelector('[data-creatives-tree-loading]')
+
+    const application = Application.start()
+    application.register('creatives--tree', TreeController)
+
+    return { container, application, serverNode }
+  }
+
+  beforeEach(() => {
+    originalFetch = global.fetch
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('adopts the server-rendered placeholder instead of rebuilding it', async () => {
+    let resolveFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+    const { container, application, serverNode } = installWithServerPlaceholder()
+    await flush()
+
+    const live = container.querySelector('[data-creatives-tree-loading]')
+    // Same node, still attached: rebuilding would blank the container for a frame,
+    // which is precisely the flicker this arrangement removes.
+    expect(live).toBe(serverNode)
+    expect(container.children).toHaveLength(1)
+
+    resolveFetch({ ok: true, json: async () => ({ creatives: [] }) })
+    application.stop()
+  })
+
+  test('does not paint the empty state before the fetch resolves', async () => {
+    let resolveFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+    const { container, application } = installWithServerPlaceholder()
+    await flush()
+
+    expect(container.querySelector('[data-creatives-empty-state]')).toBeNull()
+    expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+    expect(container.querySelector('[data-creatives-tree-loading]')).not.toBeNull()
+
+    resolveFetch({ ok: true, json: async () => ({ creatives: [] }) })
+    application.stop()
+  })
+
+  test('swaps the placeholder for the empty state only once zero rows are confirmed', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
+
+    const { container, application } = installWithServerPlaceholder()
+    await flush()
+    await flush()
+
+    expect(container.querySelector('[data-creatives-tree-loading]')).toBeNull()
+    expect(container.querySelector('.new-root-creative-btn')).not.toBeNull()
+
+    application.stop()
+  })
+
+  test('re-attaches the adopted placeholder on a later reload', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
+
+    const { container, application, serverNode } = installWithServerPlaceholder()
+    await flush()
+    await flush()
+    expect(container.querySelector('[data-creatives-tree-loading]')).toBeNull()
+
+    let resolveSecond
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveSecond = resolve }))
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.load()
+
+    expect(container.querySelector('[data-creatives-tree-loading]')).toBe(serverNode)
+    expect(container.querySelector('.new-root-creative-btn')).toBeNull()
+
+    resolveSecond({ ok: true, json: async () => ({ creatives: [] }) })
+    application.stop()
+  })
+
+  test('builds its own placeholder when the container has none, labelled from i18n', async () => {
+    let resolveFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+    const { container, application } = installWithServerPlaceholder({ placeholder: false })
+    await flush()
+
+    const built = container.querySelector('[data-creatives-tree-loading]')
+    expect(built).not.toBeNull()
+    expect(built.getAttribute('aria-label')).toBe('크리에이티브를 불러오는 중')
+    expect(built.querySelectorAll('.creative-loading-dot')).toHaveLength(3)
+
+    resolveFetch({ ok: true, json: async () => ({ creatives: [] }) })
+    application.stop()
+  })
+
+  test('requires a translated label when no server placeholder is available', async () => {
+    let resolveFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+    const { container, application } = installWithServerPlaceholder({ placeholder: false })
+    await flush()
+    container.removeAttribute('data-creatives--tree-loading-text-value')
+    container.replaceChildren()
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.loadingIndicator = null
+    expect(() => controller.showLoadingIndicator()).toThrow(
+      'creatives--tree requires a translated loadingText value when no server loading placeholder is present',
+    )
+    expect(container.querySelector('[data-creatives-tree-loading]')).toBeNull()
+
+    resolveFetch({ ok: true, json: async () => ({ creatives: [] }) })
+    application.stop()
+  })
+
+  test('never adopts the load-more indicator as the tree placeholder', async () => {
+    let resolveFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { resolveFetch = resolve }))
+
+    const { container, application } = installWithServerPlaceholder({ placeholder: false })
+    await flush()
+    // The paginated "Chats" feed appends its own .creative-tree-loading-placeholder;
+    // it carries no data-creatives-tree-loading, so the selector must miss it.
+    const loadMore = document.createElement('div')
+    loadMore.className = 'creative-tree-loading-placeholder creative-chats-load-more'
+    container.replaceChildren(loadMore)
+
+    const controller = application.getControllerForElementAndIdentifier(container, 'creatives--tree')
+    controller.loadingIndicator = null
+    controller.showLoadingIndicator()
+
+    expect(controller.loadingIndicator).not.toBe(loadMore)
+    expect(container.contains(loadMore)).toBe(false)
+
+    resolveFetch({ ok: true, json: async () => ({ creatives: [] }) })
     application.stop()
   })
 })

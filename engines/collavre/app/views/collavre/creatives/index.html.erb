@@ -259,21 +259,24 @@
   tree_url = creatives_path(tree_params)
 %>
 
-<%# The tree is client-rendered: every load() wipes #creatives, so the placeholder
-    rendered inside it below cannot survive the first fetch. This template keeps a
-    pristine copy outside the container, letting the client re-attach the placeholder
-    when the tree turns out to be — or becomes — empty. A <template> is cloned, never
-    parsed from a string, so no HTML sink is involved and the button_to CSRF token
-    stays intact. %>
+<%# The tree is client-rendered, so the empty state lives *only* in this template.
+    Rendering it inside #creatives would paint "No sub-creatives yet" on the very
+    first frame — before Stimulus has even booted, let alone confirmed the tree is
+    empty — which reads as a false empty state on every page load. #creatives gets
+    a loading placeholder instead, and the client clones this template once the
+    fetch actually reports zero rows (or the last row is removed). A <template> is
+    cloned, never parsed from a string, so no HTML sink is involved and the
+    button_to CSRF token stays intact. %>
 <%= tag.template(empty_html, id: 'creatives-empty-state-template') %>
 
 <%= tag.div(
-      empty_html,
+      render('tree_loading_placeholder'),
       id: 'creatives',
       data: {
         controller: 'creatives--tree creatives--sync',
         'creatives--tree-url-value': tree_url,
         'creatives--tree-error-text-value': error_text,
+        'creatives--tree-loading-text-value': t('.loading_creatives'),
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),

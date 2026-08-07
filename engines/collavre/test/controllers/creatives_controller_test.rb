@@ -382,23 +382,39 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
       "New child should not have been in first response"
   end
 
-  test "index renders the empty-state placeholder marked for client-side toggling" do
+  test "index paints a loading placeholder inside the tree, never the empty state" do
     get creatives_path(id: creatives(:childless_creative).id)
 
     assert_response :success
-    # The wrapper is what creative_tree_empty_state.js hides and restores; the
-    # empty-state card (with its Add/Import CTAs) is what it now wraps, in place
-    # of the plain "no sub-creatives" sentence.
-    assert_select "#creatives > div[data-creatives-empty-state]", count: 1 do
-      assert_select ".creative-empty-state-heading",
-        text: I18n.t("collavre.creatives.index.empty_state_heading_sub")
+    # The tree is client-rendered, so the server cannot know yet whether it is
+    # empty. Rendering the empty state here would flash "No sub-creatives yet" on
+    # the first paint of every load, before Stimulus has even booted. The loading
+    # placeholder is what belongs in the container; the empty state waits in the
+    # <template> until the fetch actually reports zero rows.
+    assert_select "#creatives > div[data-creatives-tree-loading]", count: 1 do
+      assert_select "span.creative-loading-dot", count: 3
     end
+    assert_select "#creatives div[data-creatives-empty-state]", count: 0
+  end
+
+  test "index labels the loading placeholder through i18n" do
+    get creatives_path(id: creatives(:childless_creative).id)
+
+    assert_response :success
+    placeholder = css_select("#creatives > div[data-creatives-tree-loading]").first
+    assert_equal I18n.t("collavre.creatives.index.loading_creatives"), placeholder["aria-label"]
+    assert_equal "status", placeholder["role"]
+    # tree_controller reuses the same string when it builds the indicator for
+    # later reloads, so the accessible name does not switch languages mid-session.
+    assert_equal I18n.t("collavre.creatives.index.loading_creatives"),
+      css_select("#creatives").first["data-creatives--tree-loading-text-value"]
   end
 
   test "index renders an empty-state template outside the client-rendered tree" do
-    # The tree is client-rendered and every load wipes #creatives, so the
-    # placeholder inside it cannot survive the first fetch. The template is the
-    # copy restoreTreeEmptyState() clones from when the tree empties out.
+    # The tree is client-rendered and every load wipes #creatives, so the empty
+    # state cannot be server-rendered into the container. The template is the copy
+    # showEmptyState() / restoreTreeEmptyState() clone from once the tree is known
+    # to be empty.
     get creatives_path(id: creatives(:root_parent).id)
 
     assert_response :success

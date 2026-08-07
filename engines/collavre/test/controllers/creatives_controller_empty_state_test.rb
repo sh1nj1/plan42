@@ -5,6 +5,11 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
   # @creatives = [] (real data streams in via a separate JSON fetch), so the
   # empty-state markup built in index.html.erb is present on every initial
   # HTML page load regardless of whether the tree actually has children.
+  #
+  # It is present in the #creatives-empty-state-template only, though — never in
+  # #creatives itself, which would flash a false empty state before the fetch
+  # resolves. The body assertions below therefore describe the template's
+  # contents; see the dedicated test at the bottom of this file.
 
   # Translations are rendered through `<%= t(...) %>`, so HTML-sensitive
   # characters (e.g. the apostrophe in "What's a creative?") come back
@@ -150,5 +155,27 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     assert_includes response.body, html_t("app.sign_in")
     assert_includes response.body, new_user_path
     assert_includes response.body, new_session_path
+  end
+
+  test "the read-only request-access variant lives in the template, not in the tree container" do
+    creative = creatives(:childless_creative)
+    perform_enqueued_jobs do
+      Collavre::CreativeShare.create!(creative: creative, user: users(:two), permission: :read)
+    end
+    sign_in_as(users(:two), password: "password")
+
+    get creatives_path(id: creative.id)
+
+    assert_response :success
+    template = css_select("template#creatives-empty-state-template").first
+    assert_not_nil template
+    # The CSRF-bearing button_to form must survive in the template: the client
+    # clones the node rather than re-parsing markup, so the token stays valid.
+    assert_includes template.to_html, html_t("collavre.creatives.index.request_permission")
+    assert_includes template.to_html, request_permission_creative_path(creative)
+    # ...and must NOT be pre-painted into the container, where it would show up
+    # before the fetch has confirmed the tree is actually empty.
+    assert_select "#creatives div[data-creatives-empty-state]", count: 0
+    assert_select "#creatives > div[data-creatives-tree-loading]", count: 1
   end
 end

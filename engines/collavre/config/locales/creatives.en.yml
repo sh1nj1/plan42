@@ -54,6 +54,7 @@ en:
         no_sub_creatives: No sub-creatives found.
         no_search_results: No creatives match your search.
         load_error: Could not load the creative tree.
+        loading_creatives: Loading creatives
         empty_state_heading_root: No creatives yet
         empty_state_heading_sub: No sub-creatives yet
         empty_state_concept_title: "💡 What's a creative?"
