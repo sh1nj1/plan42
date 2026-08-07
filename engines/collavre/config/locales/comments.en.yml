@@ -39,6 +39,7 @@ en:
       login_first: Please sign in first.
       connected: Github account connected successfully.
     comments:
+      close: Close
       reaction_invalid: Invalid reaction.
       invalid_topic: Topic does not belong to this creative.
       comments: Comments

@@ -9,6 +9,8 @@ import { renderMarkdown } from '../lib/utils/markdown'
 import { reconcileMarkdownSource } from './markdown_source_reconcile'
 import { isHtmlEmpty } from './html_content_empty'
 import { CreativeSaveQueue } from './creative_save_queue'
+import { createListenerRegistry } from './dom_listener_registry'
+import { createDelegatedClickHandler } from './creative_row_editor_delegated_clicks'
 import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
@@ -46,8 +48,37 @@ import {
 const application = window.Stimulus
 
 let initialized = false;
-let creativeEditClickHandler = null;
-let addCreativeShortcutHandler = null;
+// The template node the current editor session was built against. Workspace
+// frame swaps replace the template without firing turbo:load, so the session
+// must be rebuilt whenever a different template node is in the document.
+let activeTemplate = null;
+let destroyActiveEditor = null;
+// Frame-only swaps rebuild the session (see initializeCreativeRowEditor)
+// without the outgoing session ever calling hideCurrent()/move(), so the
+// editing ping interval it may have started has no other path to stop.
+let stopActiveEditingPing = null;
+const globalListeners = createListenerRegistry();
+
+function teardownEditorSession() {
+  globalListeners.releaseAll();
+  if (stopActiveEditingPing) {
+    try {
+      stopActiveEditingPing();
+    } catch (e) {
+      console.error('CreativeRowEditor: Failed to stop editing ping', e);
+    }
+    stopActiveEditingPing = null;
+  }
+  if (destroyActiveEditor) {
+    try {
+      destroyActiveEditor();
+    } catch (e) {
+      console.error('CreativeRowEditor: Failed to destroy inline editor', e);
+    }
+    destroyActiveEditor = null;
+  }
+  activeTemplate = null;
+}
 
 function deleteAttachment(signedId) {
   if (!signedId) return;
@@ -61,17 +92,27 @@ function deleteAttachment(signedId) {
 }
 
 export function initializeCreativeRowEditor() {
+  // Rebuild the session on every call: the Stimulus wrapper controller
+  // reconnects whenever the workspace center frame swaps its content, which
+  // is the only lifecycle signal for non-promoted frame navigations.
+  setupEditorSession();
   if (initialized) return;
   initialized = true;
 
-  document.addEventListener('turbo:load', function () {
+  document.addEventListener('turbo:load', setupEditorSession);
+}
+
+function setupEditorSession() {
     const template = document.getElementById('inline-edit-form');
+    if (template && template === activeTemplate) return;
+    teardownEditorSession();
     if (!template) return;
+    activeTemplate = template;
 
     initializeEventListeners();
 
     // Listen for attachment deletions from queue manager
-    window.addEventListener('api-queue-attachments-deleted', (event) => {
+    globalListeners.add(window, 'api-queue-attachments-deleted', (event) => {
       const attachmentIds = event.detail?.attachmentIds;
       if (attachmentIds && attachmentIds.length > 0) {
         attachmentIds.forEach(deleteAttachment);
@@ -79,7 +120,7 @@ export function initializeCreativeRowEditor() {
     });
 
     // Listen for failed requests to prevent silent data loss
-    window.addEventListener('api-queue-request-failed', (event) => {
+    globalListeners.add(window, 'api-queue-request-failed', (event) => {
       const { item, error } = event.detail;
       console.error('Queue request failed permanently:', item, error);
 
@@ -181,6 +222,9 @@ export function initializeCreativeRowEditor() {
           onEnterKey: handleEditorEnterKey,
           onUploadStateChange: handleUploadStateChange
         });
+        destroyActiveEditor = () => {
+          if (lexicalEditor && typeof lexicalEditor.destroy === 'function') lexicalEditor.destroy();
+        };
       } catch (e) {
         console.error('CreativeRowEditor: Failed to create inline editor', e);
       }
@@ -226,7 +270,22 @@ export function initializeCreativeRowEditor() {
     }
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
-    document.addEventListener('turbo:before-cache', () => stopEditingPing());
+    globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
+
+    // Registered with the module-level teardown so a workspace frame swap —
+    // which rebuilds the session without ever calling hideCurrent()/move() on
+    // the outgoing one — still stops this session's ping and reports the
+    // creative it was pinging for as no longer being edited.
+    stopActiveEditingPing = () => {
+      if (!editingPingInterval) return;
+      const editCreativeId = form.dataset.creativeId;
+      stopEditingPing();
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
+    };
 
     const destroyedCreativeIds = new Set();
 
@@ -575,112 +634,33 @@ export function initializeCreativeRowEditor() {
     }
 
     function initializeEventListeners() {
-      if (!creativeEditClickHandler) {
-        creativeEditClickHandler = function (e) {
-          const tree = e.detail?.treeElement || e.detail?.button?.closest('.creative-tree');
-          if (!tree) return;
-          e.preventDefault();
-          handleEditButtonClick(tree);
-        };
-        document.addEventListener('creative-edit-click', creativeEditClickHandler);
-      }
-
-      if (!addCreativeShortcutHandler) {
-        addCreativeShortcutHandler = function (event) {
-          if (event.defaultPrevented || event.isComposing) return;
-          if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-          const target = event.target;
-          const interactiveSelector = 'input, textarea, select, button, a, [contenteditable="true"], [data-lexical-editor-root]';
-          if (target && target.closest && target.closest(interactiveSelector)) return;
-          if (target && target.isContentEditable) return;
-          const addButton = document.querySelector('.creative-actions-row .add-creative-btn, .creative-actions-row .new-root-creative-btn');
-          if (!addButton) return;
-          event.preventDefault();
-          addButton.click();
-        };
-        document.addEventListener('keydown', addCreativeShortcutHandler);
-      }
-
-      document.body.addEventListener('click', function (e) {
-        // Delegated event for .edit-inline-btn
-        const editBtn = e.target.closest('.edit-inline-btn');
-        if (editBtn) {
-          e.preventDefault();
-          const tree = editBtn.closest('.creative-tree');
-          if (!tree) return;
-          handleEditButtonClick(tree);
-          return; // Event handled
-        }
-
-        // Delegated event for .add-creative-btn
-        const addBtn = e.target.closest('.add-creative-btn:not(#inline-add):not(#inline-level-down):not(#inline-level-up)');
-        if (addBtn) {
-          e.preventDefault();
-          if (template.style.display === 'block') {
-            hideCurrent();
-            return;
-          }
-          const tree = addBtn.closest('.creative-tree');
-          let parentId, container, insertBefore, beforeId = '';
-          if (tree) {
-            parentId = tree.dataset.id;
-            container = tree.querySelector('.creative-children');
-            if (!container) {
-              container = document.createElement('div');
-              container.className = 'creative-children';
-              container.id = 'creative-children-' + parentId;
-              tree.appendChild(container);
-            }
-            insertBefore = container.firstElementChild;
-            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          } else {
-            parentId = addBtn.dataset.parentId || '';
-            const rootContainer = document.getElementById('creatives');
-            container = rootContainer;
-            insertBefore = hideRootEmptyState(rootContainer) ? null : rootContainer.firstElementChild;
-            beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          }
-          startNew(parentId, container, insertBefore, beforeId);
-          return; // Event handled
-        }
-
-
-        // Delegated event for .new-root-creative-btn
-        const newRootBtn = e.target.closest('.new-root-creative-btn');
-        if (newRootBtn) {
-          e.preventDefault();
-          const container = document.getElementById('creatives');
-          if (!container) return;
-
-          if (template.style.display === 'block') {
-            hideCurrent();
-            return;
-          }
-          const insertBefore = hideRootEmptyState(container) ? null : container.firstElementChild;
-          const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
-          startNew('', container, insertBefore, beforeId);
-          return; // Event handled
-        }
-
-        // Delegated event for .append-parent-btn
-        const appendParentBtn = e.target.closest('.append-parent-btn');
-        if (appendParentBtn) {
-          e.preventDefault();
-          const targetId = appendParentBtn.dataset.childId;
-          const target = document.getElementById('creative-' + targetId);
-          if (!target) return;
-          const container = target.parentNode;
-          startNew(
-            container.id.startsWith('creative-children-') ? container.id.replace('creative-children-', '') : '',
-            container,
-            target,
-            targetId,
-            '',
-            targetId
-          );
-          return; // Event handled
-        }
+      globalListeners.add(document, 'creative-edit-click', function (event) {
+        const tree = event.detail?.treeElement || event.detail?.button?.closest('.creative-tree');
+        if (!tree) return;
+        event.preventDefault();
+        handleEditButtonClick(tree);
       });
+
+      globalListeners.add(document, 'keydown', function (event) {
+        if (event.defaultPrevented || event.isComposing) return;
+        if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const target = event.target;
+        const interactiveSelector = 'input, textarea, select, button, a, [contenteditable="true"], [data-lexical-editor-root]';
+        if (target && target.closest && target.closest(interactiveSelector)) return;
+        if (target && target.isContentEditable) return;
+        const addButton = document.querySelector('.creative-actions-row .add-creative-btn, .creative-actions-row .new-root-creative-btn');
+        if (!addButton) return;
+        event.preventDefault();
+        addButton.click();
+      });
+
+      globalListeners.add(document.body, 'click', createDelegatedClickHandler({
+        template,
+        startNew,
+        hideCurrent,
+        handleEditButtonClick,
+        hideRootEmptyState,
+      }));
     }
 
     function hideRow(tree) {
@@ -2167,5 +2147,4 @@ export function initializeCreativeRowEditor() {
         }
       });
     }
-  });
 }

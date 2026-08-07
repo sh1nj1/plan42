@@ -2,6 +2,15 @@
 ko:
   collavre:
     creatives:
+      workspace:
+        tree_title: 크리에이티브 트리
+        tree_label: 크리에이티브 탐색 트리
+        toggle_tree: 크리에이티브 트리 열기/닫기
+        empty: 하위 항목이 있는 크리에이티브가 없습니다.
+        load_error: 크리에이티브 트리를 불러오지 못했습니다.
+        select_chat: 채팅을 볼 크리에이티브를 선택하세요.
+        collapse_chat: 채팅 접기
+        expand_chat: 채팅 펼치기
       index:
         up: 위로
         new_creative: 추가

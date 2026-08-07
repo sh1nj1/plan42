@@ -2,6 +2,15 @@
 en:
   collavre:
     creatives:
+      workspace:
+        tree_title: Creative tree
+        tree_label: Creative navigation tree
+        toggle_tree: Toggle creative tree
+        empty: No creatives with children found.
+        load_error: Could not load the creative tree.
+        select_chat: Select a creative to view its chat.
+        collapse_chat: Collapse chat
+        expand_chat: Expand chat
       index:
         up: Up
         new_creative: Add

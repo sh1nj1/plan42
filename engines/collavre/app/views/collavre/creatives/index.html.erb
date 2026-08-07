@@ -1,5 +1,19 @@
+<% creative_index_content = capture do %>
+<% if creative_workspace? %>
+  <%= tag.div id: "workspace-navigation-state-#{@parent_creative&.id || 'root'}",
+              hidden: true,
+              data: {
+                workspace_navigation_state: true,
+                creative_id: @parent_creative&.id,
+                creative_path: @workspace_path_ids,
+                creative_snippet: @parent_creative&.creative_snippet,
+                can_comment: @parent_creative&.has_permission?(Current.user, :feedback)
+              } %>
+<% end %>
 <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
-<% if authenticated? %>
+<%# In workspace mode the creative-tree stream source lives in the persistent
+    shell (_workspace_tree) so center-frame swaps never drop the subscription %>
+<% if authenticated? && !creative_workspace? %>
   <%= turbo_stream_from Current.user, :creative_tree %>
 <% end %>
 <% if @auto_fullscreen %>
@@ -26,11 +40,11 @@
       <% if @parent_creative && authenticated? %>
         <span id="creative-presence-avatars" class="creative-presence-avatars"></span>
       <% end %>
-      <a href="<%= creatives_path %>" class="creative-breadcrumb-link"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
+      <a href="<%= creatives_path %>" class="creative-breadcrumb-link" data-turbo-action="advance"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
         <% @parent_creative.ancestors.reverse.each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" title="<%= strip_tags(ancestor.effective_description) %>"><%= truncate(strip_tags(ancestor.effective_description), length: 20) %></a>
+          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" title="<%= strip_tags(ancestor.effective_description) %>"><%= truncate(strip_tags(ancestor.effective_description), length: 20) %></a>
         <% end %>
         <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
         <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace"><%= truncate(strip_tags(@parent_creative.effective_description), length: 30) %></a>
@@ -73,7 +87,7 @@
           </button>
         <% end %>
         <% if @parent_creative.present? %>
-          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item' do %>
+          <%= button_to slide_view_creative_path(@parent_creative), method: :get, class: 'popup-menu-item', form: { data: { turbo_frame: '_top' } } do %>
             <span aria-hidden="true"><%= svg_tag 'slide.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.slide_view') %>
           <% end %>
         <% end %>
@@ -257,3 +271,11 @@
   <%= render 'integration_modals', creative: current_creative %>
 <% end %>
 </div>
+<% end %>
+<% if creative_workspace? %>
+  <%= turbo_frame_tag "creative-workspace-content" do %>
+    <%= creative_index_content %>
+  <% end %>
+<% else %>
+  <%= creative_index_content %>
+<% end %>

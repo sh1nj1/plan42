@@ -635,7 +635,11 @@ class CreativeTreeRow extends LitElement {
     // If not interactive, navigate to the linkUrl
     if (this.linkUrl && this.linkUrl !== "#") {
       if (window.Turbo) {
-        window.Turbo.visit(this.linkUrl);
+        const workspaceFrame = this.closest("turbo-frame#creative-workspace-content");
+        const options = workspaceFrame
+          ? { action: "advance", frame: workspaceFrame.id }
+          : undefined;
+        window.Turbo.visit(this.linkUrl, options);
       } else {
         window.location.href = this.linkUrl;
       }

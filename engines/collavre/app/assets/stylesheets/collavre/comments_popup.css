@@ -1896,6 +1896,11 @@ body.chat-fullscreen {
   position: static;
 }
 
+/* Chevron icon shown while the docked chat is collapsed */
+.comments-popup-actions .popup-close-btn svg {
+  display: block;
+}
+
 /* Streaming indicator for AI comments */
 .comment-content.streaming {
     min-height: 1.5em;

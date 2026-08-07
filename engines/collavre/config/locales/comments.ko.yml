@@ -39,6 +39,7 @@ ko:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
     comments:
+      close: 닫기
       reaction_invalid: 잘못된 리액션입니다.
       invalid_topic: 토픽이 이 크리에이티브에 속하지 않습니다.
       comments: 댓글

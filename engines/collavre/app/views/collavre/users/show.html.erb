@@ -93,6 +93,11 @@
           <%= f.check_box :notifications_enabled %>
           <%= f.label :notifications_enabled, t('collavre.users.notifications_enabled') %>
         </div>
+        <% creative_workspace_hint = t('collavre.users.creative_workspace.description') %>
+        <div class="checkbox-field">
+          <%= f.check_box :creative_workspace_enabled, title: creative_workspace_hint %>
+          <%= f.label :creative_workspace_enabled, t('collavre.users.creative_workspace.enabled'), title: creative_workspace_hint %>
+        </div>
         <div>
           <%= f.label :locale, t('collavre.users.locale') %>
           <%= f.select :locale, I18n.available_locales.map { |loc| [t("collavre.users.locales.#{loc}"), loc] } %>
