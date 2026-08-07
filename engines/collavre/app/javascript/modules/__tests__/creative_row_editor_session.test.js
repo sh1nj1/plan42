@@ -153,4 +153,55 @@ describe('creative row editor session lifecycle', () => {
     initializeCreativeRowEditor()
     expect(createDelegatedClickHandlerMock.mock.calls.at(-1)[0].template).toBe(template)
   })
+
+  test('stops the orphaned editing ping when a frame swap discards a session with the editor open', () => {
+    jest.useFakeTimers()
+    const stopSpy = jest.fn()
+    const startSpy = jest.fn()
+    document.addEventListener('creative-editing:stop', stopSpy)
+    document.addEventListener('creative-editing:start', startSpy)
+
+    try {
+      // Fresh session against a mounted template, same as a real workspace frame load.
+      swapCenterContent()
+      initializeCreativeRowEditor()
+      // The cached-data fast path in loadCreative() bypasses the network only when
+      // the popup is hidden; otherwise applyCreativeData() would fetch metadata.
+      document.getElementById('metadata-popup').style.display = 'none'
+
+      // A tree row with inline dataset (id/description/progress) so opening it
+      // takes the synchronous cached-data path instead of an API call.
+      const treeRow = document.createElement('creative-tree-row')
+      treeRow.dataset.descriptionRawHtml = 'hello'
+      treeRow.dataset.progressValue = '0'
+      const tree = document.createElement('div')
+      tree.className = 'creative-tree'
+      tree.id = 'creative-42'
+      tree.dataset.id = '42'
+      treeRow.appendChild(tree)
+      document.getElementById('center-frame').appendChild(treeRow)
+
+      document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
+
+      expect(startSpy).toHaveBeenCalledTimes(1)
+      expect(startSpy.mock.calls[0][0].detail.creativeId).toBe(42)
+
+      // Workspace frame swap: center content is replaced wholesale and the
+      // Stimulus wrapper reconnects, without the outgoing session ever calling
+      // hideCurrent()/move() on itself.
+      swapCenterContent()
+      initializeCreativeRowEditor()
+
+      expect(stopSpy).toHaveBeenCalledTimes(1)
+      expect(stopSpy.mock.calls[0][0].detail.creativeId).toBe(42)
+
+      startSpy.mockClear()
+      jest.advanceTimersByTime(10000)
+      expect(startSpy).not.toHaveBeenCalled()
+    } finally {
+      document.removeEventListener('creative-editing:stop', stopSpy)
+      document.removeEventListener('creative-editing:start', startSpy)
+      jest.useRealTimers()
+    }
+  })
 })

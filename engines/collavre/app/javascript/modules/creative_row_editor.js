@@ -53,10 +53,22 @@ let initialized = false;
 // must be rebuilt whenever a different template node is in the document.
 let activeTemplate = null;
 let destroyActiveEditor = null;
+// Frame-only swaps rebuild the session (see initializeCreativeRowEditor)
+// without the outgoing session ever calling hideCurrent()/move(), so the
+// editing ping interval it may have started has no other path to stop.
+let stopActiveEditingPing = null;
 const globalListeners = createListenerRegistry();
 
 function teardownEditorSession() {
   globalListeners.releaseAll();
+  if (stopActiveEditingPing) {
+    try {
+      stopActiveEditingPing();
+    } catch (e) {
+      console.error('CreativeRowEditor: Failed to stop editing ping', e);
+    }
+    stopActiveEditingPing = null;
+  }
   if (destroyActiveEditor) {
     try {
       destroyActiveEditor();
@@ -259,6 +271,21 @@ function setupEditorSession() {
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
+
+    // Registered with the module-level teardown so a workspace frame swap —
+    // which rebuilds the session without ever calling hideCurrent()/move() on
+    // the outgoing one — still stops this session's ping and reports the
+    // creative it was pinging for as no longer being edited.
+    stopActiveEditingPing = () => {
+      if (!editingPingInterval) return;
+      const editCreativeId = form.dataset.creativeId;
+      stopEditingPing();
+      if (editCreativeId) {
+        document.dispatchEvent(new CustomEvent('creative-editing:stop', {
+          detail: { creativeId: parseInt(editCreativeId, 10) }
+        }));
+      }
+    };
 
     const destroyedCreativeIds = new Set();
 
