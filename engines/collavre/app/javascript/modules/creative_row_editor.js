@@ -1881,11 +1881,7 @@ function setupEditorSession() {
           const apiCall = isArchived ? creativesApi.unarchive(creativeId) : creativesApi.archive(creativeId);
           apiCall.then(res => {
             if (!res.ok) return;
-            // The editor is bound to the row this action is about to drop (or to a
-            // tree about to be re-rendered), so close it first. This used to call a
-            // `closeEditor()` that exists nowhere in the module: it threw a
-            // ReferenceError and left the editor open over the archived row.
-            return Promise.resolve(hideCurrent()).then(() => {
+            const applyToView = function () {
               if (!isArchived) {
                 // Archiving: remove from view. Creative#archive! is an update_all,
                 // so it fires no destroy broadcast — this is the only chance to
@@ -1903,7 +1899,23 @@ function setupEditorSession() {
                   if (ctrl) ctrl.load();
                 }
               }
-            });
+            };
+            // The editor is bound to the row this action is about to drop (or to a
+            // tree about to be re-rendered), so close it first. This used to call a
+            // `closeEditor()` that exists nowhere in the module: it threw a
+            // ReferenceError and left the editor open over the archived row.
+            //
+            // The server-side change has already landed here, so the view has to
+            // follow even when that close fails. hideCurrent() flushes a pending
+            // edit through saveForm(), which rethrows when the request fails (a
+            // dropped connection, say); letting that rejection break the chain
+            // would strand the archived row on screen with nothing to repair it,
+            // since an update_all archive broadcasts no destroy either. It hides
+            // the template and clears currentTree before the save is awaited, so
+            // the editor is already closed on this path.
+            return Promise.resolve().then(hideCurrent).catch(err => {
+              console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
+            }).then(applyToView);
           });
         }
       });

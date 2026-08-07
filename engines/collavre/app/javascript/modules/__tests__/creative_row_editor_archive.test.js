@@ -9,15 +9,23 @@ import { jest } from '@jest/globals'
 // the archived row was the last one.
 const archive = jest.fn(() => Promise.resolve({ ok: true }))
 const unarchive = jest.fn(() => Promise.resolve({ ok: true }))
+const save = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('{}') }))
 const confirmDialog = jest.fn(() => Promise.resolve(true))
 
+// Captured so a test can drive the editor's onChange callback directly and leave
+// the session with a pending save, the way typing into Lexical would.
+let editorOptions = null
+
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
-  createInlineEditor: jest.fn(() => ({
-    destroy: jest.fn(),
-    load: jest.fn(),
-    focus: jest.fn(),
-    getDeletedAttachments: jest.fn(() => []),
-  })),
+  createInlineEditor: jest.fn((_container, options) => {
+    editorOptions = options
+    return {
+      destroy: jest.fn(),
+      load: jest.fn(),
+      focus: jest.fn(),
+      getDeletedAttachments: jest.fn(() => []),
+    }
+  }),
 }))
 jest.unstable_mockModule('../creative_row_editor_delegated_clicks', () => ({
   createDelegatedClickHandler: jest.fn(() => jest.fn()),
@@ -26,6 +34,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
   default: {
     archive,
     unarchive,
+    save,
     get: jest.fn(() => Promise.resolve({})),
   },
 }))
@@ -43,9 +52,11 @@ const EMPTY_HTML = '<div data-creatives-empty-state=""><p>No sub-creatives found
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+// data-description-raw-html / data-progress-value put openEditor() on
+// loadCreative()'s synchronous cached-data path instead of an API fetch.
 function rowMarkup(id) {
   return `
-    <creative-tree-row creative-id="${id}">
+    <creative-tree-row creative-id="${id}" data-description-raw-html="hello" data-progress-value="0">
       <div class="creative-tree" id="creative-${id}" data-id="${id}" data-level="1"></div>
     </creative-tree-row>
   `
@@ -62,6 +73,19 @@ function renderTree(rowIds) {
   const template = buildEditorDom(document.getElementById('center-frame'))
   initializeCreativeRowEditor()
   return template
+}
+
+// Binds the editor session to the row (currentTree) and leaves it dirty with a
+// pending save, so archiving has to flush that save before dropping the row.
+function openEditorWithPendingEdit(id) {
+  document.getElementById('metadata-popup').style.display = 'none'
+  const form = document.getElementById('inline-edit-form-element')
+  form.action = `/creatives/${id}`
+  document.getElementById('inline-method').value = 'patch'
+  document.dispatchEvent(new CustomEvent('creative-edit-click', {
+    detail: { treeElement: document.getElementById(`creative-${id}`) },
+  }))
+  editorOptions.onChange({ html: '<p>edited</p>', markdown: 'edited' })
 }
 
 async function archiveCreative(id) {
@@ -83,6 +107,7 @@ afterEach(() => {
   jest.clearAllMocks()
   delete window.Stimulus
   document.body.innerHTML = ''
+  editorOptions = null
 })
 
 // Also a regression test for the `closeEditor()` ReferenceError that used to abort
@@ -124,6 +149,36 @@ test('restoring an archived row reloads the tree instead of removing it', async 
   expect(load).toHaveBeenCalledTimes(1)
   expect(treeEl.dataset.loaded).toBeUndefined()
   expect(treeEl.innerHTML).toBe('')
+})
+
+test('flushes a pending edit before dropping the archived row', async () => {
+  renderTree(['42'])
+  openEditorWithPendingEdit('42')
+
+  await archiveCreative('42')
+
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(container().querySelector('creative-tree-row')).toBeNull()
+  expect(placeholder()).not.toBeNull()
+})
+
+// The archive request has already landed on the server by the time the editor is
+// flushed, and an update_all archive broadcasts no destroy, so a failed flush must
+// not leave the archived row on screen with nothing to repair it.
+test('still removes the archived row when the pending save fails', async () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+  save.mockRejectedValueOnce(new Error('network down'))
+  renderTree(['42'])
+  openEditorWithPendingEdit('42')
+
+  await archiveCreative('42')
+
+  expect(save).toHaveBeenCalledTimes(1)
+  expect(container().querySelector('creative-tree-row')).toBeNull()
+  expect(placeholder()).not.toBeNull()
+  expect(placeholder().hidden).toBe(false)
+  expect(consoleError).toHaveBeenCalled()
+  consoleError.mockRestore()
 })
 
 test('declining the archive confirmation leaves the row in place', async () => {
