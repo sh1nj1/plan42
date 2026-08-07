@@ -12,25 +12,36 @@ NC='\033[0m' # No Color
 
 # 1. Rubocop auto-fix for changed Ruby files
 ZERO_SHA="0000000000000000000000000000000000000000"
-if [ -n "${PRE_PUSH_BASE_REF:-}" ]; then
-    DEFAULT_BASE_REF="$PRE_PUSH_BASE_REF"
-elif git remote get-url "${1:-origin}" >/dev/null 2>&1; then
-    DEFAULT_BASE_REF="${1:-origin}/main"
-else
-    MATCHED_REMOTE=""
+REMOTE_NAME="${1:-origin}"
+REMOTE_URL="${2:-}"
+
+resolve_default_base_ref() {
+    if [ -n "${PRE_PUSH_BASE_REF:-}" ]; then
+	echo "$PRE_PUSH_BASE_REF"
+	return
+    fi
+
+    if git remote get-url "$REMOTE_NAME" >/dev/null 2>&1; then
+	echo "$REMOTE_NAME/main"
+	return
+    fi
+
+    local matched_remote=""
     while IFS= read -r remote; do
-	if [ "$(git remote get-url --push "$remote")" = "${2:-}" ]; then
-	    MATCHED_REMOTE="$remote"
+	if [ "$(git remote get-url --push "$remote")" = "$REMOTE_URL" ]; then
+	    matched_remote="$remote"
 	    break
 	fi
     done < <(git remote)
 
-    if [ -z "$MATCHED_REMOTE" ]; then
+    if [ -z "$matched_remote" ]; then
 	echo -e "${RED}❌ Set PRE_PUSH_BASE_REF when pushing to an unnamed remote.${NC}" >&2
-	exit 1
+	return 1
     fi
-    DEFAULT_BASE_REF="$MATCHED_REMOTE/main"
-fi
+
+    echo "$matched_remote/main"
+}
+
 HEAD_SHA=$(git rev-parse HEAD) || exit 1
 CHANGED_FILES=$(
     while read -r local_ref local_sha _remote_ref remote_sha; do
@@ -43,6 +54,7 @@ CHANGED_FILES=$(
       fi
 
       if [ "$remote_sha" = "$ZERO_SHA" ]; then
+	DEFAULT_BASE_REF=$(resolve_default_base_ref) || exit 1
 	base_sha=$(git merge-base "$DEFAULT_BASE_REF" "$local_commit") || exit 1
       else
 	base_sha="$remote_sha"
