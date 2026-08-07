@@ -637,7 +637,7 @@ export function initializeCreativeRowEditor() {
             parentId = addBtn.dataset.parentId || '';
             const rootContainer = document.getElementById('creatives');
             container = rootContainer;
-            insertBefore = rootContainer.firstElementChild;
+            insertBefore = hideRootEmptyState(rootContainer) ? null : rootContainer.firstElementChild;
             beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
           }
           startNew(parentId, container, insertBefore, beforeId);
@@ -656,7 +656,7 @@ export function initializeCreativeRowEditor() {
             hideCurrent();
             return;
           }
-          const insertBefore = container.firstElementChild;
+          const insertBefore = hideRootEmptyState(container) ? null : container.firstElementChild;
           const beforeId = insertBefore ? creativeIdFrom(insertBefore) : '';
           startNew('', container, insertBefore, beforeId);
           return; // Event handled
@@ -912,6 +912,28 @@ export function initializeCreativeRowEditor() {
       });
     }
 
+    // The empty-state card (see _empty_state.html.erb) is rendered as the sole
+    // child of #creatives when there are zero real rows. Starting an inline
+    // "new creative" editor there must hide that card — otherwise it stays
+    // visible underneath the editor — and appending the new row is equivalent
+    // to inserting before it once it's hidden, since it's always the sole child.
+    function hideRootEmptyState(rootContainer) {
+      const emptyState = rootContainer?.firstElementChild;
+      if (!emptyState || !emptyState.classList?.contains('creative-empty-state')) return false;
+      emptyState.style.display = 'none';
+      return true;
+    }
+
+    // Restores the empty-state card once the last unsaved new row is cancelled
+    // and no real rows remain under #creatives.
+    function restoreEmptyStateIfEmpty() {
+      const rootContainer = document.getElementById('creatives');
+      const emptyState = rootContainer?.querySelector('.creative-empty-state');
+      if (emptyState && !rootContainer.querySelector('creative-tree-row')) {
+        emptyState.style.display = '';
+      }
+    }
+
     function hideCurrent(event) {
       if (event?.preventDefault) {
         event.preventDefault();
@@ -939,6 +961,7 @@ export function initializeCreativeRowEditor() {
         return p.then(() => {
           if (wasNew && !form.dataset.creativeId) {
             removeTreeElement(tree);
+            restoreEmptyStateIfEmpty();
           } else if (!tree.querySelector('.creative-row')) {
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) {
