@@ -1052,3 +1052,219 @@ creative-tree-row.is-being-edited .creative-tree {
     box-shadow: var(--shadow-2);
 }
 
+/* ============================================================================
+ * Creative tree — actionable empty state
+ * engines/collavre/app/views/collavre/creatives/_empty_state.html.erb
+ * Uses semantic tokens only, so dark mode (body.dark-mode) is automatic.
+ * ============================================================================ */
+.creative-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-7) var(--space-3) var(--space-8);
+}
+
+.creative-empty-state-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-round);
+    background: var(--surface-btn);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--space-3);
+    color: var(--text-muted);
+}
+
+.creative-empty-state-icon svg {
+    width: 28px;
+    height: 28px;
+}
+
+.creative-empty-state-heading {
+    font-size: var(--text-1);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+    margin: 0 0 var(--space-4);
+}
+
+/* --- Concept card: "what's a creative?" --- */
+.creative-empty-state-concept {
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    border: 1px solid var(--border-color);
+    background: var(--surface-bg);
+    border-radius: 8px;
+    max-width: 560px;
+    width: 100%;
+}
+
+.creative-empty-state-concept-title {
+    font-size: var(--text-0);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+    margin-bottom: var(--space-3);
+}
+
+.creative-empty-state-concept-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.creative-empty-state-facet {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 84px;
+}
+
+.creative-empty-state-facet-chip {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-section);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.creative-empty-state-facet-chip svg {
+    width: 20px;
+    height: 20px;
+}
+
+.creative-empty-state-facet-label {
+    font-size: var(--text-00);
+    color: var(--text-muted);
+    line-height: 1.3;
+    text-align: center;
+}
+
+.creative-empty-state-op {
+    color: var(--text-muted);
+    font-weight: var(--weight-6);
+    font-size: var(--text-1);
+    padding: 0 2px;
+    align-self: flex-start;
+    margin-top: 12px;
+}
+
+.creative-empty-state-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    border: 1.5px solid var(--color-active);
+    border-radius: 10px;
+    padding: 8px 12px;
+    background: var(--surface-section);
+}
+
+.creative-empty-state-block-icons {
+    display: flex;
+    gap: 6px;
+    color: var(--color-active);
+}
+
+.creative-empty-state-block-icons svg {
+    width: 15px;
+    height: 15px;
+}
+
+.creative-empty-state-block-label {
+    font-size: var(--text-00);
+    font-weight: var(--weight-6);
+    color: var(--text-primary);
+}
+
+.creative-empty-state-concept-caption {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin: var(--space-3) 0 0;
+    text-align: center;
+}
+
+/* --- Writable CTAs --- */
+.creative-empty-state-actions-row {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.add-creative-btn--cta {
+    gap: 6px;
+}
+
+.add-creative-btn--cta svg {
+    width: 14px;
+    height: 14px;
+}
+
+.add-creative-btn-kbd {
+    font-family: inherit;
+    font-size: 10px;
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 2px;
+}
+
+/* --- Read-only variant: write-access request --- */
+.creative-empty-state-readonly {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.creative-empty-state-readonly-message {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 340px;
+}
+
+/* Author-origin `display` beats the UA stylesheet's `[hidden] { display: none }`
+   regardless of selector specificity, so the [hidden] overrides below are
+   required or these elements would always render even while hidden — the
+   request button carries the global `.btn` class (display: inline-flex from
+   dark_mode.css), and the pending pill sets its own inline-flex below. */
+.creative-empty-state-readonly .btn[hidden],
+.creative-empty-state-request-pending[hidden] {
+    display: none;
+}
+
+.creative-empty-state-request-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-btn);
+}
+
+.creative-empty-state-request-pending-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-round);
+    background: var(--color-brand);
+    animation: creative-empty-state-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes creative-empty-state-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+

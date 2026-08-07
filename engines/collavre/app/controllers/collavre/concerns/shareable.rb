@@ -5,7 +5,7 @@ module Collavre
 
       def request_permission
         creative = @creative.effective_origin
-        if creative.user == Current.user || creative.has_permission?(Current.user, :read)
+        if creative.user == Current.user || creative.has_permission?(Current.user, :write)
           return head :unprocessable_entity
         end
 

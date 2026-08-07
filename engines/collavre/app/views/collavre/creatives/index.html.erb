@@ -15,6 +15,10 @@
      data-creatives--import-dragover-class="dragover">
   <% current_creative = @parent_creative || @creative %>
   <% can_manage_integrations = current_creative&.has_permission?(Current.user, :admin) %>
+  <%# Reused for the header Add button, the Import menu item, and the empty-state
+      CTAs: root level is always addable for authenticated users; a nested level
+      additionally requires write permission on @parent_creative. %>
+  <% can_add = authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
 
   <div class="creative-actions-row">
     <%# Left: breadcrumb ancestry %>
@@ -36,7 +40,7 @@
     <%# Right: primary actions + overflow %>
     <div class="creative-header-actions">
       <%# Add button (always visible) %>
-      <%= render 'add_button' if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+      <%= render 'add_button' if can_add %>
 
       <%# Expand/collapse toggle (always visible) %>
       <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">
@@ -74,7 +78,7 @@
           <% end %>
         <% end %>
         <div class="creative-overflow-divider"></div>
-        <% if authenticated? && (!params[:id] || (@parent_creative && @parent_creative.has_permission?(Current.user, :write))) %>
+        <% if can_add %>
           <button type="button" id="import-markdown-btn" class="popup-menu-item" data-action="click->creatives--import#toggle" data-creatives--import-target="toggle">
             <span aria-hidden="true"><%= svg_tag 'arrow-down.svg', width: 16, height: 16 %></span> <%= t('.import_markdown') %>
           </button>
@@ -219,8 +223,7 @@
       action = content_tag(:div, button_to(t('.request_permission'), request_permission_creative_path(@creative), method: :post), style: 'text-align: center;')
       empty_html = message + action
     else
-      text = params[:id] ? t('.no_sub_creatives') : t('.no_creatives')
-      empty_html = content_tag(:p, text, style: 'text-align: center;')
+      empty_html = render('empty_state', root: params[:id].blank?, can_add: can_add, creative: @parent_creative)
     end
   end
   # Only pass filter parameters to avoid unnecessary params in URL

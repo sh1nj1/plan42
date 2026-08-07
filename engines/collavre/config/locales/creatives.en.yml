@@ -44,6 +44,18 @@ en:
         no_creatives: No creatives found.
         no_sub_creatives: No sub-creatives found.
         no_search_results: No creatives match your search.
+        empty_state_heading_root: No creatives yet
+        empty_state_heading_sub: No sub-creatives yet
+        empty_state_concept_title: "💡 What's a creative?"
+        empty_state_facet_doc: Tree-structured document piece
+        empty_state_facet_task: Actionable task (progress)
+        empty_state_facet_chat: Discussion channel
+        empty_state_block_label: One creative block
+        empty_state_concept_caption: One block plays all three roles — document, task, and conversation. Stacked as a tree, it becomes a document-shaped project with automatic progress rollup.
+        empty_state_add_creative: Add creative
+        empty_state_add_sub_creative: Add sub-creative
+        empty_state_readonly_message: You don't have write access to add sub-creatives here.
+        empty_state_request_pending: Access requested · awaiting owner approval
         link_loading: Loading…
         link_expand: Expand
         search_placeholder: Search creatives...

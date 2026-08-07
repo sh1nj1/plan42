@@ -40,6 +40,18 @@ ko:
         no_creatives: 크리에이티브가 없습니다.
         no_sub_creatives: 하위 크리에이티브가 없습니다.
         no_search_results: 검색 결과가 없습니다.
+        empty_state_heading_root: 크리에이티브가 없습니다
+        empty_state_heading_sub: 아직 하위 크리에이티브가 없습니다
+        empty_state_concept_title: "💡 크리에이티브란?"
+        empty_state_facet_doc: 트리 구조 문서 조각
+        empty_state_facet_task: 실행 가능한 작업 (진행률)
+        empty_state_facet_chat: 관련 대화 채널
+        empty_state_block_label: 크리에이티브 1블록
+        empty_state_concept_caption: 하나의 블록이 문서·작업·대화 역할을 동시에 합니다. 트리로 쌓으면 진행률이 자동 집계되는 문서형 프로젝트가 됩니다.
+        empty_state_add_creative: 크리에이티브 추가
+        empty_state_add_sub_creative: 하위 크리에이티브 추가
+        empty_state_readonly_message: 이 크리에이티브에 쓰기 권한이 없어 하위 항목을 추가할 수 없습니다.
+        empty_state_request_pending: 권한 요청됨 · 소유자 승인 대기 중
         link_loading: 불러오는 중…
         link_expand: 펼치기
         recommend_parent: 카테고리 추천

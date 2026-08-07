@@ -1,0 +1,85 @@
+<%
+  # Locals:
+  #   root:     Boolean — true for the root-level "no creatives" case, false for a
+  #             specific parent's "no sub-creatives" case.
+  #   can_add:  Boolean — same write-gate used for the header Add/Import controls
+  #             (see index.html.erb). Decides whether the writable CTAs or the
+  #             read-only "request write access" variant is shown.
+  #   creative: The Collavre::Creative to request write access on (nil at root,
+  #             where can_add is always true for authenticated users so this
+  #             branch never needs it).
+  heading = root ? t('collavre.creatives.index.empty_state_heading_root') : t('collavre.creatives.index.empty_state_heading_sub')
+  add_label = root ? t('collavre.creatives.index.empty_state_add_creative') : t('collavre.creatives.index.empty_state_add_sub_creative')
+%>
+<div class="creative-empty-state">
+  <div class="creative-empty-state-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="7" height="5" rx="1"/>
+      <rect x="14" y="10" width="7" height="5" rx="1"/>
+      <rect x="14" y="17.5" width="7" height="5" rx="1" opacity="0.45"/>
+      <path d="M6.5 8v9a2 2 0 0 0 2 2H14M6.5 10.5V12.5"/>
+      <path d="M6.5 8v2.5a2 2 0 0 0 2 2H14"/>
+    </svg>
+  </div>
+  <h3 class="creative-empty-state-heading"><%= heading %></h3>
+
+  <div class="creative-empty-state-concept">
+    <div class="creative-empty-state-concept-title"><%= t('collavre.creatives.index.empty_state_concept_title') %></div>
+    <div class="creative-empty-state-concept-diagram">
+      <div class="creative-empty-state-facet">
+        <div class="creative-empty-state-facet-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+        </div>
+        <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_doc') %></div>
+      </div>
+      <span class="creative-empty-state-op" aria-hidden="true">+</span>
+      <div class="creative-empty-state-facet">
+        <div class="creative-empty-state-facet-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
+        </div>
+        <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_task') %></div>
+      </div>
+      <span class="creative-empty-state-op" aria-hidden="true">+</span>
+      <div class="creative-empty-state-facet">
+        <div class="creative-empty-state-facet-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20l1.1-4.4a8.1 8.1 0 0 1-1-3.9A8.38 8.38 0 0 1 11.6 3.4a8.38 8.38 0 0 1 9.4 8.1z"/></svg>
+        </div>
+        <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_chat') %></div>
+      </div>
+      <span class="creative-empty-state-op" aria-hidden="true">=</span>
+      <div class="creative-empty-state-block">
+        <div class="creative-empty-state-block-icons" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20l1.1-4.4a8.1 8.1 0 0 1-1-3.9A8.38 8.38 0 0 1 11.6 3.4a8.38 8.38 0 0 1 9.4 8.1z"/></svg>
+        </div>
+        <div class="creative-empty-state-block-label"><%= t('collavre.creatives.index.empty_state_block_label') %></div>
+      </div>
+    </div>
+    <p class="creative-empty-state-concept-caption"><%= t('collavre.creatives.index.empty_state_concept_caption') %></p>
+  </div>
+
+  <% if can_add %>
+    <div class="creative-empty-state-actions">
+      <div class="creative-empty-state-actions-row">
+        <%= render 'add_button', label: add_label, shortcut_hint: 'Enter' %>
+        <button type="button" class="btn btn-secondary" data-action="click->creatives--import#toggle">
+          <span aria-hidden="true"><%= svg_tag 'arrow-down.svg', width: 14, height: 14 %></span>
+          <%= t('collavre.creatives.index.import_markdown') %>
+        </button>
+      </div>
+    </div>
+  <% elsif authenticated? && creative %>
+    <div class="creative-empty-state-readonly" data-controller="creatives--write-access-request" data-creatives--write-access-request-url-value="<%= request_permission_creative_path(creative) %>">
+      <p class="creative-empty-state-readonly-message"><%= t('collavre.creatives.index.empty_state_readonly_message') %></p>
+      <button type="button" class="btn btn-primary" data-creatives--write-access-request-target="button" data-action="click->creatives--write-access-request#request">
+        <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <%= t('collavre.creatives.index.request_permission') %>
+      </button>
+      <span class="creative-empty-state-request-pending" data-creatives--write-access-request-target="pending" hidden>
+        <span class="creative-empty-state-request-pending-dot" aria-hidden="true"></span>
+        <%= t('collavre.creatives.index.empty_state_request_pending') %>
+      </span>
+    </div>
+  <% end %>
+</div>
