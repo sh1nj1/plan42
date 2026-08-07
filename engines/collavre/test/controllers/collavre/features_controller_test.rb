@@ -152,6 +152,18 @@ module Collavre
       end
     end
 
+    test "trigger guide describes DONE verification as best effort in both locales" do
+      {
+        en: [ "best-effort basis", "no verifier is available", "returns no response", "verification request fails", "accepts DONE" ],
+        ko: [ "가능한 범위에서 검증", "검증 에이전트가 없거나", "검증 응답이 비어 있거나", "검증 요청이 실패하면", "DONE을 수락" ]
+      }.each do |locale, phrases|
+        get "/features/automation_trigger", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "feature pages render the complete localized footer sentence" do
       { "/features" => :en, "/features/mention_agent" => :ko }.each do |path, locale|
         get path, params: { locale: locale }

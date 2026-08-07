@@ -68,11 +68,11 @@ en:
             - heading: "Drop triggers"
               body: "Mark a Creative as a trigger container and it becomes a stage: whenever a Creative is dropped into it, the AI agent on that container is asked to process the new arrival according to the stage's purpose. A column of trigger containers turns a tree into a pipeline that moves work along without anyone dispatching it."
             - heading: "Trigger loops"
-              body: "A looped trigger keeps going until the work is actually finished. The agent reports DONE, CONTINUE, or BLOCKED after each pass; CONTINUE runs another iteration, BLOCKED pauses for you, and there is an iteration ceiling so a confused agent cannot run forever. If the agent asks for your input, the loop waits and resumes when you reply in the topic."
+              body: "A looped trigger is designed to keep work moving until it is finished. The agent reports DONE, CONTINUE, or BLOCKED after each pass; CONTINUE runs another iteration, BLOCKED pauses for you, and there is an iteration ceiling so a confused agent cannot run forever. If the agent asks for your input, the loop waits and resumes when you reply in the topic."
             - heading: "What you need first"
               body: "A trigger needs an AI agent with write permission on the container. Without one, the drop is recorded but nothing runs, and Collavre says so in the thread rather than failing quietly."
           tips:
-            - "An agent claiming DONE is verified against the actions it was asked to take; unfinished work is sent back for another iteration."
+            - "DONE claims are checked on a best-effort basis against the requested actions. If a verifier finds unfinished work, it sends the task back for another iteration. If no verifier is available, the check returns no response, or the verification request fails, Collavre accepts DONE and completes the loop to avoid blocking."
             - "Keep the decisive instruction in the first 24 visible characters of the container description: the trigger message receives only that snippet, not the full description."
         topic_management:
           title: "Topics"
