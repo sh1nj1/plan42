@@ -225,14 +225,17 @@ export default class extends Controller {
     this._stashedDraft = event.detail?.draft || null
   }
 
-  _restoreStashedDraft() {
+  _restoreStashedDraft(submittedText) {
     const draft = this._stashedDraft
     this._stashedDraft = null
     if (!draft) return
-    // Only reinstate it into an empty box. The success path clears the textarea,
-    // but the user may have started typing again while the command was in
-    // flight, and the failure path restores review-quote text into it.
-    if (this.textareaTarget.value.trim().length > 0) return
+    // Two boxes are safe to overwrite: an empty one (the success path runs
+    // resetForm) and one still holding exactly what we submitted (the failure
+    // path never clears it, so the command text is left sitting there). Any
+    // other content is text the user typed while the request was in flight, or
+    // a review quote the failure path restored, and must not be clobbered.
+    const current = this.textareaTarget.value
+    if (current.trim().length > 0 && current !== submittedText) return
     this.textareaTarget.value = draft
     // Resize and re-enable send directly rather than dispatching `input`, which
     // would re-open the command menu for a draft that starts with "/".
@@ -307,6 +310,11 @@ export default class extends Controller {
     }
 
     const wasPrivate = this.privateCheckboxTarget?.checked ?? false
+
+    // Captured after the review-quote rewrite above, so it is the exact content
+    // going to the server. _restoreStashedDraft compares against it to tell a
+    // failure that left the command text behind from text typed mid-flight.
+    const submittedText = this.textareaTarget.value
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -403,7 +411,7 @@ export default class extends Controller {
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
-        this._restoreStashedDraft()
+        this._restoreStashedDraft(submittedText)
       })
   }
 

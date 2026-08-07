@@ -72,9 +72,36 @@ describe('CommentsFormController stashed draft', () => {
     controller._stashedDraft = 'roadmap notes'
 
     textarea.value = 'something else entirely'
-    controller._restoreStashedDraft()
+    controller._restoreStashedDraft('/calendar 2026-08-14')
 
     expect(textarea.value).toBe('something else entirely')
+  })
+
+  test('restores over the command text a failed send left in the box', () => {
+    // The failure path never runs resetForm(), so the submitted command is
+    // still sitting there. Matching it proves the user has not typed since,
+    // which makes the box safe to hand the draft back into.
+    const { controller, textarea } = buildController()
+    controller._stashedDraft = 'roadmap notes'
+
+    textarea.value = '/calendar 2026-08-14'
+    controller._restoreStashedDraft('/calendar 2026-08-14')
+
+    expect(textarea.value).toBe('roadmap notes')
+    expect(controller._autoResize).toHaveBeenCalledTimes(1)
+    expect(controller._updateSubmitButton).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not clobber a review quote the failure path restored', () => {
+    // handleSend's .catch reinstates the backed-up quote text before .finally,
+    // so the box holds something other than what was submitted.
+    const { controller, textarea } = buildController()
+    controller._stashedDraft = 'roadmap notes'
+
+    textarea.value = '> quoted review text\n\nmy reply'
+    controller._restoreStashedDraft('/calendar 2026-08-14')
+
+    expect(textarea.value).toBe('> quoted review text\n\nmy reply')
   })
 
   test('consumes the stash so a later send does not resurrect it', () => {
