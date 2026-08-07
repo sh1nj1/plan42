@@ -108,6 +108,18 @@ module Collavre
       end
     end
 
+    test "slash command guide describes existing topic routing and its write permission in both locales" do
+      {
+        en: [ "If that name already exists", "assigns or replaces its primary agent", "releases any existing primary agent", "write permission" ],
+        ko: [ "같은 이름이 이미 있으면", "주 담당 에이전트를 지정하거나 교체", "지정되어 있던 주 담당 에이전트를 해제", "쓰기 권한" ]
+      }.each do |locale, phrases|
+        get "/features/slash_command", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "agent and compress tips describe the routing and permission fallbacks in both locales" do
       {
         en: [ "primary agent", "routing rules", "comment permission", "policy primary agent" ],
@@ -286,6 +298,18 @@ module Collavre
       {
         en: [ "sole ambient responder", "Explicitly mentioning another agent invites that agent instead" ],
         ko: [ "멘션 없는 메시지에 단독으로 답하는", "명시적으로 멘션하면 그 에이전트가 대신 답합니다" ]
+      }.each do |locale, phrases|
+        get "/features/topic_management", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
+    test "topic guide describes existing names and the primary-agent write gate in both locales" do
+      {
+        en: [ "If that name already exists", "existing topic's primary agent", "without a mention releases", "write permission" ],
+        ko: [ "같은 이름의 토픽이 이미 있으면", "기존 토픽의 주 담당 에이전트", "멘션 없이", "쓰기 권한" ]
       }.each do |locale, phrases|
         get "/features/topic_management", params: { locale: locale }
 
