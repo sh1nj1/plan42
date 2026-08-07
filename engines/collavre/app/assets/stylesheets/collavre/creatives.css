@@ -1168,8 +1168,10 @@ creative-tree-row.is-being-edited .creative-tree {
     gap: var(--space-2);
 }
 
-/* The block is shorter than a facet column, so its "=" needs no chip offset. */
+/* Center the "=" beside the shorter result block instead of using the facet
+   chip offset. */
 .creative-empty-state-result .creative-empty-state-op {
+    align-self: center;
     margin-top: 0;
 }
 
@@ -1299,4 +1301,3 @@ creative-tree-row.is-being-edited .creative-tree {
     margin: 0;
     max-width: 340px;
 }
-

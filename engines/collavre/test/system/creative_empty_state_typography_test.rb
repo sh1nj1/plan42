@@ -88,11 +88,26 @@ class CreativeEmptyStateTypographyTest < ApplicationSystemTestCase
     end
   end
 
+  test "the result operator is vertically centered beside the creative block" do
+    operator_center = element_center_y(".creative-empty-state-result .creative-empty-state-op")
+    block_center = element_center_y(".creative-empty-state-result .creative-empty-state-block")
+    center_delta = (operator_center - block_center).abs
+
+    assert_operator center_delta, :<=, 1,
+      "result operator and creative block centers differ by #{center_delta}px"
+  end
+
   private
 
   def computed_font_size_px(selector)
     page.evaluate_script(
       "parseFloat(getComputedStyle(document.querySelector(#{selector.to_json})).fontSize)"
     )
+  end
+
+  def element_center_y(selector)
+    script = "(() => { const rect = document.querySelector(#{selector.to_json}).getBoundingClientRect();" \
+      " return rect.top + rect.height / 2; })()"
+    page.evaluate_script(script)
   end
 end
