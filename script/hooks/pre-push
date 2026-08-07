@@ -106,6 +106,7 @@ while IFS= read -r target_file; do
 done <<< "$RUBOCOP_TARGET_FILES"
 
 while IFS= read -r file; do
+    [ -z "$file" ] && continue
     grep -Fqx -- "$file" <<< "$NORMALIZED_RUBOCOP_TARGET_FILES" && RUBOCOP_FILES+=("$file")
 done <<< "$CHANGED_FILES"
 
