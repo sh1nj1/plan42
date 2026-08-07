@@ -85,6 +85,18 @@ module Collavre
       end
     end
 
+    test "mention guide renders discoverability and creative permission distinctions in both locales" do
+      {
+        en: [ "Creative owner", "comment permission", "globally searchable", "read-only collaborator", "cannot read or reply" ],
+        ko: [ "Creative 소유자", "댓글 이상의 권한", "전역 검색", "읽기 전용 참여자", "읽거나 답하지 못합니다" ]
+      }.each do |locale, phrases|
+        get "/features/mention_agent", params: { locale: locale }
+
+        assert_response :success
+        phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
     test "feature pages render the complete localized footer sentence" do
       { "/features" => :en, "/features/mention_agent" => :ko }.each do |path, locale|
         get path, params: { locale: locale }
