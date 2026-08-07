@@ -87,7 +87,7 @@ module Collavre
       return unless Current.user && user
       return if user.ai_user?
       inbox_creative = Creative.inbox_for(user)
-      short_title = Collavre::HtmlText.truncated_label(creative.effective_description, 30)
+      short_title = Collavre::HtmlText.markdown_label(creative.effective_description, 30)
       creative_path = Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
       creative_link = "[#{short_title}](#{creative_path})"
       msg = I18n.t(

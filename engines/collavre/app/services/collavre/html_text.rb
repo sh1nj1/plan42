@@ -35,5 +35,30 @@ module Collavre
     def truncated_label(html, length, omission: "...")
       label(html).truncate(length, omission: omission)
     end
+
+    # Characters that would start a markdown construct where a label gets
+    # interpolated. `]` and `)` let a title close the generated link early and
+    # supply its own destination; `<` and `>` make marked emit inline HTML that
+    # the client sanitizer then deletes; the rest turn a label into emphasis, a
+    # code span or strikethrough.
+    MARKDOWN_SPECIAL = /[\\`*_\[\]()<>~]/
+    private_constant :MARKDOWN_SPECIAL
+
+    # Backslash-escapes markdown constructs so `text` renders as the literal
+    # characters the author typed. One pass over the string, so the backslashes
+    # this adds are never themselves escaped.
+    def escape_markdown(text)
+      text.to_s.gsub(MARKDOWN_SPECIAL) { |char| "\\#{char}" }
+    end
+
+    # `label` (optionally capped at `length`) escaped for interpolation into
+    # generated markdown, as in `"[#{markdown_label(html, 30)}](#{path})"`.
+    #
+    # Truncation happens before escaping so `length` counts the characters a
+    # reader sees, and a cut can never land inside a backslash escape.
+    def markdown_label(html, length = nil, omission: "...")
+      text = length ? truncated_label(html, length, omission: omission) : label(html)
+      escape_markdown(text)
+    end
   end
 end

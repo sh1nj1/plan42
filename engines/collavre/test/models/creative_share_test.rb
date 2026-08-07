@@ -23,6 +23,46 @@ class CreativeShareTest < ActiveSupport::TestCase
     Current.reset
   end
 
+  test "share notification escapes a link-hijacking creative title" do
+    sharer = users(:one)
+    recipient = users(:two)
+    Current.session = OpenStruct.new(user: sharer)
+
+    creative = Creative.create!(user: sharer, description: "<p>x](https://evil.example)</p>")
+    inbox = Collavre::Creative.inbox_for(recipient)
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+    end
+
+    content = inbox.comments.reload.order(:id).last.content
+
+    # The title must not be able to close the generated link early and supply
+    # its own destination.
+    refute_includes content, "](https://evil.example)"
+    assert_includes content, "x\\]\\(https://evil.example\\)"
+    assert_includes content, Collavre::Engine.routes.url_helpers.creative_path(creative, open_comments: true)
+
+    Current.reset
+  end
+
+  test "share notification escapes angle brackets so the label survives rendering" do
+    sharer = users(:one)
+    recipient = users(:two)
+    Current.session = OpenStruct.new(user: sharer)
+
+    creative = Creative.create!(user: sharer, description: "<p>A &lt;x&gt; tag</p>")
+    inbox = Collavre::Creative.inbox_for(recipient)
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: creative, user: recipient, permission: :read)
+    end
+
+    assert_includes inbox.comments.reload.order(:id).last.content, "A \\<x\\> tag"
+
+    Current.reset
+  end
+
   test "descendant no_access share removes read permission" do
     owner = User.create!(email: "share-owner@example.com", password: TEST_PASSWORD, name: "Owner")
     shared_user = User.create!(email: "share-shared@example.com", password: TEST_PASSWORD, name: "Shared")

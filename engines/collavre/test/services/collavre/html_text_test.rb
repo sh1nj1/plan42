@@ -86,5 +86,72 @@ module Collavre
     test "truncated_label leaves short text untouched" do
       assert_equal "short", HtmlText.truncated_label("<p>short</p>", 24)
     end
+
+    # --- escape_markdown ---------------------------------------------------
+
+    test "escape_markdown backslash-escapes every construct-forming character" do
+      assert_equal "a\\\\b", HtmlText.escape_markdown("a\\b")
+      assert_equal "a\\`b", HtmlText.escape_markdown("a`b")
+      assert_equal "a\\*b", HtmlText.escape_markdown("a*b")
+      assert_equal "a\\_b", HtmlText.escape_markdown("a_b")
+      assert_equal "a\\[b\\]", HtmlText.escape_markdown("a[b]")
+      assert_equal "a\\(b\\)", HtmlText.escape_markdown("a(b)")
+      assert_equal "a\\<b\\>", HtmlText.escape_markdown("a<b>")
+      assert_equal "a\\~b", HtmlText.escape_markdown("a~b")
+    end
+
+    test "escape_markdown escapes a backslash exactly once" do
+      # A naive two-pass gsub would turn `\*` into `\\\*` and render a literal
+      # backslash next to the asterisk.
+      assert_equal "\\\\\\*", HtmlText.escape_markdown("\\*")
+    end
+
+    test "escape_markdown leaves ordinary text alone" do
+      assert_equal "버그: 채팅 컨텍스트 & 라벨", HtmlText.escape_markdown("버그: 채팅 컨텍스트 & 라벨")
+      assert_equal "", HtmlText.escape_markdown(nil)
+    end
+
+    # --- markdown_label ----------------------------------------------------
+
+    test "markdown_label neutralises a link-hijacking title" do
+      # A creative described as `x](https://evil.example)` is stored verbatim by
+      # comrak, so `"[#{label}](#{path})"` would otherwise close the generated
+      # link early and point it at an attacker-chosen destination.
+      html = "<p>x](<a href=\"https://evil.example\">https://evil.example</a>)</p>"
+
+      assert_equal "x](https://evil.example)", HtmlText.label(html)
+      assert_equal "x\\]\\(https://evil.example\\)", HtmlText.markdown_label(html)
+    end
+
+    test "markdown_label keeps decoded angle brackets visible instead of letting them be dropped" do
+      # The rich editor stores a typed `<x>` as `&lt;x&gt;`; decoding it to a raw
+      # `<x>` inside markdown makes marked emit inline HTML that the sanitizer
+      # then deletes, silently corrupting the label.
+      html = "<p>A &lt;x&gt; tag</p>"
+
+      assert_equal "A <x> tag", HtmlText.label(html)
+      assert_equal "A \\<x\\> tag", HtmlText.markdown_label(html)
+    end
+
+    test "markdown_label truncates before escaping so the cap counts visible characters" do
+      html = "<p>#{'ab' * 20}</p>"
+
+      assert_equal "abababab...", HtmlText.markdown_label(html, 11)
+    end
+
+    test "markdown_label never truncates in the middle of an escape sequence" do
+      # `*` lands exactly on the 5-character boundary; escaping afterwards keeps
+      # its backslash attached instead of leaving a dangling `\`.
+      assert_equal "abcd\\*", HtmlText.markdown_label("<p>abcd*efgh</p>", 5, omission: "")
+    end
+
+    test "markdown_label collapses nbsp like label does" do
+      assert_equal "label shows", HtmlText.markdown_label("<p>label#{NBSP}shows</p>")
+    end
+
+    test "markdown_label returns empty string for blank input" do
+      assert_equal "", HtmlText.markdown_label(nil)
+      assert_equal "", HtmlText.markdown_label("<p>#{NBSP}</p>")
+    end
   end
 end

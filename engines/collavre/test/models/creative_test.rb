@@ -193,6 +193,25 @@ class CreativeTest < ActiveSupport::TestCase
     assert_equal "#{'x' * 21}...", creative.creative_snippet
   end
 
+  test "creative_snippet_markdown escapes a link-hijacking title" do
+    creative = Creative.new(description: "<p>x](https://evil.example)</p>")
+
+    assert_equal "x](https://evil.example)", creative.creative_snippet
+    assert_equal "x\\]\\(https://evil.example\\)", creative.creative_snippet_markdown
+  end
+
+  test "creative_snippet_markdown escapes decoded angle brackets" do
+    creative = Creative.new(description: "<p>A &lt;x&gt; tag</p>")
+
+    assert_equal "A \\<x\\> tag", creative.creative_snippet_markdown
+  end
+
+  test "creative_snippet_markdown applies the same 24 char cap as creative_snippet" do
+    creative = Creative.new(description: "<p>#{'x' * 100}</p>")
+
+    assert_equal "#{'x' * 21}...", creative.creative_snippet_markdown
+  end
+
   test "assigns parent user when parent present" do
     owner = User.create!(email: "creative-owner@example.com", password: TEST_PASSWORD, name: "Owner")
     Current.session = Struct.new(:user).new(owner)
