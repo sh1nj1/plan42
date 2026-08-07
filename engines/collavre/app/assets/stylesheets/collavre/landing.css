@@ -16,9 +16,12 @@
   scroll-behavior: smooth;
 }
 
-.landing-page nav {
-  display: none; /* hide app navigation */
-}
+/* This file is linked only from layouts/collavre/landing.html.erb, which renders
+   `<main><%= yield %></main>` and no app navigation — that lives in the host's
+   application layout, which never loads this stylesheet. So a blanket
+   `.landing-page nav { display: none }` could only ever hide a <nav> authored by
+   a landing-layout view (the feature-guide breadcrumbs), which is the opposite
+   of what it was for. Removed rather than narrowed. */
 
 .landing {
   font-family: var(--font-sans);
