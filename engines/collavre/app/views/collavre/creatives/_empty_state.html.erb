@@ -32,28 +32,37 @@
         </div>
         <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_doc') %></div>
       </div>
-      <span class="creative-empty-state-op" aria-hidden="true">+</span>
-      <div class="creative-empty-state-facet">
-        <div class="creative-empty-state-facet-chip" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
+      <%# Each operator is grouped with the term it introduces, so when the
+          diagram is too narrow for one row it breaks *before* an operator
+          rather than stranding one at the end of a row. %>
+      <div class="creative-empty-state-term">
+        <span class="creative-empty-state-op" aria-hidden="true">+</span>
+        <div class="creative-empty-state-facet">
+          <div class="creative-empty-state-facet-chip" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
+          </div>
+          <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_task') %></div>
         </div>
-        <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_task') %></div>
       </div>
-      <span class="creative-empty-state-op" aria-hidden="true">+</span>
-      <div class="creative-empty-state-facet">
-        <div class="creative-empty-state-facet-chip" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20l1.1-4.4a8.1 8.1 0 0 1-1-3.9A8.38 8.38 0 0 1 11.6 3.4a8.38 8.38 0 0 1 9.4 8.1z"/></svg>
+      <div class="creative-empty-state-term">
+        <span class="creative-empty-state-op" aria-hidden="true">+</span>
+        <div class="creative-empty-state-facet">
+          <div class="creative-empty-state-facet-chip" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20l1.1-4.4a8.1 8.1 0 0 1-1-3.9A8.38 8.38 0 0 1 11.6 3.4a8.38 8.38 0 0 1 9.4 8.1z"/></svg>
+          </div>
+          <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_chat') %></div>
         </div>
-        <div class="creative-empty-state-facet-label"><%= t('collavre.creatives.index.empty_state_facet_chat') %></div>
       </div>
-      <span class="creative-empty-state-op" aria-hidden="true">=</span>
-      <div class="creative-empty-state-block">
-        <div class="creative-empty-state-block-icons" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20l1.1-4.4a8.1 8.1 0 0 1-1-3.9A8.38 8.38 0 0 1 11.6 3.4a8.38 8.38 0 0 1 9.4 8.1z"/></svg>
+      <div class="creative-empty-state-term creative-empty-state-result">
+        <span class="creative-empty-state-op" aria-hidden="true">=</span>
+        <div class="creative-empty-state-block">
+          <div class="creative-empty-state-block-icons" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 12l3 3 5-6"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20l1.1-4.4a8.1 8.1 0 0 1-1-3.9A8.38 8.38 0 0 1 11.6 3.4a8.38 8.38 0 0 1 9.4 8.1z"/></svg>
+          </div>
+          <div class="creative-empty-state-block-label"><%= t('collavre.creatives.index.empty_state_block_label') %></div>
         </div>
-        <div class="creative-empty-state-block-label"><%= t('collavre.creatives.index.empty_state_block_label') %></div>
       </div>
     </div>
     <p class="creative-empty-state-concept-caption"><%= t('collavre.creatives.index.empty_state_concept_caption') %></p>

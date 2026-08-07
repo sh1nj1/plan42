@@ -1120,7 +1120,7 @@ creative-tree-row.is-being-edited .creative-tree {
     flex-direction: column;
     align-items: center;
     gap: 5px;
-    /* Wide enough that the longest label ("실행 가능한 작업 (진행률)") wraps to two
+    /* Wide enough that the longest label (empty_state_facet_task) wraps to two
        lines at --text-0 instead of shredding into a four-line stack. */
     width: 108px;
 }
@@ -1147,7 +1147,7 @@ creative-tree-row.is-being-edited .creative-tree {
     color: var(--text-muted);
     line-height: 1.3;
     text-align: center;
-    /* Korean breaks mid-word by default; wrap at spaces instead. */
+    /* CJK text breaks mid-word by default; wrap at spaces instead. */
     word-break: keep-all;
 }
 
@@ -1158,6 +1158,19 @@ creative-tree-row.is-being-edited .creative-tree {
     padding: 0 2px;
     align-self: flex-start;
     margin-top: 12px;
+}
+
+/* Glues each operator to the term it introduces, so a diagram too narrow for one
+   row wraps before an operator instead of leaving one dangling at a row end. */
+.creative-empty-state-term {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+}
+
+/* The block is shorter than a facet column, so its "=" needs no chip offset. */
+.creative-empty-state-result .creative-empty-state-op {
+    margin-top: 0;
 }
 
 .creative-empty-state-block {
