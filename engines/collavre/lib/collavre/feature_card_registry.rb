@@ -12,7 +12,7 @@ module Collavre
   #     title_key: "collavre.comments.empty_state.cards.add_user.title",
   #     description_key: "collavre.comments.empty_state.cards.add_user.description",
   #     action: { type: :share_modal },
-  #     guide_url: "/guides/add-user"
+  #     guide: true
   #   })
   class FeatureCardRegistry
     include Singleton
@@ -29,9 +29,11 @@ module Collavre
     # @option config [String] :title_key i18n key for the card title
     # @option config [String] :description_key i18n key for the card description
     # @option config [Hash] :action Optional { type:, label_key: } describing a call-to-action button
-    # @option config [String] :guide_url Optional URL for the "learn more" link. The link is
-    #   only rendered when this is present — there is no engine-provided guide route yet, so a
-    #   card that wants one has to supply its own path.
+    # @option config [Boolean] :guide Opt in to the engine-provided public guide page at
+    #   collavre.feature_path(key). Only set this once the page's copy exists under
+    #   collavre.features.pages.<key> — FeaturesController#show 404s for cards without it.
+    # @option config [String] :guide_url Optional URL overriding the engine guide page, for
+    #   vendor engines that host their own documentation.
     def register(key, config)
       card = FeatureCard.new(key, config)
       @mutex.synchronize do
@@ -58,6 +60,13 @@ module Collavre
       end
     end
 
+    # Cards that render on the public /features hub — only those opting into the
+    # engine-provided guide page, since a vendor card pointing at its own
+    # :guide_url has no page here to link to.
+    def with_builtin_guide
+      all.select(&:builtin_guide?)
+    end
+
     def each(&block)
       all.each(&block)
     end
@@ -76,7 +85,7 @@ module Collavre
     end
 
     class << self
-      delegate :register, :unregister, :find, :all, :each, :any?, :reset!, to: :instance
+      delegate :register, :unregister, :find, :all, :with_builtin_guide, :each, :any?, :reset!, to: :instance
     end
   end
 
@@ -90,6 +99,7 @@ module Collavre
       @title_key = config[:title_key]
       @description_key = config[:description_key]
       @action = config[:action]
+      @guide = config.fetch(:guide, false)
       @guide_url = config[:guide_url]
 
       validate!
@@ -97,6 +107,18 @@ module Collavre
 
     def guide_url?
       @guide_url.present?
+    end
+
+    # True when this card is served by the engine's own /features/:key page.
+    # A card carrying its own :guide_url is documented elsewhere, so the engine
+    # neither renders nor routes a page for it.
+    def builtin_guide?
+      @guide && !guide_url?
+    end
+
+    # True when the empty-state card should render a "learn more" link at all.
+    def guide_link?
+      builtin_guide? || guide_url?
     end
 
     private

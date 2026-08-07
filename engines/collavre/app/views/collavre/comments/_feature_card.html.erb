@@ -25,7 +25,11 @@
       </button>
     <% end %>
   <% end %>
-  <% if card.guide_url? %>
-    <%= link_to t("collavre.comments.empty_state.learn_more"), card.guide_url, class: "feature-card-guide-link" %>
+  <% if card.guide_link? %>
+    <%# collavre.feature_path keeps the engine's mount prefix; a vendor card's own
+        :guide_url is used verbatim since it may point outside this app. %>
+    <%= link_to t("collavre.comments.empty_state.learn_more"),
+                card.guide_url.presence || collavre.feature_path(card.key),
+                class: "feature-card-guide-link" %>
   <% end %>
 </div>

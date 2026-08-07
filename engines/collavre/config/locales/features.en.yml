@@ -1,0 +1,102 @@
+---
+en:
+  collavre:
+    features:
+      nav:
+        landing: "Home"
+        all: "All features"
+        all_arrow: "← All features"
+      index:
+        title: "Features"
+        subtitle: "The things worth knowing about before your first message."
+        meta_title: "Features"
+        meta_description: "Mentions, slash commands, chat context, automation triggers, topics, and sharing — everything Collavre's chat can do."
+      show:
+        tips: "Tips"
+      pages:
+        mention_agent:
+          title: "Mention teammates & agents"
+          tagline: "Address one participant directly, and only that participant answers."
+          meta_description: "Use @name: to direct a message at a teammate or an AI agent in a Collavre chat."
+          sections:
+            - heading: "How it works"
+              body: "Start a message with @name: — the name of a person or an AI agent with access to this Creative, followed by a colon. Everything after the colon is the message addressed to them. The mention has to open the message or follow whitespace, so an email address or a code snippet mid-sentence will not be read as one."
+            - heading: "People and agents behave the same way"
+              body: "A mentioned teammate gets a notification. A mentioned AI agent reads the chat, the Creative it belongs to, and any attached context, then replies in the thread. Both are addressed with the same syntax, so you do not have to remember which participants are human."
+            - heading: "Who can be mentioned"
+              body: "Anyone shared on this Creative. If the name you want does not resolve, they have not been given access yet — share the Creative with them first, or add an AI agent from the same dialog."
+          tips:
+            - "Without a mention, a message is just a note in the thread — no agent will pick it up."
+            - "Only one agent answers per message. To ask two agents the same question, send it twice."
+            - "Agents inherit the permissions they were shared with, so an agent without write access can read and reply but cannot change anything."
+        slash_command:
+          title: "Slash commands"
+          tagline: "Type / in the message box to run something instead of saying something."
+          meta_description: "Collavre slash commands: /calendar, /topic, /work, /compress, /creative, and MCP tools."
+          sections:
+            - heading: "How it works"
+              body: "Type / at the start of a message and a menu of available commands appears. Pick one and a small form collects its arguments, so you do not have to memorize the argument order. Commands are submitted like messages and their result lands in the thread."
+            - heading: "Built-in commands"
+              body: "/calendar (also /cal) creates a Google Calendar event from a date and a memo, accepting relative dates like tomorrow, +3days, or +mon. /topic starts a new topic and can assign a primary agent to it. /work walks the child Creatives depth-first and has an agent execute a task on each. /compress summarizes the current topic's messages and removes the originals. /creative inserts a link to another Creative, which in an AI chat also injects that Creative's tree as context."
+            - heading: "Tools from your integrations"
+              body: "Connected MCP tools show up in the same menu below the built-in commands, so a Notion or Slack action is invoked exactly like /calendar is. Which tools appear depends on which integrations you have access to."
+          tips:
+            - "Whatever you had typed is kept — the command is prepended to your draft, not written over it."
+            - "/compress only works inside a topic, and needs an AI agent assigned to that topic."
+            - "Commands are submitted as messages, so they need comment permission, and they are unavailable on an archived Creative."
+        chat_context:
+          title: "Chat context"
+          tagline: "Point an agent at another Creative instead of pasting its contents."
+          meta_description: "Attach other Creatives as context so AI agents in a Collavre chat can reference them."
+          sections:
+            - heading: "How it works"
+              body: "Attach another Creative as context and the agents in this chat can read it — its description and its subtree — as part of answering. The link is live, so editing the source Creative changes what the agent sees on the next message. Nothing is copied into the conversation."
+            - heading: "Context is inherited"
+              body: "A Creative inherits the contexts attached to its parents. Attaching your team's conventions once near the top of a tree means every chat underneath already knows them, and you are not re-pasting the same brief into every thread."
+            - heading: "Linking inline"
+              body: "The /creative command inserts a link to another Creative in the message itself. In an AI chat, that linked Creative's tree is injected as context for that exchange — useful for a one-off reference you do not want permanently attached."
+          tips:
+            - "Context is what an agent reads, not what it may change — sharing governs write access separately."
+            - "Attach the narrowest Creative that answers the question; a large subtree costs the agent attention it could spend on your actual request."
+        automation_trigger:
+          title: "Automation triggers"
+          tagline: "Let an agent react on its own when work arrives."
+          meta_description: "Drop triggers and agent triggers in Collavre run an AI agent automatically when a Creative moves or a message arrives."
+          sections:
+            - heading: "Drop triggers"
+              body: "Mark a Creative as a trigger container and it becomes a stage: whenever a Creative is dropped into it, the AI agent on that container is asked to process the new arrival according to the stage's purpose. A column of trigger containers turns a tree into a pipeline that moves work along without anyone dispatching it."
+            - heading: "Trigger loops"
+              body: "A looped trigger keeps going until the work is actually finished. The agent reports DONE, CONTINUE, or BLOCKED after each pass; CONTINUE runs another iteration, BLOCKED pauses for you, and there is an iteration ceiling so a confused agent cannot run forever. If the agent asks for your input, the loop waits and resumes when you reply in the topic."
+            - heading: "What you need first"
+              body: "A trigger needs an AI agent with write permission on the container. Without one, the drop is recorded but nothing runs, and Collavre says so in the thread rather than failing quietly."
+          tips:
+            - "An agent claiming DONE is verified against the actions it was asked to take; unfinished work is sent back for another iteration."
+            - "Give the container a description that reads as an instruction — that description is the agent's brief on every drop."
+        topic_management:
+          title: "Topics"
+          tagline: "Split one chat into parallel conversations that do not interrupt each other."
+          meta_description: "Use topics to keep separate threads of conversation inside a single Collavre chat."
+          sections:
+            - heading: "How it works"
+              body: "A topic is a named thread inside a Creative's chat. Messages sent in a topic stay in that topic, so a long-running investigation and a quick question can share a Creative without shuffling into one another. The topic list shows every topic on the Creative, including archived ones."
+            - heading: "Topics and agents"
+              body: "A topic can have a primary agent, which is the agent that answers in it — /topic \"name\" @agent sets both at once. This is how one Creative can host several agents working in parallel, each in its own topic, without them reading each other's turns."
+            - heading: "Keeping topics small"
+              body: "/compress summarizes a topic's messages and removes the originals, leaving the conclusion behind. Long-lived topics stay useful instead of becoming an archive nobody scrolls."
+          tips:
+            - "Archive a topic when it is finished — it stays readable but leaves the active list."
+            - "Compressing needs write permission and an agent assigned to the topic."
+        add_user:
+          title: "Add people"
+          tagline: "Bring a teammate or an AI agent into this Creative."
+          meta_description: "Share a Collavre Creative with teammates or AI agents and control what they can do."
+          sections:
+            - heading: "How it works"
+              body: "Sharing a Creative grants access to it and everything below it, so you share at the level the person actually works at rather than one Creative at a time. Everyone shared on a Creative can be mentioned in its chat."
+            - heading: "Permission levels"
+              body: "Access is graded: reading, commenting, writing, and administering are separate. A reviewer who should comment but not restructure gets comment access; an agent that only summarizes does not need write. Only an admin on a Creative can change who is shared on it."
+            - heading: "AI agents are participants too"
+              body: "An AI agent is added the same way a person is, with its own permission level. That is what makes an agent's reach reviewable — you can see exactly which Creatives it can read and which it can change, and revoke either."
+          tips:
+            - "Grant the narrowest permission that lets someone do their job; you can raise it later without re-sharing."
+            - "Sharing high in the tree is usually right — inherited access is easier to reason about than a dozen individual grants."

@@ -2,6 +2,12 @@ Collavre::Engine.routes.draw do
   # Landing page
   get "landing", to: "landing#show"
 
+  # Public feature guides — the long-form counterpart to the empty-chat feature
+  # cards. Keys come from Collavre::FeatureCardRegistry, so the constraint only
+  # has to cover the shape a registry key can take.
+  get "features", to: "features#index", as: :features
+  get "features/:key", to: "features#show", as: :feature, constraints: { key: /[a-z0-9_]+/ }
+
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]

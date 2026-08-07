@@ -1,0 +1,42 @@
+<%# Public hub for the feature guides — the same cards the empty chat shows,
+    minus the in-app actions, each linking to its long-form page. %>
+<% content_for :page_title, t('collavre.features.index.meta_title') %>
+<% content_for :page_description, t('collavre.features.index.meta_description') %>
+
+<div class="landing">
+  <section class="landing-section landing-features">
+    <div class="landing-container">
+      <nav class="feature-guide-breadcrumb">
+        <%= link_to t('collavre.features.nav.landing'), collavre.landing_path %>
+      </nav>
+
+      <h1 class="landing-section-title"><%= t('collavre.features.index.title') %></h1>
+      <p class="landing-section-sub"><%= t('collavre.features.index.subtitle') %></p>
+
+      <div class="landing-features-grid">
+        <% @cards.each do |card| %>
+          <%= link_to collavre.feature_path(card.key), class: "landing-feature-card feature-guide-link-card" do %>
+            <div class="landing-feature-icon" aria-hidden="true"><%= card.icon %></div>
+            <h2><%= t(card.title_key) %></h2>
+            <p><%= t(card.description_key) %></p>
+            <span class="feature-guide-more"><%= t('collavre.comments.empty_state.learn_more') %> →</span>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section class="landing-section landing-cta">
+    <div class="landing-container">
+      <h2 class="landing-cta-title"><%= t('collavre.landing.cta.title') %></h2>
+      <p class="landing-cta-sub"><%= t('collavre.landing.cta.subtitle') %></p>
+      <%= link_to t('collavre.landing.cta.start'), collavre.new_user_path, class: "landing-btn landing-btn-lg" %>
+    </div>
+  </section>
+
+  <footer class="landing-footer">
+    <div class="landing-container landing-footer-inner">
+      <p class="landing-footer-copy">© <%= Date.today.year %> <%= t('app.name') %>. <%= t('collavre.landing.footer.rights') %></p>
+    </div>
+  </footer>
+</div>

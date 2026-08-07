@@ -1059,6 +1059,19 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Phase 1 shipped the cards with the guide link suppressed because no page
+  # existed to link to. Now that /features/:key is routed, every card carries it.
+  test "index links each feature card to its public guide page" do
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.learn_more")
+    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+      assert_includes @response.body, %(href="/features/#{key}"),
+                      "expected the #{key} card to link its guide"
+    end
+  end
+
   test "index hides dismissed feature cards but keeps the rest" do
     @user.update!(dismissed_notices: [ "slash_command" ])
 
