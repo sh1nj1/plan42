@@ -36,6 +36,7 @@ import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
 import InboxBadgeController from "./inbox_badge_controller"
+import WorkspaceTreeController from "./workspace_tree_controller"
 
 // Export all controllers
 export {
@@ -73,7 +74,8 @@ export {
   SearchPopupController,
   CommentBadgeController,
   LandingVideoController,
-  InboxBadgeController
+  InboxBadgeController,
+  WorkspaceTreeController
 }
 
 // Registration function for use with a Stimulus application
@@ -114,4 +116,5 @@ export function registerControllers(application) {
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
   application.register("inbox-badge", InboxBadgeController)
+  application.register("workspace-tree", WorkspaceTreeController)
 }

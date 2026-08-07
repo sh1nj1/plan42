@@ -4,6 +4,7 @@
  */
 
 import { Application } from '@hotwired/stimulus'
+import { jest } from '@jest/globals'
 import CommentsPopupController from '../popup_controller'
 
 describe('CommentsPopupController', () => {
@@ -109,6 +110,495 @@ describe('CommentsPopupController', () => {
         await controller.openForCreative()
 
         expect(popup.dataset.autoFocusOnOpen).toBe('true')
+    })
+
+    test('docked chat opens by default and close collapses instead of hiding it', async () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.collapseDockedLabel = 'Collapse chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+
+        controller.enterDockedMode()
+        controller.close()
+
+        expect(popup.style.display).toBe('flex')
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
+    })
+
+    test('docked close button keeps the close icon while expanded and shows a chevron when collapsed', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.collapseDockedLabel = 'Collapse chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+
+        controller.enterDockedMode()
+        controller.syncDockedUI()
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
+
+        controller.toggleDocked()
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+        const icon = controller.closeButtonTarget.querySelector('svg')
+        expect(icon).not.toBeNull()
+        expect(icon.getAttribute('aria-hidden')).toBe('true')
+        expect(controller.closeButtonTarget.textContent.trim()).toBe('')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
+
+        controller.toggleDocked()
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
+    })
+
+    test('leaving docked mode while collapsed restores the close glyph', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.closeLabel = 'Close chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        expect(controller.closeButtonTarget.querySelector('svg')).not.toBeNull()
+
+        controller.dockedMediaQuery.matches = false
+        controller.syncDockedUI()
+
+        expect(controller.closeButtonTarget.querySelector('svg')).toBeNull()
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+    })
+
+    test('restores the floating close button label after leaving docked mode', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.closeLabel = 'Close chat'
+        controller.enterDockedMode()
+        controller.dockedMediaQuery.matches = false
+
+        controller.syncDockedUI()
+
+        expect(controller.closeButtonTarget.textContent).toBe('×')
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Close chat')
+        expect(controller.closeButtonTarget.title).toBe('Close chat')
+    })
+
+    test('empty docked workspace does not request a wake lock', () => {
+        const popup = document.getElementById('comments-popup')
+        const requestWakeLock = jest.spyOn(controller, '_requestWakeLock')
+        const releaseWakeLock = jest.spyOn(controller, '_releaseWakeLock')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = ''
+
+        controller.enterDockedMode()
+
+        expect(requestWakeLock).not.toHaveBeenCalled()
+        expect(releaseWakeLock).toHaveBeenCalled()
+    })
+
+    test('collapsing docked chat releases wake lock and expanding reacquires it', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        controller.enterDockedMode()
+        const requestWakeLock = jest.spyOn(controller, '_requestWakeLock')
+        const releaseWakeLock = jest.spyOn(controller, '_releaseWakeLock')
+
+        controller.toggleDocked()
+
+        expect(releaseWakeLock).toHaveBeenCalledTimes(1)
+        expect(requestWakeLock).not.toHaveBeenCalled()
+
+        controller.toggleDocked()
+
+        expect(requestWakeLock).toHaveBeenCalledTimes(1)
+    })
+
+    test('pending wake lock is released if docked chat collapses before acquisition', async () => {
+        const popup = document.getElementById('comments-popup')
+        const release = jest.fn()
+        let finishRequest
+        Object.defineProperty(navigator, 'wakeLock', {
+            configurable: true,
+            value: {
+                request: jest.fn(() => new Promise(resolve => { finishRequest = resolve })),
+            },
+        })
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        controller.enterDockedMode()
+
+        controller.toggleDocked()
+        finishRequest({ release, addEventListener: jest.fn() })
+        await Promise.resolve()
+
+        expect(release).toHaveBeenCalledTimes(1)
+        expect(controller._wakeLock).toBeNull()
+        delete navigator.wakeLock
+    })
+
+    test('deduplicates concurrent wake lock requests', async () => {
+        const popup = document.getElementById('comments-popup')
+        const wakeLock = { release: jest.fn(), addEventListener: jest.fn() }
+        let finishRequest
+        Object.defineProperty(navigator, 'wakeLock', {
+            configurable: true,
+            value: {
+                request: jest.fn(() => new Promise(resolve => { finishRequest = resolve })),
+            },
+        })
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+
+        const firstRequest = controller._requestWakeLock()
+        const secondRequest = controller._requestWakeLock()
+
+        expect(navigator.wakeLock.request).toHaveBeenCalledTimes(1)
+        finishRequest(wakeLock)
+        await Promise.all([firstRequest, secondRequest])
+        expect(controller._wakeLock).toBe(wakeLock)
+        delete navigator.wakeLock
+    })
+
+    test('docked chat forwards a comment deep link without starting a second open', async () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        window.history.replaceState({}, '', '/creatives/123/comments/456')
+        const openForCreative = jest.spyOn(controller, 'openForCreative').mockResolvedValue()
+        const openFromUrl = jest.spyOn(controller, 'openFromUrl')
+
+        controller.enterDockedMode()
+        await new Promise(resolve => requestAnimationFrame(resolve))
+        await new Promise(resolve => setTimeout(resolve, 110))
+
+        expect(openForCreative).toHaveBeenCalledWith({ highlightId: '456' })
+        expect(openFromUrl).not.toHaveBeenCalled()
+    })
+
+    test('same-creative workspace deep links refresh the docked chat highlight', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, {
+            creativeId: '123',
+            highlightId: '456',
+        })
+    })
+
+    test('same-creative workspace sync without a deep link keeps the docked chat', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.style.display = 'flex'
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(open).not.toHaveBeenCalled()
+        expect(popup.dataset.creativeId).toBe('123')
+    })
+
+    test('chat icon expands a collapsed docked chat showing the same creative', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.collapseDockedLabel = 'Collapse chat'
+        popup.dataset.expandDockedLabel = 'Expand chat'
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123' },
+        }))
+
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Collapse chat')
+        // The chat is already loaded for this creative — expanding must not
+        // reload it, which would drop the draft and subscriptions.
+        expect(open).not.toHaveBeenCalled()
+    })
+
+    test('chat icon expands a collapsed docked chat when switching creatives', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '999'
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123' },
+        }))
+
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+    })
+
+    test('workspace navigation keeps a collapsed docked chat collapsed', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '999'
+        controller.enterDockedMode()
+        controller.toggleDocked()
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+        expect(popup.classList.contains('docked-collapsed')).toBe(true)
+    })
+
+    test('workspace deep links pass the highlight when switching creatives', () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '999'
+        popup.style.display = 'flex'
+        const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: {
+                button: triggerBtn,
+                creativeId: '123',
+                workspaceSync: true,
+                highlightId: '456',
+            },
+        }))
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, {
+            creativeId: '123',
+            highlightId: '456',
+        })
+    })
+
+    test('root workspace navigation resets docked chat to its empty state', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.defaultTitle = 'Comments'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        const state = document.createElement('div')
+        state.dataset.workspaceNavigationState = 'true'
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: state, creativeId: undefined },
+        }))
+
+        expect(popup.dataset.creativeId).toBe('')
+        expect(controller.titleTarget.textContent).toBe('Comments')
+        expect(controller.listTarget.textContent).toBe('Select a creative')
+        expect(controller.listTarget.classList.contains('docked-empty')).toBe(true)
+        expect(popup.style.display).toBe('flex')
+    })
+
+    test('resetting a fullscreen docked chat exits fullscreen before showing empty state', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.fullscreen = 'true'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        popup.style.display = 'flex'
+        popup.style.position = 'fixed'
+        popup.style.width = '100%'
+        popup.style.height = '100%'
+        document.body.classList.add('chat-fullscreen')
+        window.history.replaceState({}, '', '/creatives/123/comments/fullscreen')
+        controller._previousUrl = '/creatives/123'
+
+        controller.resetDockedToEmpty()
+
+        expect(popup.dataset.fullscreen).toBe('false')
+        expect(document.body.classList.contains('chat-fullscreen')).toBe(false)
+        expect(popup.dataset.creativeId).toBe('')
+        expect(controller.listTarget.textContent).toBe('Select a creative')
+        expect(popup.style.display).toBe('flex')
+        expect(popup.style.position).toBe('')
+        expect(popup.style.width).toBe('')
+        expect(popup.style.height).toBe('')
+        expect(window.location.pathname).toBe('/creatives/123')
+    })
+
+    test('workspace navigation does not auto-open chat outside the docked layout', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        const open = jest.spyOn(controller, 'open')
+        popup.dataset.docked = 'true'
+        controller.dockedMediaQuery.matches = false
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(open).not.toHaveBeenCalled()
+        expect(popup.style.display).not.toBe('flex')
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123' },
+        }))
+        await Promise.resolve()
+
+        expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+    })
+
+    test('workspace navigation closes an existing floating chat', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        controller.dockedMediaQuery.matches = false
+        await controller.open(triggerBtn)
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '456', workspaceSync: true },
+        }))
+
+        expect(popup.style.display).toBe('none')
+        expect(popup.dataset.creativeId).toBe('123')
+    })
+
+    test('late workspace sync keeps a manually opened chat for the same creative', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        controller.dockedMediaQuery.matches = false
+        await controller.open(triggerBtn)
+
+        document.dispatchEvent(new CustomEvent('creative-comments-click', {
+            detail: { button: triggerBtn, creativeId: '123', workspaceSync: true },
+        }))
+
+        expect(popup.style.display).toBe('flex')
+        expect(popup.dataset.creativeId).toBe('123')
+    })
+
+    test('destroying the active creative resets docked chat instead of collapsing it', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.defaultTitle = 'Comments'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        controller.enterDockedMode()
+        const closeChildControllers = jest.spyOn(controller, 'closeChildControllers')
+
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+            detail: { creativeIds: ['123'] },
+        }))
+
+        expect(popup.dataset.creativeId).toBe('')
+        expect(controller.listTarget.textContent).toBe('Select a creative')
+        expect(popup.classList.contains('docked-collapsed')).toBe(false)
+        expect(popup.style.display).toBe('flex')
+        expect(closeChildControllers).toHaveBeenCalled()
+    })
+
+    test('destroying the active creative closes a floating chat', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        await controller.open(triggerBtn)
+
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+            detail: { creativeIds: ['123'] },
+        }))
+
+        expect(popup.style.display).toBe('none')
+    })
+
+    test('destroying a creative invalidates its pending docked chat open', async () => {
+        const popup = document.getElementById('comments-popup')
+        const triggerBtn = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        popup.dataset.creativeId = '123'
+        popup.dataset.defaultTitle = 'Comments'
+        popup.dataset.dockedEmptyText = 'Select a creative'
+        controller.enterDockedMode()
+
+        let finishTopicsLoad
+        Object.defineProperty(controller, 'topicsController', {
+            configurable: true,
+            value: {
+                clearOverrideTopicId: jest.fn(),
+                onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+                onPopupClosed: jest.fn(),
+            },
+        })
+        const dispatchEvent = jest.spyOn(popup, 'dispatchEvent')
+        const pendingOpen = controller.open(triggerBtn)
+        await Promise.resolve()
+
+        document.dispatchEvent(new CustomEvent('creative-destroyed', {
+            detail: { creativeIds: ['123'] },
+        }))
+        finishTopicsLoad()
+        await pendingOpen
+
+        expect(popup.dataset.creativeId).toBe('')
+        expect(dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'comments-popup:opened' }))
+    })
+
+    test('an obsolete open does not clear the current topic suppression guard', async () => {
+        const listController = {
+            creativeId: null,
+            suppressTopicChangeLoad: false,
+            onPopupOpened: jest.fn(),
+        }
+        const pendingTopics = new Map()
+        const topicsController = {
+            clearOverrideTopicId: jest.fn(),
+            currentTopicId: '7',
+            onPopupOpened: jest.fn(({ creativeId }) => new Promise(resolve => {
+                pendingTopics.set(creativeId, resolve)
+            })),
+        }
+        Object.defineProperty(controller, 'listController', { configurable: true, value: listController })
+        Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+
+        controller.openGeneration = 1
+        const firstOpen = controller.notifyChildControllers({
+            creativeId: '123', canComment: true, openGeneration: 1,
+        })
+        await Promise.resolve()
+
+        controller.openGeneration = 2
+        const secondOpen = controller.notifyChildControllers({
+            creativeId: '456', canComment: true, openGeneration: 2,
+        })
+        await Promise.resolve()
+
+        pendingTopics.get('123')()
+        expect(await firstOpen).toBe(false)
+        expect(listController.suppressTopicChangeLoad).toBe(true)
+
+        pendingTopics.get('456')()
+        expect(await secondOpen).toBe(true)
+        expect(listController.suppressTopicChangeLoad).toBe(false)
+        expect(listController.onPopupOpened).toHaveBeenCalledWith({
+            creativeId: '456', highlightId: undefined, topicId: '7',
+        })
     })
 
 })

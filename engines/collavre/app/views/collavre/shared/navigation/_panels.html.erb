@@ -1,6 +1,6 @@
 <%= render_extension_slot(:navigation_panels) %>
 
-<% if Current.user %>
+<% if Current.user && !creative_workspace? %>
   <%= render 'collavre/comments/comments_popup',
              auto_fullscreen: content_for?(:comments_popup_auto_fullscreen) %>
 <% end %>

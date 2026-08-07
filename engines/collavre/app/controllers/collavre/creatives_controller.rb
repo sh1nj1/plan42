@@ -31,6 +31,12 @@ module Collavre
           end
           @creatives = []  # CSR will fetch via JSON
           @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+          if Current.user&.creative_workspace_enabled?
+            @workspace_path_ids = Creatives::WorkspacePathResolver.new(
+              creative: @parent_creative,
+              user: Current.user
+            ).call
+          end
         end
         format.json do
           # Full query only for JSON requests
@@ -54,6 +60,18 @@ module Collavre
           @overall_progress = index_result.overall_progress if any_filter_active?
           @allowed_creative_ids = index_result.allowed_creative_ids
           @progress_map = index_result.progress_map
+
+          if params[:workspace_tree] == "1"
+            expires_now
+            render json: {
+              creatives: Collavre::Creatives::WorkspaceTreeBuilder.new(
+                user: Current.user,
+                view_context: view_context,
+                max_level: Collavre::SystemSetting.display_level
+              ).build(index_result.creatives)
+            }
+            return
+          end
 
           # Set filtered_progress on parent creative if progress_map is available
           if @parent_creative && @progress_map && @progress_map.key?(@parent_creative.id.to_s)

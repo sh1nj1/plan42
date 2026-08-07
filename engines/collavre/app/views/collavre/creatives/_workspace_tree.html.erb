@@ -1,0 +1,30 @@
+<section class="creative-workspace-tree-region"
+         data-controller="workspace-tree"
+         data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"
+         data-workspace-tree-current-path-value="<%= @workspace_path_ids.to_json %>"
+         data-workspace-tree-loading-text-value="<%= t('app.loading') %>"
+         data-workspace-tree-empty-text-value="<%= t('collavre.creatives.workspace.empty') %>"
+         data-workspace-tree-error-text-value="<%= t('collavre.creatives.workspace.load_error') %>">
+  <%# Keep the stream source inside the tree region: as a direct child of the
+      grid shell it would become a grid item with its own implicit row and
+      push all three columns down. %>
+  <%= turbo_stream_from Current.user, :creative_tree %>
+  <button type="button"
+          class="creative-workspace-tree-toggle"
+          data-workspace-tree-target="panelToggle"
+          data-action="workspace-tree#togglePanel"
+          aria-expanded="false"
+          aria-controls="creative-workspace-tree"
+          aria-label="<%= t('collavre.creatives.workspace.toggle_tree') %>"
+          title="<%= t('collavre.creatives.workspace.toggle_tree') %>">
+    <%= svg_tag "chevron-right.svg", class: "creative-workspace-tree-toggle-icon", width: 18, height: 18 %>
+  </button>
+  <aside id="creative-workspace-tree" aria-label="<%= t('collavre.creatives.workspace.tree_label') %>">
+    <header class="creative-workspace-tree-header">
+      <h2><%= t('collavre.creatives.workspace.tree_title') %></h2>
+    </header>
+    <nav class="creative-workspace-tree-nav" data-workspace-tree-target="tree">
+      <p class="creative-workspace-tree-status"><%= t('app.loading') %></p>
+    </nav>
+  </aside>
+</section>

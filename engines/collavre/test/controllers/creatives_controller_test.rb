@@ -2,7 +2,102 @@ require "test_helper"
 
 class CreativesControllerTest < ActionDispatch::IntegrationTest
   setup do
+    users(:one).update!(creative_workspace_enabled: true)
     sign_in_as(users(:one), password: "password")
+  end
+
+  def creative_tree_stream_selector
+    signed_name = Turbo::StreamsChannel.signed_stream_name([ users(:one), :creative_tree ])
+    "turbo-cable-stream-source[signed-stream-name='#{signed_name}']"
+  end
+
+  test "creative workspace is disabled by default" do
+    users(:one).update!(creative_workspace_enabled: false)
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+
+    assert_response :success
+    assert_select "body.creative-workspace", count: 0
+    assert_select ".creative-workspace-shell", count: 0
+    assert_select "#creative-workspace-tree", count: 0
+    assert_select "turbo-frame#creative-workspace-content", count: 0
+    assert_select "[data-workspace-navigation-state]", count: 0
+    assert_select "#comments-popup[data-docked='false']", count: 1
+    assert_select creative_tree_stream_selector, count: 1
+  end
+
+  test "creative pages render the three-column workspace shell" do
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+
+    assert_response :success
+    assert_select "body.creative-workspace"
+    assert_select ".creative-workspace-shell"
+    assert_select "#creative-workspace-tree"
+    assert_select "turbo-frame#creative-workspace-content:not([target]) [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select "form[data-turbo-frame='_top'][action='#{slide_view_creative_path(creative)}']"
+    assert_select "#comments-popup[data-docked='true'][data-creative-id='#{creative.id}']"
+    assert_select ".creative-workspace-shell #{creative_tree_stream_selector}", count: 1
+    # The stream source must not be a direct grid child of the shell: grid
+    # auto-placement would give it its own implicit row and push all three
+    # columns down, leaving a blank band under the top nav.
+    assert_select ".creative-workspace-shell > #{creative_tree_stream_selector}", count: 0
+    assert_select ".creative-workspace-tree-region #{creative_tree_stream_selector}", count: 1
+    assert_select "turbo-frame#creative-workspace-content #{creative_tree_stream_selector}", count: 0
+  end
+
+  test "workspace breadcrumb root and ancestor links advance browser history" do
+    ancestor = creatives(:unconvert_target)
+    child = creatives(:unconvert_child_two)
+
+    get creatives_path(id: child.id)
+
+    assert_response :success
+    assert_select "a.creative-breadcrumb-link[href='#{creatives_path}'][data-turbo-action='advance']"
+    assert_select "a.creative-breadcrumb-link[href='#{creative_path(ancestor)}'][data-turbo-action='advance']"
+  end
+
+  test "workspace tree JSON returns branches without leaf roots" do
+    branch = Creative.create!(user: users(:one), description: "Workspace branch")
+    Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
+    leaf = Creative.create!(user: users(:one), description: "Workspace leaf")
+
+    get creatives_path(format: :json, workspace_tree: 1)
+
+    assert_response :success
+    payload = JSON.parse(response.body)
+    ids = payload.fetch("creatives").pluck("id")
+    assert_includes ids, branch.id
+    refute_includes ids, leaf.id
+    branch_payload = payload.fetch("creatives").find { |node| node.fetch("id") == branch.id }
+    assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
+    assert_equal branch.creative_snippet, branch_payload.fetch("snippet")
+    assert branch_payload.fetch("can_comment")
+    assert_equal "no-cache", response.headers["Cache-Control"]
+  end
+
+  test "workspace frame requests render only the replaceable creative content" do
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state][data-creative-id='#{creative.id}']"
+    assert_select ".creative-workspace-shell", count: 0
+    assert_select creative_tree_stream_selector, count: 0
+  end
+
+  test "workspace frame falls back to root without exposing an inaccessible creative" do
+    inaccessible = Creative.create!(user: users(:two), description: "Private workspace creative")
+
+    get creatives_path(id: inaccessible.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_select "turbo-frame#creative-workspace-content [data-workspace-navigation-state]:not([data-creative-id])"
+    assert_select "[data-workspace-navigation-state][data-creative-path='[]']"
+    assert_not_includes response.body, inaccessible.description
   end
 
   test "title row emits markdown editor flag so cached rich rows reopen in Lexical" do

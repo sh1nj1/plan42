@@ -2,6 +2,13 @@ import csrfFetch from './csrf_fetch'
 
 const JSON_HEADERS = { Accept: 'application/json' }
 
+function invalidateWorkspaceTreeOnSuccess(response) {
+  if (response.ok && typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
+  }
+  return response
+}
+
 export function get(id) {
   return csrfFetch(`/creatives/${id}.json`, {
     headers: JSON_HEADERS,
@@ -48,7 +55,7 @@ export function save(action, method, form) {
     method,
     headers: JSON_HEADERS,
     body: new FormData(form),
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function linkExisting(parentId, originId) {
@@ -60,33 +67,33 @@ export function linkExisting(parentId, originId) {
     method: 'POST',
     headers: JSON_HEADERS,
     body,
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function destroy(id, withChildren = false) {
   const query = withChildren ? '?delete_with_children=true' : ''
   return csrfFetch(`/creatives/${id}${query}`, {
     method: 'DELETE',
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function archive(id) {
   return csrfFetch(`/creatives/${id}/archive`, {
     method: 'PATCH',
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function unarchive(id) {
   return csrfFetch(`/creatives/${id}/unarchive`, {
     method: 'PATCH',
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function unconvert(id) {
   return csrfFetch(`/creatives/${id}/unconvert`, {
     method: 'POST',
     headers: JSON_HEADERS,
-  })
+  }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
 export function updateMetadata(id, data) {

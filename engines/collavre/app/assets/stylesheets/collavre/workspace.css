@@ -1,0 +1,268 @@
+body.creative-workspace {
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.creative-workspace-shell {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(0, 1fr);
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+}
+
+body.creative-workspace > nav {
+    max-width: none;
+}
+
+.creative-workspace-shell > main {
+    grid-column: 2;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    overflow: auto;
+}
+
+#creative-workspace-content {
+    display: block;
+    min-width: 0;
+}
+
+body.creative-workspace .creative-content {
+    min-width: 0;
+    max-width: none;
+}
+
+.creative-workspace-tree-region {
+    grid-column: 1;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--surface-section);
+    border-right: var(--border-1) solid var(--border-color);
+}
+
+#creative-workspace-tree {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.creative-workspace-tree-header {
+    padding: var(--space-3);
+    border-bottom: var(--border-1) solid var(--border-color);
+}
+
+.creative-workspace-tree-header h2 {
+    margin: 0;
+    font-size: var(--text-2);
+}
+
+.creative-workspace-tree-nav {
+    display: block;
+    flex: 1;
+    max-width: none;
+    min-height: 0;
+    padding: var(--space-2);
+    overflow: auto;
+    background: transparent;
+    border: 0;
+}
+
+.creative-workspace-tree-list {
+    margin: 0;
+    padding: 0 0 0 var(--space-3);
+    list-style: none;
+}
+
+.creative-workspace-tree-nav > .creative-workspace-tree-list {
+    padding-left: 0;
+}
+
+.creative-workspace-tree-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.creative-workspace-tree-branch-toggle,
+.creative-workspace-tree-branch-spacer {
+    width: 1.75rem;
+    min-width: 1.75rem;
+}
+
+.creative-workspace-tree-branch-toggle {
+    padding: var(--space-1);
+    color: var(--text-muted);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.creative-workspace-tree-link {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    padding: var(--space-2);
+    overflow: hidden;
+    color: var(--text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-radius: var(--radius-2);
+}
+
+.creative-workspace-tree-link:hover,
+.creative-workspace-tree-link.is-current {
+    background: var(--surface-hover);
+}
+
+.creative-workspace-tree-link.is-current {
+    color: var(--color-active);
+    font-weight: var(--weight-6);
+}
+
+.creative-workspace-tree-status {
+    padding: var(--space-3);
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.creative-workspace-tree-toggle {
+    display: none;
+}
+
+#comments-list.docked-empty {
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    text-align: center;
+    background: transparent;
+}
+
+#comments-list.docked-empty::before {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .creative-workspace-shell > #comments-popup[data-docked="true"]:not([data-fullscreen="true"]) {
+        display: flex;
+        position: static;
+        grid-column: 3;
+        width: auto;
+        height: auto;
+        max-width: none !important;
+        max-height: none;
+        min-width: 0;
+        min-height: 0;
+        z-index: auto;
+        border-width: 0 0 0 var(--border-1);
+        border-color: var(--border-color);
+        border-radius: 0;
+        box-shadow: none;
+        transition: none;
+    }
+
+    .creative-workspace-shell > #comments-popup[data-docked="true"]:not([data-fullscreen="true"]) .resize-handle {
+        display: none;
+    }
+
+    .creative-workspace-shell:has(#comments-popup.docked-collapsed) {
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) 3rem;
+    }
+
+    #comments-popup.docked-collapsed:not([data-fullscreen="true"]) {
+        padding: var(--space-2);
+    }
+
+    #comments-popup.docked-collapsed:not([data-fullscreen="true"]) > :not(.comments-popup-header),
+    #comments-popup.docked-collapsed:not([data-fullscreen="true"]) .comments-popup-header > :not(.comments-popup-actions),
+    #comments-popup.docked-collapsed:not([data-fullscreen="true"]) .comments-popup-actions > :not(#close-comments-btn) {
+        display: none !important;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+    .creative-workspace-shell {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .creative-workspace-shell > main {
+        grid-column: 1;
+    }
+
+    .creative-workspace-shell > #comments-popup[data-docked="true"]:not([data-fullscreen="true"]) {
+        grid-column: 2;
+    }
+
+    .creative-workspace-shell:has(#comments-popup.docked-collapsed) {
+        grid-template-columns: minmax(0, 1fr) 3rem;
+    }
+
+    .creative-workspace-tree-region {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: var(--layer-modal);
+        width: min(300px, 80vw);
+        overflow: visible;
+        box-shadow: var(--shadow-3);
+        transform: translateX(-100%);
+        transition: transform 0.2s var(--ease-out-2);
+    }
+
+    .creative-workspace-tree-region > aside {
+        visibility: hidden;
+    }
+
+    .creative-workspace-tree-region.is-open {
+        transform: translateX(0);
+    }
+
+    .creative-workspace-tree-region.is-open > aside {
+        visibility: visible;
+    }
+
+    .creative-workspace-tree-toggle {
+        position: absolute;
+        top: 5rem;
+        right: -2.75rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        padding: 0;
+        color: var(--text-primary);
+        background: var(--surface-section);
+        border: var(--border-1) solid var(--border-color);
+        border-left: 0;
+        border-radius: 0 var(--radius-2) var(--radius-2) 0;
+        cursor: pointer;
+    }
+
+    .creative-workspace-tree-region.is-open .creative-workspace-tree-toggle-icon {
+        transform: rotate(180deg);
+    }
+}
+
+@media (max-width: 767px) {
+    body.creative-workspace {
+        height: auto;
+        overflow: visible;
+    }
+
+    .creative-workspace-shell {
+        display: block;
+    }
+
+    body.creative-workspace > nav,
+    .creative-workspace-shell > main {
+        max-width: var(--max-width);
+    }
+
+    .creative-workspace-tree-region {
+        display: none;
+    }
+
+}

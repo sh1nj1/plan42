@@ -216,7 +216,7 @@ export default class extends Controller {
     this.presenceSubscription.perform('running_agents', { topic_id: this.selectedTopicId })
   }
 
-  loadParticipants({ closeOnForbidden = false } = {}) {
+  loadParticipants() {
     if (!this.creativeId) return
     fetch(`/creatives/${this.creativeId}/comments/participants`, {
       cache: 'no-store',
@@ -236,16 +236,11 @@ export default class extends Controller {
         this.renderParticipants(this.currentPresentIds)
         this.renderTypingIndicator()
       })
-      .catch((error) => {
+      .catch(() => {
         this.participantsData = []
         this.canShare = false
         this.renderParticipants([])
         this.renderTypingIndicator()
-
-        if (closeOnForbidden) {
-          alertDialog(error.message)
-          this.popupController?.close()
-        }
       })
   }
 
@@ -324,7 +319,20 @@ export default class extends Controller {
         this.formController?.setCommentPermission(shareChange.can_comment)
       }
 
-      this.loadParticipants({ closeOnForbidden: shareChange.has_access === false })
+      if (shareChange.has_access === false) {
+        document.dispatchEvent(new CustomEvent('workspace-tree:invalidate', {
+          detail: { creativeIds: [String(this.creativeId)] },
+        }))
+        alertDialog(this.element.dataset.noPermissionText || 'No permission')
+        if (this.popupController?.isDocked()) {
+          this.popupController.resetDockedToEmpty()
+        } else {
+          this.popupController?.close()
+        }
+        return
+      }
+
+      this.loadParticipants()
       return
     }
     if (data.channel_chips) {
