@@ -1105,6 +1105,16 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, %(data-key="topic_management")
   end
 
+  test "index hides the slash_command card for an archived creative even for the owner" do
+    @creative.update!(archived_at: Time.current)
+
+    get creative_comments_path(@creative)
+
+    assert_response :success
+    assert_not_includes @response.body, %(data-key="slash_command")
+    assert_includes @response.body, %(data-key="topic_management")
+  end
+
   test "index shows a no-results message instead of feature cards when a search has no matches" do
     get creative_comments_path(@creative), params: { search: "no such comment exists" }
 

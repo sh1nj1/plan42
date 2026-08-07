@@ -107,6 +107,13 @@ export default class extends Controller {
 
     this.handleListLoaded = () => this._updateInboxReplyMode()
     this.element.addEventListener('comments--list:loaded', this.handleListLoaded)
+
+    // A slash command with an input schema takes over the textarea and submits
+    // itself (modules/command_menu.js), so a draft the user had already typed
+    // cannot go out with it. The menu hands the draft over here instead of
+    // discarding it, and we put it back once the send settles.
+    this.handleStashDraft = this.handleStashDraft.bind(this)
+    this.element.addEventListener('comments--form:stash-draft', this.handleStashDraft)
   }
 
   handleTopicChange(event) {
@@ -142,6 +149,7 @@ export default class extends Controller {
     this.textareaTarget.removeEventListener('paste', this.handlePaste)
     this.element.removeEventListener('comments--topics:change', this.handleTopicChange)
     this.element.removeEventListener('comments--list:loaded', this.handleListLoaded)
+    this.element.removeEventListener('comments--form:stash-draft', this.handleStashDraft)
   }
 
   get listController() {
@@ -211,6 +219,25 @@ export default class extends Controller {
     if (this.cancelTarget) this.cancelTarget.style.display = ''
     requestAnimationFrame(() => this._autoResize())
     this.focusTextarea()
+  }
+
+  handleStashDraft(event) {
+    this._stashedDraft = event.detail?.draft || null
+  }
+
+  _restoreStashedDraft() {
+    const draft = this._stashedDraft
+    this._stashedDraft = null
+    if (!draft) return
+    // Only reinstate it into an empty box. The success path clears the textarea,
+    // but the user may have started typing again while the command was in
+    // flight, and the failure path restores review-quote text into it.
+    if (this.textareaTarget.value.trim().length > 0) return
+    this.textareaTarget.value = draft
+    // Resize and re-enable send directly rather than dispatching `input`, which
+    // would re-open the command menu for a draft that starts with "/".
+    this._autoResize()
+    this._updateSubmitButton()
   }
 
   resetForm() {
@@ -376,6 +403,7 @@ export default class extends Controller {
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
+        this._restoreStashedDraft()
       })
   }
 
