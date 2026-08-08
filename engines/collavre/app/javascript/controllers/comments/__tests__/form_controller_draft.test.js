@@ -570,6 +570,50 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('88')).toBe('draft for 88')
   })
 
+  test('reconnecting during a send does not preserve the restored submitted message', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'send before reconnect')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.disconnect()
+    controller.connect()
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('send before reconnect')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+  })
+
+  test('reconnecting during a send preserves text typed after the reconnect', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'send before reconnect')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.disconnect()
+    controller.connect()
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'next message after reconnect')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('next message after reconnect')
+    expect(chatDrafts.get('77')).toBe('next message after reconnect')
+  })
+
   test('send completion preserves newer submitted-chat text after switching away', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'first message')

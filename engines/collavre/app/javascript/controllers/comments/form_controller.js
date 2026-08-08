@@ -97,9 +97,11 @@ export default class extends Controller {
     this._awaitingEffectiveDraftKeyFor = null
     this._draftSaveTimer = null
     this._draftSaveSuspendedForPermission = false
-    this._draftRevisions = new Map()
-    this._observedDrafts = new Map()
-    this._observedDraftRevisions = new Map()
+    // A pending send survives a Stimulus reconnect on this controller instance,
+    // so its completion must keep comparing against the same draft history.
+    this._draftRevisions ||= new Map()
+    this._observedDrafts ||= new Map()
+    this._observedDraftRevisions ||= new Map()
     this._handlePageHide = () => {
       if (this.element.isConnected) this._flushDraftSave()
     }
