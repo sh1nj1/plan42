@@ -46,6 +46,49 @@ module Collavre
       assert_not card.builtin_guide?
     end
 
+    test "cards default to the regular empty-chat surface" do
+      card = register
+
+      assert_equal [ :default ], card.surfaces
+      assert card.visible_on?(:default)
+      assert_not card.visible_on?(:inbox_system)
+    end
+
+    test "a card must have at least one surface" do
+      error = assert_raises(ArgumentError) { register(surfaces: []) }
+
+      assert_match(/at least one :surface/, error.message)
+    end
+
+    test "for selects inbox System cards without leaking regular cards" do
+      inbox = Creative.inbox_for(users(:one))
+      system_topic = inbox.system_topic
+
+      keys = Collavre::FeatureCardRegistry.for(creative: inbox, topic: system_topic).map(&:key)
+
+      assert_equal %i[inbox_notifications inbox_reply inbox_source], keys
+    end
+
+    test "for uses regular cards for non-System inbox topics" do
+      inbox = Creative.inbox_for(users(:one))
+      main_topic = inbox.main_topic
+
+      keys = Collavre::FeatureCardRegistry.for(creative: inbox, topic: main_topic).map(&:key)
+
+      assert_includes keys, :mention_agent
+      assert_not_includes keys, :inbox_notifications
+    end
+
+    test "for uses regular cards for a System-named topic outside the inbox" do
+      creative = creatives(:tshirt)
+      topic = creative.topics.create!(name: Creative::SYSTEM_TOPIC_NAME, user: users(:one))
+
+      keys = Collavre::FeatureCardRegistry.for(creative: creative, topic: topic).map(&:key)
+
+      assert_includes keys, :mention_agent
+      assert_not_includes keys, :inbox_notifications
+    end
+
     test "with_builtin_guide returns only cards backed by an engine page" do
       register(guide: true, guide_url: "https://example.com/docs")
 
@@ -97,7 +140,10 @@ module Collavre
     test "every core card registered by the engine has a built-in guide page" do
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 
-      %i[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+      %i[
+        mention_agent slash_command chat_context automation_trigger topic_management add_user
+        inbox_notifications inbox_reply inbox_source
+      ].each do |key|
         assert_includes keys, key
       end
     end

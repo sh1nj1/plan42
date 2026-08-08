@@ -7,5 +7,5 @@
 <% elsif local_assigns[:search].present? %>
   <%= render partial: 'collavre/comments/no_search_results' %>
 <% else %>
-  <%= render partial: 'collavre/comments/empty_state', locals: { creative: creative } %>
+  <%= render partial: 'collavre/comments/empty_state', locals: { creative: creative, topic: local_assigns[:current_topic] } %>
 <% end %>

@@ -117,6 +117,10 @@ module Collavre
         scope.limit(limit).to_a.reverse
       end
 
+      current_topic = if @comments.empty? && effective_topic_id.present?
+        @creative.topics.find_by(id: effective_topic_id)
+      end
+
       present_user_ids = CommentPresenceStore.list(@creative.id)
 
       # Read receipts land on the nearest preceding PUBLIC comment, so a user who
@@ -139,7 +143,8 @@ module Collavre
           search: params[:search],
           read_receipts: read_receipts,
           present_user_ids: present_user_ids,
-          current_topic_id: effective_topic_id
+          current_topic_id: effective_topic_id,
+          current_topic: current_topic
         }
       end
     end

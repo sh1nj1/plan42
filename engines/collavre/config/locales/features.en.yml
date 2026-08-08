@@ -11,7 +11,7 @@ en:
         title: "Features"
         subtitle: "The things worth knowing about before your first message."
         meta_title: "Features"
-        meta_description: "Mentions, slash commands, chat context, automation triggers, topics, and sharing — everything Collavre's chat can do."
+        meta_description: "Mentions, slash commands, chat context, automation triggers, topics, sharing, and inbox notifications — everything Collavre's chat can do."
         card_more: "Learn more →"
       show:
         tips: "Tips"
@@ -89,6 +89,41 @@ en:
           tips:
             - "Archive a topic when it is finished — it stays readable but leaves the active list."
             - "Compressing requires write permission and an available AI agent. Collavre tries the topic's primary agent, the policy primary agent, then any AI agent shared on the Creative with comment permission."
+        inbox_notifications:
+          title: "Inbox notifications"
+          tagline: "Your System topic collects the updates that need your attention."
+          meta_description: "See which Collavre notifications arrive in the inbox System topic and how that topic behaves."
+          sections:
+            - heading: "What arrives here"
+              body: "Mentions, new conversation activity, Creative shares, access requests, moderation notices, and important agent recovery updates can appear in your inbox's System topic. They are collected in one stream so you can review activity without reopening every Creative."
+            - heading: "A notification-only topic"
+              body: "System is reserved for alerts and behaves differently from ordinary topics. Messages here do not invoke an AI agent, even when they contain an agent mention or a slash command."
+          tips:
+            - "No notifications is a healthy state: it means there is nothing new in this stream."
+            - "Other topics in your inbox still behave like regular conversation topics."
+        inbox_reply:
+          title: "Reply from your inbox"
+          tagline: "Answer a conversation notification without leaving the System topic."
+          meta_description: "Reply to a Collavre conversation notification from the inbox and send the response back to its original topic."
+          sections:
+            - heading: "How it works"
+              body: "When you post after a conversation notification, Collavre copies your message into the original Creative and the same topic as a reply to the source comment. Your message also remains visible in the inbox, so the action is easy to trace."
+            - heading: "Which notification receives the reply"
+              body: "The most recent preceding System notification is used. Cross-posting works when that notification links to an original comment and you still have comment permission on its Creative. Otherwise the message stays in the inbox without being copied."
+          tips:
+            - "Check the notification immediately above your draft before sending."
+            - "Attachments are copied to the original conversation with the reply."
+        inbox_source:
+          title: "Jump to the source"
+          tagline: "Move from an alert to the conversation where it happened."
+          meta_description: "Use links in Collavre inbox notifications to open the source Creative and its conversation."
+          sections:
+            - heading: "Open the original context"
+              body: "Conversation notifications include a Creative link when source context is available. Follow it to open that Creative with its chat, then review the surrounding messages before acting."
+            - heading: "Use the inbox as a hub"
+              body: "Scan notifications in System, open the source when you need broader context, and return to the inbox for the next update. This keeps the notification stream compact without duplicating each full conversation."
+          tips:
+            - "A source may be unavailable if it was removed or your access was revoked."
         add_user:
           title: "Add people"
           tagline: "Bring a teammate or an AI agent into this Creative."

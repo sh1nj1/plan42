@@ -1,6 +1,10 @@
 <%
   dismissed = (Current.user.dismissed_notices || []).map(&:to_s)
-  visible_cards = Collavre::FeatureCardRegistry.all.reject { |card| dismissed.include?(card.key.to_s) }
+  inbox_system = creative.inbox? && topic&.name == Collavre::Creative::SYSTEM_TOPIC_NAME
+  cards = Collavre::FeatureCardRegistry.for(creative: creative, topic: topic)
+  visible_cards = cards.reject { |card| dismissed.include?(card.key.to_s) }
+  title_key = inbox_system ? "collavre.comments.empty_state.inbox_system_title" : "collavre.comments.empty_state.title"
+  prompt_key = inbox_system ? "collavre.comments.empty_state.inbox_system_minimal_prompt" : "collavre.comments.empty_state.minimal_prompt"
   unless creative.has_permission?(Current.user, :admin)
     visible_cards = visible_cards.reject { |card| card.action&.dig(:type) == :share_modal }
   end
@@ -13,17 +17,17 @@
 %>
 <div id="no-comments" class="comments-placeholder" data-controller="comments--feature-cards comments--placeholder">
   <template data-comments--feature-cards-target="minimalTemplate">
-    <%= render partial: "collavre/comments/empty_state_minimal" %>
+    <%= render partial: "collavre/comments/empty_state_minimal", locals: { prompt_key: prompt_key } %>
   </template>
 
   <% if visible_cards.any? %>
-    <p class="feature-cards-title"><%= t("collavre.comments.empty_state.title") %></p>
+    <p class="feature-cards-title"><%= t(title_key) %></p>
     <div class="feature-card-grid" data-comments--feature-cards-target="grid">
       <% visible_cards.each do |card| %>
         <%= render partial: "collavre/comments/feature_card", locals: { creative: creative, card: card } %>
       <% end %>
     </div>
   <% else %>
-    <%= render partial: "collavre/comments/empty_state_minimal" %>
+    <%= render partial: "collavre/comments/empty_state_minimal", locals: { prompt_key: prompt_key } %>
   <% end %>
 </div>
