@@ -183,11 +183,17 @@ class ChatDrafts {
       if (!source || source.movedTo === targetId) return
 
       const target = this._entry(targetId)
-      if (!target || this._compare(source, target) > 0) {
+      const shouldCopyToTarget = target
+        ? this._compare(source, target) > 0
+        : !source.deleted
+      if (shouldCopyToTarget) {
         if (!this._append(targetId, {
           ...source,
           migration: false,
           movedTo: undefined,
+          deletesThrough: source.deleted
+            ? this._versionOf(target)
+            : undefined,
         })) return
         this._compact(targetId)
       }

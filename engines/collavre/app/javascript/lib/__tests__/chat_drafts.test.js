@@ -617,6 +617,55 @@ describe('ChatDrafts', () => {
     expect(drafts.get('effective')).toBeNull()
   })
 
+  test('a blank migration does not hide the first concurrent destination draft', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts._writerId = 'z-clear'
+    drafts.set('raw', '', { preserveBlank: true })
+
+    const writingTab = new ChatDrafts()
+    writingTab._writerId = 'a-write'
+    const entry = drafts._entry.bind(drafts)
+    let destinationWritten = false
+    jest.spyOn(drafts, '_entry').mockImplementation((id) => {
+      const current = entry(id)
+      if (id === 'effective' && !current && !destinationWritten) {
+        destinationWritten = true
+        writingTab.set('effective', 'first canonical draft')
+      }
+      return current
+    })
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.get('effective')).toBe('first canonical draft')
+    expect(drafts.revision('effective')).toContain('a-write')
+  })
+
+  test('a migrated blank does not hide text concurrently saved from the destination revision', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    drafts._writerId = 'z-clear'
+    drafts.set('effective', 'canonical draft')
+    now += 1
+    drafts.set('raw', '', { preserveBlank: true })
+
+    const writingTab = new ChatDrafts()
+    writingTab._writerId = 'a-write'
+    const append = drafts._append.bind(drafts)
+    jest.spyOn(drafts, '_append').mockImplementation((id, entry) => {
+      if (id === 'effective' && entry.deleted) {
+        writingTab.set('effective', 'concurrent canonical text')
+      }
+      return append(id, entry)
+    })
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('effective')).toBe('concurrent canonical text')
+    expect(drafts.revision('effective')).toContain('a-write')
+  })
+
   test('move ignores invalid, identical, and missing source ids', () => {
     drafts.set('101', 'existing draft')
     const stored = storedValues('collavre_chat_drafts_9:101:')
