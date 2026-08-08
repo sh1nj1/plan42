@@ -53,6 +53,15 @@ class ChatDrafts {
     }
   }
 
+  isNewer(sourceChatId, targetChatId) {
+    if (!sourceChatId) return false
+
+    const source = this._entry(String(sourceChatId))
+    if (!source) return false
+    const target = targetChatId ? this._entry(String(targetChatId)) : null
+    return this._compare(source, target) > 0
+  }
+
   saveSubmissionBackup(chatId, text, { updatedAt = null } = {}) {
     if (!chatId || !text || !text.trim()) return null
 
@@ -172,15 +181,15 @@ class ChatDrafts {
   }
 
   move(sourceChatId, targetChatId) {
-    if (!sourceChatId || !targetChatId) return
+    if (!sourceChatId || !targetChatId) return false
 
     const sourceId = String(sourceChatId)
     const targetId = String(targetChatId)
-    if (sourceId === targetId) return
+    if (sourceId === targetId) return true
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const source = this._entry(sourceId)
-      if (!source || source.movedTo === targetId) return
+      if (!source || source.movedTo === targetId) return true
 
       const target = this._entry(targetId)
       const shouldCopyToTarget = target
@@ -194,7 +203,7 @@ class ChatDrafts {
           deletesThrough: source.deleted
             ? this._versionOf(target)
             : undefined,
-        })) return
+	})) return false
         this._compact(targetId)
       }
 
@@ -206,10 +215,11 @@ class ChatDrafts {
         movedTo: targetId,
         deletesThrough: this._versionOf(source),
       })
-      if (!this._append(sourceId, marker)) return
+      if (!this._append(sourceId, marker)) return false
       this._compact(sourceId)
-      return
+      if (this._sameEntry(marker, this._entry(sourceId))) return true
     }
+    return false
   }
 
   clearAll({ broadcast = true } = {}) {
@@ -442,7 +452,8 @@ class ChatDrafts {
     return sorted.find((entry) => (
       !entry.deletesThrough ||
       !operations.some((candidate) => (
-        !candidate.deletesThrough &&
+	!this._sameEntry(candidate, entry) &&
+	(entry.movedTo || !candidate.deletesThrough) &&
         this._compare(candidate, entry.deletesThrough) > 0
       ))
     )) || null

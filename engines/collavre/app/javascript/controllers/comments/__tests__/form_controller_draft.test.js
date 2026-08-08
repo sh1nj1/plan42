@@ -1365,6 +1365,49 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('70')).toBeNull()
   })
 
+  test('an incomplete raw-to-effective move keeps the latest raw draft active', () => {
+    delete popupEl.dataset.effectiveCreativeId
+    chatDrafts.set('78', 'latest raw draft')
+    controller.onChatWillOpen({ creativeId: '78' })
+    jest.spyOn(chatDrafts, 'move').mockReturnValueOnce(false)
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller._activeDraftKey).toBe('78')
+    expect(controller._awaitingEffectiveDraftKeyFor).toBe('78')
+    expect(controller.textareaTarget.value).toBe('latest raw draft')
+
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller._activeDraftKey).toBe('70')
+    expect(controller._awaitingEffectiveDraftKeyFor).toBeNull()
+    expect(controller.textareaTarget.value).toBe('latest raw draft')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBe('latest raw draft')
+  })
+
+  test('an incomplete move restores a newer canonical draft', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    delete popupEl.dataset.effectiveCreativeId
+    chatDrafts.set('78', 'stale raw draft')
+    now += 1
+    chatDrafts.set('70', 'newer canonical draft')
+    controller.onChatWillOpen({ creativeId: '78' })
+    jest.spyOn(chatDrafts, 'move').mockReturnValue(false)
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller._activeDraftKey).toBe('70')
+    expect(controller._awaitingEffectiveDraftKeyFor).toBeNull()
+    expect(controller.textareaTarget.value).toBe('newer canonical draft')
+  })
+
   test('send completion clears a target copied before the source marker fails', async () => {
     delete popupEl.dataset.effectiveCreativeId
     controller.onChatWillOpen({ creativeId: '78' })

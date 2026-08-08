@@ -109,6 +109,17 @@ describe('ChatDrafts', () => {
     })
   })
 
+  test('compares resolved drafts across chat keys', () => {
+    drafts.set('raw', 'raw draft')
+    expect(drafts.isNewer('raw', 'effective')).toBe(true)
+    expect(drafts.isNewer('raw', null)).toBe(true)
+    expect(drafts.isNewer(null, 'effective')).toBe(false)
+    expect(drafts.isNewer('missing', 'effective')).toBe(false)
+
+    drafts.set('effective', 'canonical draft')
+    expect(drafts.isNewer('raw', 'effective')).toBe(false)
+  })
+
   test('orders a submission backup after the regular draft it supersedes', () => {
     jest.spyOn(Date, 'now').mockReturnValue(1000)
     drafts.set('101', 'older regular draft')
@@ -549,6 +560,72 @@ describe('ChatDrafts', () => {
     expect(drafts.get('effective')).toBe('newer source')
   })
 
+  test('retries a move when a newer source survives the move marker', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts.set('raw', 'first source')
+
+    const writingTab = new ChatDrafts()
+    const append = drafts._append.bind(drafts)
+    let sourceWritten = false
+    const writeNewerSource = () => {
+      sourceWritten = true
+      writingTab.set('raw', 'newer source')
+    }
+    jest.spyOn(drafts, '_append').mockImplementation((id, entry) => {
+      if (id === 'raw' && entry.movedTo && !sourceWritten) writeNewerSource()
+      return append(id, entry)
+    })
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.get('effective')).toBe('newer source')
+  })
+
+  test('retries a move when a concurrent source clear survives the marker', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts._writerId = 'z-marker'
+    drafts.set('raw', 'source to clear')
+
+    const clearingTab = new ChatDrafts()
+    clearingTab._writerId = 'a-clear'
+    const append = drafts._append.bind(drafts)
+    let sourceCleared = false
+    const clearSource = () => {
+      sourceCleared = true
+      clearingTab.clear('raw')
+    }
+    jest.spyOn(drafts, '_append').mockImplementation((id, entry) => {
+      if (id === 'raw' && entry.movedTo && !sourceCleared) clearSource()
+      return append(id, entry)
+    })
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.get('effective')).toBeNull()
+  })
+
+  test('reports an incomplete move after concurrent source writes exhaust retries', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts.set('raw', 'first source')
+
+    const writingTab = new ChatDrafts()
+    const append = drafts._append.bind(drafts)
+    let sourceWrites = 0
+    const writeNewerSource = () => {
+      sourceWrites += 1
+      writingTab.set('raw', `newer source ${sourceWrites}`)
+    }
+    jest.spyOn(drafts, '_append').mockImplementation((id, entry) => {
+      if (id === 'raw' && entry.movedTo) writeNewerSource()
+      return append(id, entry)
+    })
+
+    expect(drafts.move('raw', 'effective')).toBe(false)
+    expect(drafts.get('raw')).toBe('newer source 3')
+  })
+
   test('handles move marker write failure', () => {
     drafts.set('raw', 'source')
     const append = drafts._append.bind(drafts)
@@ -566,7 +643,7 @@ describe('ChatDrafts', () => {
       id === 'effective' ? false : append(id, entry)
     ))
 
-    drafts.move('raw', 'effective')
+    expect(drafts.move('raw', 'effective')).toBe(false)
 
     expect(drafts.get('raw')).toBe('source')
     expect(drafts.get('effective')).toBeNull()

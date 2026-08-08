@@ -181,6 +181,7 @@ export default class extends Controller {
     const resolvingIncomingDraftKey =
       this._awaitingEffectiveDraftKeyFor &&
       String(this._awaitingEffectiveDraftKeyFor) === String(nextCreativeId || '')
+    let keepAwaitingEffectiveDraftKey = false
     if (draftKeyChanged || creativeChanged) {
       const previousDraftKey = this._activeDraftKey
       // onChatWillOpen already flushed the outgoing chat. While the effective
@@ -195,13 +196,12 @@ export default class extends Controller {
         this._activeDraftKey
       ) {
         const sourceDraft = chatDrafts.snapshot(previousDraftKey)
-        chatDrafts.move(previousDraftKey, this._activeDraftKey)
+	const moveCompleted = chatDrafts.move(previousDraftKey, this._activeDraftKey)
         const targetDraft = chatDrafts.snapshot(this._activeDraftKey)
-        const movedBackups = chatDrafts.moveSubmissionBackups(
-          previousDraftKey,
-          this._activeDraftKey,
-        )
-        if (targetDraft.revision || !sourceDraft.revision) {
+	const movedBackups = moveCompleted
+	  ? chatDrafts.moveSubmissionBackups(previousDraftKey, this._activeDraftKey)
+	  : new Map()
+	if (moveCompleted && (targetDraft.revision || !sourceDraft.revision)) {
           this._rebindPendingDraftSubmissions(
             previousDraftKey,
             this._activeDraftKey,
@@ -209,10 +209,23 @@ export default class extends Controller {
             targetDraft,
             movedBackups,
           )
+	} else if (!moveCompleted) {
+	  this._trackPartialDraftMigration(
+	    previousDraftKey,
+	    this._activeDraftKey,
+	    sourceDraft,
+	    targetDraft,
+	  )
+	  if (chatDrafts.isNewer(previousDraftKey, this._activeDraftKey)) {
+	    this._activeDraftKey = String(previousDraftKey)
+	    keepAwaitingEffectiveDraftKey = true
+	  }
         }
       }
     }
-    if (resolvingIncomingDraftKey) this._awaitingEffectiveDraftKeyFor = null
+    if (resolvingIncomingDraftKey && !keepAwaitingEffectiveDraftKey) {
+      this._awaitingEffectiveDraftKeyFor = null
+    }
     this.currentTopicId = event.detail.topicId
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
@@ -630,6 +643,30 @@ export default class extends Controller {
       if (submission.backupKey && movedBackups.has(submission.backupKey)) {
         submission.backupKey = movedBackups.get(submission.backupKey)
       }
+    })
+  }
+
+  _trackPartialDraftMigration(sourceKey, targetKey, sourceDraft, targetDraft) {
+    if (
+      !sourceDraft.revision ||
+      targetDraft.revision !== sourceDraft.revision
+    ) return
+
+    const namespace = chatDrafts.namespace()
+    this._pendingDraftSubmissions?.forEach((submission) => {
+      if (
+	submission.namespace !== namespace ||
+	String(submission.key) !== String(sourceKey) ||
+	submission.hadStash ||
+	submission.hadReview ||
+	submission.editing ||
+	submission.storedRevision !== sourceDraft.revision
+      ) return
+
+      submission.migratedSources.push({
+	key: String(targetKey),
+	revision: targetDraft.revision,
+      })
     })
   }
 
