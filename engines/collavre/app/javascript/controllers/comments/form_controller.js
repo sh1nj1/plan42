@@ -97,10 +97,11 @@ export default class extends Controller {
     this._awaitingEffectiveDraftKeyFor = null
     this._draftSaveTimer = null
     this._draftRevisions = new Map()
+    this._observedDrafts = new Map()
     this._handleDraftInput = () => {
       if (
         this.editingId ||
-        this._stashedDraftBelongsToCurrentCreative() ||
+        this._shouldSuppressDraftSaveForStash() ||
         !this._reviewStore.isEmpty ||
         !this._activeDraftKey
       ) return
@@ -327,6 +328,16 @@ export default class extends Controller {
     )
   }
 
+  _shouldSuppressDraftSaveForStash() {
+    if (!this._stashedDraftBelongsToCurrentCreative()) return false
+
+    // Before handleSend captures the command, the command-menu input event
+    // must not replace the stashed ordinary draft. Once the send starts, only
+    // the submitted command remains suppressed; later input is a new draft.
+    return !this._stashedDraft.submittedText ||
+      this.textareaTarget.value === this._stashedDraft.submittedText
+  }
+
   _restoreStashedDraft(submittedText) {
     const stashed = this._stashedDraft
     this._stashedDraft = null
@@ -373,12 +384,14 @@ export default class extends Controller {
     if (
       !this._activeDraftKey ||
       this.editingId ||
-      this._stashedDraftBelongsToCurrentCreative() ||
+      this._shouldSuppressDraftSaveForStash() ||
       !this._reviewStore.isEmpty
     ) return
     const text = this.textareaTarget.value
-    if (chatDrafts.get(this._activeDraftKey) === text) return
-    chatDrafts.set(this._activeDraftKey, text)
+    if (chatDrafts.get(this._activeDraftKey) !== text) {
+      chatDrafts.set(this._activeDraftKey, text)
+    }
+    this._observeDraft(this._activeDraftKey, chatDrafts.get(this._activeDraftKey))
   }
 
   _flushDraftSave() {
@@ -392,10 +405,17 @@ export default class extends Controller {
     if (this.textareaTarget.value.trim()) return
 
     const draft = chatDrafts.get(this._activeDraftKey)
+    this._observeDraft(this._activeDraftKey, draft)
     if (draft) {
       this.textareaTarget.value = draft
       requestAnimationFrame(() => this._autoResize())
     }
+  }
+
+  _observeDraft(draftKey, text, namespace = chatDrafts.namespace()) {
+    if (!draftKey) return
+    const observationKey = `${namespace}:${draftKey}`
+    this._observedDrafts?.set(observationKey, text)
   }
 
   setSendingState(isSending) {
@@ -457,12 +477,21 @@ export default class extends Controller {
     const submittedDraftKey = this._activeDraftKey
     const submittedDraftNamespace = chatDrafts.namespace()
     const submittedDraftRevisionKey = `${submittedDraftNamespace}:${submittedDraftKey}`
+    const submittedStoredDraftText = submittedDraftKey
+      ? chatDrafts.get(submittedDraftKey)
+      : null
+    const submittedStoredDraftChangedOutsideController =
+      this._observedDrafts?.has(submittedDraftRevisionKey) &&
+      this._observedDrafts.get(submittedDraftRevisionKey) !== submittedStoredDraftText
     const submittedEditingId = this.editingId
     const submittedDraftKeyRevision = this._draftRevisions?.get(submittedDraftRevisionKey) || 0
     const submittedHadReview = hasQuotes
     const submittedDraftUpdatedAt = submittedDraftKey
       ? chatDrafts.updatedAt(submittedDraftKey)
       : null
+    if (this._stashedDraftBelongsToCurrentCreative()) {
+      this._stashedDraft.submittedText = submittedText
+    }
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -532,6 +561,7 @@ export default class extends Controller {
           (
             (this._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
               submittedDraftKeyRevision ||
+            submittedStoredDraftChangedOutsideController ||
             chatDrafts.updatedAt(submittedDraftKey) !== submittedDraftUpdatedAt
           )
         const hasNewerDraft = hasNewerActiveDraft || hasNewerStoredDraft
@@ -552,10 +582,12 @@ export default class extends Controller {
             this._autoResize()
             this._updateSubmitButton()
             chatDrafts.set(submittedDraftKey, newerDraft)
+            this._observeDraft(submittedDraftKey, newerDraft, submittedDraftNamespace)
           } else if (hasNewerStoredDraft && submittedChatStillActive) {
             this._restoreDraft()
           } else if (!hasNewerDraft && submittedDraftKey && ownsSubmittedDraftNamespace) {
             chatDrafts.clear(submittedDraftKey)
+            this._observeDraft(submittedDraftKey, null, submittedDraftNamespace)
           }
           if (switchedChats && !submittedHadReview) this._restoreDraft()
           // New Comment:

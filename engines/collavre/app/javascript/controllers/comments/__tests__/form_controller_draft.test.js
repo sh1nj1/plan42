@@ -328,6 +328,39 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('draft updated outside this form')
   })
 
+  test('successful send preserves a draft another tab saved before submission', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'stale message in this tab')
+    controller._flushDraftSave()
+
+    chatDrafts.set('77', 'newer draft from another tab')
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('newer draft from another tab')
+    expect(chatDrafts.get('77')).toBe('newer draft from another tab')
+  })
+
+  test('successful send clears this tab draft changed before its debounce runs', async () => {
+    chatDrafts.set('77', 'older draft from this tab')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'new message sent immediately')
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+  })
+
   test('send completion after an account change does not clear the new user draft', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'user 9 message')
@@ -502,6 +535,28 @@ describe('FormController - draft persistence', () => {
     controller._restoreStashedDraft('/calendar 2026-08-14')
     expect(controller.textareaTarget.value).toBe('my draft')
     expect(chatDrafts.get('77')).toBe('my draft')
+  })
+
+  test('a message typed while a slash command is pending is saved on close', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'my draft')
+    controller.handleStashDraft(
+      new CustomEvent('comments--form:stash-draft', { detail: { draft: 'my draft' } }),
+    )
+    typeInto(controller.textareaTarget, '/calendar 2026-08-14')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    typeInto(controller.textareaTarget, 'next message')
+    controller.onPopupClosed()
+    const savedOnClose = chatDrafts.get('77')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(savedOnClose).toBe('next message')
+    expect(chatDrafts.get('77')).toBe('next message')
   })
 
   test('review quote feedback never replaces the ordinary chat draft', async () => {
