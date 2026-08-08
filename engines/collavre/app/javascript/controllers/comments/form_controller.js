@@ -96,6 +96,7 @@ export default class extends Controller {
     this._activeDraftCreativeId = null
     this._awaitingEffectiveDraftKeyFor = null
     this._draftSaveTimer = null
+    this._draftSaveSuspendedForPermission = false
     this._draftRevisions = new Map()
     this._observedDrafts = new Map()
     this._observedDraftRevisions = new Map()
@@ -112,6 +113,7 @@ export default class extends Controller {
     this._handleDraftInput = () => {
       if (
         this.editingId ||
+        this._draftSaveSuspendedForPermission ||
         this._shouldSuppressDraftSaveForStash() ||
         !this._reviewStore.isEmpty ||
         !this._activeDraftKey
@@ -231,6 +233,7 @@ export default class extends Controller {
   onPopupOpened({ creativeId, canComment }) {
     this.creativeId = creativeId
     this.element.dataset.creativeId = creativeId || ''
+    if (canComment) this._draftSaveSuspendedForPermission = false
     // Stale topic ids from the previous creative are cleared by the popup
     // controller BEFORE topics loadTopics() dispatches comments--topics:change,
     // so by the time we get here, currentTopicId already reflects the new
@@ -241,6 +244,7 @@ export default class extends Controller {
     // that is waiting in storage to be restored below.
     if (this._draftSaveTimer) this._flushDraftSave()
     this.resetForm()
+    this._draftSaveSuspendedForPermission = !canComment
     if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
@@ -289,11 +293,14 @@ export default class extends Controller {
 
     if (!canComment) {
       this._flushDraftSave()
+      this._draftSaveSuspendedForPermission = true
       this.stopSpeechRecognition()
       this.resetForm()
       return
     }
 
+    this._draftSaveSuspendedForPermission = false
+    this._restoreDraft()
     if (this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
     }
@@ -399,6 +406,7 @@ export default class extends Controller {
   _saveDraftNow() {
     if (
       !this._activeDraftKey ||
+      this._draftSaveSuspendedForPermission ||
       this.editingId ||
       this._shouldSuppressDraftSaveForStash() ||
       !this._reviewStore.isEmpty

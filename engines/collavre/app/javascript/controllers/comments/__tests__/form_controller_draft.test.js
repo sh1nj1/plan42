@@ -341,13 +341,39 @@ describe('FormController - draft persistence', () => {
     controller.connect()
   })
 
-  test('losing comment permission flush-saves the draft', () => {
+  test('losing comment permission preserves the saved draft through close', () => {
     dispatchTopicChange('77')
     controller.textareaTarget.value = 'permission changed'
     controller.setCommentPermission(false)
     expect(chatDrafts.get('77')).toBe('permission changed')
+
+    typeInto(controller.textareaTarget, 'hidden stale text')
+    controller.onPopupClosed()
+    expect(chatDrafts.get('77')).toBe('permission changed')
+
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('permission changed')
+  })
+
+  test('regaining comment permission restores the saved draft', () => {
+    dispatchTopicChange('77')
+    controller.textareaTarget.value = 'permission changed'
+    controller.setCommentPermission(false)
+
     controller.setCommentPermission(true)
     expect(controller.formTarget.style.display).toBe('')
+    expect(controller.textareaTarget.value).toBe('permission changed')
+  })
+
+  test('opening a read-only chat does not clear its saved draft on close', () => {
+    chatDrafts.set('77', 'read-only saved draft')
+    dispatchTopicChange('77')
+
+    controller.onPopupOpened({ creativeId: '77', canComment: false })
+    controller.onPopupClosed()
+
+    expect(chatDrafts.get('77')).toBe('read-only saved draft')
   })
 
   test('successful send clears the stored draft', async () => {
