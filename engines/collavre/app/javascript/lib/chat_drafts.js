@@ -31,6 +31,7 @@ class ChatDrafts {
     this._fallbackBackupStorage = createMemoryStorage()
     this._writerId = `${Date.now()}-${Math.random()}`
     this._sequence = 0
+    this._pendingClearNonces = new Map()
   }
 
   get(chatId) {
@@ -337,10 +338,25 @@ class ChatDrafts {
     }
     if (!broadcast) return
 
+    const updatedAt = Date.now()
+    const nonce = `${updatedAt}-${Math.random()}`
+    const signal = {
+      namespace,
+      nonce,
+      updatedAt,
+    }
+    const serializedSignal = JSON.stringify(signal)
     try {
-      backend.setItem(CLEAR_EVENT_KEY, JSON.stringify({
-        namespace,
-        nonce: `${Date.now()}-${Math.random()}`,
+      backend.setItem(CLEAR_EVENT_KEY, serializedSignal)
+    } catch {
+      // Storage unavailable.
+    }
+    const legacyResult = this._readClearSignal(backend, CLEAR_EVENT_KEY)
+    try {
+      backend.setItem(this._clearEventKey(namespace), JSON.stringify({
+	...signal,
+	legacyNamespace: legacyResult.signal?.namespace || null,
+	legacyNonce: legacyResult.signal?.nonce || null,
       }))
     } catch {
       // Storage unavailable.
@@ -348,7 +364,10 @@ class ChatDrafts {
   }
 
   wasCleared(event) {
-    if (event?.key !== CLEAR_EVENT_KEY || !event.newValue) return false
+    if (
+      !event?.newValue ||
+      ![CLEAR_EVENT_KEY, this._clearEventKey()].includes(event.key)
+    ) return false
 
     try {
       return JSON.parse(event.newValue)?.namespace === this._key()
@@ -361,12 +380,74 @@ class ChatDrafts {
     const backend = this._backend()
     if (!this._storage && backend === this._fallbackStorage) return undefined
 
-    try {
-      const signal = JSON.parse(backend.getItem(CLEAR_EVENT_KEY))
-      return signal?.namespace === namespace ? signal.nonce || null : null
-    } catch {
-      return undefined
+    const namespacedKey = this._clearEventKey(namespace)
+    const namespacedResult = this._readClearSignal(backend, namespacedKey)
+    const legacyResult = this._readClearSignal(backend, CLEAR_EVENT_KEY)
+    const namespacedSignal = namespacedResult.signal?.namespace === namespace
+      ? namespacedResult.signal
+      : null
+    const legacySignal = legacyResult.signal?.namespace === namespace
+      ? legacyResult.signal
+      : null
+    const pendingNonce = this._pendingClearNonces.get(namespace)
+    if (
+      pendingNonce &&
+      namespacedSignal?.nonce === pendingNonce &&
+      namespacedSignal.legacyNamespace === namespace &&
+      namespacedSignal.legacyNonce === pendingNonce
+    ) {
+      this._pendingClearNonces.delete(namespace)
     }
+    let signal = namespacedSignal || legacySignal
+    let promoteLegacy = false
+    if (
+      legacySignal &&
+      legacySignal.nonce !== namespacedSignal?.nonce
+    ) {
+      const hasLegacyBaseline = namespacedSignal &&
+	Object.hasOwn(namespacedSignal, 'legacyNamespace') &&
+	Object.hasOwn(namespacedSignal, 'legacyNonce')
+      const matchesLegacyBaseline = hasLegacyBaseline &&
+	namespacedSignal.legacyNamespace === legacySignal.namespace &&
+	namespacedSignal.legacyNonce === legacySignal.nonce
+      promoteLegacy = !matchesLegacyBaseline && (
+	hasLegacyBaseline ||
+	this._compareClearSignals(legacySignal, namespacedSignal) >= 0
+      )
+    }
+    if (!signal) {
+      return namespacedResult.available && legacyResult.available ? null : undefined
+    }
+    if (!signal.nonce) return null
+    if (promoteLegacy || !namespacedSignal) {
+      const promotedSignal = {
+	...legacySignal,
+	legacyNamespace: legacySignal.namespace,
+	legacyNonce: legacySignal.nonce,
+      }
+      try {
+	backend.setItem(namespacedKey, JSON.stringify(promotedSignal))
+      } catch {
+	this._pendingClearNonces.set(namespace, promotedSignal.nonce)
+	return promotedSignal.nonce
+      }
+      const promotedResult = this._readClearSignal(backend, namespacedKey)
+      if (
+	!promotedResult.available ||
+	promotedResult.signal?.nonce !== promotedSignal.nonce ||
+	promotedResult.signal?.legacyNonce !== promotedSignal.legacyNonce
+      ) {
+	this._pendingClearNonces.set(namespace, promotedSignal.nonce)
+	return promotedSignal.nonce
+      }
+      this._pendingClearNonces.delete(namespace)
+      signal = promotedSignal
+    }
+    return signal.nonce
+  }
+
+  clearNoncePending(namespace = this._key()) {
+    return this._pendingClearNonces.has(namespace)
   }
 
   namespace() {
@@ -397,6 +478,34 @@ class ChatDrafts {
   _key() {
     const userId = document.body?.dataset?.currentUserId || 'guest'
     return `collavre_chat_drafts_${userId}`
+  }
+
+  _clearEventKey(namespace = this._key()) {
+    return `${CLEAR_EVENT_KEY}${KEY_SEPARATOR}${encodeURIComponent(namespace)}`
+  }
+
+  _compareClearSignals(left, right) {
+    const updatedAt = (signal) => {
+      const value = Number(signal?.updatedAt ?? String(signal?.nonce).split('-')[0])
+      return Number.isFinite(value) ? value : 0
+    }
+    return updatedAt(left) - updatedAt(right)
+  }
+
+  _readClearSignal(backend, key) {
+    let value
+    try {
+      value = backend.getItem(key)
+    } catch {
+      return { available: false, signal: null }
+    }
+    if (!value) return { available: true, signal: null }
+
+    try {
+      return { available: true, signal: JSON.parse(value) }
+    } catch {
+      return { available: true, signal: null }
+    }
   }
 
   _prefix() {

@@ -114,6 +114,7 @@ export default class extends Controller {
     this._pendingDraftSubmissions ||= new Set()
     const draftNamespace = chatDrafts.namespace()
     const draftClearNonce = chatDrafts.clearNonce(draftNamespace)
+    const draftClearNoncePending = chatDrafts.clearNoncePending(draftNamespace)
     const observedDraftClearNonce = this._observedDraftClearNonces.has(draftNamespace)
     let canObserveDraftClearNonce = true
     if (draftClearNonce && !observedDraftClearNonce) {
@@ -121,7 +122,7 @@ export default class extends Controller {
 	draftNamespace,
 	draftClearNonce,
       )
-      if (canObserveDraftClearNonce) {
+      if (canObserveDraftClearNonce && !draftClearNoncePending) {
 	this._draftBackupCleanupPendingNamespaces.delete(draftNamespace)
       } else {
 	this._draftBackupCleanupPendingNamespaces.add(draftNamespace)
@@ -134,7 +135,11 @@ export default class extends Controller {
     ) {
       this._disableDraftNamespace(draftNamespace)
     }
-    if (draftClearNonce !== undefined && canObserveDraftClearNonce) {
+    if (
+      draftClearNonce !== undefined &&
+      canObserveDraftClearNonce &&
+      !draftClearNoncePending
+    ) {
       this._observedDraftClearNonces.set(draftNamespace, draftClearNonce)
     }
     this._handlePageHide = () => {

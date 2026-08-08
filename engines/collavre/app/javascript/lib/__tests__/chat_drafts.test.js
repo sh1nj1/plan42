@@ -1017,22 +1017,30 @@ describe('ChatDrafts', () => {
 
   test('clearAll broadcasts its namespace for other tabs', () => {
     drafts.clearAll()
-    const signal = window.localStorage.getItem('collavre_chat_drafts_clear')
+    const signalKey = drafts._clearEventKey()
+    const signal = window.localStorage.getItem(signalKey)
+    const legacySignal = window.localStorage.getItem('collavre_chat_drafts_clear')
 
     expect(JSON.parse(signal).namespace).toBe('collavre_chat_drafts_9')
+    expect(JSON.parse(signal)).toMatchObject(JSON.parse(legacySignal))
+    expect(JSON.parse(signal).legacyNonce).toBe(JSON.parse(legacySignal).nonce)
     expect(drafts.clearNonce()).toBe(JSON.parse(signal).nonce)
+    expect(drafts.clearNoncePending()).toBe(false)
     expect(drafts.clearNonce('collavre_chat_drafts_10')).toBeNull()
-    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+    const signalWithoutNonce = JSON.stringify({
       namespace: 'collavre_chat_drafts_9',
-    }))
+    })
+    window.localStorage.setItem(signalKey, signalWithoutNonce)
+    window.localStorage.setItem('collavre_chat_drafts_clear', signalWithoutNonce)
     expect(drafts.clearNonce()).toBeNull()
+    window.localStorage.setItem(signalKey, signal)
     window.localStorage.setItem('collavre_chat_drafts_clear', signal)
     expect(drafts.wasCleared(new StorageEvent('storage', {
-      key: 'collavre_chat_drafts_clear',
+      key: signalKey,
       newValue: signal,
     }))).toBe(true)
     expect(drafts.wasCleared(new StorageEvent('storage', {
-      key: 'collavre_chat_drafts_clear',
+      key: drafts._clearEventKey('collavre_chat_drafts_10'),
       newValue: JSON.stringify({ namespace: 'collavre_chat_drafts_10' }),
     }))).toBe(false)
     expect(drafts.wasCleared(new StorageEvent('storage', {
@@ -1040,11 +1048,181 @@ describe('ChatDrafts', () => {
       newValue: signal,
     }))).toBe(false)
     expect(drafts.wasCleared(new StorageEvent('storage', {
-      key: 'collavre_chat_drafts_clear',
+      key: signalKey,
       newValue: '{invalid',
     }))).toBe(false)
+    window.localStorage.setItem(signalKey, '{invalid')
+    expect(drafts.clearNonce()).toBe(JSON.parse(signal).nonce)
+    window.localStorage.setItem(signalKey, '{invalid')
     window.localStorage.setItem('collavre_chat_drafts_clear', '{invalid')
-    expect(drafts.clearNonce()).toBeUndefined()
+    expect(drafts.clearNonce()).toBeNull()
+  })
+
+  test('reads and observes legacy clear signals', () => {
+    const signal = JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: 'legacy-logout',
+    })
+    window.localStorage.setItem('collavre_chat_drafts_clear', signal)
+
+    expect(drafts.clearNonce()).toBe('legacy-logout')
+    expect(drafts.wasCleared(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: signal,
+    }))).toBe(true)
+  })
+
+  test('promotes a newer legacy clear signal into its namespace marker', () => {
+    const signalKey = drafts._clearEventKey()
+    window.localStorage.setItem(signalKey, JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: '1000-new-client',
+      updatedAt: 1000,
+    }))
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: '2000-old-client',
+    }))
+
+    expect(drafts.clearNonce()).toBe('2000-old-client')
+    expect(JSON.parse(window.localStorage.getItem(signalKey)).nonce)
+      .toBe('2000-old-client')
+  })
+
+  test('treats a changed synchronized legacy signal as newer across clock rollback', () => {
+    const signalKey = drafts._clearEventKey()
+    window.localStorage.setItem(signalKey, JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: '2000-z-new-client',
+      updatedAt: 2000,
+      legacyNamespace: 'collavre_chat_drafts_9',
+      legacyNonce: '2000-z-new-client',
+    }))
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: '1000-a-old-client',
+    }))
+
+    expect(drafts.clearNonce()).toBe('1000-a-old-client')
+    expect(JSON.parse(window.localStorage.getItem(signalKey))).toMatchObject({
+      nonce: '1000-a-old-client',
+      legacyNonce: '1000-a-old-client',
+    })
+  })
+
+  test('prefers the current legacy signal when old markers lack ordering metadata', () => {
+    const namespace = 'collavre_chat_drafts_9'
+    window.localStorage.setItem(drafts._clearEventKey(namespace), JSON.stringify({
+      namespace,
+      nonce: 'new-client-marker',
+    }))
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace,
+      nonce: 'old-client-logout',
+    }))
+
+    expect(drafts.clearNonce()).toBe('old-client-logout')
+  })
+
+  test('keeps a new namespaced marker when the legacy write remains stale', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    const namespace = 'collavre_chat_drafts_9'
+    const namespacedKey = drafts._clearEventKey(namespace)
+    const staleLegacy = JSON.stringify({
+      namespace,
+      nonce: '3000-stale-legacy',
+      updatedAt: 3000,
+    })
+    const values = new Map([['collavre_chat_drafts_clear', staleLegacy]])
+    const storage = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] ?? null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+	if (key !== 'collavre_chat_drafts_clear') values.set(key, value)
+      },
+      removeItem: (key) => values.delete(key),
+    }
+    const partialDrafts = new ChatDrafts(storage)
+
+    partialDrafts.clearAll()
+
+    const namespacedSignal = JSON.parse(values.get(namespacedKey))
+    expect(namespacedSignal.legacyNonce).toBe('3000-stale-legacy')
+    expect(partialDrafts.clearNonce()).toBe(namespacedSignal.nonce)
+  })
+
+  test('does not observe a legacy promotion until its write is verified', () => {
+    const namespace = 'collavre_chat_drafts_9'
+    const namespacedKey = drafts._clearEventKey(namespace)
+    const namespacedSignal = JSON.stringify({
+      namespace,
+      nonce: 'logout-1',
+      legacyNamespace: namespace,
+      legacyNonce: 'logout-1',
+    })
+    const legacySignal = JSON.stringify({ namespace, nonce: 'logout-2' })
+    const values = new Map([
+      [namespacedKey, namespacedSignal],
+      ['collavre_chat_drafts_clear', legacySignal],
+    ])
+    let writesBlocked = true
+    const storage = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] ?? null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+	if (!writesBlocked) values.set(key, value)
+      },
+      removeItem: (key) => values.delete(key),
+    }
+
+    const silentDrafts = new ChatDrafts(storage)
+    expect(silentDrafts.clearNonce(namespace)).toBe('logout-2')
+    expect(silentDrafts.clearNoncePending(namespace)).toBe(true)
+    expect(values.get(namespacedKey)).toBe(namespacedSignal)
+
+    const throwingStorage = {
+      ...storage,
+      setItem: () => { throw new Error('denied') },
+    }
+    const throwingDrafts = new ChatDrafts(throwingStorage)
+    expect(throwingDrafts.clearNonce(namespace)).toBe('logout-2')
+    expect(throwingDrafts.clearNoncePending(namespace)).toBe(true)
+
+    writesBlocked = false
+    expect(new ChatDrafts(storage).clearNonce(namespace)).toBe('logout-2')
+    expect(silentDrafts.clearNonce(namespace)).toBe('logout-2')
+    expect(silentDrafts.clearNoncePending(namespace)).toBe(false)
+  })
+
+  test('uses a valid clear marker when the other marker cannot be read', () => {
+    const namespace = 'collavre_chat_drafts_9'
+    const namespacedKey = drafts._clearEventKey(namespace)
+    const signal = JSON.stringify({ namespace, nonce: 'logout-1' })
+    const storage = {
+      length: 0,
+      key: () => null,
+      getItem: (key) => {
+	if (key === 'collavre_chat_drafts_clear') throw new Error('denied')
+	return key === namespacedKey ? signal : null
+      },
+      setItem: () => {},
+      removeItem: () => {},
+    }
+
+    expect(new ChatDrafts(storage).clearNonce(namespace)).toBe('logout-1')
+  })
+
+  test('retains clear nonces for each user namespace', () => {
+    drafts.clearAll()
+    const userNineNonce = drafts.clearNonce()
+
+    document.body.dataset.currentUserId = '10'
+    drafts.clearAll()
+
+    expect(drafts.clearNonce()).not.toBe(userNineNonce)
+    expect(drafts.clearNonce('collavre_chat_drafts_9')).toBe(userNineNonce)
   })
 
   test('clearAll can skip the cross-tab broadcast', () => {
@@ -1052,7 +1230,7 @@ describe('ChatDrafts', () => {
     drafts.clearAll({ broadcast: false })
 
     expect(storedValues('collavre_chat_drafts_9:101:')).toEqual([])
-    expect(window.localStorage.getItem('collavre_chat_drafts_clear')).toBeNull()
+    expect(window.localStorage.getItem(drafts._clearEventKey())).toBeNull()
   })
 
   test('ignores falsy chat ids', () => {

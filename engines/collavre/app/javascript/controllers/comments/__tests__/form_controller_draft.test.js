@@ -374,9 +374,10 @@ describe('FormController - draft persistence', () => {
 
     controller.disconnect()
     chatDrafts.clearAll()
-    const clearSignal = window.localStorage.getItem('collavre_chat_drafts_clear')
+    const clearSignalKey = chatDrafts._clearEventKey()
+    const clearSignal = window.localStorage.getItem(clearSignalKey)
     window.dispatchEvent(new StorageEvent('storage', {
-      key: 'collavre_chat_drafts_clear',
+      key: clearSignalKey,
       newValue: clearSignal,
     }))
 
@@ -420,10 +421,13 @@ describe('FormController - draft persistence', () => {
 
   test('a fresh controller clears submission backups from a missed logout once', async () => {
     chatDrafts.saveSubmissionBackup('77', 'failed submission before logout')
-    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+    window.localStorage.setItem(chatDrafts._clearEventKey(), JSON.stringify({
       namespace: 'collavre_chat_drafts_9',
       nonce: 'missed-logout',
     }))
+    document.body.dataset.currentUserId = '10'
+    chatDrafts.clearAll()
+    document.body.dataset.currentUserId = '9'
 
     controller.disconnect()
     application.stop()
@@ -443,6 +447,50 @@ describe('FormController - draft persistence', () => {
     freshController.connect()
 
     expect(submissionBackup('77')).toBe('failed submission after logout')
+    controller = freshController
+  })
+
+  test('a fresh controller suspends drafts until legacy marker promotion succeeds', async () => {
+    const namespace = chatDrafts.namespace()
+    const namespacedKey = chatDrafts._clearEventKey(namespace)
+    chatDrafts.saveSubmissionBackup('77', 'failed submission before logout')
+    window.localStorage.setItem(namespacedKey, JSON.stringify({
+      namespace,
+      nonce: 'logout-1',
+      legacyNamespace: namespace,
+      legacyNonce: 'logout-1',
+    }))
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace,
+      nonce: 'logout-2',
+    }))
+    const originalSetItem = window.Storage.prototype.setItem
+    const setItem = jest.spyOn(window.Storage.prototype, 'setItem')
+      .mockImplementation(function(key, value) {
+	if (this === window.localStorage && key === namespacedKey) return
+	originalSetItem.call(this, key, value)
+      })
+
+    controller.disconnect()
+    application.stop()
+    application = Application.start()
+    application.register('comments--form', FormController)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const freshController = application.getControllerForElementAndIdentifier(
+      popupEl,
+      'comments--form',
+    )
+
+    expect(submissionBackup('77')).toBeNull()
+    expect(freshController._draftPersistenceDisabled()).toBe(true)
+    expect(freshController._observedDraftClearNonces.has(namespace)).toBe(false)
+
+    setItem.mockRestore()
+    freshController.disconnect()
+    freshController.connect()
+
+    expect(freshController._draftPersistenceDisabled()).toBe(false)
+    expect(freshController._observedDraftClearNonces.get(namespace)).toBe('logout-2')
     controller = freshController
   })
 
