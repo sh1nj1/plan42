@@ -864,6 +864,31 @@ describe('ChatDrafts', () => {
     expect(() => brokenDrafts.clearAll()).not.toThrow()
   })
 
+  test('falls back when Web Storage property access is denied', () => {
+    jest.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    jest.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    const unavailableDrafts = new ChatDrafts()
+
+    expect(() => unavailableDrafts.snapshot('101')).not.toThrow()
+    expect(unavailableDrafts._backend().key(0)).toBeNull()
+    expect(unavailableDrafts._backend().getItem('missing')).toBeNull()
+    unavailableDrafts.set('101', 'ephemeral draft')
+    expect(unavailableDrafts.get('101')).toBe('ephemeral draft')
+
+    const backupKey = unavailableDrafts.saveSubmissionBackup('101', 'failed send')
+    expect(unavailableDrafts.latestSubmissionBackup('101')).toMatchObject({
+      key: backupKey,
+      text: 'failed send',
+    })
+    expect(() => unavailableDrafts.clearAll()).not.toThrow()
+    expect(unavailableDrafts.get('101')).toBeNull()
+    expect(unavailableDrafts.latestSubmissionBackup('101')).toBeNull()
+  })
+
   test('handles malformed independent entries and key enumeration failures', () => {
     window.localStorage.setItem('collavre_chat_drafts_9:bad-json:op', '{bad')
     window.localStorage.setItem(

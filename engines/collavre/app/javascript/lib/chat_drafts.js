@@ -3,6 +3,17 @@ const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const CLEAR_EVENT_KEY = 'collavre_chat_drafts_clear'
 const KEY_SEPARATOR = ':'
 
+const createMemoryStorage = () => {
+  const values = new Map()
+  return {
+    get length() { return values.size },
+    key: (index) => [...values.keys()][index] ?? null,
+    getItem: (key) => values.get(String(key)) ?? null,
+    setItem: (key, value) => values.set(String(key), String(value)),
+    removeItem: (key) => values.delete(String(key)),
+  }
+}
+
 /**
  * Per-user persistent store for unsent chat input drafts.
  *
@@ -16,6 +27,8 @@ class ChatDrafts {
   constructor(storage = null, backupStorage = null) {
     this._storage = storage
     this._backupStorage = backupStorage
+    this._fallbackStorage = createMemoryStorage()
+    this._fallbackBackupStorage = createMemoryStorage()
     this._writerId = `${Date.now()}-${Math.random()}`
     this._sequence = 0
   }
@@ -267,11 +280,24 @@ class ChatDrafts {
   }
 
   _backend() {
-    return this._storage || window.localStorage
+    if (this._storage) return this._storage
+
+    try {
+      return window.localStorage
+    } catch {
+      return this._fallbackStorage
+    }
   }
 
   _backupBackend() {
-    return this._backupStorage || this._storage || window.sessionStorage
+    if (this._backupStorage) return this._backupStorage
+    if (this._storage) return this._storage
+
+    try {
+      return window.sessionStorage
+    } catch {
+      return this._fallbackBackupStorage
+    }
   }
 
   _key() {
