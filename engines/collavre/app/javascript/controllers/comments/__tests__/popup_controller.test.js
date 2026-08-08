@@ -6,6 +6,7 @@
 import { Application } from '@hotwired/stimulus'
 import { jest } from '@jest/globals'
 import CommentsPopupController from '../popup_controller'
+import chatDrafts from '../../../lib/chat_drafts'
 
 describe('CommentsPopupController', () => {
     let application
@@ -654,6 +655,30 @@ describe('CommentsPopupController', () => {
         expect(formController.discardDraft).toHaveBeenCalledTimes(1)
         expect(window.localStorage.getItem('commentsPopupSize')).toBeNull()
         expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
+    })
+
+    test('logout submit discards drafts when the localStorage getter is denied', () => {
+        const formController = { discardDraft: jest.fn() }
+        Object.defineProperty(controller, 'formController', {
+            configurable: true,
+            value: formController,
+        })
+        const storageGetter = jest.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+            throw new DOMException('Storage access denied', 'SecurityError')
+        })
+
+        try {
+            chatDrafts.set('77', 'private draft')
+
+            expect(() => document.getElementById('logout-form').dispatchEvent(
+                new Event('submit', { bubbles: true, cancelable: true }),
+            )).not.toThrow()
+
+            expect(formController.discardDraft).toHaveBeenCalledTimes(1)
+            expect(chatDrafts.get('77')).toBeNull()
+        } finally {
+            storageGetter.mockRestore()
+        }
     })
 
 })
