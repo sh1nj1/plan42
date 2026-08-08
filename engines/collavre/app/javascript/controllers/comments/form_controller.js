@@ -96,7 +96,6 @@ export default class extends Controller {
     this._activeDraftCreativeId = null
     this._awaitingEffectiveDraftKeyFor = null
     this._draftSaveTimer = null
-    this._draftRevision = 0
     this._draftRevisions = new Map()
     this._handleDraftInput = () => {
       if (
@@ -105,7 +104,6 @@ export default class extends Controller {
         !this._reviewStore.isEmpty ||
         !this._activeDraftKey
       ) return
-      this._draftRevision += 1
       const revisionKey = `${chatDrafts.namespace()}:${this._activeDraftKey}`
       this._draftRevisions.set(revisionKey, (this._draftRevisions.get(revisionKey) || 0) + 1)
       clearTimeout(this._draftSaveTimer)
@@ -453,7 +451,6 @@ export default class extends Controller {
     const submittedDraftNamespace = chatDrafts.namespace()
     const submittedDraftRevisionKey = `${submittedDraftNamespace}:${submittedDraftKey}`
     const submittedEditingId = this.editingId
-    const submittedDraftRevision = this._draftRevision
     const submittedDraftKeyRevision = this._draftRevisions?.get(submittedDraftRevisionKey) || 0
     const submittedHadReview = hasQuotes
     const submittedDraftUpdatedAt = submittedDraftKey
@@ -518,7 +515,8 @@ export default class extends Controller {
           !submittedEditingId &&
           !submittedHadReview &&
           submittedChatStillActive &&
-          this._draftRevision !== submittedDraftRevision
+          (this._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
+            submittedDraftKeyRevision
         const hasNewerStoredDraft =
           ownsSubmittedDraftNamespace &&
           !submittedEditingId &&
