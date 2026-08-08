@@ -238,21 +238,53 @@ describe('ChatDrafts', () => {
     expect(failingDrafts.latestSubmissionBackup('effective')).toBeNull()
 
     window.localStorage.clear()
+    let rollbackNow = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => rollbackNow)
+    const rollbackStorage = {
+      get length() { return window.localStorage.length },
+      key: storage.key,
+      getItem: storage.getItem,
+      setItem: (key, value) => {
+	if (
+	  key.startsWith('collavre_chat_drafts_9_pending:effective:') &&
+	  value.includes('newer source')
+	) throw new Error('quota')
+	window.localStorage.setItem(key, value)
+      },
+      removeItem: storage.removeItem,
+    }
+    const rollbackDrafts = new ChatDrafts(rollbackStorage)
+    rollbackDrafts.saveSubmissionBackup('effective', 'older target')
+    rollbackNow += 1
+    rollbackDrafts.saveSubmissionBackup('raw', 'newer source')
+
+    expect(rollbackDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
+    expect(rollbackDrafts.latestSubmissionBackup('effective')?.text).toBe('older target')
+    expect(rollbackDrafts.latestSubmissionBackup('raw')?.text).toBe('newer source')
+
+    window.localStorage.clear()
     const droppedStorage = {
       get length() { return window.localStorage.length },
       key: storage.key,
       getItem: storage.getItem,
       setItem: (key, value) => {
-        if (!key.startsWith('collavre_chat_drafts_9_pending:effective:')) {
-          window.localStorage.setItem(key, value)
-        }
+	if (
+	  !key.startsWith('collavre_chat_drafts_9_pending:effective:') ||
+	  !value.includes('verify destination')
+	) {
+	  window.localStorage.setItem(key, value)
+	}
       },
       removeItem: storage.removeItem,
     }
     const droppedDrafts = new ChatDrafts(droppedStorage)
+    droppedDrafts.saveSubmissionBackup('effective', 'target before dropped write')
+    rollbackNow += 1
     droppedDrafts.saveSubmissionBackup('raw', 'verify destination')
     expect(droppedDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
     expect(droppedDrafts.latestSubmissionBackup('raw')?.text).toBe('verify destination')
+    expect(droppedDrafts.latestSubmissionBackup('effective')?.text)
+      .toBe('target before dropped write')
 
     const values = new Map()
     const stickySourceStorage = {
@@ -265,10 +297,13 @@ describe('ChatDrafts', () => {
       },
     }
     const stickyDrafts = new ChatDrafts(stickySourceStorage)
+    stickyDrafts.saveSubmissionBackup('effective', 'target before sticky source')
+    rollbackNow += 1
     stickyDrafts.saveSubmissionBackup('raw', 'source cannot be removed')
     expect(stickyDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
     expect(stickyDrafts.latestSubmissionBackup('raw')?.text).toBe('source cannot be removed')
-    expect(stickyDrafts.latestSubmissionBackup('effective')).toBeNull()
+    expect(stickyDrafts.latestSubmissionBackup('effective')?.text)
+      .toBe('target before sticky source')
 
     values.clear()
     const stickyTargetStorage = {

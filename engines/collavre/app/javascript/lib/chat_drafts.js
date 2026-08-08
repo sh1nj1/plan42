@@ -146,20 +146,42 @@ class ChatDrafts {
         this.removeSubmissionBackup(key)
         return
       }
-      if (!this.clearSubmissionBackups(targetId)) return
+
+      const targetBackups = this._submissionBackups(targetId)
+      const restoreTargetBackups = () => {
+	const backend = this._backupBackend()
+	targetBackups.forEach((backup) => {
+	  try {
+	    backend.setItem(backup.key, JSON.stringify({
+	      text: backup.text,
+	      updatedAt: backup.updatedAt,
+	    }))
+	  } catch {
+	    // Keep any target backup that storage still allows.
+	  }
+	})
+      }
+      if (!this.clearSubmissionBackups(targetId)) {
+	restoreTargetBackups()
+	return
+      }
 
       const targetKey = `${targetPrefix}${key.slice(sourcePrefix.length)}`
       const value = JSON.stringify({ text, updatedAt })
       try {
         this._backupBackend().setItem(targetKey, value)
-        if (this._backupBackend().getItem(targetKey) !== value) return
+	if (this._backupBackend().getItem(targetKey) !== value) {
+	  restoreTargetBackups()
+	  return
+	}
         if (!this.removeSubmissionBackup(key)) {
           this.removeSubmissionBackup(targetKey)
+	  restoreTargetBackups()
           return
         }
         moved.set(key, targetKey)
       } catch {
-        // Keep the source backup when the destination cannot be persisted.
+	restoreTargetBackups()
       }
     })
     this._evictSubmissionBackups()
