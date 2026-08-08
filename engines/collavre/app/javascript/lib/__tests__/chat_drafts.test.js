@@ -119,6 +119,26 @@ describe('ChatDrafts', () => {
     expect(drafts.get('101')).toBe('newer concurrent input')
   })
 
+  test('clearing a draft does not hide text concurrently saved from the same revision', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts.set('101', 'shared draft')
+
+    const clearingTab = new ChatDrafts()
+    const writingTab = new ChatDrafts()
+    clearingTab._writerId = 'z-clear'
+    writingTab._writerId = 'a-write'
+    const append = clearingTab._append.bind(clearingTab)
+    jest.spyOn(clearingTab, '_append').mockImplementation((id, entry) => {
+      if (entry.deleted) writingTab.set('101', 'concurrent new text')
+      return append(id, entry)
+    })
+
+    clearingTab.clear('101')
+
+    expect(drafts.get('101')).toBe('concurrent new text')
+    expect(drafts.revision('101')).toContain('a-write')
+  })
+
   test('compaction keeps a tombstone that blocks a delayed stale operation', () => {
     let now = 1000
     jest.spyOn(Date, 'now').mockImplementation(() => now)

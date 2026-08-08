@@ -965,6 +965,29 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('next message')
   })
 
+  test('switching chats while a slash command succeeds preserves its stashed draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'ordinary draft')
+    controller.handleStashDraft(
+      new CustomEvent('comments--form:stash-draft', { detail: { draft: 'ordinary draft' } }),
+    )
+    typeInto(controller.textareaTarget, '/calendar 2026-08-14')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.onChatWillOpen({ creativeId: '88' })
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('ordinary draft')
+    expect(controller.textareaTarget.value).toBe('')
+  })
+
   test('review quote feedback never replaces the ordinary chat draft', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'my ordinary draft')

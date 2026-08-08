@@ -61,7 +61,10 @@ class ChatDrafts {
       if (preserveBlank) {
         this._append(id, this._newEntry('', current, { deleted: true, migration: true }))
       } else if (current && !current.deleted) {
-        this._append(id, this._newEntry('', current, { deleted: true }))
+        this._append(id, this._newEntry('', current, {
+          deleted: true,
+          deletesThrough: this._versionOf(current),
+        }))
       } else {
         return
       }

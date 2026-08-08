@@ -593,6 +593,7 @@ export default class extends Controller {
     const initialSubmittedDraftRevisionKey =
       `${submittedDraftNamespace}:${initialSubmittedDraftKey}`
     const initialSubmittedDraft = chatDrafts.snapshot(initialSubmittedDraftKey)
+    const submittedHadStash = this._stashedDraftBelongsToCurrentCreative()
     const submittedDraft = {
       key: initialSubmittedDraftKey,
       namespace: submittedDraftNamespace,
@@ -604,13 +605,14 @@ export default class extends Controller {
       keyRevision: this._draftRevisions?.get(initialSubmittedDraftRevisionKey) || 0,
       storedRevision: initialSubmittedDraft.revision,
       text: submittedText,
+      hadStash: submittedHadStash,
       migratedSources: [],
     }
     this._pendingDraftSubmissions ||= new Set()
     this._pendingDraftSubmissions.add(submittedDraft)
     const submittedEditingId = this.editingId
     const submittedHadReview = hasQuotes
-    if (this._stashedDraftBelongsToCurrentCreative()) {
+    if (submittedHadStash) {
       this._stashedDraft.submittedText = submittedText
     }
 
@@ -663,6 +665,7 @@ export default class extends Controller {
           storedChangedOutsideController: submittedStoredDraftChangedOutsideController,
           keyRevision: submittedDraftKeyRevision,
           storedRevision: submittedDraftStoredRevision,
+          hadStash: submittedHadStash,
         } = submittedDraft
         const ownsSubmittedDraftNamespace =
           submittedDraftNamespace === chatDrafts.namespace()
@@ -714,7 +717,12 @@ export default class extends Controller {
             this._observeDraft(submittedDraftKey, newerDraft, submittedDraftNamespace)
           } else if (hasNewerStoredDraft && submittedChatStillActive) {
             this._restoreDraft()
-          } else if (!hasNewerDraft && submittedDraftKey && ownsSubmittedDraftNamespace) {
+          } else if (
+            !submittedHadStash &&
+            !hasNewerDraft &&
+            submittedDraftKey &&
+            ownsSubmittedDraftNamespace
+          ) {
             chatDrafts.clear(submittedDraftKey)
             this._observeDraft(submittedDraftKey, null, submittedDraftNamespace)
           }
