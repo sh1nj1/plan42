@@ -167,7 +167,9 @@ module Collavre
 
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
-      response = ::Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
+      response = unless inbox_system_comment?
+        ::Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
+      end
       if response.present?
         @comment.content = "#{@comment.content}\n\n#{response}"
         @comment.skip_dispatch = true
@@ -344,6 +346,10 @@ module Collavre
 
     def current_topic_context
       params[:topic_id].presence || params.dig(:comment, :topic_id).presence
+    end
+
+    def inbox_system_comment?
+      @creative.inbox? && @comment.topic&.name == Creative::SYSTEM_TOPIC_NAME
     end
 
     def validate_topic_id!(topic_id)

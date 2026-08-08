@@ -1101,6 +1101,28 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes @response.body, %(data-key="inbox_notifications")
   end
 
+  test "create does not execute slash commands in the inbox System topic" do
+    inbox = Creative.inbox_for(@user)
+    system_topic = inbox.system_topic
+    2.times do |index|
+      inbox.comments.create!(
+        topic: system_topic,
+        content: "System notification #{index}",
+        user: nil,
+        skip_default_user: true
+      )
+    end
+
+    ::Comments::CommandProcessor.stub(:new, ->(*) { flunk("System comments must skip command processing") }) do
+      post creative_comments_path(inbox), params: {
+        comment: { content: "/compress", topic_id: system_topic.id }
+      }
+    end
+
+    assert_response :created
+    assert_equal "/compress", inbox.comments.order(:id).last.content
+  end
+
   # Phase 1 shipped the cards with the guide link suppressed because no page
   # existed to link to. Now that /features/:key is routed, every card carries it.
   test "index links each feature card to its public guide page" do

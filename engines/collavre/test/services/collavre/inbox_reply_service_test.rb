@@ -53,6 +53,36 @@ module Collavre
       assert_equal @original_comment.id, cross_posted.quoted_comment_id
     end
 
+    test "cross-posts to the visually preceding notification when timestamps are out of order" do
+      newer_original = Comment.create!(
+        creative: @creative,
+        user: @other_user,
+        content: "Newer original message",
+        skip_dispatch: true
+      )
+      Comment.create!(
+        creative: @inbox,
+        topic: @system_topic,
+        content: "Newer notification with an older timestamp",
+        user: nil,
+        skip_default_user: true,
+        quoted_comment: newer_original,
+        created_at: 1.day.ago
+      )
+      reply = Comment.create!(
+        creative: @inbox,
+        topic: @system_topic,
+        content: "Reply to the notification above",
+        user: @user,
+        skip_dispatch: true
+      )
+
+      InboxReplyService.call(reply)
+
+      cross_posted = @creative.comments.find_by!(user: @user, content: reply.content)
+      assert_equal newer_original.id, cross_posted.quoted_comment_id
+    end
+
     # An inbox cross-post quotes the original comment purely for linkage. It must
     # NOT be treated as a review message: review_message? drives the in-place
     # ReviewHandler flow that OVERWRITES the quoted comment with the agent's
