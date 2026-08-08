@@ -78,16 +78,33 @@ class ChatDrafts {
   saveSubmissionBackup(chatId, text, { updatedAt = null } = {}) {
     if (!chatId || !text || !text.trim()) return null
 
-    if (!this.clearSubmissionBackups(chatId)) return null
-
-    const current = updatedAt === null ? this._entry(String(chatId)) : null
+    const id = String(chatId)
+    const current = updatedAt === null ? this._entry(id) : null
     const backupUpdatedAt = updatedAt ??
       Math.max(Date.now(), (current?.updatedAt || 0) + 1)
     this._sequence += 1
     const version = `${backupUpdatedAt}-${this._writerId}-${this._sequence}`
-    const key = `${this._backupPrefix(String(chatId))}${encodeURIComponent(version)}`
+    const key = `${this._backupPrefix(id)}${encodeURIComponent(version)}`
+    const candidate = { key, text, updatedAt: backupUpdatedAt }
+    const existing = this.latestSubmissionBackup(id)
+    if (existing && this._compareSubmissionBackups(existing, candidate) >= 0) return null
+
     try {
       this._backupBackend().setItem(key, JSON.stringify({ text, updatedAt: backupUpdatedAt }))
+      const backups = this._submissionBackups(id)
+      const latest = [...backups].sort((left, right) => (
+	this._compareSubmissionBackups(right, left)
+      ))[0]
+      if (!latest || latest.key !== key) {
+	this.removeSubmissionBackup(key)
+	return null
+      }
+      const superseded = backups.filter((backup) => (
+	backup.key !== key && this._compareSubmissionBackups(backup, candidate) < 0
+      ))
+      if (!superseded.every((backup) => this.removeSubmissionBackup(backup.key))) {
+	return this.removeSubmissionBackup(key) ? null : key
+      }
       this._evictSubmissionBackups()
       return key
     } catch {
@@ -99,7 +116,7 @@ class ChatDrafts {
     if (!chatId) return null
 
     return this._submissionBackups(String(chatId)).sort((left, right) => (
-      right.updatedAt - left.updatedAt || right.key.localeCompare(left.key)
+      this._compareSubmissionBackups(right, left)
     ))[0] || null
   }
 
@@ -120,6 +137,23 @@ class ChatDrafts {
       this._backupPrefix(String(chatId)),
       this._backupBackend(),
     ).every((key) => this.removeSubmissionBackup(key))
+  }
+
+  clearSubmissionBackupsThrough(key, namespace = this._key()) {
+    if (!key || !key.startsWith(this._backupPrefix(null, namespace))) return false
+
+    const backups = this._submissionBackups(null, namespace)
+    const candidate = backups.find((backup) => backup.key === key)
+    if (!candidate) return false
+
+    const chatPrefix = key.slice(0, key.lastIndexOf(KEY_SEPARATOR) + 1)
+    const superseded = backups.filter((backup) => (
+      backup.key.startsWith(chatPrefix) &&
+      this._compareSubmissionBackups(backup, candidate) <= 0
+    )).sort((left, right) => this._compareSubmissionBackups(left, right))
+    return superseded.every((backup) => (
+      this.removeSubmissionBackup(backup.key, namespace)
+    ))
   }
 
   moveSubmissionBackups(sourceChatId, targetChatId) {
@@ -420,8 +454,8 @@ class ChatDrafts {
     this._evictSubmissionBackups()
   }
 
-  _submissionBackups(chatId = null) {
-    const prefix = this._backupPrefix(chatId)
+  _submissionBackups(chatId = null, namespace = this._key()) {
+    const prefix = this._backupPrefix(chatId, namespace)
     const cutoff = Date.now() - DRAFT_TTL_MS
 
     const backend = this._backupBackend()
@@ -446,9 +480,13 @@ class ChatDrafts {
 
   _evictSubmissionBackups() {
     const backups = this._submissionBackups().sort((left, right) => (
-      right.updatedAt - left.updatedAt || right.key.localeCompare(left.key)
+      this._compareSubmissionBackups(right, left)
     ))
     backups.slice(MAX_DRAFTS).forEach(({ key }) => this.removeSubmissionBackup(key))
+  }
+
+  _compareSubmissionBackups(left, right) {
+    return left.updatedAt - right.updatedAt || left.key.localeCompare(right.key)
   }
 
   _valid(entry) {

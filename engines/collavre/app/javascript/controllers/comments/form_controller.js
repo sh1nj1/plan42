@@ -581,7 +581,7 @@ export default class extends Controller {
     if (restoredText) {
       this.textareaTarget.value = restoredText
       requestAnimationFrame(() => this._autoResize())
-    } else {
+    } else if (draft.updatedAt === null) {
       this._restorePendingSubmittedDraft()
     }
   }
@@ -898,7 +898,7 @@ export default class extends Controller {
       })
       .then((html) => {
         if (submittedDraft.backupKey) {
-          chatDrafts.removeSubmissionBackup(
+	  chatDrafts.clearSubmissionBackupsThrough(
             submittedDraft.backupKey,
             submittedDraft.namespace,
           )

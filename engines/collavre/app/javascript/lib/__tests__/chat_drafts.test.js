@@ -138,6 +138,157 @@ describe('ChatDrafts', () => {
     expect(drafts.latestSubmissionBackup('101')?.updatedAt).toBe(999)
   })
 
+  test('does not replace a newer submission backup with a late older failure', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(2000)
+    const olderTab = new ChatDrafts()
+    const newerTab = new ChatDrafts()
+    olderTab._writerId = 'a'
+    newerTab._writerId = 'b'
+
+    const newerKey = newerTab.saveSubmissionBackup(
+      '101',
+      'later submission that failed first',
+      { updatedAt: 2000 },
+    )
+    const ignoredOlderKey = olderTab.saveSubmissionBackup(
+      '101',
+      'earlier submission that failed later',
+      { updatedAt: 1000 },
+    )
+    const ignoredTiedKey = olderTab.saveSubmissionBackup(
+      '101',
+      'same-time submission with an older version',
+      { updatedAt: 2000 },
+    )
+
+    expect(ignoredOlderKey).toBeNull()
+    expect(ignoredTiedKey).toBeNull()
+    expect(drafts.latestSubmissionBackup('101')).toMatchObject({
+      key: newerKey,
+      text: 'later submission that failed first',
+      updatedAt: 2000,
+    })
+  })
+
+  test('drops its candidate when a newer backup arrives during the write', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(3000)
+    const values = new Map()
+    let interleaved = false
+    const storage = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] ?? null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => {
+	values.set(key, value)
+	if (interleaved || !key.includes('_pending:101:')) return
+
+	interleaved = true
+	values.set(
+	  'collavre_chat_drafts_9_pending:101:3000-z-1',
+	  JSON.stringify({ text: 'concurrent newer failure', updatedAt: 3000 }),
+	)
+      },
+      removeItem: (key) => values.delete(key),
+    }
+    const interleavedDrafts = new ChatDrafts(null, storage)
+    interleavedDrafts._writerId = 'a'
+
+    const candidateKey = interleavedDrafts.saveSubmissionBackup(
+      '101',
+      'older failure being persisted',
+      { updatedAt: 2000 },
+    )
+
+    expect(candidateKey).toBeNull()
+    expect(interleavedDrafts.latestSubmissionBackup('101')?.text)
+      .toBe('concurrent newer failure')
+    expect([...values.keys()]).toHaveLength(1)
+  })
+
+  test('rolls back a new backup when an older backup cannot be removed', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(2000)
+    const values = new Map()
+    let blockedKey = null
+    const storage = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] ?? null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => {
+	if (key !== blockedKey) values.delete(key)
+      },
+    }
+    const rollbackDrafts = new ChatDrafts(null, storage)
+    const olderKey = rollbackDrafts.saveSubmissionBackup(
+      '101',
+      'older failed submission',
+      { updatedAt: 1000 },
+    )
+    blockedKey = olderKey
+
+    const rolledBackKey = rollbackDrafts.saveSubmissionBackup(
+      '101',
+      'newer failed submission',
+      { updatedAt: 2000 },
+    )
+
+    expect(rolledBackKey).toBeNull()
+    expect(rollbackDrafts.latestSubmissionBackup('101')).toMatchObject({
+      key: olderKey,
+      text: 'older failed submission',
+    })
+    expect([...values.keys()]).toEqual([olderKey])
+  })
+
+  test('tracks a candidate when rollback fails and clears only through that version', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(3000)
+    const values = new Map()
+    let removalsBlocked = true
+    const storage = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] ?? null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => {
+	if (!removalsBlocked) values.delete(key)
+      },
+    }
+    const retryDrafts = new ChatDrafts(null, storage)
+    retryDrafts._writerId = 'a'
+    const olderKey = retryDrafts.saveSubmissionBackup(
+      '101',
+      'older failed submission',
+      { updatedAt: 1000 },
+    )
+    const candidateKey = retryDrafts.saveSubmissionBackup(
+      '101',
+      'candidate whose rollback is blocked',
+      { updatedAt: 2000 },
+    )
+    retryDrafts._writerId = 'z'
+    const newerKey = retryDrafts.saveSubmissionBackup(
+      '101',
+      'newer concurrent failure',
+      { updatedAt: 3000 },
+    )
+
+    expect(candidateKey).not.toBeNull()
+    expect(newerKey).not.toBeNull()
+    removalsBlocked = false
+    expect(retryDrafts.clearSubmissionBackupsThrough(candidateKey)).toBe(true)
+
+    expect(values.has(olderKey)).toBe(false)
+    expect(values.has(candidateKey)).toBe(false)
+    expect(retryDrafts.latestSubmissionBackup('101')).toMatchObject({
+      key: newerKey,
+      text: 'newer concurrent failure',
+    })
+    expect(retryDrafts.clearSubmissionBackupsThrough('unrelated-key')).toBe(false)
+    expect(retryDrafts.clearSubmissionBackupsThrough(
+      'collavre_chat_drafts_9_pending:101:missing',
+    )).toBe(false)
+  })
+
   test('stores submission backups independently and removes exact backups', () => {
     let now = 1000
     jest.spyOn(Date, 'now').mockImplementation(() => now)

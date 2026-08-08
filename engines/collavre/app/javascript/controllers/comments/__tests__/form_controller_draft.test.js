@@ -835,6 +835,23 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBeNull()
   })
 
+  test('successful send respects a concurrent clear instead of restoring pending text', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'message cleared from another tab')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    chatDrafts.clear('77')
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+  })
+
   test('send completion after an account change does not clear the new user draft', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'user 9 message')
