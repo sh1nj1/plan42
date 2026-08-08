@@ -97,6 +97,7 @@ export default class extends Controller {
     this._awaitingEffectiveDraftKeyFor = null
     this._draftSaveTimer = null
     this._draftRevision = 0
+    this._draftRevisions = new Map()
     this._handleDraftInput = () => {
       if (
         this.editingId ||
@@ -105,6 +106,8 @@ export default class extends Controller {
         !this._activeDraftKey
       ) return
       this._draftRevision += 1
+      const revisionKey = `${chatDrafts.namespace()}:${this._activeDraftKey}`
+      this._draftRevisions.set(revisionKey, (this._draftRevisions.get(revisionKey) || 0) + 1)
       clearTimeout(this._draftSaveTimer)
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
     }
@@ -151,18 +154,18 @@ export default class extends Controller {
       String(this._awaitingEffectiveDraftKeyFor) === String(nextCreativeId || '')
     if (draftKeyChanged || creativeChanged) {
       const previousDraftKey = this._activeDraftKey
-      const incomingText = resolvingIncomingDraftKey ? this.textareaTarget.value : ''
-      this._flushDraftSave()
+      // onChatWillOpen already flushed the outgoing chat. While the effective
+      // key is loading, save only actual new input; rewriting a restored raw
+      // draft here would make stale text appear newer than the canonical draft.
+      if (!resolvingIncomingDraftKey || this._draftSaveTimer) this._flushDraftSave()
       this._activeDraftKey = nextDraftKey ? String(nextDraftKey) : null
       this._activeDraftCreativeId = nextCreativeId ? String(nextCreativeId) : null
-      if (resolvingIncomingDraftKey && incomingText.trim() && this._activeDraftKey) {
-        chatDrafts.set(this._activeDraftKey, incomingText)
-        if (
-          previousDraftKey &&
-          String(previousDraftKey) !== String(this._activeDraftKey)
-        ) {
-          chatDrafts.clear(previousDraftKey)
-        }
+      if (
+        resolvingIncomingDraftKey &&
+        previousDraftKey &&
+        this._activeDraftKey
+      ) {
+        chatDrafts.move(previousDraftKey, this._activeDraftKey)
       }
     }
     if (resolvingIncomingDraftKey) this._awaitingEffectiveDraftKeyFor = null
@@ -368,7 +371,9 @@ export default class extends Controller {
       this._stashedDraft ||
       !this._reviewStore.isEmpty
     ) return
-    chatDrafts.set(this._activeDraftKey, this.textareaTarget.value)
+    const text = this.textareaTarget.value
+    if (chatDrafts.get(this._activeDraftKey) === text) return
+    chatDrafts.set(this._activeDraftKey, text)
   }
 
   _flushDraftSave() {
@@ -446,9 +451,14 @@ export default class extends Controller {
     const submittedText = this.textareaTarget.value
     const submittedDraftKey = this._activeDraftKey
     const submittedDraftNamespace = chatDrafts.namespace()
+    const submittedDraftRevisionKey = `${submittedDraftNamespace}:${submittedDraftKey}`
     const submittedEditingId = this.editingId
     const submittedDraftRevision = this._draftRevision
+    const submittedDraftKeyRevision = this._draftRevisions?.get(submittedDraftRevisionKey) || 0
     const submittedHadReview = hasQuotes
+    const submittedDraftUpdatedAt = submittedDraftKey
+      ? chatDrafts.updatedAt(submittedDraftKey)
+      : null
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -499,15 +509,28 @@ export default class extends Controller {
           submittedDraftKey &&
           this._activeDraftKey &&
           String(submittedDraftKey) !== String(this._activeDraftKey)
-        const hasNewerDraft =
+        const submittedChatStillActive =
+          submittedDraftKey &&
+          this._activeDraftKey &&
+          String(submittedDraftKey) === String(this._activeDraftKey)
+        const hasNewerActiveDraft =
+          ownsSubmittedDraftNamespace &&
+          !submittedEditingId &&
+          !submittedHadReview &&
+          submittedChatStillActive &&
+          this._draftRevision !== submittedDraftRevision
+        const hasNewerStoredDraft =
           ownsSubmittedDraftNamespace &&
           !submittedEditingId &&
           !submittedHadReview &&
           submittedDraftKey &&
-          this._activeDraftKey &&
-          String(submittedDraftKey) === String(this._activeDraftKey) &&
-          this._draftRevision !== submittedDraftRevision
-        const newerDraft = hasNewerDraft ? this.textareaTarget.value : null
+          (
+            (this._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
+              submittedDraftKeyRevision ||
+            chatDrafts.updatedAt(submittedDraftKey) !== submittedDraftUpdatedAt
+          )
+        const hasNewerDraft = hasNewerActiveDraft || hasNewerStoredDraft
+        const newerDraft = hasNewerActiveDraft ? this.textareaTarget.value : null
         if (switchedChats) this._flushDraftSave()
         clearTimeout(this._draftSaveTimer)
         this._draftSaveTimer = null
@@ -519,12 +542,14 @@ export default class extends Controller {
         } else {
           if (submittedHadReview && ownsSubmittedDraftNamespace) {
             this._restoreDraft()
-          } else if (hasNewerDraft) {
+          } else if (hasNewerActiveDraft) {
             this.textareaTarget.value = newerDraft
             this._autoResize()
             this._updateSubmitButton()
             chatDrafts.set(submittedDraftKey, newerDraft)
-          } else if (submittedDraftKey && ownsSubmittedDraftNamespace) {
+          } else if (hasNewerStoredDraft && submittedChatStillActive) {
+            this._restoreDraft()
+          } else if (!hasNewerDraft && submittedDraftKey && ownsSubmittedDraftNamespace) {
             chatDrafts.clear(submittedDraftKey)
           }
           if (switchedChats && !submittedHadReview) this._restoreDraft()
@@ -973,7 +998,7 @@ export default class extends Controller {
     this.textareaTarget.value = ''
 
     if (store.isEmpty) {
-      this.textareaTarget.placeholder = this._defaultPlaceholder()
+      this._restoreOrdinaryDraft()
     } else if (!store.hasActive) {
       this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     }
@@ -1130,7 +1155,7 @@ export default class extends Controller {
         store.remove(quote.id)
         if (wasActive) this.textareaTarget.value = ''
         if (store.isEmpty) {
-          this.textareaTarget.placeholder = this._defaultPlaceholder()
+          this._restoreOrdinaryDraft()
         } else if (!store.hasActive) {
           this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
         }
@@ -1163,6 +1188,12 @@ export default class extends Controller {
       'send-question': this._getI18nText('reviewSendQuestion', 'Send question'),
     }
     this.submitTarget.textContent = labels[state]
+  }
+
+  _restoreOrdinaryDraft() {
+    this.textareaTarget.value = ''
+    this.textareaTarget.placeholder = this._defaultPlaceholder()
+    this._restoreDraft()
   }
 
   _getI18nText(key, fallback) {

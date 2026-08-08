@@ -155,6 +155,28 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('78')).toBeNull()
   })
 
+  test('a stale raw linked draft does not replace a newer effective draft', () => {
+    const now = Date.now()
+    window.localStorage.setItem(
+      'collavre_chat_drafts_9',
+      JSON.stringify({
+        70: { text: 'new canonical draft', updatedAt: now },
+        78: { text: 'stale raw draft', updatedAt: now - 1000 },
+      }),
+    )
+
+    controller.onChatWillOpen({ creativeId: '78' })
+    expect(controller.textareaTarget.value).toBe('stale raw draft')
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('new canonical draft')
+    expect(chatDrafts.get('70')).toBe('new canonical draft')
+    expect(chatDrafts.get('78')).toBeNull()
+  })
+
   test('switching topics within the same chat does not flush the draft', () => {
     dispatchTopicChange('77', '10073')
     controller.textareaTarget.value = 'still composing'
@@ -271,6 +293,23 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('next message')
   })
 
+  test('successful send restores a newer stored draft for the active chat', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'first message')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    chatDrafts.set('77', 'draft updated outside this form')
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('draft updated outside this form')
+    expect(chatDrafts.get('77')).toBe('draft updated outside this form')
+  })
+
   test('send completion after an account change does not clear the new user draft', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'user 9 message')
@@ -329,6 +368,26 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBeNull()
     expect(chatDrafts.get('88')).toBe('draft for 88')
     expect(controller.textareaTarget.value).toBe('draft for 88')
+  })
+
+  test('send completion preserves newer submitted-chat text after switching away', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'first message')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    typeInto(controller.textareaTarget, 'next message')
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('next message')
+    expect(controller.textareaTarget.value).toBe('')
   })
 
   test('editing a comment preserves the draft and suspends draft saving', async () => {
@@ -426,6 +485,38 @@ describe('FormController - draft persistence', () => {
     global.fetch = jest.fn(() =>
       Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
     )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('my ordinary draft')
+    expect(chatDrafts.get('77')).toBe('my ordinary draft')
+  })
+
+  test('removing the last review quote restores the ordinary chat draft', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'my ordinary draft')
+    controller.appendReviewQuote(5, 'quoted review text')
+    typeInto(controller.textareaTarget, 'feedback for the quote')
+
+    controller.reviewQuotesContainerTarget
+      .querySelector('.review-quote-chip-remove')
+      .click()
+
+    expect(controller.textareaTarget.value).toBe('my ordinary draft')
+    expect(chatDrafts.get('77')).toBe('my ordinary draft')
+  })
+
+  test('sending the last question quote restores the ordinary chat draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'my ordinary draft')
+    controller.appendReviewQuote(5, 'quoted question text')
+    controller._reviewStore.toggleType(controller._reviewStore.activeId)
+    typeInto(controller.textareaTarget, 'question feedback')
+    jest.spyOn(controller, 'renderCommentHtml').mockImplementation(() => {})
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+
     controller.handleSend(new Event('submit', { cancelable: true }))
     await new Promise((resolve) => setTimeout(resolve, 20))
 

@@ -19,6 +19,12 @@ class ChatDrafts {
     return entry ? entry.text : null
   }
 
+  updatedAt(chatId) {
+    if (!chatId) return null
+    const entry = this._load()[String(chatId)]
+    return entry ? entry.updatedAt : null
+  }
+
   set(chatId, text) {
     if (!chatId) return
 
@@ -28,7 +34,8 @@ class ChatDrafts {
       if (!(id in drafts)) return
       delete drafts[id]
     } else {
-      drafts[id] = { text, updatedAt: Date.now() }
+      const previousUpdatedAt = drafts[id]?.updatedAt || 0
+      drafts[id] = { text, updatedAt: Math.max(Date.now(), previousUpdatedAt + 1) }
       this._evict(drafts)
     }
     this._save(drafts)
@@ -36,6 +43,23 @@ class ChatDrafts {
 
   clear(chatId) {
     this.set(chatId, '')
+  }
+
+  move(sourceChatId, targetChatId) {
+    if (!sourceChatId || !targetChatId) return
+
+    const sourceId = String(sourceChatId)
+    const targetId = String(targetChatId)
+    if (sourceId === targetId) return
+
+    const drafts = this._load()
+    const source = drafts[sourceId]
+    if (!source) return
+
+    const target = drafts[targetId]
+    if (!target || source.updatedAt > target.updatedAt) drafts[targetId] = source
+    delete drafts[sourceId]
+    this._save(drafts)
   }
 
   clearAll() {

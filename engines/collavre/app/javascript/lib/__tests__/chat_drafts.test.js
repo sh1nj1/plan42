@@ -27,6 +27,19 @@ describe('ChatDrafts', () => {
     expect(drafts.get('999')).toBeNull()
   })
 
+  test('exposes a monotonic update timestamp per draft', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    expect(drafts.updatedAt(null)).toBeNull()
+    expect(drafts.updatedAt('missing')).toBeNull()
+
+    drafts.set('101', 'same text')
+    const firstUpdatedAt = drafts.updatedAt('101')
+    drafts.set('101', 'same text')
+
+    expect(firstUpdatedAt).toBe(1000)
+    expect(drafts.updatedAt('101')).toBe(1001)
+  })
+
   test('storage key is namespaced by current user id', () => {
     drafts.set('101', 'hello')
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toContain('hello')
@@ -74,6 +87,53 @@ describe('ChatDrafts', () => {
     drafts.clear('101')
     expect(drafts.get('101')).toBeNull()
     expect(drafts.get('102')).toBe('b')
+  })
+
+  test('moves a draft to an empty destination', () => {
+    drafts.set('raw', 'loading-window draft')
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.get('effective')).toBe('loading-window draft')
+  })
+
+  test('moves only the newer draft when the destination already exists', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    drafts.set('effective', 'older canonical draft')
+    now += 1
+    drafts.set('raw', 'newer loading-window draft')
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.get('effective')).toBe('newer loading-window draft')
+  })
+
+  test('keeps a newer destination when removing a stale source draft', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    drafts.set('raw', 'stale raw draft')
+    now += 1
+    drafts.set('effective', 'newer canonical draft')
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.get('effective')).toBe('newer canonical draft')
+  })
+
+  test('move ignores invalid, identical, and missing source ids', () => {
+    drafts.set('101', 'existing draft')
+    const stored = window.localStorage.getItem('collavre_chat_drafts_9')
+
+    drafts.move(null, '102')
+    drafts.move('101', null)
+    drafts.move('101', '101')
+    drafts.move('missing', '102')
+
+    expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBe(stored)
   })
 
   test('clearAll removes the storage key', () => {
