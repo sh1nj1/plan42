@@ -605,6 +605,38 @@ describe('CommentsPopupController', () => {
         })
     })
 
+    test('notifies the form of a chat switch before awaiting topics', async () => {
+        let finishTopicsLoad
+        const formController = {
+            currentTopicId: 'old-topic',
+            _mainTopicId: 'old-main',
+            onChatWillOpen: jest.fn(),
+            onPopupOpened: jest.fn(),
+        }
+        const topicsController = {
+            clearOverrideTopicId: jest.fn(),
+            currentTopicId: 'new-topic',
+            onPopupOpened: jest.fn(() => new Promise(resolve => { finishTopicsLoad = resolve })),
+        }
+        Object.defineProperty(controller, 'formController', { configurable: true, value: formController })
+        Object.defineProperty(controller, 'topicsController', { configurable: true, value: topicsController })
+
+        controller.openGeneration = 1
+        const pendingOpen = controller.notifyChildControllers({
+            creativeId: '456', canComment: true, openGeneration: 1,
+        })
+        await Promise.resolve()
+
+        expect(formController.onChatWillOpen).toHaveBeenCalledWith({ creativeId: '456' })
+        expect(formController.onPopupOpened).not.toHaveBeenCalled()
+
+        finishTopicsLoad()
+        await pendingOpen
+        expect(formController.onPopupOpened).toHaveBeenCalledWith({
+            creativeId: '456', canComment: true,
+        })
+    })
+
     test('logout submit clears popup size and chat drafts from localStorage', () => {
         window.localStorage.setItem('commentsPopupSize', '{"w":300}')
         window.localStorage.setItem('collavre_chat_drafts_9', '{"77":{"text":"x","updatedAt":1}}')

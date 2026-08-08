@@ -43,6 +43,12 @@ describe('ChatDrafts', () => {
     expect(window.localStorage.getItem('collavre_chat_drafts_10')).toContain('user 10 draft')
   })
 
+  test('exposes the current namespace for asynchronous ownership checks', () => {
+    expect(drafts.namespace()).toBe('collavre_chat_drafts_9')
+    document.body.dataset.currentUserId = '10'
+    expect(drafts.namespace()).toBe('collavre_chat_drafts_10')
+  })
+
   test('falls back to guest namespace without a current user id', () => {
     delete document.body.dataset.currentUserId
     const guestDrafts = new ChatDrafts()

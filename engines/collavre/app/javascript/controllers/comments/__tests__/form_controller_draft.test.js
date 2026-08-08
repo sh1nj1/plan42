@@ -121,6 +121,40 @@ describe('FormController - draft persistence', () => {
     expect(controller.textareaTarget.value).toBe('')
   })
 
+  test('typing during an asynchronous chat switch is saved under the incoming chat', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'draft for 77')
+
+    controller.onChatWillOpen({ creativeId: '88' })
+    typeInto(controller.textareaTarget, 'draft for 88')
+
+    expect(chatDrafts.get('77')).toBe('draft for 77')
+    expect(chatDrafts.get('88')).toBeNull()
+
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('draft for 88')
+    expect(chatDrafts.get('88')).toBe('draft for 88')
+  })
+
+  test('typing during a linked chat switch migrates from raw to effective draft key', () => {
+    popupEl.dataset.creativeId = '77'
+    dispatchTopicChange('70')
+    typeInto(controller.textareaTarget, 'shared draft before switch')
+
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'shared draft after switch')
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('shared draft after switch')
+    expect(chatDrafts.get('70')).toBe('shared draft after switch')
+    expect(chatDrafts.get('78')).toBeNull()
+  })
+
   test('switching topics within the same chat does not flush the draft', () => {
     dispatchTopicChange('77', '10073')
     controller.textareaTarget.value = 'still composing'
@@ -237,6 +271,26 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('next message')
   })
 
+  test('send completion after an account change does not clear the new user draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'user 9 message')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    document.body.dataset.currentUserId = '10'
+    chatDrafts.set('77', 'user 10 draft')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('user 10 draft')
+    document.body.dataset.currentUserId = '9'
+    expect(chatDrafts.get('77')).toBe('user 9 message')
+  })
+
   test('failed send keeps the stored draft', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'will fail')
@@ -344,6 +398,39 @@ describe('FormController - draft persistence', () => {
     controller._restoreStashedDraft('/calendar 2026-08-14')
     expect(controller.textareaTarget.value).toBe('my draft')
     expect(chatDrafts.get('77')).toBe('my draft')
+  })
+
+  test('review quote feedback never replaces the ordinary chat draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'my ordinary draft')
+
+    controller.appendReviewQuote(5, 'quoted review text')
+    typeInto(controller.textareaTarget, 'feedback for the quote')
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(chatDrafts.get('77')).toBe('my ordinary draft')
+
+    controller.onPopupClosed()
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('my ordinary draft')
+  })
+
+  test('successful review send restores the ordinary chat draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'my ordinary draft')
+    controller.appendReviewQuote(5, 'quoted review text')
+    typeInto(controller.textareaTarget, 'feedback for the quote')
+    controller._commitActiveQuote()
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('my ordinary draft')
+    expect(chatDrafts.get('77')).toBe('my ordinary draft')
   })
 
   test('typing without an active draft key does not write to storage', async () => {

@@ -46,6 +46,10 @@ class ChatDrafts {
     }
   }
 
+  namespace() {
+    return this._key()
+  }
+
   _backend() {
     return this._storage || window.localStorage
   }

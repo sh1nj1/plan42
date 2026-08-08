@@ -407,6 +407,7 @@ export default class extends Controller {
     // formController.onPopupOpened, which runs after the topics await — would
     // erase the topic that restoreSelection() just restored from the server.
     if (this.formController) {
+      this.formController.onChatWillOpen?.({ creativeId })
       this.formController.currentTopicId = ''
       this.formController._mainTopicId = null
     }

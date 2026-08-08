@@ -94,10 +94,16 @@ export default class extends Controller {
     // _activeDraftKey always identifies the chat whose text is in the textarea.
     this._activeDraftKey = null
     this._activeDraftCreativeId = null
+    this._awaitingEffectiveDraftKeyFor = null
     this._draftSaveTimer = null
     this._draftRevision = 0
     this._handleDraftInput = () => {
-      if (this.editingId || this._stashedDraft || !this._activeDraftKey) return
+      if (
+        this.editingId ||
+        this._stashedDraft ||
+        !this._reviewStore.isEmpty ||
+        !this._activeDraftKey
+      ) return
       this._draftRevision += 1
       clearTimeout(this._draftSaveTimer)
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
@@ -140,11 +146,26 @@ export default class extends Controller {
     const draftKeyChanged = String(this._activeDraftKey || '') !== String(nextDraftKey || '')
     const creativeChanged =
       String(this._activeDraftCreativeId || '') !== String(nextCreativeId || '')
+    const resolvingIncomingDraftKey =
+      this._awaitingEffectiveDraftKeyFor &&
+      String(this._awaitingEffectiveDraftKeyFor) === String(nextCreativeId || '')
     if (draftKeyChanged || creativeChanged) {
+      const previousDraftKey = this._activeDraftKey
+      const incomingText = resolvingIncomingDraftKey ? this.textareaTarget.value : ''
       this._flushDraftSave()
       this._activeDraftKey = nextDraftKey ? String(nextDraftKey) : null
       this._activeDraftCreativeId = nextCreativeId ? String(nextCreativeId) : null
+      if (resolvingIncomingDraftKey && incomingText.trim() && this._activeDraftKey) {
+        chatDrafts.set(this._activeDraftKey, incomingText)
+        if (
+          previousDraftKey &&
+          String(previousDraftKey) !== String(this._activeDraftKey)
+        ) {
+          chatDrafts.clear(previousDraftKey)
+        }
+      }
     }
+    if (resolvingIncomingDraftKey) this._awaitingEffectiveDraftKeyFor = null
     this.currentTopicId = event.detail.topicId
     this._isInbox = event.detail.isInbox || false
     this._systemTopicId = event.detail.systemTopicId || null
@@ -198,6 +219,10 @@ export default class extends Controller {
     // so by the time we get here, currentTopicId already reflects the new
     // creative's restored topic. Do not re-clear it.
     this.formTarget.style.display = canComment ? '' : 'none'
+    // Capture input entered while topics were loading before reset clears it.
+    // Without a pending input timer, a blank textarea must not erase a draft
+    // that is waiting in storage to be restored below.
+    if (this._draftSaveTimer) this._flushDraftSave()
     this.resetForm()
     if (canComment && this.shouldAutoFocusOnOpen()) {
       requestAnimationFrame(() => this.textareaTarget.focus())
@@ -205,10 +230,29 @@ export default class extends Controller {
     this._restoreDraft()
   }
 
+  onChatWillOpen({ creativeId }) {
+    const nextCreativeId = creativeId ? String(creativeId) : null
+    if (
+      String(this._activeDraftCreativeId || '') === String(nextCreativeId || '')
+    ) return
+
+    // The popup publishes its raw creative id before awaiting topics. Flush the
+    // outgoing chat now, then give any input typed during that await a key owned
+    // by the incoming chat. The topics event replaces it with the effective id.
+    this._flushDraftSave()
+    this._activeDraftKey = nextCreativeId
+    this._activeDraftCreativeId = nextCreativeId
+    this._awaitingEffectiveDraftKeyFor = nextCreativeId
+    this.creativeId = creativeId
+    this.resetForm()
+    this._restoreDraft()
+  }
+
   onPopupClosed() {
     this._flushDraftSave()
     this._activeDraftKey = null
     this._activeDraftCreativeId = null
+    this._awaitingEffectiveDraftKeyFor = null
     this.stopSpeechRecognition()
     this.resetForm()
   }
@@ -218,6 +262,7 @@ export default class extends Controller {
     this._draftSaveTimer = null
     this._activeDraftKey = null
     this._activeDraftCreativeId = null
+    this._awaitingEffectiveDraftKeyFor = null
     this._stashedDraft = null
   }
 
@@ -317,7 +362,12 @@ export default class extends Controller {
   }
 
   _saveDraftNow() {
-    if (!this._activeDraftKey || this.editingId || this._stashedDraft) return
+    if (
+      !this._activeDraftKey ||
+      this.editingId ||
+      this._stashedDraft ||
+      !this._reviewStore.isEmpty
+    ) return
     chatDrafts.set(this._activeDraftKey, this.textareaTarget.value)
   }
 
@@ -395,8 +445,10 @@ export default class extends Controller {
     // failure that left the command text behind from text typed mid-flight.
     const submittedText = this.textareaTarget.value
     const submittedDraftKey = this._activeDraftKey
+    const submittedDraftNamespace = chatDrafts.namespace()
     const submittedEditingId = this.editingId
     const submittedDraftRevision = this._draftRevision
+    const submittedHadReview = hasQuotes
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -440,12 +492,17 @@ export default class extends Controller {
         })
       })
       .then((html) => {
+        const ownsSubmittedDraftNamespace =
+          submittedDraftNamespace === chatDrafts.namespace()
         const switchedChats =
+          ownsSubmittedDraftNamespace &&
           submittedDraftKey &&
           this._activeDraftKey &&
           String(submittedDraftKey) !== String(this._activeDraftKey)
         const hasNewerDraft =
+          ownsSubmittedDraftNamespace &&
           !submittedEditingId &&
+          !submittedHadReview &&
           submittedDraftKey &&
           this._activeDraftKey &&
           String(submittedDraftKey) === String(this._activeDraftKey) &&
@@ -456,19 +513,21 @@ export default class extends Controller {
         this._draftSaveTimer = null
         this.resetForm()
         if (submittedEditingId) {
-          this._restoreDraft()
+          if (ownsSubmittedDraftNamespace) this._restoreDraft()
           // If editing, just replace the item in place
           this.renderCommentHtml(html, { replaceExisting: true })
         } else {
-          if (hasNewerDraft) {
+          if (submittedHadReview && ownsSubmittedDraftNamespace) {
+            this._restoreDraft()
+          } else if (hasNewerDraft) {
             this.textareaTarget.value = newerDraft
             this._autoResize()
             this._updateSubmitButton()
             chatDrafts.set(submittedDraftKey, newerDraft)
-          } else if (submittedDraftKey) {
+          } else if (submittedDraftKey && ownsSubmittedDraftNamespace) {
             chatDrafts.clear(submittedDraftKey)
           }
-          if (switchedChats) this._restoreDraft()
+          if (switchedChats && !submittedHadReview) this._restoreDraft()
           // New Comment:
           // 1. If we are in "History Mode" (scrolled up), sending a message should jump us to the latest.
           // 2. Ideally, we just reload the "Latest" page to ensure sync and Live Mode.
@@ -516,7 +575,11 @@ export default class extends Controller {
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
-        this._restoreStashedDraft(submittedText)
+        if (submittedDraftNamespace === chatDrafts.namespace()) {
+          this._restoreStashedDraft(submittedText)
+        } else {
+          this._stashedDraft = null
+        }
       })
   }
 
@@ -871,6 +934,7 @@ export default class extends Controller {
     if (!selectedText) return
 
     const store = this._reviewStore
+    if (store.isEmpty) this._flushDraftSave()
     store.saveActiveFeedback(this.textareaTarget.value)
 
     if (commentId) {
