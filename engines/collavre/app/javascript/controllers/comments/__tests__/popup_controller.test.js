@@ -609,10 +609,17 @@ describe('CommentsPopupController', () => {
         window.localStorage.setItem('commentsPopupSize', '{"w":300}')
         window.localStorage.setItem('collavre_chat_drafts_9', '{"77":{"text":"x","updatedAt":1}}')
 
+        const formController = { discardDraft: jest.fn() }
+        Object.defineProperty(controller, 'formController', {
+            configurable: true,
+            value: formController,
+        })
+
         document.getElementById('logout-form').dispatchEvent(
             new Event('submit', { bubbles: true, cancelable: true }),
         )
 
+        expect(formController.discardDraft).toHaveBeenCalledTimes(1)
         expect(window.localStorage.getItem('commentsPopupSize')).toBeNull()
         expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
     })

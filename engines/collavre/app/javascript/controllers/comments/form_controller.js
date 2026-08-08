@@ -95,8 +95,10 @@ export default class extends Controller {
     this._activeDraftKey = null
     this._activeDraftCreativeId = null
     this._draftSaveTimer = null
+    this._draftRevision = 0
     this._handleDraftInput = () => {
       if (this.editingId || this._stashedDraft || !this._activeDraftKey) return
+      this._draftRevision += 1
       clearTimeout(this._draftSaveTimer)
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
     }
@@ -209,6 +211,14 @@ export default class extends Controller {
     this._activeDraftCreativeId = null
     this.stopSpeechRecognition()
     this.resetForm()
+  }
+
+  discardDraft() {
+    clearTimeout(this._draftSaveTimer)
+    this._draftSaveTimer = null
+    this._activeDraftKey = null
+    this._activeDraftCreativeId = null
+    this._stashedDraft = null
   }
 
   setCommentPermission(canComment) {
@@ -386,6 +396,7 @@ export default class extends Controller {
     const submittedText = this.textareaTarget.value
     const submittedDraftKey = this._activeDraftKey
     const submittedEditingId = this.editingId
+    const submittedDraftRevision = this._draftRevision
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -433,15 +444,30 @@ export default class extends Controller {
           submittedDraftKey &&
           this._activeDraftKey &&
           String(submittedDraftKey) !== String(this._activeDraftKey)
+        const hasNewerDraft =
+          !submittedEditingId &&
+          submittedDraftKey &&
+          this._activeDraftKey &&
+          String(submittedDraftKey) === String(this._activeDraftKey) &&
+          this._draftRevision !== submittedDraftRevision
+        const newerDraft = hasNewerDraft ? this.textareaTarget.value : null
         if (switchedChats) this._flushDraftSave()
+        clearTimeout(this._draftSaveTimer)
+        this._draftSaveTimer = null
         this.resetForm()
         if (submittedEditingId) {
           this._restoreDraft()
           // If editing, just replace the item in place
           this.renderCommentHtml(html, { replaceExisting: true })
         } else {
-          clearTimeout(this._draftSaveTimer)
-          if (submittedDraftKey) chatDrafts.clear(submittedDraftKey)
+          if (hasNewerDraft) {
+            this.textareaTarget.value = newerDraft
+            this._autoResize()
+            this._updateSubmitButton()
+            chatDrafts.set(submittedDraftKey, newerDraft)
+          } else if (submittedDraftKey) {
+            chatDrafts.clear(submittedDraftKey)
+          }
           if (switchedChats) this._restoreDraft()
           // New Comment:
           // 1. If we are in "History Mode" (scrolled up), sending a message should jump us to the latest.

@@ -119,6 +119,7 @@ export default class extends Controller {
     document.querySelectorAll('form[action="/session"]').forEach((form) => {
       form.addEventListener('submit', () => {
         window.localStorage.removeItem(SIZE_STORAGE_KEY)
+        this.formController?.discardDraft()
         chatDrafts.clearAll()
       })
     })

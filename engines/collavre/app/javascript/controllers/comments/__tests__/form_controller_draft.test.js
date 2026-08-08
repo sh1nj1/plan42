@@ -182,6 +182,18 @@ describe('FormController - draft persistence', () => {
     controller.connect()
   })
 
+  test('discarding drafts cancels a pending save and prevents disconnect from recreating it', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'must be discarded')
+
+    controller.discardDraft()
+    controller.disconnect()
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    controller.connect()
+  })
+
   test('losing comment permission flush-saves the draft', () => {
     dispatchTopicChange('77')
     controller.textareaTarget.value = 'permission changed'
@@ -206,6 +218,23 @@ describe('FormController - draft persistence', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(chatDrafts.get('77')).toBeNull()
     expect(controller.textareaTarget.value).toBe('')
+  })
+
+  test('successful send preserves newer text entered while the request is in flight', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'first message')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    typeInto(controller.textareaTarget, 'next message')
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('next message')
+    expect(chatDrafts.get('77')).toBe('next message')
   })
 
   test('failed send keeps the stored draft', async () => {
