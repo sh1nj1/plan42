@@ -11,7 +11,6 @@ const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 class ChatDrafts {
   constructor(storage = null) {
     this._storage = storage
-    this._userId = null
   }
 
   get(chatId) {
@@ -52,10 +51,8 @@ class ChatDrafts {
   }
 
   _key() {
-    if (this._userId === null) {
-      this._userId = document.body?.dataset?.currentUserId || 'guest'
-    }
-    return `collavre_chat_drafts_${this._userId}`
+    const userId = document.body?.dataset?.currentUserId || 'guest'
+    return `collavre_chat_drafts_${userId}`
   }
 
   _evict(drafts) {

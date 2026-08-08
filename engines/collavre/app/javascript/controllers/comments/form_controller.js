@@ -93,6 +93,7 @@ export default class extends Controller {
     // Draft persistence: debounce-save unsent input per chat.
     // _activeDraftKey always identifies the chat whose text is in the textarea.
     this._activeDraftKey = null
+    this._activeDraftCreativeId = null
     this._draftSaveTimer = null
     this._handleDraftInput = () => {
       if (this.editingId || this._stashedDraft || !this._activeDraftKey) return
@@ -133,9 +134,14 @@ export default class extends Controller {
     // textarea still contains the outgoing chat's text. Flush before re-keying.
     const nextDraftKey =
       this.element.dataset.effectiveCreativeId || this.element.dataset.creativeId || null
-    if (String(this._activeDraftKey || '') !== String(nextDraftKey || '')) {
+    const nextCreativeId = this.element.dataset.creativeId || null
+    const draftKeyChanged = String(this._activeDraftKey || '') !== String(nextDraftKey || '')
+    const creativeChanged =
+      String(this._activeDraftCreativeId || '') !== String(nextCreativeId || '')
+    if (draftKeyChanged || creativeChanged) {
       this._flushDraftSave()
       this._activeDraftKey = nextDraftKey ? String(nextDraftKey) : null
+      this._activeDraftCreativeId = nextCreativeId ? String(nextCreativeId) : null
     }
     this.currentTopicId = event.detail.topicId
     this._isInbox = event.detail.isInbox || false
@@ -200,6 +206,7 @@ export default class extends Controller {
   onPopupClosed() {
     this._flushDraftSave()
     this._activeDraftKey = null
+    this._activeDraftCreativeId = null
     this.stopSpeechRecognition()
     this.resetForm()
   }
@@ -378,6 +385,7 @@ export default class extends Controller {
     // failure that left the command text behind from text typed mid-flight.
     const submittedText = this.textareaTarget.value
     const submittedDraftKey = this._activeDraftKey
+    const submittedEditingId = this.editingId
 
     const formData = new FormData(this.formTarget)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
@@ -391,8 +399,8 @@ export default class extends Controller {
 
     let url = `/creatives/${this.creativeId}/comments`
     let method = 'POST'
-    if (this.editingId) {
-      url += `/${this.editingId}`
+    if (submittedEditingId) {
+      url += `/${submittedEditingId}`
       method = 'PATCH'
     }
 
@@ -421,14 +429,13 @@ export default class extends Controller {
         })
       })
       .then((html) => {
-        const wasEditing = this.editingId
         const switchedChats =
           submittedDraftKey &&
           this._activeDraftKey &&
           String(submittedDraftKey) !== String(this._activeDraftKey)
         if (switchedChats) this._flushDraftSave()
         this.resetForm()
-        if (wasEditing) {
+        if (submittedEditingId) {
           this._restoreDraft()
           // If editing, just replace the item in place
           this.renderCommentHtml(html, { replaceExisting: true })

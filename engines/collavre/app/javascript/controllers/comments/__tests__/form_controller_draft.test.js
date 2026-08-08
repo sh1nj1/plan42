@@ -129,6 +129,19 @@ describe('FormController - draft persistence', () => {
     expect(controller._activeDraftKey).toBe('77')
   })
 
+  test('switching linked creatives flushes before resetting a shared effective draft', () => {
+    popupEl.dataset.creativeId = '77'
+    dispatchTopicChange('70', '10073')
+    typeInto(controller.textareaTarget, 'draft from linked creative 77')
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70', '10073')
+
+    expect(chatDrafts.get('70')).toBe('draft from linked creative 77')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    expect(controller.textareaTarget.value).toBe('draft from linked creative 77')
+  })
+
   test('falls back to the raw creative id until an effective id is available', () => {
     delete popupEl.dataset.effectiveCreativeId
     popupEl.dataset.creativeId = '66'
@@ -263,6 +276,28 @@ describe('FormController - draft persistence', () => {
 
     expect(controller.textareaTarget.value).toBe('my draft')
     expect(chatDrafts.get('77')).toBe('my draft')
+  })
+
+  test('edit completion after a chat switch preserves the submitted chat draft', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'my draft')
+    controller.startEditing({ id: 5, content: 'existing comment', private: false })
+    jest.spyOn(controller, 'renderCommentHtml').mockImplementation(() => {})
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+    typeInto(controller.textareaTarget, 'draft for 88')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('my draft')
+    expect(chatDrafts.get('88')).toBe('draft for 88')
+    expect(controller.textareaTarget.value).toBe('draft for 88')
   })
 
   test('a stashed slash-command draft is never replaced by the command text', async () => {

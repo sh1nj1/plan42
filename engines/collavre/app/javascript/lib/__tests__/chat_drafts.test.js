@@ -32,6 +32,17 @@ describe('ChatDrafts', () => {
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toContain('hello')
   })
 
+  test('recomputes the storage namespace when the current user changes', () => {
+    drafts.set('101', 'user 9 draft')
+
+    document.body.dataset.currentUserId = '10'
+    expect(drafts.get('101')).toBeNull()
+    drafts.set('101', 'user 10 draft')
+
+    expect(window.localStorage.getItem('collavre_chat_drafts_9')).toContain('user 9 draft')
+    expect(window.localStorage.getItem('collavre_chat_drafts_10')).toContain('user 10 draft')
+  })
+
   test('falls back to guest namespace without a current user id', () => {
     delete document.body.dataset.currentUserId
     const guestDrafts = new ChatDrafts()
