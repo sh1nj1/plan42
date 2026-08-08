@@ -98,6 +98,7 @@ export default class extends Controller {
     this._draftSaveTimer = null
     this._draftRevisions = new Map()
     this._observedDrafts = new Map()
+    this._observedDraftRevisions = new Map()
     this._handlePageHide = () => {
       if (this.element.isConnected) this._flushDraftSave()
     }
@@ -408,6 +409,19 @@ export default class extends Controller {
     const preserveBlank = blank && Boolean(this._awaitingEffectiveDraftKeyFor)
     const storedText = chatDrafts.get(draftKey)
     const hasStoredEntry = chatDrafts.updatedAt(draftKey) !== null
+    const observationKey = `${chatDrafts.namespace()}:${draftKey}`
+    const hasObservedDraft = this._observedDrafts?.has(observationKey)
+    const observedText = this._observedDrafts?.get(observationKey)
+    const observedRevision = this._observedDraftRevisions?.get(observationKey) || 0
+    const currentRevision = this._draftRevisions?.get(observationKey) || 0
+    const draftChangedLocally =
+      currentRevision !== observedRevision ||
+      (hasObservedDraft && (observedText || '') !== text)
+    const storedDraftChangedOutsideController =
+      hasObservedDraft && observedText !== storedText
+    // An idle tab can retain stale restored text after another tab updates the
+    // same draft. Closing or switching that idle tab must not write it back.
+    if (!draftChangedLocally && storedDraftChangedOutsideController) return
     if (preserveBlank) {
       if (storedText !== null || !hasStoredEntry) {
         chatDrafts.set(draftKey, '', { preserveBlank: true })
@@ -442,6 +456,10 @@ export default class extends Controller {
     if (!draftKey) return
     const observationKey = `${namespace}:${draftKey}`
     this._observedDrafts?.set(observationKey, text)
+    this._observedDraftRevisions?.set(
+      observationKey,
+      this._draftRevisions?.get(observationKey) || 0,
+    )
   }
 
   setSendingState(isSending) {

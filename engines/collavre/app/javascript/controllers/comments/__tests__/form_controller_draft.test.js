@@ -418,6 +418,29 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('newer draft from another tab')
   })
 
+  test('an idle tab does not overwrite a draft changed by another tab on close', () => {
+    chatDrafts.set('77', 'draft restored in both tabs')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    chatDrafts.set('77', 'newer draft from another tab')
+    controller.onPopupClosed()
+
+    expect(chatDrafts.get('77')).toBe('newer draft from another tab')
+  })
+
+  test('local input after another tab change remains eligible to save', () => {
+    chatDrafts.set('77', 'draft restored in both tabs')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    chatDrafts.set('77', 'draft from another tab')
+    typeInto(controller.textareaTarget, 'new local input')
+    controller.onPopupClosed()
+
+    expect(chatDrafts.get('77')).toBe('new local input')
+  })
+
   test('successful send clears this tab draft changed before its debounce runs', async () => {
     chatDrafts.set('77', 'older draft from this tab')
     dispatchTopicChange('77')
