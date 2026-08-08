@@ -101,6 +101,7 @@ export default class extends Controller {
     // so its completion must keep comparing against the same draft history.
     this._draftRevisions ||= new Map()
     this._observedDrafts ||= new Map()
+    this._observedDisplayedDrafts ||= new Map()
     this._observedDraftRevisions ||= new Map()
     this._observedStoredDraftRevisions ||= new Map()
     // A linked chat can replace its temporary raw key while its request is in
@@ -455,13 +456,20 @@ export default class extends Controller {
     const observationKey = `${chatDrafts.namespace()}:${draftKey}`
     const hasObservedDraft = this._observedDrafts?.has(observationKey)
     const observedText = this._observedDrafts?.get(observationKey)
+    const hasObservedDisplayedDraft =
+      this._observedDisplayedDrafts?.has(observationKey)
+    const observedDisplayedText = hasObservedDisplayedDraft
+      ? this._observedDisplayedDrafts.get(observationKey)
+      : observedText
     const observedRevision = this._observedDraftRevisions?.get(observationKey) || 0
     const observedStoredRevision =
       this._observedStoredDraftRevisions?.get(observationKey) || null
     const currentRevision = this._draftRevisions?.get(observationKey) || 0
+    const displayedDraftChanged =
+      (hasObservedDisplayedDraft || hasObservedDraft) &&
+      (observedDisplayedText || '') !== text
     const draftChangedLocally =
-      currentRevision !== observedRevision ||
-      (hasObservedDraft && (observedText || '') !== text)
+      currentRevision !== observedRevision || displayedDraftChanged
     const storedDraftChangedOutsideController = hasObservedDraft && (
       observedText !== storedText || observedStoredRevision !== storedDraft.revision
     )
@@ -514,12 +522,22 @@ export default class extends Controller {
     if (this.textareaTarget.value.trim()) return
 
     const draft = chatDrafts.snapshot(this._activeDraftKey)
-    const backup = draft.text
-      ? null
-      : chatDrafts.latestSubmissionBackup(this._activeDraftKey)
-    this._observeDraft(this._activeDraftKey, draft.text, chatDrafts.namespace(), draft.revision)
-    if (draft.text || backup?.text) {
-      this.textareaTarget.value = draft.text || backup.text
+    const backup = chatDrafts.latestSubmissionBackup(this._activeDraftKey)
+    const restoreBackup = Boolean(
+      backup?.text &&
+      (draft.updatedAt === null || backup.updatedAt > draft.updatedAt),
+    )
+    if (backup && !restoreBackup) chatDrafts.removeSubmissionBackup(backup.key)
+    const restoredText = restoreBackup ? backup.text : draft.text
+    this._observeDraft(
+      this._activeDraftKey,
+      draft.text,
+      chatDrafts.namespace(),
+      draft.revision,
+      restoredText,
+    )
+    if (restoredText) {
+      this.textareaTarget.value = restoredText
       requestAnimationFrame(() => this._autoResize())
     } else {
       this._restorePendingSubmittedDraft()
@@ -548,6 +566,7 @@ export default class extends Controller {
     text,
     namespace = chatDrafts.namespace(),
     storedRevision,
+    displayedText,
   ) {
     if (!draftKey) return
     const storedDraft = storedRevision === undefined
@@ -555,6 +574,10 @@ export default class extends Controller {
       : { text, revision: storedRevision }
     const observationKey = `${namespace}:${draftKey}`
     this._observedDrafts?.set(observationKey, storedDraft.text)
+    this._observedDisplayedDrafts?.set(
+      observationKey,
+      displayedText === undefined ? storedDraft.text : displayedText,
+    )
     this._observedDraftRevisions?.set(
       observationKey,
       this._draftRevisions?.get(observationKey) || 0,

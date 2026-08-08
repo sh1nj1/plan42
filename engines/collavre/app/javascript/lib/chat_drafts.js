@@ -41,15 +41,15 @@ class ChatDrafts {
   }
 
   snapshot(chatId) {
-    if (!chatId) return { text: null, revision: null }
+    if (!chatId) return { text: null, revision: null, updatedAt: null }
 
     const entry = this._entry(String(chatId))
+    const hasRevision =
+      entry && !entry.movedTo && (!entry.deleted || entry.migration)
     return {
       text: entry && !entry.deleted ? entry.text : null,
-      revision:
-        entry && !entry.movedTo && (!entry.deleted || entry.migration)
-          ? entry.version
-          : null,
+      revision: hasRevision ? entry.version : null,
+      updatedAt: entry && !entry.movedTo ? entry.updatedAt : null,
     }
   }
 
@@ -58,7 +58,8 @@ class ChatDrafts {
 
     if (!this.clearSubmissionBackups(chatId)) return null
 
-    const updatedAt = Date.now()
+    const current = this._entry(String(chatId))
+    const updatedAt = Math.max(Date.now(), (current?.updatedAt || 0) + 1)
     this._sequence += 1
     const version = `${updatedAt}-${this._writerId}-${this._sequence}`
     const key = `${this._backupPrefix(String(chatId))}${encodeURIComponent(version)}`

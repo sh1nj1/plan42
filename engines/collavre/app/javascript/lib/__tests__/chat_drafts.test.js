@@ -71,20 +71,51 @@ describe('ChatDrafts', () => {
     expect(drafts.snapshot('101')).toEqual({
       text: 'submitted draft',
       revision: 'v1',
+      updatedAt: 1000,
     })
     expect(entry).toHaveBeenCalledTimes(1)
-    expect(drafts.snapshot(null)).toEqual({ text: null, revision: null })
+    expect(drafts.snapshot(null)).toEqual({
+      text: null,
+      revision: null,
+      updatedAt: null,
+    })
 
     entry.mockRestore()
-    expect(drafts.snapshot('missing')).toEqual({ text: null, revision: null })
+    expect(drafts.snapshot('missing')).toEqual({
+      text: null,
+      revision: null,
+      updatedAt: null,
+    })
     drafts.set('blank', '', { preserveBlank: true })
     expect(drafts.snapshot('blank')).toEqual({
       text: null,
       revision: drafts.revision('blank'),
+      updatedAt: drafts.updatedAt('blank'),
     })
     drafts.set('raw', 'draft to move')
     drafts.move('raw', 'effective')
-    expect(drafts.snapshot('raw')).toEqual({ text: null, revision: null })
+    expect(drafts.snapshot('raw')).toEqual({
+      text: null,
+      revision: null,
+      updatedAt: null,
+    })
+
+    drafts.set('cleared', 'draft to clear')
+    drafts.clear('cleared')
+    expect(drafts.snapshot('cleared')).toEqual({
+      text: null,
+      revision: null,
+      updatedAt: drafts._entry('cleared').updatedAt,
+    })
+  })
+
+  test('orders a submission backup after the regular draft it supersedes', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts.set('101', 'older regular draft')
+
+    drafts.saveSubmissionBackup('101', 'newer failed submission')
+
+    expect(drafts.latestSubmissionBackup('101')?.updatedAt).toBe(1001)
   })
 
   test('stores submission backups independently and removes exact backups', () => {

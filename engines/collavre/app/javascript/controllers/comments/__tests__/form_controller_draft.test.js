@@ -820,6 +820,100 @@ describe('FormController - draft persistence', () => {
     expect(controller.textareaTarget.value).toBe('')
   })
 
+  test('restores a failed submission newer than an existing stored draft', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    chatDrafts.set('77', 'older stored draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'newer failed submission')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.onChatWillOpen({ creativeId: '88' })
+    popupEl.dataset.creativeId = '88'
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    Date.now.mockReturnValue(2000)
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('older stored draft')
+    expect(submissionBackup('77')).toBe('newer failed submission')
+
+    controller.onChatWillOpen({ creativeId: '77' })
+    popupEl.dataset.creativeId = '77'
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('newer failed submission')
+
+    Date.now.mockReturnValue(3000)
+    chatDrafts.set('77', 'newest draft from another tab')
+    controller.onPopupClosed()
+
+    expect(chatDrafts.get('77')).toBe('newest draft from another tab')
+  })
+
+  test('restores a regular draft newer than a failed-submission backup', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    chatDrafts.saveSubmissionBackup('77', 'older failed submission')
+    Date.now.mockReturnValue(2000)
+    chatDrafts.set('77', 'newer stored draft')
+
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('newer stored draft')
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('prefers a regular draft saved after a backup at the same timestamp', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    chatDrafts.saveSubmissionBackup('77', 'failed submission')
+    chatDrafts.set('77', 'later regular draft')
+
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('later regular draft')
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('does not restore a backup older than a regular draft clear', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(500)
+    chatDrafts.set('77', 'regular draft')
+    Date.now.mockReturnValue(1000)
+    chatDrafts.saveSubmissionBackup('77', 'failed submission')
+    Date.now.mockReturnValue(2000)
+    chatDrafts.clear('77')
+
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('prefers a same-timestamp regular clear saved after a backup', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    chatDrafts.set('77', 'regular draft')
+    chatDrafts.saveSubmissionBackup('77', 'failed submission')
+    chatDrafts.clear('77')
+
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(submissionBackup('77')).toBeNull()
+  })
+
   test('pagehide does not persist an uncertain in-flight submission', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'message leaving with the page')
