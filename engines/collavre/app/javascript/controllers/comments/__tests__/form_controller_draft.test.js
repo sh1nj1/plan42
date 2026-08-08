@@ -443,6 +443,36 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('same-millisecond concurrent draft')
   })
 
+  test('submission snapshots text and revision before a concurrent draft arrives', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'first message')
+    controller._flushDraftSave()
+
+    const originalEntry = chatDrafts._entry.bind(chatDrafts)
+    let injectConcurrentDraft = true
+    jest.spyOn(chatDrafts, '_entry').mockImplementation((chatId) => {
+      const entry = originalEntry(chatId)
+      if (injectConcurrentDraft && String(chatId) === '77') {
+        injectConcurrentDraft = false
+        chatDrafts._append('77', {
+          text: 'draft saved concurrently after snapshot',
+          updatedAt: entry.updatedAt + 1,
+          version: `${entry.version}-concurrent`,
+        })
+      }
+      return entry
+    })
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('draft saved concurrently after snapshot')
+    expect(chatDrafts.get('77')).toBe('draft saved concurrently after snapshot')
+  })
+
   test('successful send preserves a draft another tab saved before submission', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'stale message in this tab')
@@ -559,6 +589,172 @@ describe('FormController - draft persistence', () => {
     expect(controller.textareaTarget.value).toBe('draft for 88')
   })
 
+  test('send completion clears a submitted draft after raw-to-effective key migration', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'send before linked topics resolve')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    expect(controller.textareaTarget.value).toBe('send before linked topics resolve')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBeNull()
+  })
+
+  test('raw-to-effective migration preserves a newer canonical draft during submission', async () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'stale linked message')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    now += 1000
+    chatDrafts.set('70', 'newer canonical draft')
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('newer canonical draft')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBe('newer canonical draft')
+  })
+
+  test('a failed raw-to-effective move keeps the submission bound to the raw key', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'send despite migration failure')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    jest.spyOn(chatDrafts, 'move').mockReturnValue(false)
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBeNull()
+  })
+
+  test('send completion clears a target copied before the source marker fails', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'send during partial migration')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    jest.spyOn(chatDrafts, 'move').mockImplementation((sourceKey, targetKey) => {
+      chatDrafts._append(String(targetKey), { ...chatDrafts._entry(String(sourceKey)) })
+    })
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBeNull()
+  })
+
+  test('send completion rebinds when another tab already moved the submitted draft', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'send after another tab migrates')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    chatDrafts.move('78', '70')
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBeNull()
+  })
+
+  test('linked-key migration preserves a stashed draft that differs from the command', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'ordinary draft before command')
+    controller.handleStashDraft(
+      new CustomEvent('comments--form:stash-draft', {
+        detail: { draft: 'ordinary draft before command' },
+      }),
+    )
+    typeInto(controller.textareaTarget, '/calendar 2026-08-14')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('ordinary draft before command')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBe('ordinary draft before command')
+  })
+
+  test('an unrelated linked-key migration does not rebind a pending submission', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'send from 77')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'draft for linked chat')
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(chatDrafts.get('70')).toBe('draft for linked chat')
+    expect(controller.textareaTarget.value).toBe('draft for linked chat')
+  })
+
   test('typing in another chat does not preserve a restored submitted message', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'send from 77')
@@ -628,6 +824,34 @@ describe('FormController - draft persistence', () => {
 
     expect(controller.textareaTarget.value).toBe('next message after reconnect')
     expect(chatDrafts.get('77')).toBe('next message after reconnect')
+  })
+
+  test('reconnecting while linked topics load preserves migration and new input', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'send before reconnect')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.disconnect()
+    controller.connect()
+    expect(controller._activeDraftKey).toBe('78')
+    expect(controller._awaitingEffectiveDraftKeyFor).toBe('78')
+    typeInto(controller.textareaTarget, 'next message after reconnect')
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('next message after reconnect')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(chatDrafts.get('70')).toBe('next message after reconnect')
   })
 
   test('send completion preserves newer submitted-chat text after switching away', async () => {

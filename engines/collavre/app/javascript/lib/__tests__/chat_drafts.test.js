@@ -60,6 +60,32 @@ describe('ChatDrafts', () => {
     expect(drafts.revision('101')).toBe('1000-b')
   })
 
+  test('snapshots text and revision from one resolved operation', () => {
+    const resolved = { text: 'submitted draft', updatedAt: 1000, version: 'v1' }
+    const newer = { text: 'concurrent draft', updatedAt: 1001, version: 'v2' }
+    const entry = jest.spyOn(drafts, '_entry')
+      .mockImplementationOnce(() => resolved)
+      .mockImplementation(() => newer)
+
+    expect(drafts.snapshot('101')).toEqual({
+      text: 'submitted draft',
+      revision: 'v1',
+    })
+    expect(entry).toHaveBeenCalledTimes(1)
+    expect(drafts.snapshot(null)).toEqual({ text: null, revision: null })
+
+    entry.mockRestore()
+    expect(drafts.snapshot('missing')).toEqual({ text: null, revision: null })
+    drafts.set('blank', '', { preserveBlank: true })
+    expect(drafts.snapshot('blank')).toEqual({
+      text: null,
+      revision: drafts.revision('blank'),
+    })
+    drafts.set('raw', 'draft to move')
+    drafts.move('raw', 'effective')
+    expect(drafts.snapshot('raw')).toEqual({ text: null, revision: null })
+  })
+
   test('a clear tombstone survives obsolete aggregate cleanup', () => {
     let now = 1000
     jest.spyOn(Date, 'now').mockImplementation(() => now)

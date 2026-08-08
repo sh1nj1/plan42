@@ -39,6 +39,19 @@ class ChatDrafts {
     return entry.version
   }
 
+  snapshot(chatId) {
+    if (!chatId) return { text: null, revision: null }
+
+    const entry = this._entry(String(chatId))
+    return {
+      text: entry && !entry.deleted ? entry.text : null,
+      revision:
+        entry && !entry.movedTo && (!entry.deleted || entry.migration)
+          ? entry.version
+          : null,
+    }
+  }
+
   set(chatId, text, { preserveBlank = false } = {}) {
     if (!chatId) return
 
