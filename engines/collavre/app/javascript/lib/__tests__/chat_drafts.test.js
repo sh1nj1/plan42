@@ -17,6 +17,7 @@ describe('ChatDrafts', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     document.body.dataset.currentUserId = '9'
     drafts = new ChatDrafts()
   })
@@ -84,6 +85,223 @@ describe('ChatDrafts', () => {
     drafts.set('raw', 'draft to move')
     drafts.move('raw', 'effective')
     expect(drafts.snapshot('raw')).toEqual({ text: null, revision: null })
+  })
+
+  test('stores submission backups independently and removes exact backups', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    expect(drafts.saveSubmissionBackup(null, 'draft')).toBeNull()
+    expect(drafts.saveSubmissionBackup('101', '  ')).toBeNull()
+    expect(drafts.latestSubmissionBackup(null)).toBeNull()
+
+    const firstKey = drafts.saveSubmissionBackup('101', 'first submission')
+    now += 1
+    const secondKey = drafts.saveSubmissionBackup('101', 'second submission')
+
+    expect(drafts.latestSubmissionBackup('101')).toEqual({
+      key: secondKey,
+      text: 'second submission',
+      updatedAt: 1001,
+    })
+    drafts.removeSubmissionBackup('unrelated-key')
+    drafts.removeSubmissionBackup(secondKey, 'collavre_chat_drafts_other')
+    expect(drafts.latestSubmissionBackup('101')?.key).toBe(secondKey)
+    drafts.removeSubmissionBackup(secondKey)
+    expect(window.sessionStorage.getItem(firstKey)).toBeNull()
+    expect(drafts.latestSubmissionBackup('101')).toBeNull()
+    drafts.clearSubmissionBackups('101')
+    drafts.clearSubmissionBackups(null)
+    expect(drafts.latestSubmissionBackup('101')).toBeNull()
+
+    now += 1
+    const tiedFirst = drafts.saveSubmissionBackup('101', 'tied first')
+    const tiedSecond = drafts.saveSubmissionBackup('101', 'tied second')
+    expect(window.sessionStorage.getItem(tiedFirst)).toBeNull()
+    expect(drafts.latestSubmissionBackup('101')?.key).toBe(tiedSecond)
+
+    const prefix = drafts._backupPrefix('tied')
+    window.sessionStorage.setItem(`${prefix}a`, JSON.stringify({ text: 'a', updatedAt: now }))
+    window.sessionStorage.setItem(`${prefix}b`, JSON.stringify({ text: 'b', updatedAt: now }))
+    expect(drafts.latestSubmissionBackup('tied')?.text).toBe('b')
+  })
+
+  test('moves submission backups without changing their ordering metadata', () => {
+    expect(drafts.moveSubmissionBackups(null, 'effective')).toEqual(new Map())
+    expect(drafts.moveSubmissionBackups('raw', 'raw')).toEqual(new Map())
+    const sourceKey = drafts.saveSubmissionBackup('raw', 'linked submission')
+    const source = drafts.latestSubmissionBackup('raw')
+
+    const moved = drafts.moveSubmissionBackups('raw', 'effective')
+
+    expect(moved.get(sourceKey)).toBe(drafts.latestSubmissionBackup('effective').key)
+    expect(drafts.latestSubmissionBackup('effective')).toMatchObject({
+      text: 'linked submission',
+      updatedAt: source.updatedAt,
+    })
+    expect(drafts.latestSubmissionBackup('raw')).toBeNull()
+  })
+
+  test('keeps the newest submission backup when linked keys converge', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    drafts.saveSubmissionBackup('older-raw', 'older raw')
+    now += 1
+    const newerTargetKey = drafts.saveSubmissionBackup('newer-target', 'newer target')
+
+    expect(drafts.moveSubmissionBackups('older-raw', 'newer-target')).toEqual(new Map())
+    expect(drafts.latestSubmissionBackup('newer-target')?.key).toBe(newerTargetKey)
+    expect(drafts.latestSubmissionBackup('older-raw')).toBeNull()
+
+    drafts.saveSubmissionBackup('older-target', 'older target')
+    now += 1
+    const newerSourceKey = drafts.saveSubmissionBackup('newer-raw', 'newer raw')
+    const moved = drafts.moveSubmissionBackups('newer-raw', 'older-target')
+    expect(moved.get(newerSourceKey)).toBe(drafts.latestSubmissionBackup('older-target').key)
+    expect(drafts.latestSubmissionBackup('older-target')?.text).toBe('newer raw')
+
+    const tiedSourceKey = drafts.saveSubmissionBackup('tied-raw', 'tied raw')
+    const tiedTargetKey = drafts.saveSubmissionBackup('tied-target', 'tied target')
+    expect(drafts.moveSubmissionBackups('tied-raw', 'tied-target')).toEqual(new Map())
+    expect(drafts.latestSubmissionBackup('tied-target')?.key).toBe(tiedTargetKey)
+    expect(window.sessionStorage.getItem(tiedSourceKey)).toBeNull()
+  })
+
+  test('keeps a submission backup when its move cannot be persisted', () => {
+    const storage = {
+      get length() { return window.localStorage.length },
+      key: (index) => window.localStorage.key(index),
+      getItem: (key) => window.localStorage.getItem(key),
+      setItem: (key, value) => {
+        if (key.startsWith('collavre_chat_drafts_9_pending:effective:')) {
+          throw new Error('quota')
+        }
+        window.localStorage.setItem(key, value)
+      },
+      removeItem: (key) => window.localStorage.removeItem(key),
+    }
+    const failingDrafts = new ChatDrafts(storage)
+    failingDrafts.saveSubmissionBackup('raw', 'keep at source')
+
+    expect(failingDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
+    expect(failingDrafts.latestSubmissionBackup('raw')?.text).toBe('keep at source')
+    expect(failingDrafts.latestSubmissionBackup('effective')).toBeNull()
+
+    window.localStorage.clear()
+    const droppedStorage = {
+      get length() { return window.localStorage.length },
+      key: storage.key,
+      getItem: storage.getItem,
+      setItem: (key, value) => {
+        if (!key.startsWith('collavre_chat_drafts_9_pending:effective:')) {
+          window.localStorage.setItem(key, value)
+        }
+      },
+      removeItem: storage.removeItem,
+    }
+    const droppedDrafts = new ChatDrafts(droppedStorage)
+    droppedDrafts.saveSubmissionBackup('raw', 'verify destination')
+    expect(droppedDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
+    expect(droppedDrafts.latestSubmissionBackup('raw')?.text).toBe('verify destination')
+
+    const values = new Map()
+    const stickySourceStorage = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] || null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: (key) => {
+        if (!key.startsWith('collavre_chat_drafts_9_pending:raw:')) values.delete(key)
+      },
+    }
+    const stickyDrafts = new ChatDrafts(stickySourceStorage)
+    stickyDrafts.saveSubmissionBackup('raw', 'source cannot be removed')
+    expect(stickyDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
+    expect(stickyDrafts.latestSubmissionBackup('raw')?.text).toBe('source cannot be removed')
+    expect(stickyDrafts.latestSubmissionBackup('effective')).toBeNull()
+
+    values.clear()
+    const stickyTargetStorage = {
+      get length() { return values.size },
+      key: stickySourceStorage.key,
+      getItem: stickySourceStorage.getItem,
+      setItem: stickySourceStorage.setItem,
+      removeItem: (key) => {
+        if (!key.startsWith('collavre_chat_drafts_9_pending:effective:')) values.delete(key)
+      },
+    }
+    const stickyTargetDrafts = new ChatDrafts(stickyTargetStorage)
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    stickyTargetDrafts.saveSubmissionBackup('effective', 'target cannot be removed')
+    now += 1
+    stickyTargetDrafts.saveSubmissionBackup('raw', 'newer source')
+    expect(stickyTargetDrafts.moveSubmissionBackups('raw', 'effective')).toEqual(new Map())
+    expect(stickyTargetDrafts.latestSubmissionBackup('effective')?.text)
+      .toBe('target cannot be removed')
+    expect(stickyTargetDrafts.latestSubmissionBackup('raw')?.text).toBe('newer source')
+  })
+
+  test('prunes expired and malformed submission backups', () => {
+    const prefix = drafts._backupPrefix('101')
+    const expiredKey = `${prefix}expired`
+    const malformedKey = `${prefix}malformed`
+    const blankKey = `${prefix}blank`
+    window.sessionStorage.setItem(expiredKey, JSON.stringify({
+      text: 'expired submission',
+      updatedAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+    }))
+    window.sessionStorage.setItem(malformedKey, '{bad')
+    window.sessionStorage.setItem(blankKey, JSON.stringify({ text: '', updatedAt: Date.now() }))
+    expect(drafts.latestSubmissionBackup('101')).toBeNull()
+    const validKey = drafts.saveSubmissionBackup('101', 'valid submission')
+
+    expect(drafts.latestSubmissionBackup('101')?.key).toBe(validKey)
+    expect(window.sessionStorage.getItem(expiredKey)).toBeNull()
+    expect(window.sessionStorage.getItem(malformedKey)).toBeNull()
+    expect(window.sessionStorage.getItem(blankKey)).toBeNull()
+
+    drafts.clearAll({ broadcast: false })
+    expect(window.sessionStorage.getItem(validKey)).toBeNull()
+  })
+
+  test('bounds submission backups to the newest fifty entries', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => (now += 1))
+    const keys = Array.from({ length: 51 }, (_, index) => (
+      drafts.saveSubmissionBackup(`chat-${index}`, `submission ${index}`)
+    ))
+
+    expect(window.sessionStorage.getItem(keys[0])).toBeNull()
+    expect(window.sessionStorage.getItem(keys[50])).not.toBeNull()
+    expect(drafts.latestSubmissionBackup('chat-50')?.text).toBe('submission 50')
+  })
+
+  test('submission backups tolerate unavailable storage', () => {
+    const broken = {
+      length: 1,
+      key: () => 'collavre_chat_drafts_9_pending:101:backup',
+      getItem: () => { throw new Error('denied') },
+      setItem: () => { throw new Error('quota') },
+      removeItem: () => { throw new Error('denied') },
+    }
+    const brokenDrafts = new ChatDrafts(broken)
+
+    expect(brokenDrafts.saveSubmissionBackup('101', 'draft')).toBeNull()
+    expect(brokenDrafts.latestSubmissionBackup('101')).toBeNull()
+    expect(() => brokenDrafts.removeSubmissionBackup(
+      'collavre_chat_drafts_9_pending:101:backup',
+    )).not.toThrow()
+    expect(() => brokenDrafts.clearSubmissionBackups('101')).not.toThrow()
+
+    const writeOnlyFailure = {
+      length: 0,
+      key: () => null,
+      getItem: () => null,
+      setItem: () => { throw new Error('quota') },
+      removeItem: () => {},
+    }
+    expect(new ChatDrafts(null, writeOnlyFailure)
+      .saveSubmissionBackup('101', 'draft')).toBeNull()
   })
 
   test('a clear tombstone survives obsolete aggregate cleanup', () => {

@@ -13,8 +13,9 @@ const KEY_SEPARATOR = ':'
  * from restoring cleared text.
  */
 class ChatDrafts {
-  constructor(storage = null) {
+  constructor(storage = null, backupStorage = null) {
     this._storage = storage
+    this._backupStorage = backupStorage
     this._writerId = `${Date.now()}-${Math.random()}`
     this._sequence = 0
   }
@@ -50,6 +51,95 @@ class ChatDrafts {
           ? entry.version
           : null,
     }
+  }
+
+  saveSubmissionBackup(chatId, text) {
+    if (!chatId || !text || !text.trim()) return null
+
+    if (!this.clearSubmissionBackups(chatId)) return null
+
+    const updatedAt = Date.now()
+    this._sequence += 1
+    const version = `${updatedAt}-${this._writerId}-${this._sequence}`
+    const key = `${this._backupPrefix(String(chatId))}${encodeURIComponent(version)}`
+    try {
+      this._backupBackend().setItem(key, JSON.stringify({ text, updatedAt }))
+      this._evictSubmissionBackups()
+      return key
+    } catch {
+      return null
+    }
+  }
+
+  latestSubmissionBackup(chatId) {
+    if (!chatId) return null
+
+    return this._submissionBackups(String(chatId)).sort((left, right) => (
+      right.updatedAt - left.updatedAt || right.key.localeCompare(left.key)
+    ))[0] || null
+  }
+
+  removeSubmissionBackup(key, namespace = this._key()) {
+    if (!key || !key.startsWith(this._backupPrefix(null, namespace))) return false
+
+    try {
+      this._backupBackend().removeItem(key)
+      return this._backupBackend().getItem(key) === null
+    } catch {
+      return false
+    }
+  }
+
+  clearSubmissionBackups(chatId) {
+    if (!chatId) return false
+    return this._keys(
+      this._backupPrefix(String(chatId)),
+      this._backupBackend(),
+    ).every((key) => this.removeSubmissionBackup(key))
+  }
+
+  moveSubmissionBackups(sourceChatId, targetChatId) {
+    const moved = new Map()
+    if (!sourceChatId || !targetChatId) return moved
+
+    const sourceId = String(sourceChatId)
+    const targetId = String(targetChatId)
+    if (sourceId === targetId) return moved
+
+    const sourcePrefix = this._backupPrefix(sourceId)
+    const targetPrefix = this._backupPrefix(targetId)
+    this._submissionBackups(sourceId).forEach(({ key, text, updatedAt }) => {
+      const target = this.latestSubmissionBackup(targetId)
+      if (target && (
+        target.updatedAt > updatedAt ||
+        (
+          target.updatedAt === updatedAt &&
+          target.key.slice(targetPrefix.length).localeCompare(
+            key.slice(sourcePrefix.length),
+          ) >= 0
+        )
+      )) {
+        this.removeSubmissionBackup(key)
+        return
+      }
+      if (!this.clearSubmissionBackups(targetId)) return
+
+      const targetKey = `${targetPrefix}${key.slice(sourcePrefix.length)}`
+      const value = JSON.stringify({ text, updatedAt })
+      try {
+        this._backupBackend().setItem(targetKey, value)
+        if (this._backupBackend().getItem(targetKey) !== value) return
+        if (!this.removeSubmissionBackup(key)) {
+          this.removeSubmissionBackup(targetKey)
+          return
+        }
+        moved.set(key, targetKey)
+      } catch {
+        // Keep the source backup when the destination cannot be persisted.
+      }
+    })
+    this._evictSubmissionBackups()
+    return moved
   }
 
   set(chatId, text, { preserveBlank = false } = {}) {
@@ -124,6 +214,9 @@ class ChatDrafts {
         // Storage unavailable.
       }
     })
+    this._keys(this._backupPrefix(), this._backupBackend()).forEach((key) => {
+      this.removeSubmissionBackup(key)
+    })
     try {
       backend.removeItem(namespace)
     } catch {
@@ -159,6 +252,10 @@ class ChatDrafts {
     return this._storage || window.localStorage
   }
 
+  _backupBackend() {
+    return this._backupStorage || this._storage || window.sessionStorage
+  }
+
   _key() {
     const userId = document.body?.dataset?.currentUserId || 'guest'
     return `collavre_chat_drafts_${userId}`
@@ -172,12 +269,18 @@ class ChatDrafts {
     return `${this._prefix()}${encodeURIComponent(chatId)}${KEY_SEPARATOR}`
   }
 
+  _backupPrefix(chatId = null, namespace = this._key()) {
+    const prefix = `${namespace}_pending${KEY_SEPARATOR}`
+    return chatId === null
+      ? prefix
+      : `${prefix}${encodeURIComponent(chatId)}${KEY_SEPARATOR}`
+  }
+
   _operationKey(chatId, version) {
     return `${this._chatPrefix(chatId)}${encodeURIComponent(version)}`
   }
 
-  _keys(prefix = this._prefix()) {
-    const backend = this._backend()
+  _keys(prefix = this._prefix(), backend = this._backend()) {
     if (typeof backend.key !== 'function' || typeof backend.length !== 'number') return []
 
     const keys = []
@@ -236,6 +339,38 @@ class ChatDrafts {
       // Storage unavailable.
     }
     this._keys().forEach((key) => this._readOperation(key))
+    this._evictSubmissionBackups()
+  }
+
+  _submissionBackups(chatId = null) {
+    const prefix = this._backupPrefix(chatId)
+    const cutoff = Date.now() - DRAFT_TTL_MS
+
+    const backend = this._backupBackend()
+    return this._keys(prefix, backend).flatMap((key) => {
+      try {
+        const entry = JSON.parse(backend.getItem(key))
+        if (
+          !entry ||
+          typeof entry.text !== 'string' ||
+          !entry.text.trim() ||
+          !Number.isFinite(entry.updatedAt) ||
+          entry.updatedAt < cutoff
+        ) throw new Error('Invalid submission backup')
+
+        return [{ key, text: entry.text, updatedAt: entry.updatedAt }]
+      } catch {
+        this.removeSubmissionBackup(key)
+        return []
+      }
+    })
+  }
+
+  _evictSubmissionBackups() {
+    const backups = this._submissionBackups().sort((left, right) => (
+      right.updatedAt - left.updatedAt || right.key.localeCompare(left.key)
+    ))
+    backups.slice(MAX_DRAFTS).forEach(({ key }) => this.removeSubmissionBackup(key))
   }
 
   _valid(entry) {

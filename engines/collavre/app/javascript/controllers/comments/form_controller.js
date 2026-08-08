@@ -102,15 +102,24 @@ export default class extends Controller {
     this._draftRevisions ||= new Map()
     this._observedDrafts ||= new Map()
     this._observedDraftRevisions ||= new Map()
+    this._observedStoredDraftRevisions ||= new Map()
     // A linked chat can replace its temporary raw key while its request is in
     // flight. Keep mutable submission state across that migration/reconnect.
     this._pendingDraftSubmissions ||= new Set()
     this._handlePageHide = () => {
-      if (this.element.isConnected) this._flushDraftSave()
+      if (!this.element.isConnected) return
+
+      this._flushDraftSave()
     }
     this._handleDraftStorage = (event) => {
       if (!this.element.isConnected || !chatDrafts.wasCleared(event)) return
 
+      const clearedNamespace = chatDrafts.namespace()
+      this._pendingDraftSubmissions?.forEach((submission) => {
+        if (submission.namespace !== clearedNamespace) return
+
+        submission.invalidated = true
+      })
       this.discardDraft()
       // A timer in this tab may have raced with the logout tab's first clear.
       chatDrafts.clearAll({ broadcast: false })
@@ -187,12 +196,17 @@ export default class extends Controller {
         const sourceDraft = chatDrafts.snapshot(previousDraftKey)
         chatDrafts.move(previousDraftKey, this._activeDraftKey)
         const targetDraft = chatDrafts.snapshot(this._activeDraftKey)
-        if (targetDraft.revision) {
+        const movedBackups = chatDrafts.moveSubmissionBackups(
+          previousDraftKey,
+          this._activeDraftKey,
+        )
+        if (targetDraft.revision || !sourceDraft.revision) {
           this._rebindPendingDraftSubmissions(
             previousDraftKey,
             this._activeDraftKey,
             sourceDraft,
             targetDraft,
+            movedBackups,
           )
         }
       }
@@ -294,6 +308,10 @@ export default class extends Controller {
   }
 
   discardDraft() {
+    const namespace = chatDrafts.namespace()
+    this._pendingDraftSubmissions?.forEach((submission) => {
+      if (submission.namespace === namespace) submission.invalidated = true
+    })
     clearTimeout(this._draftSaveTimer)
     this._draftSaveTimer = null
     this._activeDraftKey = null
@@ -426,22 +444,27 @@ export default class extends Controller {
       this._shouldSuppressDraftSaveForStash() ||
       !this._reviewStore.isEmpty
     ) return
+    if (this._currentTextIsPendingSubmission()) return
     const draftKey = this._activeDraftKey
     const text = this.textareaTarget.value
     const blank = !text.trim()
     const preserveBlank = blank && Boolean(this._awaitingEffectiveDraftKeyFor)
-    const storedText = chatDrafts.get(draftKey)
+    const storedDraft = chatDrafts.snapshot(draftKey)
+    const storedText = storedDraft.text
     const hasStoredEntry = chatDrafts.updatedAt(draftKey) !== null
     const observationKey = `${chatDrafts.namespace()}:${draftKey}`
     const hasObservedDraft = this._observedDrafts?.has(observationKey)
     const observedText = this._observedDrafts?.get(observationKey)
     const observedRevision = this._observedDraftRevisions?.get(observationKey) || 0
+    const observedStoredRevision =
+      this._observedStoredDraftRevisions?.get(observationKey) || null
     const currentRevision = this._draftRevisions?.get(observationKey) || 0
     const draftChangedLocally =
       currentRevision !== observedRevision ||
       (hasObservedDraft && (observedText || '') !== text)
-    const storedDraftChangedOutsideController =
-      hasObservedDraft && observedText !== storedText
+    const storedDraftChangedOutsideController = hasObservedDraft && (
+      observedText !== storedText || observedStoredRevision !== storedDraft.revision
+    )
     // An idle tab can retain stale restored text after another tab updates the
     // same draft. Closing or switching that idle tab must not write it back.
     if (!draftChangedLocally && storedDraftChangedOutsideController) return
@@ -450,11 +473,14 @@ export default class extends Controller {
         chatDrafts.set(draftKey, '', { preserveBlank: true })
       }
     } else if (blank) {
-      if (hasStoredEntry) chatDrafts.clear(draftKey)
+      if (hasStoredEntry) {
+        chatDrafts.clear(draftKey)
+      }
     } else if (storedText !== text) {
       chatDrafts.set(draftKey, text)
     }
-    this._observeDraft(draftKey, chatDrafts.get(draftKey))
+    if (blank && draftChangedLocally) chatDrafts.clearSubmissionBackups(draftKey)
+    this._observeDraft(draftKey)
   }
 
   _flushDraftSave() {
@@ -463,29 +489,86 @@ export default class extends Controller {
     this._saveDraftNow()
   }
 
+  _currentTextIsPendingSubmission() {
+    return Boolean(this._currentPendingSubmission())
+  }
+
+  _currentPendingSubmission() {
+    const namespace = chatDrafts.namespace()
+    const key = String(this._activeDraftKey || '')
+
+    return [...(this._pendingDraftSubmissions || [])].find((submission) => (
+      !submission.invalidated &&
+      submission.namespace === namespace &&
+      String(submission.key || '') === key &&
+      !submission.hadStash &&
+      !submission.hadReview &&
+      !submission.editing &&
+      submission.text === this.textareaTarget.value &&
+      (this._draftRevisions?.get(submission.revisionKey) || 0) === submission.keyRevision
+    ))
+  }
+
   _restoreDraft() {
     if (!this._activeDraftKey || this.editingId) return
     if (this.textareaTarget.value.trim()) return
 
-    const draft = chatDrafts.get(this._activeDraftKey)
-    this._observeDraft(this._activeDraftKey, draft)
-    if (draft) {
-      this.textareaTarget.value = draft
+    const draft = chatDrafts.snapshot(this._activeDraftKey)
+    const backup = draft.text
+      ? null
+      : chatDrafts.latestSubmissionBackup(this._activeDraftKey)
+    this._observeDraft(this._activeDraftKey, draft.text, chatDrafts.namespace(), draft.revision)
+    if (draft.text || backup?.text) {
+      this.textareaTarget.value = draft.text || backup.text
       requestAnimationFrame(() => this._autoResize())
+    } else {
+      this._restorePendingSubmittedDraft()
     }
   }
 
-  _observeDraft(draftKey, text, namespace = chatDrafts.namespace()) {
+  _restorePendingSubmittedDraft() {
+    const namespace = chatDrafts.namespace()
+    const pending = [...(this._pendingDraftSubmissions || [])].find((submission) => (
+      !submission.invalidated &&
+      submission.namespace === namespace &&
+      String(submission.key || '') === String(this._activeDraftKey || '') &&
+      !submission.hadStash &&
+      !submission.hadReview &&
+      !submission.editing
+    ))
+    if (!pending) return
+
+    this.textareaTarget.value = pending.text
+    requestAnimationFrame(() => this._autoResize())
+    this._updateSubmitButton()
+  }
+
+  _observeDraft(
+    draftKey,
+    text,
+    namespace = chatDrafts.namespace(),
+    storedRevision,
+  ) {
     if (!draftKey) return
+    const storedDraft = storedRevision === undefined
+      ? chatDrafts.snapshot(draftKey)
+      : { text, revision: storedRevision }
     const observationKey = `${namespace}:${draftKey}`
-    this._observedDrafts?.set(observationKey, text)
+    this._observedDrafts?.set(observationKey, storedDraft.text)
     this._observedDraftRevisions?.set(
       observationKey,
       this._draftRevisions?.get(observationKey) || 0,
     )
+    this._observedStoredDraftRevisions?.set(observationKey, storedDraft.revision)
   }
 
-  _rebindPendingDraftSubmissions(sourceKey, targetKey, sourceDraft, targetDraft) {
+  _rebindPendingDraftSubmissions(
+    sourceKey,
+    targetKey,
+    sourceDraft,
+    targetDraft,
+    movedBackups = new Map(),
+  ) {
     const namespace = chatDrafts.namespace()
     const targetRevisionKey = `${namespace}:${targetKey}`
 
@@ -495,16 +578,20 @@ export default class extends Controller {
         String(submission.key) !== String(sourceKey)
       ) return
 
+      const targetMatchesSubmission =
+        submission.storedRevision &&
+        targetDraft.revision === submission.storedRevision &&
+        targetDraft.text === submission.text
+      const sourceMatchesSubmission =
+        sourceDraft.revision &&
+        targetDraft.revision === sourceDraft.revision &&
+        targetDraft.text === submission.text
+      const submittedDraftWasUnstored =
+        !submission.storedRevision &&
+        !sourceDraft.revision &&
+        !targetDraft.revision
       const submittedDraftWasMoved =
-        (
-          submission.storedRevision &&
-          targetDraft.revision === submission.storedRevision &&
-          targetDraft.text === submission.text
-        ) || (
-          sourceDraft.revision &&
-          targetDraft.revision === sourceDraft.revision &&
-          sourceDraft.text === submission.text
-        )
+        targetMatchesSubmission || sourceMatchesSubmission || submittedDraftWasUnstored
       if (
         sourceDraft.revision &&
         sourceDraft.text === submission.text
@@ -520,6 +607,9 @@ export default class extends Controller {
       submission.storedRevision = targetDraft.revision
       submission.storedChangedOutsideController ||=
         !submittedDraftWasMoved
+      if (submission.backupKey && movedBackups.has(submission.backupKey)) {
+        submission.backupKey = movedBackups.get(submission.backupKey)
+      }
     })
   }
 
@@ -530,6 +620,21 @@ export default class extends Controller {
       chatDrafts.clear(key)
       this._observeDraft(key, null, submission.namespace)
     })
+  }
+
+  _persistFailedSubmissionDraft(submission) {
+    if (
+      submission.invalidated ||
+      submission.hadStash ||
+      submission.hadReview ||
+      submission.editing ||
+      submission.namespace !== chatDrafts.namespace()
+    ) return
+
+    submission.backupKey ||= chatDrafts.saveSubmissionBackup(
+      submission.key,
+      submission.text,
+    )
   }
 
   setSendingState(isSending) {
@@ -575,6 +680,14 @@ export default class extends Controller {
     this.setSendingState(true)
     this.presenceController?.stoppedTyping()
 
+    // Cancel any pending input debounce before capturing the submission. A
+    // write while the request is in flight looks like a newer draft and can
+    // restore the already-sent text on success. Failures persist below.
+    if (this._draftSaveTimer) {
+      clearTimeout(this._draftSaveTimer)
+      this._draftSaveTimer = null
+    }
+
     // Build final content from review quotes + user text
     if (hasQuotes) {
       store.backup(this.textareaTarget.value)
@@ -594,24 +707,36 @@ export default class extends Controller {
       `${submittedDraftNamespace}:${initialSubmittedDraftKey}`
     const initialSubmittedDraft = chatDrafts.snapshot(initialSubmittedDraftKey)
     const submittedHadStash = this._stashedDraftBelongsToCurrentCreative()
+    const submittedBackup = chatDrafts.latestSubmissionBackup(initialSubmittedDraftKey)
+    const observedSubmittedText =
+      this._observedDrafts?.get(initialSubmittedDraftRevisionKey)
+    const observedSubmittedStoredRevision =
+      this._observedStoredDraftRevisions?.get(initialSubmittedDraftRevisionKey) || null
+    const submittedTextChangedOutsideController =
+      observedSubmittedText !== initialSubmittedDraft.text
+    const submittedRevisionChangedOutsideController =
+      observedSubmittedStoredRevision !== initialSubmittedDraft.revision
+    const submittedStoredDraftChangedOutsideController =
+      this._observedDrafts?.has(initialSubmittedDraftRevisionKey) &&
+      (submittedTextChangedOutsideController || submittedRevisionChangedOutsideController)
     const submittedDraft = {
       key: initialSubmittedDraftKey,
       namespace: submittedDraftNamespace,
       revisionKey: initialSubmittedDraftRevisionKey,
-      storedChangedOutsideController:
-        this._observedDrafts?.has(initialSubmittedDraftRevisionKey) &&
-        this._observedDrafts.get(initialSubmittedDraftRevisionKey) !==
-          initialSubmittedDraft.text,
+      storedChangedOutsideController: submittedStoredDraftChangedOutsideController,
       keyRevision: this._draftRevisions?.get(initialSubmittedDraftRevisionKey) || 0,
       storedRevision: initialSubmittedDraft.revision,
       text: submittedText,
       hadStash: submittedHadStash,
+      backupKey: submittedBackup?.text === submittedText ? submittedBackup.key : null,
       migratedSources: [],
     }
     this._pendingDraftSubmissions ||= new Set()
     this._pendingDraftSubmissions.add(submittedDraft)
     const submittedEditingId = this.editingId
     const submittedHadReview = hasQuotes
+    submittedDraft.editing = Boolean(submittedEditingId)
+    submittedDraft.hadReview = submittedHadReview
     if (submittedHadStash) {
       this._stashedDraft.submittedText = submittedText
     }
@@ -658,6 +783,18 @@ export default class extends Controller {
         })
       })
       .then((html) => {
+        if (submittedDraft.backupKey) {
+          chatDrafts.removeSubmissionBackup(
+            submittedDraft.backupKey,
+            submittedDraft.namespace,
+          )
+          submittedDraft.backupKey = null
+        }
+        if (
+          submittedDraft.invalidated ||
+          submittedDraft.namespace !== chatDrafts.namespace()
+        ) return
+
         const {
           key: submittedDraftKey,
           namespace: submittedDraftNamespace,
@@ -668,6 +805,7 @@ export default class extends Controller {
           hadStash: submittedHadStash,
         } = submittedDraft
         const ownsSubmittedDraftNamespace =
+          !submittedDraft.invalidated &&
           submittedDraftNamespace === chatDrafts.namespace()
         const switchedChats =
           ownsSubmittedDraftNamespace &&
@@ -697,7 +835,13 @@ export default class extends Controller {
             chatDrafts.revision(submittedDraftKey) !== submittedDraftStoredRevision
           )
         const hasNewerDraft = hasNewerActiveDraft || hasNewerStoredDraft
-        const newerDraft = hasNewerActiveDraft ? this.textareaTarget.value : null
+        const newerDraft = hasNewerActiveDraft
+          ? (
+            this._draftSaveSuspendedForPermission
+              ? chatDrafts.get(submittedDraftKey)
+              : this.textareaTarget.value
+          )
+          : null
         if (switchedChats) this._flushDraftSave()
         clearTimeout(this._draftSaveTimer)
         this._draftSaveTimer = null
@@ -764,6 +908,8 @@ export default class extends Controller {
         }
       })
       .catch((error) => {
+        if (submittedDraft.invalidated) return
+
         // Restore review quotes state on failure so user doesn't lose work
         if (this._reviewStore.hasBackup()) {
           const restoredText = this._reviewStore.restore()
@@ -771,6 +917,7 @@ export default class extends Controller {
           this._renderReviewQuoteChips()
           this._updateSubmitButton()
         }
+        this._persistFailedSubmissionDraft(submittedDraft)
         alertDialog(error?.message || 'Failed to submit comment')
       })
       .finally(() => {
@@ -778,7 +925,10 @@ export default class extends Controller {
         inFlightSends.delete(sendKey)
         this._hasRetried = false
         this.setSendingState(false)
-        if (submittedDraft.namespace === chatDrafts.namespace()) {
+        if (
+          !submittedDraft.invalidated &&
+          submittedDraft.namespace === chatDrafts.namespace()
+        ) {
           this._restoreStashedDraft(submittedText)
         } else {
           this._stashedDraft = null

@@ -48,8 +48,17 @@ describe('FormController - draft persistence', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
+  const dismissAlert = () => {
+    document.querySelector('.modal-dialog-btn-primary')?.click()
+  }
+
+  const submissionBackup = (chatId) => (
+    chatDrafts.latestSubmissionBackup(chatId)?.text || null
+  )
+
   beforeEach(async () => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
     document.body.dataset.currentUserId = '9'
 
     if (typeof global.requestAnimationFrame !== 'function') {
@@ -309,6 +318,64 @@ describe('FormController - draft persistence', () => {
     controller.connect()
   })
 
+  test('a failed in-flight send cannot recreate a draft after cross-tab logout', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'old user submission')
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: JSON.stringify({
+        namespace: 'collavre_chat_drafts_9',
+        nonce: 'another-tab-logout',
+      }),
+    }))
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('')
+
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(controller.sending).toBe(false)
+    dismissAlert()
+  })
+
+  test('an invalidated send success does not reset input entered after logout', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'old user submission')
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: JSON.stringify({
+        namespace: 'collavre_chat_drafts_9',
+        nonce: 'another-tab-logout',
+      }),
+    }))
+    document.body.dataset.currentUserId = '10'
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'new input after logout')
+    controller._flushDraftSave()
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('new input after logout')
+    expect(chatDrafts.get('77')).toBe('new input after logout')
+  })
+
   test('an unrelated storage event leaves the active draft intact', () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'still active')
@@ -334,6 +401,27 @@ describe('FormController - draft persistence', () => {
     controller.connect()
   })
 
+  test('same-tab logout invalidates an in-flight send before clearing drafts', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'old user submission')
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.discardDraft()
+    chatDrafts.clearAll()
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(submissionBackup('77')).toBeNull()
+    expect(controller.textareaTarget.value).toBe('')
+  })
+
   test('losing comment permission preserves the saved draft through close', () => {
     dispatchTopicChange('77')
     controller.textareaTarget.value = 'permission changed'
@@ -357,6 +445,47 @@ describe('FormController - draft persistence', () => {
     controller.setCommentPermission(true)
     expect(controller.formTarget.style.display).toBe('')
     expect(controller.textareaTarget.value).toBe('permission changed')
+  })
+
+  test('permission loss preserves an undebounced submission when the send fails', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'submission before permission loss')
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.setCommentPermission(false)
+    expect(chatDrafts.get('77')).toBeNull()
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(submissionBackup('77')).toBe('submission before permission loss')
+    controller.setCommentPermission(true)
+    expect(controller.textareaTarget.value).toBe('submission before permission loss')
+    dismissAlert()
+  })
+
+  test('permission loss preserves text entered after an in-flight submission', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'first submitted message')
+    controller._flushDraftSave()
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    typeInto(controller.textareaTarget, 'next message before permission loss')
+    controller.setCommentPermission(false)
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('next message before permission loss')
+    controller.setCommentPermission(true)
+    expect(controller.textareaTarget.value).toBe('next message before permission loss')
   })
 
   test('opening a read-only chat does not clear its saved draft on close', () => {
@@ -490,6 +619,43 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('newer draft from another tab')
   })
 
+  test('submission debounce does not overwrite a newer draft from another tab', async () => {
+    chatDrafts.set('77', 'shared starting draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'message submitted from this tab')
+    chatDrafts.set('77', 'newer draft from another tab')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    expect(chatDrafts.get('77')).toBe('newer draft from another tab')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('newer draft from another tab')
+    expect(chatDrafts.get('77')).toBe('newer draft from another tab')
+  })
+
+  test('submission debounce preserves a same-text revision from another tab', async () => {
+    chatDrafts.set('77', 'shared starting draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'message submitted from this tab')
+    chatDrafts.set('77', 'other tab temporary change')
+    chatDrafts.set('77', 'shared starting draft')
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('shared starting draft')
+    expect(chatDrafts.get('77')).toBe('shared starting draft')
+  })
+
   test('an idle tab does not overwrite a draft changed by another tab on close', () => {
     chatDrafts.set('77', 'draft restored in both tabs')
     dispatchTopicChange('77')
@@ -529,6 +695,24 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBeNull()
   })
 
+  test('successful slow send does not restore the submitted text when its debounce fires', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'message sent before debounce')
+    const saveDraft = jest.spyOn(chatDrafts, 'set')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(saveDraft).not.toHaveBeenCalled()
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+  })
+
   test('send completion after an account change does not clear the new user draft', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'user 9 message')
@@ -540,10 +724,13 @@ describe('FormController - draft persistence', () => {
 
     document.body.dataset.currentUserId = '10'
     chatDrafts.set('77', 'user 10 draft')
+    controller.resetForm()
+    controller._restoreDraft()
 
     finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
     await new Promise((resolve) => setTimeout(resolve, 20))
 
+    expect(controller.textareaTarget.value).toBe('user 10 draft')
     expect(chatDrafts.get('77')).toBe('user 10 draft')
     document.body.dataset.currentUserId = '9'
     expect(chatDrafts.get('77')).toBe('user 9 message')
@@ -566,6 +753,198 @@ describe('FormController - draft persistence', () => {
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(chatDrafts.get('77')).toBe('will fail')
+  })
+
+  test('failed send persists input submitted before its debounce runs', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'unsaved message that will fail')
+
+    const failedResponse = {
+      ok: false, status: 500, json: () => Promise.resolve({ errors: ['boom'] }),
+    }
+    global.fetch = jest.fn(() => Promise.resolve(failedResponse))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(submissionBackup('77')).toBe('unsaved message that will fail')
+  })
+
+  test('failed send replaces an older restored backup with the submitted text', async () => {
+    chatDrafts.saveSubmissionBackup('77', 'older failed submission')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'new submission that will fail')
+
+    const failedResponse = {
+      ok: false, status: 500, json: () => Promise.resolve({ errors: ['boom'] }),
+    }
+    global.fetch = jest.fn(() => Promise.resolve(failedResponse))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(submissionBackup('77')).toBe('new submission that will fail')
+    dismissAlert()
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    controller.resetForm()
+    controller._restoreDraft()
+
+    expect(submissionBackup('77')).toBeNull()
+    expect(controller.textareaTarget.value).toBe('')
+  })
+
+  test('failed send persists unsaved input after switching chats', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'unsaved message from 77')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.onChatWillOpen({ creativeId: '88' })
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(submissionBackup('77')).toBe('unsaved message from 77')
+    expect(controller.textareaTarget.value).toBe('')
+  })
+
+  test('pagehide does not persist an uncertain in-flight submission', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'message leaving with the page')
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(submissionBackup('77')).toBeNull()
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('sending a restored submission backup clears its exact backup key', async () => {
+    chatDrafts.saveSubmissionBackup('77', 'restored submission')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('restored submission')
+
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') }),
+    )
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('clearing a restored submission backup removes it permanently', () => {
+    chatDrafts.saveSubmissionBackup('77', 'failed submission to clear')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('failed submission to clear')
+
+    typeInto(controller.textareaTarget, '')
+    controller._flushDraftSave()
+    controller.resetForm()
+    controller._restoreDraft()
+
+    expect(submissionBackup('77')).toBeNull()
+    expect(controller.textareaTarget.value).toBe('')
+  })
+
+  test('pagehide does not claim a same-text draft saved by another tab', async () => {
+    chatDrafts.set('77', 'starting draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'same submitted and external text')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    chatDrafts.set('77', 'same submitted and external text')
+    const externalRevision = chatDrafts.revision('77')
+
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.revision('77')).toBe(externalRevision)
+    expect(chatDrafts.get('77')).toBe('same submitted and external text')
+    expect(controller.textareaTarget.value).toBe('same submitted and external text')
+  })
+
+  test('pagehide does not overwrite a different draft saved by another tab', async () => {
+    chatDrafts.set('77', 'starting draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'submitted from this tab')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    chatDrafts.set('77', 'different draft from another tab')
+    const externalRevision = chatDrafts.revision('77')
+
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.revision('77')).toBe(externalRevision)
+    expect(chatDrafts.get('77')).toBe('different draft from another tab')
+    expect(controller.textareaTarget.value).toBe('different draft from another tab')
+  })
+
+  test('successful send clears its restored backup after the user namespace changes', async () => {
+    const backupKey = chatDrafts.saveSubmissionBackup('77', 'old user submission')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    document.body.dataset.currentUserId = '10'
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(window.sessionStorage.getItem(backupKey)).toBeNull()
+  })
+
+  test('pagehide preserves an external draft detected when submission starts', async () => {
+    chatDrafts.set('77', 'starting draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'submitted from this tab')
+    chatDrafts.set('77', 'external draft present before submit')
+    const externalRevision = chatDrafts.revision('77')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.revision('77')).toBe(externalRevision)
+    expect(chatDrafts.get('77')).toBe('external draft present before submit')
+    expect(controller.textareaTarget.value).toBe('external draft present before submit')
   })
 
   test('send completion after a chat switch clears only the submitted chat draft', async () => {
@@ -609,6 +988,71 @@ describe('FormController - draft persistence', () => {
     expect(controller.textareaTarget.value).toBe('')
     expect(chatDrafts.get('78')).toBeNull()
     expect(chatDrafts.get('70')).toBeNull()
+  })
+
+  test('linked-key migration rekeys a restored submission backup in flight', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    chatDrafts.saveSubmissionBackup('78', 'failed submission before linked topics resolve')
+    controller.resetForm()
+    controller._restoreDraft()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    expect(submissionBackup('78')).toBeNull()
+    expect(submissionBackup('70')).toBe('failed submission before linked topics resolve')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(submissionBackup('70')).toBeNull()
+  })
+
+  test('linked-key migration moves a persisted backup without in-memory submission state', () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    chatDrafts.saveSubmissionBackup('78', 'failed submission restored after reload')
+    controller._pendingDraftSubmissions.clear()
+    controller.resetForm()
+    controller._restoreDraft()
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(submissionBackup('78')).toBeNull()
+    expect(submissionBackup('70')).toBe('failed submission restored after reload')
+    expect(controller.textareaTarget.value).toBe('failed submission restored after reload')
+  })
+
+  test('failed send restores an undebounced submission after linked-key migration', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    controller.onChatWillOpen({ creativeId: '78' })
+    typeInto(controller.textareaTarget, 'failed send before linked topics resolve')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('failed send before linked topics resolve')
+    expect(chatDrafts.get('78')).toBeNull()
+    expect(submissionBackup('70')).toBe('failed send before linked topics resolve')
   })
 
   test('raw-to-effective migration preserves a newer canonical draft during submission', async () => {
@@ -796,6 +1240,27 @@ describe('FormController - draft persistence', () => {
     dispatchTopicChange('77')
     controller.onPopupOpened({ creativeId: '77', canComment: true })
     expect(controller.textareaTarget.value).toBe('send before reconnect')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+  })
+
+  test('reconnecting before the submission debounce does not persist the sent message', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'send before debounce and reconnect')
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.disconnect()
+    controller.connect()
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    expect(controller.textareaTarget.value).toBe('send before debounce and reconnect')
 
     finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
     await new Promise((resolve) => setTimeout(resolve, 20))
