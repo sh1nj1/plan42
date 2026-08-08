@@ -100,7 +100,7 @@ export default class extends Controller {
     this._handleDraftInput = () => {
       if (
         this.editingId ||
-        this._stashedDraft ||
+        this._stashedDraftBelongsToCurrentCreative() ||
         !this._reviewStore.isEmpty ||
         !this._activeDraftKey
       ) return
@@ -320,6 +320,13 @@ export default class extends Controller {
     this._stashedDraft = draft ? { draft, creativeId: this.creativeId } : null
   }
 
+  _stashedDraftBelongsToCurrentCreative() {
+    return Boolean(
+      this._stashedDraft &&
+      String(this._stashedDraft.creativeId) === String(this.creativeId),
+    )
+  }
+
   _restoreStashedDraft(submittedText) {
     const stashed = this._stashedDraft
     this._stashedDraft = null
@@ -366,7 +373,7 @@ export default class extends Controller {
     if (
       !this._activeDraftKey ||
       this.editingId ||
-      this._stashedDraft ||
+      this._stashedDraftBelongsToCurrentCreative() ||
       !this._reviewStore.isEmpty
     ) return
     const text = this.textareaTarget.value

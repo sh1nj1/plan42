@@ -138,6 +138,24 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('88')).toBe('draft for 88')
   })
 
+  test('a slash-command stash from the outgoing chat does not suppress the incoming draft', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'draft for 77')
+    controller.handleStashDraft(
+      new CustomEvent('comments--form:stash-draft', {
+        detail: { draft: 'draft for 77' },
+      }),
+    )
+    controller.textareaTarget.value = '/calendar 2026-08-14 10:00 Sync'
+
+    controller.onChatWillOpen({ creativeId: '88' })
+    typeInto(controller.textareaTarget, 'draft for 88')
+    controller.onPopupClosed()
+
+    expect(chatDrafts.get('77')).toBe('draft for 77')
+    expect(chatDrafts.get('88')).toBe('draft for 88')
+  })
+
   test('typing during a linked chat switch migrates from raw to effective draft key', () => {
     popupEl.dataset.creativeId = '77'
     dispatchTopicChange('70')
