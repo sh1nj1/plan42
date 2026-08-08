@@ -36,4 +36,33 @@ describe('creatives API workspace invalidation', () => {
     expect(listener).not.toHaveBeenCalled()
     document.removeEventListener('workspace-tree:invalidate', listener)
   })
+
+  test('creates a rich-authored Markdown creative from a picker title', async () => {
+    const listener = jest.fn()
+    document.addEventListener('workspace-tree:invalidate', listener)
+    csrfFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: 17 }) })
+
+    await expect(creativesApi.createFromTitle('New page')).resolves.toEqual({ id: 17 })
+
+    const [, options] = csrfFetch.mock.calls[0]
+    expect(csrfFetch.mock.calls[0][0]).toBe('/creatives')
+    expect(options.method).toBe('POST')
+    expect(options.body.get('creative[markdown_source]')).toBe('New page')
+    expect(options.body.get('creative[content_type_input]')).toBe('markdown')
+    expect(options.body.get('creative[markdown_editor]')).toBe('rich')
+    expect(listener).toHaveBeenCalledTimes(1)
+    document.removeEventListener('workspace-tree:invalidate', listener)
+  })
+
+  test('rejects a failed picker creation without invalidating the workspace tree', async () => {
+    const listener = jest.fn()
+    document.addEventListener('workspace-tree:invalidate', listener)
+    csrfFetch.mockResolvedValue({ ok: false, status: 422 })
+
+    await expect(creativesApi.createFromTitle('Invalid')).rejects.toThrow(
+      'Failed to create creative: 422',
+    )
+    expect(listener).not.toHaveBeenCalled()
+    document.removeEventListener('workspace-tree:invalidate', listener)
+  })
 })

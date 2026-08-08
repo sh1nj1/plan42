@@ -67,6 +67,9 @@ ko:
         empty_state_request_failed: 권한을 요청하지 못했습니다. 다시 시도해 주세요.
         empty_state_loggedout_message: 하위 크리에이티브를 추가하려면 회원가입 또는 로그인하세요.
         link_loading: 불러오는 중…
+        link_create: “%{query}” 새로 만들기
+        link_creating: 크리에이티브를 만드는 중…
+        link_create_failed: 크리에이티브를 만들지 못했습니다.
         link_expand: 펼치기
         recommend_parent: 카테고리 추천
         import_uploading: 업로드 중...

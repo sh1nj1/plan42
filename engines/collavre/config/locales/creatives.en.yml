@@ -71,6 +71,9 @@ en:
         empty_state_request_failed: Could not request access. Please try again.
         empty_state_loggedout_message: Sign up or log in to add sub-creatives.
         link_loading: Loading…
+        link_create: Create “%{query}”
+        link_creating: Creating creative…
+        link_create_failed: Could not create the creative.
         link_expand: Expand
         search_placeholder: Search creatives...
         recommend_parent: Recommend Category
