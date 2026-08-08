@@ -368,6 +368,78 @@ describe('FormController - draft persistence', () => {
     controller.connect()
   })
 
+  test('a cross-tab logout keeps the cleared user namespace disabled', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'old user draft')
+
+    controller.disconnect()
+    chatDrafts.clearAll()
+    const clearSignal = window.localStorage.getItem('collavre_chat_drafts_clear')
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: clearSignal,
+    }))
+
+    controller.connect()
+    controller.onChatWillOpen({ creativeId: '88' })
+    popupEl.dataset.creativeId = '88'
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+    expect(controller._activeDraftKey).toBeNull()
+    typeInto(controller.textareaTarget, 'must not persist for the old user')
+    controller.onPopupClosed()
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(chatDrafts.get('88')).toBeNull()
+  })
+
+  test('a missed cross-tab logout invalidates an in-flight send on reconnect', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'old user submission')
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.disconnect()
+    chatDrafts.clearAll()
+    controller.connect()
+    controller.onChatWillOpen({ creativeId: '77' })
+
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('storage recovery does not treat an existing clear marker as a new logout', () => {
+    controller.disconnect()
+    chatDrafts.clearAll()
+    controller._observedDraftClearNonces.clear()
+    const storageGetter = jest.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+
+    controller.connect()
+    controller.disconnect()
+    storageGetter.mockRestore()
+    controller.connect()
+    controller.onChatWillOpen({ creativeId: '88' })
+    popupEl.dataset.creativeId = '88'
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+    typeInto(controller.textareaTarget, 'draft after storage recovery')
+    controller._flushDraftSave()
+
+    expect(chatDrafts.get('88')).toBe('draft after storage recovery')
+  })
+
   test('a failed in-flight send cannot recreate a draft after cross-tab logout', async () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'old user submission')

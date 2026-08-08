@@ -766,6 +766,13 @@ describe('ChatDrafts', () => {
     const signal = window.localStorage.getItem('collavre_chat_drafts_clear')
 
     expect(JSON.parse(signal).namespace).toBe('collavre_chat_drafts_9')
+    expect(drafts.clearNonce()).toBe(JSON.parse(signal).nonce)
+    expect(drafts.clearNonce('collavre_chat_drafts_10')).toBeNull()
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+    }))
+    expect(drafts.clearNonce()).toBeNull()
+    window.localStorage.setItem('collavre_chat_drafts_clear', signal)
     expect(drafts.wasCleared(new StorageEvent('storage', {
       key: 'collavre_chat_drafts_clear',
       newValue: signal,
@@ -782,6 +789,8 @@ describe('ChatDrafts', () => {
       key: 'collavre_chat_drafts_clear',
       newValue: '{invalid',
     }))).toBe(false)
+    window.localStorage.setItem('collavre_chat_drafts_clear', '{invalid')
+    expect(drafts.clearNonce()).toBeUndefined()
   })
 
   test('clearAll can skip the cross-tab broadcast', () => {
@@ -861,6 +870,7 @@ describe('ChatDrafts', () => {
     const brokenDrafts = new ChatDrafts(broken)
     expect(() => brokenDrafts.set('101', 'x')).not.toThrow()
     expect(brokenDrafts.get('101')).toBeNull()
+    expect(brokenDrafts.clearNonce()).toBeUndefined()
     expect(() => brokenDrafts.clearAll()).not.toThrow()
   })
 
@@ -874,6 +884,7 @@ describe('ChatDrafts', () => {
     const unavailableDrafts = new ChatDrafts()
 
     expect(() => unavailableDrafts.snapshot('101')).not.toThrow()
+    expect(unavailableDrafts.clearNonce()).toBeUndefined()
     expect(unavailableDrafts._backend().key(0)).toBeNull()
     expect(unavailableDrafts._backend().getItem('missing')).toBeNull()
     unavailableDrafts.set('101', 'ephemeral draft')

@@ -97,6 +97,10 @@ export default class extends Controller {
     this._awaitingEffectiveDraftKeyFor ??= null
     this._draftSaveTimer = null
     this._draftSaveSuspendedForPermission ??= false
+    // A cross-tab logout permanently retires the old user's namespace for this
+    // controller lifetime, including Stimulus reconnects in the stale tab.
+    this._disabledDraftNamespaces ||= new Set()
+    this._observedDraftClearNonces ||= new Map()
     // A pending send survives a Stimulus reconnect on this controller instance,
     // so its completion must keep comparing against the same draft history.
     this._draftRevisions ||= new Map()
@@ -107,6 +111,18 @@ export default class extends Controller {
     // A linked chat can replace its temporary raw key while its request is in
     // flight. Keep mutable submission state across that migration/reconnect.
     this._pendingDraftSubmissions ||= new Set()
+    const draftNamespace = chatDrafts.namespace()
+    const draftClearNonce = chatDrafts.clearNonce(draftNamespace)
+    if (
+      draftClearNonce &&
+      this._observedDraftClearNonces.has(draftNamespace) &&
+      this._observedDraftClearNonces.get(draftNamespace) !== draftClearNonce
+    ) {
+      this._disableDraftNamespace(draftNamespace)
+    }
+    if (draftClearNonce !== undefined) {
+      this._observedDraftClearNonces.set(draftNamespace, draftClearNonce)
+    }
     this._handlePageHide = () => {
       if (!this.element.isConnected) return
 
@@ -116,18 +132,12 @@ export default class extends Controller {
       if (!this.element.isConnected || !chatDrafts.wasCleared(event)) return
 
       const clearedNamespace = chatDrafts.namespace()
-      this._pendingDraftSubmissions?.forEach((submission) => {
-        if (submission.namespace !== clearedNamespace) return
-
-        submission.invalidated = true
-      })
-      this.discardDraft()
-      // A timer in this tab may have raced with the logout tab's first clear.
-      chatDrafts.clearAll({ broadcast: false })
+      this._disableDraftNamespace(clearedNamespace)
     }
     this._handleDraftInput = () => {
       if (
         this.editingId ||
+	this._draftPersistenceDisabled() ||
         this._draftSaveSuspendedForPermission ||
         this._shouldSuppressDraftSaveForStash() ||
         !this._reviewStore.isEmpty ||
@@ -172,9 +182,13 @@ export default class extends Controller {
   handleTopicChange(event) {
     // This event fires before onPopupOpened during a chat switch, while the
     // textarea still contains the outgoing chat's text. Flush before re-keying.
-    const nextDraftKey =
-      this.element.dataset.effectiveCreativeId || this.element.dataset.creativeId || null
-    const nextCreativeId = this.element.dataset.creativeId || null
+    const draftPersistenceDisabled = this._draftPersistenceDisabled()
+    const nextDraftKey = draftPersistenceDisabled
+      ? null
+      : this.element.dataset.effectiveCreativeId || this.element.dataset.creativeId || null
+    const nextCreativeId = draftPersistenceDisabled
+      ? null
+      : this.element.dataset.creativeId || null
     const draftKeyChanged = String(this._activeDraftKey || '') !== String(nextDraftKey || '')
     const creativeChanged =
       String(this._activeDraftCreativeId || '') !== String(nextCreativeId || '')
@@ -304,6 +318,14 @@ export default class extends Controller {
     // outgoing chat now, then give any input typed during that await a key owned
     // by the incoming chat. The topics event replaces it with the effective id.
     this._flushDraftSave()
+    if (this._draftPersistenceDisabled()) {
+      this._activeDraftKey = null
+      this._activeDraftCreativeId = null
+      this._awaitingEffectiveDraftKeyFor = null
+      this.creativeId = creativeId
+      this.resetForm()
+      return
+    }
     this._activeDraftKey = nextCreativeId
     this._activeDraftCreativeId = nextCreativeId
     this._awaitingEffectiveDraftKeyFor = nextCreativeId
@@ -453,6 +475,7 @@ export default class extends Controller {
   _saveDraftNow() {
     if (
       !this._activeDraftKey ||
+      this._draftPersistenceDisabled() ||
       this._draftSaveSuspendedForPermission ||
       this.editingId ||
       this._shouldSuppressDraftSaveForStash() ||
@@ -533,7 +556,11 @@ export default class extends Controller {
   }
 
   _restoreDraft() {
-    if (!this._activeDraftKey || this.editingId) return
+    if (
+      !this._activeDraftKey ||
+      this._draftPersistenceDisabled() ||
+      this.editingId
+    ) return
     if (this.textareaTarget.value.trim()) return
 
     const draft = chatDrafts.snapshot(this._activeDraftKey)
@@ -574,6 +601,17 @@ export default class extends Controller {
     this.textareaTarget.value = pending.text
     requestAnimationFrame(() => this._autoResize())
     this._updateSubmitButton()
+  }
+
+  _draftPersistenceDisabled(namespace = chatDrafts.namespace()) {
+    return this._disabledDraftNamespaces?.has(namespace) || false
+  }
+
+  _disableDraftNamespace(namespace) {
+    this._disabledDraftNamespaces.add(namespace)
+    this.discardDraft()
+    // A timer in this tab may have raced with the logout tab's first clear.
+    chatDrafts.clearAll({ broadcast: false })
   }
 
   _observeDraft(

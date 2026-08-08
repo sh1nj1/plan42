@@ -275,6 +275,18 @@ class ChatDrafts {
     }
   }
 
+  clearNonce(namespace = this._key()) {
+    const backend = this._backend()
+    if (!this._storage && backend === this._fallbackStorage) return undefined
+
+    try {
+      const signal = JSON.parse(backend.getItem(CLEAR_EVENT_KEY))
+      return signal?.namespace === namespace ? signal.nonce || null : null
+    } catch {
+      return undefined
+    }
+  }
+
   namespace() {
     return this._key()
   }
