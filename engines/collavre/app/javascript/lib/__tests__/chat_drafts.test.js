@@ -118,6 +118,15 @@ describe('ChatDrafts', () => {
     expect(drafts.latestSubmissionBackup('101')?.updatedAt).toBe(1001)
   })
 
+  test('uses a captured timestamp to preserve submission-time ordering', () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    drafts.set('101', 'regular draft written after submission')
+
+    drafts.saveSubmissionBackup('101', 'failed submission', { updatedAt: 999 })
+
+    expect(drafts.latestSubmissionBackup('101')?.updatedAt).toBe(999)
+  })
+
   test('stores submission backups independently and removes exact backups', () => {
     let now = 1000
     jest.spyOn(Date, 'now').mockImplementation(() => now)

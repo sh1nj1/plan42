@@ -601,10 +601,7 @@ export default class extends Controller {
         String(submission.key) !== String(sourceKey)
       ) return
 
-      const targetMatchesSubmission =
-        submission.storedRevision &&
-        targetDraft.revision === submission.storedRevision &&
-        targetDraft.text === submission.text
+      const targetMatchesStoredBaseline = submission.storedRevision && targetDraft.revision === submission.storedRevision
       const sourceMatchesSubmission =
         sourceDraft.revision &&
         targetDraft.revision === sourceDraft.revision &&
@@ -613,8 +610,7 @@ export default class extends Controller {
         !submission.storedRevision &&
         !sourceDraft.revision &&
         !targetDraft.revision
-      const submittedDraftWasMoved =
-        targetMatchesSubmission || sourceMatchesSubmission || submittedDraftWasUnstored
+      const submittedDraftWasMoved = targetMatchesStoredBaseline || sourceMatchesSubmission || submittedDraftWasUnstored
       if (
         sourceDraft.revision &&
         sourceDraft.text === submission.text
@@ -628,6 +624,7 @@ export default class extends Controller {
       submission.revisionKey = targetRevisionKey
       submission.keyRevision = this._draftRevisions?.get(targetRevisionKey) || 0
       submission.storedRevision = targetDraft.revision
+      submission.storedUpdatedAt = targetDraft.updatedAt
       submission.storedChangedOutsideController ||=
         !submittedDraftWasMoved
       if (submission.backupKey && movedBackups.has(submission.backupKey)) {
@@ -654,9 +651,20 @@ export default class extends Controller {
       submission.namespace !== chatDrafts.namespace()
     ) return
 
+    const currentDraft = chatDrafts.snapshot(submission.key)
+    const currentKeyRevision =
+      this._draftRevisions?.get(submission.revisionKey) || 0
+    const submittedChatAdvanced =
+      submission.storedChangedOutsideController ||
+      currentKeyRevision !== submission.keyRevision ||
+      currentDraft.revision !== submission.storedRevision ||
+      currentDraft.updatedAt !== submission.storedUpdatedAt
+    if (submittedChatAdvanced) return
+
     submission.backupKey ||= chatDrafts.saveSubmissionBackup(
       submission.key,
       submission.text,
+      { updatedAt: submission.backupUpdatedAt },
     )
   }
 
@@ -731,6 +739,10 @@ export default class extends Controller {
     const initialSubmittedDraft = chatDrafts.snapshot(initialSubmittedDraftKey)
     const submittedHadStash = this._stashedDraftBelongsToCurrentCreative()
     const submittedBackup = chatDrafts.latestSubmissionBackup(initialSubmittedDraftKey)
+    const submittedBackupUpdatedAt = Math.max(
+      Date.now(),
+      (initialSubmittedDraft.updatedAt || 0) + 1,
+    )
     const observedSubmittedText =
       this._observedDrafts?.get(initialSubmittedDraftRevisionKey)
     const observedSubmittedStoredRevision =
@@ -749,6 +761,8 @@ export default class extends Controller {
       storedChangedOutsideController: submittedStoredDraftChangedOutsideController,
       keyRevision: this._draftRevisions?.get(initialSubmittedDraftRevisionKey) || 0,
       storedRevision: initialSubmittedDraft.revision,
+      storedUpdatedAt: initialSubmittedDraft.updatedAt,
+      backupUpdatedAt: submittedBackupUpdatedAt,
       text: submittedText,
       hadStash: submittedHadStash,
       backupKey: submittedBackup?.text === submittedText ? submittedBackup.key : null,

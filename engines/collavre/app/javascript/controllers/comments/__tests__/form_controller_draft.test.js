@@ -861,6 +861,146 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('77')).toBe('newest draft from another tab')
   })
 
+  test('failed send preserves newer text saved after the submission started', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    chatDrafts.set('77', 'older stored draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'submitted message that will fail')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    Date.now.mockReturnValue(2000)
+    typeInto(controller.textareaTarget, 'newer message after submission')
+    controller.onChatWillOpen({ creativeId: '88' })
+    popupEl.dataset.creativeId = '88'
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    Date.now.mockReturnValue(3000)
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('newer message after submission')
+    expect(submissionBackup('77')).toBeNull()
+
+    controller.onChatWillOpen({ creativeId: '77' })
+    popupEl.dataset.creativeId = '77'
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('newer message after submission')
+  })
+
+  test('failed send preserves a cross-tab draft saved after submission', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'submitted message that will fail')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    chatDrafts.set('77', 'newer draft from another tab')
+    controller.onChatWillOpen({ creativeId: '88' })
+    popupEl.dataset.creativeId = '88'
+    dispatchTopicChange('88')
+    controller.onPopupOpened({ creativeId: '88', canComment: true })
+
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('newer draft from another tab')
+    expect(submissionBackup('77')).toBeNull()
+
+    controller.onChatWillOpen({ creativeId: '77' })
+    popupEl.dataset.creativeId = '77'
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('newer draft from another tab')
+  })
+
+  test('failed send respects a cross-tab clear after submission', async () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'submitted message that will fail')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    chatDrafts.set('77', 'temporary draft from another tab')
+    chatDrafts.clear('77')
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('failure backup keeps submission-time ordering across a late cross-tab write', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'submitted message that will fail')
+
+    const saveSubmissionBackup = chatDrafts.saveSubmissionBackup.bind(chatDrafts)
+    jest.spyOn(chatDrafts, 'saveSubmissionBackup').mockImplementation((...args) => {
+      chatDrafts.set('77', 'draft written during failure handling')
+      return saveSubmissionBackup(...args)
+    })
+    global.fetch = jest.fn(() => Promise.resolve({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    controller.resetForm()
+    controller._restoreDraft()
+
+    expect(controller.textareaTarget.value).toBe('draft written during failure handling')
+    expect(chatDrafts.get('77')).toBe('draft written during failure handling')
+    expect(submissionBackup('77')).toBeNull()
+  })
+
+  test('failed send does not mask a cross-tab draft observed at submission', async () => {
+    chatDrafts.set('77', 'shared starting draft')
+    dispatchTopicChange('77')
+    controller.onPopupOpened({ creativeId: '77', canComment: true })
+    typeInto(controller.textareaTarget, 'stale submitted message')
+    chatDrafts.set('77', 'draft from another tab before submission')
+
+    global.fetch = jest.fn(() => Promise.resolve({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(chatDrafts.get('77')).toBe('draft from another tab before submission')
+    expect(submissionBackup('77')).toBeNull()
+
+    controller.resetForm()
+    controller._restoreDraft()
+
+    expect(controller.textareaTarget.value).toBe('draft from another tab before submission')
+  })
+
   test('restores a regular draft newer than a failed-submission backup', () => {
     jest.spyOn(Date, 'now').mockReturnValue(1000)
     chatDrafts.saveSubmissionBackup('77', 'older failed submission')
@@ -1147,6 +1287,34 @@ describe('FormController - draft persistence', () => {
     expect(controller.textareaTarget.value).toBe('failed send before linked topics resolve')
     expect(chatDrafts.get('78')).toBeNull()
     expect(submissionBackup('70')).toBe('failed send before linked topics resolve')
+  })
+
+  test('failed linked send restores an edit of the migrated raw baseline', async () => {
+    delete popupEl.dataset.effectiveCreativeId
+    chatDrafts.set('78', 'stored raw baseline')
+    controller.onChatWillOpen({ creativeId: '78' })
+    expect(controller.textareaTarget.value).toBe('stored raw baseline')
+    typeInto(controller.textareaTarget, 'edited submission before debounce')
+
+    let failFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { failFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+    failFetch({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ errors: ['boom'] }),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    controller.resetForm()
+    controller._restoreDraft()
+
+    expect(controller.textareaTarget.value).toBe('edited submission before debounce')
+    expect(submissionBackup('70')).toBe('edited submission before debounce')
   })
 
   test('raw-to-effective migration preserves a newer canonical draft during submission', async () => {

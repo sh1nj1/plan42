@@ -53,18 +53,19 @@ class ChatDrafts {
     }
   }
 
-  saveSubmissionBackup(chatId, text) {
+  saveSubmissionBackup(chatId, text, { updatedAt = null } = {}) {
     if (!chatId || !text || !text.trim()) return null
 
     if (!this.clearSubmissionBackups(chatId)) return null
 
-    const current = this._entry(String(chatId))
-    const updatedAt = Math.max(Date.now(), (current?.updatedAt || 0) + 1)
+    const current = updatedAt === null ? this._entry(String(chatId)) : null
+    const backupUpdatedAt = updatedAt ??
+      Math.max(Date.now(), (current?.updatedAt || 0) + 1)
     this._sequence += 1
-    const version = `${updatedAt}-${this._writerId}-${this._sequence}`
+    const version = `${backupUpdatedAt}-${this._writerId}-${this._sequence}`
     const key = `${this._backupPrefix(String(chatId))}${encodeURIComponent(version)}`
     try {
-      this._backupBackend().setItem(key, JSON.stringify({ text, updatedAt }))
+      this._backupBackend().setItem(key, JSON.stringify({ text, updatedAt: backupUpdatedAt }))
       this._evictSubmissionBackups()
       return key
     } catch {
