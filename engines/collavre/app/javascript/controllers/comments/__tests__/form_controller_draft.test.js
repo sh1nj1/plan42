@@ -308,6 +308,36 @@ describe('FormController - draft persistence', () => {
     controller.connect()
   })
 
+  test('Turbo reconnect keeps comment edits out of the ordinary draft', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'ordinary draft')
+    controller.startEditing({ id: '12', content: 'edited comment', private: false })
+
+    controller.disconnect()
+    controller.connect()
+    typeInto(controller.textareaTarget, 'edited after reconnect')
+    controller.disconnect()
+
+    expect(controller.editingId).toBe('12')
+    expect(chatDrafts.get('77')).toBe('ordinary draft')
+    controller.connect()
+  })
+
+  test('Turbo reconnect keeps review feedback out of the ordinary draft', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'ordinary draft')
+    controller.appendReviewQuote(5, 'quoted review text')
+    typeInto(controller.textareaTarget, 'feedback before reconnect')
+
+    controller.disconnect()
+    controller.connect()
+    typeInto(controller.textareaTarget, 'feedback after reconnect')
+    window.dispatchEvent(new Event('pagehide'))
+
+    expect(controller._reviewStore.isEmpty).toBe(false)
+    expect(chatDrafts.get('77')).toBe('ordinary draft')
+  })
+
   test('native pagehide flushes input before the debounce completes', () => {
     dispatchTopicChange('77')
     typeInto(controller.textareaTarget, 'reload-safe draft')

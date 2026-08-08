@@ -37,14 +37,14 @@ export default class extends Controller {
 
   connect() {
     this.creativeId = null
-    this.editingId = null
+    this.editingId ??= null
     this.sending = false
-    this._reviewStore = new ReviewQuotesStore()
+    this._reviewStore ||= new ReviewQuotesStore()
     this.cachedImageFiles = null
 
     this.handleSubmit = this.handleSubmit.bind(this)
     this.handleSend = this.handleSend.bind(this)
-    this.defaultSubmitHTML = this.submitTarget.innerHTML
+    this.defaultSubmitHTML ??= this.submitTarget.innerHTML
     this.handlePointerSend = this.handlePointerSend.bind(this)
     this.handleTouchSend = this.handleTouchSend.bind(this)
     this.handleCancel = this.handleCancel.bind(this)
