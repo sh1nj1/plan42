@@ -540,8 +540,8 @@ export default class extends Controller {
     const submittedEditingId = this.editingId
     const submittedDraftKeyRevision = this._draftRevisions?.get(submittedDraftRevisionKey) || 0
     const submittedHadReview = hasQuotes
-    const submittedDraftUpdatedAt = submittedDraftKey
-      ? chatDrafts.updatedAt(submittedDraftKey)
+    const submittedDraftStoredRevision = submittedDraftKey
+      ? chatDrafts.revision(submittedDraftKey)
       : null
     if (this._stashedDraftBelongsToCurrentCreative()) {
       this._stashedDraft.submittedText = submittedText
@@ -616,7 +616,7 @@ export default class extends Controller {
             (this._draftRevisions?.get(submittedDraftRevisionKey) || 0) !==
               submittedDraftKeyRevision ||
             submittedStoredDraftChangedOutsideController ||
-            chatDrafts.updatedAt(submittedDraftKey) !== submittedDraftUpdatedAt
+            chatDrafts.revision(submittedDraftKey) !== submittedDraftStoredRevision
           )
         const hasNewerDraft = hasNewerActiveDraft || hasNewerStoredDraft
         const newerDraft = hasNewerActiveDraft ? this.textareaTarget.value : null

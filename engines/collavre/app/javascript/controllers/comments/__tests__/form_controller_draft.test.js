@@ -174,14 +174,11 @@ describe('FormController - draft persistence', () => {
   })
 
   test('a stale raw linked draft does not replace a newer effective draft', () => {
-    const now = Date.now()
-    window.localStorage.setItem(
-      'collavre_chat_drafts_9',
-      JSON.stringify({
-        70: { text: 'new canonical draft', updatedAt: now },
-        78: { text: 'stale raw draft', updatedAt: now - 1000 },
-      }),
-    )
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    chatDrafts.set('78', 'stale raw draft')
+    now += 1000
+    chatDrafts.set('70', 'new canonical draft')
 
     controller.onChatWillOpen({ creativeId: '78' })
     expect(controller.textareaTarget.value).toBe('stale raw draft')
@@ -198,13 +195,9 @@ describe('FormController - draft persistence', () => {
   test('clearing a raw linked draft removes an older canonical draft', () => {
     let now = 1000
     jest.spyOn(Date, 'now').mockImplementation(() => now)
-    window.localStorage.setItem(
-      'collavre_chat_drafts_9',
-      JSON.stringify({
-        70: { text: 'canonical draft', updatedAt: now },
-        78: { text: 'raw draft shown while loading', updatedAt: now - 1 },
-      }),
-    )
+    chatDrafts.set('70', 'canonical draft')
+    now += 1
+    chatDrafts.set('78', 'raw draft shown while loading')
 
     controller.onChatWillOpen({ creativeId: '78' })
     expect(controller.textareaTarget.value).toBe('raw draft shown while loading')
@@ -425,6 +418,29 @@ describe('FormController - draft persistence', () => {
 
     expect(controller.textareaTarget.value).toBe('draft updated outside this form')
     expect(chatDrafts.get('77')).toBe('draft updated outside this form')
+  })
+
+  test('successful send preserves a concurrent draft with the same timestamp', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1000)
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'first message')
+    controller._flushDraftSave()
+
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    const submittedRevision = chatDrafts.revision('77')
+    chatDrafts._append('77', {
+      text: 'same-millisecond concurrent draft',
+      updatedAt: chatDrafts.updatedAt('77'),
+      version: `${submittedRevision}-later`,
+    })
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('same-millisecond concurrent draft')
+    expect(chatDrafts.get('77')).toBe('same-millisecond concurrent draft')
   })
 
   test('successful send preserves a draft another tab saved before submission', async () => {
