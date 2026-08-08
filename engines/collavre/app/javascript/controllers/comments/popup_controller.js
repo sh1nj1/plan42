@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
+import chatDrafts from '../../lib/chat_drafts'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
@@ -115,8 +116,16 @@ export default class extends Controller {
       }
     }
 
-    document.querySelectorAll('form[action="/session"]').forEach((form) => {
-      form.addEventListener('submit', () => window.localStorage.removeItem(SIZE_STORAGE_KEY))
+    document.querySelectorAll('form[action$="/session"]').forEach((form) => {
+      form.addEventListener('submit', () => {
+        this.formController?.discardDraft()
+        chatDrafts.clearAll()
+        try {
+          window.localStorage.removeItem(SIZE_STORAGE_KEY)
+        } catch {
+          // Storage can be unavailable on restricted origins; logout must continue.
+        }
+      })
     })
 
     if (this.element.dataset.autoFullscreen === 'true') {
@@ -402,6 +411,7 @@ export default class extends Controller {
     // formController.onPopupOpened, which runs after the topics await — would
     // erase the topic that restoreSelection() just restored from the server.
     if (this.formController) {
+      this.formController.onChatWillOpen?.({ creativeId })
       this.formController.currentTopicId = ''
       this.formController._mainTopicId = null
     }
