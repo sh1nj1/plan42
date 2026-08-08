@@ -195,6 +195,36 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('78')).toBeNull()
   })
 
+  test('clearing a raw linked draft removes an older canonical draft', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    window.localStorage.setItem(
+      'collavre_chat_drafts_9',
+      JSON.stringify({
+        70: { text: 'canonical draft', updatedAt: now },
+        78: { text: 'raw draft shown while loading', updatedAt: now - 1 },
+      }),
+    )
+
+    controller.onChatWillOpen({ creativeId: '78' })
+    expect(controller.textareaTarget.value).toBe('raw draft shown while loading')
+
+    now += 1
+    typeInto(controller.textareaTarget, '')
+    controller._flushDraftSave()
+    const tombstoneUpdatedAt = chatDrafts.updatedAt('78')
+    controller._flushDraftSave()
+    expect(chatDrafts.updatedAt('78')).toBe(tombstoneUpdatedAt)
+
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('70')).toBeNull()
+    expect(chatDrafts.get('78')).toBeNull()
+  })
+
   test('switching topics within the same chat does not flush the draft', () => {
     dispatchTopicChange('77', '10073')
     controller.textareaTarget.value = 'still composing'
@@ -254,6 +284,49 @@ describe('FormController - draft persistence', () => {
     controller.disconnect()
     expect(chatDrafts.get('77')).toBe('leaving the page')
     controller.connect()
+  })
+
+  test('native pagehide flushes input before the debounce completes', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'reload-safe draft')
+
+    window.dispatchEvent(new Event('pagehide'))
+
+    expect(chatDrafts.get('77')).toBe('reload-safe draft')
+  })
+
+  test('a cross-tab logout discards pending input for the signed-out user', async () => {
+    dispatchTopicChange('77')
+    chatDrafts.set('88', 'already saved in this tab')
+    typeInto(controller.textareaTarget, 'must not return after logout')
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: JSON.stringify({
+        namespace: 'collavre_chat_drafts_9',
+        nonce: 'another-tab-logout',
+      }),
+    }))
+    controller.disconnect()
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get('77')).toBeNull()
+    expect(chatDrafts.get('88')).toBeNull()
+    controller.connect()
+  })
+
+  test('an unrelated storage event leaves the active draft intact', () => {
+    dispatchTopicChange('77')
+    typeInto(controller.textareaTarget, 'still active')
+
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'unrelated',
+      newValue: 'x',
+    }))
+    window.dispatchEvent(new Event('pagehide'))
+
+    expect(chatDrafts.get('77')).toBe('still active')
   })
 
   test('discarding drafts cancels a pending save and prevents disconnect from recreating it', async () => {

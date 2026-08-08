@@ -124,6 +124,23 @@ describe('ChatDrafts', () => {
     expect(drafts.get('effective')).toBe('newer canonical draft')
   })
 
+  test('moves a newer blank tombstone by clearing the destination', () => {
+    let now = 1000
+    jest.spyOn(Date, 'now').mockImplementation(() => now)
+    drafts.set('effective', 'canonical draft')
+    now += 1
+    drafts.set('raw', '', { preserveBlank: true })
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.updatedAt('raw')).toBe(1001)
+
+    drafts.move('raw', 'effective')
+
+    expect(drafts.get('raw')).toBeNull()
+    expect(drafts.updatedAt('raw')).toBeNull()
+    expect(drafts.get('effective')).toBeNull()
+  })
+
   test('move ignores invalid, identical, and missing source ids', () => {
     drafts.set('101', 'existing draft')
     const stored = window.localStorage.getItem('collavre_chat_drafts_9')
@@ -140,6 +157,37 @@ describe('ChatDrafts', () => {
     drafts.set('101', 'a')
     drafts.clearAll()
     expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
+  })
+
+  test('clearAll broadcasts its namespace for other tabs', () => {
+    drafts.clearAll()
+    const signal = window.localStorage.getItem('collavre_chat_drafts_clear')
+
+    expect(JSON.parse(signal).namespace).toBe('collavre_chat_drafts_9')
+    expect(drafts.wasCleared(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: signal,
+    }))).toBe(true)
+    expect(drafts.wasCleared(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: JSON.stringify({ namespace: 'collavre_chat_drafts_10' }),
+    }))).toBe(false)
+    expect(drafts.wasCleared(new StorageEvent('storage', {
+      key: 'unrelated',
+      newValue: signal,
+    }))).toBe(false)
+    expect(drafts.wasCleared(new StorageEvent('storage', {
+      key: 'collavre_chat_drafts_clear',
+      newValue: '{invalid',
+    }))).toBe(false)
+  })
+
+  test('clearAll can skip the cross-tab broadcast', () => {
+    drafts.set('101', 'a')
+    drafts.clearAll({ broadcast: false })
+
+    expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
+    expect(window.localStorage.getItem('collavre_chat_drafts_clear')).toBeNull()
   })
 
   test('ignores falsy chat ids', () => {

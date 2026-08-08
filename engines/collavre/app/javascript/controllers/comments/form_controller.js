@@ -98,6 +98,16 @@ export default class extends Controller {
     this._draftSaveTimer = null
     this._draftRevisions = new Map()
     this._observedDrafts = new Map()
+    this._handlePageHide = () => {
+      if (this.element.isConnected) this._flushDraftSave()
+    }
+    this._handleDraftStorage = (event) => {
+      if (!this.element.isConnected || !chatDrafts.wasCleared(event)) return
+
+      this.discardDraft()
+      // A timer in this tab may have raced with the logout tab's first clear.
+      chatDrafts.clearAll({ broadcast: false })
+    }
     this._handleDraftInput = () => {
       if (
         this.editingId ||
@@ -111,6 +121,8 @@ export default class extends Controller {
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
     }
     this.textareaTarget.addEventListener('input', this._handleDraftInput)
+    window.addEventListener('pagehide', this._handlePageHide)
+    window.addEventListener('storage', this._handleDraftStorage)
 
     this.textareaTarget.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
@@ -185,6 +197,8 @@ export default class extends Controller {
   disconnect() {
     this._flushDraftSave()
     this.textareaTarget.removeEventListener('input', this._handleDraftInput)
+    window.removeEventListener('pagehide', this._handlePageHide)
+    window.removeEventListener('storage', this._handleDraftStorage)
     this.formTarget.removeEventListener('submit', this.handleSubmit)
     this.submitTarget.removeEventListener('click', this.handleSend)
     this.submitTarget.removeEventListener('pointerup', this.handlePointerSend)
@@ -266,6 +280,7 @@ export default class extends Controller {
     this._activeDraftCreativeId = null
     this._awaitingEffectiveDraftKeyFor = null
     this._stashedDraft = null
+    this.resetForm()
   }
 
   setCommentPermission(canComment) {
@@ -387,11 +402,22 @@ export default class extends Controller {
       this._shouldSuppressDraftSaveForStash() ||
       !this._reviewStore.isEmpty
     ) return
+    const draftKey = this._activeDraftKey
     const text = this.textareaTarget.value
-    if (chatDrafts.get(this._activeDraftKey) !== text) {
-      chatDrafts.set(this._activeDraftKey, text)
+    const blank = !text.trim()
+    const preserveBlank = blank && Boolean(this._awaitingEffectiveDraftKeyFor)
+    const storedText = chatDrafts.get(draftKey)
+    const hasStoredEntry = chatDrafts.updatedAt(draftKey) !== null
+    if (preserveBlank) {
+      if (storedText !== null || !hasStoredEntry) {
+        chatDrafts.set(draftKey, '', { preserveBlank: true })
+      }
+    } else if (blank) {
+      if (hasStoredEntry) chatDrafts.clear(draftKey)
+    } else if (storedText !== text) {
+      chatDrafts.set(draftKey, text)
     }
-    this._observeDraft(this._activeDraftKey, chatDrafts.get(this._activeDraftKey))
+    this._observeDraft(draftKey, chatDrafts.get(draftKey))
   }
 
   _flushDraftSave() {

@@ -1,12 +1,13 @@
 const MAX_DRAFTS = 50
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const CLEAR_EVENT_KEY = 'collavre_chat_drafts_clear'
 
 /**
  * Per-user persistent store for unsent chat input drafts.
  *
  * One localStorage key per user stores drafts keyed by chat id. Blank drafts
- * are removed, stale entries expire after seven days, and the oldest drafts
- * are evicted when the store grows beyond 50 entries.
+ * are removed except for temporary migration tombstones, stale entries expire
+ * after seven days, and the oldest drafts are evicted beyond 50 entries.
  */
 class ChatDrafts {
   constructor(storage = null) {
@@ -16,7 +17,7 @@ class ChatDrafts {
   get(chatId) {
     if (!chatId) return null
     const entry = this._load()[String(chatId)]
-    return entry ? entry.text : null
+    return entry?.text || null
   }
 
   updatedAt(chatId) {
@@ -25,14 +26,22 @@ class ChatDrafts {
     return entry ? entry.updatedAt : null
   }
 
-  set(chatId, text) {
+  set(chatId, text, { preserveBlank = false } = {}) {
     if (!chatId) return
 
     const id = String(chatId)
     const drafts = this._load()
     if (!text || !text.trim()) {
-      if (!(id in drafts)) return
-      delete drafts[id]
+      if (preserveBlank) {
+        // Linked creatives resolve from a raw id to a shared effective id.
+        // Keep the clear timestamp long enough for move() to win conflicts.
+        const previousUpdatedAt = drafts[id]?.updatedAt || 0
+        drafts[id] = { text: '', updatedAt: Math.max(Date.now(), previousUpdatedAt + 1) }
+        this._evict(drafts)
+      } else {
+        if (!(id in drafts)) return
+        delete drafts[id]
+      }
     } else {
       const previousUpdatedAt = drafts[id]?.updatedAt || 0
       drafts[id] = { text, updatedAt: Math.max(Date.now(), previousUpdatedAt + 1) }
@@ -57,16 +66,44 @@ class ChatDrafts {
     if (!source) return
 
     const target = drafts[targetId]
-    if (!target || source.updatedAt > target.updatedAt) drafts[targetId] = source
+    if (!target || source.updatedAt > target.updatedAt) {
+      if (source.text) {
+        drafts[targetId] = source
+      } else {
+        delete drafts[targetId]
+      }
+    }
     delete drafts[sourceId]
     this._save(drafts)
   }
 
-  clearAll() {
+  clearAll({ broadcast = true } = {}) {
+    const backend = this._backend()
+    const namespace = this._key()
     try {
-      this._backend().removeItem(this._key())
+      backend.removeItem(namespace)
     } catch {
       // Storage unavailable.
+    }
+    if (!broadcast) return
+
+    try {
+      backend.setItem(CLEAR_EVENT_KEY, JSON.stringify({
+        namespace,
+        nonce: `${Date.now()}-${Math.random()}`,
+      }))
+    } catch {
+      // Storage unavailable.
+    }
+  }
+
+  wasCleared(event) {
+    if (event?.key !== CLEAR_EVENT_KEY || !event.newValue) return false
+
+    try {
+      return JSON.parse(event.newValue)?.namespace === this._key()
+    } catch {
+      return false
     }
   }
 
