@@ -5,6 +5,7 @@ import { Controller } from '@hotwired/stimulus'
 // not necessarily the one that observes the subsequent turbo:render, so the
 // visit action must outlive any single instance.
 let lastVisitAction = null
+const MAX_EXPANDED_BRANCHES = 100
 
 export default class extends Controller {
   static targets = ['tree', 'panelToggle']
@@ -18,6 +19,9 @@ export default class extends Controller {
   }
 
   connect() {
+    this.expandedCreativeIds = new Set()
+    this.addExpandedPath(this.currentPathValue)
+    this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
     this.invalidationGeneration = 0
@@ -65,28 +69,48 @@ export default class extends Controller {
     window.removeEventListener('collavre:creative-drop-complete', this.queueRefresh)
   }
 
-  async load({ preserveState = false, showLoading = true, syncChat = true } = {}) {
+  async load({ showLoading = true, syncChat = true, preserveView = false, focusCreativeId } = {}) {
     this.loadAbortController?.abort()
     this.loadAbortController = new AbortController()
+    if (this.pendingRevealPath) this.addExpandedPath(this.pendingRevealPath)
+    const requestId = (this.loadRequestId || 0) + 1
+    this.loadRequestId = requestId
+    const requestedExpandedIds = new Set(this.expandedCreativeIds)
+    const requestedRevealPath = this.pendingRevealPath ? [...this.pendingRevealPath] : null
     const invalidationGeneration = this.invalidationGeneration
-    this.preservedBranchState = preserveState ? this.branchState() : new Map()
+    const viewState = preserveView ? this.captureViewState(focusCreativeId) : null
     if (showLoading) this.showStatus(this.loadingTextValue)
+    this.setTreeBusy(true)
 
     try {
-      const response = await fetch(this.urlValue, {
+      const response = await fetch(this.workspaceTreeUrl(requestedExpandedIds), {
         headers: { Accept: 'application/json' },
         signal: this.loadAbortController.signal,
       })
       if (!response.ok) throw new Error(`Failed to load workspace tree: ${response.status}`)
 
       const data = await response.json()
+      if (requestId !== this.loadRequestId) return null
+
       const nodes = Array.isArray(data.creatives) ? data.creatives : []
       if (invalidationGeneration === this.invalidationGeneration) this.restoreReadableCreativeIds(nodes)
+      this.expandedCreativeIds = new Set(requestedExpandedIds)
+      this.committedExpandedCreativeIds = new Set(requestedExpandedIds)
+      if (requestedRevealPath && this.samePath(requestedRevealPath, this.pendingRevealPath || [])) {
+        this.pendingRevealPath = null
+      }
       this.render(nodes, { syncChat })
+      this.restoreViewState(viewState)
+      return true
     } catch (error) {
-      if (error.name === 'AbortError') return
+      if (error.name === 'AbortError' || requestId !== this.loadRequestId) return null
+
+      this.expandedCreativeIds = new Set(this.committedExpandedCreativeIds)
       console.error(error)
       if (showLoading) this.showStatus(this.errorTextValue)
+      return false
+    } finally {
+      if (requestId === this.loadRequestId) this.setTreeBusy(false)
     }
   }
 
@@ -120,10 +144,10 @@ export default class extends Controller {
     const row = document.createElement('div')
     row.className = 'creative-workspace-tree-row'
     const children = Array.isArray(node.children) ? node.children : []
-    const savedExpanded = this.preservedBranchState?.get(String(node.id))
-    const expanded = children.length > 0 && (savedExpanded ?? this.currentPathValue.map(String).includes(String(node.id)))
+    const hasChildren = node.has_children === true || children.length > 0
+    const expanded = hasChildren && this.expandedCreativeIds.has(String(node.id))
 
-    if (children.length > 0) {
+    if (hasChildren) {
       const toggle = document.createElement('button')
       toggle.type = 'button'
       toggle.className = 'creative-workspace-tree-branch-toggle'
@@ -156,22 +180,32 @@ export default class extends Controller {
     row.appendChild(link)
     item.appendChild(row)
 
-    if (children.length > 0) {
+    if (hasChildren && expanded) {
       const childList = this.buildList(children)
-      childList.hidden = !expanded
       item.appendChild(childList)
     }
 
     return item
   }
 
-  toggleBranch(item, toggle) {
-    const childList = item.querySelector(':scope > .creative-workspace-tree-list')
-    if (!childList) return
+  async toggleBranch(item, toggle) {
+    const creativeId = item.dataset.creativeId
+    if (!creativeId) return
 
-    childList.hidden = !childList.hidden
-    toggle.setAttribute('aria-expanded', String(!childList.hidden))
-    toggle.textContent = childList.hidden ? '▸' : '▾'
+    if (this.expandedCreativeIds.has(creativeId)) {
+      this.expandedCreativeIds.delete(creativeId)
+    } else {
+      this.expandedCreativeIds.delete(creativeId)
+      this.expandedCreativeIds.add(creativeId)
+      this.trimExpandedCreativeIds()
+    }
+
+    await this.load({
+      showLoading: false,
+      syncChat: false,
+      preserveView: true,
+      focusCreativeId: creativeId,
+    })
   }
 
   togglePanel() {
@@ -274,7 +308,7 @@ export default class extends Controller {
     if (this.refreshTimeout) window.clearTimeout(this.refreshTimeout)
     this.refreshTimeout = window.setTimeout(() => {
       this.refreshTimeout = null
-      this.load({ preserveState: true, showLoading: false, syncChat: false })
+      this.load({ showLoading: false, syncChat: false, preserveView: true })
     }, 100)
   }
 
@@ -290,6 +324,8 @@ export default class extends Controller {
     const stateCreativeId = state.dataset.creativeId
     const locationCreativeId = this.creativeIdFromLocation()
     if (!stateCreativeId && (authoritative || !locationCreativeId)) {
+      this.currentPathValue = []
+      this.pendingRevealPath = null
       this.setActiveId(null)
       if (syncChat) this.openChat(this.rootState())
       return
@@ -303,6 +339,16 @@ export default class extends Controller {
     }
 
     const path = this.parsePath(state.dataset.creativePath)
+    const pathChanged = !this.samePath(path, this.currentPathValue)
+    this.currentPathValue = path
+    if (pathChanged) {
+      if (this.addExpandedPath(path)) {
+        this.pendingRevealPath = [...path]
+        this.load({ showLoading: false, syncChat: false, preserveView: true })
+      } else {
+        this.pendingRevealPath = null
+      }
+    }
     const activeId = this.deepestVisiblePathId(this.nodesData || [], path)
     this.setActiveId(activeId)
 
@@ -345,15 +391,92 @@ export default class extends Controller {
       ?.querySelector(':scope > .creative-workspace-tree-row > .creative-workspace-tree-link')
   }
 
-  branchState() {
-    return new Map(
-      [...this.treeTarget.querySelectorAll('.creative-workspace-tree-branch-toggle')]
-        .map((toggle) => [
-          toggle.closest('.creative-workspace-tree-item')?.dataset.creativeId,
-          toggle.getAttribute('aria-expanded') === 'true',
-        ])
-        .filter(([id]) => id)
+  workspaceTreeUrl(expandedIds = this.expandedCreativeIds) {
+    const url = new URL(this.urlValue, window.location.origin)
+    url.searchParams.delete('expand[]')
+    expandedIds.forEach((id) => url.searchParams.append('expand[]', id))
+    return `${url.pathname}${url.search}${url.hash}`
+  }
+
+  addExpandedPath(path) {
+    let changed = false
+    path.map(String).forEach((id) => {
+      if (this.expandedCreativeIds.has(id)) return
+
+      this.expandedCreativeIds.add(id)
+      changed = true
+    })
+    this.trimExpandedCreativeIds(path)
+    return changed
+  }
+
+  // `protectedPath` is ordered root-first. The server descends only through
+  // expanded ancestors, so once the path itself has to be trimmed the set must
+  // keep a connected root-to-descendant prefix: evicting the root would collapse
+  // the whole tree instead of leaving the first MAX_EXPANDED_BRANCHES levels.
+  trimExpandedCreativeIds(protectedPath = this.currentPathValue) {
+    const orderedProtectedIds = protectedPath.map(String)
+    const protectedIds = new Set(orderedProtectedIds)
+    while (this.expandedCreativeIds.size > MAX_EXPANDED_BRANCHES) {
+      const evictedId =
+        [...this.expandedCreativeIds].find((id) => !protectedIds.has(id)) ??
+        this.deepestExpandedId(orderedProtectedIds)
+      if (!evictedId) return
+
+      this.expandedCreativeIds.delete(evictedId)
+    }
+  }
+
+  deepestExpandedId(orderedIds) {
+    for (let index = orderedIds.length - 1; index >= 0; index -= 1) {
+      if (this.expandedCreativeIds.has(orderedIds[index])) return orderedIds[index]
+    }
+    return null
+  }
+
+  samePath(left, right) {
+    return left.length === right.length && left.every((id, index) => String(id) === String(right[index]))
+  }
+
+  captureViewState(focusCreativeId) {
+    const focusedControl = document.activeElement?.closest?.(
+      '.creative-workspace-tree-branch-toggle, .creative-workspace-tree-link'
     )
+    const focusedItem = focusedControl?.closest('.creative-workspace-tree-item')
+    let focusControl = null
+    if (focusCreativeId || focusedControl?.classList.contains('creative-workspace-tree-branch-toggle')) {
+      focusControl = 'toggle'
+    } else if (focusedControl) {
+      focusControl = 'link'
+    }
+
+    return {
+      scrollTop: this.treeTarget.scrollTop,
+      focusCreativeId: focusCreativeId || focusedItem?.dataset.creativeId,
+      focusControl,
+    }
+  }
+
+  restoreViewState(viewState) {
+    if (!viewState) return
+
+    this.treeTarget.scrollTop = viewState.scrollTop
+    if (!viewState.focusCreativeId || !viewState.focusControl) return
+
+    const item = [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
+      .find((candidate) => candidate.dataset.creativeId === String(viewState.focusCreativeId))
+    const selector = viewState.focusControl === 'toggle'
+      ? '.creative-workspace-tree-branch-toggle'
+      : '.creative-workspace-tree-link'
+    const control = item?.querySelector(`:scope > .creative-workspace-tree-row > ${selector}`)
+    control?.focus({ preventScroll: true })
+  }
+
+  setTreeBusy(busy) {
+    this.treeTarget.setAttribute('aria-busy', String(busy))
+    this.treeTarget.querySelectorAll('.creative-workspace-tree-branch-toggle').forEach((toggle) => {
+      toggle.disabled = busy
+    })
   }
 
   creativeIdFromLocation() {

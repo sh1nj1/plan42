@@ -77,11 +77,10 @@ describe('WorkspaceTreeController', () => {
   })
 
   test('renders the tree, expands the current path, and marks the deepest visible node', () => {
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/creatives.json?workspace_tree=1',
-      expect.objectContaining({ headers: { Accept: 'application/json' } })
-    )
-    expect(document.querySelector('[data-creative-id="1"] > ul').hidden).toBe(false)
+    const [requestUrl, requestOptions] = fetchMock.mock.calls[0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['1', '2', '3'])
+    expect(requestOptions).toEqual(expect.objectContaining({ headers: { Accept: 'application/json' } }))
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
     expect(document.querySelector('[data-creative-id="2"] a').classList.contains('is-current')).toBe(true)
     expect(document.querySelector('[data-creative-id="2"] a').getAttribute('aria-current')).toBe('page')
     expect(document.querySelector('[data-creative-id="2"] a').dataset.turboFrame).toBe('creative-workspace-content')
@@ -89,11 +88,28 @@ describe('WorkspaceTreeController', () => {
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-label')).toBe('Root')
   })
 
-  test('toggles branches and the medium-width panel', () => {
-    const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+  test('lazily reloads toggled branches and restores focus and scroll', async () => {
+    let branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    controller.treeTarget.scrollTop = 24
     branchToggle.click()
-    expect(document.querySelector('[data-creative-id="1"] > ul').hidden).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(document.querySelector('[data-creative-id="1"] > ul')).toBeNull()
+    branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
     expect(branchToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(branchToggle)
+    expect(controller.treeTarget.scrollTop).toBe(24)
+    let requestUrl = fetchMock.mock.calls[1][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['2', '3'])
+
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    expect(branchToggle.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(branchToggle)
+    requestUrl = fetchMock.mock.calls[2][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['2', '3', '1'])
 
     const panelToggle = document.querySelector('[data-workspace-tree-target="panelToggle"]')
     panelToggle.click()
@@ -102,6 +118,114 @@ describe('WorkspaceTreeController', () => {
 
     document.querySelector('.creative-workspace-tree-link').click()
     expect(panelToggle.closest('section').classList.contains('is-open')).toBe(false)
+  })
+
+  test('preserves link focus across background tree refreshes', async () => {
+    let rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    rootLink.focus()
+
+    await controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    rootLink = document.querySelector('[data-creative-id="1"] > div > a')
+    expect(document.activeElement).toBe(rootLink)
+
+    let leafLink = document.querySelector('[data-creative-id="2"] a')
+    leafLink.focus()
+
+    await controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    leafLink = document.querySelector('[data-creative-id="2"] a')
+    expect(document.activeElement).toBe(leafLink)
+  })
+
+  test('keeps the rendered branch state when a lazy reload fails', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('offline'))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    expect(branchToggle.disabled).toBe(false)
+    console.error.mockRestore()
+  })
+
+  test('ignores a stale non-abort failure after a newer tree request commits', async () => {
+    let rejectToggleRequest
+    fetchMock.mockReturnValueOnce(new Promise((_resolve, reject) => {
+      rejectToggleRequest = reject
+    }))
+    const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
+    branchToggle.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1', has_children: true, children: [] }] }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+    rejectToggleRequest(new Error('stale offline failure'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(false)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(false)
+    expect(document.querySelector('[data-creative-id="1"] > ul')).toBeNull()
+  })
+
+  test('reverts an aborted toggle when the latest owner request fails', async () => {
+    let rejectToggleRequest
+    fetchMock.mockReturnValueOnce(new Promise((_resolve, reject) => {
+      rejectToggleRequest = reject
+    }))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    document.querySelector('.creative-workspace-tree-branch-toggle').click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    fetchMock.mockRejectedValueOnce(new Error('refresh failed'))
+    await controller.load({ showLoading: false, syncChat: false })
+    rejectToggleRequest(new DOMException('Aborted', 'AbortError'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    expect(controller.committedExpandedCreativeIds.has('1')).toBe(true)
+    expect(document.querySelector('[data-creative-id="1"] > ul')).not.toBeNull()
+    console.error.mockRestore()
+  })
+
+  test('bounds the expanded branch request state', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+
+    controller.addExpandedPath(Array.from({ length: 101 }, (_value, index) => index + 1000))
+
+    expect(controller.expandedCreativeIds.size).toBe(100)
+    expect(new URL(controller.workspaceTreeUrl(), window.location.origin).searchParams.getAll('expand[]')).toHaveLength(100)
+  })
+
+  test('keeps a connected root prefix when the whole path exceeds the expansion bound', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+
+    const path = Array.from({ length: 101 }, (_value, index) => index + 1000)
+    controller.addExpandedPath(path)
+
+    // Lazy traversal descends only through expanded ancestors, so dropping the
+    // root would collapse the whole tree instead of showing the first 100 levels.
+    expect([...controller.expandedCreativeIds]).toEqual(path.slice(0, 100).map(String))
+  })
+
+  test('evicts unrelated branches before trimming the current path', () => {
+    controller.currentPathValue = []
+    controller.expandedCreativeIds.clear()
+    controller.expandedCreativeIds.add('9000')
+    controller.expandedCreativeIds.add('9001')
+
+    const path = Array.from({ length: 100 }, (_value, index) => index + 1000)
+    controller.addExpandedPath(path)
+
+    expect([...controller.expandedCreativeIds]).toEqual(path.map(String))
   })
 
   test('keeps the mounted tree state and switches chat while the center frame navigates', () => {
@@ -236,7 +360,8 @@ describe('WorkspaceTreeController', () => {
   test('refreshes stale data while preserving explicit branch state', async () => {
     const branchToggle = document.querySelector('.creative-workspace-tree-branch-toggle')
     branchToggle.click()
-    expect(branchToggle.getAttribute('aria-expanded')).toBe('false')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -253,9 +378,78 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => setTimeout(resolve, 120))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(document.querySelector('[data-creative-id="1"] > div > a').textContent).toBe('Renamed root')
     expect(document.querySelector('.creative-workspace-tree-branch-toggle').getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('loads a newly navigated frame path without reopening chat', async () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Root',
+          url: '/creatives?id=1',
+          has_children: true,
+          children: [{ id: 4, label: 'New branch', url: '/creatives?id=4', has_children: true, children: [] }],
+        }],
+      }),
+    })
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    state.dataset.creativeId = '5'
+    state.dataset.creativePath = '[1,4,5]'
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const requestUrl = fetchMock.mock.calls[1][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['1', '2', '3', '4', '5'])
+    expect(document.querySelector('[data-creative-id="4"] a').classList.contains('is-current')).toBe(true)
+    expect(chatListener).toHaveBeenCalledTimes(1)
+    expect(chatListener).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '5', workspaceSync: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('retries an unresolved frame path on the next tree refresh', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('path load failed'))
+    jest.spyOn(console, 'error').mockImplementation(() => {})
+    const frame = document.getElementById('creative-workspace-content')
+    const state = frame.querySelector('[data-workspace-navigation-state]')
+    state.dataset.creativeId = '5'
+    state.dataset.creativePath = '[1,4,5]'
+    window.history.replaceState({}, '', '/creatives?id=5')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.pendingRevealPath).toEqual([1, 4, 5])
+    expect(controller.expandedCreativeIds.has('4')).toBe(false)
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        creatives: [{
+          id: 1,
+          label: 'Root',
+          url: '/creatives?id=1',
+          has_children: true,
+          children: [{ id: 4, label: 'Recovered branch', url: '/creatives?id=4', has_children: true, children: [] }],
+        }],
+      }),
+    })
+    await controller.load({ showLoading: false, syncChat: false })
+
+    const requestUrl = fetchMock.mock.calls[2][0]
+    expect(new URL(requestUrl, window.location.origin).searchParams.getAll('expand[]')).toEqual(['1', '2', '3', '4', '5'])
+    expect(controller.pendingRevealPath).toBeNull()
+    expect(document.querySelector('[data-creative-id="4"] a').classList.contains('is-current')).toBe(true)
+    console.error.mockRestore()
   })
 
   test('does not replace an explicitly opened chat during a background tree refresh', async () => {
