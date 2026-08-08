@@ -156,6 +156,32 @@ class ChatDrafts {
     ))
   }
 
+  clearSubmissionBackupsForClear(namespace, nonce) {
+    if (!namespace || !nonce) return false
+
+    const backend = this._backupBackend()
+    if (
+      !this._backupStorage &&
+      !this._storage &&
+      backend === this._fallbackBackupStorage
+    ) return false
+    const acknowledgementKey = `${CLEAR_EVENT_KEY}${KEY_SEPARATOR}${encodeURIComponent(namespace)}`
+    try {
+      if (backend.getItem(acknowledgementKey) === nonce) return true
+
+      const backupsCleared = this._keys(
+	this._backupPrefix(null, namespace),
+	backend,
+      ).every((key) => this.removeSubmissionBackup(key, namespace))
+      if (!backupsCleared) return false
+
+      backend.setItem(acknowledgementKey, nonce)
+      return backend.getItem(acknowledgementKey) === nonce
+    } catch {
+      return false
+    }
+  }
+
   moveSubmissionBackups(sourceChatId, targetChatId) {
     const moved = new Map()
     if (!sourceChatId || !targetChatId) return moved

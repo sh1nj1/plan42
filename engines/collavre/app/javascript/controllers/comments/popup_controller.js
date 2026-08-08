@@ -116,7 +116,7 @@ export default class extends Controller {
       }
     }
 
-    document.querySelectorAll('form[action="/session"]').forEach((form) => {
+    document.querySelectorAll('form[action$="/session"]').forEach((form) => {
       form.addEventListener('submit', () => {
         this.formController?.discardDraft()
         chatDrafts.clearAll()

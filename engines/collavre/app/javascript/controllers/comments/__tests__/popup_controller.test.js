@@ -28,6 +28,7 @@ describe('CommentsPopupController', () => {
       </div>
       <button id="trigger-btn" data-creative-id="123" data-can-comment="true">Open</button>
       <form id="logout-form" action="/session"></form>
+      <form id="mounted-logout-form" action="/collavre/session"></form>
     `
         document.body.appendChild(container)
 
@@ -655,6 +656,23 @@ describe('CommentsPopupController', () => {
         expect(formController.discardDraft).toHaveBeenCalledTimes(1)
         expect(window.localStorage.getItem('commentsPopupSize')).toBeNull()
         expect(window.localStorage.getItem('collavre_chat_drafts_9')).toBeNull()
+    })
+
+    test('mounted logout submit clears chat drafts', () => {
+	chatDrafts.set('77', 'private draft')
+
+	const formController = { discardDraft: jest.fn() }
+	Object.defineProperty(controller, 'formController', {
+	    configurable: true,
+	    value: formController,
+	})
+
+	document.getElementById('mounted-logout-form').dispatchEvent(
+	    new Event('submit', { bubbles: true, cancelable: true }),
+	)
+
+	expect(formController.discardDraft).toHaveBeenCalledTimes(1)
+	expect(chatDrafts.get('77')).toBeNull()
     })
 
     test('logout submit discards drafts when the localStorage getter is denied', () => {

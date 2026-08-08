@@ -327,6 +327,70 @@ describe('ChatDrafts', () => {
     expect(drafts.latestSubmissionBackup('tied')?.text).toBe('b')
   })
 
+  test('clears submission backups once for each observed logout nonce', () => {
+    drafts.saveSubmissionBackup('101', 'failed before logout')
+
+    expect(drafts.clearSubmissionBackupsForClear(null, 'logout-1')).toBe(false)
+    expect(drafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      null,
+    )).toBe(false)
+    expect(drafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      'logout-1',
+    )).toBe(true)
+    expect(drafts.latestSubmissionBackup('101')).toBeNull()
+
+    drafts.saveSubmissionBackup('101', 'failed after logout')
+    expect(drafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      'logout-1',
+    )).toBe(true)
+    expect(drafts.latestSubmissionBackup('101')?.text).toBe('failed after logout')
+
+    expect(drafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      'logout-2',
+    )).toBe(true)
+    expect(drafts.latestSubmissionBackup('101')).toBeNull()
+  })
+
+  test('retries logout backup cleanup when storage cannot complete it', () => {
+    const backupKey = 'collavre_chat_drafts_9_pending:101:backup'
+    const values = new Map([[
+      backupKey,
+      JSON.stringify({ text: 'failed submission', updatedAt: Date.now() }),
+    ]])
+    const blockedRemoval = {
+      get length() { return values.size },
+      key: (index) => [...values.keys()][index] ?? null,
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+      removeItem: () => {},
+    }
+    const blockedDrafts = new ChatDrafts(null, blockedRemoval)
+
+    expect(blockedDrafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      'logout-1',
+    )).toBe(false)
+    expect(blockedDrafts.latestSubmissionBackup('101')?.text)
+      .toBe('failed submission')
+
+    const silentAcknowledgement = {
+      length: 0,
+      key: () => null,
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    }
+    expect(new ChatDrafts(null, silentAcknowledgement)
+      .clearSubmissionBackupsForClear(
+	'collavre_chat_drafts_9',
+	'logout-1',
+      )).toBe(false)
+  })
+
   test('moves submission backups without changing their ordering metadata', () => {
     expect(drafts.moveSubmissionBackups(null, 'effective')).toEqual(new Map())
     expect(drafts.moveSubmissionBackups('raw', 'raw')).toEqual(new Map())
@@ -529,6 +593,10 @@ describe('ChatDrafts', () => {
       'collavre_chat_drafts_9_pending:101:backup',
     )).not.toThrow()
     expect(() => brokenDrafts.clearSubmissionBackups('101')).not.toThrow()
+    expect(brokenDrafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      'logout-1',
+    )).toBe(false)
 
     const writeOnlyFailure = {
       length: 0,
@@ -1071,6 +1139,10 @@ describe('ChatDrafts', () => {
 
     expect(() => unavailableDrafts.snapshot('101')).not.toThrow()
     expect(unavailableDrafts.clearNonce()).toBeUndefined()
+    expect(unavailableDrafts.clearSubmissionBackupsForClear(
+      'collavre_chat_drafts_9',
+      'logout-1',
+    )).toBe(false)
     expect(unavailableDrafts._backend().key(0)).toBeNull()
     expect(unavailableDrafts._backend().getItem('missing')).toBeNull()
     unavailableDrafts.set('101', 'ephemeral draft')

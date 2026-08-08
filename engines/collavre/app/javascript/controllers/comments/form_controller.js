@@ -100,6 +100,7 @@ export default class extends Controller {
     // A cross-tab logout permanently retires the old user's namespace for this
     // controller lifetime, including Stimulus reconnects in the stale tab.
     this._disabledDraftNamespaces ||= new Set()
+    this._draftBackupCleanupPendingNamespaces ||= new Set()
     this._observedDraftClearNonces ||= new Map()
     // A pending send survives a Stimulus reconnect on this controller instance,
     // so its completion must keep comparing against the same draft history.
@@ -113,14 +114,27 @@ export default class extends Controller {
     this._pendingDraftSubmissions ||= new Set()
     const draftNamespace = chatDrafts.namespace()
     const draftClearNonce = chatDrafts.clearNonce(draftNamespace)
+    const observedDraftClearNonce = this._observedDraftClearNonces.has(draftNamespace)
+    let canObserveDraftClearNonce = true
+    if (draftClearNonce && !observedDraftClearNonce) {
+      canObserveDraftClearNonce = chatDrafts.clearSubmissionBackupsForClear(
+	draftNamespace,
+	draftClearNonce,
+      )
+      if (canObserveDraftClearNonce) {
+	this._draftBackupCleanupPendingNamespaces.delete(draftNamespace)
+      } else {
+	this._draftBackupCleanupPendingNamespaces.add(draftNamespace)
+      }
+    }
     if (
       draftClearNonce &&
-      this._observedDraftClearNonces.has(draftNamespace) &&
+      observedDraftClearNonce &&
       this._observedDraftClearNonces.get(draftNamespace) !== draftClearNonce
     ) {
       this._disableDraftNamespace(draftNamespace)
     }
-    if (draftClearNonce !== undefined) {
+    if (draftClearNonce !== undefined && canObserveDraftClearNonce) {
       this._observedDraftClearNonces.set(draftNamespace, draftClearNonce)
     }
     this._handlePageHide = () => {
@@ -604,7 +618,9 @@ export default class extends Controller {
   }
 
   _draftPersistenceDisabled(namespace = chatDrafts.namespace()) {
-    return this._disabledDraftNamespaces?.has(namespace) || false
+    return this._disabledDraftNamespaces?.has(namespace) ||
+      this._draftBackupCleanupPendingNamespaces?.has(namespace) ||
+      false
   }
 
   _disableDraftNamespace(namespace) {

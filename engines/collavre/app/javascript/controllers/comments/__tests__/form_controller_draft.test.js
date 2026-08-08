@@ -418,6 +418,57 @@ describe('FormController - draft persistence', () => {
     expect(submissionBackup('77')).toBeNull()
   })
 
+  test('a fresh controller clears submission backups from a missed logout once', async () => {
+    chatDrafts.saveSubmissionBackup('77', 'failed submission before logout')
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: 'missed-logout',
+    }))
+
+    controller.disconnect()
+    application.stop()
+    application = Application.start()
+    application.register('comments--form', FormController)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const freshController = application.getControllerForElementAndIdentifier(
+      popupEl,
+      'comments--form',
+    )
+
+    expect(freshController).not.toBe(controller)
+    expect(submissionBackup('77')).toBeNull()
+
+    chatDrafts.saveSubmissionBackup('77', 'failed submission after logout')
+    freshController.disconnect()
+    freshController.connect()
+
+    expect(submissionBackup('77')).toBe('failed submission after logout')
+    controller = freshController
+  })
+
+  test('a fresh controller retries missed logout cleanup after backup storage recovers', () => {
+    chatDrafts.saveSubmissionBackup('77', 'failed submission before logout')
+    window.localStorage.setItem('collavre_chat_drafts_clear', JSON.stringify({
+      namespace: 'collavre_chat_drafts_9',
+      nonce: 'missed-logout',
+    }))
+    controller.disconnect()
+    controller._observedDraftClearNonces.clear()
+    const storageGetter = jest.spyOn(window, 'sessionStorage', 'get').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+
+    controller.connect()
+    expect(controller._draftPersistenceDisabled()).toBe(true)
+
+    controller.disconnect()
+    storageGetter.mockRestore()
+    controller.connect()
+
+    expect(controller._draftPersistenceDisabled()).toBe(false)
+    expect(submissionBackup('77')).toBeNull()
+  })
+
   test('storage recovery does not treat an existing clear marker as a new logout', () => {
     controller.disconnect()
     chatDrafts.clearAll()
