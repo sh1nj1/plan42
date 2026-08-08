@@ -462,7 +462,6 @@ export default class extends Controller {
     const draftKey = this._activeDraftKey
     const text = this.textareaTarget.value
     const blank = !text.trim()
-    const preserveBlank = blank && Boolean(this._awaitingEffectiveDraftKeyFor)
     const storedDraft = chatDrafts.snapshot(draftKey)
     const storedText = storedDraft.text
     const hasStoredEntry = chatDrafts.updatedAt(draftKey) !== null
@@ -478,11 +477,14 @@ export default class extends Controller {
     const observedStoredRevision =
       this._observedStoredDraftRevisions?.get(observationKey) || null
     const currentRevision = this._draftRevisions?.get(observationKey) || 0
+    const inputChangedLocally = currentRevision !== observedRevision
+    const preserveBlank =
+      blank && Boolean(this._awaitingEffectiveDraftKeyFor) && inputChangedLocally
     const displayedDraftChanged =
       (hasObservedDisplayedDraft || hasObservedDraft) &&
       (observedDisplayedText || '') !== text
     const draftChangedLocally =
-      currentRevision !== observedRevision || displayedDraftChanged
+      inputChangedLocally || displayedDraftChanged
     const storedDraftChangedOutsideController = hasObservedDraft && (
       observedText !== storedText || observedStoredRevision !== storedDraft.revision
     )

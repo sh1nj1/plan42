@@ -227,6 +227,26 @@ describe('FormController - draft persistence', () => {
     expect(chatDrafts.get('78')).toBeNull()
   })
 
+  test('closing an untouched linked chat before topics load preserves the canonical draft', () => {
+    chatDrafts.set('70', 'canonical draft')
+    delete popupEl.dataset.effectiveCreativeId
+
+    controller.onChatWillOpen({ creativeId: '78' })
+    expect(controller.textareaTarget.value).toBe('')
+    controller.onPopupClosed()
+
+    expect(chatDrafts.updatedAt('78')).toBeNull()
+
+    controller.onChatWillOpen({ creativeId: '78' })
+    popupEl.dataset.creativeId = '78'
+    dispatchTopicChange('70')
+    controller.onPopupOpened({ creativeId: '78', canComment: true })
+
+    expect(controller.textareaTarget.value).toBe('canonical draft')
+    expect(chatDrafts.get('70')).toBe('canonical draft')
+    expect(chatDrafts.get('78')).toBeNull()
+  })
+
   test('switching topics within the same chat does not flush the draft', () => {
     dispatchTopicChange('77', '10073')
     controller.textareaTarget.value = 'still composing'
