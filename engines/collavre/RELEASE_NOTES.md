@@ -588,7 +588,6 @@
 - cea0b37b fix: remove duplicate GitHub integration modal render (#770)
 - 709153ae feat: add completion emoji reaction on review message update (#768)
 - 7e8df962 fix: disable stuck detection by default
-- b16a97db fix: strip HTML from creative title in stuck detector notifications (#767)
 - cfed92c9 feat: add review message (quote + reply) feature (#765)
 - f09c59c5 fix: share user search showing results briefly then disappearing (#766)
 
@@ -637,4 +636,3 @@
 ### Changes
 - 6664da75 feat: restrict sharing non-searchable AI agents to owners only (#739)
 - 9f78717f fix: exit fullscreen returns to mobile position on mobile devices (#738)
-
