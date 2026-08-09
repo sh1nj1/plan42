@@ -20,10 +20,11 @@ module Collavre
         end
 
         CreativeShare.where(creative: @creative).destroy_all
-        @creative.destroy
+        destroy_result = @creative.destroy
         if @creative.destroyed? && onboarding_owner
           onboarding_owner.update!(onboarding_completed_at: Time.current)
         end
+        destroy_result
       end
 
       private
