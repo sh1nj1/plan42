@@ -11,6 +11,7 @@ class OnboardingGuideTest < ApplicationSystemTestCase
       locale: "en"
     )
 
+    resize_window_to(1440, 900)
     sign_in_via_ui(user)
 
     guide = Creative.onboarding_guides.find_by!(user: user)

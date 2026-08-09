@@ -6,7 +6,8 @@ class CreativeShareSystemTest < ApplicationSystemTestCase
       email: "user1@example.com",
       password: SystemHelpers::PASSWORD,
       name: "User1",
-      email_verified_at: Time.current
+      email_verified_at: Time.current,
+      onboarding_seeded_at: Time.current
     )
     @creative = Creative.create!(description: "테스트", user: @user)
     CreativeShare.create!(creative: @creative, user: @user, permission: :read)
