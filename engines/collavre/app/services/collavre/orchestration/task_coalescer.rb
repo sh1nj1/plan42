@@ -89,7 +89,24 @@ module Collavre
           comment.dispatch_payload.slice(:comment).deep_stringify_keys,
           "chat" => SystemEvents::ContextBuilder.reanchor_chat(comment.content)
         )
-        moved[ACQUIRED_ANCHOR_KEY] = comment.id if previous_id && previous_id.to_i != comment.id
+        if previous_id && previous_id.to_i != comment.id
+          moved[ACQUIRED_ANCHOR_KEY] = comment.id
+
+          # The per-user CLI Proxy workspace is part of the anchor's security
+          # context. A waiter initially carried for one person can be promoted
+          # onto a later comment from another, so retaining the old principal
+          # would run the new prompt with the first person's callback token.
+          # Human anchors identify their own principal. An AI/system anchor
+          # cannot reconstruct its initiating person from the Comment row, so
+          # discard the carried value instead of crossing that trust boundary.
+          if moved.key?("workspace_user_id")
+            if comment.user && !comment.user.ai_user?
+              moved["workspace_user_id"] = comment.user_id
+            else
+              moved.delete("workspace_user_id")
+            end
+          end
+        end
         # Both keys ContextBuilder *derives* from the anchor are rebuilt here
         # too — dispatch_payload does not carry them, because ContextBuilder
         # fills each one in with `||=` and does not run again on either of

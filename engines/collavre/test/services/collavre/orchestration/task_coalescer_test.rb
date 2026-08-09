@@ -216,6 +216,68 @@ module Collavre
 
         assert_equal [ 1, 2 ], result[TaskCoalescer::PAYLOAD_KEY]
       end
+
+      test "re-anchoring onto another person's comment replaces the workspace principal" do
+        other_user = users(:two)
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: other_user, topic: @topic, skip_dispatch: true
+        )
+        payload = original.dispatch_payload.deep_stringify_keys.merge(
+          "workspace_user_id" => @user.id
+        )
+
+        moved = TaskCoalescer.reanchor_payload(payload, replacement)
+
+        assert_equal other_user.id, moved["workspace_user_id"]
+      end
+
+      test "re-anchoring an ordinary dispatch does not add a workspace principal" do
+        other_user = users(:two)
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: other_user, topic: @topic, skip_dispatch: true
+        )
+
+        moved = TaskCoalescer.reanchor_payload(
+          original.dispatch_payload.deep_stringify_keys, replacement
+        )
+
+        assert_not moved.key?("workspace_user_id")
+      end
+
+      test "re-anchoring onto an AI comment clears an unprovable workspace principal" do
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: @other_agent, topic: @topic, skip_dispatch: true
+        )
+        payload = original.dispatch_payload.deep_stringify_keys.merge(
+          "workspace_user_id" => @user.id
+        )
+
+        moved = TaskCoalescer.reanchor_payload(payload, replacement)
+
+        assert_not moved.key?("workspace_user_id")
+      end
+
+      test "a no-op re-anchor keeps the carried A2A workspace principal" do
+        anchor = @creative.comments.create!(
+          content: "A2A", user: @other_agent, topic: @topic, skip_dispatch: true
+        )
+        payload = anchor.dispatch_payload.deep_stringify_keys.merge(
+          "workspace_user_id" => @user.id
+        )
+
+        unchanged = TaskCoalescer.reanchor_payload(payload, anchor)
+
+        assert_equal @user.id, unchanged["workspace_user_id"]
+      end
     end
   end
 end
