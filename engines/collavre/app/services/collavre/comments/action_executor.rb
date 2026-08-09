@@ -5,6 +5,8 @@ module Collavre
     class ActionExecutor
       class ExecutionError < StandardError; end
 
+      attr_reader :onboarding_card, :onboarding_created_creative
+
       def initialize(comment:, executor:)
         @comment = comment
         @executor = executor
@@ -62,7 +64,10 @@ module Collavre
       end
 
       def execute_action!
-        ExecutionContext.new(comment, executor: executor).evaluate(comment.action)
+        context = ExecutionContext.new(comment, executor: executor)
+        context.evaluate(comment.action)
+        @onboarding_card = context.onboarding_card
+        @onboarding_created_creative = context.onboarding_created_creative
       rescue ExecutionContext::InvalidActionError => e
         raise ExecutionError, e.message
       end
@@ -85,7 +90,7 @@ module Collavre
           @executor = executor || comment.user || Current.user
         end
 
-        attr_reader :comment, :executor
+        attr_reader :comment, :executor, :onboarding_card, :onboarding_created_creative
 
         def evaluate(code)
           payload = parse_payload(code)
@@ -138,10 +143,15 @@ module Collavre
           new_creative.user = parent.user || comment.user || Current.user
           assign_creative_attributes(new_creative, attributes)
           new_creative.save!
-          Collavre::Onboarding::ProgressTracker.creative_created(
+          tracked_card = Collavre::Onboarding::ProgressTracker.creative_created(
             creative: new_creative,
             user: executor
           )
+          if tracked_card
+            @onboarding_card = tracked_card
+            @onboarding_created_creative = new_creative
+          end
+          new_creative.broadcast_creative_created
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
         end
@@ -152,11 +162,12 @@ module Collavre
 
           assign_creative_attributes(creative, attributes)
           creative.save!
-          Collavre::Onboarding::ProgressTracker.creative_updated(
+          tracked_card = Collavre::Onboarding::ProgressTracker.creative_updated(
             creative: creative,
             user: executor,
             changed_attributes: attributes.keys
           )
+          @onboarding_card = tracked_card if tracked_card
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
         end

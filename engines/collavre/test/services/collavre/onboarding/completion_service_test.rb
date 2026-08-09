@@ -42,6 +42,29 @@ module Collavre
         assert_not Comment.exists?(notification_key: notification_key)
       end
 
+      test "preserves shared viewers in destroy broadcasts after shares are removed" do
+        original_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+        shared_user = users(:two)
+        perform_enqueued_jobs(only: PermissionCacheJob) do
+          CreativeShare.create!(creative: @root, user: shared_user, permission: :read, shared_by: @user)
+          @root.create_linked_creative_for_user(shared_user)
+        end
+        clear_enqueued_jobs
+
+        CompletionService.call(user: @user, session_id: @session_id)
+
+        root_destroy = enqueued_jobs.find do |job|
+          arguments = job["arguments"]
+          job["job_class"] == "Collavre::CreativeBroadcastJob" &&
+            arguments.first == @root.id && arguments.second == "destroyed"
+        end
+        assert_not_nil root_destroy
+        assert_includes root_destroy["arguments"].last.dig("options", "destroy_user_ids"), shared_user.id
+      ensure
+        ActiveJob::Base.queue_adapter = original_adapter
+      end
+
       test "rejects a blank session" do
         assert_not CompletionService.call(user: @user, session_id: nil)
         assert Creative.exists?(@root.id)

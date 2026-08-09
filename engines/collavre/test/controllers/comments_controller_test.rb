@@ -156,6 +156,32 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_in_delta 0.9, comment.creative.reload.progress
   end
 
+  test "approved onboarding create returns card root and created creative refresh ids" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+    comment = card.comments.create!(
+      content: "Create a practice Creative",
+      user: @user,
+      action: JSON.generate(
+        "action" => "create_creative",
+        "attributes" => { "description" => "First draft" }
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    post approve_creative_comment_path(card, comment)
+
+    assert_response :success
+    practice = Creative.find(card.reload.onboarding_metadata["target_creative_id"])
+    assert_equal card.id.to_s, response.headers["X-Onboarding-Card-Id"]
+    assert_equal guide.id.to_s, response.headers["X-Onboarding-Root-Id"]
+    assert_equal practice.id.to_s, response.headers["X-Onboarding-Created-Creative-Id"]
+    assert_equal "in_progress", card.onboarding_metadata["status"]
+  end
+
   test "cannot execute comment action more than once" do
     action_payload = {
       "action" => "update_creative",

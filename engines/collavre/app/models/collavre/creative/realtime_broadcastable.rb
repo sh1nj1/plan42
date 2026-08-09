@@ -47,6 +47,9 @@ module Collavre
       end
 
       def capture_broadcast_state
+        return if @_destroy_broadcast_state_captured
+
+        @_destroy_broadcast_state_captured = true
         # Skip for top-level personal creatives with no links
         # (parent_id.nil? means no ancestors to inherit shares from)
         return if parent_id.nil? && !origin_id && linked_creatives.none?

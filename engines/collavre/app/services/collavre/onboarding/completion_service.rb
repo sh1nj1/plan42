@@ -20,6 +20,7 @@ module Collavre
           user.with_lock do
             items = session_items
             item_ids = items.map(&:id)
+            items.each(&:capture_broadcast_state)
             CreativeShare.where(creative_id: item_ids).destroy_all if item_ids.any?
             items.sort_by { |creative| -creative.ancestors.count }.each do |creative|
               creative.destroy! if creative.persisted?

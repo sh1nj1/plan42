@@ -72,14 +72,17 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       approver: @user
     )
 
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @user)
     assert_difference -> { @creative.reload.children.count }, 1 do
-      Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      executor.call
     end
 
     child = @creative.reload.children.order(:created_at).last
     assert_equal "New idea", ActionController::Base.helpers.strip_tags(child.description).strip
     assert_in_delta 0.25, child.progress
     assert_equal @creative.user.id, child.user.id
+    assert_nil executor.onboarding_card
+    assert_nil executor.onboarding_created_creative
   end
 
   test "credits onboarding create and update actions to the human executor" do
@@ -100,11 +103,14 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       skip_dispatch: true
     )
 
-    Comments::ActionExecutor.new(comment: create_comment, executor: @user).call
+    executor = Comments::ActionExecutor.new(comment: create_comment, executor: @user)
+    executor.call
 
     practice = Creative.find(card.reload.onboarding_metadata["target_creative_id"])
     assert_equal "in_progress", card.onboarding_metadata["status"]
     assert_equal "practice", practice.onboarding_metadata["role"]
+    assert_equal card, executor.onboarding_card
+    assert_equal practice, executor.onboarding_created_creative
 
     update_comment = practice.comments.create!(
       content: "Revise the practice Creative",

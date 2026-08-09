@@ -1018,9 +1018,9 @@ export default class extends Controller {
     })
   }
 
-  reloadCreativeChildren() {
-    if (!this.creativeId) return Promise.resolve()
-    const container = document.getElementById(`creative-children-${this.creativeId}`)
+  reloadCreativeChildren(creativeId = this.creativeId) {
+    if (!creativeId) return Promise.resolve()
+    const container = document.getElementById(`creative-children-${creativeId}`)
     const loadUrl = container?.dataset?.loadUrl
     if (!container || !loadUrl) {
       this.reloadCreativeTree()
@@ -1058,12 +1058,26 @@ export default class extends Controller {
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
     const topicQuery = this.topicQueryString()
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
-      .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.error) }))
-      .then(html => {
+    return fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+      .then(async (response) => {
+        if (!response.ok) {
+          const json = await response.json()
+          throw new Error(json.error)
+        }
+
+        return {
+          html: await response.text(),
+          onboardingCardId: response.headers?.get?.('X-Onboarding-Card-Id'),
+          onboardingRootId: response.headers?.get?.('X-Onboarding-Root-Id'),
+          onboardingCreatedCreativeId: response.headers?.get?.('X-Onboarding-Created-Creative-Id'),
+        }
+      })
+      .then(async ({ html, onboardingCardId, onboardingRootId, onboardingCreatedCreativeId }) => {
         if (!html) { button.disabled = false; return; }
         const existing = document.getElementById(`comment_${commentId}`)
         if (existing) existing.outerHTML = html
+        if (onboardingCreatedCreativeId) await this.reloadCreativeChildren(onboardingCardId)
+        this.formController?._refreshOnboardingItems(onboardingCardId, onboardingRootId)
       })
       .catch(e => { alertDialog(e.message); button.disabled = false; })
   }

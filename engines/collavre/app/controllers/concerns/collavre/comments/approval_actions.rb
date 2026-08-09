@@ -16,7 +16,9 @@ module Collavre
         end
 
         begin
-          ::Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
+          executor = ::Comments::ActionExecutor.new(comment: @comment, executor: Current.user)
+          executor.call
+          set_onboarding_refresh_headers(executor)
           @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
           render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
         rescue ::Comments::ActionExecutor::ExecutionError => e
@@ -114,6 +116,17 @@ module Collavre
       end
 
       private
+
+      def set_onboarding_refresh_headers(executor)
+        card = executor.onboarding_card
+        return unless card
+
+        headers["X-Onboarding-Card-Id"] = card.id.to_s
+        headers["X-Onboarding-Root-Id"] = card.onboarding_session_root&.id&.to_s
+        if executor.onboarding_created_creative
+          headers["X-Onboarding-Created-Creative-Id"] = executor.onboarding_created_creative.id.to_s
+        end
+      end
 
       # Resolve a Claude Channel permission prompt: gate on the approver, record
       # the decision atomically (idempotent against double-clicks), relay it to
