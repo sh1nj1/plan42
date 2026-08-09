@@ -118,6 +118,20 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert_equal "completed", card.reload.onboarding_metadata["status"]
   end
 
+  test "archive request cannot strand an active onboarding item" do
+    get collavre.creatives_path
+    guide = Creative.onboarding_guides.find_by!(user: @user)
+    practice = guide.descendants.find(&:onboarding_practice?)
+
+    get collavre.creatives_path(id: practice.id)
+    assert_select "creative-tree-row[is-title][onboarding-item]"
+
+    patch collavre.archive_creative_path(practice)
+
+    assert_response :unprocessable_entity
+    assert_not practice.reload.archived?
+  end
+
   test "onboarding cards use server-rendered feature cards with static API fallback data" do
     get collavre.creatives_path
     guide = Creative.onboarding_guides.find_by!(user: @user)

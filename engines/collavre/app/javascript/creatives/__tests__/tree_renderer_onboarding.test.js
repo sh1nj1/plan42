@@ -5,6 +5,15 @@
 import { jest } from '@jest/globals'
 import { applyRowProperties } from '../tree_renderer'
 
+test('marks onboarding rows so destructive controls can protect them', () => {
+  const row = document.createElement('div')
+
+  applyRowProperties(row, { id: 42, onboarding_item: true, templates: {} })
+
+  expect(row.onboardingItem).toBe(true)
+  expect(row.hasAttribute('onboarding-item')).toBe(true)
+})
+
 test('realtime onboarding updates refresh the request-aware card component', () => {
   const row = document.createElement('div')
   row.creativeId = 42

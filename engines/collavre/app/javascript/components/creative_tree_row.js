@@ -29,6 +29,7 @@ class CreativeTreeRow extends LitElement {
     archived: { type: Boolean, attribute: "archived", reflect: true },
     githubSource: { type: Boolean, attribute: "github-source", reflect: true },
     cardLayout: { type: Boolean, attribute: "card-layout", reflect: true },
+    onboardingItem: { type: Boolean, attribute: "onboarding-item", reflect: true },
     loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
     _loadingDotsState: { state: true },
     editingUsers: { state: true }
@@ -54,6 +55,7 @@ class CreativeTreeRow extends LitElement {
     this.isTitle = false;
     this.githubSource = false;
     this.cardLayout = false;
+    this.onboardingItem = false;
     this.editingUsers = []; // [{ user_id, user_name, avatar_url }]
     this._templatesExtracted = false;
     this.loadingChildren = false;

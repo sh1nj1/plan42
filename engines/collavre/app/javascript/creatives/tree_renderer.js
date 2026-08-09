@@ -87,6 +87,7 @@ function applyRowProperties(row, node) {
   updateBooleanAttr('archived', 'archived', node.archived)
   updateBooleanAttr('githubSource', 'github-source', node.github_source)
   updateBooleanAttr('cardLayout', 'card-layout', node.card_layout)
+  updateBooleanAttr('onboardingItem', 'onboarding-item', node.onboarding_item)
 
   if (node.link_url) {
     if (row.linkUrl !== node.link_url) {

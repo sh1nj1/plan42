@@ -144,6 +144,19 @@ test('archiving one of several rows leaves the placeholder off the page', async 
   expect(placeholder()).toBeNull()
 })
 
+test('hides archive for active onboarding items', () => {
+  renderTree(['42'])
+  document.querySelector('creative-tree-row[creative-id="42"]').setAttribute('onboarding-item', '')
+
+  document.dispatchEvent(new CustomEvent('creative-edit-click', {
+    detail: { treeElement: document.getElementById('creative-42') },
+  }))
+
+  const archiveButton = document.getElementById('inline-archive')
+  expect(archiveButton.hidden).toBe(true)
+  expect(archiveButton.disabled).toBe(true)
+})
+
 // Stimulus renders `data-controller="creatives--tree creatives--sync"` on #creatives,
 // so the fixture carries both identifiers: an exact-match attribute selector for the
 // first one alone does not match that, which is how the reload came to be skipped

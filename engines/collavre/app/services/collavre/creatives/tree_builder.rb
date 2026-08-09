@@ -142,6 +142,7 @@ module Creatives
           archived: creative.archived?,
           github_source: creative.github_markdown?,
           card_layout: creative.onboarding_card?,
+          onboarding_item: creative.onboarding_item?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative, **mount_options),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),

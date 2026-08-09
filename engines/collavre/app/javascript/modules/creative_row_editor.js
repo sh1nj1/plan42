@@ -571,10 +571,12 @@ function setupEditorSession() {
 
       if (deletePopupToggle) deletePopupToggle.disabled = !hasCreativeId;
       if (archiveBtn) {
-        archiveBtn.disabled = !hasCreativeId;
         // Toggle label between Archive / Restore based on creative state
         const targetRow = hasCreativeId ? document.querySelector(`creative-tree-row[creative-id="${form.dataset.creativeId}"]`) : null;
         const isArchived = targetRow?.hasAttribute('archived');
+        const protectsOnboarding = targetRow?.hasAttribute('onboarding-item') && !isArchived;
+        archiveBtn.hidden = Boolean(protectsOnboarding);
+        archiveBtn.disabled = !hasCreativeId || protectsOnboarding;
         archiveBtn.textContent = isArchived ? (archiveBtn.dataset.restoreLabel || 'Restore') : (archiveBtn.dataset.archiveLabel || 'Archive');
       }
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;

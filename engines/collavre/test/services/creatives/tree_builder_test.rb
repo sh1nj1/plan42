@@ -111,13 +111,18 @@ module Creatives
       onboarding_creative = Creative.create!(
         user: @user,
         description: "Onboarding content",
-        data: { "source" => { "type" => "onboarding" } }
+        data: {
+          "source" => { "type" => "onboarding" },
+          "onboarding" => { "session_id" => SecureRandom.uuid, "role" => "card" }
+        }
       )
 
       nodes = build_tree_builder.build([ github_creative, onboarding_creative ])
 
       assert nodes.find { |node| node[:id] == github_creative.id }[:github_source]
       assert_not nodes.find { |node| node[:id] == onboarding_creative.id }[:github_source]
+      assert nodes.find { |node| node[:id] == onboarding_creative.id }[:onboarding_item]
+      assert_not nodes.find { |node| node[:id] == github_creative.id }[:onboarding_item]
     end
 
     test "preserves the engine mount prefix in creative URLs" do
