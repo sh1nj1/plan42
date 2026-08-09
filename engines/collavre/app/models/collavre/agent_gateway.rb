@@ -84,20 +84,14 @@ module Collavre
         return
       end
 
-      if per_user?
-        agents.find_each do |agent|
-          agent_workspaces.find_by(agent: agent, user_id: nil)&.reassign_principal!(user: agent.creator)
-        end
-        return
-      end
-
       agents.find_each do |agent|
         workspaces = agent_workspaces.where(agent: agent)
-        shared_workspace = workspaces.find_by(user_id: nil)
-        inherited_shared_workspace = workspaces.find_by(proxy_user_id: "agent-#{agent.id}")
+        next unless workspaces.exists?
 
-        inherited_shared_workspace.reassign_principal!(user: nil) if shared_workspace.nil? && inherited_shared_workspace
-        workspaces.reload.where.not(user_id: nil).destroy_all
+        workspaces.destroy_all
+        next unless active?
+
+        AgentWorkspace.resolve!(agent: agent, user: per_user? ? agent.creator : nil)
       end
     end
   end

@@ -69,19 +69,21 @@ module Collavre
       def resolve_per_user!(agent, user, gateway)
         raise ArgumentError, "A user is required for a per-user workspace" unless user
 
+        expected_proxy_user_id = "agent-#{agent.id}--user-#{user.id}"
         existing = find_by(agent: agent, user: user, agent_gateway: gateway)
-        return existing if existing
+        return existing if existing&.proxy_user_id == expected_proxy_user_id
+
+        existing&.destroy!
 
         if user.id == agent.created_by_id
-          shared = find_by(agent: agent, agent_gateway: gateway, user_id: nil)
-          return shared.reassign_principal!(user: user) if shared
+          find_by(agent: agent, agent_gateway: gateway, user_id: nil)&.destroy!
         end
 
         create_workspace!(
           agent: agent,
           user: user,
           gateway: gateway,
-          proxy_user_id: "agent-#{agent.id}--user-#{user.id}"
+          proxy_user_id: expected_proxy_user_id
         )
       rescue ActiveRecord::RecordNotUnique
         find_by!(agent: agent, user: user, agent_gateway: gateway)
@@ -128,19 +130,6 @@ module Collavre
 
     def config_payload(base_url:)
       { url: base_url.sub(%r{/+\z}, ""), token: callback_token }
-    end
-
-    def reassign_principal!(user:)
-      with_lock do
-        return self if user_id == user&.id
-
-        old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
-        new_callback_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
-        update!(user: user, callback_token: new_callback_token)
-        old_access_token&.revoke
-      end
-
-      self
     end
 
     def rotate_tokens!

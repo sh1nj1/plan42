@@ -99,34 +99,46 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert admin_gateway.valid?, admin_gateway.errors.full_messages.to_sentence
   end
 
-  test "switching to shared preserves the owner workspace and revokes the others" do
+  test "switching to shared replaces per-user workspaces with an isolated shared workspace" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!
     agent = create_agent(gateway)
-    shared_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    original_shared_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
     gateway.update!(workspace_mode: :per_user)
     owner_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
     other_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: users(:three))
     owner_manifest_token = owner_workspace.manifest_token
+    other_manifest_token = other_workspace.manifest_token
     owner_callback_token = owner_workspace.callback_token
+    other_callback_token = other_workspace.callback_token
     owner_access_token = Doorkeeper::AccessToken.by_token(owner_callback_token)
+    other_access_token = Doorkeeper::AccessToken.by_token(other_callback_token)
 
     gateway.update!(workspace_mode: :shared)
 
-    assert_equal shared_workspace, owner_workspace
-    assert_nil owner_workspace.reload.user_id
-    assert_equal "agent-#{agent.id}", owner_workspace.proxy_user_id
-    assert_equal owner_manifest_token, owner_workspace.manifest_token
-    assert_not_equal owner_callback_token, owner_workspace.callback_token
+    shared_workspace = Collavre::AgentWorkspace.find_by!(agent: agent, user_id: nil, agent_gateway: gateway)
+    assert_not_equal original_shared_workspace, shared_workspace
+    assert_not_equal owner_workspace, shared_workspace
+    assert_nil shared_workspace.user_id
+    assert_equal "agent-#{agent.id}", shared_workspace.proxy_user_id
+    assert_not_equal owner_manifest_token, shared_workspace.manifest_token
+    assert_not_equal other_manifest_token, shared_workspace.manifest_token
+    assert_not_equal owner_callback_token, shared_workspace.callback_token
+    assert_not_equal other_callback_token, shared_workspace.callback_token
     assert_predicate owner_access_token.reload, :revoked?
-    shared_access_token = Doorkeeper::AccessToken.by_token(owner_workspace.callback_token)
+    assert_predicate other_access_token.reload, :revoked?
+    [ owner_manifest_token, other_manifest_token ].each do |manifest_token|
+      assert_raises(ActiveRecord::RecordNotFound) do
+        Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: agent.id, token: manifest_token)
+      end
+    end
+    shared_access_token = Doorkeeper::AccessToken.by_token(shared_workspace.callback_token)
     assert_equal agent.id, shared_access_token.resource_owner_id
     assert_predicate shared_access_token, :accessible?
-    assert_not Collavre::AgentWorkspace.exists?(other_workspace.id)
-    assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    assert_equal shared_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
   end
 
-  test "switching to per-user immediately reassigns the shared workspace to the owner" do
+  test "switching to per-user replaces the shared workspace with an isolated owner workspace" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!
     agent = create_agent(gateway)
@@ -137,16 +149,59 @@ class AgentGatewayTest < ActiveSupport::TestCase
 
     gateway.update!(workspace_mode: :per_user)
 
-    owner_workspace = shared_workspace.reload
+    owner_workspace = Collavre::AgentWorkspace.find_by!(agent: agent, user: @owner, agent_gateway: gateway)
+    assert_not_equal shared_workspace.id, owner_workspace.id
     assert_equal @owner, owner_workspace.user
-    assert_equal "agent-#{agent.id}", owner_workspace.proxy_user_id
-    assert_equal shared_manifest_token, owner_workspace.manifest_token
+    assert_equal "agent-#{agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_not_equal shared_manifest_token, owner_workspace.manifest_token
     assert_not_equal shared_callback_token, owner_workspace.callback_token
     assert_predicate shared_access_token.reload, :revoked?
+    assert_raises(ActiveRecord::RecordNotFound) do
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: agent.id, token: shared_manifest_token)
+    end
     owner_access_token = Doorkeeper::AccessToken.by_token(owner_workspace.callback_token)
     assert_equal @owner.id, owner_access_token.resource_owner_id
     assert_predicate owner_access_token, :accessible?
     assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
+  end
+
+  test "switching modes does not mint credentials for an unused agent" do
+    gateway = build_gateway(identity_secret: "s" * 32)
+    gateway.save!
+    create_agent(gateway)
+
+    assert_no_difference -> { Collavre::AgentWorkspace.count }, -> { Doorkeeper::AccessToken.count } do
+      gateway.update!(workspace_mode: :per_user)
+    end
+    assert_no_difference -> { Collavre::AgentWorkspace.count }, -> { Doorkeeper::AccessToken.count } do
+      gateway.update!(workspace_mode: :shared)
+    end
+  end
+
+  test "switching modes while deactivating revokes credentials and recreates them lazily" do
+    gateway = build_gateway(identity_secret: "s" * 32)
+    gateway.save!
+    agent = create_agent(gateway)
+    shared_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    shared_manifest_token = shared_workspace.manifest_token
+    shared_access_token = Doorkeeper::AccessToken.by_token(shared_workspace.callback_token)
+
+    gateway.update!(workspace_mode: :per_user, active: false)
+
+    assert_not gateway.active?
+    assert_not Collavre::AgentWorkspace.exists?(shared_workspace.id)
+    assert_predicate shared_access_token.reload, :revoked?
+    assert_raises(ActiveRecord::RecordNotFound) do
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: agent.id, token: shared_manifest_token)
+    end
+    assert_raises(ArgumentError) do
+      Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
+    end
+
+    gateway.update!(active: true)
+    owner_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
+    assert_equal "agent-#{agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_not_equal shared_manifest_token, owner_workspace.manifest_token
   end
 
   test "changing the proxy or tenant revokes existing workspace capabilities" do
