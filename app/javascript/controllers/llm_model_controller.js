@@ -128,7 +128,9 @@ export default class extends Controller {
                 await refreshCsrfToken()
                 response = await deleteRequest()
             }
-            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            if (!response.ok || response.redirected || response.status !== 204) {
+                throw new Error(`Unexpected DELETE response: ${response.status}`)
+            }
 
             this.modelsValue = this.modelsValue.filter((candidate) => candidate.id !== id)
             this.show(this.inputTarget.value.trim())

@@ -7,10 +7,11 @@ import { Application } from '@hotwired/stimulus'
 import LlmModelController from '../llm_model_controller'
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
-const response = ({ ok, status = ok ? 200 : 500, headers = {} }) => ({
+const response = ({ ok, status = ok ? 204 : 500, headers = {}, redirected = false }) => ({
     ok,
     status,
-    headers: new Headers(headers)
+    headers: new Headers(headers),
+    redirected
 })
 
 describe('LlmModelController', () => {
@@ -158,6 +159,19 @@ describe('LlmModelController', () => {
         })
         expect(global.fetch.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
         expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+    })
+
+    test('keeps the suggestion when deletion follows an authentication redirect', async () => {
+        global.fetch.mockResolvedValue(response({ ok: true, status: 200, redirected: true }))
+        controller.show('gpt')
+
+        document.querySelector('.llm-model-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await flush()
+
+        expect(document.querySelector('.confirm-dialog-message').textContent).toBe('Delete failed')
+        document.querySelector('.modal-dialog-btn-primary').click()
+        await flush()
+        expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 2, 3])
     })
 
     test('prevents delete pointer events from selecting the suggestion', () => {
