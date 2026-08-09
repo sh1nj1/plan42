@@ -61,4 +61,22 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
 
     assert_frame_navigation_to_target
   end
+
+  test "chat creative link opens the target chat on mobile" do
+    resize_window_to(600, 900)
+    comment = Comment.create!(
+      creative: @source,
+      user: @user,
+      content: "[Open target](/creatives/#{@target.id}?open_comments=true)"
+    )
+
+    visit collavre.creatives_path(id: @source.id, open_comments: true)
+    assert_selector "#comment_#{comment.id} .comment-content a", text: "Open target", wait: 10
+    mark_workspace_shell
+
+    find("#comment_#{comment.id} .comment-content a", text: "Open target").click
+
+    assert_frame_navigation_to_target
+    assert_selector "#comments-popup[data-creative-id='#{@target.id}']", visible: :visible, wait: 10
+  end
 end

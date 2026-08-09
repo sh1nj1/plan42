@@ -323,6 +323,26 @@ describe('CommentsPopupController', () => {
         expect(popup.dataset.creativeId).toBe('123')
     })
 
+    test('same-creative workspace link explicitly requesting comments expands docked chat', () => {
+	const popup = document.getElementById('comments-popup')
+	const triggerBtn = document.getElementById('trigger-btn')
+	popup.dataset.docked = 'true'
+	popup.dataset.creativeId = '123'
+	controller.enterDockedMode()
+	controller.toggleDocked()
+
+	document.dispatchEvent(new CustomEvent('creative-comments-click', {
+	    detail: {
+		button: triggerBtn,
+		creativeId: '123',
+		workspaceSync: true,
+		openRequested: true,
+	    },
+	}))
+
+	expect(popup.classList.contains('docked-collapsed')).toBe(false)
+    })
+
     test('chat icon expands a collapsed docked chat showing the same creative', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
@@ -470,6 +490,72 @@ describe('CommentsPopupController', () => {
         await Promise.resolve()
 
         expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+    })
+
+    test('workspace link explicitly requesting comments opens chat outside the docked layout', () => {
+	const popup = document.getElementById('comments-popup')
+	const triggerBtn = document.getElementById('trigger-btn')
+	const open = jest.spyOn(controller, 'open').mockResolvedValue()
+	popup.dataset.docked = 'true'
+	controller.dockedMediaQuery.matches = false
+
+	document.dispatchEvent(new CustomEvent('creative-comments-click', {
+	    detail: {
+		button: triggerBtn,
+		creativeId: '123',
+		workspaceSync: true,
+		openRequested: true,
+	    },
+	}))
+
+	expect(open).toHaveBeenCalledWith(triggerBtn, { creativeId: '123' })
+    })
+
+    test('repeated explicit workspace sync keeps an open floating chat open', async () => {
+	const popup = document.getElementById('comments-popup')
+	const triggerBtn = document.getElementById('trigger-btn')
+	popup.dataset.docked = 'true'
+	controller.dockedMediaQuery.matches = false
+	await controller.open(triggerBtn)
+	const open = jest.spyOn(controller, 'open')
+	const close = jest.spyOn(controller, 'close')
+
+	document.dispatchEvent(new CustomEvent('creative-comments-click', {
+	    detail: {
+		button: triggerBtn,
+		creativeId: '123',
+		workspaceSync: true,
+		openRequested: true,
+	    },
+	}))
+
+	expect(open).not.toHaveBeenCalled()
+	expect(close).not.toHaveBeenCalled()
+	expect(popup.style.display).toBe('flex')
+    })
+
+    test('repeated explicit workspace deep link refreshes the floating chat highlight', async () => {
+	const popup = document.getElementById('comments-popup')
+	const triggerBtn = document.getElementById('trigger-btn')
+	popup.dataset.docked = 'true'
+	controller.dockedMediaQuery.matches = false
+	await controller.open(triggerBtn)
+	const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+	document.dispatchEvent(new CustomEvent('creative-comments-click', {
+	    detail: {
+		button: triggerBtn,
+		creativeId: '123',
+		workspaceSync: true,
+		highlightId: '456',
+		openRequested: true,
+	    },
+	}))
+
+	expect(open).toHaveBeenCalledWith(triggerBtn, {
+	    creativeId: '123',
+	    highlightId: '456',
+	})
     })
 
     test('workspace navigation closes an existing floating chat', async () => {

@@ -301,7 +301,62 @@ describe('WorkspaceTreeController', () => {
 
     frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
     expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
-      detail: expect.objectContaining({ creativeId: '2', highlightId: '456' }),
+      detail: expect.objectContaining({ creativeId: '2', highlightId: '456', openRequested: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('forwards explicit chat-open requests only from authoritative frame loads', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=2&open_comments=true')
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-render', { bubbles: true }))
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', openRequested: false }),
+    }))
+
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', openRequested: true }),
+    }))
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('uses the frame request URL before Turbo updates browser history', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=2')
+
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', {
+      bubbles: true,
+      detail: { url: new URL('/creatives/2?open_comments=true&comment_id=456', window.location.origin) },
+    }))
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', highlightId: '456', openRequested: true }),
+    }))
+    expect(controller.frameRequestUrl).toBeUndefined()
+    document.removeEventListener('creative-comments-click', chatListener)
+  })
+
+  test('a frame request without chat intent overrides the previous browser URL', () => {
+    const chatListener = jest.fn()
+    document.addEventListener('creative-comments-click', chatListener)
+    const frame = document.getElementById('creative-workspace-content')
+    window.history.replaceState({}, '', '/creatives?id=2&open_comments=true')
+
+    frame.dispatchEvent(new CustomEvent('turbo:before-fetch-request', {
+      bubbles: true,
+      detail: { url: new URL('/creatives/2', window.location.origin) },
+    }))
+    frame.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(chatListener).toHaveBeenLastCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({ creativeId: '2', openRequested: false }),
     }))
     document.removeEventListener('creative-comments-click', chatListener)
   })
@@ -321,6 +376,29 @@ describe('WorkspaceTreeController', () => {
 
     window.history.replaceState({}, '', '/creatives?id=2')
     expect(controller.commentIdFromLocation()).toBeUndefined()
+  })
+
+  test('detects explicit chat-open requests in workspace URLs', () => {
+    window.history.replaceState({}, '', '/creatives?id=2&open_comments=true')
+    expect(controller.commentsRequestedFromLocation()).toBe(true)
+
+    window.history.replaceState({}, '', '/creatives?id=2&comment_id=456')
+    expect(controller.commentsRequestedFromLocation()).toBe(true)
+
+    expect(controller.commentsRequestedFromUrl('/creatives?id=2&highlight_comment_id=567')).toBe(true)
+    expect(controller.commentsRequestedFromUrl('/creatives/2/comments/678')).toBe(true)
+    expect(controller.commentsRequestedFromUrl('/creatives?id=2#comment_789')).toBe(true)
+
+    window.history.replaceState({}, '', '/creatives?id=2')
+    expect(controller.commentsRequestedFromLocation()).toBe(false)
+  })
+
+  test('extracts comment targets from explicit URLs', () => {
+    expect(controller.commentIdFromUrl('/creatives?id=2&comment_id=456')).toBe('456')
+    expect(controller.commentIdFromUrl('/creatives?id=2&highlight_comment_id=567')).toBe('567')
+    expect(controller.commentIdFromUrl('/creatives/2/comments/678')).toBe('678')
+    expect(controller.commentIdFromUrl('/creatives?id=2#comment_789')).toBe('789')
+    expect(controller.commentIdFromUrl('/creatives?id=2')).toBeUndefined()
   })
 
   test('trusts the completed frame response when an inaccessible id falls back to root', () => {
