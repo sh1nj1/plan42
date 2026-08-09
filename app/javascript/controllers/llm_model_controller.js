@@ -77,7 +77,7 @@ export default class extends Controller {
         if (!this.popup) return
 
         const lowered = term.toLowerCase()
-        const vendor = this.vendorTarget.value
+        const vendor = this.vendorTarget.value.toLowerCase()
         const filtered = this.modelsValue.filter((model) => (
             model.vendor === vendor && model.name.toLowerCase().includes(lowered)
         ))
@@ -113,7 +113,8 @@ export default class extends Controller {
         event.preventDefault()
         event.stopPropagation()
 
-        const id = Number(event.currentTarget.dataset.modelId)
+        const deleteButton = event.currentTarget
+        const id = Number(deleteButton.dataset.modelId)
         const model = this.modelsValue.find((candidate) => candidate.id === id)
         if (!model) return
 
@@ -133,6 +134,7 @@ export default class extends Controller {
             }
 
             this.modelsValue = this.modelsValue.filter((candidate) => candidate.id !== id)
+            if (document.activeElement === deleteButton) this.inputTarget.focus()
             this.show(this.inputTarget.value.trim())
         } catch (error) {
             await alertDialog(this.deleteFailedValue)

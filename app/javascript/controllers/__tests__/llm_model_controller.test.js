@@ -77,6 +77,15 @@ describe('LlmModelController', () => {
         expect(document.querySelector('.llm-model-name').textContent).toBe('gemini-3.1-flash-lite')
     })
 
+    test('normalizes the selected vendor before filtering suggestions', () => {
+        controller.vendorTarget.insertAdjacentHTML('beforeend', '<option value="OpenAI">OpenAI extension</option>')
+        controller.vendorTarget.value = 'OpenAI'
+
+        controller.show('gpt')
+
+        expect(document.querySelector('.llm-model-name').textContent).toBe('gpt-5.2')
+    })
+
     test('keeps the filtered popup open when a pending input blur follows a vendor change', () => {
         jest.useFakeTimers()
         controller.show('')
@@ -136,6 +145,23 @@ describe('LlmModelController', () => {
         expect(requestHeaders.get('Accept')).toBe('application/json')
         expect(requestHeaders.get('X-CSRF-Token')).toBe('test-token')
         expect(controller.inputTarget.value).toBe('gpt')
+        expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+    })
+
+    test('restores input focus after deleting with the keyboard', async () => {
+        global.fetch.mockResolvedValue(response({ ok: true }))
+        controller.inputTarget.focus()
+        controller.show('gpt')
+        controller.handleKeydown(new KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        }))
+
+        document.activeElement.click()
+        await flush()
+
+        expect(document.activeElement).toBe(controller.inputTarget)
         expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
     })
 
