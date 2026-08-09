@@ -336,25 +336,24 @@ module Collavre
       archived_at.present?
     end
 
+    def archive_target_roots
+      origin = effective_origin(Set.new)
+      targets = [ self ]
+
+      if origin != self
+        targets << origin
+        targets.concat(origin.linked_creatives.where.not(id: id))
+      end
+
+      targets.concat(linked_creatives)
+      targets.uniq(&:id)
+    end
+
     def archive!
       now = Time.current
       self.class.transaction do
-        # Archive self and descendants
-        self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
-
-        # If this is a linked creative, also archive the origin and its descendants
-        origin = effective_origin(Set.new)
-        if origin != self
-          origin.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
-          # Archive all other linked creatives of the origin
-          origin.linked_creatives.where.not(id: id).find_each do |linked|
-            linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
-          end
-        end
-
-        # Also archive any linked creatives that point to this one
-        linked_creatives.find_each do |linked|
-          linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+        archive_target_roots.each do |target|
+          target.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
         end
 
         reload

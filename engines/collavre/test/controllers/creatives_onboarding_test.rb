@@ -150,6 +150,27 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert_not practice.reload.archived?
   end
 
+  test "archive request checks the onboarding origin of a linked creative" do
+    owner = users(:one)
+    owner.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.onboarding_guides.where(user: owner).destroy_all
+    Creative.inbox_for(owner)
+    guide = Collavre::Onboarding::Seeder.call(user: owner)
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: guide, user: @user, permission: :write, shared_by: owner)
+    end
+    guide.create_linked_creative_for_user(@user)
+    linked_guide = Creative.find_by!(origin: guide, user: @user)
+
+    patch collavre.archive_creative_path(linked_guide)
+
+    assert_response :unprocessable_entity
+    assert_not linked_guide.reload.archived?
+    assert_not guide.reload.archived?
+    assert guide.descendants.none?(&:archived?)
+  end
+
   test "onboarding cards use server-rendered feature cards with static API fallback data" do
     get collavre.creatives_path
     guide = Creative.onboarding_guides.find_by!(user: @user)
