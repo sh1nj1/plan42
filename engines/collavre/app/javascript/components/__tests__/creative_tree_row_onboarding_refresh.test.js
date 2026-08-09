@@ -49,3 +49,37 @@ test('progress completion refreshes both the onboarding step and overview rows',
   }))
   expect(refresh.mock.calls.map(([id]) => id)).toEqual([42, 84])
 })
+
+test('realtime-created onboarding rows refresh through their mounted member URL', async () => {
+  await import('../creative_tree_row.js')
+  const { applyRowProperties, createRow } = await import('../../creatives/tree_renderer.js')
+  document.body.innerHTML = `
+    <form id="inline-edit-form-element"
+          data-update-url-template="/collavre/creatives/__CREATIVE_ID__"></form>
+  `
+  const row = createRow({
+    id: 42,
+    link_url: '/creatives?id=42',
+    onboarding_item: true,
+    templates: { description_html: 'Waiting' },
+  })
+  document.body.appendChild(row)
+  csrfFetch.mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve({ description: 'Completed' }),
+  })
+
+  applyRowProperties(row, {
+    id: 42,
+    refresh_onboarding_description: true,
+    templates: {},
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(row.linkUrl).toBe('/creatives?id=42')
+  expect(row.updateUrl).toBe('/collavre/creatives/42')
+  expect(csrfFetch).toHaveBeenCalledWith('/collavre/creatives/42', {
+    headers: { Accept: 'application/json' },
+  })
+  expect(row.descriptionHtml).toBe('Completed')
+})

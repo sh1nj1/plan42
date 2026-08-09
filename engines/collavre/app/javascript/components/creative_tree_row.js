@@ -648,9 +648,9 @@ class CreativeTreeRow extends LitElement {
 
   async _refreshOnboardingCard(cardId) {
     const row = document.querySelector(`creative-tree-row[creative-id="${cardId}"]`)
-    if (!row?.linkUrl) return
+    if (!row?.updateUrl || row.updateUrl === "#") return
 
-    const response = await csrfFetch(row.linkUrl, { headers: { Accept: "application/json" } })
+    const response = await csrfFetch(row.updateUrl, { headers: { Accept: "application/json" } })
     if (!response.ok) return
 
     const data = await response.json()
