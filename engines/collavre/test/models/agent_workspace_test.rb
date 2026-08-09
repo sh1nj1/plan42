@@ -1,4 +1,5 @@
 require "test_helper"
+require Rails.root.join("engines/collavre/db/migrate/20260809000003_hash_agent_workspace_callback_tokens")
 
 class AgentWorkspaceTest < ActiveSupport::TestCase
   setup do
@@ -33,6 +34,52 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_nil first.user
     assert_equal "agent-#{@agent.id}", first.proxy_user_id
     assert Doorkeeper::AccessToken.by_token(first.callback_token).accessible?
+  end
+
+  test "callback token is hashed in Doorkeeper while the plaintext bearer remains usable" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    access_token = Doorkeeper::AccessToken.by_token(workspace.callback_token)
+    stored_token = access_token.reload.token
+
+    assert_equal Collavre::HashedAccessTokenLookup.encode(workspace.callback_token), stored_token
+    assert_not_equal workspace.callback_token, stored_token
+    assert_nil Doorkeeper::AccessToken.by_token(stored_token)
+    assert_predicate access_token, :accessible?
+  end
+
+  test "ordinary Doorkeeper tokens retain plain storage and lookup" do
+    application = Doorkeeper::Application.create!(
+      owner: @owner,
+      name: "Ordinary OAuth client",
+      redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
+      confidential: true,
+      scopes: "public"
+    )
+    access_token = Doorkeeper::AccessToken.create!(
+      application: application,
+      resource_owner_id: @owner.id,
+      scopes: "public"
+    )
+
+    assert_equal access_token.token, access_token.reload.token
+    assert_equal access_token, Doorkeeper::AccessToken.by_token(access_token.token)
+  end
+
+  test "migration hashes and restores legacy workspace callback tokens" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    access_token = Doorkeeper::AccessToken.by_token(workspace.callback_token)
+    access_token.update_column(:token, workspace.callback_token)
+    migration = HashAgentWorkspaceCallbackTokens.new
+
+    migration.up
+
+    assert_equal Collavre::HashedAccessTokenLookup.encode(workspace.callback_token), access_token.reload.token
+    assert_equal access_token, Doorkeeper::AccessToken.by_token(workspace.callback_token)
+
+    migration.down
+
+    assert_equal workspace.callback_token, access_token.reload.token
+    assert_equal access_token, Doorkeeper::AccessToken.by_token(workspace.callback_token)
   end
 
   test "per-user mode isolates users and preserves owner shared identity" do

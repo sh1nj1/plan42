@@ -55,20 +55,18 @@ module Collavre
       end
 
       def create_workspace!(agent:, user:, gateway:, proxy_user_id:)
-        token_owner = user || agent
-        access_token = issue_callback_token!(gateway: gateway, owner: token_owner)
+        transaction do
+          callback_token = issue_callback_token!(gateway: gateway, owner: user || agent)
 
-        create!(
-          agent: agent,
-          user: user,
-          agent_gateway: gateway,
-          proxy_user_id: proxy_user_id,
-          manifest_token: SecureRandom.urlsafe_base64(32),
-          callback_token: access_token.token
-        )
-      rescue StandardError
-        access_token&.revoke
-        raise
+          create!(
+            agent: agent,
+            user: user,
+            agent_gateway: gateway,
+            proxy_user_id: proxy_user_id,
+            manifest_token: SecureRandom.urlsafe_base64(32),
+            callback_token: callback_token
+          )
+        end
       end
 
       def issue_callback_token!(gateway:, owner:)
@@ -81,13 +79,17 @@ module Collavre
           app.confidential = true
         end
 
-        Doorkeeper::AccessToken.create!(
+        access_token = Doorkeeper::AccessToken.create!(
           application: application,
           resource_owner_id: owner.id,
           scopes: "public",
           expires_in: nil,
           use_refresh_token: false
         )
+        plaintext = access_token.token
+        access_token.update_column(:token, Collavre::HashedAccessTokenLookup.encode(plaintext))
+
+        plaintext
       end
     end
 
@@ -100,8 +102,8 @@ module Collavre
         return self if user_id == user&.id
 
         old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
-        new_access_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
-        update!(user: user, callback_token: new_access_token.token)
+        new_callback_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
+        update!(user: user, callback_token: new_callback_token)
         old_access_token&.revoke
       end
 
@@ -111,8 +113,8 @@ module Collavre
     def rotate_tokens!
       with_lock do
         old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
-        new_access_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
-        update!(callback_token: new_access_token.token)
+        new_callback_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
+        update!(callback_token: new_callback_token)
         old_access_token&.revoke
       end
 
