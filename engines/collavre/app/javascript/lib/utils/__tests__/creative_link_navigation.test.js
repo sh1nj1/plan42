@@ -219,4 +219,27 @@ describe("creative link navigation", () => {
       frame: WORKSPACE_FRAME_ID,
     })
   })
+
+  test("keeps native navigation for a same-document fragment", () => {
+    window.history.replaceState({}, "", "/creatives?id=42")
+    document.getElementById("creative-link").setAttribute("href", "#creatives")
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(visit).not.toHaveBeenCalled()
+  })
+
+  test("navigates a supported comment fragment through the workspace frame", () => {
+    window.history.replaceState({}, "", "/creatives?id=42")
+    document.getElementById("creative-link").setAttribute("href", "#comment_456")
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith("#comment_456", {
+      action: "advance",
+      frame: WORKSPACE_FRAME_ID,
+    })
+  })
 })

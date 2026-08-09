@@ -37,11 +37,17 @@ function workspaceCreativePath(href) {
   }
 }
 
+function isDefaultFragmentNavigation(href) {
+  return href.startsWith("#") && !/^#comment_\d+$/.test(href)
+}
+
 export function handleCreativeLinkClick(event) {
   const anchor = clickedAnchor(event)
   if (!anchor || shouldUseDefaultNavigation(event, anchor)) return false
 
   const href = anchor.getAttribute("href")
+  if (isDefaultFragmentNavigation(href)) return false
+
   const path = workspaceCreativePath(href)
   const mountPath = collavreMountPath()
   if (!path || (!creativeIdFromUrl(path, mountPath) && !isCreativeCommentPath(path, mountPath))) return false
