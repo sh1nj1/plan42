@@ -41,7 +41,7 @@ module Collavre
 
         if user.id == agent.created_by_id
           shared = find_by(agent: agent, agent_gateway: gateway, user_id: nil)
-          return shared.update!(user: user) && shared if shared
+          return shared.reassign_principal!(user: user) if shared
         end
 
         create_workspace!(
@@ -93,6 +93,19 @@ module Collavre
 
     def config_payload(base_url:)
       { url: base_url.sub(%r{/+\z}, ""), token: callback_token }
+    end
+
+    def reassign_principal!(user:)
+      with_lock do
+        return self if user_id == user&.id
+
+        old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
+        new_access_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
+        update!(user: user, callback_token: new_access_token.token)
+        old_access_token&.revoke
+      end
+
+      self
     end
 
     def rotate_tokens!

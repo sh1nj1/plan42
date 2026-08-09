@@ -68,7 +68,7 @@ module Collavre
     def edit_ai
       @available_tools = load_available_tools
       @llm_models = Collavre::LlmModel.suggestions
-      @agent_gateways = gateway_owner_for(@user).owned_agent_gateways.active.order(:name)
+      @agent_gateways = editable_agent_gateways(@user)
       @has_stored_llm_api_key = @user.llm_api_key.present?
     end
 
@@ -76,7 +76,12 @@ module Collavre
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf, tools: [])
       effective_vendor = ai_params[:llm_vendor].presence || @user.llm_vendor
       if effective_vendor == "cli_proxy" && ai_params.key?(:agent_gateway_id)
-        gateway = gateway_owner_for(@user).owned_agent_gateways.active.find_by(id: ai_params[:agent_gateway_id])
+        gateways = gateway_owner_for(@user).owned_agent_gateways
+        gateway = if ai_params[:agent_gateway_id].to_s == @user.agent_gateway_id.to_s
+          gateways.find_by(id: ai_params[:agent_gateway_id])
+        else
+          gateways.active.find_by(id: ai_params[:agent_gateway_id])
+        end
         ai_params[:agent_gateway_id] = gateway&.id
       elsif ai_params.key?(:llm_vendor)
         ai_params[:agent_gateway_id] = nil
@@ -105,7 +110,7 @@ module Collavre
       else
         @available_tools = load_available_tools
         @llm_models = Collavre::LlmModel.suggestions
-        @agent_gateways = gateway_owner_for(@user).owned_agent_gateways.active.order(:name)
+        @agent_gateways = editable_agent_gateways(@user)
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         render :edit_ai, status: :unprocessable_entity
       end
@@ -139,6 +144,11 @@ module Collavre
 
     def gateway_owner_for(agent)
       agent.creator || Current.user
+    end
+
+    def editable_agent_gateways(agent)
+      gateways = gateway_owner_for(agent).owned_agent_gateways
+      gateways.active.or(gateways.where(id: agent.agent_gateway_id)).order(:name)
     end
 
     def set_user_for_ai_actions

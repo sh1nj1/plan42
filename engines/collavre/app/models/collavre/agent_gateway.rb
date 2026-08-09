@@ -82,7 +82,7 @@ module Collavre
         shared_workspace = workspaces.find_by(user_id: nil)
         inherited_shared_workspace = workspaces.find_by(proxy_user_id: "agent-#{agent.id}")
 
-        inherited_shared_workspace.update!(user: nil) if shared_workspace.nil? && inherited_shared_workspace
+        inherited_shared_workspace.reassign_principal!(user: nil) if shared_workspace.nil? && inherited_shared_workspace
         workspaces.reload.where.not(user_id: nil).destroy_all
       end
     end

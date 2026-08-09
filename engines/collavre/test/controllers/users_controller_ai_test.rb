@@ -119,6 +119,63 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "preserves the assigned inactive gateway while editing a CLI Proxy agent" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Inactive assigned proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    @ai_user.update!(
+      created_by_id: @admin.id,
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      agent_gateway: gateway
+    )
+    gateway.update!(active: false)
+
+    get edit_ai_user_url(@ai_user)
+
+    assert_response :success
+    assert_select "select[name='user[agent_gateway_id]'] option[value='#{gateway.id}'][selected]", gateway.name
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        name: "Renamed inactive proxy agent",
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: gateway.id
+      }
+    }
+
+    assert_redirected_to edit_ai_user_path(@ai_user)
+    assert_equal "Renamed inactive proxy agent", @ai_user.reload.name
+    assert_equal gateway, @ai_user.agent_gateway
+  end
+
+  test "does not assign a different inactive gateway while editing" do
+    inactive_gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Inactive unassigned proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      active: false
+    )
+
+    patch update_ai_user_url(@ai_user), params: {
+      user: {
+        llm_vendor: "cli_proxy",
+        llm_model: "paperclip/claude_local",
+        agent_gateway_id: inactive_gateway.id
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_nil @ai_user.reload.agent_gateway
+  end
+
   test "should not get edit_ai for normal user" do
     get edit_ai_user_url(@admin)
     assert_redirected_to user_path(@admin)

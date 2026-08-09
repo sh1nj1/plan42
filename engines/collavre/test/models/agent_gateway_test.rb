@@ -95,12 +95,21 @@ class AgentGatewayTest < ActiveSupport::TestCase
     gateway.update!(workspace_mode: :per_user)
     owner_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
     other_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: users(:three))
+    owner_manifest_token = owner_workspace.manifest_token
+    owner_callback_token = owner_workspace.callback_token
+    owner_access_token = Doorkeeper::AccessToken.by_token(owner_callback_token)
 
     gateway.update!(workspace_mode: :shared)
 
     assert_equal shared_workspace, owner_workspace
     assert_nil owner_workspace.reload.user_id
     assert_equal "agent-#{agent.id}", owner_workspace.proxy_user_id
+    assert_equal owner_manifest_token, owner_workspace.manifest_token
+    assert_not_equal owner_callback_token, owner_workspace.callback_token
+    assert_predicate owner_access_token.reload, :revoked?
+    shared_access_token = Doorkeeper::AccessToken.by_token(owner_workspace.callback_token)
+    assert_equal agent.id, shared_access_token.resource_owner_id
+    assert_predicate shared_access_token, :accessible?
     assert_not Collavre::AgentWorkspace.exists?(other_workspace.id)
     assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
   end

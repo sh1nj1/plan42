@@ -1,10 +1,10 @@
 ko:
-  # ActiveModel/ActiveRecord 기본 검증 메시지는 Rails가 en 로케일만 제공한다.
-  # rails-i18n gem을 쓰지 않으므로 ko 기본값을 여기서 정의한다.
-  # 이 블록이 없으면 모든 모델 검증 오류가 ko에서 "Translation missing"으로 표시된다.
+  # Rails provides default ActiveModel/ActiveRecord validation messages only in English.
+  # Define the Korean defaults here because this application does not use rails-i18n.
+  # Without this block, model validation errors display "Translation missing" in Korean.
   errors:
     rate_limit_exceeded: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
-    # 한국어는 조사가 속성명에 바로 붙으므로 공백 없이 이어 붙인다.
+    # Korean particles attach directly to attribute names, so no separating space is used.
     format: "%{attribute}%{message}"
     messages:
       accepted: "을(를) 반드시 허용해야 합니다"
@@ -40,7 +40,7 @@ ko:
           has_one: "이(가) 존재하기 때문에 삭제할 수 없습니다"
           has_many: "이(가) 존재하기 때문에 삭제할 수 없습니다"
 
-  # Array#to_sentence(오류 배너에서 사용)가 영어 연결어("and")로 떨어지지 않도록 한다.
+  # Prevent Array#to_sentence, used in error banners, from falling back to English connectors.
   support:
     array:
       words_connector: ", "

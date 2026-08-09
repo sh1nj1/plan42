@@ -37,6 +37,9 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
   test "per-user mode isolates users and preserves owner shared identity" do
     shared = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    shared_manifest_token = shared.manifest_token
+    shared_callback_token = shared.callback_token
+    shared_access_token = Doorkeeper::AccessToken.by_token(shared_callback_token)
     @gateway.update!(workspace_mode: :per_user)
 
     owner_workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
@@ -45,6 +48,12 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_equal shared.id, owner_workspace.id
     assert_equal @owner, owner_workspace.user
     assert_equal "agent-#{@agent.id}", owner_workspace.proxy_user_id
+    assert_equal shared_manifest_token, owner_workspace.manifest_token
+    assert_not_equal shared_callback_token, owner_workspace.callback_token
+    assert_predicate shared_access_token.reload, :revoked?
+    owner_access_token = Doorkeeper::AccessToken.by_token(owner_workspace.callback_token)
+    assert_equal @owner.id, owner_access_token.resource_owner_id
+    assert_predicate owner_access_token, :accessible?
     assert_equal "agent-#{@agent.id}--user-#{@other.id}", other_workspace.proxy_user_id
     assert_not_equal owner_workspace.callback_token, other_workspace.callback_token
   end
