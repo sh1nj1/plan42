@@ -17,7 +17,7 @@ describe("creative link navigation", () => {
 
   beforeEach(() => {
     document.body.innerHTML = `
-      <turbo-frame id="${WORKSPACE_FRAME_ID}"></turbo-frame>
+      <turbo-frame id="${WORKSPACE_FRAME_ID}" data-collavre-mount-path=""></turbo-frame>
       <div id="link-container"><a id="creative-link" href="/creatives/42?open_comments=true"><span>Creative</span></a></div>
     `
     visit = jest.fn()
@@ -41,6 +41,7 @@ describe("creative link navigation", () => {
 
   test("navigates a creative link under the engine mount path", () => {
     const anchor = document.getElementById("creative-link")
+    document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
     anchor.setAttribute("href", "/collavre/creatives/42?open_comments=true")
 
     const event = click("#creative-link")
@@ -54,7 +55,6 @@ describe("creative link navigation", () => {
 
   test.each([
     "/creatives?id=42",
-    "/collavre/creatives?open_comments=true&id=42",
   ])("navigates the canonical workspace link %s through the workspace frame", (href) => {
     const anchor = document.getElementById("creative-link")
     anchor.setAttribute("href", href)
@@ -68,9 +68,23 @@ describe("creative link navigation", () => {
     })
   })
 
+  test("navigates a canonical workspace link under the engine mount path", () => {
+    const href = "/collavre/creatives?open_comments=true&id=42"
+    const anchor = document.getElementById("creative-link")
+    document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
+    anchor.setAttribute("href", href)
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith(href, {
+      action: "advance",
+      frame: WORKSPACE_FRAME_ID,
+    })
+  })
+
   test.each([
     "/creatives/42/comments/456",
-    "/collavre/creatives/42/comments/456",
     `${window.location.origin}/creatives/42/comments/456`,
   ])("navigates the comment permalink %s through the workspace frame", (href) => {
     const anchor = document.getElementById("creative-link")
@@ -83,6 +97,35 @@ describe("creative link navigation", () => {
       action: "advance",
       frame: WORKSPACE_FRAME_ID,
     })
+  })
+
+  test("navigates a comment permalink under the engine mount path", () => {
+    const href = "/collavre/creatives/42/comments/456"
+    const anchor = document.getElementById("creative-link")
+    document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
+    anchor.setAttribute("href", href)
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith(href, {
+      action: "advance",
+      frame: WORKSPACE_FRAME_ID,
+    })
+  })
+
+  test.each([
+    "/admin/creatives/42",
+    "/creatives/42",
+  ])("keeps default navigation outside the configured engine mount for %s", (href) => {
+    const anchor = document.getElementById("creative-link")
+    document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
+    anchor.setAttribute("href", href)
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(visit).not.toHaveBeenCalled()
   })
 
   test("returns whether it handled the event", () => {

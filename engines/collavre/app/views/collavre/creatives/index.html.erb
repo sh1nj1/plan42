@@ -294,7 +294,7 @@
 </div>
 <% end %>
 <% if creative_workspace? %>
-  <%= turbo_frame_tag "creative-workspace-content" do %>
+  <%= turbo_frame_tag "creative-workspace-content", data: { collavre_mount_path: request.script_name } do %>
     <%= creative_index_content %>
   <% end %>
 <% else %>
