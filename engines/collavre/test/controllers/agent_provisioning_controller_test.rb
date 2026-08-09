@@ -29,7 +29,7 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
 
     manifest = response.parsed_body
     assert_equal "agent-provisioning/v1", manifest.fetch("schema")
-    assert_equal [ [ "skill", "collavre" ], [ "config", "workspace-config" ] ],
+    assert_equal [ [ "skill", "collavre" ], [ "config", "collavre" ] ],
                  manifest.fetch("items").map { |item| [ item.fetch("type"), item.fetch("name") ] }
 
     manifest.fetch("items").each do |item|

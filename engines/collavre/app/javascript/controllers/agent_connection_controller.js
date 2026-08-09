@@ -145,7 +145,7 @@ export default class extends Controller {
     const items = data.items || data.data || []
     const expected = [
       { type: "skill", name: "collavre" },
-      { type: "config", name: "workspace-config" }
+      { type: "config", name: "collavre" }
     ]
     this.provisionTarget.replaceChildren(...expected.map((expectedItem) => {
       const item = items.find((candidate) => candidate.type === expectedItem.type && candidate.name === expectedItem.name) || expectedItem

@@ -3,7 +3,7 @@
 module Collavre
   class AgentProvisioningController < ActionController::Base
     SKILL_NAME = "collavre"
-    CONFIG_NAME = "workspace-config"
+    CONFIG_NAME = "collavre"
     CACHE_CONTROL = "public, max-age=31536000, immutable"
 
     rate_limit to: 60, within: 1.minute
@@ -49,7 +49,7 @@ module Collavre
       bytes = Collavre::AgentProvisioning::Archive.workspace_config(workspace, base_url: request.base_url)
       return head :not_found unless digest_matches?(bytes)
 
-      send_archive(bytes, "workspace-config.tar.gz", cache_control: "private, no-store")
+      send_archive(bytes, "collavre-config.tar.gz", cache_control: "private, no-store")
     end
 
     private

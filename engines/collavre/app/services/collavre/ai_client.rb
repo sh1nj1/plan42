@@ -301,12 +301,7 @@ module Collavre
           workspace_user = context[:workspace_user] || context[:comment]&.user || agent.creator
           workspace_user = nil if gateway.shared?
           workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
-          @cli_proxy_headers = Collavre::CliProxy::Identity.headers(
-            gateway: gateway,
-            workspace: workspace,
-            method: :post,
-            path: "/v1/chat/completions"
-          )
+          @cli_proxy_identity = { gateway: gateway, workspace: workspace }
           api_key = gateway.completion_key
           base_url = gateway.completion_base_url
         else
@@ -348,9 +343,7 @@ module Collavre
 
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
-        chat.with_headers(**@cli_proxy_headers) if @cli_proxy_headers.present?
-        session_id = build_session_id
-        chat.with_headers("X-Session-Id" => session_id) if session_id
+        apply_request_headers!(chat)
         chat.on_tool_call do |tool_call|
           # Cancellation ahead of the approval gate: a turn that already
           # reached a terminal status or its deadline must end, not park
@@ -360,11 +353,11 @@ module Collavre
           @before_tool_call&.call(true)
           check_tool_approval!(tool_call)
         end
-        if @request_timeout_seconds
+        if @request_timeout_seconds || @cli_proxy_identity
           chat.after_tool_result do |_result|
             # A tool can consume much of the turn. Recheck the deadline and
-            # rebuild RubyLLM's provider connection with the new remaining
-            # timeout before the loop starts its next request.
+            # refresh request-scoped state before the loop starts its next
+            # provider request.
             refresh_turn_boundary!(chat)
           end
         end
@@ -377,11 +370,31 @@ module Collavre
     end
 
     def refresh_turn_boundary!(conversation)
-      @before_tool_call&.call(true)
-      return unless @request_timeout_seconds && @ruby_llm_context
+      if @request_timeout_seconds
+        @before_tool_call&.call(true)
+        if @ruby_llm_context
+          @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
+          conversation.with_context(@ruby_llm_context)
+        end
+      end
 
-      @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
-      conversation.with_context(@ruby_llm_context)
+      apply_request_headers!(conversation)
+    end
+
+    def apply_request_headers!(conversation)
+      headers = {}
+      session_id = build_session_id
+      headers["X-Session-Id"] = session_id if session_id
+
+      if @cli_proxy_identity
+        headers.merge!(Collavre::CliProxy::Identity.headers(
+          **@cli_proxy_identity,
+          method: :post,
+          path: "/v1/chat/completions"
+        ))
+      end
+
+      conversation.with_headers(**headers) if headers.present?
     end
 
     def effective_request_timeout_seconds

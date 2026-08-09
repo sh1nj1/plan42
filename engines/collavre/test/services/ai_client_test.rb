@@ -5,7 +5,7 @@ require "ostruct"
 
 class AiClientTest < ActiveSupport::TestCase
   class FakeConversation
-    attr_reader :messages_added, :instructions_set, :headers_set
+    attr_reader :messages_added, :instructions_set, :headers_set, :headers_history
     attr_reader :after_tool_result_callback, :context_set
 
     def initialize(response_content: "final response")
@@ -13,6 +13,7 @@ class AiClientTest < ActiveSupport::TestCase
       @messages_added = []
       @instructions_set = nil
       @headers_set = nil
+      @headers_history = []
     end
 
     def with_instructions(instructions)
@@ -21,6 +22,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     def with_headers(**headers)
       @headers_set = headers
+      @headers_history << headers
       self
     end
 
@@ -506,7 +508,12 @@ class AiClientTest < ActiveSupport::TestCase
       vendor: "cli_proxy",
       model: agent.llm_model,
       system_prompt: nil,
-      context: { user: agent, workspace_user: workspace_user }
+      context: {
+        user: agent,
+        workspace_user: workspace_user,
+        creative: OpenStruct.new(id: 42),
+        topic_id: 7
+      }
     )
     fake_chat = FakeConversation.new
     context_config = RubyLLM.config.dup
@@ -528,6 +535,16 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal "agent-#{agent.id}--user-#{workspace_user.id}",
                  fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
     assert fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature").present?
+    assert_equal "creative_42_topic_7", fake_chat.headers_set.fetch("X-Session-Id")
+
+    initial_signature = fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature")
+    Time.stub(:current, Time.current + 10.minutes) do
+      fake_chat.after_tool_result_callback.call("tool result")
+    end
+
+    assert_equal "creative_42_topic_7", fake_chat.headers_set.fetch("X-Session-Id")
+    refute_equal initial_signature, fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature")
+    assert_equal 2, fake_chat.headers_history.size
   end
 
   test "system-admin CLI Proxy gateways retain the default HTTP adapter" do
