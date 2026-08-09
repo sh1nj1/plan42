@@ -126,6 +126,35 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
   end
 
+  test "changing the proxy or tenant revokes existing workspace capabilities" do
+    {
+      base_url: "https://replacement-proxy.example.com",
+      tenant_id: "replacement-tenant"
+    }.each do |attribute, replacement|
+      gateway = build_gateway(identity_secret: "s" * 32)
+      gateway.save!
+      agent = create_agent(gateway)
+      workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+      manifest_token = workspace.manifest_token
+      callback_token = workspace.callback_token
+      access_token = Doorkeeper::AccessToken.by_token(callback_token)
+
+      gateway.update!(attribute => replacement)
+
+      assert_not Collavre::AgentWorkspace.exists?(workspace.id), "expected #{attribute} change to revoke the workspace"
+      assert_predicate access_token.reload, :revoked?
+      assert_raises(ActiveRecord::RecordNotFound) do
+        Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: agent.id, token: manifest_token)
+      end
+
+      replacement_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+      assert_not_equal workspace.id, replacement_workspace.id
+      assert_not_equal manifest_token, replacement_workspace.manifest_token
+      assert_not_equal callback_token, replacement_workspace.callback_token
+      assert_predicate Doorkeeper::AccessToken.by_token(replacement_workspace.callback_token), :accessible?
+    end
+  end
+
   private
 
   def build_gateway(overrides = {})

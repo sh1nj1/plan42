@@ -27,7 +27,7 @@ module Collavre
     validate :base_url_is_http
     validate :base_url_is_safe_for_owner
     validate :identity_secret_is_usable
-    after_update :reconcile_workspaces_after_mode_change, if: :saved_change_to_workspace_mode?
+    after_update :reconcile_workspaces_after_gateway_change, if: :workspace_scope_changed?
 
     scope :active, -> { where(active: true) }
 
@@ -74,7 +74,16 @@ module Collavre
       errors.add(:identity_secret, :too_short, count: MIN_IDENTITY_SECRET_BYTES)
     end
 
-    def reconcile_workspaces_after_mode_change
+    def workspace_scope_changed?
+      saved_change_to_base_url? || saved_change_to_tenant_id? || saved_change_to_workspace_mode?
+    end
+
+    def reconcile_workspaces_after_gateway_change
+      if saved_change_to_base_url? || saved_change_to_tenant_id?
+        agent_workspaces.destroy_all
+        return
+      end
+
       return unless shared?
 
       agents.find_each do |agent|
