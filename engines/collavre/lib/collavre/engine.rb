@@ -4,8 +4,7 @@ require "collavre/hashed_access_token_lookup"
 module Collavre
   class Engine < ::Rails::Engine
     PROVISIONING_CAPABILITY_PATH = %r{
-      \A(?:/[^/]+)*/agents/\d+/workspaces/[^/]+/
-      .*\z
+      \A(?:/[^/]+)*/agents/\d+/workspaces/[^/]+(?:/.*)?\z
     }x
 
     isolate_namespace Collavre

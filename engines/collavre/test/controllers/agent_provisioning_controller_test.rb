@@ -110,11 +110,13 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
       sha256: "a" * 64
     )
     malformed_config_path = config_path.sub("a" * 64, "NOT-A-DIGEST")
+    truncated_path = manifest_path.sub(%r{/provision\.json\z}, "")
     skill_path = collavre.agent_provision_skill_path(sha256: "a" * 64)
 
     assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, manifest_path
     assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, config_path
     assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, malformed_config_path
+    assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, truncated_path
     assert_no_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, skill_path
 
     output = StringIO.new
@@ -140,6 +142,14 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
       silencer.call("PATH_INFO" => manifest_path)
     end
     assert_empty output.string
+
+    output.truncate(0)
+    output.rewind
+    Rails.stub(:logger, logger) do
+      get truncated_path
+    end
+    assert_response :not_found
+    refute_includes output.string, @workspace.manifest_token
 
     output.truncate(0)
     output.rewind

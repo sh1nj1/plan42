@@ -154,6 +154,35 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal gateway, @ai_user.agent_gateway
   end
 
+  test "profile shows connection help for the gateway workspace mode in both locales" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @admin,
+      name: "Profile help proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32
+    )
+    @ai_user.update!(
+      created_by_id: @admin.id,
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      agent_gateway: gateway
+    )
+
+    get user_url(@ai_user)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.agent_connections.profile_help.shared", locale: :en)
+    assert_not_includes response.body, I18n.t("collavre.agent_connections.profile_help.per_user", locale: :en)
+
+    gateway.update!(workspace_mode: :per_user)
+    @admin.update!(locale: "ko")
+    get user_url(@ai_user)
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.agent_connections.profile_help.per_user", locale: :ko)
+    assert_not_includes response.body, I18n.t("collavre.agent_connections.profile_help.shared", locale: :ko)
+  end
+
   test "does not assign a different inactive gateway while editing" do
     inactive_gateway = Collavre::AgentGateway.create!(
       owner: @admin,

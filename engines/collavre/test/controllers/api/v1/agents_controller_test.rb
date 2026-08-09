@@ -1508,6 +1508,116 @@ module Collavre
           assert_not_nil dispatcher_args, "A2aDispatcher should have been instantiated"
           assert_equal reg["agent_id"], dispatcher_args[:agent].id
           assert_equal text, dispatcher_args[:reply_comment].content
+          assert_equal @user, dispatcher_args[:workspace_user]
+        end
+
+        test "reply recovers the claimed task original human for A2A dispatch" do
+          reg = register_agent("a2a-principal-test")
+          channel_agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+          initiating_user = users(:two)
+          original_comment = creative.comments.create!(
+            content: "Ask the channel",
+            topic: topic,
+            user: initiating_user,
+            skip_dispatch: true
+          )
+          task = Collavre::Task.create!(
+            name: "Channel A2A principal",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            trigger_event_payload: { "comment" => { "id" => original_comment.id } },
+            agent: channel_agent,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+
+          dispatcher_args = nil
+          mock_new = lambda { |**kwargs|
+            dispatcher_args = kwargs
+            mock = Minitest::Mock.new
+            mock.expect(:dispatch, nil)
+            mock
+          }
+
+          Collavre::AiAgent::A2aDispatcher.stub(:new, mock_new) do
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic.id, text: "@#{users(:ai_bot).name}: continue", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+          end
+
+          assert_response :created
+          assert_equal initiating_user, dispatcher_args[:workspace_user]
+        end
+
+        test "reply preserves a claimed task carried principal and nil sentinel for A2A dispatch" do
+          reg = register_agent("a2a-carried-principal-test")
+          channel_agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          creative = topic.creative.effective_origin
+          initiating_user = users(:two)
+          task = Collavre::Task.create!(
+            name: "Carried channel A2A principal",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            trigger_event_payload: { "workspace_user_id" => initiating_user.id },
+            agent: channel_agent,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+
+          dispatcher_args = []
+          mock_new = lambda { |**kwargs|
+            dispatcher_args << kwargs
+            mock = Minitest::Mock.new
+            mock.expect(:dispatch, nil)
+            mock
+          }
+
+          Collavre::AiAgent::A2aDispatcher.stub(:new, mock_new) do
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic.id, text: "@#{users(:ai_bot).name}: continue", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+          end
+
+          assert_response :created
+          assert_equal initiating_user, dispatcher_args.last[:workspace_user]
+
+          original_comment = creative.comments.create!(
+            content: "A human anchor that must not override the sentinel",
+            topic: topic,
+            user: initiating_user,
+            skip_dispatch: true
+          )
+          sentinel_task = Collavre::Task.create!(
+            name: "Cleared channel A2A principal",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            trigger_event_payload: {
+              "workspace_user_id" => nil,
+              "comment" => { "id" => original_comment.id }
+            },
+            agent: channel_agent,
+            topic_id: topic.id,
+            creative_id: creative.id
+          )
+
+          Collavre::AiAgent::A2aDispatcher.stub(:new, mock_new) do
+            post "/api/v1/agent/reply",
+              params: {
+                topic_id: topic.id,
+                text: "@#{users(:ai_bot).name}: do not inherit the anchor",
+                task_id: sentinel_task.id
+              },
+              headers: auth_headers,
+              as: :json
+          end
+
+          assert_response :created
+          assert_nil dispatcher_args.last[:workspace_user]
         end
 
         test "reply checks creative permission" do

@@ -77,7 +77,9 @@ ko:
       title: "%{agent} 연결"
       card_title: 엔진 연결 및 프로비저닝
       card_help: provider 로그인은 선택한 게이트웨이의 워크스페이스 모드에 따라 분리됩니다. Collavre 스킬과 워크스페이스 설정은 함께 프로비저닝됩니다.
-      profile_help: 이 에이전트는 사용자별 CLI Proxy 워크스페이스를 사용합니다. 사용 전에 내 provider를 연결하세요.
+      profile_help:
+        shared: 이 에이전트는 하나의 공유 CLI Proxy 워크스페이스를 사용합니다. 에이전트 소유자가 공유 provider 연결을 관리합니다.
+        per_user: 이 에이전트는 사용자별 CLI Proxy 워크스페이스를 사용합니다. 사용 전에 내 provider를 연결하세요.
       manage: 내 연결 관리
       engines: Agent provider
       loading: 불러오는 중…

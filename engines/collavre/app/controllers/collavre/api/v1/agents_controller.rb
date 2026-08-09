@@ -203,7 +203,7 @@ module Collavre
 
           if comment.save
             task_claim_service.finalize(agent: agent, task: claimed_task, comment: comment) if claimed_task
-            dispatch_a2a(agent, comment)
+            dispatch_a2a(agent, comment, task: claimed_task)
             render json: { comment_id: comment.id }, status: :created
           else
             # Restore the dispatch so the MCP client can retry — the failure
@@ -570,15 +570,34 @@ module Collavre
           end
         end
 
-        def dispatch_a2a(agent, comment)
+        def dispatch_a2a(agent, comment, task:)
           AiAgent::A2aDispatcher.new(
             agent: agent,
             reply_comment: comment,
             context: {
               "creative" => { "id" => comment.creative_id },
               "topic" => { "id" => comment.topic_id }
-            }
+            },
+            workspace_user: workspace_user_for(task)
           ).dispatch
+        end
+
+        def workspace_user_for(task)
+          unless task
+            return current_user unless current_user.ai_user?
+
+            return
+          end
+
+          payload = task.trigger_event_payload || {}
+          user =
+            if payload.key?("workspace_user_id")
+              User.find_by(id: payload["workspace_user_id"])
+            else
+              Comment.find_by(id: payload.dig("comment", "id"))&.user
+            end
+
+          user unless user&.ai_user?
         end
 
         # Provisions the (agent, topic) identities for a Claude Code

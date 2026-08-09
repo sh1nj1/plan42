@@ -23,7 +23,7 @@
         </div>
         <% if @user.cli_proxy_agent? && @user.gateway_accessible_to?(Current.user) && (@user.agent_gateway.per_user? || @user.created_by_id == Current.user.id || Current.user.system_admin?) %>
           <div class="alert alert-info">
-            <%= t("collavre.agent_connections.profile_help") %>
+            <%= t("collavre.agent_connections.profile_help.#{@user.agent_gateway.workspace_mode}") %>
             <%= link_to t("collavre.agent_connections.manage"), collavre.agent_connection_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
           </div>
         <% end %>

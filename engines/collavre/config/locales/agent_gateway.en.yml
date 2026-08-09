@@ -77,7 +77,9 @@ en:
       title: "%{agent} connection"
       card_title: Engine connection and provisioning
       card_help: Provider login is scoped according to the selected gateway's workspace mode. The Collavre skill and workspace config are provisioned together.
-      profile_help: This agent uses per-user CLI Proxy workspaces. Connect your own providers before using it.
+      profile_help:
+        shared: This agent uses one shared CLI Proxy workspace. Its owner manages the shared provider connection.
+        per_user: This agent uses per-user CLI Proxy workspaces. Connect your own providers before using it.
       manage: Manage connection
       engines: Agent providers
       loading: Loading…
