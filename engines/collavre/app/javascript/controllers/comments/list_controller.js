@@ -1067,17 +1067,20 @@ export default class extends Controller {
 
         return {
           html: await response.text(),
-          onboardingCardId: response.headers?.get?.('X-Onboarding-Card-Id'),
-          onboardingRootId: response.headers?.get?.('X-Onboarding-Root-Id'),
+          onboardingCardIds: response.headers?.get?.('X-Onboarding-Card-Ids') || response.headers?.get?.('X-Onboarding-Card-Id'),
+          onboardingRootIds: response.headers?.get?.('X-Onboarding-Root-Ids') || response.headers?.get?.('X-Onboarding-Root-Id'),
+          onboardingCreatedCardIds: response.headers?.get?.('X-Onboarding-Created-Card-Ids'),
           onboardingCreatedCreativeId: response.headers?.get?.('X-Onboarding-Created-Creative-Id'),
         }
       })
-      .then(async ({ html, onboardingCardId, onboardingRootId, onboardingCreatedCreativeId }) => {
+      .then(async ({ html, onboardingCardIds, onboardingRootIds, onboardingCreatedCardIds, onboardingCreatedCreativeId }) => {
         if (!html) { button.disabled = false; return; }
         const existing = document.getElementById(`comment_${commentId}`)
         if (existing) existing.outerHTML = html
-        if (onboardingCreatedCreativeId) await this.reloadCreativeChildren(onboardingCardId)
-        this.formController?._refreshOnboardingItems(onboardingCardId, onboardingRootId)
+        const createdCardIds = (onboardingCreatedCardIds || (onboardingCreatedCreativeId ? onboardingCardIds : ''))
+          .split(',').filter(Boolean)
+        for (const cardId of createdCardIds) await this.reloadCreativeChildren(cardId)
+        this.formController?._refreshOnboardingItems(onboardingCardIds, onboardingRootIds)
       })
       .catch(e => { alertDialog(e.message); button.disabled = false; })
   }

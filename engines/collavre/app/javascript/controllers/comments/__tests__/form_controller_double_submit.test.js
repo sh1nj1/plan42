@@ -184,4 +184,25 @@ describe('FormController - double submit on slow API', () => {
     expect(onboardingRow._refreshOnboardingCard).toHaveBeenCalledWith('42')
     expect(onboardingRoot._refreshOnboardingCard).toHaveBeenCalledWith('84')
   })
+
+  test('refreshes every onboarding card returned by a batched approval', () => {
+    const firstCard = document.createElement('creative-tree-row')
+    firstCard.setAttribute('creative-id', '42')
+    firstCard._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(firstCard)
+    const secondCard = document.createElement('creative-tree-row')
+    secondCard.setAttribute('creative-id', '43')
+    secondCard._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(secondCard)
+    const root = document.createElement('creative-tree-row')
+    root.setAttribute('creative-id', '84')
+    root._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(root)
+
+    controller._refreshOnboardingItems('42,43', '84')
+
+    expect(firstCard._refreshOnboardingCard).toHaveBeenCalledWith('42')
+    expect(secondCard._refreshOnboardingCard).toHaveBeenCalledWith('43')
+    expect(root._refreshOnboardingCard).toHaveBeenCalledWith('84')
+  })
 })

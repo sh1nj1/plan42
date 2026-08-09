@@ -1576,8 +1576,10 @@ export default class extends Controller {
     }
   }
 
-  _refreshOnboardingItems(cardId, rootId) {
-    for (const id of [cardId, rootId]) this._refreshOnboardingCard(id)
+  _refreshOnboardingItems(cardIds, rootIds) {
+    for (const ids of [cardIds, rootIds]) {
+      for (const id of String(ids || '').split(',').filter(Boolean)) this._refreshOnboardingCard(id)
+    }
   }
 
   _refreshOnboardingCard(cardId) {

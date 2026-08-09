@@ -111,6 +111,9 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     assert_equal "practice", practice.onboarding_metadata["role"]
     assert_equal card, executor.onboarding_card
     assert_equal practice, executor.onboarding_created_creative
+    assert_equal [ card ], executor.onboarding_cards
+    assert_equal [ practice ], executor.onboarding_created_creatives
+    assert_equal [ card ], executor.onboarding_created_cards
 
     update_comment = practice.comments.create!(
       content: "Revise the practice Creative",

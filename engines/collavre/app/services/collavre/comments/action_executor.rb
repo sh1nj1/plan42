@@ -5,7 +5,15 @@ module Collavre
     class ActionExecutor
       class ExecutionError < StandardError; end
 
-      attr_reader :onboarding_card, :onboarding_created_creative
+      attr_reader :onboarding_cards, :onboarding_created_creatives, :onboarding_created_cards
+
+      def onboarding_card
+        onboarding_cards&.last
+      end
+
+      def onboarding_created_creative
+        onboarding_created_creatives&.last
+      end
 
       def initialize(comment:, executor:)
         @comment = comment
@@ -66,8 +74,9 @@ module Collavre
       def execute_action!
         context = ExecutionContext.new(comment, executor: executor)
         context.evaluate(comment.action)
-        @onboarding_card = context.onboarding_card
-        @onboarding_created_creative = context.onboarding_created_creative
+        @onboarding_cards = context.onboarding_cards
+        @onboarding_created_creatives = context.onboarding_created_creatives
+        @onboarding_created_cards = context.onboarding_created_cards
       rescue ExecutionContext::InvalidActionError => e
         raise ExecutionError, e.message
       end
@@ -88,9 +97,12 @@ module Collavre
         def initialize(comment, executor: nil)
           @comment = comment
           @executor = executor || comment.user || Current.user
+          @onboarding_cards = []
+          @onboarding_created_creatives = []
+          @onboarding_created_cards = []
         end
 
-        attr_reader :comment, :executor, :onboarding_card, :onboarding_created_creative
+        attr_reader :comment, :executor, :onboarding_cards, :onboarding_created_creatives, :onboarding_created_cards
 
         def evaluate(code)
           payload = parse_payload(code)
@@ -148,8 +160,9 @@ module Collavre
             user: executor
           )
           if tracked_card
-            @onboarding_card = tracked_card
-            @onboarding_created_creative = new_creative
+            record_onboarding_card(tracked_card)
+            @onboarding_created_creatives << new_creative
+            @onboarding_created_cards << tracked_card unless @onboarding_created_cards.include?(tracked_card)
           end
           new_creative.broadcast_creative_created
         rescue ActiveRecord::RecordInvalid => e
@@ -167,9 +180,13 @@ module Collavre
             user: executor,
             changed_attributes: attributes.keys
           )
-          @onboarding_card = tracked_card if tracked_card
+          record_onboarding_card(tracked_card) if tracked_card
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
+        end
+
+        def record_onboarding_card(card)
+          @onboarding_cards << card unless @onboarding_cards.include?(card)
         end
 
         def delete_creative(payload)

@@ -68,6 +68,30 @@ describe('CommentsListController onboarding approval refresh', () => {
     expect(formController._refreshOnboardingItems).toHaveBeenCalledWith('42', '84')
   })
 
+  test('refreshes every card changed by a batched approval', async () => {
+    const { controller, formController } = buildController()
+    const headers = new Map([
+      ['X-Onboarding-Card-Ids', '42,43'],
+      ['X-Onboarding-Root-Ids', '84'],
+      ['X-Onboarding-Created-Card-Ids', '42'],
+      ['X-Onboarding-Created-Creative-Ids', '126'],
+      ['X-Onboarding-Card-Id', '43'],
+      ['X-Onboarding-Root-Id', '84'],
+      ['X-Onboarding-Created-Creative-Id', '126'],
+    ])
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: jest.fn().mockResolvedValue('<div id="comment_7">Approved</div>'),
+      headers: { get: (name) => headers.get(name) },
+    })
+
+    await controller.decideComment(document.querySelector('button'), 'approve')
+
+    expect(controller.reloadCreativeChildren).toHaveBeenCalledTimes(1)
+    expect(controller.reloadCreativeChildren).toHaveBeenCalledWith('42')
+    expect(formController._refreshOnboardingItems).toHaveBeenCalledWith('42,43', '84')
+  })
+
   test('reports an approval error and re-enables the button', async () => {
     const { controller } = buildController()
     const button = document.querySelector('button')

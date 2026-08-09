@@ -118,14 +118,22 @@ module Collavre
       private
 
       def set_onboarding_refresh_headers(executor)
-        card = executor.onboarding_card
-        return unless card
+        cards = Array(executor.onboarding_cards)
+        return if cards.empty?
 
-        headers["X-Onboarding-Card-Id"] = card.id.to_s
-        headers["X-Onboarding-Root-Id"] = card.onboarding_session_root&.id&.to_s
-        if executor.onboarding_created_creative
-          headers["X-Onboarding-Created-Creative-Id"] = executor.onboarding_created_creative.id.to_s
-        end
+        roots = cards.filter_map(&:onboarding_session_root).uniq
+        created_creatives = Array(executor.onboarding_created_creatives)
+        created_cards = Array(executor.onboarding_created_cards)
+
+        headers["X-Onboarding-Card-Ids"] = cards.map(&:id).join(",")
+        headers["X-Onboarding-Root-Ids"] = roots.map(&:id).join(",")
+        headers["X-Onboarding-Card-Id"] = cards.last.id.to_s
+        headers["X-Onboarding-Root-Id"] = roots.last&.id&.to_s
+        return if created_creatives.empty?
+
+        headers["X-Onboarding-Created-Creative-Ids"] = created_creatives.map(&:id).join(",")
+        headers["X-Onboarding-Created-Card-Ids"] = created_cards.map(&:id).join(",")
+        headers["X-Onboarding-Created-Creative-Id"] = created_creatives.last.id.to_s
       end
 
       # Resolve a Claude Channel permission prompt: gate on the approver, record

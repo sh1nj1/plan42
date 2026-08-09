@@ -209,6 +209,47 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "in_progress", card.onboarding_metadata["status"]
   end
 
+  test "approved action batch returns every changed onboarding card" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    create_card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+    progress_card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "progress_rollup" }
+    progress_practice = progress_card.children.sole
+    comment = guide.comments.create!(
+      content: "Complete two onboarding actions",
+      user: @user,
+      action: JSON.generate(
+        "actions" => [
+          {
+            "action" => "create_creative",
+            "parent_id" => create_card.id,
+            "attributes" => { "description" => "First draft" }
+          },
+          {
+            "action" => "update_creative",
+            "creative_id" => progress_practice.id,
+            "attributes" => { "progress" => 1.0 }
+          }
+        ]
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    post approve_creative_comment_path(guide, comment)
+
+    assert_response :success
+    created_practice = Creative.find(create_card.reload.onboarding_metadata["target_creative_id"])
+    assert_equal [ create_card.id, progress_card.id ].join(","), response.headers["X-Onboarding-Card-Ids"]
+    assert_equal guide.id.to_s, response.headers["X-Onboarding-Root-Ids"]
+    assert_equal create_card.id.to_s, response.headers["X-Onboarding-Created-Card-Ids"]
+    assert_equal created_practice.id.to_s, response.headers["X-Onboarding-Created-Creative-Ids"]
+    assert_equal progress_card.id.to_s, response.headers["X-Onboarding-Card-Id"]
+    assert_equal "in_progress", create_card.onboarding_metadata["status"]
+    assert_equal "completed", progress_card.reload.onboarding_metadata["status"]
+  end
+
   test "cannot execute comment action more than once" do
     action_payload = {
       "action" => "update_creative",
