@@ -384,11 +384,30 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_text I18n.t("collavre.creatives.workspace.select_chat")
   end
 
+  test "workspace tree keeps a childless root visible and selectable" do
+    resize_window_to(1440, 900)
+    branch = Creative.create!(user: @user, description: "Childless root sibling branch")
+    Creative.create!(user: @user, parent: branch, description: "Sibling child")
+    childless_root = Creative.create!(user: @user, description: "Childless workspace root")
+
+    visit collavre.creatives_path(id: branch.id)
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{childless_root.id}']", wait: 10
+
+    find(".creative-workspace-tree-link[data-creative-id='#{childless_root.id}']").click
+
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{childless_root.id}'].is-current", wait: 10
+    assert_selector "#comments-popup[data-creative-id='#{childless_root.id}']", visible: :visible, wait: 10
+  end
+
+  # Structural refresh is asserted one level below the root: roots always
+  # render, so only a nested branch flips in and out of the tree when its
+  # children appear and disappear.
   test "workspace tree refreshes first-child and last-child structural changes" do
     resize_window_to(1440, 900)
-    stable_branch = Creative.create!(user: @user, description: "Stable workspace branch")
+    root = Creative.create!(user: @user, description: "Structural workspace root")
+    stable_branch = Creative.create!(user: @user, parent: root, description: "Stable workspace branch")
     Creative.create!(user: @user, parent: stable_branch, description: "Stable child")
-    changing_creative = Creative.create!(user: @user, description: "Changing workspace creative")
+    changing_creative = Creative.create!(user: @user, parent: root, description: "Changing workspace creative")
 
     visit collavre.creatives_path(id: stable_branch.id)
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{stable_branch.id}']", wait: 10
@@ -407,7 +426,8 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
   test "workspace tree refresh does not reopen a destroyed creative chat" do
     resize_window_to(1440, 900)
-    branch = Creative.create!(user: @user, description: "Destroyed chat branch")
+    root = Creative.create!(user: @user, description: "Destroyed chat root")
+    branch = Creative.create!(user: @user, parent: root, description: "Destroyed chat branch")
     leaf = Creative.create!(user: @user, parent: branch, description: "Destroyed chat leaf")
 
     visit collavre.creatives_path(id: leaf.id)
