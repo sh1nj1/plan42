@@ -220,6 +220,92 @@ describe('FormController - IME composition send', () => {
     expect(chatDrafts.get(chatId)).toBeNull()
   })
 
+  test.each(['paste', 'drop'])('a compositionend that trails the commit input does not swallow a later %s', async (gesture) => {
+    dispatchTopicChange()
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+
+    typeInto(controller.textareaTarget, 'send me twice')
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    // Input-before-compositionend ordering: the commit input already identified
+    // itself, so the trailing compositionend has no input left to pair with.
+    controller.textareaTarget.dispatchEvent(
+      new InputEvent('input', { bubbles: true, isComposing: true }),
+    )
+    controller.textareaTarget.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true, data: 'send me twice' }),
+    )
+
+    // Select-all + paste (or drag-drop) of the identical string to send it again.
+    controller.textareaTarget.dispatchEvent(new Event(gesture, { bubbles: true }))
+    typeInto(controller.textareaTarget, 'send me twice')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('send me twice')
+    expect(chatDrafts.get(chatId)).toBe('send me twice')
+  })
+
+  test('a compositionend that trails the commit input does not swallow later typing', async () => {
+    dispatchTopicChange()
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+
+    typeInto(controller.textareaTarget, 'send me twice')
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.textareaTarget.dispatchEvent(
+      new InputEvent('input', { bubbles: true, isComposing: true }),
+    )
+    controller.textareaTarget.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true, data: 'send me twice' }),
+    )
+
+    // Retyping the same string by hand — an ordinary keystroke, not a commit.
+    controller.textareaTarget.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'e',
+      isComposing: false,
+      bubbles: true,
+      cancelable: true,
+    }))
+    typeInto(controller.textareaTarget, 'send me twice')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('send me twice')
+    expect(chatDrafts.get(chatId)).toBe('send me twice')
+  })
+
+  test('a composing keydown between compositionend and the commit input keeps the latch', async () => {
+    dispatchTopicChange()
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+
+    typeInto(controller.textareaTarget, '안녕하세요')
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    controller.textareaTarget.dispatchEvent(
+      new CompositionEvent('compositionend', { bubbles: true, data: '안녕하세요' }),
+    )
+    // Soft keyboards can interleave the next composing keystroke before the
+    // commit input lands; that is not a fresh gesture, so it must not expire.
+    controller.textareaTarget.dispatchEvent(new KeyboardEvent('keydown', {
+      keyCode: 229,
+      bubbles: true,
+      cancelable: true,
+    }))
+    controller.textareaTarget.dispatchEvent(new Event('input', { bubbles: true }))
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get(chatId)).toBeNull()
+  })
+
   test('text genuinely typed during the send is still preserved', async () => {
     dispatchTopicChange()
     let finishFetch

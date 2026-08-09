@@ -156,6 +156,16 @@ export default class extends Controller {
     this._handleCompositionEnd = () => {
       this._imeCommitPending = true
     }
+    // Chrome fires the commit `input` after `compositionend`, but Firefox has
+    // shipped the reverse order, where the commit input consumes the latch
+    // before it is even set. Nothing would clear the leftover latch, so the
+    // next ordinary edit would be misread as a commit. The commit input always
+    // arrives before the user can act again, so any fresh gesture expires it.
+    this._expireImeCommitLatch = (event) => {
+      if (event?.isComposing || event?.keyCode === 229) return
+
+      this._imeCommitPending = false
+    }
     this._handleDraftInput = (event) => {
       // Consume the composition flag before any early return, so it can never
       // outlive the `input` event that the commit itself fired. Firefox has
@@ -183,6 +193,9 @@ export default class extends Controller {
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
     }
     this.textareaTarget.addEventListener('compositionend', this._handleCompositionEnd)
+    this.textareaTarget.addEventListener('keydown', this._expireImeCommitLatch)
+    this.textareaTarget.addEventListener('paste', this._expireImeCommitLatch)
+    this.textareaTarget.addEventListener('drop', this._expireImeCommitLatch)
     this.textareaTarget.addEventListener('input', this._handleDraftInput)
     window.addEventListener('pagehide', this._handlePageHide)
     window.addEventListener('storage', this._handleDraftStorage)
@@ -296,6 +309,9 @@ export default class extends Controller {
   disconnect() {
     this._flushDraftSave()
     this.textareaTarget.removeEventListener('compositionend', this._handleCompositionEnd)
+    this.textareaTarget.removeEventListener('keydown', this._expireImeCommitLatch)
+    this.textareaTarget.removeEventListener('paste', this._expireImeCommitLatch)
+    this.textareaTarget.removeEventListener('drop', this._expireImeCommitLatch)
     this.textareaTarget.removeEventListener('input', this._handleDraftInput)
     window.removeEventListener('pagehide', this._handlePageHide)
     window.removeEventListener('storage', this._handleDraftStorage)
