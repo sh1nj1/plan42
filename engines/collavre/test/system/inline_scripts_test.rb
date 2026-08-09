@@ -7,9 +7,10 @@ class InlineScriptsTest < ApplicationSystemTestCase
       password: SystemHelpers::PASSWORD,
       name: "TestUser",
       email_verified_at: Time.current,
-      notifications_enabled: false,
-      creative_workspace_enabled: true
+      notifications_enabled: false
     )
+    # creative_workspace_enabled is intentionally left unset: these tests rely on
+    # the workspace being on by default.
 
     resize_window_to
     sign_in_via_ui(@user)
@@ -121,31 +122,32 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
   public
 
-  test "profile toggles the creative workspace from its default off state" do
-    @user.update!(creative_workspace_enabled: false)
+  test "profile toggles the creative workspace from its default on state" do
+    assert_predicate @user, :creative_workspace_enabled?
 
+    visit root_path
+    assert_selector ".creative-workspace-shell"
+    assert_selector "#comments-popup[data-docked='true']", visible: :visible
+
+    visit collavre.user_path(@user)
+    workspace_toggle = find("#user_creative_workspace_enabled")
+    assert workspace_toggle.checked?
+    workspace_toggle.uncheck
+    click_button I18n.t("collavre.users.update_profile")
+
+    assert_text I18n.t("collavre.users.profile_updated")
     visit root_path
     assert_no_selector ".creative-workspace-shell"
     assert_selector "#comments-popup[data-docked='false']", visible: :all
 
     visit collavre.user_path(@user)
-    workspace_toggle = find("#user_creative_workspace_enabled")
-    assert_not workspace_toggle.checked?
-    workspace_toggle.check
+    find("#user_creative_workspace_enabled").check
     click_button I18n.t("collavre.users.update_profile")
 
     assert_text I18n.t("collavre.users.profile_updated")
     visit root_path
     assert_selector ".creative-workspace-shell"
     assert_selector "#comments-popup[data-docked='true']", visible: :visible
-
-    visit collavre.user_path(@user)
-    find("#user_creative_workspace_enabled").uncheck
-    click_button I18n.t("collavre.users.update_profile")
-
-    visit root_path
-    assert_no_selector ".creative-workspace-shell"
-    assert_selector "#comments-popup[data-docked='false']", visible: :all
   end
 
   test "plans menu opens and loads plans on click" do
