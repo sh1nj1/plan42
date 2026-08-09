@@ -48,12 +48,13 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
   end
 
   test "description creative link advances the URL within the workspace frame" do
+    target_path = collavre.creatives_path(id: @target.id)
     @source.update!(
-      description: %(<p><a href="/creatives/#{@target.id}" data-creative-id="#{@target.id}">Open target</a></p>)
+      description: %(<p><a href="#{target_path}" data-creative-id="#{@target.id}">Open target</a></p>)
     )
 
     visit collavre.creatives_path(id: @source.id)
-    link_selector = "#creative-workspace-content a[href='/creatives/#{@target.id}']"
+    link_selector = "#creative-workspace-content a[href='#{target_path}']"
     assert_selector link_selector, text: "Open target", wait: 10
     mark_workspace_shell
 

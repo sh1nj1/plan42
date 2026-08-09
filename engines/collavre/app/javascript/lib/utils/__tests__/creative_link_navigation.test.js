@@ -53,6 +53,22 @@ describe("creative link navigation", () => {
   })
 
   test.each([
+    "/creatives?id=42",
+    "/collavre/creatives?open_comments=true&id=42",
+  ])("navigates the canonical workspace link %s through the workspace frame", (href) => {
+    const anchor = document.getElementById("creative-link")
+    anchor.setAttribute("href", href)
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith(href, {
+      action: "advance",
+      frame: WORKSPACE_FRAME_ID,
+    })
+  })
+
+  test.each([
     "/creatives/42/comments/456",
     "/collavre/creatives/42/comments/456",
     `${window.location.origin}/creatives/42/comments/456`,
@@ -85,6 +101,8 @@ describe("creative link navigation", () => {
     ["an invalid URL", { href: "http://[" }, {}],
     ["a creative slide view", { href: "/creatives/42/slide_view" }, {}],
     ["a nested creative route", { href: "/creatives/42/topics" }, {}],
+    ["a creative index without an id", { href: "/creatives?search=target" }, {}],
+    ["a creative index with an invalid id", { href: "/creatives?id=target" }, {}],
     ["a nested comment action", { href: "/creatives/42/comments/456/download_images" }, {}],
     ["a download", { download: "creative.txt" }, {}],
     ["a new-window target", { target: "_blank" }, {}],
