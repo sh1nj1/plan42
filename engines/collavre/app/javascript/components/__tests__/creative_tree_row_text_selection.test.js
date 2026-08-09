@@ -105,6 +105,64 @@ describe("creative-tree-row text selection", () => {
       expect(tree.getAttribute("draggable")).toBe("true");
     });
 
+    test("an active select-mode container leaves mousedown to the controller", async () => {
+      // select_mode_controller.toggle() cannot reflect onto rows that are
+      // already rendered, so it publishes the mode on its container element.
+      // Flipping draggable here would make handleRowMouseDown take its
+      // !isDraggable branch and deselect a row instead of dragging the bundle.
+      const container = document.createElement("div");
+      container.className = "select-mode-active";
+      document.body.appendChild(container);
+
+      await import("../creative_tree_row.js");
+      const el = document.createElement("creative-tree-row");
+      Object.assign(el, { creativeId: "1", parentId: "", level: 2, canWrite: true });
+      container.appendChild(el);
+      await el.updateComplete;
+
+      mouseDown(contentOf(el));
+      expect(treeOf(el).getAttribute("draggable")).toBe("true");
+
+      // Leaving select mode restores normal text-selection behavior.
+      container.classList.remove("select-mode-active");
+      mouseDown(contentOf(el));
+      expect(treeOf(el).getAttribute("draggable")).toBe("false");
+      mouseUpWindow();
+    });
+
+    test("losing window focus restores draggable", async () => {
+      // Pressing on the text and releasing in another window (Alt+Tab) delivers
+      // neither mouseup nor dragend, which would strand the row non-draggable.
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      window.dispatchEvent(new window.Event("blur"));
+      expect(tree.getAttribute("draggable")).toBe("true");
+
+      // One-shot: the row is drag-armed again on the next press.
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("false");
+      mouseUpWindow();
+      expect(tree.getAttribute("draggable")).toBe("true");
+    });
+
+    test("focus moving inside the page does not cut the selection short", async () => {
+      // blur does not bubble, but a capturing window listener would still see
+      // an inner element losing focus and restore draggable mid-gesture.
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+
+      mouseDown(contentOf(el));
+      contentOf(el).dispatchEvent(new window.Event("blur"));
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      mouseUpWindow();
+      expect(tree.getAttribute("draggable")).toBe("true");
+    });
+
     test("mousedown is a no-op when the row is not currently draggable", async () => {
       const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
       const tree = treeOf(el);
@@ -140,7 +198,8 @@ describe("creative-tree-row text selection", () => {
 
       click(contentOf(el));
 
-      expect(window.Turbo.visit).toHaveBeenCalledWith("/creatives/1");
+      // Outside a turbo-frame workspace the row passes no visit options.
+      expect(window.Turbo.visit).toHaveBeenCalledWith("/creatives/1", undefined);
     });
   });
 });

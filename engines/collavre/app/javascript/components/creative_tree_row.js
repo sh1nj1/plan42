@@ -623,6 +623,11 @@ class CreativeTreeRow extends LitElement {
   // selection works; row drag stays available from the rest of the row.
   _handleContentMouseDown(event) {
     if (this.selectMode) return; // select mode owns mousedown (row selection)
+    // The toolbar's select mode lives on an ancestor Stimulus controller and is
+    // not reflected onto rows that were already rendered. That controller reads
+    // the draggable attribute on mousedown to decide whether an already-selected
+    // row starts a bundle drag, so leave the attribute alone while it is on.
+    if (this.closest(".select-mode-active")) return;
     if (event.button !== 0) return;
     const tree = this.querySelector(".creative-tree");
     if (!tree || tree.getAttribute("draggable") !== "true") return;
@@ -630,10 +635,16 @@ class CreativeTreeRow extends LitElement {
     const restore = () => {
       window.removeEventListener("mouseup", restore, true);
       window.removeEventListener("dragend", restore, true);
+      window.removeEventListener("blur", restore);
       tree.setAttribute("draggable", "true");
     };
     window.addEventListener("mouseup", restore, true);
     window.addEventListener("dragend", restore, true);
+    // Releasing the button after switching windows (Alt+Tab) delivers neither
+    // mouseup nor dragend here, and the guard above would then refuse to re-arm
+    // the row forever. Non-capturing on purpose: blur does not bubble, so this
+    // only sees the window losing focus, not focus moves inside the page.
+    window.addEventListener("blur", restore);
   }
 
   _handleContentClick(event) {
