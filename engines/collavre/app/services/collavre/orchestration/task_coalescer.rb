@@ -98,13 +98,15 @@ module Collavre
           # would run the new prompt with the first person's callback token.
           # Human anchors identify their own principal. An AI/system anchor
           # cannot reconstruct its initiating person from the Comment row, so
-          # discard the carried value instead of crossing that trust boundary.
-          if moved.key?("workspace_user_id")
-            if comment.user && !comment.user.ai_user?
+          # retain an explicit nil sentinel. Downstream resolution distinguishes
+          # this security decision from an ordinary payload that never carried a
+          # principal and must not fall through to the agent creator.
+          if comment.user && !comment.user.ai_user?
+            if moved.key?("workspace_user_id")
               moved["workspace_user_id"] = comment.user_id
-            else
-              moved.delete("workspace_user_id")
             end
+          else
+            moved["workspace_user_id"] = nil
           end
         end
         # Both keys ContextBuilder *derives* from the anchor are rebuilt here

@@ -67,7 +67,11 @@ module Collavre
           topic: { id: @reply_comment.topic_id },
           chat: { content: @reply_comment.content }
         }
-        payload[:workspace_user_id] = @workspace_user.id if @workspace_user
+        # Always carry the resolved principal, including an explicit nil. Nil
+        # means the current anchor could not prove a human identity; omitting the
+        # key would let a downstream per-user CLI Proxy agent fall back to its
+        # creator and execute with that person's workspace credentials.
+        payload[:workspace_user_id] = @workspace_user&.id
 
         SystemEvents::Dispatcher.dispatch("comment_created", payload)
       end

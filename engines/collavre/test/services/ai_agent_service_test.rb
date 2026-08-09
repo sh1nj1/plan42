@@ -217,6 +217,65 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     assert_not_equal upstream_agent, captured_context[:workspace_user]
   end
 
+  test "does not fall back to the creator for an explicitly cleared workspace principal" do
+    upstream_agent = users(:ai_bot)
+    upstream_reply = @creative.comments.create!(
+      content: "Re-anchored A2A request",
+      user: upstream_agent,
+      topic: @comment.topic,
+      skip_dispatch: true
+    )
+    @task.update!(
+      trigger_event_payload: {
+        "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
+        "creative" => { "id" => @creative.id },
+        "workspace_user_id" => nil
+      }
+    )
+
+    service = AiAgentService.new(@task)
+    service.instance_variable_set(:@original_comment, upstream_reply)
+
+    assert_nil service.send(:workspace_user)
+  end
+
+  test "carries an explicitly cleared workspace principal across the next A2A hop" do
+    downstream_agent = User.create!(
+      email: "cleared-principal-downstream@ai.local",
+      password: SecureRandom.hex(24),
+      name: "ClearedPrincipalDownstream",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash",
+      system_prompt: "Help"
+    )
+    upstream_reply = @creative.comments.create!(
+      content: "Re-anchored A2A request",
+      user: @agent,
+      topic: @comment.topic,
+      skip_dispatch: true
+    )
+    @task.update!(
+      trigger_event_payload: {
+        "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => upstream_reply.topic_id },
+        "workspace_user_id" => nil
+      }
+    )
+    mock_client = Object.new
+    mock_client.define_singleton_method(:chat) { |_messages, tools: [], &block| block.call("@#{downstream_agent.name}: continue") }
+    mock_client.define_singleton_method(:last_handoff_failed?) { false }
+    mock_client.define_singleton_method(:handed_off?) { true }
+    dispatched = nil
+
+    SystemEvents::Dispatcher.stub(:dispatch, ->(_event_name, payload) { dispatched = payload }) do
+      AiClient.stub(:new, mock_client) { AiAgentService.new(@task).call }
+    end
+
+    assert dispatched.key?(:workspace_user_id)
+    assert_nil dispatched[:workspace_user_id]
+  end
+
   test "does not dispatch A2A when AI response mentions a human user" do
     mock_client = Minitest::Mock.new
     def mock_client.chat(messages, tools: [])

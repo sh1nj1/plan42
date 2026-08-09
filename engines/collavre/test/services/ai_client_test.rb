@@ -589,6 +589,38 @@ class AiClientTest < ActiveSupport::TestCase
     refute_includes fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID"), "user-#{upstream_agent.id}"
   end
 
+  test "build_conversation rejects an explicitly unverified per-user workspace principal" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Unverified A2A principal gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion-secret",
+      identity_secret: "identity-secret" * 3,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Unverified A2A CLI client agent",
+      email: "unverified-a2a-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    client = AiClient.new(
+      vendor: "cli_proxy",
+      model: agent.llm_model,
+      system_prompt: nil,
+      context: { user: agent, workspace_user: nil }
+    )
+
+    error = assert_raises(ArgumentError) { client.send(:build_conversation) }
+    assert_equal "CLI Proxy per-user workspace requires a verified human principal", error.message
+  end
+
   test "system-admin CLI Proxy gateways retain the default HTTP adapter" do
     owner = users(:one)
     gateway = Collavre::AgentGateway.create!(

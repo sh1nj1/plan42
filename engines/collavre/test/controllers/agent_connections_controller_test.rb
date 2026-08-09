@@ -74,4 +74,28 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "스킬", item_types.fetch("skill")
     assert_equal "설정", item_types.fetch("config")
   end
+
+  test "authentication submission uses a filtered secret parameter" do
+    credential = "provider-secret-that-must-not-be-logged"
+    received = nil
+    fake_client = Object.new
+    fake_client.define_singleton_method(:submit_auth_session) do |engine, session_id, auth_secret|
+      received = [ engine, session_id, auth_secret ]
+      { "status" => "authorized" }
+    end
+    sign_in_as(@owner, password: "password")
+
+    Collavre::CliProxy::Client.stub(:new, fake_client) do
+      post collavre.agent_connection_auth_session_path(
+        user_id: @agent.id,
+        engine: "codex",
+        session_id: "session-1"
+      ), params: { auth_secret: credential }, as: :json
+    end
+
+    assert_response :success
+    assert_equal [ "codex", "session-1", credential ], received
+    assert_equal "[FILTERED]", request.filtered_parameters.fetch("auth_secret")
+    refute_includes request.filtered_parameters.inspect, credential
+  end
 end

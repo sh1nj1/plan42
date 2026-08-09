@@ -250,7 +250,7 @@ module Collavre
         assert_not moved.key?("workspace_user_id")
       end
 
-      test "re-anchoring onto an AI comment clears an unprovable workspace principal" do
+      test "re-anchoring onto an AI comment marks the workspace principal as unprovable" do
         original = @creative.comments.create!(
           content: "first", user: @user, topic: @topic, skip_dispatch: true
         )
@@ -263,7 +263,24 @@ module Collavre
 
         moved = TaskCoalescer.reanchor_payload(payload, replacement)
 
-        assert_not moved.key?("workspace_user_id")
+        assert moved.key?("workspace_user_id")
+        assert_nil moved["workspace_user_id"]
+      end
+
+      test "re-anchoring an ordinary dispatch onto an AI comment marks the principal as unprovable" do
+        original = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        replacement = @creative.comments.create!(
+          content: "second", user: @other_agent, topic: @topic, skip_dispatch: true
+        )
+
+        moved = TaskCoalescer.reanchor_payload(
+          original.dispatch_payload.deep_stringify_keys, replacement
+        )
+
+        assert moved.key?("workspace_user_id")
+        assert_nil moved["workspace_user_id"]
       end
 
       test "a no-op re-anchor keeps the carried A2A workspace principal" do

@@ -84,4 +84,22 @@ describe("AgentConnectionController", () => {
     expect(controller.statusLabel("future_state")).toBe("future_state")
     expect(controller.itemTypeLabel("future_type")).toBe("future_type")
   })
+
+  test("submits provider credentials under a log-filtered parameter name", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'),
+      "agent-connection"
+    )
+    controller.sessionTarget.innerHTML = '<input value="provider-secret">'
+    let submitted
+    global.fetch = async (_url, options) => {
+      submitted = JSON.parse(options.body)
+      return { ok: true, text: async () => JSON.stringify({ engine: "codex", status: "pending" }) }
+    }
+
+    await controller.submit({ params: { engine: "codex", session: "session-1" } })
+
+    expect(submitted).toEqual({ auth_secret: "provider-secret" })
+  })
 })

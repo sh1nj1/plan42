@@ -61,7 +61,7 @@ export default class extends Controller {
     try {
       const data = await this.request(this.sessionDetailUrl(event.params.engine, event.params.session), {
         method: "POST",
-        body: JSON.stringify({ value: input?.value || "" })
+        body: JSON.stringify({ auth_secret: input?.value || "" })
       })
       this.renderSession(data)
       if (data.status === "authorized") this.refresh()

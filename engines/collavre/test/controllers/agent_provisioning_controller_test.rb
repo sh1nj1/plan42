@@ -86,4 +86,60 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
   ensure
     Rails.cache.delete(cache_key) if cache_key
   end
+
+  test "Rails silences access logs for paths containing manifest capabilities" do
+    middleware = Rails.application.middleware.find do |entry|
+      entry.klass == Collavre::SensitiveRequestSilencer &&
+        entry.args == [ { path: Collavre::Engine::PROVISIONING_CAPABILITY_PATH } ]
+    end
+    assert_not_nil middleware
+
+    manifest_path = collavre.agent_provision_manifest_path(
+      agent_id: @agent.id,
+      token: @workspace.manifest_token
+    )
+    config_path = collavre.agent_provision_config_path(
+      agent_id: @agent.id,
+      token: @workspace.manifest_token,
+      sha256: "a" * 64
+    )
+    malformed_config_path = config_path.sub("a" * 64, "NOT-A-DIGEST")
+    skill_path = collavre.agent_provision_skill_path(sha256: "a" * 64)
+
+    assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, manifest_path
+    assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, config_path
+    assert_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, malformed_config_path
+    assert_no_match Collavre::Engine::PROVISIONING_CAPABILITY_PATH, skill_path
+
+    output = StringIO.new
+    logger = ActiveSupport::Logger.new(output)
+
+    Rails.stub(:logger, logger) do
+      get malformed_config_path
+    end
+    assert_response :not_found
+    refute_includes output.string, @workspace.manifest_token
+
+    output.truncate(0)
+    output.rewind
+    error_logger = ->(_env) do
+      Rails.logger.error("failed capability request #{@workspace.manifest_token}")
+      [ 500, {}, [] ]
+    end
+    silencer = Collavre::SensitiveRequestSilencer.new(
+      error_logger,
+      path: Collavre::Engine::PROVISIONING_CAPABILITY_PATH
+    )
+    Rails.stub(:logger, logger) do
+      silencer.call("PATH_INFO" => manifest_path)
+    end
+    assert_empty output.string
+
+    output.truncate(0)
+    output.rewind
+    Rails.stub(:logger, logger) do
+      get skill_path
+    end
+    assert_includes output.string, skill_path
+  end
 end

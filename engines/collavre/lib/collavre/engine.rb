@@ -1,9 +1,28 @@
+require "collavre/sensitive_request_silencer"
+
 module Collavre
   class Engine < ::Rails::Engine
+    PROVISIONING_CAPABILITY_PATH = %r{
+      \A(?:/[^/]+)*/agents/\d+/workspaces/[^/]+/
+      .*\z
+    }x
+
     isolate_namespace Collavre
 
     config.generators do |g|
       g.test_framework :minitest
+    end
+
+    # Manifest capabilities grant access to workspace callback credentials and
+    # therefore must not appear in Rails request logs. This middleware wraps the
+    # request logger as well as controller instrumentation while leaving public,
+    # content-addressed skill archive requests observable.
+    initializer "collavre.silence_provisioning_capability_paths" do |app|
+      app.middleware.insert_before(
+        Rails::Rack::Logger,
+        Collavre::SensitiveRequestSilencer,
+        path: PROVISIONING_CAPABILITY_PATH
+      )
     end
 
     # Path to engine's JavaScript sources for jsbundling-rails integration

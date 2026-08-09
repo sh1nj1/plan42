@@ -42,7 +42,7 @@ module Collavre
     end
 
     def submit_auth_session
-      render json: proxy_client.submit_auth_session(params[:engine], params[:session_id], params[:value])
+      render json: proxy_client.submit_auth_session(params[:engine], params[:session_id], params[:auth_secret])
     rescue Collavre::CliProxy::Client::Error => e
       render_proxy_error(e)
     end

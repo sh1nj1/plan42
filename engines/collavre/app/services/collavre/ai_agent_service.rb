@@ -277,11 +277,14 @@ module Collavre
 
     def workspace_user
       @workspace_user ||= begin
+        carried_principal = @context.key?("workspace_user_id")
         carried_user = User.find_by(id: @context["workspace_user_id"])
         comment_user = @original_comment&.user
 
         if carried_user && !carried_user.ai_user?
           carried_user
+        elsif carried_principal
+          nil
         elsif comment_user && !comment_user.ai_user?
           comment_user
         else
