@@ -47,7 +47,7 @@ class FeatureCardComponentTest < ViewComponent::TestCase
     assert_no_selector ".feature-card-dismiss"
   end
 
-  test "changes create-edit action to the tracked Creative after creation" do
+  test "changes create-edit action to the tracked Creative after it is moved" do
     creative = onboarding_card(
       step_key: "create_edit",
       feature_key: "create_edit",
@@ -62,11 +62,13 @@ class FeatureCardComponentTest < ViewComponent::TestCase
           "role" => "practice",
           "step_key" => "create_edit"
         }
-      }
+      },
+      parent: creative
     )
     data = creative.data.deep_dup
     data["onboarding"]["target_creative_id"] = target.id
     creative.update!(data: data)
+    target.update!(parent: creatives(:root_parent))
 
     render_inline(
       Collavre::FeatureCardComponent.new(
@@ -77,7 +79,12 @@ class FeatureCardComponentTest < ViewComponent::TestCase
       )
     )
 
-    assert_selector "a.feature-card-action[href*='onboarding_action=edit']",
+    expected_path = Collavre::Engine.routes.url_helpers.creatives_path(
+      id: target.id,
+      onboarding_action: "edit",
+      onboarding_target_id: target.id
+    )
+    assert_selector "a.feature-card-action[href='#{expected_path}']",
                     text: I18n.t("collavre.onboarding.actions.edit_created")
   end
 

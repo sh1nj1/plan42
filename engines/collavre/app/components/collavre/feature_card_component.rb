@@ -52,7 +52,7 @@ module Collavre
       case onboarding_action&.type
       when :add_or_edit_child
         mounted_creatives_path(
-          id: creative.id,
+          id: target_creative.id,
           onboarding_action: "edit",
           onboarding_target_id: target_creative.id
         )
