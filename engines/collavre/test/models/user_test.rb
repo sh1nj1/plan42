@@ -109,4 +109,27 @@ class UserTest < ActiveSupport::TestCase
     assert_nothing_raised { sharer.destroy! }
     assert_nil share.reload.shared_by_id
   end
+
+  test "CLI Proxy agents require a gateway owned by their creator" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: users(:three),
+      name: "Foreign gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    agent = Collavre::User.new(
+      name: "Invalid CLI agent",
+      email: "invalid-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    assert_not agent.valid?
+    assert agent.errors.of_kind?(:agent_gateway, :invalid)
+  end
 end

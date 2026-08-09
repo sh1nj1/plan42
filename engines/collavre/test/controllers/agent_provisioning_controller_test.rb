@@ -1,0 +1,54 @@
+require "test_helper"
+
+class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    @owner = users(:two)
+    @gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Provision proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    @agent = Collavre::User.create!(
+      name: "Provision Agent",
+      email: "provision-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: @owner.id,
+      agent_gateway: @gateway
+    )
+    @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
+  end
+
+  test "public manifest contains fixed skill and workspace config artifacts" do
+    get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: @workspace.manifest_token)
+    assert_response :success
+
+    manifest = response.parsed_body
+    assert_equal "agent-provisioning/v1", manifest.fetch("schema")
+    assert_equal [ [ "skill", "collavre" ], [ "config", "workspace-config" ] ],
+                 manifest.fetch("items").map { |item| [ item.fetch("type"), item.fetch("name") ] }
+
+    manifest.fetch("items").each do |item|
+      get URI(item.fetch("url")).request_uri
+      assert_response :success
+      assert_equal item.fetch("sha256"), Digest::SHA256.hexdigest(response.body)
+      if item.fetch("type") == "skill"
+        assert_includes response.headers["Cache-Control"], "max-age=31536000"
+        assert_includes response.headers["Cache-Control"], "public"
+        assert_includes response.headers["Cache-Control"], "immutable"
+      else
+        assert_includes response.headers["Cache-Control"], "no-store"
+        assert_includes response.headers["Cache-Control"], "private"
+      end
+    end
+  end
+
+  test "invalid manifest capability is not found" do
+    get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: "invalid-token")
+    assert_response :not_found
+  end
+end

@@ -47,7 +47,8 @@ module Collavre
     BASE_VENDOR_OPTIONS = [
       [ "Google (Gemini)", "google" ],
       [ "OpenAI", "openai" ],
-      [ "Anthropic", "anthropic" ]
+      [ "Anthropic", "anthropic" ],
+      [ "CLI Proxy", "cli_proxy" ]
     ].freeze
 
     class << self
@@ -281,6 +282,7 @@ module Collavre
 
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
+      "cli_proxy" => :openai,
       "anthropic" => :anthropic,
       "google" => :gemini,
       "gemini" => :gemini
@@ -290,9 +292,27 @@ module Collavre
       normalized_vendor = @vendor.to_s.downcase
 
       context_block = case normalized_vendor
-      when "openai"
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
-        base_url = @gateway_url.presence
+      when "openai", "cli_proxy"
+        if normalized_vendor == "cli_proxy"
+          agent = context[:user]
+          gateway = agent&.agent_gateway
+          raise ArgumentError, "CLI Proxy agent has no active gateway" unless gateway&.active?
+
+          workspace_user = context[:workspace_user] || context[:comment]&.user || agent.creator
+          workspace_user = nil if gateway.shared?
+          workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
+          @cli_proxy_headers = Collavre::CliProxy::Identity.headers(
+            gateway: gateway,
+            workspace: workspace,
+            method: :post,
+            path: "/v1/chat/completions"
+          )
+          api_key = gateway.completion_key
+          base_url = gateway.completion_base_url
+        else
+          api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
+          base_url = @gateway_url.presence
+        end
         # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
         # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
         # if openai_api_key is blank. Supply a placeholder so keyless local gateways
@@ -325,6 +345,7 @@ module Collavre
 
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
+        chat.with_headers(**@cli_proxy_headers) if @cli_proxy_headers.present?
         session_id = build_session_id
         chat.with_headers("X-Session-Id" => session_id) if session_id
         chat.on_tool_call do |tool_call|

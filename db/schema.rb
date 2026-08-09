@@ -52,6 +52,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000001) do
     t.index ["user_id"], name: "index_activity_logs_on_user_id"
   end
 
+  create_table "agent_gateways", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.text "admin_key", null: false
+    t.string "base_url", null: false
+    t.text "completion_key", null: false
+    t.datetime "created_at", null: false
+    t.text "identity_secret"
+    t.string "name", null: false
+    t.integer "owner_id", null: false
+    t.string "tenant_id", default: "collavre", null: false
+    t.datetime "updated_at", null: false
+    t.integer "workspace_mode", default: 0, null: false
+    t.index ["owner_id", "name"], name: "index_agent_gateways_on_owner_id_and_name", unique: true
+    t.index ["owner_id"], name: "index_agent_gateways_on_owner_id"
+  end
+
   create_table "agent_subscriptions", force: :cascade do |t|
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
@@ -63,6 +79,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000001) do
     t.index ["agent_id"], name: "index_agent_subscriptions_on_agent_id"
     t.index ["last_seen_at"], name: "index_agent_subscriptions_on_last_seen_at"
     t.index ["token"], name: "index_agent_subscriptions_on_token", unique: true
+  end
+
+  create_table "agent_workspaces", force: :cascade do |t|
+    t.integer "agent_gateway_id", null: false
+    t.integer "agent_id", null: false
+    t.text "callback_token", null: false
+    t.datetime "created_at", null: false
+    t.string "manifest_token", null: false
+    t.string "proxy_user_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id"
+    t.index ["agent_gateway_id"], name: "index_agent_workspaces_on_agent_gateway_id"
+    t.index ["agent_id", "agent_gateway_id"], name: "idx_agent_workspaces_shared", unique: true, where: "user_id IS NULL"
+    t.index ["agent_id", "user_id", "agent_gateway_id"], name: "idx_agent_workspaces_per_user", unique: true, where: "user_id IS NOT NULL"
+    t.index ["agent_id"], name: "index_agent_workspaces_on_agent_id"
+    t.index ["manifest_token"], name: "index_agent_workspaces_on_manifest_token", unique: true
+    t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
   end
 
   create_table "calendar_events", force: :cascade do |t|
@@ -934,6 +967,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000001) do
 
   create_table "users", force: :cascade do |t|
     t.text "agent_conf"
+    t.integer "agent_gateway_id"
     t.string "avatar_url"
     t.string "calendar_id"
     t.datetime "created_at", null: false
@@ -973,6 +1007,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000001) do
     t.integer "typo_correction_threshold", default: 80, null: false
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
+    t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["searchable"], name: "index_users_on_searchable"
     t.index ["system_admin"], name: "index_users_on_system_admin"
@@ -995,6 +1030,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000001) do
   add_foreign_key "activity_logs", "comments"
   add_foreign_key "activity_logs", "creatives"
   add_foreign_key "activity_logs", "users"
+  add_foreign_key "agent_gateways", "users", column: "owner_id"
+  add_foreign_key "agent_workspaces", "agent_gateways"
+  add_foreign_key "agent_workspaces", "users"
+  add_foreign_key "agent_workspaces", "users", column: "agent_id"
   add_foreign_key "calendar_events", "creatives"
   add_foreign_key "calendar_events", "users"
   add_foreign_key "channels", "topics"
@@ -1083,5 +1122,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000001) do
   add_foreign_key "user_creative_preferences", "topics", column: "last_topic_id", on_delete: :nullify
   add_foreign_key "user_creative_preferences", "users"
   add_foreign_key "user_themes", "users"
+  add_foreign_key "users", "agent_gateways"
   add_foreign_key "webauthn_credentials", "users"
 end

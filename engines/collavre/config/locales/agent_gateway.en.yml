@@ -1,0 +1,96 @@
+---
+en:
+  activerecord:
+    attributes:
+      collavre/agent_gateway:
+        name: Name
+        base_url: Base URL
+        admin_key: Admin key
+        completion_key: Completion key
+        identity_secret: Identity secret
+        tenant_id: Tenant ID
+        workspace_mode: Workspace mode
+        active: Availability
+        agents: AI agents
+    errors:
+      models:
+        collavre/agent_gateway:
+          attributes:
+            base_url:
+              invalid: "must be an http(s) origin without credentials, query or fragment"
+            tenant_id:
+              invalid: "may only contain letters, digits and . _ : @ / -"
+            identity_secret:
+              blank: "is required for per-user workspace mode"
+              too_short: "must contain at least %{count} bytes"
+  collavre:
+    agent_gateways:
+      title: My Agent Gateways
+      manage: Agent gateway settings
+      description: Register CLI OpenAI proxies you own. Keys remain server-side and are never sent to the browser.
+      add: Add gateway
+      new_title: Add Agent Gateway
+      edit_title: Edit Agent Gateway
+      name: Name
+      name_placeholder: Team CLI Proxy
+      base_url: Base URL
+      base_url_help: Enter the proxy origin without an API path. HTTPS is recommended outside local development.
+      admin_key: Admin key
+      admin_key_help: A value from the proxy AUTH_ADMIN_KEYS setting. Used only by the Collavre server.
+      completion_key: Completion key
+      identity_secret: Identity secret
+      identity_secret_help: Must match USER_IDENTITY_HMAC_SECRET and contain at least 32 bytes. Required for per-user mode.
+      tenant_id: Tenant ID
+      tenant_id_help: Changing this value creates different proxy workspaces for every connected agent.
+      secret_unchanged: Leave blank to keep the current secret
+      active: Available to AI agents
+      inactive: Inactive
+      workspace_mode:
+        label: Workspace mode
+        shared: Shared
+        shared_help: One provider login and Linux workspace are shared by everyone using each AI agent.
+        per_user: Per user
+        per_user_help: Each Collavre user gets a separate Linux workspace and must connect providers personally.
+      agents: AI agents
+      actions: Actions
+      check: Check connection
+      checking: Checking…
+      connected: Connected
+      connection_failed: Connection failed
+      identity_unverified: The admin connection succeeded, but no mapped completion key or existing workspace was available to verify user identity
+      edit: Edit
+      delete: Delete
+      confirm_delete: Delete this gateway? Gateways assigned to an AI agent cannot be deleted.
+      empty: No agent gateways have been registered.
+      created: Agent gateway was created.
+      updated: Agent gateway was updated.
+      destroyed: Agent gateway was deleted.
+      in_use: This gateway is assigned to an AI agent and cannot be deleted.
+    agent_connections:
+      title: "%{agent} connection"
+      card_title: Engine connection and provisioning
+      card_help: Provider login is scoped according to the selected gateway's workspace mode. The Collavre skill and workspace config are provisioned together.
+      profile_help: This agent uses per-user CLI Proxy workspaces. Connect your own providers before using it.
+      manage: Manage connection
+      engines: Agent providers
+      loading: Loading…
+      refresh: Refresh
+      login: Log in
+      submit: Submit
+      open_url: Open verification page
+      error: CLI Proxy error
+      provisioning: Provisioning
+      provisioning_help: Collavre always provisions one collavre-cli skill and one workspace-specific config containing the callback URL and token.
+      sync: Sync now
+      item: Item
+      kind: Type
+      state: Status
+      actions: Actions
+      approve: Approve
+      revoke: Revoke approval
+      meta_skills: Enabled meta-skills
+      meta_skills_help: The AI agent owner selects these Collavre tools. They are run by the single collavre-cli skill; token-level enforcement will be added later.
+      rotate_tokens: Rotate workspace tokens
+      rotate_confirm: Rotate both the manifest capability and Collavre callback token? The workspace must sync again.
+      tokens_rotated: Workspace tokens were rotated.
+      back: Back

@@ -1,0 +1,111 @@
+require "test_helper"
+
+class AgentGatewayTest < ActiveSupport::TestCase
+  setup do
+    @owner = users(:two)
+  end
+
+  test "encrypts secrets and validates per-user identity secret" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Personal proxy",
+      base_url: "https://proxy.example.com/",
+      admin_key: "admin-secret",
+      completion_key: "completion-secret",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+
+    assert_equal "https://proxy.example.com", gateway.base_url
+    assert_equal "https://proxy.example.com/v1", gateway.completion_base_url
+    stored = Collavre::AgentGateway.connection.select_one(
+      "SELECT admin_key, completion_key, identity_secret FROM agent_gateways WHERE id = #{gateway.id}"
+    )
+    assert_not_equal "admin-secret", stored.fetch("admin_key")
+    assert_not_equal "completion-secret", stored.fetch("completion_key")
+    assert_not_equal "i" * 32, stored.fetch("identity_secret")
+
+    gateway.identity_secret = "short"
+    assert_not gateway.valid?
+    assert gateway.errors[:identity_secret].present?
+  end
+
+  test "identity secret is required for per-user mode and optional for shared mode" do
+    gateway = build_gateway(workspace_mode: :per_user, identity_secret: nil)
+    assert_not gateway.valid?
+    assert_includes gateway.errors.details[:identity_secret].pluck(:error), :blank
+
+    gateway.workspace_mode = :shared
+    assert gateway.valid?, gateway.errors.full_messages.to_sentence
+
+    gateway.identity_secret = "short"
+    assert_not gateway.valid?
+    assert_includes gateway.errors.details[:identity_secret].pluck(:error), :too_short
+  end
+
+  test "validation messages are translated in every supported locale" do
+    %i[en ko].each do |locale|
+      I18n.with_locale(locale) do
+        gateway = build_gateway(name: "", base_url: "file:///tmp/proxy", workspace_mode: :per_user, identity_secret: "short")
+        assert_not gateway.valid?
+
+        messages = gateway.errors.full_messages
+        assert messages.any?, "expected validation errors for locale #{locale}"
+        messages.each do |message|
+          assert_no_match(/translation missing/i, message, "untranslated validation message in #{locale}: #{message}")
+        end
+      end
+    end
+  end
+
+  test "rejects non-http and credential-bearing URLs" do
+    gateway = build_gateway(base_url: "file:///tmp/proxy")
+    assert_not gateway.valid?
+
+    gateway.base_url = "https://user:password@proxy.example.com"
+    assert_not gateway.valid?
+  end
+
+  test "switching to shared preserves the owner workspace and revokes the others" do
+    gateway = build_gateway(identity_secret: "s" * 32)
+    gateway.save!
+    agent = create_agent(gateway)
+    shared_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    gateway.update!(workspace_mode: :per_user)
+    owner_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
+    other_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: users(:three))
+
+    gateway.update!(workspace_mode: :shared)
+
+    assert_equal shared_workspace, owner_workspace
+    assert_nil owner_workspace.reload.user_id
+    assert_equal "agent-#{agent.id}", owner_workspace.proxy_user_id
+    assert_not Collavre::AgentWorkspace.exists?(other_workspace.id)
+    assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+  end
+
+  private
+
+  def build_gateway(overrides = {})
+    Collavre::AgentGateway.new({
+      owner: @owner,
+      name: "Proxy #{SecureRandom.hex(3)}",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    }.merge(overrides))
+  end
+
+  def create_agent(gateway)
+    Collavre::User.create!(
+      name: "CLI Agent",
+      email: "cli-#{SecureRandom.hex(4)}@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: @owner.id,
+      agent_gateway: gateway
+    )
+  end
+end

@@ -221,7 +221,8 @@ module Collavre
           creative: @creative,
           user: @agent,
           task: @task,
-          comment: @reply_comment || @original_comment
+          comment: @reply_comment || @original_comment,
+          workspace_user: @original_comment&.user
         },
         request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
         # The streaming block below checks cancellation only when a text delta

@@ -1,0 +1,61 @@
+<%= form_with model: agent_gateway, class: "stacked-form" do |form| %>
+  <% if agent_gateway.errors.any? %>
+    <div class="alert alert-danger" role="alert">
+      <ul class="mb-0 ps-3">
+        <% agent_gateway.errors.full_messages.each do |message| %>
+          <li><%= message %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div class="form-group">
+    <%= form.label :name, t("collavre.agent_gateways.name") %>
+    <%= form.text_field :name, required: true, class: "stacked-form-control", placeholder: t("collavre.agent_gateways.name_placeholder") %>
+  </div>
+  <div class="form-group">
+    <%= form.label :base_url, t("collavre.agent_gateways.base_url") %>
+    <%= form.url_field :base_url, required: true, class: "stacked-form-control", placeholder: "https://proxy.example.com" %>
+    <small class="form-text text-muted"><%= t("collavre.agent_gateways.base_url_help") %></small>
+  </div>
+
+  <% secret_placeholder = agent_gateway.persisted? ? t("collavre.agent_gateways.secret_unchanged") : nil %>
+  <div class="form-group">
+    <%= form.label :admin_key, t("collavre.agent_gateways.admin_key") %>
+    <%= masked_secret_field form, :admin_key, value: nil, required: agent_gateway.new_record?, class: "stacked-form-control", placeholder: secret_placeholder %>
+    <small class="form-text text-muted"><%= t("collavre.agent_gateways.admin_key_help") %></small>
+  </div>
+  <div class="form-group">
+    <%= form.label :completion_key, t("collavre.agent_gateways.completion_key") %>
+    <%= masked_secret_field form, :completion_key, value: nil, required: agent_gateway.new_record?, class: "stacked-form-control", placeholder: secret_placeholder %>
+  </div>
+  <div class="form-group">
+    <%= form.label :identity_secret, t("collavre.agent_gateways.identity_secret") %>
+    <%= masked_secret_field form, :identity_secret, value: nil, class: "stacked-form-control", placeholder: secret_placeholder %>
+    <small class="form-text text-muted"><%= t("collavre.agent_gateways.identity_secret_help") %></small>
+  </div>
+  <div class="form-group">
+    <%= form.label :tenant_id, t("collavre.agent_gateways.tenant_id") %>
+    <%= form.text_field :tenant_id, required: true, class: "stacked-form-control", value: agent_gateway.tenant_id.presence || "collavre" %>
+    <small class="form-text text-muted"><%= t("collavre.agent_gateways.tenant_id_help") %></small>
+  </div>
+
+  <fieldset class="form-group">
+    <legend class="form-label"><%= t("collavre.agent_gateways.workspace_mode.label") %></legend>
+    <% Collavre::AgentGateway.workspace_modes.each_key do |mode| %>
+      <div class="form-check mb-2">
+        <%= form.radio_button :workspace_mode, mode, checked: agent_gateway.workspace_mode == mode, class: "form-check-input" %>
+        <%= form.label "workspace_mode_#{mode}", t("collavre.agent_gateways.workspace_mode.#{mode}"), class: "form-check-label" %>
+        <small class="form-text text-muted"><%= t("collavre.agent_gateways.workspace_mode.#{mode}_help") %></small>
+      </div>
+    <% end %>
+  </fieldset>
+
+  <div class="form-group form-check">
+    <%= form.check_box :active, class: "form-check-input" %>
+    <%= form.label :active, t("collavre.agent_gateways.active"), class: "form-check-label" %>
+  </div>
+
+  <%= form.submit t("common.save"), class: "primary-action-button" %>
+  <%= link_to t("common.cancel"), collavre.agent_gateways_path, class: "btn btn-secondary" %>
+<% end %>

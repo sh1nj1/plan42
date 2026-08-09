@@ -40,6 +40,9 @@ import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
 import InboxBadgeController from "./inbox_badge_controller"
 import WorkspaceTreeController from "./workspace_tree_controller"
+import GatewayCheckController from "./gateway_check_controller"
+import AgentConnectionController from "./agent_connection_controller"
+import AgentVendorController from "./agent_vendor_controller"
 
 // Export all controllers
 export {
@@ -78,7 +81,10 @@ export {
   CommentBadgeController,
   LandingVideoController,
   InboxBadgeController,
-  WorkspaceTreeController
+  WorkspaceTreeController,
+  GatewayCheckController,
+  AgentConnectionController,
+  AgentVendorController
 }
 
 // Registration function for use with a Stimulus application
@@ -123,4 +129,7 @@ export function registerControllers(application) {
   application.register("landing-video", LandingVideoController)
   application.register("inbox-badge", InboxBadgeController)
   application.register("workspace-tree", WorkspaceTreeController)
+  application.register("gateway-check", GatewayCheckController)
+  application.register("agent-connection", AgentConnectionController)
+  application.register("agent-vendor", AgentVendorController)
 }

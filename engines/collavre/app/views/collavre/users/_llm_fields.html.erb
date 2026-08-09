@@ -19,10 +19,29 @@
                     {},
                     class: "stacked-form-control",
                     data: {
+                      agent_vendor_target: "vendor",
                       llm_model_target: "vendor",
-                      action: "change->llm-model#vendorChanged"
+                      action: "change->llm-model#vendorChanged agent-vendor#update"
                     } %>
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.vendor_help') %></small>
+  </div>
+
+  <div class="form-group" data-agent-vendor-target="gateway">
+    <%= form.label :agent_gateway_id, t("collavre.users.new_ai.agent_gateway_label") %>
+    <%= form.select :agent_gateway_id,
+                    options_from_collection_for_select(@agent_gateways, :id, :name, selected_gateway_id),
+                    { include_blank: t("collavre.users.new_ai.agent_gateway_blank") },
+                    class: "stacked-form-control",
+                    data: { agent_vendor_target: "gatewaySelect" } %>
+    <small class="form-text text-muted">
+      <%= t("collavre.users.new_ai.agent_gateway_help") %>
+      <%= link_to t("collavre.users.new_ai.manage_gateways"), collavre.agent_gateways_path %>
+    </small>
+    <% if selected_gateway %>
+      <div class="alert alert-info mt-2">
+        <%= t("collavre.users.edit_ai.gateway_mode", mode: t("collavre.agent_gateways.workspace_mode.#{selected_gateway.workspace_mode}")) %>
+      </div>
+    <% end %>
   </div>
 
   <div class="form-group">
@@ -35,6 +54,7 @@
                           autocomplete: "off",
                           value: selected_model,
                           data: {
+                            agent_vendor_target: "model",
                             llm_model_target: "input",
                             action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
                           } %>

@@ -1,0 +1,63 @@
+require "test_helper"
+
+class AgentWorkspaceTest < ActiveSupport::TestCase
+  setup do
+    @owner = users(:two)
+    @other = users(:three)
+    @gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Workspace proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "w" * 32,
+      workspace_mode: :shared
+    )
+    @agent = Collavre::User.create!(
+      name: "Workspace Agent",
+      email: "workspace-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/codex_local",
+      created_by_id: @owner.id,
+      agent_gateway: @gateway
+    )
+  end
+
+  test "shared mode resolves one workspace and usable callback token" do
+    first = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    second = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @other)
+
+    assert_equal first, second
+    assert_nil first.user
+    assert_equal "agent-#{@agent.id}", first.proxy_user_id
+    assert Doorkeeper::AccessToken.by_token(first.callback_token).accessible?
+  end
+
+  test "per-user mode isolates users and preserves owner shared identity" do
+    shared = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    @gateway.update!(workspace_mode: :per_user)
+
+    owner_workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    other_workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @other)
+
+    assert_equal shared.id, owner_workspace.id
+    assert_equal @owner, owner_workspace.user
+    assert_equal "agent-#{@agent.id}", owner_workspace.proxy_user_id
+    assert_equal "agent-#{@agent.id}--user-#{@other.id}", other_workspace.proxy_user_id
+    assert_not_equal owner_workspace.callback_token, other_workspace.callback_token
+  end
+
+  test "rotating tokens revokes old callback token" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
+    old_manifest = workspace.manifest_token
+    old_callback = workspace.callback_token
+
+    workspace.rotate_tokens!
+
+    assert_not_equal old_manifest, workspace.manifest_token
+    assert_not_equal old_callback, workspace.callback_token
+    assert Doorkeeper::AccessToken.by_token(old_callback).revoked?
+  end
+end

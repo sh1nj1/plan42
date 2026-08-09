@@ -1,0 +1,66 @@
+<h1 class="no-top-margin"><%= t("collavre.agent_connections.title", agent: @agent.name) %></h1>
+
+<div class="alert alert-info">
+  <strong><%= @agent.agent_gateway.name %></strong>
+  · <%= t("collavre.agent_gateways.workspace_mode.#{@agent.agent_gateway.workspace_mode}") %>
+  · <code><%= @workspace.proxy_user_id %></code>
+</div>
+
+<div data-controller="agent-connection"
+     data-agent-connection-status-url-value="<%= collavre.agent_connection_status_path(@agent) %>"
+     data-agent-connection-session-url-value="<%= collavre.agent_connection_auth_sessions_path(@agent, engine: '__ENGINE__') %>"
+     data-agent-connection-session-detail-url-value="<%= collavre.agent_connection_auth_session_path(@agent, engine: '__ENGINE__', session_id: '__SESSION__') %>"
+     data-agent-connection-sync-url-value="<%= collavre.agent_connection_provision_sync_path(@agent) %>"
+     data-agent-connection-approve-url-value="<%= collavre.agent_connection_provision_approve_path(@agent, type: '__TYPE__', name: '__NAME__') %>"
+     data-agent-connection-delete-url-value="<%= collavre.agent_connection_provision_delete_path(@agent, type: '__TYPE__', name: '__NAME__') %>"
+     data-agent-connection-loading-value="<%= t('collavre.agent_connections.loading') %>"
+     data-agent-connection-login-value="<%= t('collavre.agent_connections.login') %>"
+     data-agent-connection-submit-value="<%= t('collavre.agent_connections.submit') %>"
+     data-agent-connection-cancel-value="<%= t('common.cancel') %>"
+     data-agent-connection-open-url-value="<%= t('collavre.agent_connections.open_url') %>"
+     data-agent-connection-approve-value="<%= t('collavre.agent_connections.approve') %>"
+     data-agent-connection-revoke-value="<%= t('collavre.agent_connections.revoke') %>"
+     data-agent-connection-error-value="<%= t('collavre.agent_connections.error') %>">
+  <section class="form-section">
+    <div class="flex-row-center-between">
+      <h2><%= t("collavre.agent_connections.engines") %></h2>
+      <button type="button" class="btn btn-sm btn-secondary" data-action="agent-connection#refresh"><%= t("collavre.agent_connections.refresh") %></button>
+    </div>
+    <div data-agent-connection-target="error" class="alert alert-danger" hidden></div>
+    <div data-agent-connection-target="engines"><%= t("collavre.agent_connections.loading") %></div>
+    <div data-agent-connection-target="session"></div>
+  </section>
+
+  <section class="form-section" style="margin-top: 1.5rem;">
+    <div class="flex-row-center-between">
+      <div>
+        <h2><%= t("collavre.agent_connections.provisioning") %></h2>
+        <p class="text-muted"><%= t("collavre.agent_connections.provisioning_help") %></p>
+      </div>
+      <button type="button" class="btn btn-sm btn-primary" data-action="agent-connection#sync"><%= t("collavre.agent_connections.sync") %></button>
+    </div>
+    <table class="settings-table" style="width:100%">
+      <thead><tr><th><%= t("collavre.agent_connections.item") %></th><th><%= t("collavre.agent_connections.kind") %></th><th><%= t("collavre.agent_connections.state") %></th><th><%= t("collavre.agent_connections.actions") %></th></tr></thead>
+      <tbody data-agent-connection-target="provision">
+        <tr><td><strong>collavre</strong></td><td>skill</td><td><%= t("collavre.agent_connections.loading") %></td><td></td></tr>
+        <tr><td><strong>workspace-config</strong></td><td>config</td><td><%= t("collavre.agent_connections.loading") %></td><td></td></tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="form-section" style="margin-top: 1.5rem;">
+  <h2><%= t("collavre.agent_connections.meta_skills") %></h2>
+  <p class="text-muted"><%= t("collavre.agent_connections.meta_skills_help") %></p>
+  <% if @agent.tools.present? %>
+    <ul><% @agent.tools.each do |tool| %><li><code><%= tool %></code></li><% end %></ul>
+  <% else %>
+    <p class="text-muted"><%= t("collavre.users.edit_ai.no_tools_found") %></p>
+  <% end %>
+</section>
+
+<div class="flex-row-center-between" style="margin-top: 1.5rem;">
+  <%= link_to t("collavre.agent_connections.back"), collavre.user_path(@agent), class: "btn btn-secondary" %>
+  <%= button_to t("collavre.agent_connections.rotate_tokens"), collavre.agent_connection_rotate_tokens_path(@agent), method: :post,
+                class: "btn btn-danger", form: { data: { turbo_confirm: t("collavre.agent_connections.rotate_confirm") } } %>
+</div>
