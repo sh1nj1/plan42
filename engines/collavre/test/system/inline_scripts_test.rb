@@ -418,28 +418,6 @@ class InlineScriptsTest < ApplicationSystemTestCase
     assert_text I18n.t("collavre.creatives.workspace.select_chat")
   end
 
-  test "creative guide popover shows on help button click" do
-    # Clear help_menu_link setting to ensure popover shows instead of redirect
-    SystemSetting.find_by(key: "help_menu_link")&.destroy
-
-    visit root_path
-
-    # Popover should be hidden initially
-    assert_selector "#creative-guide-popover", visible: :all
-
-    # Click help button (the "?" button) - use CSS selector for desktop button
-    find("#creative-guide-link", visible: :all, match: :first).click
-
-    # Popover should become visible
-    assert_selector "#creative-guide-popover[style*='display: block']", visible: :visible, wait: 5
-
-    # Click close button
-    find("#close-creative-guide").click
-
-    # Popover should be hidden again
-    assert_no_selector "#creative-guide-popover[style*='display: block']", wait: 5
-  end
-
   test "share modal opens and closes correctly" do
     creative = Creative.create!(user: @user, description: "Shareable Creative")
 
@@ -619,37 +597,6 @@ class InlineScriptsTest < ApplicationSystemTestCase
     close_btn.click
 
     assert_selector "#token-modal", visible: :hidden, wait: 5
-  end
-
-  test "creative guide popover works after browser back navigation (Turbo cache)" do
-    # Clear help_menu_link setting to ensure popover shows
-    SystemSetting.find_by(key: "help_menu_link")&.destroy
-    creative = Creative.create!(user: @user, description: "Cache Test Creative")
-
-    # Visit root page and verify creative guide works
-    visit root_path
-    assert_selector "#creative-guide-link", visible: :all, wait: 5
-
-    find("#creative-guide-link", visible: :all, match: :first).click
-    assert_selector "#creative-guide-popover[style*='display: block']", visible: :visible, wait: 5
-
-    find("#close-creative-guide").click
-    assert_no_selector "#creative-guide-popover[style*='display: block']", wait: 5
-
-    # Navigate to a different page
-    visit collavre.creative_path(creative)
-    assert_selector "#creative-guide-link", visible: :all, wait: 5
-
-    # Navigate back using browser history (this restores from Turbo cache)
-    page.go_back
-    assert_selector "#creative-guide-link", visible: :all, wait: 5
-
-    # Verify creative guide still works after cache restore
-    find("#creative-guide-link", visible: :all, match: :first).click
-    assert_selector "#creative-guide-popover[style*='display: block']", visible: :visible, wait: 5
-
-    find("#close-creative-guide").click
-    assert_no_selector "#creative-guide-popover[style*='display: block']", wait: 5
   end
 
   test "doorkeeper token modal works after browser back navigation (Turbo cache)" do

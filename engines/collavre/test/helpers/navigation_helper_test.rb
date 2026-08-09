@@ -130,6 +130,32 @@ class NavigationHelperTest < ActionView::TestCase
     assert_match(/creative-guide-link/, html)
   end
 
+  test "help partial opens the default features page in a new tab" do
+    SystemSetting.stub(:help_menu_link, "") do
+      I18n.with_locale(:en) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en'][target='_blank'][rel='noopener']", count: 1
+  end
+
+  test "help partial preserves the engine mount path" do
+    request.script_name = "/collavre"
+
+    SystemSetting.stub(:help_menu_link, "") do
+      I18n.with_locale(:ko) { render partial: "collavre/shared/navigation/help_button" }
+    end
+
+    assert_select "a#creative-guide-link[href='/collavre/features?locale=ko']", count: 1
+  end
+
+  test "help partial preserves the configured link and opens it in a new tab" do
+    SystemSetting.stub(:help_menu_link, "https://docs.example.com/help") do
+      render partial: "collavre/shared/navigation/help_button"
+    end
+
+    assert_select "a#creative-guide-link[href='https://docs.example.com/help'][target='_blank'][rel='noopener']", count: 1
+  end
+
   test "navigation partial renders mobile guest help and sign in buttons" do
     Navigation::Registry.instance.register(
       key: :help,
@@ -153,8 +179,44 @@ class NavigationHelperTest < ActionView::TestCase
 
     assert_includes rendered, 'class="mobile-only"'
     assert_includes rendered, 'creative-guide-link'
+    assert_includes rendered, 'target="_blank"'
+    assert_includes rendered, 'rel="noopener"'
     assert_includes rendered, I18n.t("app.sign_in")
     assert_includes rendered, collavre.new_session_path
+  end
+
+  test "navigation partial renders signed-in help in the desktop nav and user menu" do
+    help_menu_item = {
+      key: :help_menu,
+      label: "app.help",
+      type: :partial,
+      partial: "collavre/shared/navigation/help_button"
+    }
+    Navigation::Registry.instance.register(
+      key: :help,
+      label: "app.help",
+      type: :partial,
+      partial: "collavre/shared/navigation/help_button",
+      priority: 170
+    )
+    Navigation::Registry.instance.register(
+      key: :user_menu,
+      label: "User",
+      section: :user,
+      type: :raw,
+      button_content: "User",
+      requires_user: true,
+      children: [ help_menu_item ]
+    )
+    Current.user = users(:one)
+
+    SystemSetting.stub(:help_menu_link, "") do
+      render partial: "collavre/shared/navigation"
+    end
+
+    assert_select "a#creative-guide-link[href='/features?locale=en'][target='_blank'][rel='noopener']", count: 2
+  ensure
+    Current.user = nil
   end
 
   test "render_navigation_item respects html_class option" do

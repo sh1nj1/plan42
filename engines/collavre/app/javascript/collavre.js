@@ -10,7 +10,6 @@ import "./modules/command_menu"
 import "./modules/modal_dialog"
 import "./modules/export_to_markdown"
 import "./modules/inbox_panel"
-import "./modules/creative_guide"
 import "./modules/creative_row_editor"
 import "./modules/slide_view"
 
