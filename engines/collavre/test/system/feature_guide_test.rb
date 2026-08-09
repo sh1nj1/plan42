@@ -24,7 +24,7 @@ class FeatureGuideTest < ApplicationSystemTestCase
 
     within_window feature_window do
       assert_current_path collavre.features_path(locale: I18n.locale)
-      assert_selector ".feature-guide-link-card", count: 9
+      assert_selector ".feature-guide-link-card", count: Collavre::FeatureCardRegistry.with_builtin_guide.size
 
       find("a[href^='/features/mention_agent']").click
 
