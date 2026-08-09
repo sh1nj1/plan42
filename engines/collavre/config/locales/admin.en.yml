@@ -8,7 +8,7 @@ en:
       orchestration: "AI Orchestration"
     settings:
       help_link: "Help Menu Link URL"
-      help_link_hint: "If set, the \"?\" menu in the top navigation will link to this URL."
+      help_link_hint: "The \"?\" menu opens this URL in a new tab. Leave blank to open the default features page."
       mcp_tool_approval: "MCP Tool Approval"
       mcp_tool_approval_hint: "Require system administrator approval for new MCP tools."
       creatives_login_required: "Require Login for Creatives"

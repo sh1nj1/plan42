@@ -1,1 +1,3 @@
-<%= button_tag t('app.help'), id: "creative-guide-link", class: "creative-guide-link", data: { help_url: SystemSetting.help_menu_link } %>
+<% default_help_url = collavre.features_path(locale: I18n.locale, script_name: request.script_name) %>
+<% help_url = SystemSetting.help_menu_link.presence || default_help_url %>
+<%= link_to t('app.help'), help_url, id: "creative-guide-link", class: "creative-guide-link", target: "_blank", rel: "noopener" %>
