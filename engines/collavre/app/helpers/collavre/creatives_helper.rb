@@ -1,18 +1,20 @@
 module Collavre
   module CreativesHelper
     def render_creative_description(creative, fallback: nil)
-      if creative.onboarding_card?
-        card = Collavre::FeatureCardRegistry.find(creative.onboarding_metadata["feature_key"])
+      content_owner = creative.effective_origin
+
+      if content_owner.onboarding_card?
+        card = Collavre::FeatureCardRegistry.find(content_owner.onboarding_metadata["feature_key"])
         return render(
           Collavre::FeatureCardComponent.new(
             card: card,
             surface: :onboarding,
-            creative: creative,
-            onboarding_state: creative.onboarding_metadata
+            creative: content_owner,
+            onboarding_state: content_owner.onboarding_metadata
           )
         ) if card
-      elsif creative.onboarding_root?
-        return render(Collavre::OnboardingOverviewComponent.new(creative: creative))
+      elsif content_owner.onboarding_root?
+        return render(Collavre::OnboardingOverviewComponent.new(creative: content_owner))
       end
 
       fallback || embed_youtube_iframe(creative.effective_description)

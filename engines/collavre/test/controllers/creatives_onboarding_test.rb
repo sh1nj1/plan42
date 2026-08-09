@@ -171,6 +171,48 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert guide.descendants.none?(&:archived?)
   end
 
+  test "linked onboarding root renders the owner's live overview without owner actions" do
+    owner = users(:one)
+    owner.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.onboarding_guides.where(user: owner).destroy_all
+    Creative.inbox_for(owner)
+    guide = Collavre::Onboarding::Seeder.call(user: owner)
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: guide, user: @user, permission: :read, shared_by: owner)
+    end
+    guide.create_linked_creative_for_user(@user)
+    linked_guide = Creative.find_by!(origin: guide, user: @user)
+
+    get collavre.creative_path(linked_guide), as: :json
+
+    assert_response :success
+    description = response.parsed_body["description"]
+    assert_includes description, "onboarding-overview"
+    assert_includes description, "0/#{guide.children.count}"
+    assert_not_includes description, 'data-turbo-method="delete"'
+  end
+
+  test "archive guard does not instantiate an ordinary subtree" do
+    ancestor = Creative.create!(user: @user, description: "Ordinary ancestor")
+    parent = ancestor
+    20.times do |index|
+      parent = Creative.create!(user: @user, parent: parent, description: "Child #{index}")
+    end
+    instantiated_creatives = 0
+    counter = lambda do |_name, _start, _finish, _id, payload|
+      instantiated_creatives += payload[:record_count] if payload[:class_name] == "Collavre::Creative"
+    end
+
+    ActiveSupport::Notifications.subscribed(counter, "instantiation.active_record") do
+      patch collavre.archive_creative_path(ancestor)
+    end
+
+    assert_response :success
+    assert_predicate ancestor.reload, :archived?
+    assert_operator instantiated_creatives, :<=, 3
+  end
+
   test "onboarding cards use server-rendered feature cards with static API fallback data" do
     get collavre.creatives_path
     guide = Creative.onboarding_guides.find_by!(user: @user)

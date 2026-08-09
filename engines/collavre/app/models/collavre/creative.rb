@@ -89,6 +89,7 @@ module Collavre
 
     ONBOARDING_KIND = "onboarding"
     scope :onboarding_guides, -> { where("data->>'kind' = ?", ONBOARDING_KIND) }
+    scope :onboarding_items, -> { where("data->'onboarding'->>'session_id' IS NOT NULL") }
 
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"

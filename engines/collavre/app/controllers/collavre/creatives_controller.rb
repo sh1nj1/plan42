@@ -556,7 +556,7 @@ module Collavre
 
     def archive
       onboarding_item_present = @creative.archive_target_roots.any? do |target|
-        target.self_and_descendants.any?(&:onboarding_item?)
+        target.self_and_descendants.onboarding_items.exists?
       end
       return head :unprocessable_entity if onboarding_item_present
 
