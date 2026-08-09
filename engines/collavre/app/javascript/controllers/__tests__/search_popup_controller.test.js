@@ -266,6 +266,22 @@ describe('SearchPopupController filter navigation', () => {
     })
   })
 
+  test('clears whitespace-only searches', async () => {
+    setLocation('http://localhost/creatives?search=roadmap')
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    input.value = '   '
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
+
+    expect(visit).toHaveBeenLastCalledWith('/creatives', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
   test('ignores keys other than Enter in the search input', async () => {
     await mount()
     const input = document.querySelector('[data-search-popup-target="input"]')

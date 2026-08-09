@@ -80,11 +80,12 @@ export function syncFilterButtons(url) {
   const params = url.searchParams
   const hasProgress = Boolean(params.get('min_progress') || params.get('max_progress'))
   const hasArchived = params.get('show_archived') === 'true'
+  const hasSearch = Boolean(params.get('search')?.trim())
   const active = {
     [`progress:${progressState(params)}`]: true,
     comment: params.get('comment') === 'true',
     archived: hasArchived,
-    'any-filter': hasProgress || hasArchived || Boolean(params.get('search'))
+    'any-filter': hasProgress || hasArchived || hasSearch
   }
 
   document.querySelectorAll('[data-filter-state]').forEach((element) => {

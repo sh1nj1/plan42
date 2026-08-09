@@ -143,8 +143,9 @@ export default class extends Controller {
     this._navigate((params) => {
       if (!('search' in overrides)) return
 
-      if (overrides.search) {
-        params.set('search', overrides.search)
+      const search = overrides.search
+      if (search.trim()) {
+        params.set('search', search)
       } else {
         params.delete('search')
       }

@@ -186,8 +186,8 @@ describe('syncFilterButtons', () => {
     expect(activeStates()).toContain('any-filter')
   })
 
-  test('ignores blank filter values, matching the server-side .present? check', () => {
-    syncFilterButtons(new URL('http://localhost/creatives?search=&min_progress='))
+  test('ignores blank and whitespace-only filter values, matching server-side .present?', () => {
+    syncFilterButtons(new URL('http://localhost/creatives?search=%20%20%20&min_progress='))
 
     expect(activeStates()).toEqual(['progress:all'])
   })
