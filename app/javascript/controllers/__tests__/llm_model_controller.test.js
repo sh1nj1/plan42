@@ -39,6 +39,7 @@ describe('LlmModelController', () => {
             <div id="llm-model-suggestions" style="display:none;">
               <ul class="common-popup-list"></ul>
             </div>
+            <input id="next-field">
           </div>
         `
         document.getElementById('llm-fields').dataset.llmModelModelsValue = JSON.stringify(models)
@@ -114,6 +115,44 @@ describe('LlmModelController', () => {
         expect(controller.menuElement.style.display).toBe('block')
     })
 
+    test('hides the popup when focus leaves the delete button and model controls', () => {
+        controller.inputTarget.focus()
+        controller.show('gpt')
+        controller.handleKeydown(new KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        }))
+
+        document.getElementById('next-field').focus()
+
+        expect(controller.menuElement.style.display).toBe('none')
+    })
+
+    test('keeps the popup open when focus returns from delete to the model input', () => {
+        controller.inputTarget.focus()
+        controller.show('gpt')
+        controller.handleKeydown(new KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        }))
+
+        controller.inputTarget.focus()
+
+        expect(controller.menuElement.style.display).toBe('block')
+    })
+
+    test('keeps the popup open when focus moves within its delete controls', () => {
+        controller.show('')
+        const buttons = document.querySelectorAll('.llm-model-delete')
+        buttons[0].focus()
+
+        buttons[1].focus()
+
+        expect(controller.menuElement.style.display).toBe('block')
+    })
+
     test('selects a model without including the delete control', () => {
         controller.show('gpt')
         document.querySelector('.llm-model-name').dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -131,6 +170,7 @@ describe('LlmModelController', () => {
     test('deletes a suggestion without selecting it', async () => {
         global.fetch.mockResolvedValue(response({ ok: true }))
         controller.inputTarget.value = 'gpt'
+        controller.inputTarget.focus()
         controller.show('gpt')
 
         document.querySelector('.llm-model-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -163,6 +203,43 @@ describe('LlmModelController', () => {
 
         expect(document.activeElement).toBe(controller.inputTarget)
         expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+    })
+
+    test('keeps the popup hidden when focus leaves during deletion', async () => {
+        let resolveDelete
+        global.fetch.mockReturnValue(new Promise((resolve) => { resolveDelete = resolve }))
+        controller.inputTarget.focus()
+        controller.show('')
+        controller.handleKeydown(new KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        }))
+
+        document.activeElement.click()
+        document.getElementById('next-field').focus()
+        resolveDelete(response({ ok: true }))
+        await flush()
+
+        expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+        expect(controller.menuElement.style.display).toBe('none')
+    })
+
+    test('restores input focus when deletion rebuilds another focused suggestion', async () => {
+        let resolveDelete
+        global.fetch.mockReturnValue(new Promise((resolve) => { resolveDelete = resolve }))
+        controller.show('')
+        const buttons = document.querySelectorAll('.llm-model-delete')
+        buttons[0].focus()
+        buttons[0].click()
+        buttons[1].focus()
+
+        resolveDelete(response({ ok: true }))
+        await flush()
+
+        expect(document.activeElement).toBe(controller.inputTarget)
+        expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+        expect(controller.menuElement.style.display).toBe('block')
     })
 
     test('refreshes a stale CSRF token and retries deletion once', async () => {

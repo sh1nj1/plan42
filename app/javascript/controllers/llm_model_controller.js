@@ -73,6 +73,13 @@ export default class extends Controller {
         return true
     }
 
+    deleteButtonBlur(event) {
+        const nextTarget = event.relatedTarget
+        if (nextTarget === this.inputTarget || this.menuElement.contains(nextTarget)) return
+
+        this.hide()
+    }
+
     show(term) {
         if (!this.popup) return
 
@@ -133,9 +140,17 @@ export default class extends Controller {
                 throw new Error(`Unexpected DELETE response: ${response.status}`)
             }
 
+            const shouldRefreshPopup = this.popup?.isOpen() && (
+                document.activeElement === this.inputTarget ||
+                this.menuElement.contains(document.activeElement)
+            )
             this.modelsValue = this.modelsValue.filter((candidate) => candidate.id !== id)
-            if (document.activeElement === deleteButton) this.inputTarget.focus()
-            this.show(this.inputTarget.value.trim())
+            if (this.menuElement.contains(document.activeElement)) this.inputTarget.focus()
+            if (shouldRefreshPopup) {
+                this.show(this.inputTarget.value.trim())
+            } else {
+                this.hide()
+            }
         } catch (error) {
             await alertDialog(this.deleteFailedValue)
         }
@@ -158,6 +173,7 @@ export default class extends Controller {
             button.addEventListener('touchend', this.deleteModel.bind(this))
             button.addEventListener('click', this.deleteModel.bind(this))
             button.addEventListener('focus', () => clearTimeout(this.hideTimeout))
+            button.addEventListener('blur', this.deleteButtonBlur.bind(this))
         })
     }
 
