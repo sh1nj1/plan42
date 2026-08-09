@@ -186,13 +186,17 @@ module Collavre
               @creative,
               fallback: @creative.effective_description
             )
+            embedded_description = view_context.render_creative_description(
+              @creative,
+              fallback: view_context.embed_youtube_iframe(@creative.effective_description)
+            )
             render json: {
               id: @creative.id,
               description: rendered_description,
               # Embedded variant for read-only display (e.g. slide view): turns
               # bare YouTube links into preview iframes. `description` stays the
               # raw editable form the inline editor round-trips.
-              description_embedded_html: rendered_description,
+              description_embedded_html: embedded_description,
               description_raw_html: @creative.description,
               origin_id: @creative.origin_id,
               parent_id: @creative.parent_id,

@@ -15,6 +15,7 @@ module Collavre
       collavre/org_chart
       collavre/popup
       collavre/comments_popup
+      collavre/feature_cards
       collavre/workspace
       collavre/tables
       collavre/code_highlight
