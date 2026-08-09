@@ -58,7 +58,7 @@ module Collavre
         )
       when :focus_progress
         mounted_creatives_path(
-          id: creative.id,
+          id: target_creative.id,
           onboarding_action: "progress",
           onboarding_target_id: target_creative.id
         )

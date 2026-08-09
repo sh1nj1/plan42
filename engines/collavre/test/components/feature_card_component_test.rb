@@ -88,6 +88,47 @@ class FeatureCardComponentTest < ViewComponent::TestCase
                     text: I18n.t("collavre.onboarding.actions.edit_created")
   end
 
+  test "navigates progress action to the tracked Creative after it is moved" do
+    creative = onboarding_card(
+      step_key: "progress_rollup",
+      feature_key: "progress_rollup"
+    )
+    target = Creative.create!(
+      user: @user,
+      description: "Practice",
+      progress: 0,
+      data: {
+        "onboarding" => {
+          "session_id" => creative.onboarding_metadata["session_id"],
+          "role" => "practice",
+          "step_key" => "progress_rollup"
+        }
+      },
+      parent: creative
+    )
+    data = creative.data.deep_dup
+    data["onboarding"]["target_creative_id"] = target.id
+    creative.update!(data: data)
+    target.update!(parent: creatives(:root_parent))
+
+    render_inline(
+      Collavre::FeatureCardComponent.new(
+        card: Collavre::FeatureCardRegistry.find(:progress_rollup),
+        surface: :onboarding,
+        creative: creative,
+        onboarding_state: creative.onboarding_metadata
+      )
+    )
+
+    expected_path = Collavre::Engine.routes.url_helpers.creatives_path(
+      id: target.id,
+      onboarding_action: "progress",
+      onboarding_target_id: target.id
+    )
+    assert_selector "a.feature-card-action[href='#{expected_path}']",
+                    text: I18n.t("collavre.onboarding.actions.progress_rollup")
+  end
+
   test "completed onboarding cards render status without another action" do
     creative = onboarding_card(
       step_key: "progress_rollup",
