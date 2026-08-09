@@ -39,6 +39,19 @@ describe("creative link navigation", () => {
     })
   })
 
+  test("navigates a creative link under the engine mount path", () => {
+    const anchor = document.getElementById("creative-link")
+    anchor.setAttribute("href", "/collavre/creatives/42?open_comments=true")
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith("/collavre/creatives/42?open_comments=true", {
+      action: "advance",
+      frame: WORKSPACE_FRAME_ID,
+    })
+  })
+
   test("returns whether it handled the event", () => {
     const anchor = document.getElementById("creative-link")
     const event = new MouseEvent("click", { bubbles: true, cancelable: true })

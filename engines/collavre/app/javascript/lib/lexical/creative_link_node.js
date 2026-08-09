@@ -1,7 +1,7 @@
 import { LinkNode } from "@lexical/link"
 import { $applyNodeReplacement } from "lexical"
 
-const CREATIVE_PATH = /^\/creatives\/(\d+)(?:[?#].*)?$/
+const CREATIVE_PATH = /^\/(?:[^/?#]+\/)*creatives\/(\d+)(?:[?#].*)?$/
 
 export function creativeIdFromUrl(url) {
   const match = String(url || "").match(CREATIVE_PATH)
