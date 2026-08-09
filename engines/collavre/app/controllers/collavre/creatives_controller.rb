@@ -555,7 +555,7 @@ module Collavre
     end
 
     def archive
-      return head :unprocessable_entity if @creative.onboarding_item?
+      return head :unprocessable_entity if @creative.self_and_descendants.any?(&:onboarding_item?)
 
       @creative.archive!
       head :ok

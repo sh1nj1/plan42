@@ -135,6 +135,21 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert_not practice.reload.archived?
   end
 
+  test "archive request cannot strand onboarding items below an ordinary ancestor" do
+    get collavre.creatives_path
+    guide = Creative.onboarding_guides.find_by!(user: @user)
+    practice = guide.descendants.find(&:onboarding_practice?)
+    ancestor = Creative.create!(user: @user, description: "Ordinary ancestor")
+    container = Creative.create!(user: @user, parent: ancestor, description: "Container")
+    practice.update!(parent: container)
+
+    patch collavre.archive_creative_path(ancestor)
+
+    assert_response :unprocessable_entity
+    assert_not ancestor.reload.archived?
+    assert_not practice.reload.archived?
+  end
+
   test "onboarding cards use server-rendered feature cards with static API fallback data" do
     get collavre.creatives_path
     guide = Creative.onboarding_guides.find_by!(user: @user)

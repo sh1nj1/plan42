@@ -73,4 +73,30 @@ class DestroyServiceOnboardingTest < ActiveSupport::TestCase
     assert Creative.exists?(guide.id)
     assert_nil @user.reload.onboarding_completed_at
   end
+
+  test "recursive deletion cleans an onboarding session below an ordinary ancestor" do
+    @user.update!(onboarding_seeded_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    session_id = guide.onboarding_metadata["session_id"]
+    practice = guide.descendants.find(&:onboarding_practice?)
+    ancestor = Creative.create!(user: @user, description: "Ordinary ancestor")
+    outside = Creative.create!(user: @user, description: "Outside container")
+    guide.update!(parent: ancestor)
+    practice.update!(parent: outside)
+
+    Collavre::Creatives::DestroyService.new(
+      creative: ancestor,
+      user: @user,
+      delete_with_children: true
+    ).call
+
+    remaining = Creative.where(user: @user).select do |creative|
+      creative.onboarding_metadata&.dig("session_id") == session_id
+    end
+    assert_empty remaining
+    assert_not Creative.exists?(ancestor.id)
+    assert Creative.exists?(outside.id)
+    assert_not_nil @user.reload.onboarding_completed_at
+  end
 end
