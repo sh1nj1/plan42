@@ -22,8 +22,12 @@ en:
             tenant_id:
               invalid: "may only contain letters, digits and . _ : @ / -"
             identity_secret:
-              blank: "is required for per-user workspace mode"
+              blank: "is required for per-user mode or a gateway assigned to multiple AI agents"
               too_short: "must contain at least %{count} bytes"
+        collavre/user:
+          attributes:
+            agent_gateway:
+              identity_required: "requires an identity secret when shared with another AI agent"
   collavre:
     agent_gateways:
       title: My Agent Gateways
@@ -41,7 +45,7 @@ en:
       admin_key_help: A value from the proxy AUTH_ADMIN_KEYS setting. Used only by the Collavre server.
       completion_key: Completion key
       identity_secret: Identity secret
-      identity_secret_help: Must match USER_IDENTITY_HMAC_SECRET and contain at least 32 bytes. Required for per-user mode.
+      identity_secret_help: Must match USER_IDENTITY_HMAC_SECRET and contain at least 32 bytes. Required for per-user mode or multiple AI agents.
       tenant_id: Tenant ID
       tenant_id_help: Changing this value creates different proxy workspaces for every connected agent.
       secret_unchanged: Leave blank to keep the current secret

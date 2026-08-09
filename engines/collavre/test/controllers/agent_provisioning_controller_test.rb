@@ -51,4 +51,18 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
     get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: "invalid-token")
     assert_response :not_found
   end
+
+  test "rate limiting applies only to manifests" do
+    cache_key = "rate-limit:collavre/agent_provisioning:127.0.0.1"
+    Rails.cache.write(cache_key, 60, expires_in: 1.minute)
+    skill = Collavre::AgentProvisioning::Archive.collavre_skill
+
+    get collavre.agent_provision_skill_path(sha256: Digest::SHA256.hexdigest(skill))
+    assert_response :success
+
+    get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: @workspace.manifest_token)
+    assert_response :too_many_requests
+  ensure
+    Rails.cache.delete(cache_key) if cache_key
+  end
 end

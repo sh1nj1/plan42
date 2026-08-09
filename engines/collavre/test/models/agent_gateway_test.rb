@@ -43,6 +43,18 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_includes gateway.errors.details[:identity_secret].pluck(:error), :too_short
   end
 
+  test "identity secret is required before a shared gateway can serve multiple agents" do
+    gateway = build_gateway(identity_secret: "s" * 32)
+    gateway.save!
+    create_agent(gateway)
+    create_agent(gateway)
+
+    gateway.identity_secret = nil
+
+    assert_not gateway.valid?
+    assert_includes gateway.errors.details[:identity_secret].pluck(:error), :blank
+  end
+
   test "validation messages are translated in every supported locale" do
     %i[en ko].each do |locale|
       I18n.with_locale(locale) do

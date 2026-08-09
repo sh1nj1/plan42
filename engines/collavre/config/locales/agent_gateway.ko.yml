@@ -22,8 +22,12 @@ ko:
             tenant_id:
               invalid: "은(는) 영문·숫자와 . _ : @ / - 만 사용할 수 있습니다"
             identity_secret:
-              blank: "은(는) 사용자별 워크스페이스 모드에서 필수입니다"
+              blank: "은(는) 사용자별 모드 또는 여러 AI Agent가 사용하는 게이트웨이에서 필수입니다"
               too_short: "은(는) %{count}바이트 이상이어야 합니다"
+        collavre/user:
+          attributes:
+            agent_gateway:
+              identity_required: "은(는) 다른 AI Agent와 게이트웨이를 공유할 때 Identity secret이 필요합니다"
   collavre:
     agent_gateways:
       title: 내 Agent Gateway
@@ -41,7 +45,7 @@ ko:
       admin_key_help: 프록시 AUTH_ADMIN_KEYS 값입니다. Collavre 서버에서만 사용합니다.
       completion_key: Completion key
       identity_secret: Identity secret
-      identity_secret_help: USER_IDENTITY_HMAC_SECRET과 같아야 하며 32바이트 이상이어야 합니다. 사용자별 모드에서는 필수입니다.
+      identity_secret_help: USER_IDENTITY_HMAC_SECRET과 같아야 하며 32바이트 이상이어야 합니다. 사용자별 모드 또는 여러 AI Agent가 사용할 때 필수입니다.
       tenant_id: Tenant ID
       tenant_id_help: 이 값을 바꾸면 연결된 모든 에이전트가 프록시에서 다른 워크스페이스를 사용하게 됩니다.
       secret_unchanged: 비워두면 현재 값을 유지합니다

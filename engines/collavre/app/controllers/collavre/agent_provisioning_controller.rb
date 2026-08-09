@@ -6,7 +6,7 @@ module Collavre
     CONFIG_NAME = "collavre"
     CACHE_CONTROL = "public, max-age=31536000, immutable"
 
-    rate_limit to: 60, within: 1.minute
+    rate_limit to: 60, within: 1.minute, only: :manifest
 
     def manifest
       response.headers["Cache-Control"] = "private, no-store"

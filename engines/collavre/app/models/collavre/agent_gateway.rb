@@ -64,8 +64,8 @@ module Collavre
 
     def identity_secret_is_usable
       if identity_secret.blank?
-        # Shared mode may fall back to the proxy's single unscoped workspace.
-        errors.add(:identity_secret, :blank) if per_user?
+        # A single-agent shared gateway may fall back to the proxy's unscoped workspace.
+        errors.add(:identity_secret, :blank) if per_user? || agents.many?
         return
       end
 

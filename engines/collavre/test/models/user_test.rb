@@ -133,6 +133,31 @@ class UserTest < ActiveSupport::TestCase
     assert agent.errors.of_kind?(:agent_gateway, :invalid)
   end
 
+  test "a secretless shared gateway cannot be assigned to a second CLI Proxy agent" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Single-agent gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    first_agent = Collavre::User.create!(
+      name: "First CLI agent",
+      email: "first-secretless-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    second_agent = first_agent.dup
+    second_agent.email = "second-secretless-cli-agent@ai.local"
+
+    assert_not second_agent.valid?
+    assert second_agent.errors.of_kind?(:agent_gateway, :identity_required)
+  end
+
   test "gateway access follows inherited creative permissions" do
     owner = users(:two)
     viewer = Collavre::User.create!(
