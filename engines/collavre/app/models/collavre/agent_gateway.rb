@@ -4,7 +4,7 @@ module Collavre
   class AgentGateway < ApplicationRecord
     self.table_name = "agent_gateways"
 
-    # 프록시의 USER_IDENTITY_HMAC_SECRET과 동일해야 하는 공유 비밀의 최소 길이.
+    # Must match the proxy's USER_IDENTITY_HMAC_SECRET.
     MIN_IDENTITY_SECRET_BYTES = 32
 
     belongs_to :owner, class_name: "Collavre::User"
@@ -25,6 +25,7 @@ module Collavre
     validates :name, uniqueness: { scope: :owner_id }
     validates :tenant_id, format: { with: /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/ }
     validate :base_url_is_http
+    validate :base_url_is_safe_for_owner
     validate :identity_secret_is_usable
     after_update :reconcile_workspaces_after_mode_change, if: :saved_change_to_workspace_mode?
 
@@ -50,9 +51,16 @@ module Collavre
       errors.add(:base_url, :invalid)
     end
 
+    def base_url_is_safe_for_owner
+      return if owner&.system_admin?
+      return if CliProxy::EndpointPolicy.new.safe_literal?(base_url)
+
+      errors.add(:base_url, :unsafe)
+    end
+
     def identity_secret_is_usable
       if identity_secret.blank?
-        # 공유 모드는 신원 헤더 없이 단일 워크스페이스로 퇴화하므로 비워 둘 수 있다.
+        # Shared mode may fall back to the proxy's single unscoped workspace.
         errors.add(:identity_secret, :blank) if per_user?
         return
       end

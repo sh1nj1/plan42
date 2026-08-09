@@ -44,6 +44,19 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
     assert @owner.owned_agent_gateways.exists?(name: "Second proxy")
   end
 
+  test "gateway form explains the owner-specific endpoint policy" do
+    sign_in_as(@owner, password: "password")
+    get collavre.new_agent_gateway_path
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.agent_gateways.base_url_help")
+
+    sign_out
+    sign_in_as(users(:one), password: "password")
+    get collavre.new_agent_gateway_path
+    assert_response :success
+    assert_includes response.body, I18n.t("collavre.agent_gateways.base_url_help_admin")
+  end
+
   test "user cannot edit another user's gateway" do
     sign_in_as(@other, password: "password")
     get collavre.edit_agent_gateway_path(@gateway)

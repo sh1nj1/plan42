@@ -18,7 +18,7 @@ module Collavre
         @gateway = gateway
         @workspace = workspace
         @user_key = user_key
-        @http_client = http_client || Collavre::HttpClient.new(open_timeout: 5, read_timeout: 35)
+        @http_client = http_client || default_http_client
       end
 
       def engines
@@ -71,6 +71,11 @@ module Collavre
 
       private
 
+      def default_http_client
+        policy = EndpointPolicy.new unless @gateway.owner.system_admin?
+        Collavre::HttpClient.new(open_timeout: 5, read_timeout: 35, endpoint_policy: policy)
+      end
+
       def request(method, path, body: nil)
         headers = {
           "Authorization" => "Bearer #{@gateway.admin_key}",
@@ -106,6 +111,8 @@ module Collavre
         raise Error.new("Invalid JSON from CLI proxy", details: e.message)
       rescue Collavre::HttpClient::ConnectionError => e
         raise Error.new(e.message, code: "proxy_unreachable")
+      rescue EndpointPolicy::UnsafeEndpoint
+        raise Error.new(I18n.t("collavre.agent_gateways.unsafe_endpoint"), code: "unsafe_proxy_endpoint")
       end
 
       def segment(value)

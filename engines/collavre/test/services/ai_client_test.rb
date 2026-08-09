@@ -524,9 +524,44 @@ class AiClientTest < ActiveSupport::TestCase
 
     assert_equal "completion-secret", context_config.openai_api_key
     assert_equal "https://proxy.example.com/v1", context_config.openai_api_base
+    assert_equal Collavre::CliProxy::SafeNetHttpAdapter, context_config.faraday_adapter
     assert_equal "agent-#{agent.id}--user-#{workspace_user.id}",
                  fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
     assert fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature").present?
+  end
+
+  test "system-admin CLI Proxy gateways retain the default HTTP adapter" do
+    owner = users(:one)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Admin internal proxy",
+      base_url: "http://127.0.0.1:3456",
+      admin_key: "admin",
+      completion_key: "completion-secret"
+    )
+    agent = Collavre::User.create!(
+      name: "Admin CLI client agent",
+      email: "admin-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    client = AiClient.new(vendor: "cli_proxy", model: agent.llm_model, system_prompt: nil, context: { user: agent })
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    original_adapter = context_config.faraday_adapter
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "http://127.0.0.1:3456/v1", context_config.openai_api_base
+    assert_equal original_adapter, context_config.faraday_adapter
   end
 
   private

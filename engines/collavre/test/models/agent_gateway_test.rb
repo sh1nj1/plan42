@@ -66,6 +66,19 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_not gateway.valid?
   end
 
+  test "regular owners require public HTTPS while system administrators may use internal HTTP endpoints" do
+    regular_gateway = build_gateway(base_url: "http://127.0.0.1:3456")
+    assert_not regular_gateway.valid?
+    assert_includes regular_gateway.errors.details[:base_url].pluck(:error), :unsafe
+
+    regular_gateway.base_url = "https://192.168.1.20"
+    assert_not regular_gateway.valid?
+    assert_includes regular_gateway.errors.details[:base_url].pluck(:error), :unsafe
+
+    admin_gateway = build_gateway(owner: users(:one), base_url: "http://127.0.0.1:3456")
+    assert admin_gateway.valid?, admin_gateway.errors.full_messages.to_sentence
+  end
+
   test "switching to shared preserves the owner workspace and revokes the others" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!

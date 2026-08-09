@@ -321,6 +321,9 @@ module Collavre
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
+          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin?
+            config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
+          end
         end
       when "anthropic"
         api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)

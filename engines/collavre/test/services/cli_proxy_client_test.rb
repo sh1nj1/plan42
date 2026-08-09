@@ -88,4 +88,49 @@ class CliProxyClientTest < ActiveSupport::TestCase
     assert_equal "completion-secret", request.dig(:headers, "X-CLI-Proxy-User-Key")
     assert_nil request.dig(:headers, "X-CLI-Proxy-User-ID")
   end
+
+  test "maps blocked regular-user endpoints without making a request" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Blocked proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin-secret",
+      completion_key: "completion-secret"
+    )
+    http = FakeHttpClient.new(nil)
+    http.define_singleton_method(:get) do |*, **|
+      raise Collavre::CliProxy::EndpointPolicy::UnsafeEndpoint
+    end
+
+    error = assert_raises(Collavre::CliProxy::Client::Error) do
+      Collavre::CliProxy::Client.new(gateway: gateway, http_client: http).engines
+    end
+
+    assert_equal "unsafe_proxy_endpoint", error.code
+    assert_equal I18n.t("collavre.agent_gateways.unsafe_endpoint"), error.message
+  end
+
+  test "default client applies endpoint policy only to non-admin owners" do
+    regular_gateway = build_gateway(owner: users(:two), name: "Regular proxy", base_url: "https://proxy.example.com")
+    admin_gateway = build_gateway(owner: users(:one), name: "Admin proxy", base_url: "http://127.0.0.1:3456")
+
+    regular_http = Collavre::CliProxy::Client.new(gateway: regular_gateway).instance_variable_get(:@http_client)
+    admin_http = Collavre::CliProxy::Client.new(gateway: admin_gateway).instance_variable_get(:@http_client)
+
+    assert_instance_of Collavre::CliProxy::EndpointPolicy, regular_http.instance_variable_get(:@endpoint_policy)
+    assert_nil admin_http.instance_variable_get(:@endpoint_policy)
+  end
+
+  private
+
+  def build_gateway(owner:, name:, base_url:)
+    Collavre::AgentGateway.create!(
+      owner: owner,
+      name: name,
+      base_url: base_url,
+      admin_key: "admin-secret",
+      completion_key: "completion-secret"
+    )
+  end
 end

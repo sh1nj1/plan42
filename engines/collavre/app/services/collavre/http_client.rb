@@ -62,10 +62,12 @@ module Collavre
       end
     end
 
-    def initialize(open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT, default_headers: {})
+    def initialize(open_timeout: DEFAULT_OPEN_TIMEOUT, read_timeout: DEFAULT_READ_TIMEOUT, default_headers: {},
+                   endpoint_policy: nil)
       @open_timeout = open_timeout
       @read_timeout = read_timeout
       @default_headers = default_headers
+      @endpoint_policy = endpoint_policy
     end
 
     def get(url, headers: {})
@@ -92,7 +94,7 @@ module Collavre
 
     def request(method, url, body: nil, headers: {})
       uri = URI.parse(url)
-      http = Net::HTTP.new(uri.host, uri.port)
+      http = build_connection(uri)
       http.use_ssl = uri.scheme == "https"
       http.open_timeout = @open_timeout
       http.read_timeout = @read_timeout
@@ -101,6 +103,13 @@ module Collavre
       Response.new(http.request(req))
     rescue *TRANSPORT_ERRORS => e
       raise ConnectionError, "#{e.class}: #{e.message}"
+    end
+
+    def build_connection(uri)
+      return Net::HTTP.new(uri.host, uri.port) unless @endpoint_policy
+
+      pinned_ip = @endpoint_policy.resolve!(uri).first
+      Net::HTTP.new(uri.host, uri.port, nil).tap { |http| http.ipaddr = pinned_ip }
     end
 
     def build_request(method, uri, body, headers)

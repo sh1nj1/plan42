@@ -16,7 +16,9 @@
   <div class="form-group">
     <%= form.label :base_url, t("collavre.agent_gateways.base_url") %>
     <%= form.url_field :base_url, required: true, class: "stacked-form-control", placeholder: "https://proxy.example.com" %>
-    <small class="form-text text-muted"><%= t("collavre.agent_gateways.base_url_help") %></small>
+    <small class="form-text text-muted">
+      <%= t(Current.user.system_admin? ? "collavre.agent_gateways.base_url_help_admin" : "collavre.agent_gateways.base_url_help") %>
+    </small>
   </div>
 
   <% secret_placeholder = agent_gateway.persisted? ? t("collavre.agent_gateways.secret_unchanged") : nil %>

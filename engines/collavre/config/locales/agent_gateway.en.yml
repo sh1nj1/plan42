@@ -18,6 +18,7 @@ en:
           attributes:
             base_url:
               invalid: "must be an http(s) origin without credentials, query or fragment"
+              unsafe: "must use HTTPS and cannot target a local, private, or reserved network address"
             tenant_id:
               invalid: "may only contain letters, digits and . _ : @ / -"
             identity_secret:
@@ -34,7 +35,8 @@ en:
       name: Name
       name_placeholder: Team CLI Proxy
       base_url: Base URL
-      base_url_help: Enter the proxy origin without an API path. HTTPS is recommended outside local development.
+      base_url_help: Enter a public HTTPS proxy origin without an API path. Local, private, and reserved network addresses are blocked.
+      base_url_help_admin: Enter the proxy origin without an API path. System administrators may use HTTP and private network addresses.
       admin_key: Admin key
       admin_key_help: A value from the proxy AUTH_ADMIN_KEYS setting. Used only by the Collavre server.
       completion_key: Completion key
@@ -58,6 +60,7 @@ en:
       connected: Connected
       connection_failed: Connection failed
       identity_unverified: The admin connection succeeded, but no mapped completion key or existing workspace was available to verify user identity
+      unsafe_endpoint: This gateway was blocked because it does not resolve exclusively to public HTTPS addresses
       edit: Edit
       delete: Delete
       confirm_delete: Delete this gateway? Gateways assigned to an AI agent cannot be deleted.
