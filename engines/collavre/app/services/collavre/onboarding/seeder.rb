@@ -168,7 +168,11 @@ module Collavre
       def grant_practice_agent_access!(root, agent)
         return unless agent
 
-        share = CreativeShare.find_or_create_by!(creative: root, user: agent) do |new_share|
+        mention_card = root.children.find do |child|
+          child.onboarding_metadata&.dig("step_key") == "mention_agent"
+        end
+        practice = Creative.find(mention_card.onboarding_metadata.fetch("target_creative_id"))
+        share = CreativeShare.find_or_create_by!(creative: practice, user: agent) do |new_share|
           new_share.permission = :feedback
           new_share.shared_by = user
         end

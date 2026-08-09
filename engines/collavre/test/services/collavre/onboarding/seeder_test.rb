@@ -109,16 +109,18 @@ module Collavre
         assert_includes welcome.content, collavre.features_path(script_name: "/collavre")
       end
 
-      test "grants one accessible AI agent feedback access for mention practice" do
+      test "grants one accessible AI agent feedback access on the mention practice creative" do
         agent = users(:ai_bot)
         agent.update!(created_by_id: @user.id)
 
         root = Seeder.call(user: @user)
 
         assert_includes root.children.map { |child| child.onboarding_metadata["step_key"] }, "mention_agent"
-        share = CreativeShare.find_by!(creative: root, user: agent)
+        practice = mention_practice(root)
+        share = CreativeShare.find_by!(creative: practice, user: agent)
         assert_predicate share, :feedback?
         assert_equal @user, share.shared_by
+        assert_not CreativeShare.exists?(creative: root, user: agent)
       end
 
       test "populates practice agent access before the authz job runs" do
@@ -128,14 +130,29 @@ module Collavre
         root = PermissionCacheJob.stub(:perform_later, ->(*) { }) do
           Seeder.call(user: @user)
         end
-        share = CreativeShare.find_by!(creative: root, user: agent)
+        practice = mention_practice(root)
+        share = CreativeShare.find_by!(creative: practice, user: agent)
 
-        root.self_and_descendants.each do |creative|
-          cache = CreativeSharesCache.find_by!(creative: creative, user: agent)
-          assert_predicate cache, :feedback?
-          assert_equal share.id, cache.source_share_id
-          assert creative.has_permission?(agent, :feedback)
-        end
+        cache = CreativeSharesCache.find_by!(creative: practice, user: agent)
+        assert_predicate cache, :feedback?
+        assert_equal share.id, cache.source_share_id
+        assert practice.has_permission?(agent, :feedback)
+      end
+
+      test "keeps practice agent access after the mention practice creative is moved" do
+        agent = users(:ai_bot)
+        agent.update!(created_by_id: @user.id)
+        root = perform_enqueued_jobs { Seeder.call(user: @user) }
+        practice = mention_practice(root)
+        share = CreativeShare.find_by!(creative: practice, user: agent)
+        other = Creative.create!(user: @user, description: "Other")
+
+        perform_enqueued_jobs { practice.update!(parent: other) }
+
+        cache = CreativeSharesCache.find_by!(creative: practice, user: agent)
+        assert_predicate cache, :feedback?
+        assert_equal share.id, cache.source_share_id
+        assert practice.has_permission?(agent, :feedback)
       end
 
       test "omits mention practice when no accessible AI agent exists" do
@@ -188,6 +205,11 @@ module Collavre
 
       def onboarding_welcome_messages
         Comment.where(notification_key: "#{Seeder::WELCOME_NOTIFICATION_KEY_PREFIX}#{@user.id}")
+      end
+
+      def mention_practice(root)
+        card = root.children.find { |child| child.onboarding_metadata["step_key"] == "mention_agent" }
+        Creative.find(card.onboarding_metadata.fetch("target_creative_id"))
       end
 
       def collavre
