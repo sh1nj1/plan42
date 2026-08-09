@@ -153,7 +153,25 @@ export default class extends Controller {
       const clearedNamespace = chatDrafts.namespace()
       this._disableDraftNamespace(clearedNamespace)
     }
-    this._handleDraftInput = () => {
+    this._handleCompositionEnd = () => {
+      this._imeCommitPending = true
+    }
+    // Chrome fires the commit `input` after `compositionend`, but Firefox has
+    // shipped the reverse order, where the commit input consumes the latch
+    // before it is even set. Nothing would clear the leftover latch, so the
+    // next ordinary edit would be misread as a commit. The commit input always
+    // arrives before the user can act again, so any fresh gesture expires it.
+    this._expireImeCommitLatch = (event) => {
+      if (event?.isComposing || event?.keyCode === 229) return
+
+      this._imeCommitPending = false
+    }
+    this._handleDraftInput = (event) => {
+      // Consume the composition flag before any early return, so it can never
+      // outlive the `input` event that the commit itself fired. Firefox has
+      // shipped both orderings, so accept isComposing on the input event too.
+      const isImeCommit = Boolean(event?.isComposing) || this._imeCommitPending === true
+      this._imeCommitPending = false
       if (
         this.editingId ||
 	this._draftPersistenceDisabled() ||
@@ -162,11 +180,22 @@ export default class extends Controller {
         !this._reviewStore.isEmpty ||
         !this._activeDraftKey
       ) return
+      // An IME commit fires `input` after the keydown that started a send, so
+      // the textarea still holds exactly what went to the server. Counting it
+      // as a revision would defeat _currentPendingSubmission and make the sent
+      // message look like a draft typed mid-flight, restoring it on success.
+      // Text equality alone is not enough to suppress: re-entering the same
+      // string mid-flight (select-all + paste to send it twice) is a real edit.
+      if (isImeCommit && this._currentTextIsPendingSubmission()) return
       const revisionKey = `${chatDrafts.namespace()}:${this._activeDraftKey}`
       this._draftRevisions.set(revisionKey, (this._draftRevisions.get(revisionKey) || 0) + 1)
       clearTimeout(this._draftSaveTimer)
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
     }
+    this.textareaTarget.addEventListener('compositionend', this._handleCompositionEnd)
+    this.textareaTarget.addEventListener('keydown', this._expireImeCommitLatch)
+    this.textareaTarget.addEventListener('paste', this._expireImeCommitLatch)
+    this.textareaTarget.addEventListener('drop', this._expireImeCommitLatch)
     this.textareaTarget.addEventListener('input', this._handleDraftInput)
     window.addEventListener('pagehide', this._handlePageHide)
     window.addEventListener('storage', this._handleDraftStorage)
@@ -176,6 +205,10 @@ export default class extends Controller {
         this.presenceController?.cancelAllAgentTasks()
         return
       }
+      // While an IME is composing (Korean, Japanese, Chinese), Enter confirms
+      // the pending syllable rather than submitting. keyCode 229 covers
+      // browsers that leave isComposing unset on the keydown itself.
+      if (event.isComposing || event.keyCode === 229) return
       if (event.key === 'Enter' && !event.shiftKey) {
         if (this.isMentionMenuVisible()) return
         this.handleSend(event)
@@ -275,6 +308,10 @@ export default class extends Controller {
 
   disconnect() {
     this._flushDraftSave()
+    this.textareaTarget.removeEventListener('compositionend', this._handleCompositionEnd)
+    this.textareaTarget.removeEventListener('keydown', this._expireImeCommitLatch)
+    this.textareaTarget.removeEventListener('paste', this._expireImeCommitLatch)
+    this.textareaTarget.removeEventListener('drop', this._expireImeCommitLatch)
     this.textareaTarget.removeEventListener('input', this._handleDraftInput)
     window.removeEventListener('pagehide', this._handlePageHide)
     window.removeEventListener('storage', this._handleDraftStorage)
