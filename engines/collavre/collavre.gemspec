@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
   spec.metadata["source_code_uri"] = "https://github.com/sh1nj1/plan42"
 
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
-    Dir["{app,config,db,lib}/**/*", "Rakefile", "README.md"]
+    Dir["{app,config,db,lib,skills}/**/*", "Rakefile", "README.md"].select { |path| File.file?(path) }
   end
 
   # Core dependencies - required for the engine to function

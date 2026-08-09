@@ -60,6 +60,11 @@ module Collavre
              foreign_key: :created_by_id,
              dependent: :nullify,
              inverse_of: :creator
+    belongs_to :agent_gateway, class_name: "Collavre::AgentGateway", optional: true
+    has_many :owned_agent_gateways, class_name: "Collavre::AgentGateway", foreign_key: :owner_id, dependent: :destroy
+    has_many :agent_workspaces, class_name: "Collavre::AgentWorkspace", foreign_key: :agent_id, dependent: :destroy
+    has_many :personal_agent_workspaces, class_name: "Collavre::AgentWorkspace", foreign_key: :user_id, dependent: :destroy
+    after_update :revoke_old_gateway_workspaces, if: :saved_change_to_agent_gateway_id?
 
     has_one_attached :avatar
 
@@ -207,11 +212,40 @@ module Collavre
     SUPPORTED_LLM_MODELS = [
       "gemini-3.1-flash-lite",
       "gemini-1.5-flash",
-      "gemini-1.5-pro"
+      "gemini-1.5-pro",
+      "paperclip/claude_local",
+      "paperclip/codex_local"
     ].freeze
 
     def ai_user?
       llm_vendor.present?
+    end
+
+    def cli_proxy_agent?
+      llm_vendor == "cli_proxy" && agent_gateway.present?
+    end
+
+    def gateway_accessible_to?(user)
+      return false unless user
+      return true if user.system_admin? || created_by_id == user.id
+      return true if user.contact_users.where(id: id).exists?
+
+      agent_creative_ids = Collavre::Creative.where(user_id: id).pluck(:id)
+      agent_creative_ids.concat(
+        Collavre::CreativeSharesCache.where(user_id: [ id, nil ]).distinct.pluck(:creative_id)
+      )
+      agent_permissions = Collavre::Creatives::PermissionFilter.new(user: self)
+      agent_creative_ids = agent_permissions.readable_ids(agent_creative_ids, min_permission: :feedback)
+      Collavre::Creatives::PermissionFilter.new(user: user)
+                                           .readable_ids(agent_creative_ids)
+                                           .any?
+    end
+
+    def revoke_old_gateway_workspaces
+      old_gateway_id = agent_gateway_id_before_last_save
+      return unless old_gateway_id
+
+      agent_workspaces.where(agent_gateway_id: old_gateway_id).destroy_all
     end
 
     def claude_channel_agent?
@@ -252,6 +286,7 @@ module Collavre
     validates :llm_model,
               length: { maximum: Collavre::LlmModel::MAX_NAME_LENGTH },
               if: :will_save_change_to_llm_model?
+    validate :cli_proxy_gateway_belongs_to_creator
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,
@@ -262,6 +297,22 @@ module Collavre
     validates :typo_correction_threshold,
               presence: true,
               numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
+
+    def cli_proxy_gateway_belongs_to_creator
+      return unless llm_vendor == "cli_proxy"
+
+      if agent_gateway.nil?
+        errors.add(:agent_gateway, :blank)
+      elsif agent_gateway.owner_id != created_by_id
+        errors.add(:agent_gateway, :invalid)
+      elsif agent_gateway.identity_secret.blank?
+        agent_gateway.with_lock do
+          if agent_gateway.per_user? || agent_gateway.agents.where.not(id: id).exists?
+            errors.add(:agent_gateway, :identity_required)
+          end
+        end
+      end
+    end
 
     generates_token_for :email_verification, expires_in: 1.day do
       email

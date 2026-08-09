@@ -345,6 +345,49 @@ module Collavre
         assert_equal "2", refreshed.dig("chat", "content")
       end
 
+      test "refresh keeps a per-user proxy turn on its original human workspace principal" do
+        owner = @user
+        gateway = AgentGateway.create!(
+          owner: owner,
+          name: "Principal-bound proxy",
+          base_url: "https://proxy.example.com",
+          admin_key: "admin",
+          completion_key: "completion",
+          identity_secret: "p" * 32,
+          workspace_mode: :per_user
+        )
+        @ai_agent.update!(
+          llm_vendor: "cli_proxy",
+          llm_model: "paperclip/claude_local",
+          creator: owner,
+          agent_gateway: gateway
+        )
+        topic = Topic.create!(name: "Principal-bound topic", creative: @creative, user: @user)
+        original_comment = Comment.create!(
+          creative: @creative, user: @user, content: "from A", topic: topic
+        )
+        queued_task = Task.create!(
+          name: "Queued task", status: "queued",
+          trigger_event_name: "comment_created",
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => topic.id },
+            "comment" => { "id" => original_comment.id, "content" => original_comment.content },
+            "chat" => { "content" => original_comment.content }
+          },
+          agent: @ai_agent, topic_id: topic.id
+        )
+        other_user = users(:two)
+        Comment.create!(creative: @creative, user: other_user, content: "from B", topic: topic)
+
+        AgentOrchestrator.send(:refresh_deferred_context!, queued_task)
+
+        refreshed = queued_task.reload.trigger_event_payload
+        assert_equal original_comment.id, refreshed.dig("comment", "id")
+        assert_equal "from A", refreshed.dig("comment", "content")
+        assert_not_includes Array(refreshed[TaskCoalescer::PAYLOAD_KEY]), original_comment.id
+      end
+
       test "refresh_deferred_context skips agent's own comments" do
         topic = Topic.create!(name: "Test Topic", creative: @creative, user: @user)
 

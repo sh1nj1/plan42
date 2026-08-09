@@ -1,0 +1,121 @@
+---
+ko:
+  activerecord:
+    attributes:
+      collavre/agent_gateway:
+        name: 이름
+        base_url: Base URL
+        admin_key: Admin key
+        completion_key: Completion key
+        identity_secret: Identity secret
+        tenant_id: Tenant ID
+        workspace_mode: 워크스페이스 모드
+        active: 사용 가능 여부
+        agents: AI Agent
+    errors:
+      models:
+        collavre/agent_gateway:
+          attributes:
+            base_url:
+              invalid: "은(는) 사용자 정보·쿼리·프래그먼트가 없는 http(s) 주소여야 합니다"
+              unsafe: "은(는) HTTPS를 사용해야 하며 로컬·사설·예약된 네트워크 주소를 사용할 수 없습니다"
+            tenant_id:
+              invalid: "은(는) 영문·숫자와 . _ : @ / - 만 사용할 수 있습니다"
+            identity_secret:
+              blank: "은(는) 사용자별 모드 또는 여러 AI Agent가 사용하는 게이트웨이에서 필수입니다"
+              too_short: "은(는) %{count}바이트 이상이어야 합니다"
+        collavre/user:
+          attributes:
+            agent_gateway:
+              identity_required: "은(는) 다른 AI Agent와 게이트웨이를 공유할 때 Identity secret이 필요합니다"
+  collavre:
+    agent_gateways:
+      title: 내 Agent Gateway
+      manage: Agent Gateway 설정
+      description: 내가 소유한 CLI OpenAI 프록시를 등록합니다. 키는 서버에만 보관되며 브라우저로 전달되지 않습니다.
+      add: 게이트웨이 추가
+      new_title: Agent Gateway 추가
+      edit_title: Agent Gateway 수정
+      name: 이름
+      name_placeholder: 팀 CLI Proxy
+      base_url: Base URL
+      base_url_help: API 경로를 제외한 공개 HTTPS 프록시 주소를 입력하세요. 로컬·사설·예약된 네트워크 주소는 차단됩니다.
+      base_url_help_admin: API 경로를 제외한 프록시 주소를 입력하세요. 시스템 관리자는 HTTP와 사설망 주소를 사용할 수 있습니다.
+      admin_key: Admin key
+      admin_key_help: 프록시 AUTH_ADMIN_KEYS 값입니다. Collavre 서버에서만 사용합니다.
+      completion_key: Completion key
+      identity_secret: Identity secret
+      identity_secret_help: USER_IDENTITY_HMAC_SECRET과 같아야 하며 32바이트 이상이어야 합니다. 사용자별 모드 또는 여러 AI Agent가 사용할 때 필수입니다.
+      tenant_id: Tenant ID
+      tenant_id_help: 이 값을 바꾸면 연결된 모든 에이전트가 프록시에서 다른 워크스페이스를 사용하게 됩니다.
+      secret_unchanged: 비워두면 현재 값을 유지합니다
+      active: AI Agent에서 사용 가능
+      inactive: 비활성
+      workspace_mode:
+        label: 워크스페이스 모드
+        shared: 공유
+        shared_help: AI Agent 하나의 Linux 워크스페이스와 provider 로그인을 모든 사용자가 공유합니다.
+        per_user: 사용자별
+        per_user_help: Collavre 사용자마다 Linux 워크스페이스가 분리되며 각자 provider에 로그인해야 합니다.
+      agents: AI Agent
+      actions: 작업
+      check: 연결 확인
+      checking: 확인 중…
+      connected: 연결됨
+      connection_failed: 연결 실패
+      identity_unverified: 관리 키 연결은 확인했지만 사용자 신원을 확인할 completion key 매핑이나 기존 워크스페이스가 없습니다
+      unsafe_endpoint: 이 게이트웨이가 공개 HTTPS 주소로만 해석되지 않아 차단되었습니다
+      edit: 수정
+      delete: 삭제
+      confirm_delete: 이 게이트웨이를 삭제할까요? AI Agent가 사용 중인 게이트웨이는 삭제할 수 없습니다.
+      empty: 등록된 Agent Gateway가 없습니다.
+      created: Agent Gateway가 생성되었습니다.
+      updated: Agent Gateway가 수정되었습니다.
+      destroyed: Agent Gateway가 삭제되었습니다.
+      in_use: AI Agent가 사용 중인 게이트웨이는 삭제할 수 없습니다.
+    agent_connections:
+      title: "%{agent} 연결"
+      card_title: 엔진 연결 및 프로비저닝
+      card_help: provider 로그인은 선택한 게이트웨이의 워크스페이스 모드에 따라 분리됩니다. Collavre 스킬과 워크스페이스 설정은 함께 프로비저닝됩니다.
+      profile_help:
+        shared: 이 에이전트는 하나의 공유 CLI Proxy 워크스페이스를 사용합니다. 에이전트 소유자가 공유 provider 연결을 관리합니다.
+        per_user: 이 에이전트는 사용자별 CLI Proxy 워크스페이스를 사용합니다. 사용 전에 내 provider를 연결하세요.
+      manage: 내 연결 관리
+      engines: Agent provider
+      loading: 불러오는 중…
+      refresh: 새로고침
+      login: 로그인
+      submit: 제출
+      open_url: 인증 페이지 열기
+      error: CLI Proxy 오류
+      provisioning: 프로비저닝
+      provisioning_help: Collavre는 collavre-cli 스킬 하나와 callback URL·token이 든 워크스페이스 설정 하나를 항상 프로비저닝합니다.
+      sync: 지금 동기화
+      item: 항목
+      kind: 유형
+      state: 상태
+      actions: 작업
+      approve: 승인
+      revoke: 승인 회수
+      item_types:
+        skill: 스킬
+        config: 설정
+      statuses:
+        authenticated: 인증됨
+        unauthenticated: 미인증
+        unknown: 알 수 없음
+        pending: 대기 중
+        authorized: 인증 완료
+        failed: 실패
+        cancelled: 취소됨
+        not_synced: 동기화되지 않음
+        pending_approval: 승인 대기
+        installed: 설치됨
+        unsupported: 지원되지 않음
+        removed: 제거됨
+      meta_skills: 활성 메타 스킬
+      meta_skills_help: AI Agent 설정자가 선택한 Collavre 도구입니다. 단일 collavre-cli 스킬이 실행하며, 토큰 단위 권한 제어는 추후 추가됩니다.
+      rotate_tokens: 콜백 토큰 회전
+      rotate_confirm: Collavre 콜백 토큰을 회전할까요? 등록된 매니페스트 URL은 유지되며, 이후 워크스페이스를 다시 동기화해야 합니다.
+      tokens_rotated: 콜백 토큰이 회전되었습니다.
+      back: 뒤로

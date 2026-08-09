@@ -31,6 +31,10 @@ en:
           Stored encrypted.
         gateway_url_label: Gateway URL
         gateway_url_help: Required for OpenClaw. The URL of your OpenClaw gateway.
+        agent_gateway_label: Agent Gateway
+        agent_gateway_blank: Select a gateway for CLI Proxy
+        agent_gateway_help: Required only when LLM Vendor is CLI Proxy.
+        manage_gateways: Manage gateways
         searchable_label: Allow this AI to be searchable and mentionable
         searchable_help: When enabled, others can find and mention this AI by name.
         submit: Add AI Agent
@@ -55,6 +59,9 @@ en:
         not_an_ai: This user is not an AI agent.
         tools_title: Available Tools
         tools_description: These tools are available for the agent to use.
+        meta_skills_title: Collavre meta-skills
+        meta_skills_description: The single provisioned collavre-cli skill runs the selected tools as meta-skills. These selections are not enforced as callback-token permissions yet.
+        gateway_mode: "Workspace mode: %{mode}. Change it in the selected gateway's settings."
         no_tools_found: No tools found.
         clear_api_key_label: Remove stored API key
         clear_api_key_help: After saving, the agent will use the system default or

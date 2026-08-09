@@ -47,7 +47,8 @@ module Collavre
     BASE_VENDOR_OPTIONS = [
       [ "Google (Gemini)", "google" ],
       [ "OpenAI", "openai" ],
-      [ "Anthropic", "anthropic" ]
+      [ "Anthropic", "anthropic" ],
+      [ "CLI Proxy", "cli_proxy" ]
     ].freeze
 
     class << self
@@ -281,6 +282,7 @@ module Collavre
 
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
+      "cli_proxy" => :openai,
       "anthropic" => :anthropic,
       "google" => :gemini,
       "gemini" => :gemini
@@ -290,9 +292,32 @@ module Collavre
       normalized_vendor = @vendor.to_s.downcase
 
       context_block = case normalized_vendor
-      when "openai"
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
-        base_url = @gateway_url.presence
+      when "openai", "cli_proxy"
+        if normalized_vendor == "cli_proxy"
+          agent = context[:user]
+          gateway = agent&.agent_gateway
+          raise ArgumentError, "CLI Proxy agent has no active gateway" unless gateway&.active?
+
+          if context.key?(:workspace_user)
+            workspace_user = context[:workspace_user]
+          else
+            comment_user = context[:comment]&.user
+            workspace_user = comment_user unless comment_user&.ai_user?
+            workspace_user ||= agent.creator
+          end
+          if gateway.per_user? && workspace_user.nil?
+            raise ArgumentError, "CLI Proxy per-user workspace requires a verified human principal"
+          end
+          workspace_user = nil if gateway.shared?
+          workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
+          gateway = workspace.agent_gateway
+          @cli_proxy_identity = { gateway: gateway, workspace: workspace }
+          api_key = gateway.completion_key
+          base_url = gateway.completion_base_url
+        else
+          api_key = @llm_api_key.presence || IntegrationSettings.fetch(:openai_api_key)
+          base_url = @gateway_url.presence
+        end
         # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
         # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
         # if openai_api_key is blank. Supply a placeholder so keyless local gateways
@@ -301,6 +326,9 @@ module Collavre
         proc do |config|
           config.openai_api_key = api_key
           config.openai_api_base = base_url if base_url
+          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin?
+            config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
+          end
         end
       when "anthropic"
         api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)
@@ -325,8 +353,7 @@ module Collavre
 
       @ruby_llm_context.chat(**chat_opts).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
-        session_id = build_session_id
-        chat.with_headers("X-Session-Id" => session_id) if session_id
+        apply_request_headers!(chat)
         chat.on_tool_call do |tool_call|
           # Cancellation ahead of the approval gate: a turn that already
           # reached a terminal status or its deadline must end, not park
@@ -336,11 +363,11 @@ module Collavre
           @before_tool_call&.call(true)
           check_tool_approval!(tool_call)
         end
-        if @request_timeout_seconds
+        if @request_timeout_seconds || @cli_proxy_identity
           chat.after_tool_result do |_result|
             # A tool can consume much of the turn. Recheck the deadline and
-            # rebuild RubyLLM's provider connection with the new remaining
-            # timeout before the loop starts its next request.
+            # refresh request-scoped state before the loop starts its next
+            # provider request.
             refresh_turn_boundary!(chat)
           end
         end
@@ -353,11 +380,31 @@ module Collavre
     end
 
     def refresh_turn_boundary!(conversation)
-      @before_tool_call&.call(true)
-      return unless @request_timeout_seconds && @ruby_llm_context
+      if @request_timeout_seconds
+        @before_tool_call&.call(true)
+        if @ruby_llm_context
+          @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
+          conversation.with_context(@ruby_llm_context)
+        end
+      end
 
-      @ruby_llm_context.config.request_timeout = effective_request_timeout_seconds
-      conversation.with_context(@ruby_llm_context)
+      apply_request_headers!(conversation)
+    end
+
+    def apply_request_headers!(conversation)
+      headers = {}
+      session_id = build_session_id
+      headers["X-Session-Id"] = session_id if session_id
+
+      if @cli_proxy_identity
+        headers.merge!(Collavre::CliProxy::Identity.headers(
+          **@cli_proxy_identity,
+          method: :post,
+          path: "/v1/chat/completions"
+        ))
+      end
+
+      conversation.with_headers(**headers) if headers.present?
     end
 
     def effective_request_timeout_seconds

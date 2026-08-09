@@ -5,7 +5,7 @@ require "ostruct"
 
 class AiClientTest < ActiveSupport::TestCase
   class FakeConversation
-    attr_reader :messages_added, :instructions_set, :headers_set
+    attr_reader :messages_added, :instructions_set, :headers_set, :headers_history
     attr_reader :after_tool_result_callback, :context_set
 
     def initialize(response_content: "final response")
@@ -13,6 +13,7 @@ class AiClientTest < ActiveSupport::TestCase
       @messages_added = []
       @instructions_set = nil
       @headers_set = nil
+      @headers_history = []
     end
 
     def with_instructions(instructions)
@@ -21,6 +22,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     def with_headers(**headers)
       @headers_set = headers
+      @headers_history << headers
       self
     end
 
@@ -478,6 +480,234 @@ class AiClientTest < ActiveSupport::TestCase
 
     result = client.ask("test")
     assert_nil result
+  end
+
+  test "build_conversation uses the selected CLI Proxy gateway and workspace identity" do
+    owner = users(:two)
+    workspace_user = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "AI client proxy",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion-secret",
+      identity_secret: "identity-secret" * 3,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "CLI client agent",
+      email: "cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    client = AiClient.new(
+      vendor: "cli_proxy",
+      model: agent.llm_model,
+      system_prompt: nil,
+      context: {
+        user: agent,
+        workspace_user: workspace_user,
+        creative: OpenStruct.new(id: 42),
+        topic_id: 7
+      }
+    )
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) do |model:, provider:, assume_model_exists:|
+      raise "wrong model" unless model == "paperclip/claude_local"
+      raise "wrong provider" unless provider == :openai && assume_model_exists
+
+      fake_chat
+    end
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "completion-secret", context_config.openai_api_key
+    assert_equal "https://proxy.example.com/v1", context_config.openai_api_base
+    assert_equal Collavre::CliProxy::SafeNetHttpAdapter, context_config.faraday_adapter
+    assert_equal "agent-#{agent.id}--user-#{workspace_user.id}",
+                 fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
+    assert fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature").present?
+    assert_equal "creative_42_topic_7", fake_chat.headers_set.fetch("X-Session-Id")
+
+    initial_signature = fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature")
+    Time.stub(:current, Time.current + 10.minutes) do
+      fake_chat.after_tool_result_callback.call("tool result")
+    end
+
+    assert_equal "creative_42_topic_7", fake_chat.headers_set.fetch("X-Session-Id")
+    refute_equal initial_signature, fake_chat.headers_set.fetch("X-CLI-Proxy-Identity-Signature")
+    assert_equal 2, fake_chat.headers_history.size
+  end
+
+  test "build_conversation uses the gateway selected during locked workspace resolution" do
+    owner = users(:two)
+    original_gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Original AI client proxy",
+      base_url: "https://old-proxy.example.com",
+      admin_key: "old-admin",
+      completion_key: "old-completion",
+      identity_secret: "o" * 32,
+      workspace_mode: :per_user
+    )
+    replacement_gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Replacement AI client proxy",
+      base_url: "https://new-proxy.example.com",
+      admin_key: "new-admin",
+      completion_key: "new-completion",
+      identity_secret: "n" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Reassigned CLI client agent",
+      email: "reassigned-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: original_gateway
+    )
+    assert_equal original_gateway, agent.agent_gateway
+    Collavre::User.where(id: agent.id).update_all(agent_gateway_id: replacement_gateway.id)
+
+    client = AiClient.new(
+      vendor: "cli_proxy",
+      model: agent.llm_model,
+      system_prompt: nil,
+      context: { user: agent, workspace_user: owner }
+    )
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "new-completion", context_config.openai_api_key
+    assert_equal "https://new-proxy.example.com/v1", context_config.openai_api_base
+    assert_equal replacement_gateway,
+      Collavre::AgentWorkspace.find_by!(agent: agent).agent_gateway
+    assert_empty Collavre::AgentWorkspace.where(agent: agent, agent_gateway: original_gateway)
+  end
+
+  test "build_conversation does not use an AI comment author as the workspace principal" do
+    owner = users(:two)
+    upstream_agent = users(:ai_bot)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "A2A principal gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion-secret",
+      identity_secret: "identity-secret" * 3,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "A2A CLI client agent",
+      email: "a2a-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    client = AiClient.new(
+      vendor: "cli_proxy",
+      model: agent.llm_model,
+      system_prompt: nil,
+      context: { user: agent, comment: OpenStruct.new(user: upstream_agent) }
+    )
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "agent-#{agent.id}--user-#{owner.id}",
+                 fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID")
+    refute_includes fake_chat.headers_set.fetch("X-CLI-Proxy-User-ID"), "user-#{upstream_agent.id}"
+  end
+
+  test "build_conversation rejects an explicitly unverified per-user workspace principal" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Unverified A2A principal gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion-secret",
+      identity_secret: "identity-secret" * 3,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Unverified A2A CLI client agent",
+      email: "unverified-a2a-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    client = AiClient.new(
+      vendor: "cli_proxy",
+      model: agent.llm_model,
+      system_prompt: nil,
+      context: { user: agent, workspace_user: nil }
+    )
+
+    error = assert_raises(ArgumentError) { client.send(:build_conversation) }
+    assert_equal "CLI Proxy per-user workspace requires a verified human principal", error.message
+  end
+
+  test "system-admin CLI Proxy gateways retain the default HTTP adapter" do
+    owner = users(:one)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Admin internal proxy",
+      base_url: "http://127.0.0.1:3456",
+      admin_key: "admin",
+      completion_key: "completion-secret"
+    )
+    agent = Collavre::User.create!(
+      name: "Admin CLI client agent",
+      email: "admin-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    client = AiClient.new(vendor: "cli_proxy", model: agent.llm_model, system_prompt: nil, context: { user: agent })
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    original_adapter = context_config.faraday_adapter
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "http://127.0.0.1:3456/v1", context_config.openai_api_base
+    assert_equal original_adapter, context_config.faraday_adapter
   end
 
   private

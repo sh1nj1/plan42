@@ -12,6 +12,9 @@ Collavre::Engine.routes.draw do
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
+  resources :agent_gateways, path: "settings/agent-gateways", except: :show do
+    post :check, on: :member
+  end
   resources :users, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     collection do
       get :new_ai
@@ -31,8 +34,27 @@ Collavre::Engine.routes.draw do
       patch :update_password
       get :passkeys
       get :typo_correction
+      get :agent_connection, to: "agent_connections#show"
     end
   end
+  scope "users/:user_id/agent-connection", as: :agent_connection do
+    get :status, to: "agent_connections#status"
+    post "auth/:engine/sessions", to: "agent_connections#create_auth_session", as: :auth_sessions
+    get "auth/:engine/sessions/:session_id", to: "agent_connections#auth_session", as: :auth_session
+    post "auth/:engine/sessions/:session_id", to: "agent_connections#submit_auth_session"
+    delete "auth/:engine/sessions/:session_id", to: "agent_connections#cancel_auth_session"
+    post "provision/sync", to: "agent_connections#provision_sync", as: :provision_sync
+    post "provision/items/:type/:name/approve", to: "agent_connections#provision_approve", as: :provision_approve
+    delete "provision/items/:type/:name", to: "agent_connections#provision_delete", as: :provision_delete
+    post "rotate-tokens", to: "agent_connections#rotate_tokens", as: :rotate_tokens
+  end
+
+  get "/agents/:agent_id/workspaces/:token/provision.json",
+      to: "agent_provisioning#manifest", as: :agent_provision_manifest, format: false
+  get "/agent-provisioning/collavre/:sha256.tar.gz",
+      to: "agent_provisioning#skill", as: :agent_provision_skill, format: false
+  get "/agents/:agent_id/workspaces/:token/config/:sha256.tar.gz",
+      to: "agent_provisioning#config_archive", as: :agent_provision_config, format: false
   get "/email_verification/:token", to: "email_verifications#show", as: :email_verification
 
   # OAuth callback routes (paths match OmniAuth provider names)

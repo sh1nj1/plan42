@@ -72,5 +72,17 @@ module Collavre
 
       assert_nil HttpClient.new.delete(ENDPOINT).json
     end
+
+    test "pins policy-protected requests to the validated address" do
+      policy = Minitest::Mock.new
+      policy.expect(:resolve!, [ "8.8.8.8" ], [ URI(ENDPOINT) ])
+      client = HttpClient.new(endpoint_policy: policy)
+
+      http = client.send(:build_connection, URI(ENDPOINT))
+
+      assert_equal "api.example.test", http.address
+      assert_equal "8.8.8.8", http.ipaddr
+      policy.verify
+    end
   end
 end

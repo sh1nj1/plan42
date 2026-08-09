@@ -1,6 +1,51 @@
 ko:
+  # Rails provides default ActiveModel/ActiveRecord validation messages only in English.
+  # Define the Korean defaults here because this application does not use rails-i18n.
+  # Without this block, model validation errors display "Translation missing" in Korean.
   errors:
     rate_limit_exceeded: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."
+    # Korean particles attach directly to attribute names, so no separating space is used.
+    format: "%{attribute}%{message}"
+    messages:
+      accepted: "을(를) 반드시 허용해야 합니다"
+      blank: "을(를) 입력해 주세요"
+      confirmation: "이(가) %{attribute}와(과) 일치하지 않습니다"
+      empty: "을(를) 입력해 주세요"
+      equal_to: "은(는) %{count}이어야 합니다"
+      even: "은(는) 짝수여야 합니다"
+      exclusion: "은(는) 사용할 수 없는 값입니다"
+      greater_than: "은(는) %{count}보다 커야 합니다"
+      greater_than_or_equal_to: "은(는) %{count} 이상이어야 합니다"
+      inclusion: "은(는) 허용된 값이 아닙니다"
+      invalid: "이(가) 올바르지 않습니다"
+      less_than: "은(는) %{count}보다 작아야 합니다"
+      less_than_or_equal_to: "은(는) %{count} 이하여야 합니다"
+      model_invalid: "검증에 실패했습니다: %{errors}"
+      not_a_number: "은(는) 숫자여야 합니다"
+      not_an_integer: "은(는) 정수여야 합니다"
+      odd: "은(는) 홀수여야 합니다"
+      other_than: "은(는) %{count}이(가) 아니어야 합니다"
+      present: "은(는) 비워 두어야 합니다"
+      required: "이(가) 필요합니다"
+      taken: "은(는) 이미 사용 중입니다"
+      too_long: "은(는) %{count}자를 넘을 수 없습니다"
+      too_short: "은(는) %{count}자 이상이어야 합니다"
+      wrong_length: "은(는) %{count}자여야 합니다"
+
+  activerecord:
+    errors:
+      messages:
+        record_invalid: "검증에 실패했습니다: %{errors}"
+        restrict_dependent_destroy:
+          has_one: "이(가) 존재하기 때문에 삭제할 수 없습니다"
+          has_many: "이(가) 존재하기 때문에 삭제할 수 없습니다"
+
+  # Prevent Array#to_sentence, used in error banners, from falling back to English connectors.
+  support:
+    array:
+      words_connector: ", "
+      two_words_connector: ", "
+      last_word_connector: ", "
 
   comments:
     activity_logs_summary: "활동 기록"

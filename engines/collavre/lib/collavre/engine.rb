@@ -1,9 +1,39 @@
+require "collavre/sensitive_request_silencer"
+require "collavre/hashed_access_token_lookup"
+
 module Collavre
   class Engine < ::Rails::Engine
+    PROVISIONING_CAPABILITY_PATH = %r{
+      \A(?:/[^/]+)*/agents/\d+/workspaces/[^/]+(?:/.*)?\z
+    }x
+
     isolate_namespace Collavre
 
     config.generators do |g|
       g.test_framework :minitest
+    end
+
+    # Manifest capabilities grant access to workspace callback credentials and
+    # therefore must not appear in Rails request logs. This middleware wraps the
+    # request logger as well as controller instrumentation while leaving public,
+    # content-addressed skill archive requests observable.
+    initializer "collavre.silence_provisioning_capability_paths" do |app|
+      app.middleware.insert_before(
+        Rails::Rack::Logger,
+        Collavre::SensitiveRequestSilencer,
+        path: PROVISIONING_CAPABILITY_PATH
+      )
+    end
+
+    # Workspace callback credentials retain their plaintext only in the
+    # encrypted AgentWorkspace column. Doorkeeper stores a one-way digest and
+    # resolves presented bearer values through this mixed plain/hashed lookup,
+    # preserving existing OAuth tokens without making stored digests usable.
+    initializer "collavre.hashed_workspace_callback_tokens" do
+      Rails.application.config.to_prepare do
+        token_class = Doorkeeper::AccessToken.singleton_class
+        token_class.prepend(Collavre::HashedAccessTokenLookup) unless token_class < Collavre::HashedAccessTokenLookup
+      end
     end
 
     # Path to engine's JavaScript sources for jsbundling-rails integration

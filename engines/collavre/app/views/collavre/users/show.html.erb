@@ -21,6 +21,12 @@
           <%= t('collavre.users.details_ai_notice') %>
           <%= link_to t('collavre.users.edit_ai.title'), collavre.edit_ai_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
         </div>
+        <% if @user.cli_proxy_agent? && @user.gateway_accessible_to?(Current.user) && (@user.agent_gateway.per_user? || @user.created_by_id == Current.user.id || Current.user.system_admin?) %>
+          <div class="alert alert-info">
+            <%= t("collavre.agent_connections.profile_help.#{@user.agent_gateway.workspace_mode}") %>
+            <%= link_to t("collavre.agent_connections.manage"), collavre.agent_connection_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
+          </div>
+        <% end %>
 
         <dl class="row">
           <dt class="col-sm-3"><%= t('collavre.users.name') %></dt>
@@ -116,6 +122,8 @@
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.typo_correction.manage'), collavre.typo_correction_user_path(@user) %>
+        <br>
+        <%= link_to t('collavre.agent_gateways.manage'), collavre.agent_gateways_path %>
         <br>
         <%= link_to t('doorkeeper.my_applications'), main_app.oauth_applications_path %>
         <% if @user.system_admin? %>

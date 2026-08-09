@@ -109,4 +109,193 @@ class UserTest < ActiveSupport::TestCase
     assert_nothing_raised { sharer.destroy! }
     assert_nil share.reload.shared_by_id
   end
+
+  test "CLI Proxy agents require a gateway owned by their creator" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: users(:three),
+      name: "Foreign gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    agent = Collavre::User.new(
+      name: "Invalid CLI agent",
+      email: "invalid-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    assert_not agent.valid?
+    assert agent.errors.of_kind?(:agent_gateway, :invalid)
+  end
+
+  test "a secretless shared gateway cannot be assigned to a second CLI Proxy agent" do
+    owner = users(:two)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Single-agent gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    first_agent = Collavre::User.create!(
+      name: "First CLI agent",
+      email: "first-secretless-cli-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+    second_agent = first_agent.dup
+    second_agent.email = "second-secretless-cli-agent@ai.local"
+
+    assert_not second_agent.valid?
+    assert second_agent.errors.of_kind?(:agent_gateway, :identity_required)
+  end
+
+  test "gateway access follows inherited creative permissions" do
+    owner = users(:two)
+    viewer = Collavre::User.create!(
+      email: "inherited-gateway-viewer@example.com",
+      password: TEST_PASSWORD,
+      name: "Inherited Gateway Viewer"
+    )
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Inherited permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Inherited permission agent",
+      email: "inherited-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    child = perform_enqueued_jobs do
+      root = Collavre::Creative.create!(user: owner, description: "Shared root")
+      nested = Collavre::Creative.create!(user: owner, parent: root, description: "Nested agent creative")
+      Collavre::CreativeShare.create!(creative: root, user: viewer, permission: :read)
+      Collavre::CreativeShare.create!(creative: nested, user: agent, permission: :feedback)
+      nested
+    end
+
+    assert child.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "gateway access includes creatives owned by the agent" do
+    owner = users(:two)
+    viewer = Collavre::User.create!(
+      email: "agent-owned-gateway-viewer@example.com",
+      password: TEST_PASSWORD,
+      name: "Agent-owned Gateway Viewer"
+    )
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Agent-owned creative gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Agent-owned creative agent",
+      email: "agent-owned-creative-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: agent, description: "Agent-owned root")
+      Collavre::CreativeShare.create!(creative: creative, user: viewer, permission: :read)
+      creative
+    end
+
+    assert creative.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "gateway access follows public feedback permission for the agent" do
+    owner = users(:two)
+    viewer = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Public permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Public permission agent",
+      email: "public-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: owner, description: "Public feedback creative")
+      Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :feedback)
+      creative
+    end
+
+    assert creative.has_permission?(agent, :feedback)
+    assert creative.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "explicit agent denial overrides public feedback for gateway access" do
+    owner = users(:two)
+    viewer = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Denied public permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Denied public permission agent",
+      email: "denied-public-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: owner, description: "Denied public creative")
+      Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :feedback)
+      Collavre::CreativeShare.create!(creative: creative, user: agent, permission: :no_access)
+      creative
+    end
+
+    refute creative.has_permission?(agent, :feedback)
+    assert creative.has_permission?(viewer, :read)
+    refute agent.gateway_accessible_to?(viewer)
+  end
 end

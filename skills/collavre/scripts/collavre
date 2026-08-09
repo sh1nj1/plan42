@@ -7,6 +7,7 @@ import path from "node:path";
 import https from "node:https";
 import http from "node:http";
 import os from "node:os";
+import { decodeHtmlEntities } from "./html_entities.js";
 
 const CONFIG_DIR = path.join(
   os.homedir(),
@@ -260,20 +261,6 @@ function parseArgs(argv) {
     }
   }
   return { args, positional };
-}
-
-// HTML entity decoding
-function decodeHtmlEntities(text) {
-  if (!text) return text;
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
 }
 
 // Fix Ruby hash-style output to valid JSON
