@@ -22,7 +22,7 @@ class OnboardingGuideTest < ApplicationSystemTestCase
     progress_selector = "creative-tree-row[creative-id='#{progress_step.id}'] [data-progress-toggle]"
     find(progress_selector).click
     assert_no_selector "#{progress_selector}.progress-toggle-saving", wait: 10
-    assert_selector "#{progress_selector} .progress-toggle-checkbox:checked", wait: 10
+    assert_selector "#{progress_selector} .progress-toggle-checkbox:checked", visible: :all, wait: 10
     assert_equal 1.0, progress_step.reload.progress
     assert_operator guide.reload.progress, :>, 0.0
 
