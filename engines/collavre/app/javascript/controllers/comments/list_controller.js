@@ -20,6 +20,8 @@ export default class extends Controller {
   connect() {
     this.selection = new Set()
     this.loadingOlder = false
+    this.loadingOlderPromise = null
+    this.pendingPreviousMessageAnchorId = null
     this.loadingNewer = false
     this.allOlderLoaded = false // Reached the beginning of time
     this.allNewerLoaded = true  // Reached current time (initially true until we scroll up)
@@ -182,6 +184,7 @@ export default class extends Controller {
     this.allNewerLoaded = true
     this.movingComments = false
     this.manualSearchQuery = null
+    this.pendingPreviousMessageAnchorId = null
   }
 
   resetToLatest() {
@@ -198,6 +201,7 @@ export default class extends Controller {
 
     // The list is about to be replaced wholesale; any anchor we hold is stale.
     this.prevMsgNavigator.reset()
+    this.pendingPreviousMessageAnchorId = null
 
     const requestVersion = ++this._loadCommentsVersion
     const params = {}
@@ -253,9 +257,10 @@ export default class extends Controller {
   }
 
   loadOlderComments() {
-    if (this.loadingOlder || this.allOlderLoaded || !this.creativeId) return
+    if (this.loadingOlder) return this.loadingOlderPromise || Promise.resolve(false)
+    if (this.allOlderLoaded || !this.creativeId) return Promise.resolve(false)
     const minId = this.getMinId()
-    if (!minId) return
+    if (!minId) return Promise.resolve(false)
 
     this.loadingOlder = true
 
@@ -263,11 +268,11 @@ export default class extends Controller {
     // We Prepend them.
     const currentScrollHeight = this.listTarget.scrollHeight
 
-    this.fetchComments({ before_id: minId })
+    this.loadingOlderPromise = this.fetchComments({ before_id: minId })
       .then((html) => {
-        if (html.trim() === '') {
-          this.allOlderLoaded = true
-          return
+	if (html.trim() === '') {
+	  this.allOlderLoaded = true
+	  return false
         }
         // Prepend to start (Visual Top)
         this.listTarget.insertAdjacentHTML('afterbegin', html)
@@ -277,10 +282,24 @@ export default class extends Controller {
         const newScrollHeight = this.listTarget.scrollHeight
         this.listTarget.scrollTop = this.listTarget.scrollTop + (newScrollHeight - currentScrollHeight)
 
+	// Prepending changes element geometry without user input. Keep the
+	// previous-message anchor based on its new position so the next click
+	// continues into the newly loaded page instead of dropping the anchor.
+	const anchorId = this.prevMsgNavigator.anchorId
+	const anchor = anchorId && Array.from(this.listTarget.querySelectorAll('.comment-item'))
+	  .find((item) => item.dataset.commentId === anchorId)
+	if (anchor) this.prevMsgNavigator.commit(anchorId, anchor.getBoundingClientRect().top)
+
+	this.fulfillPendingPreviousMessageNavigation()
+
+	return true
       })
       .finally(() => {
-        this.loadingOlder = false
+	this.loadingOlder = false
+	this.loadingOlderPromise = null
       })
+
+    return this.loadingOlderPromise
   }
 
   loadNewerComments() {
@@ -428,6 +447,7 @@ export default class extends Controller {
   }
 
   handlePrevMsgUserInput() {
+    this.pendingPreviousMessageAnchorId = null
     this.prevMsgNavigator.notifyUserInput()
   }
 
@@ -1166,6 +1186,18 @@ export default class extends Controller {
     const elements = Array.from(list.querySelectorAll('.comment-item'))
     if (elements.length === 0) return
 
+    const anchorId = this.prevMsgNavigator.anchorId
+    const anchorIdx = anchorId === null
+      ? -1
+      : elements.findIndex((item) => item.dataset.commentId === anchorId)
+    if (anchorIdx >= 0) {
+	if (anchorIdx > 0) {
+	  this.navigateToMessage(elements[anchorIdx - 1])
+	  return
+      }
+      return this.loadAndNavigateToPreviousMessage(anchorId)
+    }
+
     const viewportTop = list.getBoundingClientRect().top
     const measured = elements.map((el) => ({
       id: el.dataset.commentId,
@@ -1174,19 +1206,46 @@ export default class extends Controller {
 
     const targetIdx = this.prevMsgNavigator.resolveTargetIndex(measured, viewportTop)
     if (targetIdx < 0) {
-      if (!this.allOlderLoaded) {
-        this.loadOlderComments()
-      }
-      return
+      return this.loadAndNavigateToPreviousMessage(elements[0].dataset.commentId)
     }
 
-    const target = elements[targetIdx]
+    this.navigateToMessage(elements[targetIdx])
+  }
+
+  loadAndNavigateToPreviousMessage(anchorId) {
+    if (this.navigateToPreviousSibling(anchorId)) return Promise.resolve(true)
+    if (this.allOlderLoaded) return Promise.resolve(false)
+
+    this.pendingPreviousMessageAnchorId = anchorId
+    return this.loadOlderComments().then(() => this.fulfillPendingPreviousMessageNavigation())
+  }
+
+  navigateToPreviousSibling(anchorId) {
+    const comments = Array.from(this.listTarget.querySelectorAll('.comment-item'))
+    const anchorIdx = comments.findIndex((item) => item.dataset.commentId === anchorId)
+    if (anchorIdx <= 0) return false
+
+    this.navigateToMessage(comments[anchorIdx - 1])
+    return true
+  }
+
+  fulfillPendingPreviousMessageNavigation() {
+    const anchorId = this.pendingPreviousMessageAnchorId
+    if (!anchorId || !this.navigateToPreviousSibling(anchorId)) return false
+
+    this.pendingPreviousMessageAnchorId = null
+    return true
+  }
+
+  navigateToMessage(target) {
+    const list = this.listTarget
     const targetTop = target.offsetTop - list.offsetTop
-    this.prevMsgNavigator.commit(measured[targetIdx].id, measured[targetIdx].top)
+    this.prevMsgNavigator.commit(target.dataset.commentId, target.getBoundingClientRect().top)
     list.scrollTo({ top: targetTop, behavior: 'smooth' })
     this.stickToBottom = false
 
     target.classList.add('highlight-flash')
+    target.dataset.highlighted = 'true'
     setTimeout(() => target.classList.remove('highlight-flash'), 2000)
   }
 
@@ -1246,6 +1305,8 @@ export default class extends Controller {
     this.listObserver = new MutationObserver((mutations) => {
       const hasAdded = mutations.some(m => m.addedNodes.length > 0)
       if (hasAdded) {
+	if (this.fulfillPendingPreviousMessageNavigation()) return
+
         // If we are sticking to bottom, force scroll to bottom on new content
         // BUT NOT if we are explicitly loading newer pagination (infinite scroll down)
         if (this.stickToBottom && !this.loadingNewer) {
