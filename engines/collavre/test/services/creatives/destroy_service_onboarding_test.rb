@@ -57,4 +57,20 @@ class DestroyServiceOnboardingTest < ActiveSupport::TestCase
     assert_empty remaining
     assert_not_nil @user.reload.onboarding_completed_at
   end
+
+  test "a collaborator without admin permission cannot delete the owner's onboarding session" do
+    @user.update!(onboarding_seeded_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    collaborator = users(:two)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: guide, user: collaborator, permission: :write, shared_by: @user)
+    end
+
+    result = Collavre::Creatives::DestroyService.new(creative: guide, user: collaborator).call
+
+    assert_not result
+    assert Creative.exists?(guide.id)
+    assert_nil @user.reload.onboarding_completed_at
+  end
 end

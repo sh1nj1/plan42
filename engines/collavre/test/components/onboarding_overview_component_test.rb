@@ -7,6 +7,11 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
     Collavre::Creative.onboarding_guides.where(user: @user).destroy_all
     Collavre::Creative.inbox_for(@user)
     @root = Collavre::Onboarding::Seeder.call(user: @user)
+    Current.user = @user
+  end
+
+  teardown do
+    Current.user = nil
   end
 
   test "shows completed card count and skip action before all steps finish" do
@@ -29,5 +34,14 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
 
     assert_selector ".onboarding-overview-progress", text: "4/4"
     assert_selector "a", text: I18n.t("collavre.onboarding.overview.finish")
+  end
+
+  test "hides completion actions from a non-owner" do
+    Current.user = users(:two)
+
+    render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
+
+    assert_no_selector "a[data-turbo-method='delete']"
+    assert_selector "a.feature-card-guide-link"
   end
 end

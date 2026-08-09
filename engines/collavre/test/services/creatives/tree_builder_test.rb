@@ -5,6 +5,13 @@ module Creatives
     class FakeViewContext
       include Rails.application.routes.url_helpers
 
+      Request = Struct.new(:script_name)
+      attr_reader :request
+
+      def initialize(script_name: nil)
+        @request = Request.new(script_name)
+      end
+
       def embed_youtube_iframe(_content)
         "<iframe></iframe>"
       end
@@ -25,12 +32,12 @@ module Creatives
         block_given? ? yield : ""
       end
 
-      def creative_path(creative)
-        "/creatives/#{creative.id}"
+      def creative_path(creative, script_name: nil)
+        "#{script_name}/creatives/#{creative.id}"
       end
 
-      def children_creative_path(creative, level:, select_mode:)
-        "/creatives/#{creative.id}/children?level=#{level}&select_mode=#{select_mode}"
+      def children_creative_path(creative, level:, select_mode:, script_name: nil)
+        "#{script_name}/creatives/#{creative.id}/children?level=#{level}&select_mode=#{select_mode}"
       end
 
       # Engine route proxy
@@ -111,6 +118,15 @@ module Creatives
 
       assert nodes.find { |node| node[:id] == github_creative.id }[:github_source]
       assert_not nodes.find { |node| node[:id] == onboarding_creative.id }[:github_source]
+    end
+
+    test "preserves the engine mount prefix in creative URLs" do
+      creative = Creative.create!(user: @user, description: "Mounted")
+      @view_context = FakeViewContext.new(script_name: "/collavre")
+
+      node = build_tree_builder.build([ creative ]).sole
+
+      assert_equal "/collavre/creatives/#{creative.id}", node[:link_url]
     end
 
     private

@@ -13,6 +13,8 @@ module Collavre
 
       def call
         if @creative.onboarding_item? && !@onboarding_cleanup
+          return false unless @creative.has_permission?(@user, :admin)
+
           return Collavre::Onboarding::CompletionService.call(
             user: @creative.user,
             session_id: @creative.onboarding_metadata["session_id"]

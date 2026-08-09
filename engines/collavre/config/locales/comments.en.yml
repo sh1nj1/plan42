@@ -81,6 +81,7 @@ en:
       approve_no_attributes: Comment action must include at least one allowed attribute.
       approve_invalid_creative: Comment action targets an invalid creative.
       approve_no_write_permission: No write permission to perform this action on the creative.
+      approve_no_admin_permission: Admin permission is required to remove an onboarding guide.
       approve_invalid_progress: Comment action progress must be a number.
       approve_invalid_description: Comment action description must be text.
       approved_label: Approved

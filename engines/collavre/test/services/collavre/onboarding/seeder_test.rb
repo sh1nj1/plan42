@@ -108,6 +108,17 @@ module Collavre
         assert_includes welcome.content, collavre.features_path(script_name: "/collavre")
       end
 
+      test "grants one accessible AI agent feedback access for mention practice" do
+        agent = users(:ai_bot)
+        agent.update!(created_by_id: @user.id)
+
+        root = Seeder.call(user: @user)
+
+        share = CreativeShare.find_by!(creative: root, user: agent)
+        assert_predicate share, :feedback?
+        assert_equal @user, share.shared_by
+      end
+
       test "reset removes a guide after it has been moved below another creative" do
         root = Seeder.call(user: @user)
         parent = Creative.create!(user: @user, description: "Parent")

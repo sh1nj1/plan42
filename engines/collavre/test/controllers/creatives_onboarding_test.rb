@@ -71,6 +71,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
          as: :json
     assert_response :success
     practice = Creative.find(response.parsed_body["id"])
+    assert_equal card.id, response.parsed_body["onboarding_card_id"]
     assert_equal "in_progress", card.reload.onboarding_metadata["status"]
 
     patch collavre.creative_path(practice),
@@ -80,6 +81,28 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal card.id, response.parsed_body["onboarding_card_id"]
     assert_equal "completed", card.reload.onboarding_metadata["status"]
+  end
+
+
+  test "create rejects a parent the current user cannot write" do
+    owner = users(:one)
+    owner.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(owner)
+    guide = Collavre::Onboarding::Seeder.call(user: owner)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: guide, user: @user, permission: :read, shared_by: owner)
+    end
+
+    assert_no_difference -> { Creative.count } do
+      post collavre.creatives_path,
+           params: { creative: { parent_id: card.id, description: "Unauthorized child" } },
+           as: :json
+    end
+
+    assert_response :unprocessable_entity
+    assert_includes response.parsed_body["errors"], I18n.t("collavre.creatives.errors.parent_no_write_permission")
   end
 
   test "progress update request completes the real progress practice" do

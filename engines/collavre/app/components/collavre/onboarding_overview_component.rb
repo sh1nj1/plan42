@@ -20,6 +20,10 @@ module Collavre
       completed_steps == TOTAL_STEPS
     end
 
+    def owner?
+      creative.user_id == Current.user&.id
+    end
+
     def completion_label
       I18n.t(completed? ? "collavre.onboarding.overview.finish" : "collavre.onboarding.overview.skip")
     end

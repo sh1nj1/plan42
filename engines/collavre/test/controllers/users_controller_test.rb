@@ -532,6 +532,15 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action=?]", collavre.reset_onboarding_path, count: 0
   end
 
+  test "profile onboarding reset form preserves the engine mount prefix" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user), env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :success
+    assert_select "form[action=?]", collavre.reset_onboarding_path(script_name: "/collavre")
+  end
+
   test "profile controls the creative workspace preference which defaults on" do
     sign_in_as(@regular_user, password: "password")
 

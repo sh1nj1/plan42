@@ -6,10 +6,12 @@
     <%= t('collavre.onboarding.overview.progress', completed: completed_steps, total: TOTAL_STEPS) %>
   </strong>
   <div class="onboarding-overview-actions">
-    <%= link_to completion_label,
-                onboarding_path,
-                class: "feature-card-action",
-                data: { turbo_method: :delete, turbo_confirm: completion_confirmation } %>
+    <% if owner? %>
+      <%= link_to completion_label,
+                  onboarding_path,
+                  class: "feature-card-action",
+                  data: { turbo_method: :delete, turbo_confirm: completion_confirmation } %>
+    <% end %>
     <%= link_to t('collavre.onboarding.overview.guide_link'), features_path, class: "feature-card-guide-link" %>
   </div>
 </div>

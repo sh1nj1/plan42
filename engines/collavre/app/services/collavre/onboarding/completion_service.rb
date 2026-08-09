@@ -24,7 +24,10 @@ module Collavre
             items.sort_by { |creative| -creative.ancestors.count }.each do |creative|
               creative.destroy! if creative.persisted?
             end
-            user.update!(onboarding_completed_at: Time.current) if mark_completed
+            if mark_completed
+              Comment.find_by(notification_key: Seeder.welcome_notification_key(user))&.destroy!
+              user.update!(onboarding_completed_at: Time.current)
+            end
           end
         end
         true

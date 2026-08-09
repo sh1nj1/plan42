@@ -17,6 +17,11 @@ module Collavre
         new(user: user).comment_created(comment)
       end
 
+      def self.agent_replied(comment:)
+        owner = comment.creative&.user
+        new(user: owner).agent_replied(comment)
+      end
+
       def initialize(user:)
         @user = user
       end
@@ -76,7 +81,9 @@ module Collavre
         when "creative_chat"
           complete!(card: card, practice: creative)
         when "mention_agent"
-          mentioned_agent = MentionParser.resolve_all_users(comment.content.to_s).find(&:ai_user?)
+          mentioned_agent = MentionParser.resolve_all_users(comment.content.to_s).find do |candidate|
+            candidate.ai_user? && creative.has_permission?(candidate, :feedback)
+          end
           return unless mentioned_agent
 
           complete!(
@@ -85,6 +92,25 @@ module Collavre
             extra: { "invoked_agent_id" => mentioned_agent.id, "response_status" => "waiting" }
           )
         end
+      end
+
+      def agent_replied(comment)
+        creative = comment.creative
+        metadata = creative&.onboarding_metadata
+        return unless comment.user&.ai_user? && active_practice?(creative, metadata)
+        return unless metadata["step_key"] == "mention_agent"
+
+        card = card_for(metadata)
+        return unless tracked_target?(card, creative)
+        return unless card.onboarding_metadata["invoked_agent_id"].to_i == comment.user_id
+
+        card.with_lock do
+          update_card!(card, {
+            "response_status" => "responded",
+            "responded_at" => Time.current.iso8601
+          })
+        end
+        card
       end
 
       private

@@ -143,7 +143,7 @@ module Creatives
           github_source: creative.github_markdown?,
           card_layout: creative.onboarding_card?,
           sequence: creative.sequence,
-          link_url: view_context.collavre.creative_path(creative),
+          link_url: view_context.collavre.creative_path(creative, **mount_options),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
           inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(
@@ -239,7 +239,8 @@ module Creatives
         load_url: view_context.collavre.children_creative_path(
           creative,
           level: child_level,
-          select_mode: select_mode ? 1 : 0
+          select_mode: select_mode ? 1 : 0,
+          **mount_options
         ),
         level: child_level,
         nodes: children_nodes
@@ -258,13 +259,18 @@ module Creatives
       return unless creative.origin_id.present?
 
       view_context.link_to(
-        view_context.collavre.creative_path(creative.origin),
+        view_context.collavre.creative_path(creative.origin, **mount_options),
         class: "creative-origin-link creative-action-btn unstyled-link",
         title: I18n.t("collavre.creatives.index.view_origin"),
         aria: { label: I18n.t("collavre.creatives.index.view_origin") }
       ) do
         view_context.svg_tag("arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16)
       end
+    end
+
+    def mount_options
+      script_name = view_context.request&.script_name if view_context.respond_to?(:request)
+      script_name.present? ? { script_name: script_name } : {}
     end
   end
 end

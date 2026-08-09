@@ -105,8 +105,12 @@ module Collavre
 
         ActiveRecord::Base.transaction do
           comment = parent.effective_origin.comments.create!(content: markdown, user: Current.user)
-          base_creative.descendants.each(&:destroy!)
-          base_creative.destroy!
+          destroyed = Collavre::Creatives::DestroyService.new(
+            creative: base_creative,
+            user: Current.user,
+            delete_with_children: true
+          ).call
+          raise ActiveRecord::Rollback unless destroyed
         end
 
         render json: { comment_id: comment.id }, status: :created

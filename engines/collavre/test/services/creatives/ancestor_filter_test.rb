@@ -9,7 +9,7 @@ module Creatives
       def render_creative_progress(_creative, select_mode: false, has_children: nil, can_write: nil, can_feedback: nil, unread_count: nil); ""; end
       def svg_tag(name, **args); ""; end
       def link_to(_path, *args); block_given? ? yield : ""; end
-      def creative_path(creative); "/creatives/#{creative.id}"; end
+      def creative_path(creative, **_options); "/creatives/#{creative.id}"; end
       def children_creative_path(creative, **args); "/children"; end
       def collavre; self; end
     end

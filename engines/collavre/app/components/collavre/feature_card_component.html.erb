@@ -20,7 +20,7 @@
     <% if waiting_for_agent? %>
       <span class="feature-card-agent-status"><%= t('collavre.onboarding.status.waiting_for_agent') %></span>
     <% end %>
-    <% unless completed? %>
+    <% if can_interact? && !completed? %>
       <% if add_child_action? %>
         <button type="button" class="feature-card-action add-creative-btn"><%= action_label %></button>
       <% elsif action_url %>

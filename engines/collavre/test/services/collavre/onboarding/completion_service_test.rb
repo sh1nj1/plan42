@@ -33,6 +33,15 @@ module Collavre
         assert_nil @user.reload.onboarding_completed_at
       end
 
+      test "completion removes the welcome message that links to the deleted guide" do
+        notification_key = Seeder.welcome_notification_key(@user)
+        assert Comment.exists?(notification_key: notification_key)
+
+        assert CompletionService.call(user: @user, session_id: @session_id)
+
+        assert_not Comment.exists?(notification_key: notification_key)
+      end
+
       test "rejects a blank session" do
         assert_not CompletionService.call(user: @user, session_id: nil)
         assert Creative.exists?(@root.id)

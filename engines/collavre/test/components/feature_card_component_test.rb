@@ -4,6 +4,11 @@ class FeatureCardComponentTest < ViewComponent::TestCase
   setup do
     @user = users(:one)
     @creative = creatives(:tshirt)
+    Current.user = @user
+  end
+
+  teardown do
+    Current.user = nil
   end
 
   test "renders the shared card definition on the comment empty surface" do
@@ -93,6 +98,22 @@ class FeatureCardComponentTest < ViewComponent::TestCase
     )
 
     assert_selector ".feature-card-status--completed", text: I18n.t("collavre.onboarding.status.completed")
+    assert_no_selector ".feature-card-action"
+  end
+
+  test "does not render onboarding actions for a non-owner" do
+    creative = onboarding_card(step_key: "create_edit", feature_key: "create_edit")
+    Current.user = users(:two)
+
+    render_inline(
+      Collavre::FeatureCardComponent.new(
+        card: Collavre::FeatureCardRegistry.find(:create_edit),
+        surface: :onboarding,
+        creative: creative,
+        onboarding_state: creative.onboarding_metadata
+      )
+    )
+
     assert_no_selector ".feature-card-action"
   end
 

@@ -31,6 +31,10 @@ module Collavre
       status == "completed"
     end
 
+    def can_interact?
+      !onboarding? || creative.user_id == Current.user&.id
+    end
+
     def waiting_for_agent?
       completed? && onboarding_state["response_status"] == "waiting"
     end

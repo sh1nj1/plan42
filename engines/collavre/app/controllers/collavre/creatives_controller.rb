@@ -250,12 +250,14 @@ module Collavre
         # matching the update endpoint contract. Without this, a freshly created
         # markdown creative with a pasted data: URI would re-import the blob on
         # the next keystroke save.
-        render json: {
+        response_data = {
           id: @creative.id,
           content_type: @creative.data&.dig("content_type"),
           markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
         }
+        response_data[:onboarding_card_id] = result.onboarding_card.id if result.onboarding_card
+        render json: response_data
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
       end

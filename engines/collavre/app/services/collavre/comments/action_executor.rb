@@ -62,7 +62,7 @@ module Collavre
       end
 
       def execute_action!
-        ExecutionContext.new(comment).evaluate(comment.action)
+        ExecutionContext.new(comment, executor: executor).evaluate(comment.action)
       rescue ExecutionContext::InvalidActionError => e
         raise ExecutionError, e.message
       end
@@ -80,11 +80,12 @@ module Collavre
 
         CREATIVE_ATTRIBUTES = %w[description progress].freeze
 
-        def initialize(comment)
+        def initialize(comment, executor: nil)
           @comment = comment
+          @executor = executor || comment.user || Current.user
         end
 
-        attr_reader :comment
+        attr_reader :comment, :executor
 
         def evaluate(code)
           payload = parse_payload(code)
@@ -162,11 +163,13 @@ module Collavre
 
         def delete_creative(payload)
           creative = find_target_creative(payload)
-          executor = comment.user || Current.user
           unless creative.has_permission?(executor, :write)
             raise InvalidActionError, I18n.t("collavre.comments.approve_no_write_permission")
           end
-          Collavre::Creatives::DestroyService.new(creative: creative, user: executor).call
+          deleted = Collavre::Creatives::DestroyService.new(creative: creative, user: executor).call
+          unless deleted
+            raise InvalidActionError, I18n.t("collavre.comments.approve_no_admin_permission")
+          end
         end
 
         def approve_tool(payload)

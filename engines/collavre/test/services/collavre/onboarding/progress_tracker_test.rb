@@ -118,6 +118,9 @@ module Collavre
         assert_equal "pending", card.reload.onboarding_metadata["status"]
 
         agent = users(:ai_bot)
+        perform_enqueued_jobs do
+          CreativeShare.create!(creative: @root, user: agent, permission: :feedback, shared_by: @user)
+        end
         mentioned = practice.comments.create!(
           user: @user,
           content: "@#{agent.name}: help me",
@@ -130,6 +133,50 @@ module Collavre
         assert_equal "completed", metadata["status"]
         assert_equal agent.id, metadata["invoked_agent_id"]
         assert_equal "waiting", metadata["response_status"]
+      end
+
+      test "an AI mention without feedback access does not complete the mention step" do
+        card = card_for("mention_agent")
+        practice = card.children.sole
+        agent = users(:ai_bot)
+        comment = practice.comments.create!(
+          user: @user,
+          content: "@#{agent.name}: help me",
+          private: false,
+          skip_dispatch: true
+        )
+
+        assert_nil ProgressTracker.comment_created(comment: comment, user: @user)
+        assert_equal "pending", card.reload.onboarding_metadata["status"]
+      end
+
+      test "an invoked agent reply clears the waiting state" do
+        card = card_for("mention_agent")
+        practice = card.children.sole
+        agent = users(:ai_bot)
+        perform_enqueued_jobs do
+          CreativeShare.create!(creative: @root, user: agent, permission: :feedback, shared_by: @user)
+        end
+        mention = practice.comments.create!(
+          user: @user,
+          content: "@#{agent.name}: help me",
+          private: false,
+          skip_dispatch: true
+        )
+        ProgressTracker.comment_created(comment: mention, user: @user)
+        reply = practice.comments.create!(
+          user: agent,
+          content: "Here is help",
+          private: false,
+          skip_dispatch: true
+        )
+
+        tracked_card = ProgressTracker.agent_replied(comment: reply)
+
+        assert_equal card, tracked_card
+        metadata = card.reload.onboarding_metadata
+        assert_equal "responded", metadata["response_status"]
+        assert_not_nil metadata["responded_at"]
       end
 
       test "tracking is disabled after onboarding completes" do

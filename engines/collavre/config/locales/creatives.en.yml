@@ -190,6 +190,7 @@ en:
       notices:
         progress_recalculated: All parent progress recalculated.
       errors:
+        parent_no_write_permission: You do not have write permission on the parent Creative.
         no_permission: You do not have permission to perform this action.
         metadata_must_be_object: Metadata must be an object.
         description_read_only_source: cannot be changed directly for read-only source

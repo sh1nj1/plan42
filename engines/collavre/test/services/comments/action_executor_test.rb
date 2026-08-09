@@ -105,6 +105,28 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     assert_not_nil @user.reload.onboarding_completed_at
   end
 
+  test "delete action rejects session-wide onboarding cleanup without admin permission" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: guide, user: @approver, permission: :write, shared_by: @user)
+    end
+    comment = guide.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate("action" => "delete_creative", "creative_id" => guide.id),
+      approver: @approver
+    )
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      Comments::ActionExecutor.new(comment: comment, executor: @approver).call
+    end
+
+    assert_equal I18n.t("collavre.comments.approve_no_admin_permission"), error.message
+    assert Creative.exists?(guide.id)
+  end
+
   test "supports multiple actions within a single payload" do
     child = Creative.create!(user: @user, parent: @creative, description: "Child", progress: 0.2)
 

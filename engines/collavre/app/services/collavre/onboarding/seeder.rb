@@ -33,6 +33,10 @@ module Collavre
         end
       end
 
+      def self.welcome_notification_key(user)
+        "#{WELCOME_NOTIFICATION_KEY_PREFIX}#{user.id}"
+      end
+
       def initialize(user:, script_name: nil)
         @user = user
         @script_name = script_name
@@ -47,6 +51,7 @@ module Collavre
             next if user.onboarding_seeded_at.present?
 
             seeded_creative = create_guide!
+            grant_practice_agent_access!(seeded_creative)
             create_or_update_welcome_message!(seeded_creative)
             user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: nil)
           end
@@ -159,8 +164,18 @@ module Collavre
         comment.save!
       end
 
+      def grant_practice_agent_access!(root)
+        agent = User.accessible_ai_agents_for(user).first
+        return unless agent
+
+        CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
+          share.permission = :feedback
+          share.shared_by = user
+        end
+      end
+
       def welcome_notification_key
-        "#{WELCOME_NOTIFICATION_KEY_PREFIX}#{user.id}"
+        self.class.welcome_notification_key(user)
       end
 
       def onboarding_locale
