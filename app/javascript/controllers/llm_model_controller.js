@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import CommonPopup from 'collavre/lib/common_popup.js'
+import csrfFetch, { refreshCsrfToken } from 'collavre/lib/api/csrf_fetch.js'
 import { alertDialog } from 'collavre/lib/utils/dialog.js'
 
 export default class extends Controller {
@@ -117,13 +118,16 @@ export default class extends Controller {
         if (!model) return
 
         try {
-            const response = await fetch(model.delete_url, {
+            const deleteRequest = () => csrfFetch(model.delete_url, {
                 method: 'DELETE',
-                headers: {
-                    Accept: 'application/json',
-                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
-                }
+                headers: { Accept: 'application/json' }
             })
+
+            let response = await deleteRequest()
+            if (response.status === 422) {
+                await refreshCsrfToken()
+                response = await deleteRequest()
+            }
             if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
             this.modelsValue = this.modelsValue.filter((candidate) => candidate.id !== id)

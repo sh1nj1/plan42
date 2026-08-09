@@ -7,6 +7,11 @@ import { Application } from '@hotwired/stimulus'
 import LlmModelController from '../llm_model_controller'
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+const response = ({ ok, status = ok ? 200 : 500, headers = {} }) => ({
+    ok,
+    status,
+    headers: new Headers(headers)
+})
 
 describe('LlmModelController', () => {
     let application
@@ -114,7 +119,7 @@ describe('LlmModelController', () => {
     })
 
     test('deletes a suggestion without selecting it', async () => {
-        global.fetch.mockResolvedValue({ ok: true })
+        global.fetch.mockResolvedValue(response({ ok: true }))
         controller.inputTarget.value = 'gpt'
         controller.show('gpt')
 
@@ -122,10 +127,36 @@ describe('LlmModelController', () => {
         await flush()
 
         expect(global.fetch).toHaveBeenCalledWith('/llm_models/2', {
+            credentials: 'same-origin',
             method: 'DELETE',
-            headers: { Accept: 'application/json', 'X-CSRF-Token': 'test-token' }
+            headers: expect.any(Headers)
         })
+        const requestHeaders = global.fetch.mock.calls[0][1].headers
+        expect(requestHeaders.get('Accept')).toBe('application/json')
+        expect(requestHeaders.get('X-CSRF-Token')).toBe('test-token')
         expect(controller.inputTarget.value).toBe('gpt')
+        expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+    })
+
+    test('refreshes a stale CSRF token and retries deletion once', async () => {
+        global.fetch
+            .mockResolvedValueOnce(response({ ok: false, status: 422 }))
+            .mockResolvedValueOnce(response({
+                ok: true,
+                headers: { 'X-CSRF-Token': 'fresh-token' }
+            }))
+            .mockResolvedValueOnce(response({ ok: true }))
+        controller.show('gpt')
+
+        document.querySelector('.llm-model-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await flush()
+
+        expect(global.fetch).toHaveBeenCalledTimes(3)
+        expect(global.fetch.mock.calls[1][1]).toEqual({
+            method: 'HEAD',
+            credentials: 'same-origin'
+        })
+        expect(global.fetch.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
         expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
     })
 
@@ -140,7 +171,7 @@ describe('LlmModelController', () => {
     })
 
     test('keeps the suggestion and shows a localized error when deletion fails', async () => {
-        global.fetch.mockResolvedValue({ ok: false, status: 500 })
+        global.fetch.mockResolvedValue(response({ ok: false, status: 500 }))
         controller.show('gpt')
 
         document.querySelector('.llm-model-delete').dispatchEvent(new MouseEvent('click', { bubbles: true }))
