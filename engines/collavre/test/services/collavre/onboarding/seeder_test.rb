@@ -121,6 +121,23 @@ module Collavre
         assert_equal @user, share.shared_by
       end
 
+      test "populates practice agent access before the authz job runs" do
+        agent = users(:ai_bot)
+        agent.update!(created_by_id: @user.id)
+
+        root = PermissionCacheJob.stub(:perform_later, ->(*) { }) do
+          Seeder.call(user: @user)
+        end
+        share = CreativeShare.find_by!(creative: root, user: agent)
+
+        root.self_and_descendants.each do |creative|
+          cache = CreativeSharesCache.find_by!(creative: creative, user: agent)
+          assert_predicate cache, :feedback?
+          assert_equal share.id, cache.source_share_id
+          assert creative.has_permission?(agent, :feedback)
+        end
+      end
+
       test "omits mention practice when no accessible AI agent exists" do
         root = Seeder.call(user: @user)
 

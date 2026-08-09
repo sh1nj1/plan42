@@ -168,10 +168,14 @@ module Collavre
       def grant_practice_agent_access!(root, agent)
         return unless agent
 
-        CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
-          share.permission = :feedback
-          share.shared_by = user
+        share = CreativeShare.find_or_create_by!(creative: root, user: agent) do |new_share|
+          new_share.permission = :feedback
+          new_share.shared_by = user
         end
+
+        # The mention step is visible as soon as seeding returns, so its grant
+        # cannot wait for the normal after-commit authz job.
+        Creatives::PermissionCacheBuilder.propagate_share(share)
       end
 
       def eligible_practice_agent
