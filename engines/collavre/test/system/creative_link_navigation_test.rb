@@ -79,4 +79,37 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
     assert_frame_navigation_to_target
     assert_selector "#comments-popup[data-creative-id='#{@target.id}']", visible: :visible, wait: 10
   end
+
+  test "chat comment link loads an earlier target page and highlights the message" do
+    resize_window_to(600, 900)
+    target_topic = Topic.create!(creative: @target, user: @user, name: "Earlier messages")
+    target_comment = Comment.create!(
+      creative: @target,
+      topic: target_topic,
+      user: @user,
+      content: "Earlier target message"
+    )
+    25.times do |index|
+      content = "Newer target message #{index}"
+      Comment.create!(creative: @target, topic: target_topic, user: @user, content:)
+    end
+    source_comment = Comment.create!(
+      creative: @source,
+      user: @user,
+      content: "[Open earlier message](/creatives/#{@target.id}?comment_id=#{target_comment.id})"
+    )
+
+    visit collavre.creatives_path(id: @source.id, open_comments: true)
+    link_selector = "#comment_#{source_comment.id} .comment-content a"
+    assert_selector link_selector, text: "Open earlier message", wait: 10
+    mark_workspace_shell
+
+    find(link_selector, text: "Open earlier message").click
+
+    assert_current_path collavre.creatives_path(id: @target.id, comment_id: target_comment.id)
+    navigation_state = "#creative-workspace-content [data-workspace-navigation-state]"
+    assert_selector "#{navigation_state}[data-creative-id='#{@target.id}']", visible: :all, wait: 10
+    assert_selector ".creative-workspace-shell[data-creative-link-marker='mounted']"
+    assert_selector "#comment_#{target_comment.id}[data-highlighted='true']", wait: 10
+  end
 end

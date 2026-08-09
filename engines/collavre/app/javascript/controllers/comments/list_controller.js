@@ -201,8 +201,9 @@ export default class extends Controller {
 
     const requestVersion = ++this._loadCommentsVersion
     const params = {}
-    if (this.highlightAfterLoad) {
-      params.around_comment_id = this.highlightAfterLoad
+    const requestedHighlightId = this.highlightAfterLoad
+    if (requestedHighlightId) {
+      params.around_comment_id = requestedHighlightId
     }
 
     const requestTopicId = this.currentTopicId || ""
@@ -214,17 +215,20 @@ export default class extends Controller {
       // the old creative's comments to overwrite the new creative's list.
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+      // An around-comment request may legitimately move from the saved topic
+      // to the topic containing the target comment. User-selected topic changes
+      // still invalidate this request by incrementing _loadCommentsVersion.
+      if (!requestedHighlightId && String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       this.listTarget.innerHTML = html
       this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
       renderMarkdownInContainer(this.listTarget)
       this.popupController?.updatePosition()
 
-      if (this.highlightAfterLoad) {
+      if (requestedHighlightId) {
         // We are deep linking
         this.allNewerLoaded = false // We are likely in middle
-        this.highlightComment(this.highlightAfterLoad)
+	this.highlightComment(requestedHighlightId)
         this.highlightAfterLoad = null
         this.highlightCreativeId = null
       } else {
