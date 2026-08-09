@@ -6,6 +6,27 @@ import { jest } from '@jest/globals'
 import CommentsListController from '../list_controller'
 
 describe('CommentsListController docked startup', () => {
+  test('loads comments through the mounted engine path', async () => {
+    const controller = Object.create(CommentsListController.prototype)
+    const element = document.createElement('div')
+    element.dataset.creativeUrlTemplate = '/collavre/creatives/__CREATIVE_ID__'
+    Object.defineProperty(controller, 'context', { value: { element } })
+    controller.creativeId = '12'
+    controller.currentTopicId = '34'
+    controller.manualSearchQuery = null
+    controller.listTarget = document.createElement('div')
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      text: async () => '<div>Mounted comments</div>',
+    })
+
+    await controller.fetchComments()
+
+    expect(global.fetch).toHaveBeenCalledWith('/collavre/creatives/12/comments?topic_id=34')
+    delete global.fetch
+  })
+
   test('ignores a repeated topic selection while a deep link is loading', () => {
     const controller = Object.create(CommentsListController.prototype)
     controller.currentTopicId = '12'

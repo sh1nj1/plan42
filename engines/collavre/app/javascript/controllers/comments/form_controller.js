@@ -5,6 +5,7 @@ import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
 import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
+import { commentsUrl } from './mounted_routes'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -923,7 +924,7 @@ export default class extends Controller {
       this._pendingReviewType = null
     }
 
-    let url = `/creatives/${this.creativeId}/comments`
+    let url = commentsUrl(this.context?.element, this.creativeId)
     let method = 'POST'
     if (submittedEditingId) {
       url += `/${submittedEditingId}`
@@ -1521,7 +1522,7 @@ export default class extends Controller {
       formData.append('comment[topic_id]', effectiveTopicId)
     }
 
-    const url = `/creatives/${this.creativeId}/comments`
+    const url = commentsUrl(this.context?.element, this.creativeId)
     const doFetch = () => fetch(url, {
       method: 'POST',
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },

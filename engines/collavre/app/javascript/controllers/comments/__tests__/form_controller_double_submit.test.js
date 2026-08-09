@@ -21,6 +21,7 @@ describe('FormController - double submit on slow API', () => {
   const FIXTURE = `
     <div id="comments-popup"
          data-controller="comments--form"
+         data-creative-url-template="/collavre/creatives/__CREATIVE_ID__"
          data-review-feedback-placeholder="Write feedback for this quote..."
          data-review-summary-placeholder="Overall comment (optional)..."
          data-review-add-quote="+ Add"
@@ -103,6 +104,7 @@ describe('FormController - double submit on slow API', () => {
     pressEnter(textarea) // impatient second Enter
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith('/collavre/creatives/111/comments', expect.any(Object))
   })
 
   test('SCENARIO B: a controller reconnect (morph) mid-send must NOT re-enable sending', () => {

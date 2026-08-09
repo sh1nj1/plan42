@@ -7,6 +7,7 @@ import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 import PrevMessageNavigator from './prev_message_navigator'
+import { commentsUrl } from './mounted_routes'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 // Gestures that mean the user moved the list themselves, invalidating the
@@ -313,7 +314,7 @@ export default class extends Controller {
     if (this.currentTopicId) {
       urlParams.set('topic_id', this.currentTopicId)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
+    return fetch(`${commentsUrl(this.context?.element, this.creativeId)}?${urlParams.toString()}`).then(async (response) => {
       // Keep the CSRF meta tag in sync with the session cookie.
       // This is critical after the browser returns from a background/frozen state.
       updateCsrfTokenFromResponse(response)

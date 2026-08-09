@@ -199,5 +199,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     mounted_member_path = collavre.creative_path(creative, script_name: "/collavre")
     assert_select "creative-tree-row[is-title][link-url=?][update-url=?]",
                   mounted_member_path, mounted_member_path
+    assert_select "#comments-popup[data-creative-url-template=?]",
+                  collavre.creative_path("__CREATIVE_ID__", script_name: "/collavre")
   end
 end
