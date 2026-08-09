@@ -24,7 +24,7 @@ module Creatives
         "<progress data-select='#{select_mode}'></progress>"
       end
 
-      def svg_tag(name, className: nil, width: nil, height: nil)
+      def svg_tag(name, className: nil, width: nil, height: nil, **)
         "<svg data-name='#{name}' data-class='#{className}' data-width='#{width}' data-height='#{height}'></svg>"
       end
 
@@ -133,6 +133,30 @@ module Creatives
 
       assert_equal "/collavre/creatives/#{creative.id}", node[:link_url]
       assert_equal "/collavre/creatives/#{creative.id}", node[:update_url]
+    end
+
+    test "uses the effective origin posture for a linked onboarding root" do
+      owner = users(:two)
+      root = Creative.create!(
+        user: owner,
+        description: "Onboarding root",
+        data: {
+          "kind" => Creative::ONBOARDING_KIND,
+          "source" => { "type" => Creative::ONBOARDING_KIND },
+          "onboarding" => { "session_id" => SecureRandom.uuid, "role" => "root" }
+        }
+      )
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: root, user: @user, permission: :write, shared_by: owner)
+      end
+      root.create_linked_creative_for_user(@user)
+      linked_root = Creative.find_by!(origin: root, user: @user)
+
+      node = build_tree_builder.build([ linked_root ]).sole
+
+      assert node[:card_layout]
+      assert node[:onboarding_item]
+      assert_not node[:can_write]
     end
 
     private

@@ -83,7 +83,7 @@ module Creatives
     def can_write?(creative)
       return false unless user
       # Read-only-source creatives are never writable
-      return false if creative.read_only_source?
+      return false if creative.effective_origin.read_only_source?
 
       allowed?(creative, :write)
     end
@@ -127,6 +127,7 @@ module Creatives
       return children_nodes if skip
 
       can_write = can_write?(creative)
+      content_owner = creative.effective_origin
 
       [
         {
@@ -141,8 +142,8 @@ module Creatives
           is_root: creative.parent_id.nil?,
           archived: creative.archived?,
           github_source: creative.github_markdown?,
-          card_layout: creative.onboarding_card?,
-          onboarding_item: creative.onboarding_item?,
+          card_layout: content_owner.onboarding_root? || content_owner.onboarding_card?,
+          onboarding_item: content_owner.onboarding_item?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative, **mount_options),
           update_url: view_context.collavre.creative_path(creative, **mount_options),

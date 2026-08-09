@@ -243,5 +243,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
                   mounted_member_path, mounted_member_path
     assert_select "#comments-popup[data-creative-url-template=?]",
                   collavre.creative_path("__CREATIVE_ID__", script_name: "/collavre")
+    assert_select "#comments-popup[data-user-search-url=?]",
+                  collavre.search_users_path(script_name: "/collavre")
   end
 end

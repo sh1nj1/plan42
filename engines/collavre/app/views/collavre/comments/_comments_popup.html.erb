@@ -15,6 +15,7 @@
      data-fullscreen-label="<%= t('collavre.comments.fullscreen', default: 'Full screen') %>"
      data-exit-fullscreen-label="<%= t('collavre.comments.exit_fullscreen', default: 'Exit full screen') %>"
      data-creative-url-template="<%= collavre.creative_path('__CREATIVE_ID__', script_name: request.script_name) %>"
+     data-user-search-url="<%= collavre.search_users_path(script_name: request.script_name) %>"
      <% popup_creative = creative || (@parent_creative if auto_fullscreen) %>
      <% if (fullscreen || auto_fullscreen || docked) && popup_creative.present? %>
      data-creative-id="<%= popup_creative.id %>"
