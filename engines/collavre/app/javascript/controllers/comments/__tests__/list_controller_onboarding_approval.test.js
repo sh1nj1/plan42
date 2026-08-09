@@ -8,13 +8,16 @@ import CommentsListController from '../list_controller'
 describe('CommentsListController onboarding approval refresh', () => {
   const buildController = (formController = { _refreshOnboardingItems: jest.fn() }) => {
     const controller = Object.create(CommentsListController.prototype)
+    const element = document.createElement('div')
+    element.dataset.creativeUrlTemplate = '/collavre/creatives/__CREATIVE_ID__'
     controller.creativeId = '42'
     controller.currentTopicId = null
     controller.reloadCreativeChildren = jest.fn().mockResolvedValue()
+    Object.defineProperty(controller, 'context', { value: { element } })
     Object.defineProperty(controller, 'application', {
       value: { getControllerForElementAndIdentifier: jest.fn().mockReturnValue(formController) },
     })
-    Object.defineProperty(controller, 'element', { value: document.createElement('div') })
+    Object.defineProperty(controller, 'element', { value: element })
     return { controller, formController }
   }
 
@@ -45,6 +48,10 @@ describe('CommentsListController onboarding approval refresh', () => {
 
     await controller.decideComment(document.querySelector('button'), 'approve')
 
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/collavre/creatives/42/comments/7/approve',
+      expect.objectContaining({ method: 'POST' }),
+    )
     expect(controller.reloadCreativeChildren).toHaveBeenCalledWith('42')
     expect(formController._refreshOnboardingItems).toHaveBeenCalledWith('42', '84')
     expect(document.getElementById('comment_7').textContent).toBe('Approved')

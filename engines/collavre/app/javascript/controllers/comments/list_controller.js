@@ -1059,7 +1059,7 @@ export default class extends Controller {
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
     const topicQuery = this.topicQueryString()
-    return fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+    return fetch(`${commentsUrl(this.context?.element, this.creativeId)}/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
       .then(async (response) => {
         if (!response.ok) {
           const json = await response.json()
