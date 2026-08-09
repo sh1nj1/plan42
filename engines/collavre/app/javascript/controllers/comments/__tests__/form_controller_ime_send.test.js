@@ -54,6 +54,14 @@ describe('FormController - IME composition send', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
+  // A real IME commit ends the composition and then fires `input` for the
+  // committed text. jsdom has no IME, so replay that exact pair.
+  const commitComposition = (textarea, value = textarea.value) => {
+    textarea.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: value }))
+    textarea.value = value
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
   beforeEach(async () => {
     window.localStorage.clear()
     window.sessionStorage.clear()
@@ -121,7 +129,7 @@ describe('FormController - IME composition send', () => {
 
     // The IME commits the pending syllable right after keydown started the
     // send. The textarea content is unchanged, but an input event still fires.
-    controller.textareaTarget.dispatchEvent(new Event('input', { bubbles: true }))
+    commitComposition(controller.textareaTarget)
 
     finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -137,7 +145,7 @@ describe('FormController - IME composition send', () => {
 
     typeInto(controller.textareaTarget, '안녕하세요')
     controller.handleSend(new Event('submit', { cancelable: true }))
-    controller.textareaTarget.dispatchEvent(new Event('input', { bubbles: true }))
+    commitComposition(controller.textareaTarget)
 
     // The response outlives the 500ms draft debounce window.
     await new Promise((resolve) => setTimeout(resolve, 600))
@@ -169,6 +177,47 @@ describe('FormController - IME composition send', () => {
 
     expect(global.fetch).toHaveBeenCalled()
     expect(controller.textareaTarget.value).toBe('')
+  })
+
+  test('re-entering the same text during the send is preserved, not treated as an IME commit', async () => {
+    dispatchTopicChange()
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+
+    typeInto(controller.textareaTarget, 'send me twice')
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    // Select-all + paste of the identical string to send it again. No
+    // composition is involved, so this is a genuine edit even though the
+    // value matches the in-flight submission.
+    typeInto(controller.textareaTarget, 'send me twice')
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('send me twice')
+    expect(chatDrafts.get(chatId)).toBe('send me twice')
+  })
+
+  test('an input event still carrying isComposing is treated as an IME commit', async () => {
+    dispatchTopicChange()
+    let finishFetch
+    global.fetch = jest.fn(() => new Promise((resolve) => { finishFetch = resolve }))
+
+    typeInto(controller.textareaTarget, '안녕하세요')
+    controller.handleSend(new Event('submit', { cancelable: true }))
+
+    // Some browsers fire the commit `input` before `compositionend`, with
+    // isComposing still set on the input event itself.
+    controller.textareaTarget.dispatchEvent(
+      new InputEvent('input', { bubbles: true, isComposing: true }),
+    )
+
+    finishFetch({ ok: true, status: 200, text: () => Promise.resolve('<div></div>') })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(controller.textareaTarget.value).toBe('')
+    expect(chatDrafts.get(chatId)).toBeNull()
   })
 
   test('text genuinely typed during the send is still preserved', async () => {

@@ -153,7 +153,15 @@ export default class extends Controller {
       const clearedNamespace = chatDrafts.namespace()
       this._disableDraftNamespace(clearedNamespace)
     }
-    this._handleDraftInput = () => {
+    this._handleCompositionEnd = () => {
+      this._imeCommitPending = true
+    }
+    this._handleDraftInput = (event) => {
+      // Consume the composition flag before any early return, so it can never
+      // outlive the `input` event that the commit itself fired. Firefox has
+      // shipped both orderings, so accept isComposing on the input event too.
+      const isImeCommit = Boolean(event?.isComposing) || this._imeCommitPending === true
+      this._imeCommitPending = false
       if (
         this.editingId ||
 	this._draftPersistenceDisabled() ||
@@ -166,12 +174,15 @@ export default class extends Controller {
       // the textarea still holds exactly what went to the server. Counting it
       // as a revision would defeat _currentPendingSubmission and make the sent
       // message look like a draft typed mid-flight, restoring it on success.
-      if (this._currentTextIsPendingSubmission()) return
+      // Text equality alone is not enough to suppress: re-entering the same
+      // string mid-flight (select-all + paste to send it twice) is a real edit.
+      if (isImeCommit && this._currentTextIsPendingSubmission()) return
       const revisionKey = `${chatDrafts.namespace()}:${this._activeDraftKey}`
       this._draftRevisions.set(revisionKey, (this._draftRevisions.get(revisionKey) || 0) + 1)
       clearTimeout(this._draftSaveTimer)
       this._draftSaveTimer = setTimeout(() => this._saveDraftNow(), 500)
     }
+    this.textareaTarget.addEventListener('compositionend', this._handleCompositionEnd)
     this.textareaTarget.addEventListener('input', this._handleDraftInput)
     window.addEventListener('pagehide', this._handlePageHide)
     window.addEventListener('storage', this._handleDraftStorage)
@@ -284,6 +295,7 @@ export default class extends Controller {
 
   disconnect() {
     this._flushDraftSave()
+    this.textareaTarget.removeEventListener('compositionend', this._handleCompositionEnd)
     this.textareaTarget.removeEventListener('input', this._handleDraftInput)
     window.removeEventListener('pagehide', this._handlePageHide)
     window.removeEventListener('storage', this._handleDraftStorage)
