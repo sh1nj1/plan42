@@ -55,7 +55,7 @@ module Collavre
     private
 
     def find_workspace!
-      Collavre::AgentWorkspace.find_by!(agent_id: params[:agent_id], manifest_token: params[:token])
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: params[:agent_id], token: params[:token])
     end
 
     def digest(bytes)

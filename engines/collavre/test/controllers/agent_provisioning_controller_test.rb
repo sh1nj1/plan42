@@ -48,8 +48,14 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "invalid manifest capability is not found" do
-    get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: "invalid-token")
-    assert_response :not_found
+    stored = ActiveRecord::Base.connection.select_one(
+      "SELECT manifest_token, manifest_token_digest FROM agent_workspaces WHERE id = #{@workspace.id}"
+    )
+
+    [ "invalid-token", stored.fetch("manifest_token"), stored.fetch("manifest_token_digest") ].each do |token|
+      get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: token)
+      assert_response :not_found
+    end
   end
 
   test "callback token rotation preserves the registered manifest URL" do

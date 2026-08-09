@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module Collavre
   class AgentWorkspace < ApplicationRecord
     self.table_name = "agent_workspaces"
@@ -8,12 +10,14 @@ module Collavre
     belongs_to :user, class_name: "Collavre::User", optional: true
     belongs_to :agent_gateway, class_name: "Collavre::AgentGateway"
 
+    encrypts :manifest_token, deterministic: false
     encrypts :callback_token, deterministic: false
 
-    validates :proxy_user_id, :manifest_token, :callback_token, presence: true
+    validates :proxy_user_id, :manifest_token, :manifest_token_digest, :callback_token, presence: true
     validates :proxy_user_id, format: { with: /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/ }
-    validates :manifest_token, uniqueness: true
+    validates :manifest_token_digest, uniqueness: true
 
+    before_validation :derive_manifest_token_digest, if: :will_save_change_to_manifest_token?
     before_destroy :revoke_callback_token
 
     class << self
@@ -22,6 +26,18 @@ module Collavre
         raise ArgumentError, "Agent gateway is inactive" unless gateway.active?
 
         gateway.shared? ? resolve_shared!(agent, gateway) : resolve_per_user!(agent, user, gateway)
+      end
+
+      def find_by_manifest_token!(agent_id:, token:)
+        supplied = token.to_s
+        workspace = find_by!(agent_id: agent_id, manifest_token_digest: manifest_digest(supplied))
+        return workspace if ActiveSupport::SecurityUtils.secure_compare(supplied, workspace.manifest_token.to_s)
+
+        raise ActiveRecord::RecordNotFound
+      end
+
+      def manifest_digest(token)
+        Digest::SHA256.hexdigest(token)
       end
 
       private
@@ -122,6 +138,10 @@ module Collavre
     end
 
     private
+
+    def derive_manifest_token_digest
+      self.manifest_token_digest = self.class.manifest_digest(manifest_token.to_s)
+    end
 
     def revoke_callback_token
       Doorkeeper::AccessToken.by_token(callback_token)&.revoke

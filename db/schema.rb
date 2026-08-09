@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_09_000003) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_09_000004) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -87,6 +87,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000003) do
     t.text "callback_token", null: false
     t.datetime "created_at", null: false
     t.string "manifest_token", null: false
+    t.string "manifest_token_digest", null: false
     t.string "proxy_user_id", null: false
     t.datetime "updated_at", null: false
     t.integer "user_id"
@@ -94,7 +95,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000003) do
     t.index ["agent_id", "agent_gateway_id"], name: "idx_agent_workspaces_shared", unique: true, where: "user_id IS NULL"
     t.index ["agent_id", "user_id", "agent_gateway_id"], name: "idx_agent_workspaces_per_user", unique: true, where: "user_id IS NOT NULL"
     t.index ["agent_id"], name: "index_agent_workspaces_on_agent_id"
-    t.index ["manifest_token"], name: "index_agent_workspaces_on_manifest_token", unique: true
+    t.index ["manifest_token_digest"], name: "index_agent_workspaces_on_manifest_token_digest", unique: true
     t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
   end
 

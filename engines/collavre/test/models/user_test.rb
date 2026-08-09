@@ -188,7 +188,7 @@ class UserTest < ActiveSupport::TestCase
       root = Collavre::Creative.create!(user: owner, description: "Shared root")
       nested = Collavre::Creative.create!(user: owner, parent: root, description: "Nested agent creative")
       Collavre::CreativeShare.create!(creative: root, user: viewer, permission: :read)
-      Collavre::CreativeShare.create!(creative: nested, user: agent, permission: :read)
+      Collavre::CreativeShare.create!(creative: nested, user: agent, permission: :feedback)
       nested
     end
 
@@ -230,5 +230,72 @@ class UserTest < ActiveSupport::TestCase
 
     assert creative.has_permission?(viewer, :read)
     assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "gateway access follows public feedback permission for the agent" do
+    owner = users(:two)
+    viewer = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Public permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Public permission agent",
+      email: "public-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: owner, description: "Public feedback creative")
+      Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :feedback)
+      creative
+    end
+
+    assert creative.has_permission?(agent, :feedback)
+    assert creative.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
+
+  test "explicit agent denial overrides public feedback for gateway access" do
+    owner = users(:two)
+    viewer = users(:three)
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Denied public permission gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Denied public permission agent",
+      email: "denied-public-permission-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: owner, description: "Denied public creative")
+      Collavre::CreativeShare.create!(creative: creative, user: nil, permission: :feedback)
+      Collavre::CreativeShare.create!(creative: creative, user: agent, permission: :no_access)
+      creative
+    end
+
+    refute creative.has_permission?(agent, :feedback)
+    assert creative.has_permission?(viewer, :read)
+    refute agent.gateway_accessible_to?(viewer)
   end
 end

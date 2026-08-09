@@ -1,5 +1,6 @@
 require "test_helper"
 require Rails.root.join("engines/collavre/db/migrate/20260809000003_hash_agent_workspace_callback_tokens")
+require Rails.root.join("engines/collavre/db/migrate/20260809000004_encrypt_agent_workspace_manifest_tokens")
 
 class AgentWorkspaceTest < ActiveSupport::TestCase
   setup do
@@ -47,6 +48,26 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_predicate access_token, :accessible?
   end
 
+  test "manifest capability is encrypted and only its plaintext resolves" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    plaintext = workspace.manifest_token
+    stored = workspace.read_attribute_before_type_cast(:manifest_token)
+
+    assert_not_equal plaintext, stored
+    assert_equal Digest::SHA256.hexdigest(plaintext), workspace.manifest_token_digest
+    assert_equal workspace,
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: @agent.id, token: plaintext)
+    assert_raises(ActiveRecord::RecordNotFound) do
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: @agent.id, token: stored)
+    end
+    assert_raises(ActiveRecord::RecordNotFound) do
+      Collavre::AgentWorkspace.find_by_manifest_token!(
+        agent_id: @agent.id,
+        token: workspace.manifest_token_digest
+      )
+    end
+  end
+
   test "ordinary Doorkeeper tokens retain plain storage and lookup" do
     application = Doorkeeper::Application.create!(
       owner: @owner,
@@ -80,6 +101,28 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
     assert_equal workspace.callback_token, access_token.reload.token
     assert_equal access_token, Doorkeeper::AccessToken.by_token(workspace.callback_token)
+  end
+
+  test "migration encrypts and restores legacy manifest capabilities" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    plaintext = workspace.manifest_token
+    connection = ActiveRecord::Base.connection
+    connection.execute(
+      "UPDATE agent_workspaces SET manifest_token = #{connection.quote(plaintext)} WHERE id = #{workspace.id}"
+    )
+    migration = EncryptAgentWorkspaceManifestTokens.new
+
+    migration.send(:transform_tokens, encrypt: true)
+
+    stored = connection.select_value("SELECT manifest_token FROM agent_workspaces WHERE id = #{workspace.id}")
+    assert_not_equal plaintext, stored
+    assert_equal plaintext, workspace.reload.manifest_token
+    assert_equal Digest::SHA256.hexdigest(plaintext), workspace.manifest_token_digest
+
+    migration.send(:transform_tokens, encrypt: false)
+
+    assert_equal plaintext,
+      connection.select_value("SELECT manifest_token FROM agent_workspaces WHERE id = #{workspace.id}")
   end
 
   test "per-user mode isolates users and preserves owner shared identity" do
