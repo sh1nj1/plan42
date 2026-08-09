@@ -37,6 +37,17 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert Doorkeeper::AccessToken.by_token(first.callback_token).accessible?
   end
 
+  test "resolution reloads and locks the gateway before creating a workspace" do
+    cached_gateway = @agent.agent_gateway
+    assert_predicate cached_gateway, :active?
+    Collavre::AgentGateway.where(id: cached_gateway.id).update_all(active: false)
+
+    assert_raises(ArgumentError, match: /inactive/) do
+      Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    end
+    assert_empty Collavre::AgentWorkspace.where(agent: @agent, agent_gateway: cached_gateway)
+  end
+
   test "callback token is hashed in Doorkeeper while the plaintext bearer remains usable" do
     workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
     access_token = Doorkeeper::AccessToken.by_token(workspace.callback_token)

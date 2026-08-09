@@ -439,6 +439,7 @@ module Collavre
           .where.not(user_id: [ task.agent_id, nil ])
           .where.not(id: Comment.review_messages.where(creative_id: creative_id, topic_id: topic_id).select(:id))
           .order(id: :desc)
+        scope = TaskCoalescer.reanchor_scope_for_workspace_principal(scope, task)
 
         # Narrowing the destination closes the door this call site opens, but the
         # promotion door still moves the anchor onto the newest comment in the

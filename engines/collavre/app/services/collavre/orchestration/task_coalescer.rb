@@ -136,6 +136,37 @@ module Collavre
         payload.merge(PAYLOAD_KEY => merged.sort)
       end
 
+      # Restrict a re-anchor query to comments that keep the task on the same
+      # per-user CLI Proxy principal. The current anchor is always retained as
+      # the no-op candidate: an A2A payload may carry a human principal even
+      # though its anchor was authored by an agent, while moving onto another
+      # agent comment would deliberately turn that principal into explicit nil.
+      def self.reanchor_scope_for_workspace_principal(scope, task)
+        return scope unless workspace_principal_isolated?(task.agent)
+
+        principal = workspace_principal_for(task)
+        anchor_id = (task.trigger_event_payload || {}).dig("comment", "id")
+        compatible =
+          case principal.first
+          when :human
+            scope.where(user_id: principal.second)
+          when :unprovable
+            scope.where(user_id: nil).or(scope.where(user_id: User.ai_agents.select(:id)))
+          else
+            scope.none
+          end
+
+        anchor_id ? compatible.or(scope.where(id: anchor_id)) : compatible
+      end
+
+      def self.workspace_principal_for(task)
+        workspace_principals_for([ task ]).fetch(task.id)
+      end
+
+      def self.workspace_principal_isolated?(agent)
+        agent&.cli_proxy_agent? && agent.agent_gateway.per_user?
+      end
+
       def initialize(keep_task, scope: :older)
         @keep = keep_task
         @scope = scope
@@ -169,6 +200,7 @@ module Collavre
           siblings = reject_review_triggers(
             locked.values.select { |t| t.id != keep.id && t.status == "queued" }
           )
+          siblings = reject_other_workspace_principals(keep, siblings)
           comment_ids = siblings.flat_map { |t| trigger_comment_ids(t) }
 
           siblings.each do |task|
@@ -259,6 +291,53 @@ module Collavre
           review_ids.include?((task.trigger_event_payload || {}).dig("comment", "id").to_i)
         end
       end
+
+      # Coalesced comments are rendered into one trigger and execute under the
+      # survivor's single workspace principal. Folding across people would let
+      # one person's prompt run with another person's provider login and
+      # callback permissions, so only siblings whose effective principal is
+      # identical may be absorbed.
+      def reject_other_workspace_principals(keep, siblings)
+        return siblings if siblings.empty?
+        return siblings unless self.class.workspace_principal_isolated?(keep.agent)
+
+        principals = self.class.send(:workspace_principals_for, [ keep ] + siblings)
+        keep_principal = principals.fetch(keep.id)
+        siblings.select { |task| principals.fetch(task.id) == keep_principal }
+      end
+
+      def self.workspace_principals_for(tasks)
+        payloads = tasks.to_h { |task| [ task.id, task.trigger_event_payload || {} ] }
+        explicit_ids = payloads.values.filter_map do |payload|
+          payload["workspace_user_id"] if payload.key?("workspace_user_id")
+        end
+        anchor_ids = payloads.values.filter_map { |payload| payload.dig("comment", "id") }
+        agent_creators = User.where(id: tasks.map(&:agent_id).compact.uniq).pluck(:id, :created_by_id).to_h
+        creator_ids = agent_creators.values.compact
+        users = User.where(id: explicit_ids + creator_ids).index_by(&:id)
+        comments = Comment.where(id: anchor_ids).includes(:user).index_by(&:id)
+
+        tasks.to_h do |task|
+          payload = payloads.fetch(task.id)
+          principal = effective_workspace_principal(task, payload, users, comments, agent_creators)
+          [ task.id, principal ]
+        end
+      end
+      private_class_method :workspace_principals_for
+
+      def self.effective_workspace_principal(task, payload, users, comments, agent_creators)
+        if payload.key?("workspace_user_id")
+          carried = users[payload["workspace_user_id"].to_i]
+          return carried && !carried.ai_user? ? [ :human, carried.id ] : [ :unprovable ]
+        end
+
+        comment = comments[payload.dig("comment", "id").to_i]
+        return [ :human, comment.user_id ] if comment&.user && !comment.user.ai_user?
+
+        creator = users[agent_creators[task.agent_id]]
+        creator && !creator.ai_user? ? [ :human, creator.id ] : [ :fallback, creator&.id ]
+      end
+      private_class_method :effective_workspace_principal
 
       # The comment a task was going to answer, plus anything it had already
       # absorbed itself — coalescing has to be transitive or a second round

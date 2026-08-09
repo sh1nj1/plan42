@@ -53,6 +53,56 @@ module Collavre
         assert_equal [ 11, 12 ], third.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
       end
 
+      test "does not absorb a queued comment from another human workspace principal" do
+        per_user_agent = create_per_user_agent
+        other_user = users(:two)
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: other_user, topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id, agent: per_user_agent)
+        second = create_waiter(comment_id: second_comment.id, agent: per_user_agent)
+
+        assert_empty TaskCoalescer.coalesce!(second)
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status
+        assert_nil second.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "still absorbs queued comments from the same human workspace principal" do
+        per_user_agent = create_per_user_agent
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: @user, topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id, agent: per_user_agent)
+        second = create_waiter(comment_id: second_comment.id, agent: per_user_agent)
+
+        assert_equal [ first.id ], TaskCoalescer.coalesce!(second)
+        assert_equal "cancelled", first.reload.status
+        assert_equal [ first_comment.id ], second.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "shared proxy agents may still coalesce comments from different humans" do
+        shared_agent = create_proxy_agent(workspace_mode: :shared)
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: users(:two), topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id, agent: shared_agent)
+        second = create_waiter(comment_id: second_comment.id, agent: shared_agent)
+
+        assert_equal [ first.id ], TaskCoalescer.coalesce!(second)
+        assert_equal "cancelled", first.reload.status
+        assert_equal [ first_comment.id ], second.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
       test "keeps the newest comment as the trigger anchor" do
         create_waiter(comment_id: 11)
         newest = create_waiter(comment_id: 12)
@@ -294,6 +344,34 @@ module Collavre
         unchanged = TaskCoalescer.reanchor_payload(payload, anchor)
 
         assert_equal @user.id, unchanged["workspace_user_id"]
+      end
+
+      private
+
+      def create_per_user_agent
+        create_proxy_agent(workspace_mode: :per_user)
+      end
+
+      def create_proxy_agent(workspace_mode:)
+        owner = users(:one)
+        gateway = AgentGateway.create!(
+          owner: owner,
+          name: "Coalescer proxy #{SecureRandom.hex(3)}",
+          base_url: "https://proxy.example.com",
+          admin_key: "admin",
+          completion_key: "completion",
+          identity_secret: "c" * 32,
+          workspace_mode: workspace_mode
+        )
+        User.create!(
+          name: "per-user-agent-#{SecureRandom.hex(3)}",
+          email: "per-user-#{SecureRandom.hex(4)}@agent.test",
+          password: "password123",
+          llm_vendor: "cli_proxy",
+          llm_model: "paperclip/claude_local",
+          created_by_id: owner.id,
+          agent_gateway: gateway
+        )
       end
     end
   end
