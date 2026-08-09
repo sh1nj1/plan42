@@ -1,0 +1,50 @@
+class CreateLlmModels < ActiveRecord::Migration[8.1]
+  DEFAULT_MODELS = {
+    "google" => [
+      "gemini-3.1-flash-lite",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro"
+    ]
+  }.freeze
+
+  def up
+    create_table :llm_models do |t|
+      t.string :llm_vendor, null: false
+      t.string :name, null: false
+      t.references :created_by,
+                   null: true,
+                   foreign_key: { to_table: :users, on_delete: :nullify }
+      t.timestamps
+    end
+
+    add_index :llm_models, [ :llm_vendor, :name ], unique: true
+
+    llm_model_class = Class.new(ActiveRecord::Base) do
+      self.table_name = "llm_models"
+    end
+    user_class = Class.new(ActiveRecord::Base) do
+      self.table_name = "users"
+    end
+
+    models = DEFAULT_MODELS.flat_map do |vendor, names|
+      names.map { |name| [ vendor, name ] }
+    end
+    models.concat(
+      user_class.where.not(llm_vendor: [ nil, "" ])
+                .where.not(llm_model: [ nil, "" ])
+                .distinct
+                .pluck(:llm_vendor, :llm_model)
+    )
+
+    models.each do |vendor, name|
+      llm_model_class.find_or_create_by!(
+        llm_vendor: vendor.to_s.strip.downcase,
+        name: name.to_s.strip
+      )
+    end
+  end
+
+  def down
+    drop_table :llm_models
+  end
+end

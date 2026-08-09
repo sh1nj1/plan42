@@ -23,6 +23,8 @@ ko:
         vendor_label: LLM 벤더
         vendor_help: 이 에이전트에 사용할 AI 제공업체를 선택하세요
         model_label: 모델
+        remove_model: 모델 목록에서 삭제
+        remove_model_failed: 모델을 목록에서 삭제하지 못했습니다.
         api_key_label: API Key
         api_key_help: 입력하면 시스템 기본값 대신 이 키가 사용됩니다. 암호화되어 저장됩니다.
         gateway_url_label: Gateway URL

@@ -55,6 +55,11 @@ module Collavre
 
     belongs_to :creator, class_name: "Collavre::User", foreign_key: "created_by_id", optional: true
     has_many :created_ai_users, class_name: "Collavre::User", foreign_key: "created_by_id", dependent: :destroy
+    has_many :created_llm_models,
+             class_name: "Collavre::LlmModel",
+             foreign_key: :created_by_id,
+             dependent: :nullify,
+             inverse_of: :creator
 
     has_one_attached :avatar
 

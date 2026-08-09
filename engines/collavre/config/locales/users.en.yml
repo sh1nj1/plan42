@@ -24,6 +24,8 @@ en:
         vendor_label: LLM Vendor
         vendor_help: Select the AI provider for this agent
         model_label: Model
+        remove_model: Remove from model list
+        remove_model_failed: Could not remove the model from the list.
         api_key_label: API Key
         api_key_help: If provided, this key will be used instead of the system default.
           Stored encrypted.

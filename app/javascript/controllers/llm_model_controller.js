@@ -1,11 +1,14 @@
 import { Controller } from '@hotwired/stimulus'
 import CommonPopup from 'collavre/lib/common_popup.js'
+import { alertDialog } from 'collavre/lib/utils/dialog.js'
 
 export default class extends Controller {
-    static targets = ['input']
+    static targets = ['input', 'vendor']
     static values = {
         models: Array,
-        menuId: String
+        menuId: String,
+        deleteLabel: String,
+        deleteFailed: String
     }
 
     connect() {
@@ -13,11 +16,11 @@ export default class extends Controller {
         this.listElement = this.menuElement?.querySelector('.mention-results') ||
             this.menuElement?.querySelector('.common-popup-list')
 
-        if (!this.menuElement || !this.listElement || this.modelsValue.length === 0) return
+        if (!this.menuElement || !this.listElement) return
 
         this.popup = new CommonPopup(this.menuElement, {
             listElement: this.listElement,
-            renderItem: (model) => `<div class="mention-item">${model}</div>`,
+            renderItem: (model) => this.renderModel(model),
             onSelect: this.select.bind(this)
         })
     }
@@ -29,6 +32,10 @@ export default class extends Controller {
     }
 
     search() {
+        this.show(this.inputTarget.value.trim())
+    }
+
+    vendorChanged() {
         this.show(this.inputTarget.value.trim())
     }
 
@@ -51,7 +58,10 @@ export default class extends Controller {
         if (!this.popup) return
 
         const lowered = term.toLowerCase()
-        const filtered = this.modelsValue.filter((model) => model.toLowerCase().includes(lowered))
+        const vendor = this.vendorTarget.value
+        const filtered = this.modelsValue.filter((model) => (
+            model.vendor === vendor && model.name.toLowerCase().includes(lowered)
+        ))
 
         if (filtered.length === 0) {
             this.hide()
@@ -59,6 +69,7 @@ export default class extends Controller {
         }
 
         this.popup.setItems(filtered)
+        this.bindDeleteButtons()
         this.popup.showAt(this.inputTarget.getBoundingClientRect())
     }
 
@@ -67,10 +78,68 @@ export default class extends Controller {
     }
 
     select(model) {
-        this.inputTarget.value = model
+        this.inputTarget.value = model.name
         this.hide()
         this.inputTarget.focus()
         this.inputTarget.dispatchEvent(new Event('input', { bubbles: true }))
         this.inputTarget.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+
+    prepareDelete(event) {
+        event.preventDefault()
+        event.stopPropagation()
+    }
+
+    async deleteModel(event) {
+        event.preventDefault()
+        event.stopPropagation()
+
+        const id = Number(event.currentTarget.dataset.modelId)
+        const model = this.modelsValue.find((candidate) => candidate.id === id)
+        if (!model) return
+
+        try {
+            const response = await fetch(model.delete_url, {
+                method: 'DELETE',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                }
+            })
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+            this.modelsValue = this.modelsValue.filter((candidate) => candidate.id !== id)
+            this.show(this.inputTarget.value.trim())
+        } catch (error) {
+            await alertDialog(this.deleteFailedValue)
+        }
+    }
+
+    renderModel(model) {
+        const name = this.escapeHtml(model.name)
+        const label = this.escapeHtml(`${this.deleteLabelValue}: ${model.name}`)
+
+        return `<div class="mention-item llm-model-item">` +
+            `<span class="llm-model-name">${name}</span>` +
+            `<button type="button" class="llm-model-delete" data-model-id="${model.id}" aria-label="${label}" title="${label}">&times;</button>` +
+            `</div>`
+    }
+
+    bindDeleteButtons() {
+        this.listElement.querySelectorAll('.llm-model-delete').forEach((button) => {
+            button.addEventListener('mousedown', this.prepareDelete.bind(this))
+            button.addEventListener('touchstart', this.prepareDelete.bind(this))
+            button.addEventListener('touchend', this.deleteModel.bind(this))
+            button.addEventListener('click', this.deleteModel.bind(this))
+        })
+    }
+
+    escapeHtml(value) {
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;')
     }
 }

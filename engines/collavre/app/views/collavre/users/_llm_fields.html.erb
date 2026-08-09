@@ -1,0 +1,43 @@
+<% models = @llm_models.map do |model|
+     {
+       id: model.id,
+       vendor: model.llm_vendor,
+       name: model.name,
+       delete_url: collavre.llm_model_path(model)
+     }
+   end %>
+
+<div data-controller="llm-model"
+     data-llm-model-menu-id-value="llm-model-suggestions"
+     data-llm-model-models-value="<%= models.to_json %>"
+     data-llm-model-delete-label-value="<%= t('collavre.users.new_ai.remove_model') %>"
+     data-llm-model-delete-failed-value="<%= t('collavre.users.new_ai.remove_model_failed') %>">
+  <div class="form-group">
+    <%= form.label :llm_vendor, t('collavre.users.new_ai.vendor_label') %>
+    <%= form.select :llm_vendor,
+                    options_for_select(Collavre::User::LLM_VENDOR_OPTIONS, selected_vendor),
+                    {},
+                    class: "stacked-form-control",
+                    data: {
+                      llm_model_target: "vendor",
+                      action: "change->llm-model#vendorChanged"
+                    } %>
+    <small class="form-text text-muted"><%= t('collavre.users.new_ai.vendor_help') %></small>
+  </div>
+
+  <div class="form-group">
+    <%= form.label :llm_model, t('collavre.users.new_ai.model_label') %>
+    <div style="position: relative;">
+      <%= form.text_field :llm_model,
+                          required: true,
+                          class: "stacked-form-control",
+                          autocomplete: "off",
+                          value: selected_model,
+                          data: {
+                            llm_model_target: "input",
+                            action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
+                          } %>
+      <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
+    </div>
+  </div>
+</div>

@@ -28,32 +28,10 @@
 
   <%= render "collavre/users/trigger_field", form: form, routing_expression: @copy_source&.routing_expression %>
 
-  <div class="form-group">
-    <%= form.label :llm_vendor, t('collavre.users.new_ai.vendor_label', default: 'LLM Provider') %>
-    <%= form.select :llm_vendor, options_for_select(
-      Collavre::User::LLM_VENDOR_OPTIONS, @copy_source&.llm_vendor || "google"
-    ), {}, class: "stacked-form-control" %>
-    <small class="form-text text-muted"><%= t('collavre.users.new_ai.vendor_help', default: 'Select the AI provider for this agent') %></small>
-  </div>
-
-  <div class="form-group">
-    <%= form.label :llm_model, t('collavre.users.new_ai.model_label') %>
-    <div style="position: relative;"
-         data-controller="llm-model"
-         data-llm-model-menu-id-value="llm-model-suggestions"
-         data-llm-model-models-value="<%= Collavre::User::SUPPORTED_LLM_MODELS.to_json %>">
-      <%= form.text_field :llm_model,
-                          required: true,
-                          class: "stacked-form-control",
-                          autocomplete: "off",
-                          value: @copy_source&.llm_model,
-                          data: {
-                            llm_model_target: "input",
-                            action: "input->llm-model#search focus->llm-model#focus blur->llm-model#blur keydown->llm-model#handleKeydown"
-                          } %>
-      <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
-    </div>
-  </div>
+  <%= render "collavre/users/llm_fields",
+             form: form,
+             selected_vendor: @user&.llm_vendor || @copy_source&.llm_vendor || "google",
+             selected_model: @user&.llm_model || @copy_source&.llm_model %>
 
   <div class="form-group">
     <%= form.label :llm_api_key, t('collavre.users.new_ai.api_key_label') %>

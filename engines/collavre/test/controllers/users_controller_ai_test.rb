@@ -8,11 +8,22 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
   end
 
   test "should get new_ai page with tools list" do
+    model = Collavre::LlmModel.create!(llm_vendor: "openai", name: "gpt-5")
+
     get new_ai_users_url
     assert_response :success
     assert_select "h1", I18n.t("collavre.users.new_ai.title")
     assert_select "form[action=?]", create_ai_users_path
     assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
+    assert_select "[data-controller='llm-model']" do |nodes|
+      models = JSON.parse(nodes.first["data-llm-model-models-value"])
+      assert_includes models, {
+        "id" => model.id,
+        "vendor" => "openai",
+        "name" => "gpt-5",
+        "delete_url" => llm_model_path(model)
+      }
+    end
     # Verify tools section is rendered
     assert_select "label", I18n.t("collavre.users.edit_ai.tools_title")
   end
@@ -76,6 +87,57 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal "New prompt", @ai_user.system_prompt
     assert_equal "gemini-1.5-pro", @ai_user.llm_model
     assert @ai_user.searchable
+  end
+
+  test "creating an ai user remembers its model" do
+    assert_difference("Collavre::LlmModel.count", 1) do
+      post create_ai_users_url, params: {
+        ai_id: "custom-model-bot",
+        name: "Custom Model Bot",
+        system_prompt: "Use the configured model.",
+        llm_vendor: "openai",
+        llm_model: "gpt-5.2"
+      }
+    end
+
+    model = Collavre::LlmModel.find_by!(llm_vendor: "openai", name: "gpt-5.2")
+    assert_equal @admin, model.creator
+  end
+
+  test "failed ai user creation does not remember its model" do
+    assert_no_difference("Collavre::LlmModel.count") do
+      post create_ai_users_url, params: {
+        ai_id: "invalid-model-bot",
+        name: "",
+        system_prompt: "Use the configured model.",
+        llm_vendor: "openai",
+        llm_model: "unsaved-model"
+      }
+    end
+
+    assert_response :unprocessable_entity
+    refute Collavre::LlmModel.exists?(llm_vendor: "openai", name: "unsaved-model")
+  end
+
+  test "changing an ai user's vendor or model remembers the new selection" do
+    assert_difference("Collavre::LlmModel.count", 1) do
+      patch update_ai_user_url(@ai_user), params: {
+        user: { llm_vendor: "anthropic", llm_model: "claude-sonnet-4" }
+      }
+    end
+
+    assert Collavre::LlmModel.exists?(llm_vendor: "anthropic", name: "claude-sonnet-4")
+  end
+
+  test "updating unrelated ai settings does not restore a deleted list entry" do
+    model = Collavre::LlmModel.find_or_create_by!(llm_vendor: @ai_user.llm_vendor, name: @ai_user.llm_model)
+    model.destroy!
+
+    assert_no_difference("Collavre::LlmModel.count") do
+      patch update_ai_user_url(@ai_user), params: { user: { name: "Renamed Agent" } }
+    end
+
+    refute Collavre::LlmModel.exists?(llm_vendor: @ai_user.llm_vendor, name: @ai_user.llm_model)
   end
 
   test "should preserve existing api key when submitted value is blank" do
