@@ -80,6 +80,17 @@ module Collavre
         user ? "user-#{user.id}" : "agent-#{agent.id}"
       end
 
+      # Nothing here reads proxy_user_id; it is written so a process still
+      # running the pre-split code can resolve rows this release creates —
+      # the previous container during a Kamal rollout, or the whole app after
+      # a rollback. Drop this together with the column in the contract
+      # migration that follows this release.
+      def legacy_proxy_user_id_for(agent, user)
+        return "agent-#{agent.id}" unless user
+
+        "agent-#{agent.id}--user-#{user.id}"
+      end
+
       private
 
       def resolve_shared!(agent, gateway)
@@ -129,6 +140,7 @@ module Collavre
             agent_gateway: gateway,
             proxy_workspace_id: proxy_workspace_id_for(agent),
             proxy_credential_id: proxy_credential_id_for(agent, user),
+            proxy_user_id: legacy_proxy_user_id_for(agent, user),
             manifest_token: SecureRandom.urlsafe_base64(32),
             callback_token: callback_token
           )

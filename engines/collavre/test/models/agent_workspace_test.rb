@@ -347,6 +347,40 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     end
   end
 
+  test "the legacy identity column outlives the split so the previous release keeps resolving" do
+    column = Collavre::AgentWorkspace.columns_hash["proxy_user_id"]
+
+    assert_not_nil column, "proxy_user_id must survive this release; a later contract migration drops it"
+    assert column.null, "proxy_user_id must be nullable so dropping the write is not a breaking change"
+  end
+
+  test "creation still writes the legacy identity a pre-split release would read" do
+    shared = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_equal "agent-#{@agent.id}", shared.proxy_user_id
+
+    @gateway.update!(workspace_mode: :per_user)
+    per_user = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @other)
+
+    assert_equal "agent-#{@agent.id}--user-#{@other.id}", per_user.proxy_user_id
+  end
+
+  test "resolution repairs a workspace the previous release created mid-rollout" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    # What the pre-split code inserts once the expand migration has landed: the
+    # legacy column only, both new axes left NULL.
+    workspace.update_columns(
+      proxy_workspace_id: nil,
+      proxy_credential_id: nil,
+      proxy_user_id: "agent-#{@agent.id}"
+    )
+
+    replacement = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+
+    assert_not_equal workspace.id, replacement.id
+    assert_equal "agent-#{@agent.id}", replacement.proxy_workspace_id
+    assert_equal "agent-#{@agent.id}", replacement.proxy_credential_id
+  end
+
   test "migration maps each legacy identity onto both axes and back" do
     migration = SplitAgentWorkspaceIdentityAxes.new
     shared = Struct.new(:agent_id, :user_id).new(11, nil)

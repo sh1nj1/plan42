@@ -5,13 +5,21 @@
 # a path workspace below that worker's HOME. Split the single proxy_user_id into
 # those axes so engine login is per Collavre user while skills and workspace
 # config stay per agent.
+#
+# Expand only. bin/docker-entrypoint runs db:migrate while the previous release
+# is still serving requests against the same database, so proxy_user_id has to
+# stay readable and writable until every process runs the new code. The new
+# columns are therefore nullable here and the old one merely loses its NOT NULL,
+# which also keeps a Kamal rollback working. The contract half — dropping
+# proxy_user_id and adding NOT NULL to the two new columns — belongs to a later
+# release, once no process writes the legacy column anymore.
 class SplitAgentWorkspaceIdentityAxes < ActiveRecord::Migration[8.0]
   class MigrationWorkspace < ActiveRecord::Base
     self.table_name = "agent_workspaces"
   end
 
   def up
-    rename_column :agent_workspaces, :proxy_user_id, :proxy_credential_id
+    add_column :agent_workspaces, :proxy_credential_id, :string
     add_column :agent_workspaces, :proxy_workspace_id, :string
 
     MigrationWorkspace.reset_column_information
@@ -22,17 +30,18 @@ class SplitAgentWorkspaceIdentityAxes < ActiveRecord::Migration[8.0]
       )
     end
 
-    change_column_null :agent_workspaces, :proxy_workspace_id, false
+    change_column_null :agent_workspaces, :proxy_user_id, true
   end
 
   def down
     MigrationWorkspace.reset_column_information
-    MigrationWorkspace.find_each do |workspace|
-      workspace.update_columns(proxy_credential_id: legacy_proxy_user_id_for(workspace))
+    MigrationWorkspace.where(proxy_user_id: nil).find_each do |workspace|
+      workspace.update_columns(proxy_user_id: legacy_proxy_user_id_for(workspace))
     end
 
+    change_column_null :agent_workspaces, :proxy_user_id, false
     remove_column :agent_workspaces, :proxy_workspace_id
-    rename_column :agent_workspaces, :proxy_credential_id, :proxy_user_id
+    remove_column :agent_workspaces, :proxy_credential_id
   end
 
   private

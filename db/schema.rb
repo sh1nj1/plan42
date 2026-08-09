@@ -88,8 +88,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_000000) do
     t.datetime "created_at", null: false
     t.string "manifest_token", null: false
     t.string "manifest_token_digest", null: false
-    t.string "proxy_credential_id", null: false
-    t.string "proxy_workspace_id", null: false
+    t.string "proxy_credential_id"
+    t.string "proxy_user_id"
+    t.string "proxy_workspace_id"
     t.datetime "updated_at", null: false
     t.integer "user_id"
     t.index ["agent_gateway_id"], name: "index_agent_workspaces_on_agent_gateway_id"
