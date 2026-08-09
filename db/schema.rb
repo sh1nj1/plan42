@@ -249,6 +249,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000000) do
     t.index ["user_id"], name: "index_creative_shares_caches_on_user_id"
   end
 
+  create_table "creative_workspace_enabled_backfills", id: false, force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_creative_workspace_enabled_backfills_on_user_id", unique: true
+  end
+
   create_table "creatives", force: :cascade do |t|
     t.datetime "archived_at"
     t.integer "comments_count", default: 0, null: false
