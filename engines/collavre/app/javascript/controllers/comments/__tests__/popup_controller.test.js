@@ -343,6 +343,32 @@ describe('CommentsPopupController', () => {
 	expect(popup.classList.contains('docked-collapsed')).toBe(false)
     })
 
+    test('same-creative comment deep link expands and refreshes the docked chat highlight', () => {
+	const popup = document.getElementById('comments-popup')
+	const triggerBtn = document.getElementById('trigger-btn')
+	popup.dataset.docked = 'true'
+	popup.dataset.creativeId = '123'
+	controller.enterDockedMode()
+	controller.toggleDocked()
+	const open = jest.spyOn(controller, 'open').mockResolvedValue()
+
+	document.dispatchEvent(new CustomEvent('creative-comments-click', {
+	    detail: {
+		button: triggerBtn,
+		creativeId: '123',
+		workspaceSync: true,
+		highlightId: '456',
+		openRequested: true,
+	    },
+	}))
+
+	expect(popup.classList.contains('docked-collapsed')).toBe(false)
+	expect(open).toHaveBeenCalledWith(triggerBtn, {
+	    creativeId: '123',
+	    highlightId: '456',
+	})
+    })
+
     test('chat icon expands a collapsed docked chat showing the same creative', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')

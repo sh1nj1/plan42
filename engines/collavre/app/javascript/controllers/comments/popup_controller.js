@@ -248,7 +248,8 @@ export default class extends Controller {
           // Already loaded for this creative — expand only, so the draft and
           // subscriptions survive.
           this.expandDocked()
-        } else if (highlightId) {
+	}
+	if (highlightId) {
           this.open(button, { creativeId, highlightId })
         }
         return
