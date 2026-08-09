@@ -28,8 +28,15 @@ module Collavre
       I18n.t(completed? ? "collavre.onboarding.overview.finish" : "collavre.onboarding.overview.skip")
     end
 
+    def overview_description
+      I18n.t("collavre.onboarding.overview.description", total: total_steps)
+    end
+
     def completion_confirmation
-      I18n.t(completed? ? "collavre.onboarding.overview.confirm_finish" : "collavre.onboarding.overview.confirm_skip")
+      I18n.t(
+        completed? ? "collavre.onboarding.overview.confirm_finish" : "collavre.onboarding.overview.confirm_skip",
+        total: total_steps
+      )
     end
 
     def onboarding_path

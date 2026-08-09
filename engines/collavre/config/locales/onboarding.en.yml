@@ -20,12 +20,12 @@ en:
         waiting_for_agent: "Agent called · waiting for a reply"
       overview:
         title: "Learn Collavre by using it"
-        description: "Finish the four cards below. Each real action completes a step and rolls progress up to this guide."
+        description: "Finish the %{total} cards below. Each real action completes a step and rolls progress up to this guide."
         progress: "%{completed}/%{total} complete"
         skip: "Skip and close guide"
         finish: "Complete and close guide"
         guide_link: "Browse all feature guides"
-        confirm_skip: "Close onboarding before completing all four steps?"
+        confirm_skip: "Close onboarding before completing all %{total} steps?"
         confirm_finish: "Close this completed onboarding guide?"
       completion:
         notice: "Onboarding has been closed."

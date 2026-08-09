@@ -18,8 +18,10 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
     render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
 
     assert_selector ".onboarding-overview-progress", text: "0/3"
+    assert_selector ".feature-card-description", text: "3 cards"
     assert_selector "a[data-turbo-method='delete']",
                     text: I18n.t("collavre.onboarding.overview.skip")
+    assert_selector "a[data-turbo-confirm*='3 steps']"
     assert_selector "a.feature-card-guide-link[href='/features']"
   end
 
@@ -53,5 +55,16 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
     render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
 
     assert_selector ".onboarding-overview-progress", text: "0/4"
+    assert_selector ".feature-card-description", text: "4 cards"
+    assert_selector "a[data-turbo-confirm*='4 steps']"
+  end
+
+  test "interpolates the Korean card count" do
+    I18n.with_locale(:ko) do
+      render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
+    end
+
+    assert_selector ".feature-card-description", text: "카드 3개"
+    assert_selector "a[data-turbo-confirm*='3단계']"
   end
 end
