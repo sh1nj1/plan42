@@ -34,4 +34,15 @@ class LlmModelsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to collavre.new_session_path
   end
+
+  test "removing an already absent model succeeds" do
+    model = Collavre::LlmModel.create!(llm_vendor: "openai", name: "gpt-5")
+    model.destroy!
+
+    assert_no_difference("Collavre::LlmModel.count") do
+      delete collavre.llm_model_path(model)
+    end
+
+    assert_response :no_content
+  end
 end
