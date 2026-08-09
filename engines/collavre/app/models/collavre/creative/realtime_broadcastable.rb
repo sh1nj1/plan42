@@ -27,9 +27,10 @@ module Collavre
         # Skip broadcast when only progress changed (cascade from update_parent_progress).
         # The original creative's broadcast already includes ancestor progress in its payload,
         # so receivers update parent rows without needing separate broadcasts per ancestor.
-        # Exception: MCP requests must always broadcast because the browser has no HTTP
-        # response to update from — WebSocket is the only delivery channel.
-        return if progress_only_change? && !Collavre::Current.mcp_request
+        # Exceptions: MCP requests must always broadcast because the browser has no HTTP
+        # response to update from. Onboarding roots must also broadcast so shared viewers
+        # refresh the server-rendered completed-step overview after progress rolls up.
+        return if progress_only_change? && !onboarding_root? && !Collavre::Current.mcp_request
 
         payload = broadcast_node_payload
         if onboarding_item?

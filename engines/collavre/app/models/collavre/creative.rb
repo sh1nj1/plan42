@@ -122,6 +122,15 @@ module Collavre
       onboarding_metadata&.dig("role") == "practice"
     end
 
+    def onboarding_session_root
+      return unless onboarding_item?
+
+      session_id = onboarding_metadata["session_id"]
+      Creative.onboarding_guides.where(user_id: user_id).find do |creative|
+        creative.onboarding_root? && creative.onboarding_metadata["session_id"] == session_id
+      end
+    end
+
     # Bypass the read-only-source guard for a single save (used by the vendor
     # sync services that legitimately write the synced content into core).
     attr_accessor :skip_read_only_source_validation

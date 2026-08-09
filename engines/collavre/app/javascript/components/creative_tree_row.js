@@ -629,8 +629,8 @@ class CreativeTreeRow extends LitElement {
           }
         }
       }
-      if (data.onboarding_card_id) {
-        await this._refreshOnboardingCard(data.onboarding_card_id)
+      for (const id of [data.onboarding_card_id, data.onboarding_root_id]) {
+        if (id) await this._refreshOnboardingCard(id)
       }
     } catch (err) {
       // Revert optimistic UI

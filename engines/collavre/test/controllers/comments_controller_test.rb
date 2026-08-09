@@ -54,6 +54,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :created
     assert_equal card.id.to_s, response.headers["X-Onboarding-Card-Id"]
+    assert_equal guide.id.to_s, response.headers["X-Onboarding-Root-Id"]
     assert_equal "completed", card.reload.onboarding_metadata["status"]
     assert_in_delta 1.0, practice.reload.progress
   end

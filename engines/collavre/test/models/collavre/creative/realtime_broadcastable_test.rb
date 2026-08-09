@@ -257,6 +257,29 @@ module Collavre
         end
       end
 
+      test "onboarding root progress changes broadcast an overview refresh" do
+        onboarding_root = Creative.create!(
+          user: @owner,
+          description: "Onboarding",
+          progress: 0.0,
+          data: {
+            "kind" => Creative::ONBOARDING_KIND,
+            "onboarding" => {
+              "session_id" => SecureRandom.uuid,
+              "role" => "root"
+            }
+          }
+        )
+
+        assert_enqueued_with(job: Collavre::CreativeBroadcastJob) do
+          onboarding_root.update!(progress: 0.5)
+        end
+
+        job = enqueued_jobs.select { |candidate| candidate["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        payload = job["arguments"].third["payload"]
+        assert payload["refresh_onboarding_description"]
+      end
+
       # --- MCP request context ---
 
       test "enqueue_broadcast passes nil current_user_id during MCP request" do

@@ -157,15 +157,22 @@ describe('FormController - double submit on slow API', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
-  test('refreshes the completed onboarding card returned by the comment response', async () => {
+  test('refreshes the completed onboarding card and overview returned by the comment response', async () => {
     const onboardingRow = document.createElement('creative-tree-row')
     onboardingRow.setAttribute('creative-id', '42')
     onboardingRow._refreshOnboardingCard = jest.fn().mockResolvedValue()
     container.appendChild(onboardingRow)
+    const onboardingRoot = document.createElement('creative-tree-row')
+    onboardingRoot.setAttribute('creative-id', '84')
+    onboardingRoot._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(onboardingRoot)
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 201,
-      headers: new Headers({ 'X-Onboarding-Card-Id': '42' }),
+      headers: new Headers({
+        'X-Onboarding-Card-Id': '42',
+        'X-Onboarding-Root-Id': '84',
+      }),
       text: () => Promise.resolve('<div></div>'),
     })
     jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
@@ -175,5 +182,6 @@ describe('FormController - double submit on slow API', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(onboardingRow._refreshOnboardingCard).toHaveBeenCalledWith('42')
+    expect(onboardingRoot._refreshOnboardingCard).toHaveBeenCalledWith('84')
   })
 })

@@ -954,8 +954,8 @@ export default class extends Controller {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
       })
-      .then(({ html, onboardingCardId }) => {
-        this._refreshOnboardingCard(onboardingCardId)
+      .then(({ html, onboardingCardId, onboardingRootId }) => {
+        this._refreshOnboardingItems(onboardingCardId, onboardingRootId)
         if (submittedDraft.backupKey) {
 	  chatDrafts.clearSubmissionBackupsThrough(
             submittedDraft.backupKey,
@@ -1544,8 +1544,8 @@ export default class extends Controller {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
       })
-      .then(({ html, onboardingCardId }) => {
-        this._refreshOnboardingCard(onboardingCardId)
+      .then(({ html, onboardingCardId, onboardingRootId }) => {
+        this._refreshOnboardingItems(onboardingCardId, onboardingRootId)
         this.renderCommentHtml(html)
         const listCtrl = this.application.getControllerForElementAndIdentifier(
           document.querySelector('[data-controller~="comments--list"]'), 'comments--list'
@@ -1572,7 +1572,12 @@ export default class extends Controller {
     return {
       html: await response.text(),
       onboardingCardId: response.headers?.get?.('X-Onboarding-Card-Id'),
+      onboardingRootId: response.headers?.get?.('X-Onboarding-Root-Id'),
     }
+  }
+
+  _refreshOnboardingItems(cardId, rootId) {
+    for (const id of [cardId, rootId]) this._refreshOnboardingCard(id)
   }
 
   _refreshOnboardingCard(cardId) {

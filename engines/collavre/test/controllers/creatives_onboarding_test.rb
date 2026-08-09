@@ -72,6 +72,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert_response :success
     practice = Creative.find(response.parsed_body["id"])
     assert_equal card.id, response.parsed_body["onboarding_card_id"]
+    assert_equal guide.id, response.parsed_body["onboarding_root_id"]
     assert_equal "in_progress", card.reload.onboarding_metadata["status"]
 
     patch collavre.creative_path(practice),
@@ -80,6 +81,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal card.id, response.parsed_body["onboarding_card_id"]
+    assert_equal guide.id, response.parsed_body["onboarding_root_id"]
     assert_equal "completed", card.reload.onboarding_metadata["status"]
   end
 
@@ -115,6 +117,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal card.id, response.parsed_body["onboarding_card_id"]
+    assert_equal guide.id, response.parsed_body["onboarding_root_id"]
     assert_equal "completed", card.reload.onboarding_metadata["status"]
   end
 

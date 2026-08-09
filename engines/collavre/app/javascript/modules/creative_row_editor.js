@@ -61,6 +61,14 @@ let destroyActiveEditor = null;
 let stopActiveEditingPing = null;
 const globalListeners = createListenerRegistry();
 
+export function refreshOnboardingRows(data, refreshRow) {
+  for (const id of [data.onboarding_card_id, data.onboarding_root_id]) {
+    if (!id) continue;
+    const onboardingTree = document.getElementById(`creative-${id}`);
+    if (onboardingTree) refreshRow(onboardingTree);
+  }
+}
+
 function teardownEditorSession() {
   globalListeners.releaseAll();
   if (stopActiveEditingPing) {
@@ -880,10 +888,7 @@ function setupEditorSession() {
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
             }
-            if (data.onboarding_card_id) {
-              const onboardingCardTree = document.getElementById(`creative-${data.onboarding_card_id}`);
-              if (onboardingCardTree) refreshRow(onboardingCardTree);
-            }
+            refreshOnboardingRows(data, refreshRow);
             if (cascadeProgressUpdate && tree) {
               refreshChildren(tree);
               completionCascadePending = false;

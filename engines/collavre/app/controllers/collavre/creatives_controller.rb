@@ -256,7 +256,7 @@ module Collavre
           markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
         }
-        response_data[:onboarding_card_id] = result.onboarding_card.id if result.onboarding_card
+        add_onboarding_refresh_ids(response_data, result.onboarding_card)
         render json: response_data
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
@@ -336,7 +336,7 @@ module Collavre
               content_type: base.data&.dig("content_type"),
               markdown_editor: base.data&.dig("editor")
             }
-            response_data[:onboarding_card_id] = onboarding_card.id if onboarding_card
+            add_onboarding_refresh_ids(response_data, onboarding_card)
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
             # Gated on write permission so a read-only share recipient moving a
@@ -579,6 +579,13 @@ module Collavre
     end
 
     private
+      def add_onboarding_refresh_ids(response_data, card)
+        return unless card
+
+        response_data[:onboarding_card_id] = card.id
+        response_data[:onboarding_root_id] = card.onboarding_session_root&.id
+      end
+
       def ensure_onboarding_seeded
         return if Current.user.nil? || params[:id].present?
 
