@@ -23,7 +23,8 @@ afterEach(() => {
 test('progress completion refreshes both the onboarding step and overview rows', async () => {
   await import('../creative_tree_row.js')
   const row = document.createElement('creative-tree-row')
-  row.linkUrl = '/collavre/creatives/7'
+  row.linkUrl = '/creatives?id=7'
+  row.updateUrl = '/collavre/creatives/7'
   document.body.appendChild(row)
   const refresh = jest.spyOn(row, '_refreshOnboardingCard').mockResolvedValue()
   const toggle = document.createElement('button')

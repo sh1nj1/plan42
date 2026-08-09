@@ -20,6 +20,7 @@ class CreativeTreeRow extends LitElement {
     expanded: { type: Boolean, attribute: "expanded", reflect: true },
     isRoot: { type: Boolean, attribute: "is-root" },
     linkUrl: { attribute: "link-url" },
+    updateUrl: { attribute: "update-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
     editIconHtml: { state: true },
@@ -47,6 +48,7 @@ class CreativeTreeRow extends LitElement {
     this.expanded = false;
     this.isRoot = false;
     this.linkUrl = "#";
+    this.updateUrl = "#";
     this._descriptionHtml = "";
     this.progressHtml = "";
     this.editIconHtml = "";
@@ -594,7 +596,7 @@ class CreativeTreeRow extends LitElement {
     try {
       const body = new FormData();
       body.append("creative[progress]", newProgress);
-      const response = await csrfFetch(this.linkUrl, {
+      const response = await csrfFetch(this.updateUrl, {
         method: "PATCH",
         headers: { Accept: "application/json" },
         body,

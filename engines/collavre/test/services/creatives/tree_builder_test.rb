@@ -132,6 +132,7 @@ module Creatives
       node = build_tree_builder.build([ creative ]).sole
 
       assert_equal "/collavre/creatives/#{creative.id}", node[:link_url]
+      assert_equal "/collavre/creatives/#{creative.id}", node[:update_url]
     end
 
     private

@@ -145,6 +145,7 @@ module Creatives
           onboarding_item: creative.onboarding_item?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative, **mount_options),
+          update_url: view_context.collavre.creative_path(creative, **mount_options),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
           inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(

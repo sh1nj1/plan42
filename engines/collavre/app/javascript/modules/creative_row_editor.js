@@ -865,6 +865,8 @@ function setupEditorSession() {
                   const creativeLink = creativeUpdateUrl(data.id);
                   rowEl.setAttribute('link-url', creativeLink);
                   rowEl.linkUrl = creativeLink;
+                  rowEl.setAttribute('update-url', creativeLink);
+                  rowEl.updateUrl = creativeLink;
                   const levelValue = tree.dataset.level;
                   if (levelValue) {
                     rowEl.setAttribute('level', levelValue);

@@ -116,6 +116,7 @@ describe('empty-state recovery when the first inline save fails', () => {
 
     expect(new URL(form.action).pathname).toBe('/collavre/creatives/42')
     expect(document.querySelector('creative-tree-row').linkUrl).toBe('/collavre/creatives/42')
+    expect(document.querySelector('creative-tree-row').updateUrl).toBe('/collavre/creatives/42')
   })
 
   test('uses the engine mount when an existing row enters edit mode', async () => {

@@ -175,7 +175,8 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     mounted_update_template = collavre.creative_path("__CREATIVE_ID__", script_name: "/collavre")
     assert_select "form#inline-edit-form-element[action=?][data-create-url=?][data-update-url-template=?]",
                   mounted_create_path, mounted_create_path, mounted_update_template
-    assert_select "creative-tree-row[is-title][link-url=?]",
-                  collavre.creative_path(creative, script_name: "/collavre")
+    mounted_member_path = collavre.creative_path(creative, script_name: "/collavre")
+    assert_select "creative-tree-row[is-title][link-url=?][update-url=?]",
+                  mounted_member_path, mounted_member_path
   end
 end

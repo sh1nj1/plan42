@@ -198,6 +198,7 @@
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
         "link-url": creative_path(@parent_creative),
+        "update-url": creative_path(@parent_creative),
         "can-write": title_can_write ? "true" : "false",
         "is-title": "",
         "card-layout": @parent_creative.onboarding_root? || @parent_creative.onboarding_card? ? "true" : nil,

@@ -11,6 +11,13 @@ function setDatasetValue(element, key, value) {
   }
 }
 
+function updateUrlFromTemplate(creativeId) {
+  const template = document.querySelector('#inline-edit-form-element')?.dataset.updateUrlTemplate
+  if (!template || creativeId == null) return null
+
+  return template.replace('__CREATIVE_ID__', encodeURIComponent(creativeId))
+}
+
 // Capture current DOM state of the progress area back into Lit's progressHtml
 // so that Turbo Streams DOM mutations (e.g. badge count updates) survive Lit re-renders.
 // Lit renders progressHtml via unsafeHTML() inside a .creative-progress-area wrapper.
@@ -95,6 +102,16 @@ function applyRowProperties(row, node) {
       dirty = true
     }
     row.setAttribute('link-url', node.link_url)
+  }
+
+  const updateUrl = node.update_url ||
+    ((row.updateUrl && row.updateUrl !== '#') ? row.updateUrl : updateUrlFromTemplate(node.id))
+  if (updateUrl) {
+    if (row.updateUrl !== updateUrl) {
+      row.updateUrl = updateUrl
+      dirty = true
+    }
+    row.setAttribute('update-url', updateUrl)
   }
 
   const templates = node.templates || {}
