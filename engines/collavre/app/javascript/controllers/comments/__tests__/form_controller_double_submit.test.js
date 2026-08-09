@@ -21,6 +21,7 @@ describe('FormController - double submit on slow API', () => {
   const FIXTURE = `
     <div id="comments-popup"
          data-controller="comments--form"
+         data-creative-url-template="/collavre/creatives/__CREATIVE_ID__"
          data-review-feedback-placeholder="Write feedback for this quote..."
          data-review-summary-placeholder="Overall comment (optional)..."
          data-review-add-quote="+ Add"
@@ -103,6 +104,7 @@ describe('FormController - double submit on slow API', () => {
     pressEnter(textarea) // impatient second Enter
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith('/collavre/creatives/111/comments', expect.any(Object))
   })
 
   test('SCENARIO B: a controller reconnect (morph) mid-send must NOT re-enable sending', () => {
@@ -155,5 +157,54 @@ describe('FormController - double submit on slow API', () => {
     controller.textareaTarget.value = 'second'
     pressEnter(controller.textareaTarget)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test('refreshes the completed onboarding card and overview returned by the comment response', async () => {
+    const onboardingRow = document.createElement('creative-tree-row')
+    onboardingRow.setAttribute('creative-id', '42')
+    onboardingRow._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(onboardingRow)
+    const onboardingRoot = document.createElement('creative-tree-row')
+    onboardingRoot.setAttribute('creative-id', '84')
+    onboardingRoot._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(onboardingRoot)
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: new Headers({
+        'X-Onboarding-Card-Id': '42',
+        'X-Onboarding-Root-Id': '84',
+      }),
+      text: () => Promise.resolve('<div></div>'),
+    })
+    jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+
+    controller.textareaTarget.value = 'complete the chat step'
+    pressEnter(controller.textareaTarget)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(onboardingRow._refreshOnboardingCard).toHaveBeenCalledWith('42')
+    expect(onboardingRoot._refreshOnboardingCard).toHaveBeenCalledWith('84')
+  })
+
+  test('refreshes every onboarding card returned by a batched approval', () => {
+    const firstCard = document.createElement('creative-tree-row')
+    firstCard.setAttribute('creative-id', '42')
+    firstCard._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(firstCard)
+    const secondCard = document.createElement('creative-tree-row')
+    secondCard.setAttribute('creative-id', '43')
+    secondCard._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(secondCard)
+    const root = document.createElement('creative-tree-row')
+    root.setAttribute('creative-id', '84')
+    root._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(root)
+
+    controller._refreshOnboardingItems('42,43', '84')
+
+    expect(firstCard._refreshOnboardingCard).toHaveBeenCalledWith('42')
+    expect(secondCard._refreshOnboardingCard).toHaveBeenCalledWith('43')
+    expect(root._refreshOnboardingCard).toHaveBeenCalledWith('84')
   })
 })

@@ -4,7 +4,7 @@ module Collavre
   module Creatives
     # Handles creative creation including sequencing and tagging.
     class CreateService
-      Result = Struct.new(:creative, :success?, :errors, keyword_init: true)
+      Result = Struct.new(:creative, :success?, :errors, :onboarding_card, keyword_init: true)
 
       def initialize(creative_params:, user:, child_id: nil, before_id: nil, after_id: nil, tag_ids: nil)
         @creative_params = creative_params
@@ -19,6 +19,14 @@ module Collavre
         creative = Creative.new(@creative_params)
         creative.user = creative.parent ? creative.parent.user : @user
 
+        if creative.parent && !creative.parent.has_permission?(@user, :write)
+          return Result.new(
+            creative: creative,
+            success?: false,
+            errors: [ I18n.t("collavre.creatives.errors.parent_no_write_permission") ]
+          )
+        end
+
         unless creative.save
           return Result.new(creative: creative, success?: false, errors: creative.errors.full_messages)
         end
@@ -30,8 +38,9 @@ module Collavre
         # Broadcast AFTER insert_at_position so sequence and previous_sibling are correct
         creative.reload # pick up resequenced values
         creative.broadcast_creative_created(after_id: @after_id)
+        onboarding_card = Collavre::Onboarding::ProgressTracker.creative_created(creative: creative, user: @user)
 
-        Result.new(creative: creative, success?: true, errors: [])
+        Result.new(creative: creative, success?: true, errors: [], onboarding_card: onboarding_card)
       end
 
       private

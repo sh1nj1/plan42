@@ -16,5 +16,11 @@ module Collavre
 
       render json: { success: true, dismissed_notices: Current.user.dismissed_notices }
     end
+
+    def reset_onboarding
+      Collavre::Onboarding::Seeder.reset!(user: Current.user)
+
+      redirect_to creatives_path, notice: t("collavre.onboarding.reset.notice")
+    end
   end
 end

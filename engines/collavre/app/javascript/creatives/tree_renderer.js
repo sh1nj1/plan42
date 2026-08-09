@@ -11,6 +11,13 @@ function setDatasetValue(element, key, value) {
   }
 }
 
+function updateUrlFromTemplate(creativeId) {
+  const template = document.querySelector('#inline-edit-form-element')?.dataset.updateUrlTemplate
+  if (!template || creativeId == null) return null
+
+  return template.replace('__CREATIVE_ID__', encodeURIComponent(creativeId))
+}
+
 // Capture current DOM state of the progress area back into Lit's progressHtml
 // so that Turbo Streams DOM mutations (e.g. badge count updates) survive Lit re-renders.
 // Lit renders progressHtml via unsafeHTML() inside a .creative-progress-area wrapper.
@@ -86,6 +93,8 @@ function applyRowProperties(row, node) {
   updateBooleanAttr('isRoot', 'is-root', node.is_root)
   updateBooleanAttr('archived', 'archived', node.archived)
   updateBooleanAttr('githubSource', 'github-source', node.github_source)
+  updateBooleanAttr('cardLayout', 'card-layout', node.card_layout)
+  updateBooleanAttr('onboardingItem', 'onboarding-item', node.onboarding_item)
 
   if (node.link_url) {
     if (row.linkUrl !== node.link_url) {
@@ -93,6 +102,16 @@ function applyRowProperties(row, node) {
       dirty = true
     }
     row.setAttribute('link-url', node.link_url)
+  }
+
+  const updateUrl = node.update_url ||
+    ((row.updateUrl && row.updateUrl !== '#') ? row.updateUrl : updateUrlFromTemplate(node.id))
+  if (updateUrl) {
+    if (row.updateUrl !== updateUrl) {
+      row.updateUrl = updateUrl
+      dirty = true
+    }
+    row.setAttribute('update-url', updateUrl)
   }
 
   const templates = node.templates || {}
@@ -181,6 +200,11 @@ function applyRowProperties(row, node) {
     // the Turbo-updated DOM with the stale string, losing badges.
     syncProgressHtmlFromDom(row)
     row.requestUpdate()
+  }
+
+  if (normalizeBoolean(node.refresh_onboarding_description) &&
+      typeof row._refreshOnboardingCard === 'function') {
+    void row._refreshOnboardingCard(node.id)
   }
 }
 

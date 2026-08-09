@@ -28,7 +28,7 @@ module Collavre
     # @option config [String] :icon Icon identifier (optional)
     # @option config [String] :title_key i18n key for the card title
     # @option config [String] :description_key i18n key for the card description
-    # @option config [Array<Symbol>] :surfaces Empty-state surfaces where the card appears
+    # @option config [Array<Symbol>] :surfaces UI surfaces where the card appears
     #   (defaults to [:default])
     # @option config [Hash] :action Optional { type:, label_key: } describing a call-to-action button
     # @option config [Boolean] :guide Opt in to the engine-provided public guide page at
@@ -69,6 +69,10 @@ module Collavre
         :default
       end
 
+      for_surface(surface)
+    end
+
+    def for_surface(surface)
       all.select { |card| card.visible_on?(surface) }
     end
 
@@ -97,7 +101,7 @@ module Collavre
     end
 
     class << self
-      delegate :register, :unregister, :find, :all, :for, :with_builtin_guide, :each, :any?, :reset!, to: :instance
+      delegate :register, :unregister, :find, :all, :for, :for_surface, :with_builtin_guide, :each, :any?, :reset!, to: :instance
     end
   end
 

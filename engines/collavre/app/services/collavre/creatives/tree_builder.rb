@@ -83,7 +83,7 @@ module Creatives
     def can_write?(creative)
       return false unless user
       # Read-only-source creatives are never writable
-      return false if creative.read_only_source?
+      return false if creative.effective_origin.read_only_source?
 
       allowed?(creative, :write)
     end
@@ -127,6 +127,7 @@ module Creatives
       return children_nodes if skip
 
       can_write = can_write?(creative)
+      content_owner = creative.effective_origin
 
       [
         {
@@ -140,12 +141,12 @@ module Creatives
           expanded: expanded,
           is_root: creative.parent_id.nil?,
           archived: creative.archived?,
-          # `github_source` is the wire key the tree renderer JS reads; its value
-          # is now the neutral read-only-source flag (GitHub-synced content is one
-          # such source) so core names no vendor here.
-          github_source: creative.read_only_source?,
+          github_source: creative.github_markdown?,
+          card_layout: content_owner.onboarding_root? || content_owner.onboarding_card?,
+          onboarding_item: content_owner.onboarding_item?,
           sequence: creative.sequence,
-          link_url: view_context.collavre.creative_path(creative),
+          link_url: view_context.collavre.creative_path(creative, **mount_options),
+          update_url: view_context.collavre.creative_path(creative, **mount_options),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
           inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(
@@ -195,7 +196,10 @@ module Creatives
     end
 
     def template_payload_for(creative, has_children: nil, can_write: nil)
-      description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
+      fallback_description = view_context.embed_youtube_iframe(
+        creative.effective_description(raw_params["tags"]&.first)
+      )
+      description_html = view_context.render_creative_description(creative, fallback: fallback_description)
       can_feedback = can_feedback?(creative)
       progress_html = view_context.render_creative_progress(
         creative,
@@ -238,7 +242,8 @@ module Creatives
         load_url: view_context.collavre.children_creative_path(
           creative,
           level: child_level,
-          select_mode: select_mode ? 1 : 0
+          select_mode: select_mode ? 1 : 0,
+          **mount_options
         ),
         level: child_level,
         nodes: children_nodes
@@ -257,13 +262,18 @@ module Creatives
       return unless creative.origin_id.present?
 
       view_context.link_to(
-        view_context.collavre.creative_path(creative.origin),
+        view_context.collavre.creative_path(creative.origin, **mount_options),
         class: "creative-origin-link creative-action-btn unstyled-link",
         title: I18n.t("collavre.creatives.index.view_origin"),
         aria: { label: I18n.t("collavre.creatives.index.view_origin") }
       ) do
         view_context.svg_tag("arrow-right.svg", class: "creative-origin-link-icon", width: 16, height: 16)
       end
+    end
+
+    def mount_options
+      script_name = view_context.request&.script_name if view_context.respond_to?(:request)
+      script_name.present? ? { script_name: script_name } : {}
     end
   end
 end

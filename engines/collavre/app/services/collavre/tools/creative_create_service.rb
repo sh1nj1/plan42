@@ -55,6 +55,7 @@ module Tools
       # Broadcast after ordering so sequence and previous_sibling are correct
       creative.reload
       creative.broadcast_creative_created(after_id: after_id)
+      Collavre::Onboarding::ProgressTracker.creative_created(creative: creative, user: Current.user)
 
       {
         success: true,

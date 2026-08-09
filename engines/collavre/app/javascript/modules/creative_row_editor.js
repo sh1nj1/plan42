@@ -61,6 +61,14 @@ let destroyActiveEditor = null;
 let stopActiveEditingPing = null;
 const globalListeners = createListenerRegistry();
 
+export function refreshOnboardingRows(data, refreshRow) {
+  for (const id of [data.onboarding_card_id, data.onboarding_root_id]) {
+    if (!id) continue;
+    const onboardingTree = document.getElementById(`creative-${id}`);
+    if (onboardingTree) refreshRow(onboardingTree);
+  }
+}
+
 function teardownEditorSession() {
   globalListeners.releaseAll();
   if (stopActiveEditingPing) {
@@ -393,11 +401,15 @@ function setupEditorSession() {
       if (descriptionInput) descriptionInput.value = renderMarkdown(md);
     }
 
+    function creativeUpdateUrl(creativeId) {
+      return form.dataset.updateUrlTemplate.replace('__CREATIVE_ID__', encodeURIComponent(creativeId));
+    }
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
       if (!creativeId) return;
-      form.action = `/creatives/${creativeId}`;
+      form.action = creativeUpdateUrl(creativeId);
       if (methodInput) methodInput.value = 'patch';
       form.dataset.creativeId = creativeId;
       const content = data.description_raw_html || data.description || '';
@@ -571,10 +583,12 @@ function setupEditorSession() {
 
       if (deletePopupToggle) deletePopupToggle.disabled = !hasCreativeId;
       if (archiveBtn) {
-        archiveBtn.disabled = !hasCreativeId;
         // Toggle label between Archive / Restore based on creative state
         const targetRow = hasCreativeId ? document.querySelector(`creative-tree-row[creative-id="${form.dataset.creativeId}"]`) : null;
         const isArchived = targetRow?.hasAttribute('archived');
+        const protectsOnboarding = targetRow?.hasAttribute('onboarding-item') && !isArchived;
+        archiveBtn.hidden = Boolean(protectsOnboarding);
+        archiveBtn.disabled = !hasCreativeId || protectsOnboarding;
         archiveBtn.textContent = isArchived ? (archiveBtn.dataset.restoreLabel || 'Restore') : (archiveBtn.dataset.archiveLabel || 'Archive');
       }
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
@@ -837,7 +851,7 @@ function setupEditorSession() {
             }
 
             if (method === 'POST' && data.id) {
-              form.action = `/creatives/${data.id}`;
+              form.action = creativeUpdateUrl(data.id);
               methodInput.value = 'patch';
               form.dataset.creativeId = data.id;
               if (tree) {
@@ -848,9 +862,11 @@ function setupEditorSession() {
                 if (rowEl) {
                   rowEl.setAttribute('creative-id', data.id);
                   rowEl.creativeId = data.id;
-                  const creativeLink = `/creatives/${data.id}`;
+                  const creativeLink = creativeUpdateUrl(data.id);
                   rowEl.setAttribute('link-url', creativeLink);
                   rowEl.linkUrl = creativeLink;
+                  rowEl.setAttribute('update-url', creativeLink);
+                  rowEl.updateUrl = creativeLink;
                   const levelValue = tree.dataset.level;
                   if (levelValue) {
                     rowEl.setAttribute('level', levelValue);
@@ -878,6 +894,7 @@ function setupEditorSession() {
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
             }
+            refreshOnboardingRows(data, refreshRow);
             if (cascadeProgressUpdate && tree) {
               refreshChildren(tree);
               completionCascadePending = false;
@@ -1806,7 +1823,7 @@ function setupEditorSession() {
           syncInlineEditorPadding(level);
           attachTemplate(newTree);
           template.style.display = 'block';
-          form.action = '/creatives';
+          form.action = form.dataset.createUrl || '/creatives';
           methodInput.value = '';
           form.dataset.creativeId = '';
           parentInput.value = parentId || '';

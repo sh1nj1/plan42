@@ -228,10 +228,56 @@ module Collavre
         end
       end
 
+      test "onboarding updates request a component refresh without broadcasting fallback html" do
+        onboarding = Creative.create!(
+          user: @owner,
+          parent: @root,
+          description: "Fallback",
+          data: {
+            "onboarding" => {
+              "session_id" => SecureRandom.uuid,
+              "role" => "card",
+              "step_key" => "progress_rollup"
+            }
+          }
+        )
+
+        onboarding.update!(data: onboarding.data.deep_merge("onboarding" => { "status" => "completed" }))
+        job = enqueued_jobs.select { |candidate| candidate["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        payload = job["arguments"].third["payload"]
+
+        assert payload["refresh_onboarding_description"]
+        assert_nil payload["link_url"]
+        assert_nil payload.dig("templates", "description_html")
+      end
+
       test "broadcast_creative_updated skips progress-only changes" do
         assert_no_enqueued_jobs(only: Collavre::CreativeBroadcastJob) do
           @child.update!(progress: 0.9)
         end
+      end
+
+      test "onboarding root progress changes broadcast an overview refresh" do
+        onboarding_root = Creative.create!(
+          user: @owner,
+          description: "Onboarding",
+          progress: 0.0,
+          data: {
+            "kind" => Creative::ONBOARDING_KIND,
+            "onboarding" => {
+              "session_id" => SecureRandom.uuid,
+              "role" => "root"
+            }
+          }
+        )
+
+        assert_enqueued_with(job: Collavre::CreativeBroadcastJob) do
+          onboarding_root.update!(progress: 0.5)
+        end
+
+        job = enqueued_jobs.select { |candidate| candidate["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        payload = job["arguments"].third["payload"]
+        assert payload["refresh_onboarding_description"]
       end
 
       # --- MCP request context ---

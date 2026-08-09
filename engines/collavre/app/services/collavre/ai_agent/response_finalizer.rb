@@ -65,6 +65,7 @@ module Collavre
           partial: "collavre/comments/comment",
           locals: { comment: @reply_comment, streaming: false }
         )
+        Collavre::Onboarding::ProgressTracker.agent_replied(comment: @reply_comment)
 
         log_action("reply_created", { comment_id: @reply_comment.id, content: @response_content })
         @reply_comment.notify_ai_completion
@@ -77,6 +78,7 @@ module Collavre
           topic_id: @original_comment.topic_id,
           task: @task
         )
+        Collavre::Onboarding::ProgressTracker.agent_replied(comment: reply_comment)
 
         log_action("reply_created", { comment_id: reply_comment.id, content: @response_content })
         reassociate_activity_logs(@original_comment, reply_comment)

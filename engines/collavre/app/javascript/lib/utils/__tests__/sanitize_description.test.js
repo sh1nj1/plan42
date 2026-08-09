@@ -47,6 +47,14 @@ describe('sanitizeDescriptionHtml', () => {
     expect(sanitizeDescriptionHtml(html)).toBe(html)
   })
 
+  test('preserves server-rendered onboarding controls', () => {
+    const html = '<button type="button" data-action="click->onboarding-card#open">Start</button>'
+    const out = sanitizeDescriptionHtml(html)
+
+    expect(out).toContain('<button')
+    expect(out).toContain('data-action="click->onboarding-card#open"')
+  })
+
   test('treats null/undefined as empty string', () => {
     expect(sanitizeDescriptionHtml(null)).toBe('')
     expect(sanitizeDescriptionHtml(undefined)).toBe('')

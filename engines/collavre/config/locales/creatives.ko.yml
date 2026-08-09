@@ -176,6 +176,7 @@ ko:
       notices:
         progress_recalculated: 진행률을 다시 계산 했습니다.
       errors:
+        parent_no_write_permission: 상위 Creative에 대한 쓰기 권한이 없습니다.
         no_permission: 이 작업을 수행할 권한이 없습니다.
         metadata_must_be_object: 메타데이터는 객체여야 합니다.
         description_read_only_source: 읽기 전용 소스 콘텐츠는 직접 변경할 수 없습니다

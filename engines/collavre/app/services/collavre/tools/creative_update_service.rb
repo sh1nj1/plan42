@@ -107,12 +107,19 @@ module Tools
       if updates.present? || description_provided
         base.assign_attributes(updates) if updates.present?
         success &&= base.save
+        changed_attributes = updates.keys if success
+        changed_attributes << :description if success && description_provided
 
         # Note: progress updates are only allowed on leaf Creatives (validated above).
         # Parent progress is automatically calculated from children.
       end
 
       if success
+        Collavre::Onboarding::ProgressTracker.creative_updated(
+          creative: base,
+          user: Current.user,
+          changed_attributes: changed_attributes || []
+        )
         creative.reload
         base.reload
         {

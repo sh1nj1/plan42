@@ -27,16 +27,29 @@ module Collavre
         # Skip broadcast when only progress changed (cascade from update_parent_progress).
         # The original creative's broadcast already includes ancestor progress in its payload,
         # so receivers update parent rows without needing separate broadcasts per ancestor.
-        # Exception: MCP requests must always broadcast because the browser has no HTTP
-        # response to update from — WebSocket is the only delivery channel.
-        return if progress_only_change? && !Collavre::Current.mcp_request
+        # Exceptions: MCP requests must always broadcast because the browser has no HTTP
+        # response to update from. Onboarding roots must also broadcast so shared viewers
+        # refresh the server-rendered completed-step overview after progress rolls up.
+        return if progress_only_change? && !onboarding_root? && !Collavre::Current.mcp_request
 
-        enqueue_broadcast(:updated, broadcast_node_payload)
+        payload = broadcast_node_payload
+        if onboarding_item?
+          # The persisted description is only an API fallback. The browser must
+          # fetch the request-aware component so card state and mounted URLs stay
+          # identical to the initial TreeBuilder render.
+          payload[:templates].delete(:description_html)
+          payload.delete(:link_url)
+          payload[:refresh_onboarding_description] = true
+        end
+        enqueue_broadcast(:updated, payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_updated: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       end
 
       def capture_broadcast_state
+        return if @_destroy_broadcast_state_captured
+
+        @_destroy_broadcast_state_captured = true
         # Skip for top-level personal creatives with no links
         # (parent_id.nil? means no ancestors to inherit shares from)
         return if parent_id.nil? && !origin_id && linked_creatives.none?

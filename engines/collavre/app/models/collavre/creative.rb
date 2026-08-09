@@ -12,7 +12,7 @@ module Collavre
     # match on, so a metadata save that omits it makes the row undiscoverable and
     # `inbox_for` creates a duplicate inbox for that user.
     # ---------------------------------------------------------------------------
-    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind source onboarding].freeze
 
     SubtreeTouchTransactionRecord = Data.define(:creative_id) do
       def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
@@ -87,12 +87,49 @@ module Collavre
     # --- Inbox ---
     scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
 
+    ONBOARDING_KIND = "onboarding"
+    scope :onboarding_guides, -> { where("data->>'kind' = ?", ONBOARDING_KIND) }
+    scope :onboarding_items, -> { where("data->'onboarding'->>'session_id' IS NOT NULL") }
+
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
     CONTENT_TOPIC_NAME = "Content"
 
     def inbox?
       data&.dig("kind") == "inbox"
+    end
+
+    def onboarding_guide?
+      data&.dig("kind") == ONBOARDING_KIND
+    end
+
+    def onboarding_metadata
+      data.is_a?(Hash) ? data["onboarding"] : nil
+    end
+
+    def onboarding_item?
+      onboarding_metadata&.dig("session_id").present?
+    end
+
+    def onboarding_root?
+      onboarding_metadata&.dig("role") == "root"
+    end
+
+    def onboarding_card?
+      onboarding_metadata&.dig("role") == "card"
+    end
+
+    def onboarding_practice?
+      onboarding_metadata&.dig("role") == "practice"
+    end
+
+    def onboarding_session_root
+      return unless onboarding_item?
+
+      session_id = onboarding_metadata["session_id"]
+      Creative.onboarding_guides.where(user_id: user_id).find do |creative|
+        creative.onboarding_root? && creative.onboarding_metadata["session_id"] == session_id
+      end
     end
 
     # Bypass the read-only-source guard for a single save (used by the vendor
@@ -300,25 +337,24 @@ module Collavre
       archived_at.present?
     end
 
+    def archive_target_roots
+      origin = effective_origin(Set.new)
+      targets = [ self ]
+
+      if origin != self
+        targets << origin
+        targets.concat(origin.linked_creatives.where.not(id: id))
+      end
+
+      targets.concat(linked_creatives)
+      targets.uniq(&:id)
+    end
+
     def archive!
       now = Time.current
       self.class.transaction do
-        # Archive self and descendants
-        self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
-
-        # If this is a linked creative, also archive the origin and its descendants
-        origin = effective_origin(Set.new)
-        if origin != self
-          origin.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
-          # Archive all other linked creatives of the origin
-          origin.linked_creatives.where.not(id: id).find_each do |linked|
-            linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
-          end
-        end
-
-        # Also archive any linked creatives that point to this one
-        linked_creatives.find_each do |linked|
-          linked.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
+        archive_target_roots.each do |target|
+          target.self_and_descendants.where(archived_at: nil).update_all(archived_at: now)
         end
 
         reload

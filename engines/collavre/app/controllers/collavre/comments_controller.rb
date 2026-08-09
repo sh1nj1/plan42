@@ -174,7 +174,19 @@ module Collavre
         @comment.content = "#{@comment.content}\n\n#{response}"
         @comment.skip_dispatch = true
       end
-      if @comment.save
+      onboarding_card = nil
+      saved = Comment.transaction do
+        next false unless @comment.save
+
+        onboarding_card = Collavre::Onboarding::ProgressTracker.comment_created(comment: @comment, user: Current.user)
+        true
+      end
+
+      if saved
+        if onboarding_card
+          headers["X-Onboarding-Card-Id"] = onboarding_card.id.to_s
+          headers["X-Onboarding-Root-Id"] = onboarding_card.onboarding_session_root&.id&.to_s
+        end
         # Cross-post inbox inline replies to the original creative/topic
         InboxReplyService.call(@comment)
 

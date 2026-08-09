@@ -16,7 +16,9 @@ module Collavre
         end
 
         begin
-          ::Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
+          executor = ::Comments::ActionExecutor.new(comment: @comment, executor: Current.user)
+          executor.call
+          set_onboarding_refresh_headers(executor)
           @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
           render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
         rescue ::Comments::ActionExecutor::ExecutionError => e
@@ -114,6 +116,25 @@ module Collavre
       end
 
       private
+
+      def set_onboarding_refresh_headers(executor)
+        cards = Array(executor.onboarding_cards)
+        return if cards.empty?
+
+        roots = cards.filter_map(&:onboarding_session_root).uniq
+        created_creatives = Array(executor.onboarding_created_creatives)
+        created_cards = Array(executor.onboarding_created_cards)
+
+        headers["X-Onboarding-Card-Ids"] = cards.map(&:id).join(",")
+        headers["X-Onboarding-Root-Ids"] = roots.map(&:id).join(",")
+        headers["X-Onboarding-Card-Id"] = cards.last.id.to_s
+        headers["X-Onboarding-Root-Id"] = roots.last&.id&.to_s
+        return if created_creatives.empty?
+
+        headers["X-Onboarding-Created-Creative-Ids"] = created_creatives.map(&:id).join(",")
+        headers["X-Onboarding-Created-Card-Ids"] = created_cards.map(&:id).join(",")
+        headers["X-Onboarding-Created-Creative-Id"] = created_creatives.last.id.to_s
+      end
 
       # Resolve a Claude Channel permission prompt: gate on the approver, record
       # the decision atomically (idempotent against double-clicks), relay it to

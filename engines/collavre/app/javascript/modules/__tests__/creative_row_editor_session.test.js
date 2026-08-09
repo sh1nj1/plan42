@@ -16,7 +16,7 @@ jest.unstable_mockModule('../creative_row_editor_delegated_clicks', () => ({
   createDelegatedClickHandler: createDelegatedClickHandlerMock,
 }))
 
-const { initializeCreativeRowEditor } = await import('../creative_row_editor')
+const { initializeCreativeRowEditor, refreshOnboardingRows } = await import('../creative_row_editor')
 const { buildEditorDom } = await import('./support/inline_editor_dom')
 
 function swapCenterContent() {
@@ -140,5 +140,19 @@ describe('creative row editor session lifecycle', () => {
       document.removeEventListener('creative-editing:start', startSpy)
       jest.useRealTimers()
     }
+  })
+
+  test('refreshes both the onboarding step and overview rows after a save', () => {
+    const card = document.createElement('div')
+    card.id = 'creative-42'
+    document.body.appendChild(card)
+    const root = document.createElement('div')
+    root.id = 'creative-84'
+    document.body.appendChild(root)
+    const refreshRow = jest.fn()
+
+    refreshOnboardingRows({ onboarding_card_id: 42, onboarding_root_id: 84 }, refreshRow)
+
+    expect(refreshRow.mock.calls.map(([row]) => row.id)).toEqual(['creative-42', 'creative-84'])
   })
 })

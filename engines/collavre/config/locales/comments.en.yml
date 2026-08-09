@@ -81,6 +81,7 @@ en:
       approve_no_attributes: Comment action must include at least one allowed attribute.
       approve_invalid_creative: Comment action targets an invalid creative.
       approve_no_write_permission: No write permission to perform this action on the creative.
+      approve_no_admin_permission: Admin permission is required to remove an onboarding guide.
       approve_invalid_progress: Comment action progress must be a number.
       approve_invalid_description: Comment action description must be text.
       approved_label: Approved
@@ -262,6 +263,15 @@ en:
         learn_more: Learn more
         no_search_results: No messages match your search.
         cards:
+          create_edit:
+            title: Create and edit a Creative
+            description: Add a child Creative, then change its text to make the work your own.
+          progress_rollup:
+            title: Completion and progress rollup
+            description: Complete a child and watch its progress roll up through the tree.
+          creative_chat:
+            title: Chat on every Creative
+            description: Open a Creative's chat and leave a message in its own context.
           mention_agent:
             title: Mention teammates & agents
             description: "Use @name: to ask a question or loop someone in."

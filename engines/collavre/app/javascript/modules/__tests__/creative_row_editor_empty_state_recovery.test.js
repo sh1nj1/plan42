@@ -92,6 +92,44 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
   })
 
+  test('posts a new row through the request-aware engine mount', async () => {
+    const form = document.getElementById('inline-edit-form-element')
+    form.dataset.createUrl = '/collavre/creatives'
+
+    await startFirstRowWithContent()
+
+    expect(new URL(form.action).pathname).toBe('/collavre/creatives')
+  })
+
+  test('keeps the engine mount when a created row switches to update', async () => {
+    const form = document.getElementById('inline-edit-form-element')
+    form.dataset.createUrl = '/collavre/creatives'
+    form.dataset.updateUrlTemplate = '/collavre/creatives/__CREATIVE_ID__'
+    saveMock.mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ id: 42 })),
+    })
+
+    await startFirstRowWithContent()
+    document.getElementById('inline-close').click()
+    await flush()
+
+    expect(new URL(form.action).pathname).toBe('/collavre/creatives/42')
+    expect(document.querySelector('creative-tree-row').linkUrl).toBe('/collavre/creatives/42')
+    expect(document.querySelector('creative-tree-row').updateUrl).toBe('/collavre/creatives/42')
+  })
+
+  test('uses the engine mount when an existing row enters edit mode', async () => {
+    const form = document.getElementById('inline-edit-form-element')
+    form.dataset.updateUrlTemplate = '/collavre/creatives/__CREATIVE_ID__'
+    const { tree } = appendExistingRow(42)
+
+    document.dispatchEvent(new CustomEvent('creative-edit-click', { detail: { treeElement: tree } }))
+    await flush()
+
+    expect(new URL(form.action).pathname).toBe('/collavre/creatives/42')
+  })
+
   test('keeps the failed first draft and its editor open when the save rejects on close', async () => {
     saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
     const emptyState = await startFirstRowWithContent()

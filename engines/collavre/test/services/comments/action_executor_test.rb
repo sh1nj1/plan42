@@ -72,14 +72,109 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
       approver: @user
     )
 
+    executor = Comments::ActionExecutor.new(comment: comment, executor: @user)
     assert_difference -> { @creative.reload.children.count }, 1 do
-      Comments::ActionExecutor.new(comment: comment, executor: @user).call
+      executor.call
     end
 
     child = @creative.reload.children.order(:created_at).last
     assert_equal "New idea", ActionController::Base.helpers.strip_tags(child.description).strip
     assert_in_delta 0.25, child.progress
     assert_equal @creative.user.id, child.user.id
+    assert_nil executor.onboarding_card
+    assert_nil executor.onboarding_created_creative
+  end
+
+  test "credits onboarding create and update actions to the human executor" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+    agent = users(:ai_bot)
+
+    create_comment = card.comments.create!(
+      content: "Create a practice Creative",
+      user: agent,
+      action: JSON.generate(
+        "action" => "create_creative",
+        "attributes" => { "description" => "First draft" }
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    executor = Comments::ActionExecutor.new(comment: create_comment, executor: @user)
+    executor.call
+
+    practice = Creative.find(card.reload.onboarding_metadata["target_creative_id"])
+    assert_equal "in_progress", card.onboarding_metadata["status"]
+    assert_equal "practice", practice.onboarding_metadata["role"]
+    assert_equal card, executor.onboarding_card
+    assert_equal practice, executor.onboarding_created_creative
+    assert_equal [ card ], executor.onboarding_cards
+    assert_equal [ practice ], executor.onboarding_created_creatives
+    assert_equal [ card ], executor.onboarding_created_cards
+
+    update_comment = practice.comments.create!(
+      content: "Revise the practice Creative",
+      user: agent,
+      action: JSON.generate(
+        "action" => "update_creative",
+        "attributes" => { "description" => "Revised draft" }
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    Comments::ActionExecutor.new(comment: update_comment, executor: @user).call
+
+    assert_equal "completed", card.reload.onboarding_metadata["status"]
+    assert_in_delta 1.0, practice.reload.progress
+  end
+
+  test "delete action uses onboarding completion cleanup" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    session_id = guide.onboarding_metadata["session_id"]
+    wrapper = Creative.create!(user: @user, description: "Wrapper")
+    guide.update!(parent: wrapper)
+    comment = wrapper.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate("action" => "delete_creative", "creative_id" => guide.id),
+      approver: @user
+    )
+
+    Comments::ActionExecutor.new(comment: comment, executor: @user).call
+
+    remaining = Creative.where(user: @user).select do |creative|
+      creative.onboarding_metadata&.dig("session_id") == session_id
+    end
+    assert_empty remaining
+    assert_not_nil @user.reload.onboarding_completed_at
+  end
+
+  test "delete action rejects session-wide onboarding cleanup without admin permission" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: guide, user: @approver, permission: :write, shared_by: @user)
+    end
+    comment = guide.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate("action" => "delete_creative", "creative_id" => guide.id),
+      approver: @approver
+    )
+
+    error = assert_raises(Comments::ActionExecutor::ExecutionError) do
+      Comments::ActionExecutor.new(comment: comment, executor: @approver).call
+    end
+
+    assert_equal I18n.t("collavre.comments.approve_no_admin_permission"), error.message
+    assert Creative.exists?(guide.id)
   end
 
   test "supports multiple actions within a single payload" do

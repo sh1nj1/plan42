@@ -57,6 +57,22 @@ module Collavre
         assert_nil Creative.find_by(id: child.id)
       end
 
+      test "does not let a write collaborator delete an owner's onboarding session" do
+        owner = users(:one)
+        owner.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+        Creative.inbox_for(owner)
+        guide = Onboarding::Seeder.call(user: owner)
+        CreativeSharesCache.create!(creative: guide, user: @user, permission: :write)
+
+        result = CreativeBatchService.new.call(operations: [
+          { "action" => "delete", "id" => guide.id }
+        ])
+
+        assert_not result[:success]
+        assert Creative.exists?(guide.id)
+        assert_nil owner.reload.onboarding_completed_at
+      end
+
       test "mixed operations in a single batch" do
         child = Creative.create!(description: "<p>Child</p>", user: @user, parent: @root)
         service = CreativeBatchService.new

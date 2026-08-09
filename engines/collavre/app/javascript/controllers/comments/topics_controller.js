@@ -2,6 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import { createSubscription } from "../../services/cable"
 import { fetchNextTopicName, createTopicWithComments, saveLastTopic } from "../../lib/api/topics"
 import { alertDialog, confirmDialog } from "../../lib/utils/dialog"
+import { creativeUrl } from "./mounted_routes"
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 const ICON_RESTORE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6.69 3L3 13"/></svg>`
@@ -83,7 +84,7 @@ export default class extends Controller {
         this.topics = []
 
         try {
-            const response = await fetch(`/creatives/${this.creativeId}/topics`)
+            const response = await fetch(`${creativeUrl(this.context?.element, this.creativeId)}/topics`)
             // Discard stale response if a newer loadTopics() call was made
             if (version !== this._loadTopicsVersion) return
 

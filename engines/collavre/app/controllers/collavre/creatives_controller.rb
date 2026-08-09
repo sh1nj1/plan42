@@ -19,6 +19,7 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
+    before_action :ensure_onboarding_seeded, only: :index
     before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
     before_action :require_creative_write!, only: %i[archive unarchive]
 
@@ -181,13 +182,21 @@ module Collavre
             if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
               sanitized_data = sanitized_data.except("markdown_source")
             end
+            rendered_description = view_context.render_creative_description(
+              @creative,
+              fallback: @creative.effective_description
+            )
+            embedded_description = view_context.render_creative_description(
+              @creative,
+              fallback: view_context.embed_youtube_iframe(@creative.effective_description)
+            )
             render json: {
               id: @creative.id,
-              description: @creative.effective_description,
+              description: rendered_description,
               # Embedded variant for read-only display (e.g. slide view): turns
               # bare YouTube links into preview iframes. `description` stays the
               # raw editable form the inline editor round-trips.
-              description_embedded_html: view_context.embed_youtube_iframe(@creative.effective_description),
+              description_embedded_html: embedded_description,
               description_raw_html: @creative.description,
               origin_id: @creative.origin_id,
               parent_id: @creative.parent_id,
@@ -241,12 +250,14 @@ module Collavre
         # matching the update endpoint contract. Without this, a freshly created
         # markdown creative with a pasted data: URI would re-import the blob on
         # the next keystroke save.
-        render json: {
+        response_data = {
           id: @creative.id,
           content_type: @creative.data&.dig("content_type"),
           markdown_editor: @creative.data&.dig("editor"),
           markdown_source: @creative.data&.dig("markdown_source")
         }
+        add_onboarding_refresh_ids(response_data, result.onboarding_card)
+        render json: response_data
       else
         render json: { errors: result.errors }, status: :unprocessable_entity
       end
@@ -300,6 +311,7 @@ module Collavre
         permitted.delete(:origin_id)
 
         success &&= base.update(permitted)
+        changed_attributes = permitted.keys if success
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
           if base.children.exists?
             base.self_and_descendants.where(origin_id: nil)
@@ -308,6 +320,11 @@ module Collavre
         end
 
         if success
+          onboarding_card = Collavre::Onboarding::ProgressTracker.creative_updated(
+            creative: base,
+            user: Current.user,
+            changed_attributes: changed_attributes
+          )
           format.html { redirect_to @creative }
           format.json do
             base.reload
@@ -319,6 +336,7 @@ module Collavre
               content_type: base.data&.dig("content_type"),
               markdown_editor: base.data&.dig("editor")
             }
+            add_onboarding_refresh_ids(response_data, onboarding_card)
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
             # Gated on write permission so a read-only share recipient moving a
@@ -537,6 +555,11 @@ module Collavre
     end
 
     def archive
+      onboarding_item_present = @creative.archive_target_roots.any? do |target|
+        target.self_and_descendants.onboarding_items.exists?
+      end
+      return head :unprocessable_entity if onboarding_item_present
+
       @creative.archive!
       head :ok
     end
@@ -559,6 +582,20 @@ module Collavre
     end
 
     private
+      def add_onboarding_refresh_ids(response_data, card)
+        return unless card
+
+        response_data[:onboarding_card_id] = card.id
+        response_data[:onboarding_root_id] = card.onboarding_session_root&.id
+      end
+
+      def ensure_onboarding_seeded
+        return if Current.user.nil? || params[:id].present?
+
+        onboarding = Collavre::Onboarding::Seeder.call(user: Current.user, script_name: request.script_name)
+        redirect_to creatives_path(id: onboarding.id) if onboarding && request.format.html?
+      end
+
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
           user: Current.user,

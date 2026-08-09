@@ -5,6 +5,16 @@ module Collavre
     class ActionExecutor
       class ExecutionError < StandardError; end
 
+      attr_reader :onboarding_cards, :onboarding_created_creatives, :onboarding_created_cards
+
+      def onboarding_card
+        onboarding_cards&.last
+      end
+
+      def onboarding_created_creative
+        onboarding_created_creatives&.last
+      end
+
       def initialize(comment:, executor:)
         @comment = comment
         @executor = executor
@@ -62,7 +72,11 @@ module Collavre
       end
 
       def execute_action!
-        ExecutionContext.new(comment).evaluate(comment.action)
+        context = ExecutionContext.new(comment, executor: executor)
+        context.evaluate(comment.action)
+        @onboarding_cards = context.onboarding_cards
+        @onboarding_created_creatives = context.onboarding_created_creatives
+        @onboarding_created_cards = context.onboarding_created_cards
       rescue ExecutionContext::InvalidActionError => e
         raise ExecutionError, e.message
       end
@@ -80,11 +94,15 @@ module Collavre
 
         CREATIVE_ATTRIBUTES = %w[description progress].freeze
 
-        def initialize(comment)
+        def initialize(comment, executor: nil)
           @comment = comment
+          @executor = executor || comment.user || Current.user
+          @onboarding_cards = []
+          @onboarding_created_creatives = []
+          @onboarding_created_cards = []
         end
 
-        attr_reader :comment
+        attr_reader :comment, :executor, :onboarding_cards, :onboarding_created_creatives, :onboarding_created_cards
 
         def evaluate(code)
           payload = parse_payload(code)
@@ -137,6 +155,16 @@ module Collavre
           new_creative.user = parent.user || comment.user || Current.user
           assign_creative_attributes(new_creative, attributes)
           new_creative.save!
+          tracked_card = Collavre::Onboarding::ProgressTracker.creative_created(
+            creative: new_creative,
+            user: executor
+          )
+          if tracked_card
+            record_onboarding_card(tracked_card)
+            @onboarding_created_creatives << new_creative
+            @onboarding_created_cards << tracked_card unless @onboarding_created_cards.include?(tracked_card)
+          end
+          new_creative.broadcast_creative_created
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
         end
@@ -147,17 +175,29 @@ module Collavre
 
           assign_creative_attributes(creative, attributes)
           creative.save!
+          tracked_card = Collavre::Onboarding::ProgressTracker.creative_updated(
+            creative: creative,
+            user: executor,
+            changed_attributes: attributes.keys
+          )
+          record_onboarding_card(tracked_card) if tracked_card
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
         end
 
+        def record_onboarding_card(card)
+          @onboarding_cards << card unless @onboarding_cards.include?(card)
+        end
+
         def delete_creative(payload)
           creative = find_target_creative(payload)
-          executor = comment.user || Current.user
           unless creative.has_permission?(executor, :write)
             raise InvalidActionError, I18n.t("collavre.comments.approve_no_write_permission")
           end
-          creative.destroy!
+          deleted = Collavre::Creatives::DestroyService.new(creative: creative, user: executor).call
+          unless deleted
+            raise InvalidActionError, I18n.t("collavre.comments.approve_no_admin_permission")
+          end
         end
 
         def approve_tool(payload)

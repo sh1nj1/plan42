@@ -5,7 +5,13 @@ require "test_helper"
 # so both ship the index path and an "am I already there?" flag to the client.
 class CreativeFilterNavigationTest < ActionDispatch::IntegrationTest
   setup do
-    @user = User.create!(email: "filter-nav@example.com", password: TEST_PASSWORD, name: "Filter Nav", system_admin: true)
+    @user = User.create!(
+      email: "filter-nav@example.com",
+      password: TEST_PASSWORD,
+      name: "Filter Nav",
+      system_admin: true,
+      onboarding_seeded_at: Time.current
+    )
     Rails.cache.clear
     SystemSetting.where(key: [ "home_page_path", "home_page_path_authenticated" ]).destroy_all
     Rails.cache.clear

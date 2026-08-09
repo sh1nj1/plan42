@@ -44,6 +44,7 @@ app/javascript/
 app/assets/stylesheets/collavre/
 ├── creatives.css            # Main creative tree styles
 ├── comments_popup.css       # Comment panel styles
+├── feature_cards.css        # Shared feature and onboarding card styles
 ├── dark_mode.css            # Dark theme
 ├── mention_menu.css         # @mention dropdown
 ├── popup.css                # Common popup styles

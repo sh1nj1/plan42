@@ -5,6 +5,7 @@ import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import ReviewQuotesStore from './review_quotes_store'
 import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
+import { commentsUrl } from './mounted_routes'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -923,7 +924,7 @@ export default class extends Controller {
       this._pendingReviewType = null
     }
 
-    let url = `/creatives/${this.creativeId}/comments`
+    let url = commentsUrl(this.context?.element, this.creativeId)
     let method = 'POST'
     if (submittedEditingId) {
       url += `/${submittedEditingId}`
@@ -938,13 +939,13 @@ export default class extends Controller {
 
     doFetch()
       .then((response) => {
-        if (response.ok) return response.text()
+        if (response.ok) return this._commentResponsePayload(response)
         // On 422, the CSRF token may have gone stale (e.g. after an OS
         // window switch).  Refresh the token and retry once before giving up.
         if (response.status === 422 && !this._hasRetried) {
           this._hasRetried = true
           return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
+            if (retryResp.ok) return this._commentResponsePayload(retryResp)
             return retryResp.json().then((json) => {
               throw new Error(json.errors?.join(', ') || 'Unable to save comment')
             })
@@ -954,7 +955,8 @@ export default class extends Controller {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
       })
-      .then((html) => {
+      .then(({ html, onboardingCardId, onboardingRootId }) => {
+        this._refreshOnboardingItems(onboardingCardId, onboardingRootId)
         if (submittedDraft.backupKey) {
 	  chatDrafts.clearSubmissionBackupsThrough(
             submittedDraft.backupKey,
@@ -1520,7 +1522,7 @@ export default class extends Controller {
       formData.append('comment[topic_id]', effectiveTopicId)
     }
 
-    const url = `/creatives/${this.creativeId}/comments`
+    const url = commentsUrl(this.context?.element, this.creativeId)
     const doFetch = () => fetch(url, {
       method: 'POST',
       headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
@@ -1529,11 +1531,11 @@ export default class extends Controller {
 
     doFetch()
       .then((response) => {
-        if (response.ok) return response.text()
+        if (response.ok) return this._commentResponsePayload(response)
         if (response.status === 422 && !this._hasRetried) {
           this._hasRetried = true
           return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
+            if (retryResp.ok) return this._commentResponsePayload(retryResp)
             return retryResp.json().then((json) => {
               throw new Error(json.errors?.join(', ') || 'Unable to save comment')
             })
@@ -1543,7 +1545,8 @@ export default class extends Controller {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
       })
-      .then((html) => {
+      .then(({ html, onboardingCardId, onboardingRootId }) => {
+        this._refreshOnboardingItems(onboardingCardId, onboardingRootId)
         this.renderCommentHtml(html)
         const listCtrl = this.application.getControllerForElementAndIdentifier(
           document.querySelector('[data-controller~="comments--list"]'), 'comments--list'
@@ -1564,6 +1567,31 @@ export default class extends Controller {
       })
 
     this.focusTextarea()
+  }
+
+  async _commentResponsePayload(response) {
+    return {
+      html: await response.text(),
+      onboardingCardId: response.headers?.get?.('X-Onboarding-Card-Id'),
+      onboardingRootId: response.headers?.get?.('X-Onboarding-Root-Id'),
+    }
+  }
+
+  _refreshOnboardingItems(cardIds, rootIds) {
+    for (const ids of [cardIds, rootIds]) {
+      for (const id of String(ids || '').split(',').filter(Boolean)) this._refreshOnboardingCard(id)
+    }
+  }
+
+  _refreshOnboardingCard(cardId) {
+    if (!cardId) return
+
+    const row = document.querySelector(`creative-tree-row[creative-id="${cardId}"]`)
+    if (typeof row?._refreshOnboardingCard !== 'function') return
+
+    row._refreshOnboardingCard(cardId).catch((error) => {
+      console.error('Onboarding card refresh failed:', error)
+    })
   }
 
   _renderReviewQuoteChips() {

@@ -122,6 +122,14 @@
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.typo_correction.manage'), collavre.typo_correction_user_path(@user) %>
+        <% if @user == Current.user %>
+          <br>
+          <%= button_to t('collavre.onboarding.reset.label'),
+                        collavre.reset_onboarding_path(script_name: request.script_name),
+                        method: :delete,
+                        class: 'btn btn-secondary',
+                        form: { data: { turbo_confirm: t('collavre.onboarding.reset.confirm') } } %>
+        <% end %>
         <br>
         <%= link_to t('collavre.agent_gateways.manage'), collavre.agent_gateways_path %>
         <br>

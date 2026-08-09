@@ -24,7 +24,7 @@
     <p class="feature-cards-title"><%= t(title_key) %></p>
     <div class="feature-card-grid" data-comments--feature-cards-target="grid">
       <% visible_cards.each do |card| %>
-        <%= render partial: "collavre/comments/feature_card", locals: { creative: creative, card: card } %>
+        <%= render Collavre::FeatureCardComponent.new(card: card, surface: :comment_empty, creative: creative) %>
       <% end %>
     </div>
   <% else %>

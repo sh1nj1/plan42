@@ -7,6 +7,7 @@ import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
 import PrevMessageNavigator from './prev_message_navigator'
+import { commentsUrl } from './mounted_routes'
 // CommonPopup is now used via TopicSearchController (Stimulus)
 
 // Gestures that mean the user moved the list themselves, invalidating the
@@ -313,7 +314,7 @@ export default class extends Controller {
     if (this.currentTopicId) {
       urlParams.set('topic_id', this.currentTopicId)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
+    return fetch(`${commentsUrl(this.context?.element, this.creativeId)}?${urlParams.toString()}`).then(async (response) => {
       // Keep the CSRF meta tag in sync with the session cookie.
       // This is critical after the browser returns from a background/frozen state.
       updateCsrfTokenFromResponse(response)
@@ -1018,9 +1019,9 @@ export default class extends Controller {
     })
   }
 
-  reloadCreativeChildren() {
-    if (!this.creativeId) return Promise.resolve()
-    const container = document.getElementById(`creative-children-${this.creativeId}`)
+  reloadCreativeChildren(creativeId = this.creativeId) {
+    if (!creativeId) return Promise.resolve()
+    const container = document.getElementById(`creative-children-${creativeId}`)
     const loadUrl = container?.dataset?.loadUrl
     if (!container || !loadUrl) {
       this.reloadCreativeTree()
@@ -1058,12 +1059,29 @@ export default class extends Controller {
     button.disabled = true
     const commentId = button.getAttribute('data-comment-id')
     const topicQuery = this.topicQueryString()
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
-      .then(r => r.ok ? r.text() : r.json().then(j => { throw new Error(j.error) }))
-      .then(html => {
+    return fetch(`${commentsUrl(this.context?.element, this.creativeId)}/${commentId}/${action}${topicQuery}`, { method: 'POST', headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content } })
+      .then(async (response) => {
+        if (!response.ok) {
+          const json = await response.json()
+          throw new Error(json.error)
+        }
+
+        return {
+          html: await response.text(),
+          onboardingCardIds: response.headers?.get?.('X-Onboarding-Card-Ids') || response.headers?.get?.('X-Onboarding-Card-Id'),
+          onboardingRootIds: response.headers?.get?.('X-Onboarding-Root-Ids') || response.headers?.get?.('X-Onboarding-Root-Id'),
+          onboardingCreatedCardIds: response.headers?.get?.('X-Onboarding-Created-Card-Ids'),
+          onboardingCreatedCreativeId: response.headers?.get?.('X-Onboarding-Created-Creative-Id'),
+        }
+      })
+      .then(async ({ html, onboardingCardIds, onboardingRootIds, onboardingCreatedCardIds, onboardingCreatedCreativeId }) => {
         if (!html) { button.disabled = false; return; }
         const existing = document.getElementById(`comment_${commentId}`)
         if (existing) existing.outerHTML = html
+        const createdCardIds = (onboardingCreatedCardIds || (onboardingCreatedCreativeId ? onboardingCardIds : ''))
+          .split(',').filter(Boolean)
+        for (const cardId of createdCardIds) await this.reloadCreativeChildren(cardId)
+        this.formController?._refreshOnboardingItems(onboardingCardIds, onboardingRootIds)
       })
       .catch(e => { alertDialog(e.message); button.disabled = false; })
   }

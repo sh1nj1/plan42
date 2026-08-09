@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_09_000004) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_09_000005) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -990,6 +990,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000004) do
     t.datetime "locked_at"
     t.string "name", null: false
     t.boolean "notifications_enabled"
+    t.datetime "onboarding_completed_at"
+    t.datetime "onboarding_seeded_at"
     t.string "password_digest", null: false
     t.text "routing_expression"
     t.string "routing_subscription_token"

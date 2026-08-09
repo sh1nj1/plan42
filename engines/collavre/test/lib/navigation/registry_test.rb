@@ -5,11 +5,13 @@ require "test_helper"
 class Navigation::RegistryTest < ActiveSupport::TestCase
   setup do
     @registry = Navigation::Registry.instance
+    @registry_snapshot = @registry.all
     @registry.reset!
   end
 
   teardown do
     @registry.reset!
+    @registry_snapshot.each { |item| @registry.register(item) }
   end
 
   test "register adds a navigation item" do

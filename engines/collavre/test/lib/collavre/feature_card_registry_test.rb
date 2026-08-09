@@ -54,6 +54,12 @@ module Collavre
       assert_not card.visible_on?(:inbox_system)
     end
 
+    test "for_surface returns the onboarding card set from the same registry" do
+      keys = Collavre::FeatureCardRegistry.for_surface(:onboarding).map(&:key)
+
+      assert_equal %i[create_edit progress_rollup creative_chat mention_agent], keys
+    end
+
     test "a card must have at least one surface" do
       error = assert_raises(ArgumentError) { register(surfaces: []) }
 
@@ -141,7 +147,7 @@ module Collavre
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 
       %i[
-        mention_agent slash_command chat_context automation_trigger topic_management add_user
+        create_edit progress_rollup creative_chat mention_agent slash_command chat_context automation_trigger topic_management add_user
         inbox_notifications inbox_reply inbox_source
       ].each do |key|
         assert_includes keys, key

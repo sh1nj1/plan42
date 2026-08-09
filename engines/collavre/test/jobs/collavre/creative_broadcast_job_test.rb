@@ -64,6 +64,34 @@ module Collavre
       end
     end
 
+    test "updated action keeps read-only source creatives non-writable" do
+      onboarding = nil
+      perform_enqueued_jobs do
+        onboarding = Creative.create!(
+          user: @owner,
+          parent: @root,
+          description: "Onboarding card",
+          data: { "source" => { "type" => Creative::ONBOARDING_KIND } }
+        )
+      end
+      broadcasts = []
+      capture = lambda do |*, **kwargs|
+        broadcasts << JSON.parse(kwargs.dig(:attributes, :data))
+      end
+
+      Turbo::StreamsChannel.stub(:broadcast_action_to, capture) do
+        CreativeBroadcastJob.perform_now(
+          onboarding.id,
+          "updated",
+          current_user_id: @shared_user.id,
+          payload: onboarding.broadcast_node_payload
+        )
+      end
+
+      assert_equal 1, broadcasts.size
+      assert_equal false, broadcasts.first.dig("creative", "can_write")
+    end
+
     # --- destroyed action ---
 
     test "destroyed action does not raise with valid options" do

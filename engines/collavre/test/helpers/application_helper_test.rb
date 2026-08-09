@@ -36,4 +36,9 @@ class Collavre::ApplicationHelperTest < ActionView::TestCase
     Current.user = nil
     assert_equal "", body_theme_class
   end
+
+  test "collavre_stylesheets includes shared feature card styles" do
+    assert_includes Collavre::ApplicationHelper::COLLAVRE_STYLESHEETS, "collavre/feature_cards"
+    assert_includes collavre_stylesheets, 'href="/stylesheets/collavre/feature_cards.css"'
+  end
 end

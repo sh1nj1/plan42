@@ -187,10 +187,37 @@ module Collavre
     # the same way they register integrations.
     initializer "collavre.feature_cards", after: "collavre.navigation_reset" do
       Rails.application.config.to_prepare do
+        Collavre::Creative.register_read_only_source(Collavre::Creative::ONBOARDING_KIND)
+
+        Collavre::FeatureCardRegistry.register(:create_edit, {
+          icon: "✏️",
+          title_key: "collavre.comments.empty_state.cards.create_edit.title",
+          description_key: "collavre.comments.empty_state.cards.create_edit.description",
+          surfaces: [ :onboarding ],
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:progress_rollup, {
+          icon: "✅",
+          title_key: "collavre.comments.empty_state.cards.progress_rollup.title",
+          description_key: "collavre.comments.empty_state.cards.progress_rollup.description",
+          surfaces: [ :onboarding ],
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:creative_chat, {
+          icon: "💬",
+          title_key: "collavre.comments.empty_state.cards.creative_chat.title",
+          description_key: "collavre.comments.empty_state.cards.creative_chat.description",
+          surfaces: [ :onboarding ],
+          guide: true
+        })
+
         Collavre::FeatureCardRegistry.register(:mention_agent, {
           icon: "🤖",
           title_key: "collavre.comments.empty_state.cards.mention_agent.title",
           description_key: "collavre.comments.empty_state.cards.mention_agent.description",
+          surfaces: [ :default, :onboarding ],
           guide: true
         })
 

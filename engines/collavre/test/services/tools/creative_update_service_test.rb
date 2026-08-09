@@ -262,6 +262,19 @@ module Collavre
         assert_equal parent.id, @creative.parent_id
       end
 
+      test "completes create-edit when the tracked child is updated through the tool" do
+        Creative.inbox_for(@user)
+        guide = Collavre::Onboarding::Seeder.call(user: @user)
+        card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+        create_result = CreativeCreateService.new.call(parent_id: card.id, description: "Tool practice")
+
+        result = CreativeUpdateService.new.call(id: create_result[:id], description: "Edited tool practice")
+
+        assert result[:success]
+        assert_equal "completed", card.reload.onboarding_metadata["status"]
+        assert_in_delta 1.0, Creative.find(create_result[:id]).progress
+      end
+
       test "returns error when parent_id is set to self" do
         service = CreativeUpdateService.new
         result = service.call(id: @creative.id, parent_id: @creative.id)

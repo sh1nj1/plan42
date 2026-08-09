@@ -1,0 +1,17 @@
+<div class="feature-card feature-card--onboarding onboarding-overview" data-controller="onboarding-card">
+  <div class="feature-card-icon" aria-hidden="true">🚀</div>
+  <div class="feature-card-title"><%= t('collavre.onboarding.overview.title') %></div>
+  <p class="feature-card-description"><%= overview_description %></p>
+  <strong class="onboarding-overview-progress">
+    <%= t('collavre.onboarding.overview.progress', completed: completed_steps, total: total_steps) %>
+  </strong>
+  <div class="onboarding-overview-actions">
+    <% if owner? %>
+      <%= link_to completion_label,
+                  onboarding_path,
+                  class: "feature-card-action",
+                  data: { turbo_method: :delete, turbo_confirm: completion_confirmation } %>
+    <% end %>
+    <%= link_to t('collavre.onboarding.overview.guide_link'), features_path, class: "feature-card-guide-link" %>
+  </div>
+</div>

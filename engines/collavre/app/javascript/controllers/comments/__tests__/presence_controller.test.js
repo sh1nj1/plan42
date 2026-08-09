@@ -19,6 +19,7 @@ describe('CommentsPresenceController', () => {
     container.innerHTML = `
       <div id="comments-popup"
            data-controller="comments--presence"
+           data-creative-url-template="/collavre/creatives/__CREATIVE_ID__"
            data-no-permission-text="No permission">
         <div data-comments--presence-target="participants"></div>
         <div data-comments--presence-target="typingIndicator"></div>
@@ -66,6 +67,22 @@ describe('CommentsPresenceController', () => {
     expect(setCommentPermission).toHaveBeenCalledWith(false)
     expect(loadParticipantsSpy).toHaveBeenCalledWith()
     expect(close).not.toHaveBeenCalled()
+  })
+
+  test('loads mention participants through the mounted engine path', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ users: [], can_share: false, can_comment: true }),
+    })
+    jest.spyOn(controller, 'formController', 'get').mockReturnValue({ setCommentPermission: jest.fn() })
+
+    controller.loadParticipants()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/collavre/creatives/123/comments/participants',
+      expect.objectContaining({ cache: 'no-store' }),
+    )
   })
 
   test('clears docked chat and invalidates the workspace tree when access is revoked', async () => {

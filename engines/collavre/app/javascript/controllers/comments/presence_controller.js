@@ -3,6 +3,7 @@ import { createSubscription } from '../../services/cable'
 import TouchDragHandler from '../../lib/touch_drag'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
+import { commentsUrl } from './mounted_routes'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
@@ -218,7 +219,7 @@ export default class extends Controller {
 
   loadParticipants() {
     if (!this.creativeId) return
-    fetch(`/creatives/${this.creativeId}/comments/participants`, {
+    fetch(`${commentsUrl(this.context?.element, this.creativeId)}/participants`, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     })

@@ -160,6 +160,25 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_raises(ActiveRecord::RecordNotFound) { grandchild.reload }
   end
 
+  test "unconvert routes a moved onboarding guide through session cleanup" do
+    user = users(:one)
+    user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(user)
+    guide = Collavre::Onboarding::Seeder.call(user: user)
+    wrapper = Creative.create!(user: user, description: "Wrapper")
+    guide.update!(parent: wrapper)
+    session_id = guide.onboarding_metadata["session_id"]
+
+    post unconvert_creative_path(guide), headers: { "ACCEPT" => "application/json" }
+
+    assert_response :created
+    remaining = Creative.where(user: user).select do |creative|
+      creative.onboarding_metadata&.dig("session_id") == session_id
+    end
+    assert_empty remaining
+    assert_not_nil user.reload.onboarding_completed_at
+  end
+
   test "unconvert without parent returns error" do
     creative = creatives(:root_parent)
     post unconvert_creative_path(creative), headers: { "ACCEPT" => "application/json" }

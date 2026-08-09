@@ -1,5 +1,25 @@
 module Collavre
   module CreativesHelper
+    def render_creative_description(creative, fallback: nil)
+      content_owner = creative.effective_origin
+
+      if content_owner.onboarding_card?
+        card = Collavre::FeatureCardRegistry.find(content_owner.onboarding_metadata["feature_key"])
+        return render(
+          Collavre::FeatureCardComponent.new(
+            card: card,
+            surface: :onboarding,
+            creative: content_owner,
+            onboarding_state: content_owner.onboarding_metadata
+          )
+        ) if card
+      elsif content_owner.onboarding_root?
+        return render(Collavre::OnboardingOverviewComponent.new(creative: content_owner))
+      end
+
+      fallback || embed_youtube_iframe(creative.effective_description)
+    end
+
     def render_tags(labels, class_name = nil, name_only = false)
       return "" if labels&.empty? or labels.nil?
 
@@ -84,7 +104,7 @@ module Collavre
           safe_join([])
         end
         is_leaf = has_children.nil? ? !creative.children.exists? : !has_children
-        can_write = creative.has_permission?(Current.user, :write) if can_write.nil?
+        can_write = creative.has_permission?(Current.user, :write) && !creative.read_only_source? if can_write.nil?
         progress_part = if is_leaf && can_write && !select_mode
           render_progress_toggle(creative, progress_value)
         else

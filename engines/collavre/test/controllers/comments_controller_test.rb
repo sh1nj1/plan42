@@ -41,6 +41,51 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
                         "expected no version navigator for comment WITHOUT versions"
   end
 
+  test "creating a public comment completes the matching onboarding chat practice" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "creative_chat" }
+    practice = card.children.sole
+
+    post creative_comments_path(practice), params: {
+      comment: { content: "My first message", topic_id: practice.main_topic.id, private: false }
+    }
+
+    assert_response :created
+    assert_equal card.id.to_s, response.headers["X-Onboarding-Card-Id"]
+    assert_equal guide.id.to_s, response.headers["X-Onboarding-Root-Id"]
+    assert_equal "completed", card.reload.onboarding_metadata["status"]
+    assert_in_delta 1.0, practice.reload.progress
+  end
+
+  test "records an onboarding mention before dispatching it to an agent" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    agent = users(:ai_bot)
+    agent.update!(created_by_id: @user.id)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "mention_agent" }
+    practice = card.children.sole
+    state_at_dispatch = nil
+
+    dispatch = lambda do |event_name, context|
+      next unless event_name == "comment_created" && context.dig(:comment, :user_id) == @user.id
+
+      metadata = card.reload.onboarding_metadata
+      state_at_dispatch = metadata.slice("invoked_agent_id", "response_status")
+    end
+
+    Collavre::SystemEvents::Dispatcher.stub(:dispatch, dispatch) do
+      post creative_comments_path(practice), params: {
+        comment: { content: "@#{agent.name}: help me", topic_id: practice.main_topic.id, private: false }
+      }
+    end
+
+    assert_response :created
+    assert_equal({ "invoked_agent_id" => agent.id, "response_status" => "waiting" }, state_at_dispatch)
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do
@@ -136,6 +181,73 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_not_nil comment.action_executed_at
     assert_equal @user.id, comment.action_executed_by.id
     assert_in_delta 0.9, comment.creative.reload.progress
+  end
+
+  test "approved onboarding create returns card root and created creative refresh ids" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+    comment = card.comments.create!(
+      content: "Create a practice Creative",
+      user: @user,
+      action: JSON.generate(
+        "action" => "create_creative",
+        "attributes" => { "description" => "First draft" }
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    post approve_creative_comment_path(card, comment)
+
+    assert_response :success
+    practice = Creative.find(card.reload.onboarding_metadata["target_creative_id"])
+    assert_equal card.id.to_s, response.headers["X-Onboarding-Card-Id"]
+    assert_equal guide.id.to_s, response.headers["X-Onboarding-Root-Id"]
+    assert_equal practice.id.to_s, response.headers["X-Onboarding-Created-Creative-Id"]
+    assert_equal "in_progress", card.onboarding_metadata["status"]
+  end
+
+  test "approved action batch returns every changed onboarding card" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    create_card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+    progress_card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "progress_rollup" }
+    progress_practice = progress_card.children.sole
+    comment = guide.comments.create!(
+      content: "Complete two onboarding actions",
+      user: @user,
+      action: JSON.generate(
+        "actions" => [
+          {
+            "action" => "create_creative",
+            "parent_id" => create_card.id,
+            "attributes" => { "description" => "First draft" }
+          },
+          {
+            "action" => "update_creative",
+            "creative_id" => progress_practice.id,
+            "attributes" => { "progress" => 1.0 }
+          }
+        ]
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    post approve_creative_comment_path(guide, comment)
+
+    assert_response :success
+    created_practice = Creative.find(create_card.reload.onboarding_metadata["target_creative_id"])
+    assert_equal [ create_card.id, progress_card.id ].join(","), response.headers["X-Onboarding-Card-Ids"]
+    assert_equal guide.id.to_s, response.headers["X-Onboarding-Root-Ids"]
+    assert_equal create_card.id.to_s, response.headers["X-Onboarding-Created-Card-Ids"]
+    assert_equal created_practice.id.to_s, response.headers["X-Onboarding-Created-Creative-Ids"]
+    assert_equal progress_card.id.to_s, response.headers["X-Onboarding-Card-Id"]
+    assert_equal "in_progress", create_card.onboarding_metadata["status"]
+    assert_equal "completed", progress_card.reload.onboarding_metadata["status"]
   end
 
   test "cannot execute comment action more than once" do

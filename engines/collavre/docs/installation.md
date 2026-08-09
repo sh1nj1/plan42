@@ -91,6 +91,7 @@ Collavre stylesheets are automatically available via Propshaft. Import them in y
 ```css
 @import "collavre/creatives";
 @import "collavre/comments_popup";
+@import "collavre/feature_cards";
 @import "collavre/dark_mode";
 @import "collavre/mention_menu";
 @import "collavre/popup";

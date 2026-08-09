@@ -1,0 +1,39 @@
+ko:
+  collavre:
+    onboarding:
+      guide:
+        title: "🚀 콜라브 시작하기"
+      practice:
+        progress_rollup: "실습: 이 Creative를 체크해 완료하세요"
+        creative_chat: "실습: 이 Creative의 채팅에 메시지를 남기세요"
+        mention_agent: "실습: 이 Creative의 채팅에서 AI 에이전트를 멘션하세요"
+      actions:
+        create_edit: "연습용 Creative 추가"
+        edit_created: "추가한 Creative 편집"
+        progress_rollup: "체크박스 위치 보기"
+        creative_chat: "이 Creative의 채팅 열기"
+        mention_agent: "채팅을 열고 @ 입력"
+      status:
+        pending: "시작 전"
+        in_progress: "진행 중"
+        completed: "완료"
+        waiting_for_agent: "에이전트 호출 완료 · 답변 대기 중"
+      overview:
+        title: "직접 사용하며 콜라브 익히기"
+        description: "아래 카드 %{total}개를 완료하세요. 실제 행동이 단계를 완료하고 진행률을 이 가이드까지 올립니다."
+        progress: "%{completed}/%{total} 완료"
+        skip: "건너뛰고 가이드 닫기"
+        finish: "완료하고 가이드 닫기"
+        guide_link: "전체 기능 가이드 보기"
+        confirm_skip: "%{total}단계를 모두 완료하지 않고 온보딩을 닫을까요?"
+        confirm_finish: "완료한 온보딩 가이드를 닫을까요?"
+      completion:
+        notice: "온보딩 가이드를 닫았습니다."
+      welcome: |-
+        콜라브에 오신 것을 환영합니다! [🚀 콜라브 시작하기](%{onboarding_path})에서 시작해보세요.
+
+        언제든 [기능 가이드](%{features_path})에서 다시 확인할 수 있습니다.
+      reset:
+        label: "온보딩 다시 보기"
+        confirm: "현재 온보딩 가이드를 삭제하고 다시 시작할까요?"
+        notice: "온보딩을 초기화했습니다."

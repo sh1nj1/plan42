@@ -1,0 +1,52 @@
+<div class="feature-card <%= 'feature-card--onboarding' if onboarding? %>"
+     data-key="<%= card.key %>"
+     <% if comment_empty? %>data-comments--feature-cards-target="card"<% end %>
+     <% if onboarding? %>data-controller="onboarding-card"<% end %>>
+  <% if comment_empty? %>
+    <button type="button" class="feature-card-dismiss"
+            data-action="click->comments--feature-cards#dismiss"
+            data-key="<%= card.key %>"
+            title="<%= t('collavre.comments.empty_state.dismiss') %>"
+            aria-label="<%= t('collavre.comments.empty_state.dismiss') %>">&times;</button>
+  <% end %>
+  <div class="feature-card-icon" aria-hidden="true"><%= card.icon %></div>
+  <div class="feature-card-title"><%= t(card.title_key) %></div>
+  <p class="feature-card-description"><%= t(card.description_key) %></p>
+
+  <% if onboarding? %>
+    <span class="feature-card-status feature-card-status--<%= status %>">
+      <%= t("collavre.onboarding.status.#{status}") %>
+    </span>
+    <% if waiting_for_agent? %>
+      <span class="feature-card-agent-status"><%= t('collavre.onboarding.status.waiting_for_agent') %></span>
+    <% end %>
+    <% if can_interact? && !completed? %>
+      <% if add_child_action? %>
+        <button type="button" class="feature-card-action add-creative-btn"><%= action_label %></button>
+      <% elsif action_url %>
+        <a class="feature-card-action" href="<%= action_url %>" data-turbo-action="advance"><%= action_label %></a>
+      <% end %>
+    <% end %>
+  <% elsif card.action.present? %>
+    <% case card.action[:type]
+    when :command_menu %>
+      <button type="button" class="feature-card-action" data-action="click->comments--feature-cards#openCommandMenu">
+        <%= t(card.action[:label_key]) %>
+      </button>
+    <% when :topic_list %>
+      <button type="button" class="feature-card-action" data-action="click->comments--topics#openTopicListPopup">
+        <%= t(card.action[:label_key]) %>
+      </button>
+    <% when :share_modal %>
+      <button type="button" class="feature-card-action"
+              data-action="click->share-modal#open"
+              data-share-modal-url-param="<%= helpers.collavre.creative_creative_shares_path(creative) %>">
+        <%= t(card.action[:label_key]) %>
+      </button>
+    <% end %>
+  <% end %>
+
+  <% if guide_url %>
+    <%= link_to t('collavre.comments.empty_state.learn_more'), guide_url, class: "feature-card-guide-link" %>
+  <% end %>
+</div>

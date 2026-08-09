@@ -5,6 +5,7 @@ import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
+import { updateRowFromData } from "../modules/creative_inline_payload";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -20,6 +21,7 @@ class CreativeTreeRow extends LitElement {
     expanded: { type: Boolean, attribute: "expanded", reflect: true },
     isRoot: { type: Boolean, attribute: "is-root" },
     linkUrl: { attribute: "link-url" },
+    updateUrl: { attribute: "update-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
     editIconHtml: { state: true },
@@ -28,6 +30,8 @@ class CreativeTreeRow extends LitElement {
     isTitle: { type: Boolean, attribute: "is-title", reflect: true },
     archived: { type: Boolean, attribute: "archived", reflect: true },
     githubSource: { type: Boolean, attribute: "github-source", reflect: true },
+    cardLayout: { type: Boolean, attribute: "card-layout", reflect: true },
+    onboardingItem: { type: Boolean, attribute: "onboarding-item", reflect: true },
     loadingChildren: { type: Boolean, attribute: "loading-children", reflect: true },
     _loadingDotsState: { state: true },
     editingUsers: { state: true }
@@ -45,6 +49,7 @@ class CreativeTreeRow extends LitElement {
     this.expanded = false;
     this.isRoot = false;
     this.linkUrl = "#";
+    this.updateUrl = "#";
     this._descriptionHtml = "";
     this.progressHtml = "";
     this.editIconHtml = "";
@@ -52,6 +57,8 @@ class CreativeTreeRow extends LitElement {
     this.originLinkHtml = "";
     this.isTitle = false;
     this.githubSource = false;
+    this.cardLayout = false;
+    this.onboardingItem = false;
     this.editingUsers = []; // [{ user_id, user_name, avatar_url }]
     this._templatesExtracted = false;
     this.loadingChildren = false;
@@ -251,6 +258,26 @@ class CreativeTreeRow extends LitElement {
   }
 
   _renderTitle() {
+    if (this.cardLayout) {
+      return html`
+        <div
+          class="creative-tree creative-tree-title"
+          id=${this.domId ?? nothing}
+          data-id=${this.creativeId ?? nothing}
+          data-parent-id=${this.parentId ?? ""}
+        >
+          <div class="creative-row onboarding-card-title-row" data-creatives--select-mode-target="row">
+            <div class="creative-row-start">
+              ${this._renderActionButton()}
+              <div class="creative-toggle-btn" style="visibility: hidden;"></div>
+              <div class="creative-title-content">${unsafeHTML(this.descriptionHtml || "")}</div>
+            </div>
+            <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
+          </div>
+        </div>
+      `;
+    }
+
     return html`
       <div
         class="creative-tree creative-tree-title"
@@ -359,6 +386,10 @@ class CreativeTreeRow extends LitElement {
       </div>
     `;
     const indicator = this.loadingChildren ? this._renderLoadingIndicator() : nothing;
+
+    if (this.cardLayout) {
+      return html`<div class="creative-card-content">${content}${indicator}</div>`;
+    }
 
     if (level <= BULLET_STARTING_LEVEL) {
       const headingClass = `indent${level}`;
@@ -566,7 +597,7 @@ class CreativeTreeRow extends LitElement {
     try {
       const body = new FormData();
       body.append("creative[progress]", newProgress);
-      const response = await csrfFetch(`/creatives/${creativeId}`, {
+      const response = await csrfFetch(this.updateUrl, {
         method: "PATCH",
         headers: { Accept: "application/json" },
         body,
@@ -601,6 +632,9 @@ class CreativeTreeRow extends LitElement {
           }
         }
       }
+      for (const id of [data.onboarding_card_id, data.onboarding_root_id]) {
+        if (id) await this._refreshOnboardingCard(id)
+      }
     } catch (err) {
       // Revert optimistic UI
       if (checkbox) checkbox.checked = wasComplete;
@@ -611,6 +645,17 @@ class CreativeTreeRow extends LitElement {
     } finally {
       wrap.classList.remove("progress-toggle-saving");
     }
+  }
+
+  async _refreshOnboardingCard(cardId) {
+    const row = document.querySelector(`creative-tree-row[creative-id="${cardId}"]`)
+    if (!row?.updateUrl || row.updateUrl === "#") return
+
+    const response = await csrfFetch(row.updateUrl, { headers: { Accept: "application/json" } })
+    if (!response.ok) return
+
+    const data = await response.json()
+    updateRowFromData(row, data)
   }
 
   _handleContentClick(event) {
