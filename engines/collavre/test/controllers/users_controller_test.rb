@@ -517,26 +517,34 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", collavre.typo_correction_user_path(@regular_user)
   end
 
-  test "profile controls the creative workspace preference which defaults off" do
+  test "profile controls the creative workspace preference which defaults on" do
     sign_in_as(@regular_user, password: "password")
 
     get collavre.user_path(@regular_user)
 
     assert_response :success
-    assert_select "input[name=?][type='checkbox']:not([checked])", "user[creative_workspace_enabled]"
-
-    patch collavre.user_path(@regular_user), params: {
-      user: { creative_workspace_enabled: "1" }
-    }
-
-    assert_redirected_to collavre.user_path(@regular_user)
     assert_predicate @regular_user.reload, :creative_workspace_enabled?
+    assert_select "input[name=?][type='checkbox'][checked]", "user[creative_workspace_enabled]"
 
     patch collavre.user_path(@regular_user), params: {
       user: { creative_workspace_enabled: "0" }
     }
 
+    assert_redirected_to collavre.user_path(@regular_user)
     assert_not @regular_user.reload.creative_workspace_enabled?
+
+    patch collavre.user_path(@regular_user), params: {
+      user: { creative_workspace_enabled: "1" }
+    }
+
+    assert_predicate @regular_user.reload, :creative_workspace_enabled?
+  end
+
+  test "new users get the creative workspace enabled by default" do
+    user = Collavre::User.new
+
+    assert_predicate user, :creative_workspace_enabled?
+    assert_equal true, Collavre::User.column_defaults["creative_workspace_enabled"]
   end
 
   test "profile shows the creative workspace explanation as a tooltip instead of inline text" do
