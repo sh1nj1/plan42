@@ -18,7 +18,7 @@ class OnboardingGuideTest < ApplicationSystemTestCase
     progress_card = guide.children.find { |child| child.onboarding_metadata["step_key"] == "progress_rollup" }
     progress_step = progress_card.children.sole
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{guide.id}']", wait: 10
-    assert_selector ".feature-card--onboarding[data-key]", count: 4, wait: 10
+    assert_selector ".feature-card--onboarding[data-key]", count: 3, wait: 10
     within ".feature-card[data-key='progress_rollup']" do
       click_link I18n.t("collavre.onboarding.actions.progress_rollup", locale: :en)
     end

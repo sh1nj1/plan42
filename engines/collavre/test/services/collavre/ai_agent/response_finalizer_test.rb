@@ -55,15 +55,13 @@ module Collavre
 
       test "an agent reply clears the onboarding mention waiting state" do
         @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+        users(:ai_bot).update!(created_by_id: @user.id)
         Creative.inbox_for(@user)
         root = Onboarding::Seeder.call(user: @user)
         card = root.children.find { |creative| creative.onboarding_metadata["step_key"] == "mention_agent" }
         practice = card.children.sole
         @agent = users(:ai_bot)
         @task.update!(agent: @agent)
-        perform_enqueued_jobs do
-          CreativeShare.create!(creative: root, user: @agent, permission: :feedback, shared_by: @user)
-        end
         mention = practice.comments.create!(
           content: "@#{@agent.name}: help me",
           user: @user,

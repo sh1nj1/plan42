@@ -183,6 +183,11 @@ function applyRowProperties(row, node) {
     syncProgressHtmlFromDom(row)
     row.requestUpdate()
   }
+
+  if (normalizeBoolean(node.refresh_onboarding_description) &&
+      typeof row._refreshOnboardingCard === 'function') {
+    void row._refreshOnboardingCard(node.id)
+  }
 }
 
 export function createRow(node) {

@@ -6,6 +6,7 @@ module Collavre
       setup do
         @user = users(:one)
         @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil, locale: "en")
+        users(:ai_bot).update!(created_by_id: @user.id)
         Creative.onboarding_guides.where(user: @user).destroy_all
         Creative.inbox_for(@user)
         @root = Seeder.call(user: @user)
@@ -118,9 +119,6 @@ module Collavre
         assert_equal "pending", card.reload.onboarding_metadata["status"]
 
         agent = users(:ai_bot)
-        perform_enqueued_jobs do
-          CreativeShare.create!(creative: @root, user: agent, permission: :feedback, shared_by: @user)
-        end
         mentioned = practice.comments.create!(
           user: @user,
           content: "@#{agent.name}: help me",
@@ -138,7 +136,13 @@ module Collavre
       test "an AI mention without feedback access does not complete the mention step" do
         card = card_for("mention_agent")
         practice = card.children.sole
-        agent = users(:ai_bot)
+        agent = User.create!(
+          name: "Unshared AI",
+          email: "unshared-ai-#{SecureRandom.hex(4)}@example.com",
+          password: "password",
+          llm_vendor: "google",
+          llm_model: "gemini-1.5-flash"
+        )
         comment = practice.comments.create!(
           user: @user,
           content: "@#{agent.name}: help me",
@@ -154,9 +158,6 @@ module Collavre
         card = card_for("mention_agent")
         practice = card.children.sole
         agent = users(:ai_bot)
-        perform_enqueued_jobs do
-          CreativeShare.create!(creative: @root, user: agent, permission: :feedback, shared_by: @user)
-        end
         mention = practice.comments.create!(
           user: @user,
           content: "@#{agent.name}: help me",

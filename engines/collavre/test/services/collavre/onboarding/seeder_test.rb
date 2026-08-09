@@ -13,7 +13,7 @@ module Collavre
       test "seeds a localized guide and one inbox welcome message atomically" do
         root = nil
 
-        assert_difference -> { Creative.count }, 8 do
+        assert_difference -> { Creative.count }, 6 do
           assert_difference -> { onboarding_welcome_messages.count }, 1 do
             root = Seeder.call(user: @user)
           end
@@ -21,13 +21,14 @@ module Collavre
 
         assert_predicate root, :onboarding_guide?
         assert_equal I18n.t("collavre.onboarding.guide.title", locale: :ko), root.description
-        assert_equal 4, root.children.count
-        assert_equal Seeder::STEP_KEYS, root.children.map { |child| child.onboarding_metadata["step_key"] }
+        assert_equal 3, root.children.count
+        assert_equal Seeder::STEP_KEYS.excluding("mention_agent"),
+                     root.children.map { |child| child.onboarding_metadata["step_key"] }
         assert_includes root.children.first.description, I18n.t(
           "collavre.comments.empty_state.cards.create_edit.title",
           locale: :ko
         )
-        assert_equal 3, root.descendants.count(&:onboarding_practice?)
+        assert_equal 2, root.descendants.count(&:onboarding_practice?)
         assert root.read_only_source?
         session_ids = root.self_and_descendants.map { |creative| creative.onboarding_metadata["session_id"] }
         assert_equal [ root.onboarding_metadata["session_id"] ], session_ids.uniq
@@ -114,9 +115,17 @@ module Collavre
 
         root = Seeder.call(user: @user)
 
+        assert_includes root.children.map { |child| child.onboarding_metadata["step_key"] }, "mention_agent"
         share = CreativeShare.find_by!(creative: root, user: agent)
         assert_predicate share, :feedback?
         assert_equal @user, share.shared_by
+      end
+
+      test "omits mention practice when no accessible AI agent exists" do
+        root = Seeder.call(user: @user)
+
+        assert_not_includes root.children.map { |child| child.onboarding_metadata["step_key"] }, "mention_agent"
+        assert_empty CreativeShare.where(creative: root, permission: :feedback)
       end
 
       test "reset removes a guide after it has been moved below another creative" do

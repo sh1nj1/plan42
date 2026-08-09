@@ -228,6 +228,29 @@ module Collavre
         end
       end
 
+      test "onboarding updates request a component refresh without broadcasting fallback html" do
+        onboarding = Creative.create!(
+          user: @owner,
+          parent: @root,
+          description: "Fallback",
+          data: {
+            "onboarding" => {
+              "session_id" => SecureRandom.uuid,
+              "role" => "card",
+              "step_key" => "progress_rollup"
+            }
+          }
+        )
+
+        onboarding.update!(data: onboarding.data.deep_merge("onboarding" => { "status" => "completed" }))
+        job = enqueued_jobs.select { |candidate| candidate["job_class"] == "Collavre::CreativeBroadcastJob" }.last
+        payload = job["arguments"].third["payload"]
+
+        assert payload["refresh_onboarding_description"]
+        assert_nil payload["link_url"]
+        assert_nil payload.dig("templates", "description_html")
+      end
+
       test "broadcast_creative_updated skips progress-only changes" do
         assert_no_enqueued_jobs(only: Collavre::CreativeBroadcastJob) do
           @child.update!(progress: 0.9)

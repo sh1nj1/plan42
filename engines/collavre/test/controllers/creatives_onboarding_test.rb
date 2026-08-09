@@ -10,7 +10,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
   end
 
   test "first root HTML visit seeds onboarding and opens the guide" do
-    assert_difference -> { Creative.count }, 8 do
+    assert_difference -> { Creative.count }, 6 do
       get collavre.creatives_path
     end
 
@@ -45,7 +45,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
   end
 
   test "root JSON visit seeds onboarding without redirecting" do
-    assert_difference -> { Creative.count }, 8 do
+    assert_difference -> { Creative.count }, 6 do
       get collavre.creatives_path(format: :json)
     end
 

@@ -2,8 +2,6 @@
 
 module Collavre
   class OnboardingOverviewComponent < ViewComponent::Base
-    TOTAL_STEPS = Onboarding::Seeder::STEP_KEYS.size
-
     def initialize(creative:)
       @creative = creative
     end
@@ -11,13 +9,15 @@ module Collavre
     attr_reader :creative
 
     def completed_steps
-      session_items.count do |item|
-        item.onboarding_card? && item.onboarding_metadata["status"] == "completed"
-      end
+      onboarding_cards.count { |item| item.onboarding_metadata["status"] == "completed" }
+    end
+
+    def total_steps
+      onboarding_cards.size
     end
 
     def completed?
-      completed_steps == TOTAL_STEPS
+      total_steps.positive? && completed_steps == total_steps
     end
 
     def owner?
@@ -46,6 +46,10 @@ module Collavre
       @session_items ||= Creative.where(user: creative.user).select do |item|
         item.onboarding_metadata&.dig("session_id") == creative.onboarding_metadata["session_id"]
       end
+    end
+
+    def onboarding_cards
+      @onboarding_cards ||= session_items.select(&:onboarding_card?)
     end
   end
 end

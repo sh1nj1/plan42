@@ -31,7 +31,16 @@ module Collavre
         # response to update from — WebSocket is the only delivery channel.
         return if progress_only_change? && !Collavre::Current.mcp_request
 
-        enqueue_broadcast(:updated, broadcast_node_payload)
+        payload = broadcast_node_payload
+        if onboarding_item?
+          # The persisted description is only an API fallback. The browser must
+          # fetch the request-aware component so card state and mounted URLs stay
+          # identical to the initial TreeBuilder render.
+          payload[:templates].delete(:description_html)
+          payload.delete(:link_url)
+          payload[:refresh_onboarding_description] = true
+        end
+        enqueue_broadcast(:updated, payload)
       rescue StandardError => e
         Rails.logger.error "[CreativeBroadcast] ERROR in broadcast_creative_updated: #{e.message}\n#{e.backtrace.first(5).join("\n")}"
       end

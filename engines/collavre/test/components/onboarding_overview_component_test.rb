@@ -17,7 +17,7 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
   test "shows completed card count and skip action before all steps finish" do
     render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
 
-    assert_selector ".onboarding-overview-progress", text: "0/4"
+    assert_selector ".onboarding-overview-progress", text: "0/3"
     assert_selector "a[data-turbo-method='delete']",
                     text: I18n.t("collavre.onboarding.overview.skip")
     assert_selector "a.feature-card-guide-link[href='/features']"
@@ -32,7 +32,7 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
 
     render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
 
-    assert_selector ".onboarding-overview-progress", text: "4/4"
+    assert_selector ".onboarding-overview-progress", text: "3/3"
     assert_selector "a", text: I18n.t("collavre.onboarding.overview.finish")
   end
 
@@ -43,5 +43,15 @@ class OnboardingOverviewComponentTest < ViewComponent::TestCase
 
     assert_no_selector "a[data-turbo-method='delete']"
     assert_selector "a.feature-card-guide-link"
+  end
+
+  test "includes the mention step in the total when an agent is available" do
+    Collavre::Onboarding::Seeder.reset!(user: @user)
+    users(:ai_bot).update!(created_by_id: @user.id)
+    @root = Collavre::Onboarding::Seeder.call(user: @user)
+
+    render_inline(Collavre::OnboardingOverviewComponent.new(creative: @root))
+
+    assert_selector ".onboarding-overview-progress", text: "0/4"
   end
 end

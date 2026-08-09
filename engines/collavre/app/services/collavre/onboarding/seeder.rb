@@ -50,8 +50,9 @@ module Collavre
           user.with_lock do
             next if user.onboarding_seeded_at.present?
 
-            seeded_creative = create_guide!
-            grant_practice_agent_access!(seeded_creative)
+            practice_agent = eligible_practice_agent
+            seeded_creative = create_guide!(step_keys: step_keys_for(practice_agent))
+            grant_practice_agent_access!(seeded_creative, practice_agent)
             create_or_update_welcome_message!(seeded_creative)
             user.update!(onboarding_seeded_at: Time.current, onboarding_completed_at: nil)
           end
@@ -69,7 +70,7 @@ module Collavre
 
       attr_reader :user, :script_name
 
-      def create_guide!
+      def create_guide!(step_keys:)
         session_id = SecureRandom.uuid
         root = Creative.create!(
           user: user,
@@ -82,7 +83,7 @@ module Collavre
           progress: 0.0
         )
 
-        STEP_KEYS.each do |step_key|
+        step_keys.each do |step_key|
           create_step!(root: root, session_id: session_id, step_key: step_key)
         end
 
@@ -164,14 +165,21 @@ module Collavre
         comment.save!
       end
 
-      def grant_practice_agent_access!(root)
-        agent = User.accessible_ai_agents_for(user).first
+      def grant_practice_agent_access!(root, agent)
         return unless agent
 
         CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
           share.permission = :feedback
           share.shared_by = user
         end
+      end
+
+      def eligible_practice_agent
+        User.accessible_ai_agents_for(user).first
+      end
+
+      def step_keys_for(practice_agent)
+        practice_agent ? STEP_KEYS : STEP_KEYS.excluding("mention_agent")
       end
 
       def welcome_notification_key
