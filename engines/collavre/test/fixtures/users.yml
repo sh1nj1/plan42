@@ -8,18 +8,21 @@ one:
   password_digest: <%= password_digest %>
   name: One
   system_admin: true
+  onboarding_seeded_at: <%= Time.current %>
 
 two:
   email: two@example1.com
   password_digest: <%= password_digest %>
   name: Two
   system_admin: false
+  onboarding_seeded_at: <%= Time.current %>
 
 three:
   email: three@example1.com
   password_digest: <%= password_digest %>
   name: Three
   system_admin: false
+  onboarding_seeded_at: <%= Time.current %>
 
 ai_bot:
   email: bot@ai.local

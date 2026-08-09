@@ -11,6 +11,8 @@ module Collavre
       end
 
       def call
+        onboarding_owner = @creative.user if @creative.onboarding_guide?
+
         if @delete_with_children
           destroy_descendants_recursively(@creative)
         else
@@ -19,6 +21,9 @@ module Collavre
 
         CreativeShare.where(creative: @creative).destroy_all
         @creative.destroy
+        if @creative.destroyed? && onboarding_owner
+          onboarding_owner.update!(onboarding_completed_at: Time.current)
+        end
       end
 
       private

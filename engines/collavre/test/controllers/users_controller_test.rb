@@ -517,6 +517,21 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", collavre.typo_correction_user_path(@regular_user)
   end
 
+  test "profile page offers onboarding reset only for the current user" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+    assert_response :success
+    assert_select "form[action=?]", collavre.reset_onboarding_path do
+      assert_select "input[name=_method][value=delete]"
+      assert_select "button", text: I18n.t("collavre.onboarding.reset.label")
+    end
+
+    get collavre.user_path(users(:one))
+    assert_response :success
+    assert_select "form[action=?]", collavre.reset_onboarding_path, count: 0
+  end
+
   test "profile controls the creative workspace preference which defaults on" do
     sign_in_as(@regular_user, password: "password")
 

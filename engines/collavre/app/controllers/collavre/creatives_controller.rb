@@ -19,6 +19,7 @@ module Collavre
     # tracked separately and intentionally deferred.
     allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
+    before_action :ensure_onboarding_seeded, only: :index
     before_action :set_creative, only: %i[ show edit update destroy parent_suggestions slide_view request_permission unconvert contexts update_contexts update_metadata archive unarchive trigger_action ]
     before_action :require_creative_write!, only: %i[archive unarchive]
 
@@ -559,6 +560,13 @@ module Collavre
     end
 
     private
+      def ensure_onboarding_seeded
+        return if Current.user.nil? || params[:id].present?
+
+        onboarding = Collavre::Onboarding::Seeder.call(user: Current.user)
+        redirect_to creatives_path(id: onboarding.id) if onboarding && request.format.html?
+      end
+
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
           user: Current.user,

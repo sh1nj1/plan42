@@ -87,12 +87,19 @@ module Collavre
     # --- Inbox ---
     scope :inboxes, -> { where("data->>'kind' = 'inbox'") }
 
+    ONBOARDING_KIND = "onboarding"
+    scope :onboarding_guides, -> { where("data->>'kind' = ?", ONBOARDING_KIND) }
+
     SYSTEM_TOPIC_NAME = "System"
     MAIN_TOPIC_NAME = "Main"
     CONTENT_TOPIC_NAME = "Content"
 
     def inbox?
       data&.dig("kind") == "inbox"
+    end
+
+    def onboarding_guide?
+      data&.dig("kind") == ONBOARDING_KIND
     end
 
     # Bypass the read-only-source guard for a single save (used by the vendor
