@@ -18,7 +18,7 @@ describe("creative link navigation", () => {
   beforeEach(() => {
     document.body.innerHTML = `
       <turbo-frame id="${WORKSPACE_FRAME_ID}"></turbo-frame>
-      <a id="creative-link" href="/creatives/42?open_comments=true"><span>Creative</span></a>
+      <div id="link-container"><a id="creative-link" href="/creatives/42?open_comments=true"><span>Creative</span></a></div>
     `
     visit = jest.fn()
     window.Turbo = { visit }
@@ -56,6 +56,8 @@ describe("creative link navigation", () => {
     ["a new-window target", { target: "_blank" }, {}],
     ["a different Turbo frame", { turboFrame: "other-frame" }, {}],
     ["a Turbo opt-out", { turboDisabled: true }, {}],
+    ["a contenteditable editor", { contentEditable: true }, {}],
+    ["a Lexical editor", { lexicalEditor: true }, {}],
     ["a modified click", {}, { metaKey: true }],
     ["a non-primary click", {}, { button: 1 }],
   ])("keeps default navigation for %s", (_label, attributes, eventOptions) => {
@@ -65,6 +67,8 @@ describe("creative link navigation", () => {
     if (attributes.target) anchor.setAttribute("target", attributes.target)
     if (attributes.turboFrame) anchor.dataset.turboFrame = attributes.turboFrame
     if (attributes.turboDisabled) anchor.dataset.turbo = "false"
+    if (attributes.contentEditable) anchor.parentElement.setAttribute("contenteditable", "true")
+    if (attributes.lexicalEditor) anchor.parentElement.dataset.lexicalEditorRoot = ""
 
     const event = click("#creative-link", eventOptions)
 
@@ -107,5 +111,17 @@ describe("creative link navigation", () => {
     click("#creative-link")
 
     expect(visit).toHaveBeenCalledTimes(1)
+  })
+
+  test("preserves an explicit Turbo history action", () => {
+    const anchor = document.getElementById("creative-link")
+    anchor.dataset.turboAction = "replace"
+
+    click("#creative-link")
+
+    expect(visit).toHaveBeenCalledWith("/creatives/42?open_comments=true", {
+      action: "replace",
+      frame: WORKSPACE_FRAME_ID,
+    })
   })
 })

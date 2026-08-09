@@ -12,6 +12,7 @@ function shouldUseDefaultNavigation(event, anchor) {
   if (anchor.hasAttribute("download")) return true
   if (anchor.target && anchor.target !== "_self") return true
   if (anchor.closest('[data-turbo="false"]')) return true
+  if (anchor.closest("[contenteditable], [data-lexical-editor-root]")) return true
 
   const turboFrame = anchor.dataset.turboFrame
   return Boolean(turboFrame && turboFrame !== WORKSPACE_FRAME_ID)
@@ -28,7 +29,8 @@ export function handleCreativeLinkClick(event) {
   if (!workspaceFrame || !window.Turbo?.visit) return false
 
   event.preventDefault()
-  window.Turbo.visit(href, { action: "advance", frame: WORKSPACE_FRAME_ID })
+  const action = anchor.dataset.turboAction || "advance"
+  window.Turbo.visit(href, { action, frame: WORKSPACE_FRAME_ID })
   return true
 }
 
