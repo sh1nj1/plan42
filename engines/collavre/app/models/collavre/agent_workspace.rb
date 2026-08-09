@@ -22,17 +22,26 @@ module Collavre
 
     class << self
       def resolve!(agent:, user:)
-        gateway = agent.agent_gateway or raise ArgumentError, "Agent has no gateway"
+        loop do
+          gateway_id = agent.class.where(id: agent.id).pick(:agent_gateway_id)
+          raise ArgumentError, "Agent has no gateway" unless gateway_id
 
-        # Gateway identity updates lock this same row until their workspace
-        # invalidation callback has finished. Reloading under that lock makes a
-        # concurrent resolver land wholly before the invalidation or wholly
-        # after it; it cannot insert a capability from a stale gateway snapshot
-        # after the callback's destroy_all has already run.
-        gateway.with_lock do
-          raise ArgumentError, "Agent gateway is inactive" unless gateway.active?
+          gateway = Collavre::AgentGateway.find(gateway_id)
+          workspace = gateway.with_lock do
+            agent.with_lock do
+              # User validation takes the gateway lock before updating the agent.
+              # Use the same lock order, then verify the association under both
+              # locks. A concurrent reassignment makes this attempt retry against
+              # the newly persisted gateway instead of creating stale credentials.
+              next unless agent.agent_gateway_id == gateway.id
 
-          gateway.shared? ? resolve_shared!(agent, gateway) : resolve_per_user!(agent, user, gateway)
+              raise ArgumentError, "Agent gateway is inactive" unless gateway.active?
+
+              gateway.shared? ? resolve_shared!(agent, gateway) : resolve_per_user!(agent, user, gateway)
+            end
+          end
+
+          return workspace if workspace
         end
       end
 

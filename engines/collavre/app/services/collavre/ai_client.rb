@@ -310,6 +310,7 @@ module Collavre
           end
           workspace_user = nil if gateway.shared?
           workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
+          gateway = workspace.agent_gateway
           @cli_proxy_identity = { gateway: gateway, workspace: workspace }
           api_key = gateway.completion_key
           base_url = gateway.completion_base_url

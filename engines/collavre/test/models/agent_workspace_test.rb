@@ -48,6 +48,48 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_empty Collavre::AgentWorkspace.where(agent: @agent, agent_gateway: cached_gateway)
   end
 
+  test "resolution reloads and locks the agent before selecting its gateway" do
+    cached_gateway = @agent.agent_gateway
+    replacement_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Replacement workspace proxy",
+      base_url: "https://replacement-proxy.example.com",
+      admin_key: "replacement-admin",
+      completion_key: "replacement-completion",
+      identity_secret: "r" * 32,
+      workspace_mode: :shared
+    )
+    Collavre::User.where(id: @agent.id).update_all(agent_gateway_id: replacement_gateway.id)
+
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+
+    assert_equal replacement_gateway, workspace.agent_gateway
+    assert_equal replacement_gateway, @agent.agent_gateway
+    assert_empty Collavre::AgentWorkspace.where(agent: @agent, agent_gateway: cached_gateway)
+  end
+
+  test "resolution locks the gateway before the agent" do
+    lock_order = []
+    gateway_lock = ->(&block) do
+      lock_order << :gateway
+      block.call
+    end
+    agent_lock = ->(&block) do
+      lock_order << :agent
+      block.call
+    end
+
+    Collavre::AgentGateway.stub(:find, @gateway) do
+      @gateway.stub(:with_lock, gateway_lock) do
+        @agent.stub(:with_lock, agent_lock) do
+          Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+        end
+      end
+    end
+
+    assert_equal [ :gateway, :agent ], lock_order.first(2)
+  end
+
   test "callback token is hashed in Doorkeeper while the plaintext bearer remains usable" do
     workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
     access_token = Doorkeeper::AccessToken.by_token(workspace.callback_token)

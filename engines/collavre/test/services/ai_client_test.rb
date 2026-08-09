@@ -547,6 +547,61 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal 2, fake_chat.headers_history.size
   end
 
+  test "build_conversation uses the gateway selected during locked workspace resolution" do
+    owner = users(:two)
+    original_gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Original AI client proxy",
+      base_url: "https://old-proxy.example.com",
+      admin_key: "old-admin",
+      completion_key: "old-completion",
+      identity_secret: "o" * 32,
+      workspace_mode: :per_user
+    )
+    replacement_gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Replacement AI client proxy",
+      base_url: "https://new-proxy.example.com",
+      admin_key: "new-admin",
+      completion_key: "new-completion",
+      identity_secret: "n" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Reassigned CLI client agent",
+      email: "reassigned-cli-client-agent@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: original_gateway
+    )
+    assert_equal original_gateway, agent.agent_gateway
+    Collavre::User.where(id: agent.id).update_all(agent_gateway_id: replacement_gateway.id)
+
+    client = AiClient.new(
+      vendor: "cli_proxy",
+      model: agent.llm_model,
+      system_prompt: nil,
+      context: { user: agent, workspace_user: owner }
+    )
+    fake_chat = FakeConversation.new
+    context_config = RubyLLM.config.dup
+    mock_context = Object.new
+    mock_context.define_singleton_method(:chat) { |**| fake_chat }
+
+    RubyLLM.stub(:context, ->(&block) { block.call(context_config); mock_context }) do
+      client.send(:build_conversation)
+    end
+
+    assert_equal "new-completion", context_config.openai_api_key
+    assert_equal "https://new-proxy.example.com/v1", context_config.openai_api_base
+    assert_equal replacement_gateway,
+      Collavre::AgentWorkspace.find_by!(agent: agent).agent_gateway
+    assert_empty Collavre::AgentWorkspace.where(agent: agent, agent_gateway: original_gateway)
+  end
+
   test "build_conversation does not use an AI comment author as the workspace principal" do
     owner = users(:two)
     upstream_agent = users(:ai_bot)

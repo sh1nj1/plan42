@@ -83,19 +83,19 @@ module Collavre
       return head :not_found unless @agent.cli_proxy_agent?
       return head :forbidden unless @agent.gateway_accessible_to?(Current.user)
 
-      gateway = @agent.agent_gateway
-      return head :service_unavailable unless gateway.active?
-
+      @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: Current.user)
+      gateway = @workspace.agent_gateway
       if gateway.shared? && Current.user.id != @agent.created_by_id && !Current.user.system_admin?
-        return head :forbidden
+        head :forbidden
       end
+    rescue ArgumentError => error
+      raise unless [ "Agent has no gateway", "Agent gateway is inactive" ].include?(error.message)
 
-      workspace_user = gateway.per_user? ? Current.user : nil
-      @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: workspace_user)
+      head :service_unavailable
     end
 
     def proxy_client
-      @proxy_client ||= Collavre::CliProxy::Client.new(gateway: @agent.agent_gateway, workspace: @workspace)
+      @proxy_client ||= Collavre::CliProxy::Client.new(gateway: @workspace.agent_gateway, workspace: @workspace)
     end
 
     def manifest_url
