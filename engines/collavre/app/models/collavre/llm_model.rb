@@ -1,5 +1,7 @@
 module Collavre
   class LlmModel < ApplicationRecord
+    MAX_SUGGESTIONS = 100
+
     self.table_name = "llm_models"
 
     belongs_to :creator,
@@ -15,17 +17,33 @@ module Collavre
     validates :name, presence: true, uniqueness: { scope: :llm_vendor }
 
     scope :ordered, -> { order(:llm_vendor, :name) }
+    scope :suggestions, -> {
+      recent_ids = reorder(updated_at: :desc, id: :desc).limit(MAX_SUGGESTIONS).select(:id)
+      where(id: recent_ids).ordered
+    }
 
     def self.remember!(vendor:, name:, creator: nil)
       vendor = vendor.to_s.strip.downcase
       name = name.to_s.strip
       return if vendor.blank? || name.blank?
 
-      find_or_create_by!(llm_vendor: vendor, name: name) do |model|
-        model.creator = creator
+      model = find_or_create_by!(llm_vendor: vendor, name: name) do |record|
+        record.creator = creator
       end
+      model.touch unless model.previously_new_record?
+      prune_excess!
+      model
     rescue ActiveRecord::RecordNotUnique
-      find_by!(llm_vendor: vendor, name: name)
+      model = find_by!(llm_vendor: vendor, name: name)
+      model.touch
+      prune_excess!
+      model
     end
+
+    def self.prune_excess!
+      keep_ids = reorder(updated_at: :desc, id: :desc).limit(MAX_SUGGESTIONS).select(:id)
+      where.not(id: keep_ids).delete_all
+    end
+    private_class_method :prune_excess!
   end
 end

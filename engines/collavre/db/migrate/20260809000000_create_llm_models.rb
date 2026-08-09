@@ -1,4 +1,6 @@
 class CreateLlmModels < ActiveRecord::Migration[8.1]
+  MAX_SUGGESTIONS = 100
+
   DEFAULT_MODELS = {
     "google" => [
       "gemini-3.1-flash-lite",
@@ -42,6 +44,11 @@ class CreateLlmModels < ActiveRecord::Migration[8.1]
         name: name.to_s.strip
       )
     end
+
+    keep_ids = llm_model_class.order(updated_at: :desc, id: :desc)
+                              .limit(MAX_SUGGESTIONS)
+                              .select(:id)
+    llm_model_class.where.not(id: keep_ids).delete_all
   end
 
   def down

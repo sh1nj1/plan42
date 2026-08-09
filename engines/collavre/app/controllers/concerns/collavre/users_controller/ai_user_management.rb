@@ -10,7 +10,7 @@ module Collavre
 
     def new_ai
       @available_tools = load_available_tools
-      @llm_models = Collavre::LlmModel.ordered
+      @llm_models = Collavre::LlmModel.suggestions
 
       if params[:copy_from].present?
         source = Collavre::User.find_by(id: params[:copy_from])
@@ -51,14 +51,14 @@ module Collavre
       else
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         @available_tools = load_available_tools
-        @llm_models = Collavre::LlmModel.ordered
+        @llm_models = Collavre::LlmModel.suggestions
         render :new_ai, status: :unprocessable_entity
       end
     end
 
     def edit_ai
       @available_tools = load_available_tools
-      @llm_models = Collavre::LlmModel.ordered
+      @llm_models = Collavre::LlmModel.suggestions
       @has_stored_llm_api_key = @user.llm_api_key.present?
     end
 
@@ -81,7 +81,7 @@ module Collavre
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
         @available_tools = load_available_tools
-        @llm_models = Collavre::LlmModel.ordered
+        @llm_models = Collavre::LlmModel.suggestions
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         render :edit_ai, status: :unprocessable_entity
       end

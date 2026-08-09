@@ -40,6 +40,18 @@ class LlmModelTest < ActiveSupport::TestCase
     assert_equal creator, model.creator
   end
 
+  test "remember marks an existing model as recently used" do
+    model = Collavre::LlmModel.create!(
+      llm_vendor: "openai",
+      name: "gpt-5",
+      updated_at: 1.year.ago
+    )
+
+    assert_changes -> { model.reload.updated_at } do
+      Collavre::LlmModel.remember!(vendor: "openai", name: "gpt-5")
+    end
+  end
+
   test "remember ignores blank values" do
     assert_no_difference("Collavre::LlmModel.count") do
       assert_nil Collavre::LlmModel.remember!(vendor: "openai", name: "")
@@ -53,6 +65,50 @@ class LlmModelTest < ActiveSupport::TestCase
     Collavre::LlmModel.stub(:find_or_create_by!, ->(**) { raise ActiveRecord::RecordNotUnique }) do
       assert_equal existing, Collavre::LlmModel.remember!(vendor: "openai", name: "gpt-5")
     end
+  end
+
+  test "suggestions are bounded to the most recently used models" do
+    Collavre::LlmModel.delete_all
+    rows = (1..(Collavre::LlmModel::MAX_SUGGESTIONS + 1)).map do |index|
+      {
+        llm_vendor: "vendor-#{index}",
+        name: "model-#{index}",
+        created_at: index.minutes.ago,
+        updated_at: index.minutes.ago
+      }
+    end
+    Collavre::LlmModel.insert_all!(rows)
+
+    suggestions = Collavre::LlmModel.suggestions.to_a
+
+    assert_equal Collavre::LlmModel::MAX_SUGGESTIONS, suggestions.size
+    assert_not_includes suggestions.map(&:name), "model-101"
+    assert_equal suggestions.sort_by { |model| [ model.llm_vendor, model.name ] }, suggestions
+  end
+
+  test "remember prunes the oldest shared suggestion beyond the global cap" do
+    Collavre::LlmModel.delete_all
+    oldest = Collavre::LlmModel.create!(
+      llm_vendor: "old-vendor",
+      name: "old-model",
+      created_at: 1.year.ago,
+      updated_at: 1.year.ago
+    )
+    rows = (1...Collavre::LlmModel::MAX_SUGGESTIONS).map do |index|
+      {
+        llm_vendor: "vendor-#{index}",
+        name: "model-#{index}",
+        created_at: index.minutes.ago,
+        updated_at: index.minutes.ago
+      }
+    end
+    Collavre::LlmModel.insert_all!(rows)
+
+    remembered = Collavre::LlmModel.remember!(vendor: "openai", name: "new-model")
+
+    assert_equal "new-model", remembered.name
+    assert_equal Collavre::LlmModel::MAX_SUGGESTIONS, Collavre::LlmModel.count
+    refute Collavre::LlmModel.exists?(oldest.id)
   end
 
   test "deleting a creator keeps the shared model" do
