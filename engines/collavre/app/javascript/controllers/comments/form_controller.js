@@ -162,6 +162,11 @@ export default class extends Controller {
         !this._reviewStore.isEmpty ||
         !this._activeDraftKey
       ) return
+      // An IME commit fires `input` after the keydown that started a send, so
+      // the textarea still holds exactly what went to the server. Counting it
+      // as a revision would defeat _currentPendingSubmission and make the sent
+      // message look like a draft typed mid-flight, restoring it on success.
+      if (this._currentTextIsPendingSubmission()) return
       const revisionKey = `${chatDrafts.namespace()}:${this._activeDraftKey}`
       this._draftRevisions.set(revisionKey, (this._draftRevisions.get(revisionKey) || 0) + 1)
       clearTimeout(this._draftSaveTimer)
@@ -176,6 +181,10 @@ export default class extends Controller {
         this.presenceController?.cancelAllAgentTasks()
         return
       }
+      // While an IME is composing (Korean, Japanese, Chinese), Enter confirms
+      // the pending syllable rather than submitting. keyCode 229 covers
+      // browsers that leave isComposing unset on the keydown itself.
+      if (event.isComposing || event.keyCode === 229) return
       if (event.key === 'Enter' && !event.shiftKey) {
         if (this.isMentionMenuVisible()) return
         this.handleSend(event)
