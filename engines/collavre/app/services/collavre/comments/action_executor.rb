@@ -140,7 +140,7 @@ module Collavre
           new_creative.save!
           Collavre::Onboarding::ProgressTracker.creative_created(
             creative: new_creative,
-            user: comment.user || Current.user
+            user: executor
           )
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
@@ -154,7 +154,7 @@ module Collavre
           creative.save!
           Collavre::Onboarding::ProgressTracker.creative_updated(
             creative: creative,
-            user: comment.user || Current.user,
+            user: executor,
             changed_attributes: attributes.keys
           )
         rescue ActiveRecord::RecordInvalid => e

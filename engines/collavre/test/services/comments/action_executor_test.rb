@@ -82,6 +82,47 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     assert_equal @creative.user.id, child.user.id
   end
 
+  test "credits onboarding create and update actions to the human executor" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+    agent = users(:ai_bot)
+
+    create_comment = card.comments.create!(
+      content: "Create a practice Creative",
+      user: agent,
+      action: JSON.generate(
+        "action" => "create_creative",
+        "attributes" => { "description" => "First draft" }
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    Comments::ActionExecutor.new(comment: create_comment, executor: @user).call
+
+    practice = Creative.find(card.reload.onboarding_metadata["target_creative_id"])
+    assert_equal "in_progress", card.onboarding_metadata["status"]
+    assert_equal "practice", practice.onboarding_metadata["role"]
+
+    update_comment = practice.comments.create!(
+      content: "Revise the practice Creative",
+      user: agent,
+      action: JSON.generate(
+        "action" => "update_creative",
+        "attributes" => { "description" => "Revised draft" }
+      ),
+      approver: @user,
+      skip_dispatch: true
+    )
+
+    Comments::ActionExecutor.new(comment: update_comment, executor: @user).call
+
+    assert_equal "completed", card.reload.onboarding_metadata["status"]
+    assert_in_delta 1.0, practice.reload.progress
+  end
+
   test "delete action uses onboarding completion cleanup" do
     @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
     Creative.inbox_for(@user)

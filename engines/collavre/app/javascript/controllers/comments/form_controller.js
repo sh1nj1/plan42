@@ -938,13 +938,13 @@ export default class extends Controller {
 
     doFetch()
       .then((response) => {
-        if (response.ok) return response.text()
+        if (response.ok) return this._commentResponsePayload(response)
         // On 422, the CSRF token may have gone stale (e.g. after an OS
         // window switch).  Refresh the token and retry once before giving up.
         if (response.status === 422 && !this._hasRetried) {
           this._hasRetried = true
           return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
+            if (retryResp.ok) return this._commentResponsePayload(retryResp)
             return retryResp.json().then((json) => {
               throw new Error(json.errors?.join(', ') || 'Unable to save comment')
             })
@@ -954,7 +954,8 @@ export default class extends Controller {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
       })
-      .then((html) => {
+      .then(({ html, onboardingCardId }) => {
+        this._refreshOnboardingCard(onboardingCardId)
         if (submittedDraft.backupKey) {
 	  chatDrafts.clearSubmissionBackupsThrough(
             submittedDraft.backupKey,
@@ -1529,11 +1530,11 @@ export default class extends Controller {
 
     doFetch()
       .then((response) => {
-        if (response.ok) return response.text()
+        if (response.ok) return this._commentResponsePayload(response)
         if (response.status === 422 && !this._hasRetried) {
           this._hasRetried = true
           return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
+            if (retryResp.ok) return this._commentResponsePayload(retryResp)
             return retryResp.json().then((json) => {
               throw new Error(json.errors?.join(', ') || 'Unable to save comment')
             })
@@ -1543,7 +1544,8 @@ export default class extends Controller {
           throw new Error(json.errors?.join(', ') || 'Unable to save comment')
         })
       })
-      .then((html) => {
+      .then(({ html, onboardingCardId }) => {
+        this._refreshOnboardingCard(onboardingCardId)
         this.renderCommentHtml(html)
         const listCtrl = this.application.getControllerForElementAndIdentifier(
           document.querySelector('[data-controller~="comments--list"]'), 'comments--list'
@@ -1564,6 +1566,24 @@ export default class extends Controller {
       })
 
     this.focusTextarea()
+  }
+
+  async _commentResponsePayload(response) {
+    return {
+      html: await response.text(),
+      onboardingCardId: response.headers?.get?.('X-Onboarding-Card-Id'),
+    }
+  }
+
+  _refreshOnboardingCard(cardId) {
+    if (!cardId) return
+
+    const row = document.querySelector(`creative-tree-row[creative-id="${cardId}"]`)
+    if (typeof row?._refreshOnboardingCard !== 'function') return
+
+    row._refreshOnboardingCard(cardId).catch((error) => {
+      console.error('Onboarding card refresh failed:', error)
+    })
   }
 
   _renderReviewQuoteChips() {

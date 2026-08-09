@@ -156,4 +156,24 @@ describe('FormController - double submit on slow API', () => {
     pressEnter(controller.textareaTarget)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
+
+  test('refreshes the completed onboarding card returned by the comment response', async () => {
+    const onboardingRow = document.createElement('creative-tree-row')
+    onboardingRow.setAttribute('creative-id', '42')
+    onboardingRow._refreshOnboardingCard = jest.fn().mockResolvedValue()
+    container.appendChild(onboardingRow)
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: new Headers({ 'X-Onboarding-Card-Id': '42' }),
+      text: () => Promise.resolve('<div></div>'),
+    })
+    jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+
+    controller.textareaTarget.value = 'complete the chat step'
+    pressEnter(controller.textareaTarget)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(onboardingRow._refreshOnboardingCard).toHaveBeenCalledWith('42')
+  })
 })
