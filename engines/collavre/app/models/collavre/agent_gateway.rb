@@ -84,7 +84,12 @@ module Collavre
         return
       end
 
-      return unless shared?
+      if per_user?
+        agents.find_each do |agent|
+          agent_workspaces.find_by(agent: agent, user_id: nil)&.reassign_principal!(user: agent.creator)
+        end
+        return
+      end
 
       agents.find_each do |agent|
         workspaces = agent_workspaces.where(agent: agent)

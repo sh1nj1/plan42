@@ -126,6 +126,29 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
   end
 
+  test "switching to per-user immediately reassigns the shared workspace to the owner" do
+    gateway = build_gateway(identity_secret: "s" * 32)
+    gateway.save!
+    agent = create_agent(gateway)
+    shared_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    shared_manifest_token = shared_workspace.manifest_token
+    shared_callback_token = shared_workspace.callback_token
+    shared_access_token = Doorkeeper::AccessToken.by_token(shared_callback_token)
+
+    gateway.update!(workspace_mode: :per_user)
+
+    owner_workspace = shared_workspace.reload
+    assert_equal @owner, owner_workspace.user
+    assert_equal "agent-#{agent.id}", owner_workspace.proxy_user_id
+    assert_equal shared_manifest_token, owner_workspace.manifest_token
+    assert_not_equal shared_callback_token, owner_workspace.callback_token
+    assert_predicate shared_access_token.reload, :revoked?
+    owner_access_token = Doorkeeper::AccessToken.by_token(owner_workspace.callback_token)
+    assert_equal @owner.id, owner_access_token.resource_owner_id
+    assert_predicate owner_access_token, :accessible?
+    assert_equal owner_workspace, Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
+  end
+
   test "changing the proxy or tenant revokes existing workspace capabilities" do
     {
       base_url: "https://replacement-proxy.example.com",
