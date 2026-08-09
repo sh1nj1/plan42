@@ -28,6 +28,8 @@ module Collavre
     # @option config [String] :icon Icon identifier (optional)
     # @option config [String] :title_key i18n key for the card title
     # @option config [String] :description_key i18n key for the card description
+    # @option config [Array<Symbol>] :surfaces Empty-state surfaces where the card appears
+    #   (defaults to [:default])
     # @option config [Hash] :action Optional { type:, label_key: } describing a call-to-action button
     # @option config [Boolean] :guide Opt in to the engine-provided public guide page at
     #   collavre.feature_path(key). Only set this once the page's copy exists under
@@ -60,6 +62,16 @@ module Collavre
       end
     end
 
+    def for(creative:, topic:)
+      surface = if creative.inbox? && topic&.name == Creative::SYSTEM_TOPIC_NAME
+        :inbox_system
+      else
+        :default
+      end
+
+      all.select { |card| card.visible_on?(surface) }
+    end
+
     # Cards that render on the public /features hub — only those opting into the
     # engine-provided guide page, since a vendor card pointing at its own
     # :guide_url has no page here to link to.
@@ -85,7 +97,7 @@ module Collavre
     end
 
     class << self
-      delegate :register, :unregister, :find, :all, :with_builtin_guide, :each, :any?, :reset!, to: :instance
+      delegate :register, :unregister, :find, :all, :for, :with_builtin_guide, :each, :any?, :reset!, to: :instance
     end
   end
 
@@ -99,7 +111,7 @@ module Collavre
     GUIDE_KEY_FORMAT = /[a-z0-9_]+/
     GUIDE_KEY_FORMAT_ANCHORED = /\A#{GUIDE_KEY_FORMAT.source}\z/
 
-    attr_reader :key, :icon, :title_key, :description_key, :action, :guide_url
+    attr_reader :key, :icon, :title_key, :description_key, :action, :guide_url, :surfaces
 
     def initialize(key, config)
       @key = key.to_sym
@@ -109,6 +121,7 @@ module Collavre
       @action = config[:action]
       @guide = config.fetch(:guide, false)
       @guide_url = config[:guide_url]
+      @surfaces = Array(config.fetch(:surfaces, :default)).map(&:to_sym).uniq.freeze
 
       validate!
     end
@@ -129,11 +142,16 @@ module Collavre
       builtin_guide? || guide_url?
     end
 
+    def visible_on?(surface)
+      @surfaces.include?(surface.to_sym)
+    end
+
     private
 
     def validate!
       raise ArgumentError, "FeatureCard must have a :title_key" unless @title_key.present?
       raise ArgumentError, "FeatureCard must have a :description_key" unless @description_key.present?
+      raise ArgumentError, "FeatureCard must have at least one :surface" if @surfaces.empty?
 
       # Reject an unroutable key at registration rather than at render. A key the
       # features route cannot accept would otherwise raise UrlGenerationError from

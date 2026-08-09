@@ -5,7 +5,10 @@ module Collavre
   # their copy comes entirely from config/locales/features.*.yml keyed off the
   # feature card registry.
   class FeaturesControllerTest < ActionDispatch::IntegrationTest
-    GUIDE_KEYS = %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].freeze
+    GUIDE_KEYS = %w[
+      mention_agent slash_command chat_context automation_trigger topic_management add_user
+      inbox_notifications inbox_reply inbox_source
+    ].freeze
 
     # Card titles and guide copy contain characters ERB escapes ("&", "'"), so
     # every body assertion compares against the escaped form.
@@ -209,6 +212,23 @@ module Collavre
 
         assert_response :success
         phrases.each { |phrase| assert_includes @response.body, ERB::Util.html_escape(phrase) }
+      end
+    end
+
+    test "inbox guides explain the System topic behavior in both locales" do
+      {
+        en: [ "notification-only topic", "most recent preceding System notification", "Creative link" ],
+        ko: [ "알림 전용 토픽", "가장 최근 System 알림", "Creative 링크" ]
+      }.each do |locale, phrases|
+        responses = %w[inbox_notifications inbox_reply inbox_source].map do |key|
+          get "/features/#{key}", params: { locale: locale }
+
+          assert_response :success
+          @response.body
+        end
+        rendered_copy = responses.join(" ")
+
+        phrases.each { |phrase| assert_includes rendered_copy, ERB::Util.html_escape(phrase) }
       end
     end
 

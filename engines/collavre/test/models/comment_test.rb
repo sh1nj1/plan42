@@ -22,6 +22,8 @@ class CommentTest < ActiveSupport::TestCase
       assert inbox_comment, "Expected inbox comment for #{recipient.email}"
       assert_nil inbox_comment.user, "Inbox comment should be system (user: nil)"
       assert_equal comment.id, inbox_comment.quoted_comment_id
+      expected_path = Collavre::Engine.routes.url_helpers.creative_path(creative, comment_id: comment.id)
+      assert_includes inbox_comment.content, "(#{expected_path})"
     end
   end
 

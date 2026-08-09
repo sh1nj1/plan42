@@ -117,6 +117,10 @@ module Collavre
         scope.limit(limit).to_a.reverse
       end
 
+      current_topic = if @comments.empty? && effective_topic_id.present?
+        @creative.topics.find_by(id: effective_topic_id)
+      end
+
       present_user_ids = CommentPresenceStore.list(@creative.id)
 
       # Read receipts land on the nearest preceding PUBLIC comment, so a user who
@@ -139,7 +143,8 @@ module Collavre
           search: params[:search],
           read_receipts: read_receipts,
           present_user_ids: present_user_ids,
-          current_topic_id: effective_topic_id
+          current_topic_id: effective_topic_id,
+          current_topic: current_topic
         }
       end
     end
@@ -162,7 +167,9 @@ module Collavre
 
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
-      response = ::Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
+      response = unless inbox_system_comment?
+        ::Comments::CommandProcessor.new(comment: @comment, user: Current.user).call
+      end
       if response.present?
         @comment.content = "#{@comment.content}\n\n#{response}"
         @comment.skip_dispatch = true
@@ -339,6 +346,10 @@ module Collavre
 
     def current_topic_context
       params[:topic_id].presence || params.dig(:comment, :topic_id).presence
+    end
+
+    def inbox_system_comment?
+      @creative.inbox? && @comment.topic&.name == Creative::SYSTEM_TOPIC_NAME
     end
 
     def validate_topic_id!(topic_id)

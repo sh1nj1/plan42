@@ -252,6 +252,8 @@ ko:
       empty_state:
         title: 시작해보세요
         minimal_prompt: 대화를 시작해보세요
+        inbox_system_title: 새 알림이 없습니다
+        inbox_system_minimal_prompt: 밀린 알림이 없습니다
         restore_cards: 팁 다시 보기
         dismiss: 닫기
         learn_more: 자세히 보기
@@ -278,6 +280,15 @@ ko:
             title: 사용자 추가
             description: 팀원이나 AI 에이전트를 이 대화에 초대해보세요.
             action: 사용자 추가
+          inbox_notifications:
+            title: 알림이 모이는 곳
+            description: 멘션, 공유, 권한 요청, 중요한 시스템 안내가 이 토픽에 모입니다.
+          inbox_reply:
+            title: 인박스에서 바로 답장
+            description: 대화에서 온 알림 뒤에 답장하면 메시지가 원래 대화의 같은 토픽으로 전달됩니다.
+          inbox_source:
+            title: 원문으로 바로 이동
+            description: 알림의 Creative 링크를 누르면 원문이 있는 대화로 바로 이동할 수 있습니다.
     channels:
       detach: "해제"
     calendar_events:

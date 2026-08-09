@@ -255,6 +255,8 @@ en:
       empty_state:
         title: Get started
         minimal_prompt: Start a conversation
+        inbox_system_title: No new notifications
+        inbox_system_minimal_prompt: You're all caught up
         restore_cards: Show tips again
         dismiss: Dismiss
         learn_more: Learn more
@@ -281,6 +283,15 @@ en:
             title: Add people
             description: Invite teammates or AI agents to this conversation.
             action: Add user
+          inbox_notifications:
+            title: Notifications arrive here
+            description: Mentions, shares, access requests, and important system updates are collected in this topic.
+          inbox_reply:
+            title: Reply from your inbox
+            description: Reply after a conversation notification to send your message back to its original topic.
+          inbox_source:
+            title: Jump to the source
+            description: Use the Creative link in a notification to open the original conversation in context.
     channels:
       detach: "Detach"
     calendar_events:

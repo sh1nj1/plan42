@@ -1057,6 +1057,70 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(data-key="#{key}")
     end
+    assert_not_includes @response.body, %(data-key="inbox_notifications")
+  end
+
+  test "index shows notification guidance for an empty inbox System topic" do
+    inbox = Creative.inbox_for(@user)
+    system_topic = inbox.system_topic
+
+    get creative_comments_path(inbox), params: { topic_id: system_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, I18n.t("collavre.comments.empty_state.inbox_system_title")
+    %w[inbox_notifications inbox_reply inbox_source].each do |key|
+      assert_includes @response.body, %(data-key="#{key}")
+      assert_includes @response.body, %(href="/features/#{key}?locale=en")
+    end
+    assert_not_includes @response.body, %(data-key="mention_agent")
+    assert_not_includes @response.body, I18n.t("collavre.comments.empty_state.title")
+  end
+
+  test "index uses the notification-specific minimal state when System cards are dismissed" do
+    inbox = Creative.inbox_for(@user)
+    system_topic = inbox.system_topic
+    @user.update!(dismissed_notices: %w[inbox_notifications inbox_reply inbox_source])
+
+    get creative_comments_path(inbox), params: { topic_id: system_topic.id }
+
+    assert_response :success
+    assert_includes @response.body,
+                    ERB::Util.html_escape(I18n.t("collavre.comments.empty_state.inbox_system_minimal_prompt"))
+    assert_not_includes @response.body, "feature-card-grid"
+    assert_not_includes @response.body, I18n.t("collavre.comments.empty_state.minimal_prompt")
+  end
+
+  test "index keeps regular guidance in non-System inbox topics" do
+    inbox = Creative.inbox_for(@user)
+    main_topic = inbox.main_topic
+
+    get creative_comments_path(inbox), params: { topic_id: main_topic.id }
+
+    assert_response :success
+    assert_includes @response.body, %(data-key="mention_agent")
+    assert_not_includes @response.body, %(data-key="inbox_notifications")
+  end
+
+  test "create does not execute slash commands in the inbox System topic" do
+    inbox = Creative.inbox_for(@user)
+    system_topic = inbox.system_topic
+    2.times do |index|
+      inbox.comments.create!(
+        topic: system_topic,
+        content: "System notification #{index}",
+        user: nil,
+        skip_default_user: true
+      )
+    end
+
+    ::Comments::CommandProcessor.stub(:new, ->(*) { flunk("System comments must skip command processing") }) do
+      post creative_comments_path(inbox), params: {
+        comment: { content: "/compress", topic_id: system_topic.id }
+      }
+    end
+
+    assert_response :created
+    assert_equal "/compress", inbox.comments.order(:id).last.content
   end
 
   # Phase 1 shipped the cards with the guide link suppressed because no page

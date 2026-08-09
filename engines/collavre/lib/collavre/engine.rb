@@ -201,6 +201,30 @@ module Collavre
           action: { type: :share_modal, label_key: "collavre.comments.empty_state.cards.add_user.action" },
           guide: true
         })
+
+        Collavre::FeatureCardRegistry.register(:inbox_notifications, {
+          icon: "🔔",
+          title_key: "collavre.comments.empty_state.cards.inbox_notifications.title",
+          description_key: "collavre.comments.empty_state.cards.inbox_notifications.description",
+          surfaces: [ :inbox_system ],
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:inbox_reply, {
+          icon: "↩️",
+          title_key: "collavre.comments.empty_state.cards.inbox_reply.title",
+          description_key: "collavre.comments.empty_state.cards.inbox_reply.description",
+          surfaces: [ :inbox_system ],
+          guide: true
+        })
+
+        Collavre::FeatureCardRegistry.register(:inbox_source, {
+          icon: "🔗",
+          title_key: "collavre.comments.empty_state.cards.inbox_source.title",
+          description_key: "collavre.comments.empty_state.cards.inbox_source.description",
+          surfaces: [ :inbox_system ],
+          guide: true
+        })
       end
     end
 
