@@ -140,10 +140,7 @@ module Creatives
           expanded: expanded,
           is_root: creative.parent_id.nil?,
           archived: creative.archived?,
-          # `github_source` is the wire key the tree renderer JS reads; its value
-          # is now the neutral read-only-source flag (GitHub-synced content is one
-          # such source) so core names no vendor here.
-          github_source: creative.read_only_source?,
+          github_source: creative.github_markdown?,
           card_layout: creative.onboarding_card?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),

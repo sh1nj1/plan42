@@ -95,6 +95,24 @@ module Creatives
       assert_nil payload[:origin_id]
     end
 
+    test "shows the GitHub badge only for GitHub-sourced creatives" do
+      github_creative = Creative.create!(
+        user: @user,
+        description: "GitHub content",
+        data: { "source" => { "type" => "github_markdown" } }
+      )
+      onboarding_creative = Creative.create!(
+        user: @user,
+        description: "Onboarding content",
+        data: { "source" => { "type" => "onboarding" } }
+      )
+
+      nodes = build_tree_builder.build([ github_creative, onboarding_creative ])
+
+      assert nodes.find { |node| node[:id] == github_creative.id }[:github_source]
+      assert_not nodes.find { |node| node[:id] == onboarding_creative.id }[:github_source]
+    end
+
     private
 
     def build_tree_builder(allowed_creative_ids: nil, params: {})
