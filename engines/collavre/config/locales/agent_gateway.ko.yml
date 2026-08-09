@@ -89,8 +89,10 @@ ko:
       open_url: 인증 페이지 열기
       error: CLI Proxy 오류
       provisioning: 프로비저닝
-      provisioning_help: Collavre는 collavre-cli 스킬 하나와 callback URL·token이 든 워크스페이스 설정 하나를 항상 프로비저닝합니다.
+      provisioning_help: Collavre는 collavre-cli 스킬 하나와 callback URL·token이 든 워크스페이스 설정 하나를 항상 프로비저닝합니다. "지금 동기화"는 이 워크스페이스의 매니페스트를 먼저 다시 등록하므로, 프로비저닝이 안 됐거나 실패한 경우에도 다시 로그인하지 않고 복구합니다.
       sync: 지금 동기화
+      manifest_unregistered: 이 워크스페이스에 등록된 매니페스트가 아직 없습니다. "지금 동기화"를 누르면 등록하고 프로비저닝합니다.
+      last_error: 최근 프로비저닝 오류
       item: 항목
       kind: 유형
       state: 상태

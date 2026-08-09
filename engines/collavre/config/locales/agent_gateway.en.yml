@@ -89,8 +89,10 @@ en:
       open_url: Open verification page
       error: CLI Proxy error
       provisioning: Provisioning
-      provisioning_help: Collavre always provisions one collavre-cli skill and one workspace-specific config containing the callback URL and token.
+      provisioning_help: Collavre always provisions one collavre-cli skill and one workspace-specific config containing the callback URL and token. "Sync now" re-registers this workspace's manifest first, so it also repairs provisioning that never ran or failed — no new login needed.
       sync: Sync now
+      manifest_unregistered: No manifest is registered with this workspace yet. Press "Sync now" to register it and provision.
+      last_error: Last provisioning error
       item: Item
       kind: Type
       state: Status

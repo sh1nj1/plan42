@@ -89,6 +89,62 @@ class CliProxyClientTest < ActiveSupport::TestCase
     assert_nil request.dig(:headers, "X-CLI-Proxy-User-ID")
   end
 
+  test "registers a manifest url so provisioning can be repaired without a login" do
+    gateway = Struct.new(:admin_key) do
+      def proxy_path(path)
+        "https://proxy.example.com#{path}"
+      end
+    end.new("admin-secret")
+    response = FakeResponse.new(code: 200, message: "OK", payload: { "items" => [] }, successful: true)
+    http = FakeHttpClient.new(response)
+
+    Collavre::CliProxy::Client.new(gateway: gateway, http_client: http)
+                              .provision_register_manifest("https://collavre.example/provision.json")
+
+    request = http.requests.fetch(0)
+    assert_equal :post, request.fetch(:method)
+    assert_equal "https://proxy.example.com/v1/provision/manifest", request.fetch(:url)
+    assert_equal(
+      { "url" => "https://collavre.example/provision.json" },
+      JSON.parse(request.fetch(:body))
+    )
+  end
+
+  test "keeps the status of a failure whose body is not json" do
+    gateway = Struct.new(:admin_key) do
+      def proxy_path(path)
+        "https://proxy.example.com#{path}"
+      end
+    end.new("admin-secret")
+    response = FakeResponse.new(code: 404, message: "Not Found", payload: nil, successful: false)
+    response.define_singleton_method(:json) { raise JSON::ParserError, "unexpected token at '<html>'" }
+
+    error = assert_raises(Collavre::CliProxy::Client::Error) do
+      Collavre::CliProxy::Client.new(gateway: gateway, http_client: FakeHttpClient.new(response))
+                                .provision_register_manifest("https://collavre.example/provision.json")
+    end
+
+    assert_equal 404, error.status
+    assert_nil error.code
+    assert_equal "Not Found", error.message
+  end
+
+  test "still reports an unparsable success body as an error" do
+    gateway = Struct.new(:admin_key) do
+      def proxy_path(path)
+        "https://proxy.example.com#{path}"
+      end
+    end.new("admin-secret")
+    response = FakeResponse.new(code: 200, message: "OK", payload: nil, successful: true)
+    response.define_singleton_method(:json) { raise JSON::ParserError, "unexpected token at '<html>'" }
+
+    error = assert_raises(Collavre::CliProxy::Client::Error) do
+      Collavre::CliProxy::Client.new(gateway: gateway, http_client: FakeHttpClient.new(response)).provision_status
+    end
+
+    assert_equal "Invalid JSON from CLI proxy", error.message
+  end
+
   test "maps blocked regular-user endpoints without making a request" do
     owner = users(:two)
     gateway = Collavre::AgentGateway.create!(

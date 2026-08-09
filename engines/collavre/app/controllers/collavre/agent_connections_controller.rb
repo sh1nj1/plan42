@@ -54,7 +54,7 @@ module Collavre
     end
 
     def provision_sync
-      render json: proxy_client.provision_sync
+      render json: sync_provisioning
     rescue Collavre::CliProxy::Client::Error => e
       render_proxy_error(e)
     end
@@ -96,6 +96,29 @@ module Collavre
 
     def proxy_client
       @proxy_client ||= Collavre::CliProxy::Client.new(gateway: @workspace.agent_gateway, workspace: @workspace)
+    end
+
+    # "Sync now" starts from registration rather than assuming one happened.
+    # A manifest URL otherwise only reaches the proxy as a side effect of a
+    # login, so a workspace whose registration never landed — an engine
+    # authenticated before provisioning existed, a first sync that failed, a
+    # proxy that lost its state — could only be repaired by logging in again.
+    #
+    # Registration is idempotent: re-registering the same URL is a plain
+    # re-sync. Two answers mean the proxy will not take a URL from us at all
+    # and a plain sync is the whole of what we can do — an operator who pinned
+    # the workspace with PROVISION_MANIFEST_URL (409 manifest_url_locked), and
+    # a proxy predating the endpoint, whose router answers 404 for it. The one
+    # 404 that is not that is provisioning_disabled, where the plain sync would
+    # only repeat the same answer and hide which of the two it was.
+    def sync_provisioning
+      proxy_client.provision_register_manifest(manifest_url)
+    rescue Collavre::CliProxy::Client::Error => error
+      registration_refused = error.code == "manifest_url_locked" ||
+        (error.status == 404 && error.code != "provisioning_disabled")
+      raise unless registration_refused
+
+      proxy_client.provision_sync
     end
 
     def manifest_url
