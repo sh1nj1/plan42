@@ -231,7 +231,8 @@ class AgentGatewaysControllerTest < ActionDispatch::IntegrationTest
       agent: agent,
       user: user,
       agent_gateway: @gateway,
-      proxy_user_id: "agent-#{agent.id}-#{suffix}",
+      proxy_credential_id: "agent-#{agent.id}-#{suffix}",
+      proxy_workspace_id: "agent-#{agent.id}-#{suffix}",
       manifest_token: SecureRandom.urlsafe_base64(32),
       callback_token: SecureRandom.hex(32)
     )

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_09_000004) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -88,7 +88,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000004) do
     t.datetime "created_at", null: false
     t.string "manifest_token", null: false
     t.string "manifest_token_digest", null: false
-    t.string "proxy_user_id", null: false
+    t.string "proxy_credential_id", null: false
+    t.string "proxy_workspace_id", null: false
     t.datetime "updated_at", null: false
     t.integer "user_id"
     t.index ["agent_gateway_id"], name: "index_agent_workspaces_on_agent_gateway_id"

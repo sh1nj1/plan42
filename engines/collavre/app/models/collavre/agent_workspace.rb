@@ -13,8 +13,17 @@ module Collavre
     encrypts :manifest_token, deterministic: false
     encrypts :callback_token, deterministic: false
 
-    validates :proxy_user_id, :manifest_token, :manifest_token_digest, :callback_token, presence: true
-    validates :proxy_user_id, format: { with: /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/ }
+    # Mirrors the proxy's STABLE_ID_RE: the credential axis selects the OS worker.
+    CREDENTIAL_ID_FORMAT = /\A[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,199}\z/
+    # Mirrors the proxy's WORKSPACE_ID_RE. Narrower than the credential format
+    # because this value becomes one path segment below the worker's HOME, so
+    # "/" and "." must stay out of it.
+    WORKSPACE_ID_FORMAT = /\A[A-Za-z0-9][A-Za-z0-9_:@-]{0,199}\z/
+
+    validates :proxy_credential_id, :proxy_workspace_id, :manifest_token,
+              :manifest_token_digest, :callback_token, presence: true
+    validates :proxy_credential_id, format: { with: CREDENTIAL_ID_FORMAT }
+    validates :proxy_workspace_id, format: { with: WORKSPACE_ID_FORMAT }
     validates :manifest_token_digest, uniqueness: true
 
     before_validation :derive_manifest_token_digest, if: :will_save_change_to_manifest_token?
@@ -57,11 +66,28 @@ module Collavre
         Digest::SHA256.hexdigest(token)
       end
 
+      # The workspace axis is always the agent: skills, workspace config, and the
+      # provisioning lockfile are per agent regardless of the gateway mode.
+      def proxy_workspace_id_for(agent)
+        "agent-#{agent.id}"
+      end
+
+      # The credential axis selects the proxy worker that holds the engine
+      # logins. A per-user gateway keys it by Collavre user so one login covers
+      # every agent that user reaches; a shared gateway keys it by agent so all
+      # of its users keep sharing the one login.
+      def proxy_credential_id_for(agent, user)
+        user ? "user-#{user.id}" : "agent-#{agent.id}"
+      end
+
       private
 
       def resolve_shared!(agent, gateway)
-        find_by(agent: agent, agent_gateway: gateway, user_id: nil) ||
-          create_workspace!(agent: agent, user: nil, gateway: gateway, proxy_user_id: "agent-#{agent.id}")
+        existing = find_by(agent: agent, agent_gateway: gateway, user_id: nil)
+        return existing if identity_current?(existing, agent, nil)
+
+        existing&.destroy!
+        create_workspace!(agent: agent, user: nil, gateway: gateway)
       rescue ActiveRecord::RecordNotUnique
         find_by!(agent: agent, agent_gateway: gateway, user_id: nil)
       end
@@ -69,9 +95,8 @@ module Collavre
       def resolve_per_user!(agent, user, gateway)
         raise ArgumentError, "A user is required for a per-user workspace" unless user
 
-        expected_proxy_user_id = "agent-#{agent.id}--user-#{user.id}"
         existing = find_by(agent: agent, user: user, agent_gateway: gateway)
-        return existing if existing&.proxy_user_id == expected_proxy_user_id
+        return existing if identity_current?(existing, agent, user)
 
         existing&.destroy!
 
@@ -79,17 +104,22 @@ module Collavre
           find_by(agent: agent, agent_gateway: gateway, user_id: nil)&.destroy!
         end
 
-        create_workspace!(
-          agent: agent,
-          user: user,
-          gateway: gateway,
-          proxy_user_id: expected_proxy_user_id
-        )
+        create_workspace!(agent: agent, user: user, gateway: gateway)
       rescue ActiveRecord::RecordNotUnique
         find_by!(agent: agent, user: user, agent_gateway: gateway)
       end
 
-      def create_workspace!(agent:, user:, gateway:, proxy_user_id:)
+      # A row minted under an older identity scheme addresses a proxy workspace
+      # that no longer matches its agent/user pair, so it is replaced rather than
+      # reused — its credentials would resolve to the wrong worker or directory.
+      def identity_current?(workspace, agent, user)
+        return false unless workspace
+
+        workspace.proxy_workspace_id == proxy_workspace_id_for(agent) &&
+          workspace.proxy_credential_id == proxy_credential_id_for(agent, user)
+      end
+
+      def create_workspace!(agent:, user:, gateway:)
         transaction do
           callback_token = issue_callback_token!(gateway: gateway, owner: user || agent)
 
@@ -97,7 +127,8 @@ module Collavre
             agent: agent,
             user: user,
             agent_gateway: gateway,
-            proxy_user_id: proxy_user_id,
+            proxy_workspace_id: proxy_workspace_id_for(agent),
+            proxy_credential_id: proxy_credential_id_for(agent, user),
             manifest_token: SecureRandom.urlsafe_base64(32),
             callback_token: callback_token
           )

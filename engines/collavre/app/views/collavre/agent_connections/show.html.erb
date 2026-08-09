@@ -3,7 +3,11 @@
 <div class="alert alert-info">
   <strong><%= @agent.agent_gateway.name %></strong>
   · <%= t("collavre.agent_gateways.workspace_mode.#{@agent.agent_gateway.workspace_mode}") %>
-  · <code><%= @workspace.proxy_user_id %></code>
+  · <%= t("collavre.agent_connections.credential_axis") %> <code><%= @workspace.proxy_credential_id %></code>
+  · <%= t("collavre.agent_connections.workspace_axis") %> <code><%= @workspace.proxy_workspace_id %></code>
+  <p class="text-muted" style="margin-bottom: 0;">
+    <%= t("collavre.agent_connections.axis_help.#{@agent.agent_gateway.workspace_mode}") %>
+  </p>
 </div>
 
 <div data-controller="agent-connection"

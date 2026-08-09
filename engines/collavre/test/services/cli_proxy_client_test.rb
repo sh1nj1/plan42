@@ -33,7 +33,7 @@ class CliProxyClientTest < ActiveSupport::TestCase
         "https://proxy.example.com#{path}"
       end
     end.new("admin-secret", "identity-secret" * 3, "collavre")
-    workspace = Struct.new(:proxy_user_id).new("agent-42--user-7")
+    workspace = Struct.new(:proxy_credential_id, :proxy_workspace_id).new("user-7", "agent-42")
     response = FakeResponse.new(code: 201, message: "Created", payload: { "status" => "pending" }, successful: true)
     http = FakeHttpClient.new(response)
 
@@ -48,7 +48,8 @@ class CliProxyClientTest < ActiveSupport::TestCase
     request = http.requests.fetch(0)
     assert_equal :post, request.fetch(:method)
     assert_equal "Bearer admin-secret", request.dig(:headers, "Authorization")
-    assert_equal "agent-42--user-7", request.dig(:headers, "X-CLI-Proxy-User-ID")
+    assert_equal "user-7", request.dig(:headers, "X-CLI-Proxy-User-ID")
+    assert_equal "agent-42", request.dig(:headers, "X-CLI-Proxy-Workspace-ID")
     assert_equal "device-code", JSON.parse(request.fetch(:body)).fetch("flow")
   end
 

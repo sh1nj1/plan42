@@ -81,6 +81,11 @@ en:
         shared: This agent uses one shared CLI Proxy workspace. Its owner manages the shared provider connection.
         per_user: This agent uses per-user CLI Proxy workspaces. Connect your own providers before using it.
       manage: Manage connection
+      credential_axis: 'Login:'
+      workspace_axis: 'Workspace:'
+      axis_help:
+        shared: Provider login and provisioning are both shared by every user of this agent. Logging in once here covers everyone.
+        per_user: Provider login is yours and is reused by every agent you connect to this gateway — log in once per provider, not once per agent. Skills and workspace config stay separate per agent.
       engines: Agent providers
       loading: Loading…
       refresh: Refresh

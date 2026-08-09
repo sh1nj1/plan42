@@ -1,6 +1,7 @@
 require "test_helper"
 require Rails.root.join("engines/collavre/db/migrate/20260809000003_hash_agent_workspace_callback_tokens")
 require Rails.root.join("engines/collavre/db/migrate/20260809000004_encrypt_agent_workspace_manifest_tokens")
+require Rails.root.join("engines/collavre/db/migrate/20260810000000_split_agent_workspace_identity_axes")
 
 class AgentWorkspaceTest < ActiveSupport::TestCase
   setup do
@@ -33,7 +34,8 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
     assert_equal first, second
     assert_nil first.user
-    assert_equal "agent-#{@agent.id}", first.proxy_user_id
+    assert_equal "agent-#{@agent.id}", first.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", first.proxy_workspace_id
     assert Doorkeeper::AccessToken.by_token(first.callback_token).accessible?
   end
 
@@ -190,7 +192,8 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
     assert_not_equal shared.id, owner_workspace.id
     assert_equal @owner, owner_workspace.user
-    assert_equal "agent-#{@agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_equal "user-#{@owner.id}", owner_workspace.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", owner_workspace.proxy_workspace_id
     assert_not_equal shared_manifest_token, owner_workspace.manifest_token
     assert_not_equal shared_callback_token, owner_workspace.callback_token
     assert_predicate shared_access_token.reload, :revoked?
@@ -200,7 +203,8 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     owner_access_token = Doorkeeper::AccessToken.by_token(owner_workspace.callback_token)
     assert_equal @owner.id, owner_access_token.resource_owner_id
     assert_predicate owner_access_token, :accessible?
-    assert_equal "agent-#{@agent.id}--user-#{@other.id}", other_workspace.proxy_user_id
+    assert_equal "user-#{@other.id}", other_workspace.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", other_workspace.proxy_workspace_id
     assert_not_equal owner_workspace.callback_token, other_workspace.callback_token
   end
 
@@ -214,7 +218,8 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
     assert_not_equal shared.id, owner_workspace.id
     assert_equal @owner, owner_workspace.user
-    assert_equal "agent-#{@agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_equal "user-#{@owner.id}", owner_workspace.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", owner_workspace.proxy_workspace_id
     assert_not_equal shared_manifest_token, owner_workspace.manifest_token
     assert_predicate shared_access_token.reload, :revoked?
     assert_raises(ActiveRecord::RecordNotFound) do
@@ -232,7 +237,8 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     owner_workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
 
     assert_not_equal legacy.id, owner_workspace.id
-    assert_equal "agent-#{@agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_equal "user-#{@owner.id}", owner_workspace.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", owner_workspace.proxy_workspace_id
     assert_not_equal legacy_manifest_token, owner_workspace.manifest_token
     assert_predicate legacy_access_token.reload, :revoked?
     assert_raises(ActiveRecord::RecordNotFound) do
@@ -288,5 +294,67 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
     assert_raises(ActiveRecord::RecordNotFound) { workspace.rotate_tokens! }
     assert_equal access_token_count, Doorkeeper::AccessToken.count
+  end
+
+  test "per-user credential axis is the Collavre user so one login covers every agent" do
+    @gateway.update!(workspace_mode: :per_user)
+    second_agent = Collavre::User.create!(
+      name: "Second Workspace Agent",
+      email: "workspace-agent-2@ai.local",
+      password: SecureRandom.hex(24),
+      system_prompt: "Help",
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/codex_local",
+      created_by_id: @owner.id,
+      agent_gateway: @gateway
+    )
+
+    first = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    second = Collavre::AgentWorkspace.resolve!(agent: second_agent, user: @owner)
+
+    # Same worker (one engine login) but separate path workspaces.
+    assert_equal first.proxy_credential_id, second.proxy_credential_id
+    assert_equal "user-#{@owner.id}", first.proxy_credential_id
+    assert_not_equal first.proxy_workspace_id, second.proxy_workspace_id
+    assert_not_equal first.callback_token, second.callback_token
+  end
+
+  test "workspace axis rejects identifiers that are not one safe path segment" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
+
+    [ "../escape", "agent/12", "agent.12", "/agent-12", "" ].each do |candidate|
+      workspace.proxy_workspace_id = candidate
+      assert_not workspace.valid?, "expected #{candidate.inspect} to be rejected"
+      assert_includes workspace.errors.attribute_names, :proxy_workspace_id
+    end
+  end
+
+  test "resolution replaces a workspace minted under the legacy single-axis identity" do
+    @gateway.update!(workspace_mode: :per_user)
+    legacy = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    legacy.update_column(:proxy_credential_id, "agent-#{@agent.id}--user-#{@owner.id}")
+    legacy_manifest_token = legacy.manifest_token
+    legacy_access_token = Doorkeeper::AccessToken.by_token(legacy.callback_token)
+
+    replacement = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+
+    assert_not_equal legacy.id, replacement.id
+    assert_equal "user-#{@owner.id}", replacement.proxy_credential_id
+    assert_equal "agent-#{@agent.id}", replacement.proxy_workspace_id
+    assert_predicate legacy_access_token.reload, :revoked?
+    assert_raises(ActiveRecord::RecordNotFound) do
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: @agent.id, token: legacy_manifest_token)
+    end
+  end
+
+  test "migration maps each legacy identity onto both axes and back" do
+    migration = SplitAgentWorkspaceIdentityAxes.new
+    shared = Struct.new(:agent_id, :user_id).new(11, nil)
+    per_user = Struct.new(:agent_id, :user_id).new(11, 7)
+
+    assert_equal "agent-11", migration.send(:credential_id_for, shared)
+    assert_equal "user-7", migration.send(:credential_id_for, per_user)
+    assert_equal "agent-11", migration.send(:legacy_proxy_user_id_for, shared)
+    assert_equal "agent-11--user-7", migration.send(:legacy_proxy_user_id_for, per_user)
   end
 end

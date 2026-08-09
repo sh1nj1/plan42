@@ -81,6 +81,11 @@ ko:
         shared: 이 에이전트는 하나의 공유 CLI Proxy 워크스페이스를 사용합니다. 에이전트 소유자가 공유 provider 연결을 관리합니다.
         per_user: 이 에이전트는 사용자별 CLI Proxy 워크스페이스를 사용합니다. 사용 전에 내 provider를 연결하세요.
       manage: 내 연결 관리
+      credential_axis: '로그인:'
+      workspace_axis: '워크스페이스:'
+      axis_help:
+        shared: provider 로그인과 프로비저닝을 이 에이전트의 모든 사용자가 공유합니다. 여기서 한 번 로그인하면 전원에게 적용됩니다.
+        per_user: provider 로그인은 내 계정 단위이며, 이 게이트웨이에 연결한 모든 에이전트가 함께 사용합니다. 에이전트마다가 아니라 provider마다 한 번만 로그인하면 됩니다. 스킬과 워크스페이스 설정은 에이전트별로 분리됩니다.
       engines: Agent provider
       loading: 불러오는 중…
       refresh: 새로고침

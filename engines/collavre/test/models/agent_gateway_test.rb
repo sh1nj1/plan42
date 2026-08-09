@@ -120,7 +120,8 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_not_equal original_shared_workspace, shared_workspace
     assert_not_equal owner_workspace, shared_workspace
     assert_nil shared_workspace.user_id
-    assert_equal "agent-#{agent.id}", shared_workspace.proxy_user_id
+    assert_equal "agent-#{agent.id}", shared_workspace.proxy_credential_id
+    assert_equal "agent-#{agent.id}", shared_workspace.proxy_workspace_id
     assert_not_equal owner_manifest_token, shared_workspace.manifest_token
     assert_not_equal other_manifest_token, shared_workspace.manifest_token
     assert_not_equal owner_callback_token, shared_workspace.callback_token
@@ -152,7 +153,8 @@ class AgentGatewayTest < ActiveSupport::TestCase
     owner_workspace = Collavre::AgentWorkspace.find_by!(agent: agent, user: @owner, agent_gateway: gateway)
     assert_not_equal shared_workspace.id, owner_workspace.id
     assert_equal @owner, owner_workspace.user
-    assert_equal "agent-#{agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_equal "user-#{@owner.id}", owner_workspace.proxy_credential_id
+    assert_equal "agent-#{agent.id}", owner_workspace.proxy_workspace_id
     assert_not_equal shared_manifest_token, owner_workspace.manifest_token
     assert_not_equal shared_callback_token, owner_workspace.callback_token
     assert_predicate shared_access_token.reload, :revoked?
@@ -200,7 +202,8 @@ class AgentGatewayTest < ActiveSupport::TestCase
 
     gateway.update!(active: true)
     owner_workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: @owner)
-    assert_equal "agent-#{agent.id}--user-#{@owner.id}", owner_workspace.proxy_user_id
+    assert_equal "user-#{@owner.id}", owner_workspace.proxy_credential_id
+    assert_equal "agent-#{agent.id}", owner_workspace.proxy_workspace_id
     assert_not_equal shared_manifest_token, owner_workspace.manifest_token
   end
 
