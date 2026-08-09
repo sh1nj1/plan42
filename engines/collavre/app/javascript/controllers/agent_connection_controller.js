@@ -16,7 +16,8 @@ export default class extends Controller {
     openUrl: String,
     approve: String,
     revoke: String,
-    error: String
+    error: String,
+    statusLabels: Object
   }
 
   connect() {
@@ -120,7 +121,7 @@ export default class extends Controller {
       strong.textContent = engine.engine
       name.append(strong)
       const state = document.createElement("td")
-      state.textContent = engine.status?.state || "unknown"
+      state.textContent = this.statusLabel(engine.status?.state || "unknown")
       const action = document.createElement("td")
       const flows = engine.flows?.length ? engine.flows : [engine.flow].filter(Boolean)
       flows.forEach((flow) => {
@@ -158,7 +159,7 @@ export default class extends Controller {
           strong.textContent = value
           cell.append(strong)
         } else {
-          cell.textContent = value
+          cell.textContent = index === 2 ? this.statusLabel(value) : value
         }
         row.append(cell)
       })
@@ -188,7 +189,7 @@ export default class extends Controller {
     const panel = document.createElement("div")
     panel.className = "alert alert-info mt-2"
     const title = document.createElement("strong")
-    title.textContent = `${session.engine}: ${session.status}`
+    title.textContent = `${session.engine}: ${this.statusLabel(session.status)}`
     panel.append(title)
 
     if (session.verificationUrl) {
@@ -232,6 +233,10 @@ export default class extends Controller {
     button.dataset.agentConnectionEngineParam = session.engine
     button.dataset.agentConnectionSessionParam = session.sessionId
     return button
+  }
+
+  statusLabel(status) {
+    return this.statusLabelsValue[status] || status
   }
 
   async poll(engine, sessionId, expiresAt) {

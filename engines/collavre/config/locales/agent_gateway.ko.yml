@@ -91,6 +91,19 @@ ko:
       actions: 작업
       approve: 승인
       revoke: 승인 회수
+      statuses:
+        authenticated: 인증됨
+        unauthenticated: 미인증
+        unknown: 알 수 없음
+        pending: 대기 중
+        authorized: 인증 완료
+        failed: 실패
+        cancelled: 취소됨
+        not_synced: 동기화되지 않음
+        pending_approval: 승인 대기
+        installed: 설치됨
+        unsupported: 지원되지 않음
+        removed: 제거됨
       meta_skills: 활성 메타 스킬
       meta_skills_help: AI Agent 설정자가 선택한 Collavre 도구입니다. 단일 collavre-cli 스킬이 실행하며, 토큰 단위 권한 제어는 추후 추가됩니다.
       rotate_tokens: 워크스페이스 토큰 회전

@@ -32,15 +32,19 @@ module Collavre
     scope :active, -> { where(active: true) }
 
     def completion_base_url
-      base_url.end_with?("/v1") ? base_url : "#{base_url}/v1"
+      "#{proxy_base_url}/v1"
     end
 
     def proxy_path(path)
       suffix = path.start_with?("/") ? path : "/#{path}"
-      "#{base_url}#{suffix}"
+      "#{proxy_base_url}#{suffix}"
     end
 
     private
+
+    def proxy_base_url
+      base_url.delete_suffix("/v1")
+    end
 
     def base_url_is_http
       uri = URI.parse(base_url.to_s)

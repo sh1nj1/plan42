@@ -91,6 +91,19 @@ en:
       actions: Actions
       approve: Approve
       revoke: Revoke approval
+      statuses:
+        authenticated: Authenticated
+        unauthenticated: Not authenticated
+        unknown: Unknown
+        pending: Pending
+        authorized: Authorized
+        failed: Failed
+        cancelled: Cancelled
+        not_synced: Not synced
+        pending_approval: Pending approval
+        installed: Installed
+        unsupported: Unsupported
+        removed: Removed
       meta_skills: Enabled meta-skills
       meta_skills_help: The AI agent owner selects these Collavre tools. They are run by the single collavre-cli skill; token-level enforcement will be added later.
       rotate_tokens: Rotate workspace tokens

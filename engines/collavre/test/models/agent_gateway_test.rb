@@ -66,6 +66,14 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_not gateway.valid?
   end
 
+  test "normalizes a versioned completion URL for control API requests" do
+    gateway = build_gateway(base_url: "https://proxy.example.com/deployment/v1")
+
+    assert gateway.valid?, gateway.errors.full_messages.to_sentence
+    assert_equal "https://proxy.example.com/deployment/v1", gateway.completion_base_url
+    assert_equal "https://proxy.example.com/deployment/v1/auth/engines", gateway.proxy_path("/v1/auth/engines")
+  end
+
   test "regular owners require public HTTPS while system administrators may use internal HTTP endpoints" do
     regular_gateway = build_gateway(base_url: "http://127.0.0.1:3456")
     assert_not regular_gateway.valid?

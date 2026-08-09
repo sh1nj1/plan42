@@ -42,4 +42,19 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     get collavre.agent_connection_user_path(@agent)
     assert_response :forbidden
   end
+
+  test "connection page provides localized proxy status labels" do
+    @owner.update!(locale: "ko")
+    sign_in_as(@owner, password: "password")
+
+    get collavre.agent_connection_user_path(@agent)
+
+    assert_response :success
+    labels = JSON.parse(css_select("[data-agent-connection-status-labels-value]").sole[
+      "data-agent-connection-status-labels-value"
+    ])
+    assert_equal "인증됨", labels.fetch("authenticated")
+    assert_equal "승인 대기", labels.fetch("pending_approval")
+    assert_equal "설치됨", labels.fetch("installed")
+  end
 end
