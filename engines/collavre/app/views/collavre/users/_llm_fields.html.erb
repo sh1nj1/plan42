@@ -30,6 +30,7 @@
     <div style="position: relative;">
       <%= form.text_field :llm_model,
                           required: true,
+                          maxlength: Collavre::LlmModel::MAX_NAME_LENGTH,
                           class: "stacked-form-control",
                           autocomplete: "off",
                           value: selected_model,

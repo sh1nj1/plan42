@@ -23,6 +23,25 @@ class LlmModelTest < ActiveSupport::TestCase
     assert same_name_other_vendor.valid?
   end
 
+  test "bounds vendor and model name lengths" do
+    model = Collavre::LlmModel.new(
+      llm_vendor: "v" * Collavre::LlmModel::MAX_VENDOR_LENGTH,
+      name: "m" * Collavre::LlmModel::MAX_NAME_LENGTH
+    )
+
+    model.save!
+    assert_predicate model, :persisted?
+
+    model.llm_vendor = "v" * (Collavre::LlmModel::MAX_VENDOR_LENGTH + 1)
+    assert_not model.valid?
+    assert model.errors.of_kind?(:llm_vendor, :too_long)
+
+    model.llm_vendor = "vendor"
+    model.name = "m" * (Collavre::LlmModel::MAX_NAME_LENGTH + 1)
+    assert_not model.valid?
+    assert model.errors.of_kind?(:name, :too_long)
+  end
+
   test "remember creates one shared model and records its first creator" do
     creator = users(:one)
 
@@ -56,6 +75,17 @@ class LlmModelTest < ActiveSupport::TestCase
     assert_no_difference("Collavre::LlmModel.count") do
       assert_nil Collavre::LlmModel.remember!(vendor: "openai", name: "")
       assert_nil Collavre::LlmModel.remember!(vendor: "", name: "gpt-5")
+    end
+  end
+
+  test "remember rejects an oversized model name without saving it" do
+    oversized_name = "m" * (Collavre::LlmModel::MAX_NAME_LENGTH + 1)
+
+    assert_no_difference("Collavre::LlmModel.count") do
+      error = assert_raises(ActiveRecord::RecordInvalid) do
+        Collavre::LlmModel.remember!(vendor: "openai", name: oversized_name)
+      end
+      assert error.record.errors.of_kind?(:name, :too_long)
     end
   end
 

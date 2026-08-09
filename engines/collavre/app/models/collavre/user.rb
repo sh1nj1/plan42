@@ -246,6 +246,12 @@ module Collavre
     validates :email, presence: true, uniqueness: true,
                       format: { with: URI::MailTo::EMAIL_REGEXP }
     validates :name, presence: true
+    validates :llm_vendor,
+              length: { maximum: Collavre::LlmModel::MAX_VENDOR_LENGTH },
+              if: :will_save_change_to_llm_vendor?
+    validates :llm_model,
+              length: { maximum: Collavre::LlmModel::MAX_NAME_LENGTH },
+              if: :will_save_change_to_llm_model?
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,

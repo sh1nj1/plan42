@@ -1,6 +1,8 @@
 module Collavre
   class LlmModel < ApplicationRecord
     MAX_SUGGESTIONS = 100
+    MAX_VENDOR_LENGTH = 255
+    MAX_NAME_LENGTH = 255
 
     self.table_name = "llm_models"
 
@@ -13,8 +15,11 @@ module Collavre
     normalizes :llm_vendor, with: ->(vendor) { vendor.to_s.strip.downcase }
     normalizes :name, with: ->(name) { name.to_s.strip }
 
-    validates :llm_vendor, presence: true
-    validates :name, presence: true, uniqueness: { scope: :llm_vendor }
+    validates :llm_vendor, presence: true, length: { maximum: MAX_VENDOR_LENGTH }
+    validates :name,
+              presence: true,
+              length: { maximum: MAX_NAME_LENGTH },
+              uniqueness: { scope: :llm_vendor }
 
     scope :ordered, -> { order(:llm_vendor, :name) }
     scope :suggestions, -> {

@@ -59,6 +59,46 @@ class UserTest < ActiveSupport::TestCase
       "72-char password should pass when min is capped at 72"
   end
 
+  test "bounds AI vendor and model lengths" do
+    user = User.new(
+      email: "bounded-agent@example.com",
+      password: "password123",
+      name: "Bounded Agent",
+      llm_vendor: "v" * Collavre::LlmModel::MAX_VENDOR_LENGTH,
+      llm_model: "m" * Collavre::LlmModel::MAX_NAME_LENGTH
+    )
+
+    user.save!
+    assert_predicate user, :persisted?
+
+    user.llm_vendor = "v" * (Collavre::LlmModel::MAX_VENDOR_LENGTH + 1)
+    assert_not user.valid?
+    assert user.errors.of_kind?(:llm_vendor, :too_long)
+
+    user.llm_vendor = "vendor"
+    user.llm_model = "m" * (Collavre::LlmModel::MAX_NAME_LENGTH + 1)
+    assert_not user.valid?
+    assert user.errors.of_kind?(:llm_model, :too_long)
+  end
+
+  test "allows unrelated updates for a legacy AI user with oversized fields" do
+    user = User.create!(
+      email: "legacy-agent@example.com",
+      password: "password123",
+      name: "Legacy Agent",
+      llm_vendor: "vendor",
+      llm_model: "model"
+    )
+    user.update_columns(
+      llm_vendor: "v" * (Collavre::LlmModel::MAX_VENDOR_LENGTH + 1),
+      llm_model: "m" * (Collavre::LlmModel::MAX_NAME_LENGTH + 1)
+    )
+
+    user.name = "Renamed Legacy Agent"
+
+    assert user.save
+  end
+
   test "nullifies shares created by user as sharer when destroyed" do
     sharer = users(:two)
     recipient = users(:three)

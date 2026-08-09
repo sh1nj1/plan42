@@ -14,6 +14,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", I18n.t("collavre.users.new_ai.title")
     assert_select "form[action=?]", create_ai_users_path
+    assert_select "input[name='llm_model'][maxlength=?]", Collavre::LlmModel::MAX_NAME_LENGTH.to_s
     assert_select "input[type='text'][name='llm_api_key'].masked-secret-field[autocomplete='off'][autocapitalize='none'][spellcheck='false']"
     assert_select "[data-controller='llm-model']" do |nodes|
       models = JSON.parse(nodes.first["data-llm-model-models-value"])
@@ -119,6 +120,36 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     refute Collavre::LlmModel.exists?(llm_vendor: "openai", name: "unsaved-model")
   end
 
+  test "oversized model does not partially create an ai user or suggestion" do
+    oversized_model = "m" * (Collavre::LlmModel::MAX_NAME_LENGTH + 1)
+
+    assert_no_difference([ "Collavre::User.count", "Collavre::LlmModel.count" ]) do
+      post create_ai_users_url, params: {
+        ai_id: "oversized-model-bot",
+        name: "Oversized Model Bot",
+        llm_vendor: "openai",
+        llm_model: oversized_model
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_select "input[name='llm_model'][maxlength=?]", Collavre::LlmModel::MAX_NAME_LENGTH.to_s
+  end
+
+  test "oversized model does not partially update an ai user or suggestion" do
+    original_model = @ai_user.llm_model
+    oversized_model = "m" * (Collavre::LlmModel::MAX_NAME_LENGTH + 1)
+
+    assert_no_difference("Collavre::LlmModel.count") do
+      patch update_ai_user_url(@ai_user), params: {
+        user: { llm_vendor: "openai", llm_model: oversized_model }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal original_model, @ai_user.reload.llm_model
+  end
+
   test "changing an ai user's vendor or model remembers the new selection" do
     assert_difference("Collavre::LlmModel.count", 1) do
       patch update_ai_user_url(@ai_user), params: {
@@ -127,6 +158,40 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     end
 
     assert Collavre::LlmModel.exists?(llm_vendor: "anthropic", name: "claude-sonnet-4")
+  end
+
+  test "ai user creation rolls back when remembering the model fails" do
+    failure = ->(**) { raise "model suggestion failed" }
+
+    Collavre::LlmModel.stub(:remember!, failure) do
+      assert_no_difference([ "Collavre::User.count", "Collavre::Contact.count" ]) do
+        assert_raises(RuntimeError, "model suggestion failed") do
+          post create_ai_users_url, params: {
+            ai_id: "rollback-model-bot",
+            name: "Rollback Model Bot",
+            llm_vendor: "openai",
+            llm_model: "gpt-5.2"
+          }
+        end
+      end
+    end
+  end
+
+  test "ai user update rolls back when remembering the model fails" do
+    original_vendor = @ai_user.llm_vendor
+    original_model = @ai_user.llm_model
+    failure = ->(**) { raise "model suggestion failed" }
+
+    Collavre::LlmModel.stub(:remember!, failure) do
+      assert_raises(RuntimeError, "model suggestion failed") do
+        patch update_ai_user_url(@ai_user), params: {
+          user: { llm_vendor: "openai", llm_model: "gpt-5.2" }
+        }
+      end
+    end
+
+    assert_equal original_vendor, @ai_user.reload.llm_vendor
+    assert_equal original_model, @ai_user.llm_model
   end
 
   test "updating unrelated ai settings does not restore a deleted list entry" do

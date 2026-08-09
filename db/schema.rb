@@ -460,8 +460,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000000) do
   create_table "llm_models", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "created_by_id"
-    t.string "llm_vendor", null: false
-    t.string "name", null: false
+    t.string "llm_vendor", limit: 255, null: false
+    t.string "name", limit: 255, null: false
     t.datetime "updated_at", null: false
     t.index ["created_by_id"], name: "index_llm_models_on_created_by_id"
     t.index ["llm_vendor", "name"], name: "index_llm_models_on_llm_vendor_and_name", unique: true

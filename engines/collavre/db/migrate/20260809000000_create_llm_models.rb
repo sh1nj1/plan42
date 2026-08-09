@@ -1,5 +1,7 @@
 class CreateLlmModels < ActiveRecord::Migration[8.1]
   MAX_SUGGESTIONS = 100
+  MAX_VENDOR_LENGTH = 255
+  MAX_NAME_LENGTH = 255
 
   DEFAULT_MODELS = {
     "google" => [
@@ -11,8 +13,8 @@ class CreateLlmModels < ActiveRecord::Migration[8.1]
 
   def up
     create_table :llm_models do |t|
-      t.string :llm_vendor, null: false
-      t.string :name, null: false
+      t.string :llm_vendor, null: false, limit: MAX_VENDOR_LENGTH
+      t.string :name, null: false, limit: MAX_NAME_LENGTH
       t.references :created_by,
                    null: true,
                    foreign_key: { to_table: :users, on_delete: :nullify }
@@ -39,9 +41,14 @@ class CreateLlmModels < ActiveRecord::Migration[8.1]
     )
 
     models.each do |vendor, name|
+      vendor = vendor.to_s.strip.downcase
+      name = name.to_s.strip
+      next if vendor.blank? || name.blank?
+      next if vendor.length > MAX_VENDOR_LENGTH || name.length > MAX_NAME_LENGTH
+
       llm_model_class.find_or_create_by!(
-        llm_vendor: vendor.to_s.strip.downcase,
-        name: name.to_s.strip
+        llm_vendor: vendor,
+        name: name
       )
     end
 
