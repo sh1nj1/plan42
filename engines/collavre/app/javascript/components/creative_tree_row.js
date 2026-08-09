@@ -594,7 +594,7 @@ class CreativeTreeRow extends LitElement {
     try {
       const body = new FormData();
       body.append("creative[progress]", newProgress);
-      const response = await csrfFetch(`/creatives/${creativeId}`, {
+      const response = await csrfFetch(this.linkUrl, {
         method: "PATCH",
         headers: { Accept: "application/json" },
         body,

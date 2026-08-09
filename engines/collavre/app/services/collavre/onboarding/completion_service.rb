@@ -21,6 +21,7 @@ module Collavre
             items = session_items
             item_ids = items.map(&:id)
             items.each(&:capture_broadcast_state)
+            preserve_non_session_children(item_ids)
             CreativeShare.where(creative_id: item_ids).destroy_all if item_ids.any?
             items.sort_by { |creative| -creative.ancestors.count }.each do |creative|
               creative.destroy! if creative.persisted?
@@ -41,6 +42,14 @@ module Collavre
       def session_items
         Creative.where(user: user).select do |creative|
           creative.onboarding_metadata&.dig("session_id") == session_id
+        end
+      end
+
+      def preserve_non_session_children(item_ids)
+        Creative.where(parent_id: item_ids).where.not(id: item_ids).find_each do |creative|
+          destination = creative.parent
+          destination = destination.parent while destination && item_ids.include?(destination.id)
+          creative.update!(parent: destination)
         end
       end
     end

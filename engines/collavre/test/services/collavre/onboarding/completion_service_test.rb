@@ -33,6 +33,26 @@ module Collavre
         assert_nil @user.reload.onboarding_completed_at
       end
 
+      test "preserves ordinary children nested below session items" do
+        external = Creative.create!(user: @user, description: "External parent")
+        practice = @root.children.second.children.sole
+        practice.update!(parent: external)
+        ordinary_child = Creative.create!(user: @user, parent: practice, description: "Keep this child")
+
+        assert CompletionService.call(user: @user, session_id: @session_id)
+
+        assert_empty session_items
+        assert_equal external, ordinary_child.reload.parent
+      end
+
+      test "promotes ordinary children to roots when the session has no outside parent" do
+        ordinary_child = Creative.create!(user: @user, parent: @root, description: "Keep this root")
+
+        assert CompletionService.call(user: @user, session_id: @session_id)
+
+        assert ordinary_child.reload.root?
+      end
+
       test "completion removes the welcome message that links to the deleted guide" do
         notification_key = Seeder.welcome_notification_key(@user)
         assert Comment.exists?(notification_key: notification_key)

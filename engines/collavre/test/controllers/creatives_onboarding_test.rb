@@ -166,12 +166,16 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
   end
 
   test "inline create form preserves the engine mount prefix" do
-    creative = creatives(:root_parent)
+    creative = Creative.create!(user: @user, description: "Mounted creative")
 
     get collavre.creatives_path(id: creative.id), env: { "SCRIPT_NAME" => "/collavre" }
 
     assert_response :success
     mounted_create_path = collavre.creatives_path(script_name: "/collavre")
-    assert_select "form#inline-edit-form-element[action=?][data-create-url=?]", mounted_create_path, mounted_create_path
+    mounted_update_template = collavre.creative_path("__CREATIVE_ID__", script_name: "/collavre")
+    assert_select "form#inline-edit-form-element[action=?][data-create-url=?][data-update-url-template=?]",
+                  mounted_create_path, mounted_create_path, mounted_update_template
+    assert_select "creative-tree-row[is-title][link-url=?]",
+                  collavre.creative_path(creative, script_name: "/collavre")
   end
 end

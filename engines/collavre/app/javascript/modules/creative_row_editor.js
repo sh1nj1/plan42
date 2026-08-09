@@ -401,11 +401,15 @@ function setupEditorSession() {
       if (descriptionInput) descriptionInput.value = renderMarkdown(md);
     }
 
+    function creativeUpdateUrl(creativeId) {
+      return form.dataset.updateUrlTemplate.replace('__CREATIVE_ID__', encodeURIComponent(creativeId));
+    }
+
     function applyCreativeData(data, tree) {
       if (!data) return;
       const creativeId = data.id;
       if (!creativeId) return;
-      form.action = `/creatives/${creativeId}`;
+      form.action = creativeUpdateUrl(creativeId);
       if (methodInput) methodInput.value = 'patch';
       form.dataset.creativeId = creativeId;
       const content = data.description_raw_html || data.description || '';
@@ -847,7 +851,7 @@ function setupEditorSession() {
             }
 
             if (method === 'POST' && data.id) {
-              form.action = `/creatives/${data.id}`;
+              form.action = creativeUpdateUrl(data.id);
               methodInput.value = 'patch';
               form.dataset.creativeId = data.id;
               if (tree) {
@@ -858,7 +862,7 @@ function setupEditorSession() {
                 if (rowEl) {
                   rowEl.setAttribute('creative-id', data.id);
                   rowEl.creativeId = data.id;
-                  const creativeLink = `/creatives/${data.id}`;
+                  const creativeLink = creativeUpdateUrl(data.id);
                   rowEl.setAttribute('link-url', creativeLink);
                   rowEl.linkUrl = creativeLink;
                   const levelValue = tree.dataset.level;

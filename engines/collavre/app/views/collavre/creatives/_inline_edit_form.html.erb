@@ -2,6 +2,7 @@
   <form id="inline-edit-form-element" method="post"
         action="<%= creatives_path %>"
         data-create-url="<%= creatives_path %>"
+        data-update-url-template="<%= creative_path('__CREATIVE_ID__') %>"
         data-save-failed-message="<%= t('collavre.creatives.index.save_failed_alert') %>">
     <input type="hidden" id="inline-method" name="_method" value="patch" />
     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
