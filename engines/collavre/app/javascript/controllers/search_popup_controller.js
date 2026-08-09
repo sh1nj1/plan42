@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import {
+  WORKSPACE_FRAME_ID,
   applyFilterParam,
   buildFilterUrl,
   syncFilterButtons,
@@ -29,6 +30,18 @@ export default class extends Controller {
       }
     }
     document.addEventListener('keydown', this._shortcutHandler)
+
+    // The GNB survives workspace-frame visits. Tree navigation and frame
+    // history traversal bypass _navigate(), so keep its controls aligned with
+    // the browser URL whenever that frame loads or history changes.
+    this._frameLoadHandler = (event) => {
+      if (event.target.id !== WORKSPACE_FRAME_ID) return
+      this._syncFromLocation()
+    }
+    this._historyHandler = () => this._syncFromLocation()
+    document.addEventListener('turbo:frame-load', this._frameLoadHandler)
+    window.addEventListener('popstate', this._historyHandler)
+    this._syncFromLocation()
   }
 
   _isEditableTarget(target) {
@@ -45,6 +58,8 @@ export default class extends Controller {
   disconnect() {
     document.removeEventListener('keydown', this._escHandler)
     document.removeEventListener('keydown', this._shortcutHandler)
+    document.removeEventListener('turbo:frame-load', this._frameLoadHandler)
+    window.removeEventListener('popstate', this._historyHandler)
   }
 
   open() {
@@ -146,5 +161,11 @@ export default class extends Controller {
 
     this.close()
     if (visitFilterUrl(url)) syncFilterButtons(url)
+  }
+
+  _syncFromLocation() {
+    const url = new URL(window.location.href)
+    syncFilterButtons(url)
+    this.inputTarget.value = url.searchParams.get('search') || ''
   }
 }

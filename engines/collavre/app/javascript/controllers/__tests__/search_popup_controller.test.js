@@ -300,6 +300,63 @@ describe('SearchPopupController filter navigation', () => {
     )
   })
 
+  test('resyncs persistent controls when workspace-tree navigation loads the frame', async () => {
+    setLocation('http://localhost/creatives?search=roadmap&show_archived=true')
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+    const archiveButton = document.querySelector('[data-filter-state="archived"]')
+
+    expect(input.value).toBe('roadmap')
+    expect(archiveButton.classList).toContain('active')
+    expect(archiveButton.textContent).toBe('Hide archived')
+
+    setLocation('http://localhost/creatives?id=7')
+    document
+      .getElementById(WORKSPACE_FRAME_ID)
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(input.value).toBe('')
+    expect(archiveButton.classList).not.toContain('active')
+    expect(archiveButton.textContent).toBe('Show archived')
+    expect(document.querySelector('[data-filter-state="any-filter"]').classList).not.toContain(
+      'active'
+    )
+  })
+
+  test('resyncs persistent controls during browser history traversal', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    setLocation('http://localhost/creatives?search=restored')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+
+    expect(input.value).toBe('restored')
+    expect(document.querySelector('[data-filter-state="any-filter"].active')).not.toBeNull()
+  })
+
+  test('ignores frame loads outside the creative workspace', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    setLocation('http://localhost/creatives?search=ignored')
+    document.body.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(input.value).toBe('')
+    expect(document.querySelector('[data-filter-state="any-filter"].active')).toBeNull()
+  })
+
+  test('stops resyncing after the persistent controller disconnects', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    input.closest('[data-controller="search-popup"]').remove()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    setLocation('http://localhost/creatives?search=ignored')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+
+    expect(input.value).toBe('')
+  })
+
   test('sends filters to the creative index from a page that cannot use them', async () => {
     setLocation('http://localhost/settings?tab=profile')
     await mount({ onIndex: false, withFrame: false })

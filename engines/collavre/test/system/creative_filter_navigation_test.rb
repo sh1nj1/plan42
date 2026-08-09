@@ -17,7 +17,8 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
       creative_workspace_enabled: true,
       system_admin: true
     )
-    Creative.create!(description: "Root creative", user: @user)
+    @creative = Creative.create!(description: "Root creative", user: @user)
+    Creative.create!(description: "Root child", user: @user, parent: @creative)
 
     resize_window_to
     sign_in_via_ui(@user)
@@ -86,5 +87,23 @@ class CreativeFilterNavigationTest < ApplicationSystemTestCase
 
     assert_current_path(/\/creatives\?comment=true/, url: false)
     assert_selector "turbo-frame#creative-workspace-content"
+  end
+
+  test "tree navigation clears persistent search controls with the filter URL" do
+    visit collavre.creatives_path
+    find(".search-popup-trigger").click
+    fill_in "search", with: "Root"
+    find("#search").send_keys(:enter)
+
+    assert_current_path(/search=Root/, url: false)
+    assert_selector ".search-popup-trigger.active"
+
+    find(".creative-workspace-tree-toggle").click
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{@creative.id}']", wait: 10
+    find(".creative-workspace-tree-link", text: "Root creative").click
+
+    assert_current_path(collavre.creatives_path(id: @creative.id))
+    assert_no_selector ".search-popup-trigger.active"
+    assert_equal "", find("#search", visible: :all).value
   end
 end
