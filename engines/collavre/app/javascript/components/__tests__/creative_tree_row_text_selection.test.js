@@ -46,6 +46,10 @@ function mouseUpWindow() {
   window.dispatchEvent(new window.MouseEvent("mouseup"));
 }
 
+function mouseMoveWindow(opts = {}) {
+  window.dispatchEvent(new window.MouseEvent("mousemove", opts));
+}
+
 function click(target) {
   target.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
@@ -163,20 +167,76 @@ describe("creative-tree-row text selection", () => {
       expect(tree.getAttribute("draggable")).toBe("true");
     });
 
-    test("mousedown is a no-op when the row is not currently draggable", async () => {
+    test("mousedown leaves a row that is not drag-enabled alone", async () => {
+      // A row rendered without the draggable attribute never took part in
+      // drag-and-drop; the handler must not add the attribute on its way out.
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+      tree.removeAttribute("draggable");
+
+      mouseDown(contentOf(el));
+      expect(tree.hasAttribute("draggable")).toBe(false);
+
+      mouseUpWindow();
+      expect(tree.hasAttribute("draggable")).toBe(false);
+    });
+
+    test("a pointer move with no button held re-arms the row", async () => {
+      // Releasing outside the viewport without changing focus delivers neither
+      // mouseup, dragend nor blur; the pointer coming back with the button up
+      // is the only signal that the gesture ended.
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+
+      mouseDown(contentOf(el));
+      mouseMoveWindow({ buttons: 1 }); // still dragging — leave the row alone
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      mouseMoveWindow({ buttons: 0 });
+      expect(tree.getAttribute("draggable")).toBe("true");
+
+      // One-shot: a later move must not touch the attribute again.
+      tree.setAttribute("draggable", "false");
+      mouseMoveWindow({ buttons: 0 });
+      expect(tree.getAttribute("draggable")).toBe("false");
+    });
+
+    test("a stale disarmed row re-arms itself on the next press", async () => {
+      // Belt and braces for the same lost-release case: even with no pointer
+      // move in between, the next press must not bail out on the guard and
+      // strand the row non-draggable.
       const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
       const tree = treeOf(el);
 
       mouseDown(contentOf(el));
       expect(tree.getAttribute("draggable")).toBe("false");
 
-      // A second mousedown before mouseup (or any state where draggable is not
-      // "true") must not stack extra restore listeners or flip the attribute.
+      // Simulate the release never arriving: press again on the content.
       mouseDown(contentOf(el));
       expect(tree.getAttribute("draggable")).toBe("false");
 
+      // The stale gesture's listeners were dropped, so this press owns the
+      // restore and a single mouseup fully re-arms the row.
       mouseUpWindow();
       expect(tree.getAttribute("draggable")).toBe("true");
+    });
+
+    test("removing a row mid-gesture drops its window listeners", async () => {
+      const el = await mountRow({ creativeId: "1", parentId: "", level: 2, canWrite: true });
+      const tree = treeOf(el);
+
+      mouseDown(contentOf(el));
+      expect(tree.getAttribute("draggable")).toBe("false");
+
+      el.remove();
+      expect(tree.getAttribute("draggable")).toBe("true");
+
+      // Nothing is listening any more: window events must not touch the row.
+      tree.setAttribute("draggable", "false");
+      mouseUpWindow();
+      mouseMoveWindow({ buttons: 0 });
+      window.dispatchEvent(new window.Event("blur"));
+      expect(tree.getAttribute("draggable")).toBe("false");
     });
   });
 

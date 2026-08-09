@@ -106,6 +106,9 @@ class CreativeTreeRow extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._stopAnimation();
+    // A row torn down mid-gesture (re-render, turbo navigation) would otherwise
+    // leave its window listeners behind, holding on to the detached element.
+    if (this._restoreDraggable) this._restoreDraggable();
   }
 
   get descriptionHtml() {
@@ -630,22 +633,41 @@ class CreativeTreeRow extends LitElement {
     if (this.closest(".select-mode-active")) return;
     if (event.button !== 0) return;
     const tree = this.querySelector(".creative-tree");
-    if (!tree || tree.getAttribute("draggable") !== "true") return;
+    if (!tree) return;
+    // A gesture whose release never reached us (button let go outside the
+    // viewport, no focus change) leaves the row disarmed with its restore
+    // still pending. Run it first so this press starts from a known state
+    // instead of bailing out and stranding the row non-draggable forever.
+    if (this._restoreDraggable) this._restoreDraggable();
+    if (tree.getAttribute("draggable") !== "true") return;
     tree.setAttribute("draggable", "false");
     const restore = () => {
       window.removeEventListener("mouseup", restore, true);
       window.removeEventListener("dragend", restore, true);
+      window.removeEventListener("mousemove", this._restoreOnButtonlessMove, true);
       window.removeEventListener("blur", restore);
+      this._restoreDraggable = null;
       tree.setAttribute("draggable", "true");
     };
+    this._restoreDraggable = restore;
     window.addEventListener("mouseup", restore, true);
     window.addEventListener("dragend", restore, true);
     // Releasing the button after switching windows (Alt+Tab) delivers neither
-    // mouseup nor dragend here, and the guard above would then refuse to re-arm
-    // the row forever. Non-capturing on purpose: blur does not bubble, so this
-    // only sees the window losing focus, not focus moves inside the page.
+    // mouseup nor dragend here. Non-capturing on purpose: blur does not bubble,
+    // so this only sees the window losing focus, not focus moves inside the page.
     window.addEventListener("blur", restore);
+    // Releasing outside the viewport without changing focus delivers none of
+    // the three above; the first pointer move with no button held means the
+    // gesture is over, so re-arm the row for drag-and-drop right then.
+    window.addEventListener("mousemove", this._restoreOnButtonlessMove, true);
   }
+
+  // Bound once so the capture-phase listener can be removed by identity; the
+  // move only ends a gesture when every button is already up.
+  _restoreOnButtonlessMove = (event) => {
+    if (event.buttons !== 0) return;
+    if (this._restoreDraggable) this._restoreDraggable();
+  };
 
   _handleContentClick(event) {
     // In select mode, block navigation — selection toggle is handled by
