@@ -230,9 +230,12 @@ module Collavre
       return true if user.system_admin? || created_by_id == user.id
       return true if user.contact_users.where(id: id).exists?
 
-      shared_agent_creative_ids = Collavre::CreativeShare.where(user_id: id).pluck(:creative_id)
+      agent_creative_ids = Collavre::Creative
+        .where(user_id: id)
+        .or(Collavre::Creative.where(id: Collavre::CreativeShare.where(user_id: id).select(:creative_id)))
+        .pluck(:id)
       Collavre::Creatives::PermissionFilter.new(user: user)
-                                           .readable_ids(shared_agent_creative_ids)
+                                           .readable_ids(agent_creative_ids)
                                            .any?
     end
 

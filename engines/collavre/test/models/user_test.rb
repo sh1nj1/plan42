@@ -195,4 +195,40 @@ class UserTest < ActiveSupport::TestCase
     assert child.has_permission?(viewer, :read)
     assert agent.gateway_accessible_to?(viewer)
   end
+
+  test "gateway access includes creatives owned by the agent" do
+    owner = users(:two)
+    viewer = Collavre::User.create!(
+      email: "agent-owned-gateway-viewer@example.com",
+      password: TEST_PASSWORD,
+      name: "Agent-owned Gateway Viewer"
+    )
+    gateway = Collavre::AgentGateway.create!(
+      owner: owner,
+      name: "Agent-owned creative gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion",
+      identity_secret: "i" * 32,
+      workspace_mode: :per_user
+    )
+    agent = Collavre::User.create!(
+      name: "Agent-owned creative agent",
+      email: "agent-owned-creative-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/claude_local",
+      created_by_id: owner.id,
+      agent_gateway: gateway
+    )
+
+    creative = perform_enqueued_jobs do
+      creative = Collavre::Creative.create!(user: agent, description: "Agent-owned root")
+      Collavre::CreativeShare.create!(creative: creative, user: viewer, permission: :read)
+      creative
+    end
+
+    assert creative.has_permission?(viewer, :read)
+    assert agent.gateway_accessible_to?(viewer)
+  end
 end

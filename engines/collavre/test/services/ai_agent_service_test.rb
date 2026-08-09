@@ -163,6 +163,7 @@ class AiAgentServiceTest < ActiveSupport::TestCase
       dispatched = true
       assert_equal "comment_created", event_name
       assert_equal "@AgentB: 이 주제에 대해 어떻게 생각해?", context[:comment][:content]
+      assert_equal @user.id, context[:workspace_user_id]
     } do
       AiClient.stub :new, mock_client do
         AiAgentService.new(@task).call
@@ -170,6 +171,50 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     end
 
     assert dispatched, "Expected A2A dispatch to be called for AI agent mention"
+  end
+
+  test "uses the carried human workspace principal for an A2A turn" do
+    upstream_agent = User.create!(
+      email: "upstream-a2a-agent@ai.local",
+      password: SecureRandom.hex(24),
+      name: "UpstreamA2AAgent",
+      llm_vendor: "google",
+      llm_model: "gemini-1.5-flash"
+    )
+    upstream_reply = @creative.comments.create!(
+      content: "A2A request",
+      user: upstream_agent,
+      topic: @comment.topic,
+      skip_dispatch: true
+    )
+    @task.update!(
+      trigger_event_payload: {
+        "comment" => { "id" => upstream_reply.id, "content" => upstream_reply.content },
+        "creative" => { "id" => @creative.id },
+        "topic" => { "id" => upstream_reply.topic_id },
+        "workspace_user_id" => @user.id
+      }
+    )
+
+    mock_client = Minitest::Mock.new
+    def mock_client.chat(messages, tools: [])
+      yield "Downstream response"
+    end
+    def mock_client.last_handoff_failed? = false
+    def mock_client.handed_off? = true
+
+    captured_context = nil
+    client_factory = lambda do |**options|
+      captured_context = options[:context]
+      mock_client
+    end
+
+    AiClient.stub :new, client_factory do
+      AiAgentService.new(@task).call
+    end
+
+    assert_equal @user, captured_context[:workspace_user]
+    assert_not_equal upstream_agent, captured_context[:workspace_user]
   end
 
   test "does not dispatch A2A when AI response mentions a human user" do

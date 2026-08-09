@@ -222,7 +222,7 @@ module Collavre
           user: @agent,
           task: @task,
           comment: @reply_comment || @original_comment,
-          workspace_user: @original_comment&.user
+          workspace_user: workspace_user
         },
         request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
         # The streaming block below checks cancellation only when a text delta
@@ -269,9 +269,25 @@ module Collavre
       dispatcher = AiAgent::A2aDispatcher.new(
         agent: @agent,
         reply_comment: finalized_comment,
-        context: @context
+        context: @context,
+        workspace_user: workspace_user
       )
       dispatcher.dispatch
+    end
+
+    def workspace_user
+      @workspace_user ||= begin
+        carried_user = User.find_by(id: @context["workspace_user_id"])
+        comment_user = @original_comment&.user
+
+        if carried_user && !carried_user.ai_user?
+          carried_user
+        elsif comment_user && !comment_user.ai_user?
+          comment_user
+        else
+          @agent.creator
+        end
+      end
     end
 
     def handle_cancelled(action_type: "cancelled", message: "Task cancelled by user")

@@ -298,7 +298,10 @@ module Collavre
           gateway = agent&.agent_gateway
           raise ArgumentError, "CLI Proxy agent has no active gateway" unless gateway&.active?
 
-          workspace_user = context[:workspace_user] || context[:comment]&.user || agent.creator
+          workspace_user = context[:workspace_user]
+          comment_user = context[:comment]&.user
+          workspace_user ||= comment_user unless comment_user&.ai_user?
+          workspace_user ||= agent.creator
           workspace_user = nil if gateway.shared?
           workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
           @cli_proxy_identity = { gateway: gateway, workspace: workspace }

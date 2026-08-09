@@ -6,10 +6,11 @@ module Collavre
     # Detects mentioned agents, records interactions for loop prevention,
     # and dispatches system events for downstream processing.
     class A2aDispatcher
-      def initialize(agent:, reply_comment:, context:)
+      def initialize(agent:, reply_comment:, context:, workspace_user: nil)
         @agent = agent
         @reply_comment = reply_comment
         @context = context
+        @workspace_user = workspace_user
       end
 
       # Dispatch A2A events if the response mentions any AI agents
@@ -53,7 +54,7 @@ module Collavre
       end
 
       def dispatch_event(creative)
-        SystemEvents::Dispatcher.dispatch("comment_created", {
+        payload = {
           comment: {
             id: @reply_comment.id,
             content: @reply_comment.content,
@@ -65,7 +66,10 @@ module Collavre
           },
           topic: { id: @reply_comment.topic_id },
           chat: { content: @reply_comment.content }
-        })
+        }
+        payload[:workspace_user_id] = @workspace_user.id if @workspace_user
+
+        SystemEvents::Dispatcher.dispatch("comment_created", payload)
       end
     end
   end
