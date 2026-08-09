@@ -55,6 +55,11 @@ module Collavre
 
     belongs_to :creator, class_name: "Collavre::User", foreign_key: "created_by_id", optional: true
     has_many :created_ai_users, class_name: "Collavre::User", foreign_key: "created_by_id", dependent: :destroy
+    has_many :created_llm_models,
+             class_name: "Collavre::LlmModel",
+             foreign_key: :created_by_id,
+             dependent: :nullify,
+             inverse_of: :creator
 
     has_one_attached :avatar
 
@@ -241,6 +246,12 @@ module Collavre
     validates :email, presence: true, uniqueness: true,
                       format: { with: URI::MailTo::EMAIL_REGEXP }
     validates :name, presence: true
+    validates :llm_vendor,
+              length: { maximum: Collavre::LlmModel::MAX_VENDOR_LENGTH },
+              if: :will_save_change_to_llm_vendor?
+    validates :llm_model,
+              length: { maximum: Collavre::LlmModel::MAX_NAME_LENGTH },
+              if: :will_save_change_to_llm_model?
     validate :theme_accessibility
     validate :password_meets_minimum_length
     validates :timezone,

@@ -59,6 +59,8 @@ Collavre::Engine.routes.draw do
     end
   end
 
+  resources :llm_models, only: [ :destroy ]
+
   resources :typo_corrections, only: [ :create ]
 
   resources :creative_imports, only: [ :create ]

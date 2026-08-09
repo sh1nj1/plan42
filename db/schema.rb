@@ -457,6 +457,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000000) do
     t.index ["team_id"], name: "index_linear_project_links_on_team_id"
   end
 
+  create_table "llm_models", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "created_by_id"
+    t.string "llm_vendor", limit: 255, null: false
+    t.string "name", limit: 255, null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_llm_models_on_created_by_id"
+    t.index ["llm_vendor", "name"], name: "index_llm_models_on_llm_vendor_and_name", unique: true
+  end
+
   create_table "mcp_tools", force: :cascade do |t|
     t.datetime "approved_at"
     t.string "checksum"
@@ -1030,6 +1040,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_09_000000) do
   add_foreign_key "linear_issue_links", "linear_project_links", column: "project_link_id"
   add_foreign_key "linear_project_links", "creatives"
   add_foreign_key "linear_project_links", "linear_accounts", column: "account_id"
+  add_foreign_key "llm_models", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "mcp_tools", "creatives"
   add_foreign_key "notion_accounts", "users"
   add_foreign_key "notion_block_links", "creatives"

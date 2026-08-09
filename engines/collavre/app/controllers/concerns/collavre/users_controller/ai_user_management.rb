@@ -10,6 +10,7 @@ module Collavre
 
     def new_ai
       @available_tools = load_available_tools
+      @llm_models = Collavre::LlmModel.suggestions
 
       if params[:copy_from].present?
         source = Collavre::User.find_by(id: params[:copy_from])
@@ -42,19 +43,28 @@ module Collavre
       )
       @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
-      if @user.save
+      saved = Collavre::User.transaction do
+        next false unless @user.save
+
+        remember_llm_model(@user)
         Collavre::Contact.ensure(user: Current.user, contact_user: @user)
         share_ai_agent_to_creative(@user, params[:creative_id])
+        true
+      end
+
+      if saved
         redirect_to user_path(Current.user, tab: "contacts"), notice: I18n.t("collavre.users.create_ai.success")
       else
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         @available_tools = load_available_tools
+        @llm_models = Collavre::LlmModel.suggestions
         render :new_ai, status: :unprocessable_entity
       end
     end
 
     def edit_ai
       @available_tools = load_available_tools
+      @llm_models = Collavre::LlmModel.suggestions
       @has_stored_llm_api_key = @user.llm_api_key.present?
     end
 
@@ -70,16 +80,34 @@ module Collavre
         ai_params.delete(:llm_api_key)
       end
 
-      if @user.update(ai_params)
+      updated = Collavre::User.transaction do
+        next false unless @user.update(ai_params)
+
+        if @user.saved_change_to_llm_vendor? || @user.saved_change_to_llm_model?
+          remember_llm_model(@user)
+        end
+        true
+      end
+
+      if updated
         redirect_to edit_ai_user_path(@user), notice: I18n.t("collavre.users.update_ai.success")
       else
         @available_tools = load_available_tools
+        @llm_models = Collavre::LlmModel.suggestions
         flash.now[:alert] = @user.errors.full_messages.to_sentence
         render :edit_ai, status: :unprocessable_entity
       end
     end
 
     private
+
+    def remember_llm_model(user)
+      Collavre::LlmModel.remember!(
+        vendor: user.llm_vendor,
+        name: user.llm_model,
+        creator: Current.user
+      )
+    end
 
     def load_available_tools
       Collavre::McpService.available_tools(Current.user).map do |tool|
