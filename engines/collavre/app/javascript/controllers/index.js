@@ -43,6 +43,7 @@ import WorkspaceTreeController from "./workspace_tree_controller"
 import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
+import OnboardingCardController from "./onboarding_card_controller"
 
 // Export all controllers
 export {
@@ -84,7 +85,8 @@ export {
   WorkspaceTreeController,
   GatewayCheckController,
   AgentConnectionController,
-  AgentVendorController
+  AgentVendorController,
+  OnboardingCardController
 }
 
 // Registration function for use with a Stimulus application
@@ -132,4 +134,5 @@ export function registerControllers(application) {
   application.register("gateway-check", GatewayCheckController)
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
+  application.register("onboarding-card", OnboardingCardController)
 }

@@ -12,14 +12,20 @@ class OnboardingGuideTest < ApplicationSystemTestCase
     )
 
     resize_window_to(1440, 900)
-    sign_in_via_ui(user)
+    using_wait_time(10) { sign_in_via_ui(user) }
 
     guide = Creative.onboarding_guides.find_by!(user: user)
-    progress_step = guide.children.second
+    progress_card = guide.children.find { |child| child.onboarding_metadata["step_key"] == "progress_rollup" }
+    progress_step = progress_card.children.sole
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{guide.id}']", wait: 10
+    assert_selector ".feature-card--onboarding[data-key]", count: 4, wait: 10
+    within ".feature-card[data-key='progress_rollup']" do
+      click_link I18n.t("collavre.onboarding.actions.progress_rollup", locale: :en)
+    end
     assert_selector "creative-tree-row[creative-id='#{progress_step.id}']", wait: 10
 
     progress_selector = "creative-tree-row[creative-id='#{progress_step.id}'] [data-progress-toggle]"
+    assert_selector "#{progress_selector}.onboarding-progress-highlight", wait: 10
     find(progress_selector).click
     assert_no_selector "#{progress_selector}.progress-toggle-saving", wait: 10
     assert_selector "#{progress_selector} .progress-toggle-checkbox:checked", visible: :all, wait: 10

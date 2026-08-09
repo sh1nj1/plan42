@@ -41,6 +41,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
                         "expected no version navigator for comment WITHOUT versions"
   end
 
+  test "creating a public comment completes the matching onboarding chat practice" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "creative_chat" }
+    practice = card.children.sole
+
+    post creative_comments_path(practice), params: {
+      comment: { content: "My first message", topic_id: practice.main_topic.id, private: false }
+    }
+
+    assert_response :created
+    assert_equal "completed", card.reload.onboarding_metadata["status"]
+    assert_in_delta 1.0, practice.reload.progress
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do

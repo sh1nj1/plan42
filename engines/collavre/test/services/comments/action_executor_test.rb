@@ -82,6 +82,29 @@ class Comments::ActionExecutorTest < ActiveSupport::TestCase
     assert_equal @creative.user.id, child.user.id
   end
 
+  test "delete action uses onboarding completion cleanup" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    session_id = guide.onboarding_metadata["session_id"]
+    wrapper = Creative.create!(user: @user, description: "Wrapper")
+    guide.update!(parent: wrapper)
+    comment = wrapper.comments.create!(
+      content: "Needs approval",
+      user: @user,
+      action: JSON.generate("action" => "delete_creative", "creative_id" => guide.id),
+      approver: @user
+    )
+
+    Comments::ActionExecutor.new(comment: comment, executor: @user).call
+
+    remaining = Creative.where(user: @user).select do |creative|
+      creative.onboarding_metadata&.dig("session_id") == session_id
+    end
+    assert_empty remaining
+    assert_not_nil @user.reload.onboarding_completed_at
+  end
+
   test "supports multiple actions within a single payload" do
     child = Creative.create!(user: @user, parent: @creative, description: "Child", progress: 0.2)
 

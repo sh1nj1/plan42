@@ -20,7 +20,8 @@
   <% content_for :comments_popup_auto_fullscreen, "true" %>
 <% end %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal"
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal onboarding-card"
+     data-onboarding-card-workspace-value="true"
      data-creatives--import-parent-id-value="<%= @parent_creative&.id %>"
      data-creatives--import-uploading-value="<%= t('collavre.creatives.index.import_uploading') %>"
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
@@ -142,6 +143,7 @@
 
 
 <%= stylesheet_link_tag 'collavre/comments_popup', media: 'all' %>
+<%= stylesheet_link_tag 'collavre/feature_cards', media: 'all' %>
 <%= stylesheet_link_tag 'collavre/mention_menu', media: 'all' %>
 
 <div class="tags">
@@ -165,7 +167,7 @@
     <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
   <% end %>
   <% title_templates = [
-        content_tag(:template, data: { part: "description" }) { sanitize @parent_creative.effective_description },
+        content_tag(:template, data: { part: "description" }) { render_creative_description(@parent_creative) },
         content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
       ] %>
   <% if @parent_creative.origin_id.present? %>
@@ -184,7 +186,7 @@
     title_row_content += content_tag(:template, data: { part: "edit-off-icon" }) { svg_tag("edit-off.svg", class: "icon-edit") }
   %>
   <%
-    title_can_write = @parent_creative.has_permission?(Current.user, :write)
+    title_can_write = @parent_creative.has_permission?(Current.user, :write) && !@parent_creative.read_only_source?
     title_effective_origin = @parent_creative.effective_origin(Set.new)
     title_content_type = title_effective_origin.data&.dig("content_type")
     title_markdown_source = title_can_write ? title_effective_origin.data&.dig("markdown_source") : nil
@@ -198,6 +200,7 @@
         "parent-id": @parent_creative.parent_id,
         "can-write": title_can_write ? "true" : "false",
         "is-title": "",
+        "card-layout": @parent_creative.onboarding_root? || @parent_creative.onboarding_card? ? "true" : nil,
         "data-description-raw-html": @parent_creative.description,
         "data-progress-value": @parent_creative.progress,
         "data-origin-id": @parent_creative.origin_id,

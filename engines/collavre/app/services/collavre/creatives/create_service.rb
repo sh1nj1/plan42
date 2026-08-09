@@ -30,6 +30,7 @@ module Collavre
         # Broadcast AFTER insert_at_position so sequence and previous_sibling are correct
         creative.reload # pick up resequenced values
         creative.broadcast_creative_created(after_id: @after_id)
+        Collavre::Onboarding::ProgressTracker.creative_created(creative: creative, user: @user)
 
         Result.new(creative: creative, success?: true, errors: [])
       end

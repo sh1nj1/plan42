@@ -137,6 +137,10 @@ module Collavre
           new_creative.user = parent.user || comment.user || Current.user
           assign_creative_attributes(new_creative, attributes)
           new_creative.save!
+          Collavre::Onboarding::ProgressTracker.creative_created(
+            creative: new_creative,
+            user: comment.user || Current.user
+          )
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
         end
@@ -147,6 +151,11 @@ module Collavre
 
           assign_creative_attributes(creative, attributes)
           creative.save!
+          Collavre::Onboarding::ProgressTracker.creative_updated(
+            creative: creative,
+            user: comment.user || Current.user,
+            changed_attributes: attributes.keys
+          )
         rescue ActiveRecord::RecordInvalid => e
           raise InvalidActionError, e.record.errors.full_messages.to_sentence
         end
@@ -157,7 +166,7 @@ module Collavre
           unless creative.has_permission?(executor, :write)
             raise InvalidActionError, I18n.t("collavre.comments.approve_no_write_permission")
           end
-          creative.destroy!
+          Collavre::Creatives::DestroyService.new(creative: creative, user: executor).call
         end
 
         def approve_tool(payload)

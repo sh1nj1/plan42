@@ -13,7 +13,7 @@ module Collavre
       test "seeds a localized guide and one inbox welcome message atomically" do
         root = nil
 
-        assert_difference -> { Creative.count }, 7 do
+        assert_difference -> { Creative.count }, 8 do
           assert_difference -> { onboarding_welcome_messages.count }, 1 do
             root = Seeder.call(user: @user)
           end
@@ -21,8 +21,16 @@ module Collavre
 
         assert_predicate root, :onboarding_guide?
         assert_equal I18n.t("collavre.onboarding.guide.title", locale: :ko), root.description
-        assert_equal I18n.t("collavre.onboarding.guide.steps", locale: :ko).values, root.children.map(&:description)
-        assert_equal 6, root.children.count
+        assert_equal 4, root.children.count
+        assert_equal Seeder::STEP_KEYS, root.children.map { |child| child.onboarding_metadata["step_key"] }
+        assert_includes root.children.first.description, I18n.t(
+          "collavre.comments.empty_state.cards.create_edit.title",
+          locale: :ko
+        )
+        assert_equal 3, root.descendants.count(&:onboarding_practice?)
+        assert root.read_only_source?
+        session_ids = root.self_and_descendants.map { |creative| creative.onboarding_metadata["session_id"] }
+        assert_equal [ root.onboarding_metadata["session_id"] ], session_ids.uniq
         assert_in_delta 0.0, root.progress
         assert_not_nil @user.reload.onboarding_seeded_at
         assert_nil @user.onboarding_completed_at
@@ -109,6 +117,19 @@ module Collavre
 
         assert_not Creative.exists?(root.id)
         assert_nil @user.reload.onboarding_seeded_at
+      end
+
+      test "reset removes a step after it has been moved outside the guide" do
+        root = Seeder.call(user: @user)
+        moved_step = root.children.second
+        other = Creative.create!(user: @user, description: "Other")
+        moved_step.update!(parent: other)
+
+        Seeder.reset!(user: @user)
+
+        assert_not Creative.exists?(root.id)
+        assert_not Creative.exists?(moved_step.id)
+        assert Creative.exists?(other.id)
       end
 
       test "reuses a welcome message after it has been moved to another creative" do

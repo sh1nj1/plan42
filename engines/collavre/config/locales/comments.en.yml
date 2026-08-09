@@ -262,6 +262,15 @@ en:
         learn_more: Learn more
         no_search_results: No messages match your search.
         cards:
+          create_edit:
+            title: Create and edit a Creative
+            description: Add a child Creative, then change its text to make the work your own.
+          progress_rollup:
+            title: Completion and progress rollup
+            description: Complete a child and watch its progress roll up through the tree.
+          creative_chat:
+            title: Chat on every Creative
+            description: Open a Creative's chat and leave a message in its own context.
           mention_agent:
             title: Mention teammates & agents
             description: "Use @name: to ask a question or loop someone in."

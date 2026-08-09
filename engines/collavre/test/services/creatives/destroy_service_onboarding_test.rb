@@ -41,4 +41,20 @@ class DestroyServiceOnboardingTest < ActiveSupport::TestCase
 
     assert_nil @user.reload.onboarding_completed_at
   end
+
+  test "deleting any version-two onboarding item cleans the durable session" do
+    @user.update!(onboarding_seeded_at: nil)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    session_id = guide.onboarding_metadata["session_id"]
+    practice = guide.descendants.find(&:onboarding_practice?)
+
+    Collavre::Creatives::DestroyService.new(creative: practice, user: @user).call
+
+    remaining = Creative.where(user: @user).select do |creative|
+      creative.onboarding_metadata&.dig("session_id") == session_id
+    end
+    assert_empty remaining
+    assert_not_nil @user.reload.onboarding_completed_at
+  end
 end

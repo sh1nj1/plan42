@@ -16,6 +16,35 @@ en:
       show:
         tips: "Tips"
       pages:
+        create_edit:
+          title: "Create and edit a Creative"
+          tagline: "Turn an idea into a block, then shape it in place."
+          meta_description: "Create and edit Creative blocks in Collavre's hierarchical workspace."
+          sections:
+            - heading: "Add where the work belongs"
+              body: "Use + at the level where the new work belongs. A Creative can stand alone or become a child of another Creative, so the same action grows both documents and task trees."
+            - heading: "Edit inline"
+              body: "Open the inline editor from a Creative row and change its text without leaving the tree. The saved HTML is sanitized before it is displayed."
+          tips:
+            - "Use a short first line so the tree stays easy to scan."
+        progress_rollup:
+          title: "Completion and progress rollup"
+          tagline: "Complete leaves; let their parents summarize the result."
+          meta_description: "See how child completion automatically rolls progress up through a Collavre Creative tree."
+          sections:
+            - heading: "Complete the real work"
+              body: "Leaf Creatives have a completion checkbox. A parent's progress is calculated from its active children, so checking one child immediately changes every parent above it."
+          tips:
+            - "Break large work into children when you want progress to explain itself."
+        creative_chat:
+          title: "Chat on every Creative"
+          tagline: "Keep the conversation attached to the work it explains."
+          meta_description: "Use the dedicated chat attached to every Collavre Creative."
+          sections:
+            - heading: "Context stays local"
+              body: "Every Creative has its own chat. Messages, topics, mentions, and agent replies stay attached to that Creative, so decisions remain beside the work they changed."
+          tips:
+            - "Open chat from the speech-bubble action on any Creative row."
         mention_agent:
           title: "Mention teammates & agents"
           tagline: "Address one participant directly, and only that participant answers."

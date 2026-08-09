@@ -259,6 +259,15 @@ ko:
         learn_more: 자세히 보기
         no_search_results: 검색 결과에 해당하는 메시지가 없습니다.
         cards:
+          create_edit:
+            title: Creative 추가·편집
+            description: 하위 Creative를 추가한 뒤 문장을 바꿔 내 작업으로 만들어보세요.
+          progress_rollup:
+            title: 완료 체크와 진행률 롤업
+            description: 하위 항목을 완료하고 진행률이 트리 위로 올라가는 모습을 확인하세요.
+          creative_chat:
+            title: Creative마다 붙는 채팅
+            description: Creative의 채팅을 열고 그 작업의 맥락 안에서 메시지를 남겨보세요.
           mention_agent:
             title: 팀원 · 에이전트 멘션
             description: "@이름: 으로 질문하거나 참여자를 초대해보세요."

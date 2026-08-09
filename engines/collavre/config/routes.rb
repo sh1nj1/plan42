@@ -177,6 +177,7 @@ Collavre::Engine.routes.draw do
   post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
   delete "/notices", to: "notices#restore_all", as: :restore_notices
   delete "/notices/onboarding", to: "notices#reset_onboarding", as: :reset_onboarding
+  resource :onboarding, only: :destroy
 
   # Agent API (Claude Channel MCP plugin)
   namespace :api do

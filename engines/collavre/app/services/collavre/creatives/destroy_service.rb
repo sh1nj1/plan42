@@ -4,13 +4,21 @@ module Collavre
   module Creatives
     # Handles creative destruction with optional recursive child deletion.
     class DestroyService
-      def initialize(creative:, user:, delete_with_children: false)
+      def initialize(creative:, user:, delete_with_children: false, onboarding_cleanup: false)
         @creative = creative
         @user = user
         @delete_with_children = delete_with_children
+        @onboarding_cleanup = onboarding_cleanup
       end
 
       def call
+        if @creative.onboarding_item? && !@onboarding_cleanup
+          return Collavre::Onboarding::CompletionService.call(
+            user: @creative.user,
+            session_id: @creative.onboarding_metadata["session_id"]
+          )
+        end
+
         onboarding_owner = @creative.user if @creative.onboarding_guide?
 
         if @delete_with_children || onboarding_owner

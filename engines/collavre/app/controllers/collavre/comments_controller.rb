@@ -175,6 +175,7 @@ module Collavre
         @comment.skip_dispatch = true
       end
       if @comment.save
+        Collavre::Onboarding::ProgressTracker.comment_created(comment: @comment, user: Current.user)
         # Cross-post inbox inline replies to the original creative/topic
         InboxReplyService.call(@comment)
 

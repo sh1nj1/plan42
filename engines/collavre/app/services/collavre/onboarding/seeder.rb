@@ -3,8 +3,10 @@
 module Collavre
   module Onboarding
     class Seeder
-      VERSION = 1
+      VERSION = 2
       WELCOME_NOTIFICATION_KEY_PREFIX = "onboarding_welcome_v1_user_"
+      STEP_KEYS = %w[create_edit progress_rollup creative_chat mention_agent].freeze
+      SEEDED_PRACTICE_STEPS = STEP_KEYS.excluding("create_edit").freeze
 
       def self.call(user:, script_name: nil)
         new(user: user, script_name: script_name).call
@@ -12,11 +14,18 @@ module Collavre
 
       def self.reset!(user:)
         User.transaction do
+          session_ids = Creative.where(user: user).filter_map { |creative| creative.onboarding_metadata&.dig("session_id") }.uniq
+          session_ids.each do |session_id|
+            CompletionService.call(user: user, session_id: session_id, mark_completed: false)
+          end
+
+          # Version 1 guides did not carry durable session metadata.
           Creative.onboarding_guides.where(user: user).find_each do |creative|
             Collavre::Creatives::DestroyService.new(
               creative: creative,
               user: user,
-              delete_with_children: true
+              delete_with_children: true,
+              onboarding_cleanup: true
             ).call
           end
 
@@ -56,18 +65,77 @@ module Collavre
       attr_reader :user, :script_name
 
       def create_guide!
+        session_id = SecureRandom.uuid
         root = Creative.create!(
           user: user,
           description: I18n.t("collavre.onboarding.guide.title"),
-          data: { "kind" => Creative::ONBOARDING_KIND, "version" => VERSION },
+          data: onboarding_data(session_id: session_id, role: "root").merge(
+            "kind" => Creative::ONBOARDING_KIND,
+            "version" => VERSION,
+            "source" => { "type" => Creative::ONBOARDING_KIND }
+          ),
           progress: 0.0
         )
 
-        I18n.t("collavre.onboarding.guide.steps").each_value do |description|
-          Creative.create!(user: user, parent: root, description: description, progress: 0.0)
+        STEP_KEYS.each do |step_key|
+          create_step!(root: root, session_id: session_id, step_key: step_key)
         end
 
         root
+      end
+
+      def create_step!(root:, session_id:, step_key:)
+        card = FeatureCardRegistry.find(step_key)
+        raise KeyError, "Missing onboarding feature card: #{step_key}" unless card&.visible_on?(:onboarding)
+
+        card_creative = Creative.create!(
+          user: user,
+          parent: root,
+          description: fallback_description(card),
+          data: onboarding_data(
+            session_id: session_id,
+            role: "card",
+            step_key: step_key,
+            feature_key: step_key,
+            status: "pending"
+          ).merge("source" => { "type" => Creative::ONBOARDING_KIND }),
+          progress: 0.0
+        )
+        return unless SEEDED_PRACTICE_STEPS.include?(step_key)
+
+        practice = Creative.create!(
+          user: user,
+          parent: card_creative,
+          description: I18n.t("collavre.onboarding.practice.#{step_key}"),
+          data: onboarding_data(session_id: session_id, role: "practice", step_key: step_key),
+          progress: 0.0
+        )
+        update_onboarding_data!(card_creative, "target_creative_id" => practice.id)
+      end
+
+      def onboarding_data(session_id:, role:, step_key: nil, feature_key: nil, status: nil)
+        metadata = { "session_id" => session_id, "role" => role }
+        metadata["step_key"] = step_key if step_key
+        metadata["feature_key"] = feature_key if feature_key
+        metadata["status"] = status if status
+        { "onboarding" => metadata }
+      end
+
+      def update_onboarding_data!(creative, attributes)
+        data = creative.data.deep_dup
+        data["onboarding"].merge!(attributes.stringify_keys)
+        creative.update!(data: data)
+      end
+
+      def fallback_description(card)
+        helpers = ActionController::Base.helpers
+        helpers.content_tag(:p) do
+          helpers.safe_join([
+            helpers.content_tag(:strong, "#{card.icon} #{I18n.t(card.title_key)}"),
+            helpers.tag.br,
+            I18n.t(card.description_key)
+          ])
+        end
       end
 
       def create_or_update_welcome_message!(root)

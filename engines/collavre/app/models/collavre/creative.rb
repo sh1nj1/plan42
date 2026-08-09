@@ -12,7 +12,7 @@ module Collavre
     # match on, so a metadata save that omits it makes the row undiscoverable and
     # `inbox_for` creates a duplicate inbox for that user.
     # ---------------------------------------------------------------------------
-    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind].freeze
+    BUILTIN_RESERVED_METADATA_KEYS = %w[markdown_source content_type editor kind source onboarding].freeze
 
     SubtreeTouchTransactionRecord = Data.define(:creative_id) do
       def self.run_commit_callbacks_on_first_saved_instances_in_transaction = true
@@ -100,6 +100,26 @@ module Collavre
 
     def onboarding_guide?
       data&.dig("kind") == ONBOARDING_KIND
+    end
+
+    def onboarding_metadata
+      data.is_a?(Hash) ? data["onboarding"] : nil
+    end
+
+    def onboarding_item?
+      onboarding_metadata&.dig("session_id").present?
+    end
+
+    def onboarding_root?
+      onboarding_metadata&.dig("role") == "root"
+    end
+
+    def onboarding_card?
+      onboarding_metadata&.dig("role") == "card"
+    end
+
+    def onboarding_practice?
+      onboarding_metadata&.dig("role") == "practice"
     end
 
     # Bypass the read-only-source guard for a single save (used by the vendor

@@ -182,13 +182,17 @@ module Collavre
             if sanitized_data.is_a?(Hash) && sanitized_data.key?("markdown_source")
               sanitized_data = sanitized_data.except("markdown_source")
             end
+            rendered_description = view_context.render_creative_description(
+              @creative,
+              fallback: @creative.effective_description
+            )
             render json: {
               id: @creative.id,
-              description: @creative.effective_description,
+              description: rendered_description,
               # Embedded variant for read-only display (e.g. slide view): turns
               # bare YouTube links into preview iframes. `description` stays the
               # raw editable form the inline editor round-trips.
-              description_embedded_html: view_context.embed_youtube_iframe(@creative.effective_description),
+              description_embedded_html: rendered_description,
               description_raw_html: @creative.description,
               origin_id: @creative.origin_id,
               parent_id: @creative.parent_id,
@@ -301,6 +305,7 @@ module Collavre
         permitted.delete(:origin_id)
 
         success &&= base.update(permitted)
+        changed_attributes = permitted.keys if success
         if success && requested_progress.present? && requested_progress.to_f >= 1 && previous_progress.to_f < 1
           if base.children.exists?
             base.self_and_descendants.where(origin_id: nil)
@@ -309,6 +314,11 @@ module Collavre
         end
 
         if success
+          onboarding_card = Collavre::Onboarding::ProgressTracker.creative_updated(
+            creative: base,
+            user: Current.user,
+            changed_attributes: changed_attributes
+          )
           format.html { redirect_to @creative }
           format.json do
             base.reload
@@ -320,6 +330,7 @@ module Collavre
               content_type: base.data&.dig("content_type"),
               markdown_editor: base.data&.dig("editor")
             }
+            response_data[:onboarding_card_id] = onboarding_card.id if onboarding_card
             # Expose the post-rewrite markdown source so the client can sync its
             # textarea after the server replaces inline data: URIs with blob paths.
             # Gated on write permission so a read-only share recipient moving a

@@ -144,6 +144,7 @@ module Creatives
           # is now the neutral read-only-source flag (GitHub-synced content is one
           # such source) so core names no vendor here.
           github_source: creative.read_only_source?,
+          card_layout: creative.onboarding_card?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
@@ -195,7 +196,10 @@ module Creatives
     end
 
     def template_payload_for(creative, has_children: nil, can_write: nil)
-      description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
+      fallback_description = view_context.embed_youtube_iframe(
+        creative.effective_description(raw_params["tags"]&.first)
+      )
+      description_html = view_context.render_creative_description(creative, fallback: fallback_description)
       can_feedback = can_feedback?(creative)
       progress_html = view_context.render_creative_progress(
         creative,

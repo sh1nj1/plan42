@@ -3,13 +3,32 @@ en:
     onboarding:
       guide:
         title: "🚀 Get started with Collavre"
-        steps:
-          edit: "Click this line and change the text — try inline editing"
-          complete: "Check the box on the left — watch progress roll up to the parent"
-          comment: "Leave any message in the chat on the right — every Creative has its own chat"
-          mention: "Type @ in chat and call an AI agent — see it answer in context"
-          add: "Use + to add a child item — grow the tree yourself"
-          finish: "When you are ready, delete this entire ‘Get started’ tree"
+      practice:
+        progress_rollup: "Practice: check this Creative to complete it"
+        creative_chat: "Practice: leave a message in this Creative's chat"
+        mention_agent: "Practice: mention an AI agent in this Creative's chat"
+      actions:
+        create_edit: "Add a practice Creative"
+        edit_created: "Edit the Creative you added"
+        progress_rollup: "Show me the checkbox"
+        creative_chat: "Open this Creative's chat"
+        mention_agent: "Open chat and type @"
+      status:
+        pending: "Not started"
+        in_progress: "In progress"
+        completed: "Completed"
+        waiting_for_agent: "Agent called · waiting for a reply"
+      overview:
+        title: "Learn Collavre by using it"
+        description: "Finish the four cards below. Each real action completes a step and rolls progress up to this guide."
+        progress: "%{completed}/%{total} complete"
+        skip: "Skip and close guide"
+        finish: "Complete and close guide"
+        guide_link: "Browse all feature guides"
+        confirm_skip: "Close onboarding before completing all four steps?"
+        confirm_finish: "Close this completed onboarding guide?"
+      completion:
+        notice: "Onboarding has been closed."
       welcome: |-
         Welcome to Collavre! Start with [🚀 Get started with Collavre](%{onboarding_path}).
 

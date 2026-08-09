@@ -10,7 +10,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
   end
 
   test "first root HTML visit seeds onboarding and opens the guide" do
-    assert_difference -> { Creative.count }, 7 do
+    assert_difference -> { Creative.count }, 8 do
       get collavre.creatives_path
     end
 
@@ -45,7 +45,7 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
   end
 
   test "root JSON visit seeds onboarding without redirecting" do
-    assert_difference -> { Creative.count }, 7 do
+    assert_difference -> { Creative.count }, 8 do
       get collavre.creatives_path(format: :json)
     end
 
@@ -59,5 +59,54 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
+  end
+
+  test "create then edit requests complete the create-edit card" do
+    get collavre.creatives_path
+    guide = Creative.onboarding_guides.find_by!(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+
+    post collavre.creatives_path,
+         params: { creative: { parent_id: card.id, description: "Draft" } },
+         as: :json
+    assert_response :success
+    practice = Creative.find(response.parsed_body["id"])
+    assert_equal "in_progress", card.reload.onboarding_metadata["status"]
+
+    patch collavre.creative_path(practice),
+          params: { creative: { description: "Edited draft" } },
+          as: :json
+
+    assert_response :success
+    assert_equal card.id, response.parsed_body["onboarding_card_id"]
+    assert_equal "completed", card.reload.onboarding_metadata["status"]
+  end
+
+  test "progress update request completes the real progress practice" do
+    get collavre.creatives_path
+    guide = Creative.onboarding_guides.find_by!(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "progress_rollup" }
+    practice = card.children.sole
+
+    patch collavre.creative_path(practice), params: { creative: { progress: 1 } }, as: :json
+
+    assert_response :success
+    assert_equal card.id, response.parsed_body["onboarding_card_id"]
+    assert_equal "completed", card.reload.onboarding_metadata["status"]
+  end
+
+  test "onboarding cards use server-rendered feature cards with static API fallback data" do
+    get collavre.creatives_path
+    guide = Creative.onboarding_guides.find_by!(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+
+    get collavre.creative_path(card), as: :json
+
+    assert_response :success
+    assert_includes response.parsed_body["description"], "feature-card--onboarding"
+    assert_includes response.parsed_body["description"], "add-creative-btn"
+    assert_includes response.parsed_body["description_raw_html"], "<p>"
+    assert_not_includes response.parsed_body["description_raw_html"], "<button"
+    assert_equal "onboarding", response.parsed_body.dig("data", "source", "type")
   end
 end

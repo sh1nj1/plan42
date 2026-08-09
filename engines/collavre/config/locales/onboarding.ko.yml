@@ -3,13 +3,32 @@ ko:
     onboarding:
       guide:
         title: "🚀 콜라브 시작하기"
-        steps:
-          edit: "이 줄을 클릭해 문장을 바꿔보세요 — 인라인 편집"
-          complete: "왼쪽 체크박스로 완료 표시해보세요 — 진행률이 부모로 올라갑니다"
-          comment: "오른쪽 채팅에 아무 말이나 남겨보세요 — 크리에이티브마다 채팅이 있습니다"
-          mention: "채팅에서 @로 AI 에이전트를 불러보세요 — 맥락을 이해한 답변을 확인합니다"
-          add: "+로 하위 항목을 추가해보세요 — 트리를 직접 키워봅니다"
-          finish: "다 익히셨으면 이 ‘시작하기’ 트리를 통째로 삭제하세요"
+      practice:
+        progress_rollup: "실습: 이 Creative를 체크해 완료하세요"
+        creative_chat: "실습: 이 Creative의 채팅에 메시지를 남기세요"
+        mention_agent: "실습: 이 Creative의 채팅에서 AI 에이전트를 멘션하세요"
+      actions:
+        create_edit: "연습용 Creative 추가"
+        edit_created: "추가한 Creative 편집"
+        progress_rollup: "체크박스 위치 보기"
+        creative_chat: "이 Creative의 채팅 열기"
+        mention_agent: "채팅을 열고 @ 입력"
+      status:
+        pending: "시작 전"
+        in_progress: "진행 중"
+        completed: "완료"
+        waiting_for_agent: "에이전트 호출 완료 · 답변 대기 중"
+      overview:
+        title: "직접 사용하며 콜라브 익히기"
+        description: "아래 카드 4개를 완료하세요. 실제 행동이 단계를 완료하고 진행률을 이 가이드까지 올립니다."
+        progress: "%{completed}/%{total} 완료"
+        skip: "건너뛰고 가이드 닫기"
+        finish: "완료하고 가이드 닫기"
+        guide_link: "전체 기능 가이드 보기"
+        confirm_skip: "4단계를 모두 완료하지 않고 온보딩을 닫을까요?"
+        confirm_finish: "완료한 온보딩 가이드를 닫을까요?"
+      completion:
+        notice: "온보딩 가이드를 닫았습니다."
       welcome: |-
         콜라브에 오신 것을 환영합니다! [🚀 콜라브 시작하기](%{onboarding_path})에서 시작해보세요.
 

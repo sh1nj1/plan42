@@ -878,6 +878,10 @@ function setupEditorSession() {
             } else if (method === 'PATCH') {
               if (tree) refreshRow(tree);
             }
+            if (data.onboarding_card_id) {
+              const onboardingCardTree = document.getElementById(`creative-${data.onboarding_card_id}`);
+              if (onboardingCardTree) refreshRow(onboardingCardTree);
+            }
             if (cascadeProgressUpdate && tree) {
               refreshChildren(tree);
               completionCascadePending = false;

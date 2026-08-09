@@ -190,6 +190,19 @@ module Collavre
         end
       end
 
+      test "registers a child created through the tool as onboarding practice" do
+        Creative.inbox_for(@user)
+        guide = Collavre::Onboarding::Seeder.call(user: @user)
+        card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "create_edit" }
+
+        result = CreativeCreateService.new.call(parent_id: card.id, description: "Tool practice")
+
+        assert result[:success]
+        practice = Creative.find(result[:id])
+        assert practice.onboarding_practice?
+        assert_equal "in_progress", card.reload.onboarding_metadata["status"]
+      end
+
       test "raises error when no current user" do
         Current.user = nil
         service = CreativeCreateService.new
