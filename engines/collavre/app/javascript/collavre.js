@@ -20,6 +20,7 @@ import "./components/creative_tree_row"
 import "./lib/apply_lexical_styles"
 import "./lib/turbo_stream_actions"
 import "./lib/turbo_confirm"
+import "./lib/utils/creative_link_navigation"
 
 // Export controller registration
 export { registerControllers } from "./controllers"
