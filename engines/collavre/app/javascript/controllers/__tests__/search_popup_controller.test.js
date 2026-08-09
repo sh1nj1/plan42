@@ -102,3 +102,313 @@ describe('SearchPopupController Ctrl+K shortcut', () => {
     expect(event.defaultPrevented).toBe(false)
   })
 })
+
+const WORKSPACE_FRAME_ID = 'creative-workspace-content'
+
+describe('SearchPopupController filter navigation', () => {
+  let application
+  let visit
+  let popup
+
+  // jsdom's window.location is unforgeable, so drive it through history.
+  function setLocation(href) {
+    window.history.replaceState({}, '', href)
+  }
+
+  async function mount({ onIndex = true, withFrame = true } = {}) {
+    document.body.innerHTML = `
+      ${withFrame ? `<turbo-frame id="${WORKSPACE_FRAME_ID}"></turbo-frame>` : ''}
+      <div data-controller="search-popup"
+           data-search-popup-index-path-value="/creatives"
+           data-search-popup-on-index-value="${onIndex}">
+        <button data-filter-state="any-filter"></button>
+        <input type="text" data-search-popup-target="input"
+               data-action="keydown->search-popup#submitSearch" />
+        <div data-search-popup-target="popup" class="open"></div>
+        <button data-filter="all" data-filter-state="progress:all"
+                data-action="click->search-popup#applyProgressFilter"></button>
+        <button data-filter="incomplete" data-filter-state="progress:incomplete"
+                data-action="click->search-popup#applyProgressFilter"></button>
+        <button data-filter-state="comment"
+                data-action="click->search-popup#applyCommentFilter"></button>
+        <button data-filter-state="archived"
+                data-label-on="Hide archived" data-label-off="Show archived"
+                data-action="click->search-popup#toggleArchive">Show archived</button>
+        <button data-mode="tree" data-action="click->search-popup#applySearchMode"></button>
+        <button data-mode="flat" data-action="click->search-popup#applySearchMode"></button>
+      </div>
+    `
+
+    application = Application.start()
+    application.register('search-popup', SearchPopupController)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    popup = document.querySelector('[data-search-popup-target="popup"]')
+  }
+
+  function click(selector) {
+    document.querySelector(selector).click()
+  }
+
+  beforeEach(() => {
+    visit = jest.fn()
+    window.Turbo = { visit }
+    setLocation('http://localhost/creatives')
+  })
+
+  afterEach(() => {
+    application?.stop()
+    application = null
+    delete window.Turbo
+    document.body.innerHTML = ''
+    jest.restoreAllMocks()
+  })
+
+  test('applies a progress filter through the workspace frame', async () => {
+    await mount()
+
+    click('[data-filter="incomplete"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives?min_progress=0&max_progress=0.99', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('applies the comment filter through the workspace frame', async () => {
+    await mount()
+
+    click('[data-filter-state="comment"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives?comment=true', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('toggles the archive filter and swaps its label', async () => {
+    await mount()
+
+    click('[data-filter-state="archived"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives?show_archived=true', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+    expect(document.querySelector('[data-filter-state="archived"]').textContent).toBe(
+      'Hide archived'
+    )
+  })
+
+  test('toggles the archive filter back off', async () => {
+    setLocation('http://localhost/creatives?show_archived=true')
+    await mount()
+
+    click('[data-filter-state="archived"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('applies the tree search mode', async () => {
+    await mount()
+
+    click('[data-mode="tree"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives?search_mode=tree', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('drops the search mode param when returning to flat mode', async () => {
+    setLocation('http://localhost/creatives?search_mode=tree')
+    await mount()
+
+    click('[data-mode="flat"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('submits the search term on Enter', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+    input.value = 'roadmap'
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
+
+    expect(visit).toHaveBeenCalledWith('/creatives?search=roadmap', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('clears the search term when submitted empty', async () => {
+    setLocation('http://localhost/creatives?search=roadmap')
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+    input.value = ''
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
+
+    expect(visit).toHaveBeenCalledWith('/creatives', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('clears whitespace-only searches', async () => {
+    setLocation('http://localhost/creatives?search=roadmap')
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    input.value = '   '
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    )
+
+    expect(visit).toHaveBeenLastCalledWith('/creatives', {
+      action: 'advance',
+      frame: WORKSPACE_FRAME_ID
+    })
+  })
+
+  test('ignores keys other than Enter in the search input', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+
+    expect(visit).not.toHaveBeenCalled()
+  })
+
+  test('closes the popup, which a frame-only navigation would leave open', async () => {
+    await mount()
+
+    click('[data-filter-state="comment"]')
+
+    expect(popup.classList.contains('open')).toBe(false)
+  })
+
+  test('refreshes the stale GNB filter state after a frame-only navigation', async () => {
+    setLocation('http://localhost/creatives?min_progress=0&max_progress=0.99')
+    await mount()
+
+    click('[data-filter="all"]')
+
+    expect(document.querySelector('[data-filter-state="progress:all"]').classList).toContain(
+      'active'
+    )
+    expect(
+      document.querySelector('[data-filter-state="progress:incomplete"]').classList
+    ).not.toContain('active')
+    expect(document.querySelector('[data-filter-state="any-filter"]').classList).not.toContain(
+      'active'
+    )
+  })
+
+  test('resyncs persistent controls when workspace-tree navigation loads the frame', async () => {
+    setLocation('http://localhost/creatives?search=roadmap&show_archived=true')
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+    const archiveButton = document.querySelector('[data-filter-state="archived"]')
+
+    expect(input.value).toBe('roadmap')
+    expect(archiveButton.classList).toContain('active')
+    expect(archiveButton.textContent).toBe('Hide archived')
+
+    setLocation('http://localhost/creatives?id=7')
+    document
+      .getElementById(WORKSPACE_FRAME_ID)
+      .dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(input.value).toBe('')
+    expect(archiveButton.classList).not.toContain('active')
+    expect(archiveButton.textContent).toBe('Show archived')
+    expect(document.querySelector('[data-filter-state="any-filter"]').classList).not.toContain(
+      'active'
+    )
+  })
+
+  test('resyncs persistent controls during browser history traversal', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    setLocation('http://localhost/creatives?search=restored')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+
+    expect(input.value).toBe('restored')
+    expect(document.querySelector('[data-filter-state="any-filter"].active')).not.toBeNull()
+  })
+
+  test('ignores frame loads outside the creative workspace', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    setLocation('http://localhost/creatives?search=ignored')
+    document.body.dispatchEvent(new CustomEvent('turbo:frame-load', { bubbles: true }))
+
+    expect(input.value).toBe('')
+    expect(document.querySelector('[data-filter-state="any-filter"].active')).toBeNull()
+  })
+
+  test('stops resyncing after the persistent controller disconnects', async () => {
+    await mount()
+    const input = document.querySelector('[data-search-popup-target="input"]')
+
+    input.closest('[data-controller="search-popup"]').remove()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    setLocation('http://localhost/creatives?search=ignored')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+
+    expect(input.value).toBe('')
+  })
+
+  test('sends filters to the creative index from a page that cannot use them', async () => {
+    setLocation('http://localhost/settings?tab=profile')
+    await mount({ onIndex: false, withFrame: false })
+
+    click('[data-filter-state="comment"]')
+
+    expect(visit).toHaveBeenCalledWith('/creatives?comment=true', { action: 'advance' })
+  })
+
+  test('leaves the filter state to the server when the whole page is replaced', async () => {
+    await mount({ withFrame: false })
+
+    click('[data-filter-state="comment"]')
+
+    expect(document.querySelector('[data-filter-state="comment"]').classList).not.toContain(
+      'active'
+    )
+  })
+
+  test('does nothing when a progress button carries no filter', async () => {
+    await mount()
+    const button = document.querySelector('[data-filter="all"]')
+    button.removeAttribute('data-filter')
+
+    button.click()
+
+    expect(visit).not.toHaveBeenCalled()
+  })
+
+  test('does nothing when a search mode button carries no mode', async () => {
+    await mount()
+    const button = document.querySelector('[data-mode="tree"]')
+    button.removeAttribute('data-mode')
+
+    button.click()
+
+    expect(visit).not.toHaveBeenCalled()
+  })
+})

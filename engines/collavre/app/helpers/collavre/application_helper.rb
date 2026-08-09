@@ -70,10 +70,16 @@ module Collavre
       end
     end
 
+    # The creative index is reachable at both "/" (root route) and
+    # "/creatives", so the list filters cannot decide "am I already on the
+    # index?" from the pathname alone — they read this instead.
+    def creative_index_page?
+      controller_path == "collavre/creatives" && action_name == "index"
+    end
+
     def creative_workspace?
       Current.user&.creative_workspace_enabled? &&
-        controller_path == "collavre/creatives" &&
-        action_name == "index" &&
+        creative_index_page? &&
         !@auto_fullscreen
     end
 

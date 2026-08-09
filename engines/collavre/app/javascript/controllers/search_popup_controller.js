@@ -1,7 +1,15 @@
 import { Controller } from '@hotwired/stimulus'
+import {
+  WORKSPACE_FRAME_ID,
+  applyFilterParam,
+  buildFilterUrl,
+  syncFilterButtons,
+  visitFilterUrl
+} from '../lib/utils/filter_navigation'
 
 export default class extends Controller {
   static targets = ['input', 'popup', 'overlay']
+  static values = { indexPath: String, onIndex: Boolean }
 
   connect() {
     this._escHandler = (e) => {
@@ -22,6 +30,18 @@ export default class extends Controller {
       }
     }
     document.addEventListener('keydown', this._shortcutHandler)
+
+    // The GNB survives workspace-frame visits. Tree navigation and frame
+    // history traversal bypass _navigate(), so keep its controls aligned with
+    // the browser URL whenever that frame loads or history changes.
+    this._frameLoadHandler = (event) => {
+      if (event.target.id !== WORKSPACE_FRAME_ID) return
+      this._syncFromLocation()
+    }
+    this._historyHandler = () => this._syncFromLocation()
+    document.addEventListener('turbo:frame-load', this._frameLoadHandler)
+    window.addEventListener('popstate', this._historyHandler)
+    this._syncFromLocation()
   }
 
   _isEditableTarget(target) {
@@ -38,6 +58,8 @@ export default class extends Controller {
   disconnect() {
     document.removeEventListener('keydown', this._escHandler)
     document.removeEventListener('keydown', this._shortcutHandler)
+    document.removeEventListener('turbo:frame-load', this._frameLoadHandler)
+    window.removeEventListener('popstate', this._historyHandler)
   }
 
   open() {
@@ -81,33 +103,13 @@ export default class extends Controller {
     const filter = event.currentTarget.dataset.filter
     if (!filter) return
 
-    const url = new URL(window.location.href)
-    url.searchParams.delete('min_progress')
-    url.searchParams.delete('max_progress')
-
-    if (filter === 'complete') {
-      url.searchParams.set('min_progress', '1')
-      url.searchParams.set('max_progress', '1')
-    } else if (filter === 'incomplete') {
-      url.searchParams.set('min_progress', '0')
-      url.searchParams.set('max_progress', '0.99')
-    }
-
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate((params) => applyFilterParam(params, filter))
   }
 
   // Apply comment filter
   applyCommentFilter(event) {
     event.preventDefault()
-    const url = new URL(window.location.href)
-    if (url.searchParams.get('comment') === 'true') {
-      url.searchParams.delete('comment')
-    } else {
-      url.searchParams.set('comment', 'true')
-    }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate((params) => applyFilterParam(params, 'comment'))
   }
 
   // Toggle search mode (flat/tree)
@@ -116,39 +118,55 @@ export default class extends Controller {
     const mode = event.currentTarget.dataset.mode
     if (!mode) return
 
-    const url = new URL(window.location.href)
-    if (mode === 'tree') {
-      url.searchParams.set('search_mode', 'tree')
-    } else {
-      url.searchParams.delete('search_mode')
-    }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate((params) => {
+      if (mode === 'tree') {
+        params.set('search_mode', 'tree')
+      } else {
+        params.delete('search_mode')
+      }
+    })
   }
 
   // Toggle archive visibility via URL parameter
   toggleArchive(event) {
     event.preventDefault()
-    const url = new URL(window.location.href)
-    if (url.searchParams.get('show_archived') === 'true') {
-      url.searchParams.delete('show_archived')
-    } else {
-      url.searchParams.set('show_archived', 'true')
-    }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    this._navigate((params) => {
+      if (params.get('show_archived') === 'true') {
+        params.delete('show_archived')
+      } else {
+        params.set('show_archived', 'true')
+      }
+    })
   }
 
   _applyFilters(overrides = {}) {
-    const url = new URL(window.location.href)
-    if ('search' in overrides) {
-      if (overrides.search) {
-        url.searchParams.set('search', overrides.search)
+    this._navigate((params) => {
+      if (!('search' in overrides)) return
+
+      const search = overrides.search
+      if (search.trim()) {
+        params.set('search', search)
       } else {
-        url.searchParams.delete('search')
+        params.delete('search')
       }
-    }
-    const query = url.searchParams.toString()
-    window.location.href = query ? `${url.pathname}?${query}` : url.pathname
+    })
+  }
+
+  // The popup lives in the GNB, outside the workspace frame, so a frame-only
+  // navigation leaves it open and showing the previous filter state.
+  _navigate(mutate) {
+    const url = buildFilterUrl(
+      { indexPath: this.indexPathValue, onIndex: this.onIndexValue },
+      mutate
+    )
+
+    this.close()
+    if (visitFilterUrl(url)) syncFilterButtons(url)
+  }
+
+  _syncFromLocation() {
+    const url = new URL(window.location.href)
+    syncFilterButtons(url)
+    this.inputTarget.value = url.searchParams.get('search') || ''
   }
 }
