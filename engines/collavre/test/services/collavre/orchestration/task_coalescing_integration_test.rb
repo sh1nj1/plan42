@@ -385,32 +385,25 @@ module Collavre
         assert_equal "cancelled", task.reload.status
       end
 
-      # Both doors onto the anchor replace "comment" but the payload also carries
-      # a "sender" block, and SystemEvents::ContextBuilder only fills it in with
-      # `||=` — it is never rebuilt on a promotion path. A stale sender labels the
-      # new anchor's text with the wrong speaker in MessageBuilder and ships the
-      # wrong author_id/author_name over ClaudeChannelAdapter.
-      test "deleting the anchor rebuilds the sender from the surviving comment" do
+      test "deleting one user's anchor leaves another user's waiter intact" do
         block_topic!
         other = users(:two)
         first = dispatch_comment("@#{@agent.name}: from other", user: other)
         second = dispatch_comment("@#{@agent.name}: from one")
 
-        waiter = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").sole
-        assert_equal @user.id, waiter.trigger_event_payload.dig("sender", "id")
+        waiters = Task.where(agent: @agent, topic_id: @topic.id, status: "queued").index_by do |task|
+          task.trigger_event_payload.dig("comment", "id")
+        end
+        assert_equal [ first.id, second.id ].sort, waiters.keys.sort
 
         second.destroy!
 
-        payload = waiter.reload.trigger_event_payload
-        assert_equal first.id, payload.dig("comment", "id")
-        assert_equal other.id, payload.dig("sender", "id"),
-                     "the turn now answers #{other.name}'s comment and must say so"
-        assert_equal expected_sender_for(other), payload["sender"],
-                     "the rebuilt sender must carry the same shape the builder does — " \
-                     "a two-key stub silently flips the is_a2a gate"
+        assert_equal "queued", waiters.fetch(first.id).reload.status
+        assert_equal other.id, waiters.fetch(first.id).trigger_event_payload.dig("sender", "id")
+        assert_equal "cancelled", waiters.fetch(second.id).reload.status
       end
 
-      test "refresh rebuilds the sender when it moves onto another user's comment" do
+      test "refresh does not move a verified human turn onto another user's comment" do
         other = users(:two)
         stale = dispatch_comment("@#{@agent.name}: stale")
         task = queued_waiter_for(stale)
@@ -425,9 +418,34 @@ module Collavre
         AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
 
         payload = task.reload.trigger_event_payload
-        assert_equal newer.id, payload.dig("comment", "id")
-        assert_equal expected_sender_for(other), payload["sender"],
-                     "refreshing onto another user's comment must move the sender with it"
+        assert_equal stale.id, payload.dig("comment", "id")
+        assert_equal expected_sender_for(@user), payload["sender"]
+        assert_not_includes Array(payload[TaskCoalescer::PAYLOAD_KEY]), newer.id
+      end
+
+      test "refresh keeps legacy latest-comment behavior without a verified principal" do
+        other = users(:two)
+        task = Task.create!(
+          name: "Legacy waiter", status: "queued", trigger_event_name: "comment_created",
+          agent: @agent, topic_id: @topic.id, creative_id: @creative.id,
+          trigger_event_payload: {
+            "creative" => { "id" => @creative.id },
+            "topic" => { "id" => @topic.id },
+            "comment" => { "id" => 0, "content" => "missing" },
+            "chat" => { "content" => "missing" },
+            "sender" => expected_sender_for(@user)
+          }
+        )
+        latest = Comment.create!(
+          creative: @creative, user: other, topic: @topic,
+          content: "@#{@agent.name}: recover me", skip_dispatch: true
+        )
+
+        AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
+
+        payload = task.reload.trigger_event_payload
+        assert_equal latest.id, payload.dig("comment", "id")
+        assert_equal other.id, payload.dig("sender", "id")
       end
 
       # Control: the rebuild must not fire blind. Re-anchoring within one user's

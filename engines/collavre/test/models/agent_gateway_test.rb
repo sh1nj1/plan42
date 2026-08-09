@@ -204,6 +204,32 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_not_equal shared_manifest_token, owner_workspace.manifest_token
   end
 
+  test "deactivating alone revokes credentials and reactivation recreates them lazily" do
+    gateway = build_gateway(identity_secret: "s" * 32)
+    gateway.save!
+    agent = create_agent(gateway)
+    workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    manifest_token = workspace.manifest_token
+    callback_token = workspace.callback_token
+    access_token = Doorkeeper::AccessToken.by_token(callback_token)
+
+    gateway.update!(active: false)
+
+    assert_not Collavre::AgentWorkspace.exists?(workspace.id)
+    assert_predicate access_token.reload, :revoked?
+    assert_raises(ActiveRecord::RecordNotFound) do
+      Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: agent.id, token: manifest_token)
+    end
+
+    assert_no_difference -> { Collavre::AgentWorkspace.count }, -> { Doorkeeper::AccessToken.count } do
+      gateway.update!(active: true)
+    end
+
+    replacement = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    assert_not_equal manifest_token, replacement.manifest_token
+    assert_not_equal callback_token, replacement.callback_token
+  end
+
   test "changing the proxy or tenant revokes existing workspace capabilities" do
     {
       base_url: "https://replacement-proxy.example.com",

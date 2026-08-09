@@ -27,7 +27,7 @@ module Collavre
     validate :base_url_is_http
     validate :base_url_is_safe_for_owner
     validate :identity_secret_is_usable
-    after_update :reconcile_workspaces_after_gateway_change, if: :workspace_scope_changed?
+    after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
 
     scope :active, -> { where(active: true) }
 
@@ -74,12 +74,16 @@ module Collavre
       errors.add(:identity_secret, :too_short, count: MIN_IDENTITY_SECRET_BYTES)
     end
 
-    def workspace_scope_changed?
-      saved_change_to_base_url? || saved_change_to_tenant_id? || saved_change_to_workspace_mode?
+    def workspace_credentials_changed?
+      saved_change_to_base_url? || saved_change_to_tenant_id? || saved_change_to_workspace_mode? || deactivated?
+    end
+
+    def deactivated?
+      saved_change_to_active? && !active?
     end
 
     def reconcile_workspaces_after_gateway_change
-      if saved_change_to_base_url? || saved_change_to_tenant_id?
+      if saved_change_to_base_url? || saved_change_to_tenant_id? || deactivated?
         agent_workspaces.destroy_all
         return
       end

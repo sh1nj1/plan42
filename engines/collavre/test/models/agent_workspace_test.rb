@@ -242,17 +242,51 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
 
   test "rotating tokens preserves manifest capability and revokes old callback token" do
     workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
+    gateway = workspace.agent_gateway
+    agent = workspace.agent
     old_manifest = workspace.manifest_token
     old_callback = workspace.callback_token
-    lock_calls = 0
+    lock_order = []
 
-    workspace.stub(:with_lock, ->(&block) { lock_calls += 1; block.call }) do
-      workspace.rotate_tokens!
+    gateway.stub(:with_lock, ->(&block) { lock_order << :gateway; block.call }) do
+      agent.stub(:with_lock, ->(&block) { lock_order << :agent; block.call }) do
+        workspace.stub(:with_lock, ->(&block) { lock_order << :workspace; block.call }) do
+          workspace.rotate_tokens!
+        end
+      end
     end
 
-    assert_equal 1, lock_calls
+    assert_equal %i[gateway agent workspace], lock_order
     assert_equal old_manifest, workspace.manifest_token
     assert_not_equal old_callback, workspace.callback_token
     assert Doorkeeper::AccessToken.by_token(old_callback).revoked?
+  end
+
+  test "token rotation refuses a workspace after its gateway is deactivated" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
+    access_token_count = Doorkeeper::AccessToken.count
+
+    @gateway.update!(active: false)
+
+    error = assert_raises(ArgumentError) { workspace.rotate_tokens! }
+    assert_equal "Agent gateway is inactive", error.message
+    assert_equal access_token_count, Doorkeeper::AccessToken.count
+  end
+
+  test "token rotation refuses a workspace after its agent changes gateways" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
+    access_token_count = Doorkeeper::AccessToken.count
+    replacement_gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Replacement proxy",
+      base_url: "https://replacement.example.com",
+      admin_key: "replacement-admin",
+      completion_key: "replacement-completion",
+      identity_secret: "r" * 32
+    )
+    @agent.update!(agent_gateway: replacement_gateway)
+
+    assert_raises(ActiveRecord::RecordNotFound) { workspace.rotate_tokens! }
+    assert_equal access_token_count, Doorkeeper::AccessToken.count
   end
 end

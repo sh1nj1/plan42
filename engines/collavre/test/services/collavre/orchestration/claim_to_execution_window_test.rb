@@ -115,16 +115,18 @@ module Collavre
                         "a comment with a turn still coming must not be swallowed by this one"
       end
 
-      test "the sender moves with the anchor when the fold crosses users" do
+      test "the execution-window fold does not cross human principals" do
         claimed = task_for(comment("@#{@agent.name}: first"), status: "pending")
         other = users(:two)
         late = comment("@#{@agent.name}: mine now", user: other)
-        task_for(late, status: "queued")
+        late_waiter = task_for(late, status: "queued")
 
         AgentOrchestrator.coalesce_at_start!(claimed)
 
-        assert_equal sender_for(other.id), claimed.reload.trigger_event_payload["sender"],
-                     "the turn now answers #{other.name}'s comment and must say so"
+        assert_equal sender_for(@user.id), claimed.reload.trigger_event_payload["sender"],
+                     "the claimed turn must retain its own workspace principal"
+        assert_equal "queued", late_waiter.reload.status,
+                     "the other person's prompt must keep a separate turn"
       end
 
       # Control: the window closes at execution, it does not stay open forever.

@@ -137,14 +137,19 @@ module Collavre
       end
 
       # Restrict a re-anchor query to comments that keep the task on the same
-      # per-user CLI Proxy principal. The current anchor is always retained as
+      # potential workspace principal. The current anchor is always retained as
       # the no-op candidate: an A2A payload may carry a human principal even
       # though its anchor was authored by an agent, while moving onto another
       # agent comment would deliberately turn that principal into explicit nil.
+      # A verified human boundary applies before a per-user gateway is selected
+      # because configuration may change while the task is queued. A fallback
+      # creator is not evidence of who initiated an ordinary turn, so it keeps
+      # the legacy refresh behavior until a per-user gateway requires fail-closed
+      # handling.
       def self.reanchor_scope_for_workspace_principal(scope, task)
-        return scope unless workspace_principal_isolated?(task.agent)
-
         principal = workspace_principal_for(task)
+        return scope if principal.first == :fallback && !workspace_principal_isolated?(task.agent)
+
         anchor_id = (task.trigger_event_payload || {}).dig("comment", "id")
         compatible =
           case principal.first
@@ -299,7 +304,6 @@ module Collavre
       # identical may be absorbed.
       def reject_other_workspace_principals(keep, siblings)
         return siblings if siblings.empty?
-        return siblings unless self.class.workspace_principal_isolated?(keep.agent)
 
         principals = self.class.send(:workspace_principals_for, [ keep ] + siblings)
         keep_principal = principals.fetch(keep.id)
@@ -335,7 +339,7 @@ module Collavre
         return [ :human, comment.user_id ] if comment&.user && !comment.user.ai_user?
 
         creator = users[agent_creators[task.agent_id]]
-        creator && !creator.ai_user? ? [ :human, creator.id ] : [ :fallback, creator&.id ]
+        [ :fallback, creator&.id ]
       end
       private_class_method :effective_workspace_principal
 

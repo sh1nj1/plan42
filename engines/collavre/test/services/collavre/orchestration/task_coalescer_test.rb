@@ -87,7 +87,7 @@ module Collavre
         assert_equal [ first_comment.id ], second.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
       end
 
-      test "shared proxy agents may still coalesce comments from different humans" do
+      test "shared proxy agents keep human principals separate before a per-user mode change" do
         shared_agent = create_proxy_agent(workspace_mode: :shared)
         first_comment = @creative.comments.create!(
           content: "first", user: @user, topic: @topic, skip_dispatch: true
@@ -98,9 +98,27 @@ module Collavre
         first = create_waiter(comment_id: first_comment.id, agent: shared_agent)
         second = create_waiter(comment_id: second_comment.id, agent: shared_agent)
 
-        assert_equal [ first.id ], TaskCoalescer.coalesce!(second)
-        assert_equal "cancelled", first.reload.status
-        assert_equal [ first_comment.id ], second.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+        assert_empty TaskCoalescer.coalesce!(second)
+        shared_agent.agent_gateway.update!(workspace_mode: :per_user)
+
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status
+        assert_nil second.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+      end
+
+      test "agents without a gateway keep human principals separate before configuration" do
+        first_comment = @creative.comments.create!(
+          content: "first", user: @user, topic: @topic, skip_dispatch: true
+        )
+        second_comment = @creative.comments.create!(
+          content: "second", user: users(:two), topic: @topic, skip_dispatch: true
+        )
+        first = create_waiter(comment_id: first_comment.id)
+        second = create_waiter(comment_id: second_comment.id)
+
+        assert_empty TaskCoalescer.coalesce!(second)
+        assert_equal "queued", first.reload.status
+        assert_equal "queued", second.reload.status
       end
 
       test "keeps the newest comment as the trigger anchor" do

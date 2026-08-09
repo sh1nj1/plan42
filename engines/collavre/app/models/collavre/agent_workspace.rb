@@ -133,11 +133,22 @@ module Collavre
     end
 
     def rotate_tokens!
-      with_lock do
-        old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
-        new_callback_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
-        update!(callback_token: new_callback_token)
-        old_access_token&.revoke
+      gateway = agent_gateway
+      gateway.with_lock do
+        workspace_agent = agent
+        workspace_agent.with_lock do
+          raise ActiveRecord::RecordNotFound unless workspace_agent.agent_gateway_id == gateway.id
+          raise ArgumentError, "Agent gateway is inactive" unless gateway.active?
+
+          with_lock do
+            raise ActiveRecord::RecordNotFound unless agent_gateway_id == gateway.id
+
+            old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
+            new_callback_token = self.class.send(:issue_callback_token!, gateway: gateway, owner: user || workspace_agent)
+            update!(callback_token: new_callback_token)
+            old_access_token&.revoke
+          end
+        end
       end
 
       self
