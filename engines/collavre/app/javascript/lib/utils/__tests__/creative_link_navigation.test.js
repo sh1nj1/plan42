@@ -54,6 +54,7 @@ describe("creative link navigation", () => {
   })
 
   test.each([
+    "/creatives/42/",
     "/creatives?id=42",
   ])("navigates the canonical workspace link %s through the workspace frame", (href) => {
     const anchor = document.getElementById("creative-link")
@@ -70,6 +71,21 @@ describe("creative link navigation", () => {
 
   test("navigates a canonical workspace link under the engine mount path", () => {
     const href = "/collavre/creatives?open_comments=true&id=42"
+    const anchor = document.getElementById("creative-link")
+    document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
+    anchor.setAttribute("href", href)
+
+    const event = click("#creative-link")
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(visit).toHaveBeenCalledWith(href, {
+      action: "advance",
+      frame: WORKSPACE_FRAME_ID,
+    })
+  })
+
+  test("navigates a trailing-slash link under the engine mount path", () => {
+    const href = "/collavre/creatives/42/"
     const anchor = document.getElementById("creative-link")
     document.getElementById(WORKSPACE_FRAME_ID).dataset.collavreMountPath = "/collavre"
     anchor.setAttribute("href", href)

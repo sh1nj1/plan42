@@ -32,7 +32,9 @@ describe('CreativeLinkNode', () => {
   test('extracts creative ids only from canonical internal paths', () => {
     expect(creativeIdFromUrl()).toBeNull()
     expect(creativeIdFromUrl('/creatives/42')).toBe(42)
+    expect(creativeIdFromUrl('/creatives/42/')).toBe(42)
     expect(creativeIdFromUrl('/collavre/creatives/42', '/collavre')).toBe(42)
+    expect(creativeIdFromUrl('/collavre/creatives/42/', '/collavre')).toBe(42)
     expect(creativeIdFromUrl('/apps/collavre/creatives/42?topic_id=3', '/apps/collavre')).toBe(42)
     expect(creativeIdFromUrl('/creatives/42?topic_id=3')).toBe(42)
     expect(creativeIdFromUrl('/creatives/42#comments')).toBe(42)
@@ -42,6 +44,7 @@ describe('CreativeLinkNode', () => {
     expect(creativeIdFromUrl('/creatives/42/slide_view')).toBeNull()
     expect(creativeIdFromUrl('/collavre/creatives/42/slide_view', '/collavre')).toBeNull()
     expect(creativeIdFromUrl('/creatives/42/topics')).toBeNull()
+    expect(creativeIdFromUrl('/creatives/42//')).toBeNull()
     expect(creativeIdFromUrl('/creatives')).toBeNull()
     expect(creativeIdFromUrl('/creatives?id=not-a-number')).toBeNull()
     expect(creativeIdFromUrl('/creatives/42/topics?id=42')).toBeNull()

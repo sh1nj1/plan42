@@ -25,7 +25,7 @@ export function creativeIdFromUrl(url, mountPath = collavreMountPath()) {
   const showPath = parsed.pathname.startsWith(`${creativeBasePath}/`)
     ? parsed.pathname.slice(creativeBasePath.length)
     : ""
-  const showMatch = showPath.match(/^\/(\d+)$/)
+  const showMatch = showPath.match(/^\/(\d+)\/?$/)
   if (showMatch) return Number(showMatch[1])
 
   if (parsed.pathname !== creativeBasePath) return null
