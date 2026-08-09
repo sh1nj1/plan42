@@ -29,7 +29,7 @@
 
 .feature-card--onboarding {
     max-width: 560px;
-    border-color: color-mix(in srgb, var(--border-color), var(--color-active) 30%);
+    border: 0;
 }
 
 .feature-card-dismiss {

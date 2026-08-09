@@ -19,6 +19,9 @@ class OnboardingGuideTest < ApplicationSystemTestCase
     progress_step = progress_card.children.sole
     assert_selector ".creative-workspace-tree-link[data-creative-id='#{guide.id}']", wait: 10
     assert_selector ".feature-card--onboarding[data-key]", count: 3, wait: 10
+    assert_equal "0px", page.evaluate_script(<<~JS)
+      getComputedStyle(document.querySelector('.feature-card--onboarding[data-key]')).borderTopWidth
+    JS
     within ".feature-card[data-key='progress_rollup']" do
       click_link I18n.t("collavre.onboarding.actions.progress_rollup", locale: :en)
     end
