@@ -9,8 +9,11 @@ module Collavre
         @permission_rank = {}
       end
 
+      # Roots stay visible even when they have nothing to expand, so the tree
+      # never silently drops a creative the user navigated to. Below the root
+      # level only branches render, which keeps leaf chatter out of the tree.
       def build(collection)
-        entries = Array(collection).map { |creative| { creative: creative, ancestor_ids: Set.new } }
+        entries = Array(collection).map { |creative| { creative: creative, ancestor_ids: Set.new, root: true } }
         build_entries(entries)
       end
 
@@ -23,26 +26,28 @@ module Collavre
 
         creatives = entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
         prepare_level(creatives)
-        branch_entries = entries.select { |entry| children_index.has_children?(entry.fetch(:creative)) }
-        branches = branch_entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
-        children_index.load(branches)
-        children_by_parent = branches.to_h { |creative| [ creative.id, children_index.children_for(creative) ] }
+        visible_entries = entries.select do |entry|
+          entry.fetch(:root) || children_index.has_children?(entry.fetch(:creative))
+        end
+        visible_creatives = visible_entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
+        children_index.load(visible_creatives)
+        children_by_parent = visible_creatives.to_h { |creative| [ creative.id, children_index.children_for(creative) ] }
         prepare_presence(children_by_parent.values.flatten)
         branch_children_by_parent = children_by_parent.transform_values do |children|
           children.select { |child| children_index.has_children?(child) }
         end
-        child_entries_by_parent = branch_entries.to_h do |entry|
+        child_entries_by_parent = visible_entries.to_h do |entry|
           creative = entry.fetch(:creative)
           children = expanded?(creative) ? acyclic_children(entry, branch_children_by_parent.fetch(creative.id)) : []
           child_entries = children.map do |child|
-            { creative: child, ancestor_ids: entry.fetch(:ancestor_ids).dup.add(creative.id) }
+            { creative: child, ancestor_ids: entry.fetch(:ancestor_ids).dup.add(creative.id), root: false }
           end
           [ entry.object_id, child_entries ]
         end
         child_nodes = build_entries(child_entries_by_parent.values.flatten)
         next_child_node = child_nodes.each
 
-        branch_entries.map do |entry|
+        visible_entries.map do |entry|
           creative = entry.fetch(:creative)
           visible_children = acyclic_children(entry, branch_children_by_parent.fetch(creative.id))
           children = child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }

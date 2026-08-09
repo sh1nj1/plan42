@@ -342,10 +342,10 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a.creative-breadcrumb-current[href='#{creative_path(child)}'][data-turbo-action='replace'][data-turbo-prefetch='false']"
   end
 
-  test "workspace tree JSON returns collapsed branches without leaf roots" do
+  test "workspace tree JSON returns collapsed branches and childless roots" do
     branch = Creative.create!(user: users(:one), description: "Workspace branch")
     child = Creative.create!(user: users(:one), parent: branch, description: "Workspace child")
-    Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
+    nested_leaf = Creative.create!(user: users(:one), parent: child, description: "Workspace leaf")
     leaf = Creative.create!(user: users(:one), description: "Workspace leaf")
 
     get creatives_path(format: :json, workspace_tree: 1)
@@ -354,7 +354,12 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     payload = JSON.parse(response.body)
     ids = payload.fetch("creatives").pluck("id")
     assert_includes ids, branch.id
-    refute_includes ids, leaf.id
+    assert_includes ids, leaf.id
+    refute_includes ids, nested_leaf.id
+    leaf_payload = payload.fetch("creatives").find { |node| node.fetch("id") == leaf.id }
+    assert_equal creatives_path(id: leaf.id), leaf_payload.fetch("url")
+    refute leaf_payload.fetch("has_children")
+    assert_empty leaf_payload.fetch("children")
     branch_payload = payload.fetch("creatives").find { |node| node.fetch("id") == branch.id }
     assert_equal creatives_path(id: branch.id), branch_payload.fetch("url")
     assert_equal branch.creative_snippet, branch_payload.fetch("snippet")
