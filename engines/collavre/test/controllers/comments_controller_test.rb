@@ -59,6 +59,33 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_in_delta 1.0, practice.reload.progress
   end
 
+  test "records an onboarding mention before dispatching it to an agent" do
+    @user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+    agent = users(:ai_bot)
+    agent.update!(created_by_id: @user.id)
+    Creative.inbox_for(@user)
+    guide = Collavre::Onboarding::Seeder.call(user: @user)
+    card = guide.children.find { |creative| creative.onboarding_metadata["step_key"] == "mention_agent" }
+    practice = card.children.sole
+    state_at_dispatch = nil
+
+    dispatch = lambda do |event_name, context|
+      next unless event_name == "comment_created" && context.dig(:comment, :user_id) == @user.id
+
+      metadata = card.reload.onboarding_metadata
+      state_at_dispatch = metadata.slice("invoked_agent_id", "response_status")
+    end
+
+    Collavre::SystemEvents::Dispatcher.stub(:dispatch, dispatch) do
+      post creative_comments_path(practice), params: {
+        comment: { content: "@#{agent.name}: help me", topic_id: practice.main_topic.id, private: false }
+      }
+    end
+
+    assert_response :created
+    assert_equal({ "invoked_agent_id" => agent.id, "response_status" => "waiting" }, state_at_dispatch)
+  end
+
   test "convert markdown comment to sub creatives" do
     comment = @creative.comments.create!(content: "- First\n- Second", user: @user)
     assert_difference("Creative.count", 2) do
