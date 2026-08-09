@@ -52,6 +52,8 @@ describe("creative link navigation", () => {
   test.each([
     ["a non-creative path", { href: "/users/42" }, {}],
     ["an external URL", { href: "https://example.com/creatives/42" }, {}],
+    ["a creative slide view", { href: "/creatives/42/slide_view" }, {}],
+    ["a nested creative route", { href: "/creatives/42/topics" }, {}],
     ["a download", { download: "creative.txt" }, {}],
     ["a new-window target", { target: "_blank" }, {}],
     ["a different Turbo frame", { turboFrame: "other-frame" }, {}],
