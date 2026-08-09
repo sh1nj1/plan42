@@ -59,7 +59,7 @@ en:
         empty_state_heading_sub: No sub-creatives yet
         empty_state_concept_title: "💡 What's a creative?"
         empty_state_facet_doc: Tree-structured document piece
-        empty_state_facet_task: Actionable task (progress)
+        empty_state_facet_task: Actionable task
         empty_state_facet_chat: Discussion channel
         empty_state_block_label: One creative block
         empty_state_concept_caption: One block plays all three roles — document, task, and conversation. Stacked as a tree, it becomes a document-shaped project with automatic progress rollup.

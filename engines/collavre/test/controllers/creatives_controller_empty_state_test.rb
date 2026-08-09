@@ -18,6 +18,15 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     ERB::Util.html_escape(I18n.t(key))
   end
 
+  test "task facet omits the progress qualifier in both locales" do
+    { en: "Actionable task", ko: "실행 가능한 작업" }.each do |locale, expected|
+      label = I18n.t("collavre.creatives.index.empty_state_facet_task", locale: locale)
+
+      assert_equal expected, label
+      refute_match(/\(.+\)/, label)
+    end
+  end
+
   test "root empty state shows writable CTAs for an authenticated user" do
     sign_in_as(users(:one), password: "password")
 

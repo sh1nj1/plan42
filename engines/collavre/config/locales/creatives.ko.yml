@@ -55,7 +55,7 @@ ko:
         empty_state_heading_sub: 아직 하위 크리에이티브가 없습니다
         empty_state_concept_title: "💡 크리에이티브란?"
         empty_state_facet_doc: 트리 구조 문서 조각
-        empty_state_facet_task: 실행 가능한 작업 (진행률)
+        empty_state_facet_task: 실행 가능한 작업
         empty_state_facet_chat: 관련 대화 채널
         empty_state_block_label: 크리에이티브 1블록
         empty_state_concept_caption: 하나의 블록이 문서·작업·대화 역할을 동시에 합니다. 트리로 쌓으면 진행률이 자동 집계되는 문서형 프로젝트가 됩니다.
