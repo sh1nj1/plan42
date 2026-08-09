@@ -43,6 +43,17 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
+  test "inactive gateway returns unavailable before creating a workspace" do
+    @gateway.update!(active: false)
+    sign_in_as(@owner, password: "password")
+
+    assert_no_difference("Collavre::AgentWorkspace.count") do
+      get collavre.agent_connection_user_path(@agent)
+    end
+
+    assert_response :service_unavailable
+  end
+
   test "connection page provides localized proxy status labels" do
     @owner.update!(locale: "ko")
     sign_in_as(@owner, password: "password")

@@ -1,0 +1,628 @@
+#!/usr/bin/env node
+// Collavre CLI — MCP SSE client for Creative management
+// Usage: collavre <command> [options]
+
+import fs from "node:fs";
+import path from "node:path";
+import https from "node:https";
+import http from "node:http";
+import os from "node:os";
+
+const CONFIG_DIR = path.join(
+  os.homedir(),
+  ".config",
+  "collavre"
+);
+const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+
+// --- Config ---
+function loadConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveConfig(config) {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
+// --- MCP SSE Client ---
+class McpClient {
+  constructor(url, token) {
+    this.baseUrl = url.replace(/\/+$/, "");
+    this.token = token;
+    this.sessionUrl = null;
+    this._pendingRequests = new Map();
+    this._sseBuffer = "";
+  }
+
+  async connect() {
+    const sseUrl = `${this.baseUrl}/mcp/sse`;
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("SSE connection timeout")),
+        10000
+      );
+      const req = this._request(sseUrl, { method: "GET" });
+
+      req.on("response", (res) => {
+        if (res.statusCode !== 200) {
+          clearTimeout(timeout);
+          reject(new Error(`SSE connection failed: ${res.statusCode}`));
+          return;
+        }
+        this._sseRes = res;
+        res.on("data", (chunk) => {
+          this._sseBuffer += chunk.toString();
+          const lines = this._sseBuffer.split("\n");
+          this._sseBuffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              // First data message contains the messages endpoint URL
+              if (!this.sessionUrl && data.includes("/mcp/messages")) {
+                clearTimeout(timeout);
+                this.sessionUrl = data.startsWith("http")
+                  ? data
+                  : `${this.baseUrl}${data}`;
+                resolve();
+              } else if (this.sessionUrl) {
+                // Subsequent data messages are JSON-RPC responses
+                this._handleSseMessage(data);
+              }
+            }
+          }
+        });
+        res.on("error", (e) => {
+          clearTimeout(timeout);
+          reject(e);
+        });
+      });
+      req.on("error", (e) => {
+        clearTimeout(timeout);
+        reject(e);
+      });
+      req.end();
+    });
+  }
+
+  _handleSseMessage(data) {
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.id && this._pendingRequests.has(parsed.id)) {
+        const { resolve, reject } = this._pendingRequests.get(parsed.id);
+        this._pendingRequests.delete(parsed.id);
+        if (parsed.error) {
+          reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+        } else {
+          resolve(parsed.result);
+        }
+      }
+    } catch {
+      // ignore non-JSON SSE messages
+    }
+  }
+
+  async callTool(name, args) {
+    if (!this.sessionUrl) throw new Error("Not connected. Call connect() first.");
+
+    const id = Date.now();
+    const body = JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name, arguments: args },
+    });
+
+    // Set up listener for SSE response before sending
+    const resultPromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this._pendingRequests.delete(id);
+        reject(new Error("Tool call timeout (30s)"));
+      }, 30000);
+      this._pendingRequests.set(id, {
+        resolve: (v) => { clearTimeout(timeout); resolve(v); },
+        reject: (e) => { clearTimeout(timeout); reject(e); },
+      });
+    });
+
+    // Send the POST request (response comes via SSE, not HTTP body)
+    await new Promise((resolve, reject) => {
+      const req = this._request(this.sessionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      req.on("response", (res) => {
+        // 200 or 202 = accepted, actual result comes via SSE
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          res.resume(); // drain response
+          resolve();
+        } else {
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => reject(new Error(`HTTP ${res.statusCode}: ${data}`)));
+        }
+      });
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
+
+    return resultPromise;
+  }
+
+  disconnect() {
+    if (this._sseRes) {
+      this._sseRes.destroy();
+      this._sseRes = null;
+    }
+  }
+
+  _request(url, opts) {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === "https:" ? https : http;
+    return mod.request(url, {
+      ...opts,
+      headers: {
+        ...(opts.headers || {}),
+        Authorization: `Bearer ${this.token}`,
+      },
+    });
+  }
+}
+
+// --- Multipart upload (bearer) to the Collavre web app ---
+// Bytes travel as raw multipart, not base64-over-JSON-RPC, so binary files
+// (png, mp4, pdf, svg) upload without bloat. The endpoint embeds the node into
+// the creative's description and attaches it to creative.files.
+function postMultipartFile(baseUrl, token, creativeId, filePath) {
+  return new Promise((resolve, reject) => {
+    const fileName = path.basename(filePath);
+    const fileBuf = fs.readFileSync(filePath);
+    const boundary =
+      "----collavre" +
+      Buffer.from(fileName + fileBuf.length).toString("hex").slice(0, 16);
+    const head = Buffer.from(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([head, fileBuf, tail]);
+
+    const url = new URL(
+      `${baseUrl.replace(/\/+$/, "")}/creatives/${creativeId}/attachments`
+    );
+    const mod = url.protocol === "https:" ? https : http;
+    const req = mod.request(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
+      },
+    });
+    req.on("response", (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve({ raw: data });
+          }
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// --- Commands ---
+async function withClient(fn) {
+  const config = loadConfig();
+  if (!config.url || !config.token) {
+    console.error("Not configured. Run: collavre auth --url <url> --token <token>");
+    process.exit(1);
+  }
+  const client = new McpClient(config.url, config.token);
+  try {
+    await client.connect();
+    await fn(client);
+  } finally {
+    client.disconnect();
+  }
+}
+
+function parseArgs(argv) {
+  const args = {};
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith("--")) {
+      const key = argv[i].slice(2);
+      const next = argv[i + 1];
+      if (!next || next.startsWith("--")) {
+        args[key] = true;
+      } else {
+        args[key] = next;
+        i++;
+      }
+    } else {
+      positional.push(argv[i]);
+    }
+  }
+  return { args, positional };
+}
+
+// HTML entity decoding
+function decodeHtmlEntities(text) {
+  if (!text) return text;
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)));
+}
+
+// Fix Ruby hash-style output to valid JSON
+function fixRubyHash(text) {
+  if (!text) return text;
+  // Ruby symbol keys: {id: 1} → {"id": 1}
+  // Also handles nested arrays/hashes
+  try {
+    // Try parsing as JSON first
+    JSON.parse(text);
+    return text;
+  } catch {
+    // Convert Ruby hash syntax to JSON
+    // First, quote symbol keys: word: → "word":
+    let fixed = text
+      .replace(/(?<=[\{,\s])(\w+):\s/g, '"$1": ');
+    // Replace nil → null only outside quoted strings
+    fixed = fixed.replace(/"(?:[^"\\]|\\.)*"|(\bnil\b)/g, (match, nil) => nil ? "null" : match);
+    try {
+      JSON.parse(fixed);
+      return fixed;
+    } catch {
+      return text;
+    }
+  }
+}
+
+function processMarkdownOutput(text, truncateLen) {
+  let output = decodeHtmlEntities(text);
+  if (truncateLen && truncateLen > 0) {
+    output = output.split("\n").map((line) => {
+      // Match tree lines: "  - [id] description (progress%)"
+      const match = line.match(/^(\s*-\s*\[\d+\]\s*)(.+?)(\s*\(\d+%\)\s*)$/);
+      if (match) {
+        let desc = match[2];
+        if (desc.length > truncateLen) {
+          desc = desc.slice(0, truncateLen - 1) + "…";
+        }
+        return match[1] + desc + match[3];
+      }
+      return line;
+    }).join("\n");
+  }
+  return output;
+}
+
+function printResult(result, { truncate } = {}) {
+  if (!result) return;
+  if (result.content) {
+    for (const item of result.content) {
+      if (item.type === "text") {
+        // Try to parse as JSON (or fix Ruby hash format)
+        const fixed = fixRubyHash(item.text);
+        try {
+          const parsed = JSON.parse(fixed);
+          console.log(JSON.stringify(parsed, null, 2));
+        } catch {
+          // Markdown output — decode HTML entities and optionally truncate
+          console.log(processMarkdownOutput(item.text, truncate));
+        }
+      }
+    }
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
+}
+
+const commands = {
+  auth(argv) {
+    const { args } = parseArgs(argv);
+    if (!args.url || !args.token) {
+      console.error("Usage: collavre auth --url <url> --token <token>");
+      process.exit(1);
+    }
+    saveConfig({ url: args.url, token: args.token });
+    console.log(`Saved config to ${CONFIG_FILE}`);
+  },
+
+  async list(argv) {
+    const { args } = parseArgs(argv);
+    const truncate = args.truncate ? parseInt(args.truncate) : undefined;
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_retrieval_service", {
+        level: parseInt(args.level) || 3,
+        format: args.format || "markdown",
+        include_comments: args.comments === true,
+      });
+      printResult(result, { truncate });
+    });
+  },
+
+  async get(argv) {
+    const { args, positional } = parseArgs(argv);
+    const id = parseInt(positional[0]);
+    if (!id) {
+      console.error("Usage: collavre get <id> [--level N] [--comments] [--format json] [--truncate N]");
+      process.exit(1);
+    }
+    const truncate = args.truncate ? parseInt(args.truncate) : undefined;
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_retrieval_service", {
+        id,
+        level: parseInt(args.level) || 3,
+        format: args.format || "markdown",
+        include_comments: args.comments === true,
+      });
+      printResult(result, { truncate });
+    });
+  },
+
+  async search(argv) {
+    const { args, positional } = parseArgs(argv);
+    const query = positional[0];
+    if (!query) {
+      console.error("Usage: collavre search <query> [--tags tags]");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const params = {
+        query,
+      };
+      if (args.tags) params.tags = args.tags;
+      const result = await client.callTool("creative_retrieval_service", params);
+      printResult(result);
+    });
+  },
+
+  async create(argv) {
+    const { args } = parseArgs(argv);
+    if (!args.desc) {
+      console.error("Usage: collavre create --parent <id> --desc <text>");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const params = { description: args.desc };
+      if (args.parent) params.parent_id = parseInt(args.parent);
+      if (args.after) params.after_id = parseInt(args.after);
+      if (args.before) params.before_id = parseInt(args.before);
+      const result = await client.callTool("creative_create_service", params);
+      printResult(result);
+    });
+  },
+
+  async update(argv) {
+    const { args, positional } = parseArgs(argv);
+    const id = parseInt(positional[0]);
+    if (!id) {
+      console.error("Usage: collavre update <id> [--desc text] [--progress 1.0] [--parent id]");
+      process.exit(1);
+    }
+    await withClient(async (client) => {
+      const params = { id };
+      if (args.desc) params.description = args.desc;
+      if (args.progress !== undefined) params.progress = parseFloat(args.progress);
+      if (args.parent !== undefined) params.parent_id = parseInt(args.parent);
+      const result = await client.callTool("creative_update_service", params);
+      printResult(result);
+    });
+  },
+
+  async import(argv) {
+    const { args } = parseArgs(argv);
+    const parentId = parseInt(args.parent);
+    if (!parentId) {
+      console.error("Usage: collavre import --parent <id> --file <path> | --stdin");
+      process.exit(1);
+    }
+
+    let markdown;
+    if (args.file) {
+      markdown = fs.readFileSync(args.file, "utf8");
+    } else if (args.stdin) {
+      markdown = fs.readFileSync(0, "utf8");
+    } else {
+      console.error("Provide --file <path> or --stdin");
+      process.exit(1);
+    }
+
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_import_service", {
+        markdown,
+        parent_id: parentId,
+      });
+      printResult(result);
+    });
+  },
+
+  async batch(argv) {
+    const { args } = parseArgs(argv);
+    if (!args.file) {
+      console.error("Usage: collavre batch --file <ops.json>");
+      process.exit(1);
+    }
+    const ops = JSON.parse(fs.readFileSync(args.file, "utf8"));
+    await withClient(async (client) => {
+      const result = await client.callTool("creative_batch_service", {
+        operations: ops,
+      });
+      printResult(result);
+    });
+  },
+
+  async attach(argv) {
+    const { args } = parseArgs(argv);
+    const creativeId = parseInt(args.creative);
+    const file = args.file && args.file !== true ? args.file : null;
+    if (!creativeId || !file) {
+      console.error("Usage: collavre attach --creative <id> --file <path>");
+      process.exit(1);
+    }
+    if (!fs.existsSync(file)) {
+      console.error(`File not found: ${file}`);
+      process.exit(1);
+    }
+    const config = loadConfig();
+    if (!config.url || !config.token) {
+      console.error("Not configured. Run: collavre auth --url <url> --token <token>");
+      process.exit(1);
+    }
+    // config.url is the MCP base URL; the web app shares the same origin.
+    const webBase = new URL(config.url).origin;
+    const result = await postMultipartFile(webBase, config.token, creativeId, file);
+    console.log(JSON.stringify(result, null, 2));
+  },
+
+  async tool(argv) {
+    const { args, positional } = parseArgs(argv);
+    const sub = positional[0];
+
+    if (!sub || sub === "help") {
+      console.log(`Usage: collavre tool <subcommand> [options]
+
+Subcommands:
+  list                          List available tools (summary)
+  list --full                   List with full details
+  search <query>                Search tools by name/description
+  info <tool_name>              Show tool parameters and usage
+  run <tool_name> --json '{}'   Run tool with JSON arguments
+  run <tool_name> --key value   Run tool with flag arguments`);
+      process.exit(0);
+    }
+
+    await withClient(async (client) => {
+      switch (sub) {
+        case "list": {
+          const action = args.full ? "list" : "list_summary";
+          const result = await client.callTool("meta_tool", { action });
+          printResult(result);
+          break;
+        }
+
+        case "search": {
+          const query = positional[1];
+          if (!query) {
+            console.error("Usage: collavre tool search <query>");
+            process.exit(1);
+          }
+          const result = await client.callTool("meta_tool", {
+            action: "search",
+            query,
+          });
+          printResult(result);
+          break;
+        }
+
+        case "info": {
+          const toolName = positional[1];
+          if (!toolName) {
+            console.error("Usage: collavre tool info <tool_name>");
+            process.exit(1);
+          }
+          const result = await client.callTool("meta_tool", {
+            action: "get",
+            tool_name: toolName,
+          });
+          printResult(result);
+          break;
+        }
+
+        case "run": {
+          const toolName = positional[1];
+          if (!toolName) {
+            console.error("Usage: collavre tool run <tool_name> [--json '{}' | --key value ...]");
+            process.exit(1);
+          }
+          let toolArgs = {};
+          if (args.json) {
+            toolArgs = JSON.parse(args.json);
+          } else {
+            // Build arguments from remaining --key value flags
+            const { json: _, ...rest } = args;
+            for (const [k, v] of Object.entries(rest)) {
+              // Auto-parse numbers and booleans
+              if (v === "true") toolArgs[k] = true;
+              else if (v === "false") toolArgs[k] = false;
+              else if (v !== true && !isNaN(v) && v !== "") toolArgs[k] = Number(v);
+              else toolArgs[k] = v;
+            }
+          }
+          const result = await client.callTool("meta_tool", {
+            action: "run",
+            tool_name: toolName,
+            arguments: toolArgs,
+          });
+          printResult(result);
+          break;
+        }
+
+        default:
+          console.error(`Unknown subcommand: ${sub}. Run 'collavre tool help' for usage.`);
+          process.exit(1);
+      }
+    });
+  },
+};
+
+// --- Main ---
+async function main() {
+  const [cmd, ...argv] = process.argv.slice(2);
+
+  if (!cmd || cmd === "help" || cmd === "--help") {
+    console.log(`Collavre CLI — Manage Creatives via MCP
+
+Usage: collavre <command> [options]
+
+Commands:
+  auth     --url <url> --token <token>     Configure connection
+  list     [--level N] [--format json] [--truncate N]  List root creatives
+  get      <id> [--level N] [--comments] [--truncate N]  Get creative subtree
+  search   <query> [--tags t1,t2]           Search creatives
+  create   --parent <id> --desc <text>     Create creative
+  update   <id> [--desc] [--progress 1.0]  Update creative
+  import   --parent <id> --file <path>     Import markdown
+  attach   --creative <id> --file <path>   Upload & embed a file (bearer multipart)
+  batch    --file <ops.json>               Batch operations
+  tool     <list|search|info|run>          Discover & run any tool
+  help                                     Show this help`);
+    process.exit(0);
+  }
+
+  if (commands[cmd]) {
+    await commands[cmd](argv);
+  } else {
+    console.error(`Unknown command: ${cmd}. Run 'collavre help' for usage.`);
+    process.exit(1);
+  }
+}
+
+main().catch((e) => {
+  console.error(`Error: ${e.message}`);
+  process.exit(1);
+});

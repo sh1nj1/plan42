@@ -84,6 +84,8 @@ module Collavre
       return head :forbidden unless @agent.gateway_accessible_to?(Current.user)
 
       gateway = @agent.agent_gateway
+      return head :service_unavailable unless gateway.active?
+
       if gateway.shared? && Current.user.id != @agent.created_by_id && !Current.user.system_admin?
         return head :forbidden
       end

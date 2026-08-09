@@ -14,7 +14,7 @@ module Collavre
 
       class << self
         def collavre_skill
-          @collavre_skill ||= build_from_directory(Rails.root.join("skills/collavre"))
+          @collavre_skill ||= build_from_directory(Collavre::Engine.root.join("skills/collavre"))
         end
 
         def workspace_config(workspace, base_url:)
@@ -29,6 +29,8 @@ module Collavre
         private
 
         def build_from_directory(root)
+          raise ArgumentError, "Provisioning source directory does not exist: #{root}" unless root.directory?
+
           files = Dir.glob(root.join("**/*"), File::FNM_DOTMATCH).filter_map do |path|
             next unless File.file?(path)
 
@@ -36,6 +38,8 @@ module Collavre
             mode = File.executable?(path) ? 0o755 : 0o644
             [ relative, { content: File.binread(path), mode: mode } ]
           end.to_h
+          raise ArgumentError, "Provisioning source directory is empty: #{root}" if files.empty?
+
           build(files)
         end
 

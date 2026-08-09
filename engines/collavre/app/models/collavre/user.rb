@@ -230,9 +230,10 @@ module Collavre
       return true if user.system_admin? || created_by_id == user.id
       return true if user.contact_users.where(id: id).exists?
 
-      shared_agent_creative_ids = Collavre::CreativeShare.where(user_id: id).select(:creative_id)
-      Collavre::Creative.where(id: shared_agent_creative_ids)
-                        .where(id: Collavre::Creative.shared_accessible_ids(user)).exists?
+      shared_agent_creative_ids = Collavre::CreativeShare.where(user_id: id).pluck(:creative_id)
+      Collavre::Creatives::PermissionFilter.new(user: user)
+                                           .readable_ids(shared_agent_creative_ids)
+                                           .any?
     end
 
     def revoke_old_gateway_workspaces
