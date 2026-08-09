@@ -54,6 +54,7 @@ describe('LlmModelController', () => {
     })
 
     afterEach(() => {
+        jest.useRealTimers()
         application.stop()
         document.body.innerHTML = ''
         jest.clearAllMocks()
@@ -68,6 +69,34 @@ describe('LlmModelController', () => {
         controller.vendorTarget.value = 'google'
         controller.vendorChanged()
         expect(document.querySelector('.llm-model-name').textContent).toBe('gemini-3.1-flash-lite')
+    })
+
+    test('keeps the filtered popup open when a pending input blur follows a vendor change', () => {
+        jest.useFakeTimers()
+        controller.show('')
+        controller.blur()
+
+        controller.vendorTarget.value = 'google'
+        controller.vendorChanged()
+        jest.advanceTimersByTime(150)
+
+        expect(controller.menuElement.style.display).toBe('block')
+        expect(document.querySelector('.llm-model-name').textContent).toBe('gemini-3.1-flash-lite')
+    })
+
+    test('moves Tab focus from the model input to the active model delete button', () => {
+        jest.useFakeTimers()
+        controller.inputTarget.focus()
+        controller.show('gpt')
+        controller.blur()
+
+        const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+        controller.handleKeydown(event)
+        jest.advanceTimersByTime(150)
+
+        expect(event.defaultPrevented).toBe(true)
+        expect(document.activeElement).toBe(document.querySelector('.llm-model-delete'))
+        expect(controller.menuElement.style.display).toBe('block')
     })
 
     test('selects a model without including the delete control', () => {
@@ -98,6 +127,16 @@ describe('LlmModelController', () => {
         })
         expect(controller.inputTarget.value).toBe('gpt')
         expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
+    })
+
+    test('prevents delete pointer events from selecting the suggestion', () => {
+        controller.show('gpt')
+        const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+
+        document.querySelector('.llm-model-delete').dispatchEvent(event)
+
+        expect(event.defaultPrevented).toBe(true)
+        expect(controller.inputTarget.value).toBe('')
     })
 
     test('keeps the suggestion and shows a localized error when deletion fails', async () => {

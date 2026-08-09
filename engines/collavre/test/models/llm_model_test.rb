@@ -47,6 +47,14 @@ class LlmModelTest < ActiveSupport::TestCase
     end
   end
 
+  test "remember returns the existing model when concurrent creation wins" do
+    existing = Collavre::LlmModel.create!(llm_vendor: "openai", name: "gpt-5")
+
+    Collavre::LlmModel.stub(:find_or_create_by!, ->(**) { raise ActiveRecord::RecordNotUnique }) do
+      assert_equal existing, Collavre::LlmModel.remember!(vendor: "openai", name: "gpt-5")
+    end
+  end
+
   test "deleting a creator keeps the shared model" do
     creator = User.create!(email: "model-owner@example.com", password: "password", name: "Owner")
     model = Collavre::LlmModel.create!(llm_vendor: "openai", name: "gpt-5", creator: creator)

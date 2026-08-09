@@ -36,6 +36,7 @@ export default class extends Controller {
     }
 
     vendorChanged() {
+        clearTimeout(this.hideTimeout)
         this.show(this.inputTarget.value.trim())
     }
 
@@ -49,9 +50,26 @@ export default class extends Controller {
     }
 
     handleKeydown(event) {
+        if (event.key === 'Tab' && !event.shiftKey && this.focusActiveDeleteButton()) {
+            event.preventDefault()
+            return
+        }
+
         if (this.popup?.handleKey(event)) {
             event.preventDefault()
         }
+    }
+
+    focusActiveDeleteButton() {
+        if (!this.popup?.isOpen()) return false
+
+        const button = this.listElement
+            .querySelector('.common-popup-item.active .llm-model-delete')
+        if (!button) return false
+
+        clearTimeout(this.hideTimeout)
+        button.focus()
+        return true
     }
 
     show(term) {
@@ -131,6 +149,7 @@ export default class extends Controller {
             button.addEventListener('touchstart', this.prepareDelete.bind(this))
             button.addEventListener('touchend', this.deleteModel.bind(this))
             button.addEventListener('click', this.deleteModel.bind(this))
+            button.addEventListener('focus', () => clearTimeout(this.hideTimeout))
         })
     }
 
