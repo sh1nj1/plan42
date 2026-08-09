@@ -52,6 +52,27 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "callback token rotation preserves the registered manifest URL" do
+    manifest_path = collavre.agent_provision_manifest_path(
+      agent_id: @agent.id,
+      token: @workspace.manifest_token
+    )
+    get manifest_path
+    old_config = response.parsed_body.fetch("items").find { |item| item.fetch("type") == "config" }
+
+    @workspace.rotate_tokens!
+
+    get manifest_path
+    assert_response :success
+    new_config = response.parsed_body.fetch("items").find { |item| item.fetch("type") == "config" }
+    assert_not_equal old_config.fetch("sha256"), new_config.fetch("sha256")
+
+    get URI(old_config.fetch("url")).request_uri
+    assert_response :not_found
+    get URI(new_config.fetch("url")).request_uri
+    assert_response :success
+  end
+
   test "rate limiting applies only to manifests" do
     cache_key = "rate-limit:collavre/agent_provisioning:127.0.0.1"
     Rails.cache.write(cache_key, 60, expires_in: 1.minute)

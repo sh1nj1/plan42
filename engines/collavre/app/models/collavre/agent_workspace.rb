@@ -112,7 +112,7 @@ module Collavre
       with_lock do
         old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
         new_access_token = self.class.send(:issue_callback_token!, gateway: agent_gateway, owner: user || agent)
-        update!(manifest_token: SecureRandom.urlsafe_base64(32), callback_token: new_access_token.token)
+        update!(callback_token: new_access_token.token)
         old_access_token&.revoke
       end
 

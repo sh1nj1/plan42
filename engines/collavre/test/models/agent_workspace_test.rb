@@ -58,7 +58,7 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_not_equal owner_workspace.callback_token, other_workspace.callback_token
   end
 
-  test "rotating tokens revokes old callback token" do
+  test "rotating tokens preserves manifest capability and revokes old callback token" do
     workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
     old_manifest = workspace.manifest_token
     old_callback = workspace.callback_token
@@ -69,7 +69,7 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     end
 
     assert_equal 1, lock_calls
-    assert_not_equal old_manifest, workspace.manifest_token
+    assert_equal old_manifest, workspace.manifest_token
     assert_not_equal old_callback, workspace.callback_token
     assert Doorkeeper::AccessToken.by_token(old_callback).revoked?
   end

@@ -110,7 +110,7 @@ ko:
         removed: 제거됨
       meta_skills: 활성 메타 스킬
       meta_skills_help: AI Agent 설정자가 선택한 Collavre 도구입니다. 단일 collavre-cli 스킬이 실행하며, 토큰 단위 권한 제어는 추후 추가됩니다.
-      rotate_tokens: 워크스페이스 토큰 회전
-      rotate_confirm: 매니페스트 capability와 Collavre callback token을 모두 회전할까요? 이후 다시 동기화해야 합니다.
-      tokens_rotated: 워크스페이스 토큰이 회전되었습니다.
+      rotate_tokens: 콜백 토큰 회전
+      rotate_confirm: Collavre 콜백 토큰을 회전할까요? 등록된 매니페스트 URL은 유지되며, 이후 워크스페이스를 다시 동기화해야 합니다.
+      tokens_rotated: 콜백 토큰이 회전되었습니다.
       back: 뒤로

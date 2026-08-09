@@ -110,7 +110,7 @@ en:
         removed: Removed
       meta_skills: Enabled meta-skills
       meta_skills_help: The AI agent owner selects these Collavre tools. They are run by the single collavre-cli skill; token-level enforcement will be added later.
-      rotate_tokens: Rotate workspace tokens
-      rotate_confirm: Rotate both the manifest capability and Collavre callback token? The workspace must sync again.
-      tokens_rotated: Workspace tokens were rotated.
+      rotate_tokens: Rotate callback token
+      rotate_confirm: Rotate the Collavre callback token? The registered manifest URL remains unchanged, and the workspace must sync again.
+      tokens_rotated: The callback token was rotated.
       back: Back
