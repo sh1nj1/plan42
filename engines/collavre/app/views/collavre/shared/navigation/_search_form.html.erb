@@ -1,4 +1,7 @@
-<div class="search-popup-wrapper" data-controller="search-popup">
+<div class="search-popup-wrapper"
+     data-controller="search-popup"
+     data-search-popup-index-path-value="<%= collavre.creatives_path %>"
+     data-search-popup-on-index-value="<%= creative_index_page? %>">
   <%
     raw_url = begin; request.original_url; rescue; request.url; end
     url = URI.parse(raw_url)
@@ -19,7 +22,7 @@
                      end
   %>
 
-  <button type="button" class="search-popup-trigger<%= ' active' if has_any_filter %>" data-action="click->search-popup#toggle" aria-label="<%= t('app.search_placeholder') %>">
+  <button type="button" class="search-popup-trigger<%= ' active' if has_any_filter %>" data-filter-state="any-filter" data-action="click->search-popup#toggle" aria-label="<%= t('app.search_placeholder') %>">
     <span class="search-popup-trigger-icon" aria-hidden="true"><%= svg_tag 'search.svg', width: 16, height: 16 rescue '🔍' %></span>
     <span class="search-popup-trigger-label"><%= t('collavre.search_popup.search') %></span>
   </button>
@@ -54,14 +57,17 @@
           <button type="button"
                   class="search-popup-filter-btn<%= ' active' if progress_state == :all %>"
                   data-filter="all"
+                  data-filter-state="progress:all"
                   data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_all') %></button>
           <button type="button"
                   class="search-popup-filter-btn<%= ' active' if progress_state == :incomplete %>"
                   data-filter="incomplete"
+                  data-filter-state="progress:incomplete"
                   data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_incomplete') %></button>
           <button type="button"
                   class="search-popup-filter-btn<%= ' active' if progress_state == :complete %>"
                   data-filter="complete"
+                  data-filter-state="progress:complete"
                   data-action="click->search-popup#applyProgressFilter"><%= t('app.filter_complete') %></button>
         </div>
       </div>
@@ -71,10 +77,15 @@
         <div class="search-popup-filter-buttons">
           <button type="button"
                   class="search-popup-filter-btn<%= ' active' if has_comment %>"
+                  data-filter-state="comment"
                   data-action="click->search-popup#applyCommentFilter"><%= t('app.filter_comments') %></button>
           <% if authenticated? %>
+            <%# Both labels ship up front so a frame-only navigation can swap them without a round trip. %>
             <button type="button"
                     class="search-popup-filter-btn<%= ' active' if has_archived %>"
+                    data-filter-state="archived"
+                    data-label-on="<%= t('collavre.creatives.index.hide_archived') %>"
+                    data-label-off="<%= t('collavre.creatives.index.show_archived') %>"
                     data-action="click->search-popup#toggleArchive"><%= has_archived ? t('collavre.creatives.index.hide_archived') : t('collavre.creatives.index.show_archived') %></button>
           <% end %>
         </div>

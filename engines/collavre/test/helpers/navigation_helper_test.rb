@@ -6,12 +6,17 @@ class NavigationHelperTest < ActionView::TestCase
   include Collavre::NavigationHelper
   include ApplicationHelper
 
+  # The registry is a process-wide singleton seeded by the engine initializer,
+  # so resetting it without putting the engine's items back leaves every later
+  # test in the process with an empty GNB.
   setup do
+    @registry_snapshot = Navigation::Registry.instance.all
     Navigation::Registry.instance.reset!
   end
 
   teardown do
     Navigation::Registry.instance.reset!
+    @registry_snapshot.each { |item| Navigation::Registry.instance.register(item) }
   end
 
   # Stub authentication methods
