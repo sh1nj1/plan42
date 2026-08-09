@@ -1812,7 +1812,7 @@ function setupEditorSession() {
           syncInlineEditorPadding(level);
           attachTemplate(newTree);
           template.style.display = 'block';
-          form.action = '/creatives';
+          form.action = form.dataset.createUrl || '/creatives';
           methodInput.value = '';
           form.dataset.creativeId = '';
           parentInput.value = parentId || '';

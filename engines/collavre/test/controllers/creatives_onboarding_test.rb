@@ -146,4 +146,14 @@ class CreativesOnboardingTest < ActionDispatch::IntegrationTest
     assert_not_includes response.parsed_body["description_raw_html"], "<button"
     assert_equal "onboarding", response.parsed_body.dig("data", "source", "type")
   end
+
+  test "inline create form preserves the engine mount prefix" do
+    creative = creatives(:root_parent)
+
+    get collavre.creatives_path(id: creative.id), env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_response :success
+    mounted_create_path = collavre.creatives_path(script_name: "/collavre")
+    assert_select "form#inline-edit-form-element[action=?][data-create-url=?]", mounted_create_path, mounted_create_path
+  end
 end

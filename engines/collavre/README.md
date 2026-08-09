@@ -90,6 +90,7 @@ Add to your application layout:
 <%= stylesheet_link_tag "collavre/actiontext" %>
 <%= stylesheet_link_tag "collavre/activity_logs" %>
 <%= stylesheet_link_tag "collavre/comments_popup" %>
+<%= stylesheet_link_tag "collavre/feature_cards" %>
 <%= stylesheet_link_tag "collavre/tables" %>
 <%= stylesheet_link_tag "collavre/dark_mode" %>
 <%= stylesheet_link_tag "collavre/mention_menu" %>

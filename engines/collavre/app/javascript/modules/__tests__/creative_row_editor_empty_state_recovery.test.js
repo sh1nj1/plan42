@@ -92,6 +92,15 @@ describe('empty-state recovery when the first inline save fails', () => {
     expect(document.querySelectorAll('#creatives creative-tree-row')).toHaveLength(1)
   })
 
+  test('posts a new row through the request-aware engine mount', async () => {
+    const form = document.getElementById('inline-edit-form-element')
+    form.dataset.createUrl = '/collavre/creatives'
+
+    await startFirstRowWithContent()
+
+    expect(new URL(form.action).pathname).toBe('/collavre/creatives')
+  })
+
   test('keeps the failed first draft and its editor open when the save rejects on close', async () => {
     saveMock.mockImplementation(() => Promise.reject(new Error('network down')))
     const emptyState = await startFirstRowWithContent()

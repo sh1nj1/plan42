@@ -31,6 +31,7 @@ export function buildEditorDom(container, {
   saveFailedMessage,
   archiveFailedMessage,
   restoreFailedMessage,
+  createUrl = '/creatives',
 } = {}) {
   const template = document.createElement('div')
   template.id = 'inline-edit-form'
@@ -38,7 +39,8 @@ export function buildEditorDom(container, {
 
   const form = document.createElement('form')
   form.id = 'inline-edit-form-element'
-  form.action = '/creatives'
+  form.action = createUrl
+  form.dataset.createUrl = createUrl
   // Mirrors the ERB: plain JS can't call `t()`, so the localized save-failure
   // message rides on the form's data-* attribute.
   if (saveFailedMessage) form.dataset.saveFailedMessage = saveFailedMessage
