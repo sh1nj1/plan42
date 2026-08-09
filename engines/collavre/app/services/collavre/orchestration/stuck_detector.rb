@@ -2,12 +2,11 @@
 
 module Collavre
   module Orchestration
-    # StuckDetector detects stuck tasks and creatives, then auto-escalates to admins.
+    # StuckDetector detects stuck tasks, auto-recovers them, and escalates to admins.
     #
     # Detection conditions:
     # 1. Running tasks that haven't progressed for N minutes
     # 2. Tasks with too many retries (escalated but not handled)
-    # 3. Creatives with no progress for extended periods
     #
     # Auto-escalation:
     # - Creates InboxItem for admin users
@@ -33,7 +32,6 @@ module Collavre
         stuck_items = []
         stuck_items.concat(detect_stuck_tasks(config))
         stuck_items.concat(detect_orphaned_queued_tasks(config))
-        stuck_items.concat(detect_stalled_creatives(config))
 
         auto_recover_stuck_tasks(stuck_items)
         escalated_count = escalate_stuck_items(stuck_items, config)
@@ -49,7 +47,6 @@ module Collavre
         stuck_items = []
         stuck_items.concat(detect_stuck_tasks(config))
         stuck_items.concat(detect_orphaned_queued_tasks(config))
-        stuck_items.concat(detect_stalled_creatives(config))
         stuck_items
       end
 
@@ -238,46 +235,6 @@ module Collavre
         end
       end
 
-      # Detect creatives that have stalled (no activity for extended period)
-      def detect_stalled_creatives(config)
-        threshold_minutes = config["creative_stall_threshold_minutes"] || 120
-        threshold_time = threshold_minutes.minutes.ago
-
-        # Find creatives with incomplete status but no recent activity
-        # Only check creatives that have at least one AI agent with access
-        stalled = []
-
-        Creative.where("progress < 1.0")
-                .where("updated_at < ?", threshold_time)
-                .includes(creative_shares: :user)
-                .find_each do |creative|
-          # Skip if no AI agents have access. Public shares carry no user, so
-          # drop them before asking whether the holder is an AI agent.
-          ai_agents = creative.creative_shares
-                              .reject { |s| s.permission == "no_access" }
-                              .filter_map(&:user)
-                              .select(&:ai_user?)
-
-          next if ai_agents.empty?
-
-          # Skip if already escalated recently
-          next if recently_escalated_creative?(creative)
-
-          escalation_targets = find_creative_escalation_targets(creative)
-          next if escalation_targets.empty?
-
-          stalled << StuckItem.new(
-            type: :creative,
-            item: creative,
-            reason: :stalled,
-            stuck_since: creative.updated_at,
-            escalation_targets: escalation_targets
-          )
-        end
-
-        stalled
-      end
-
       def find_escalation_targets(task)
         # Find admin users for the task's creative
         creative_id = task.trigger_event_payload&.dig("creative", "id")
@@ -308,18 +265,9 @@ module Collavre
         Rails.cache.exist?(cache_key)
       end
 
-      def recently_escalated_creative?(creative)
-        cache_key = "stuck_detector:creative:#{creative.id}"
-        Rails.cache.exist?(cache_key)
-      end
-
       def mark_escalated(item)
-        cache_key = case item.type
-        when :task then "stuck_detector:task:#{item.item.id}"
-        when :creative then "stuck_detector:creative:#{item.item.id}"
-        end
         # Don't re-escalate for 1 hour
-        Rails.cache.write(cache_key, true, expires_in: 1.hour)
+        Rails.cache.write("stuck_detector:task:#{item.item.id}", true, expires_in: 1.hour)
       end
 
       def escalate_stuck_items(stuck_items, config)
@@ -346,9 +294,7 @@ module Collavre
         end
 
         # Optionally create a system comment
-        if config["create_system_comment"] && stuck_item.type == :task
-          create_system_comment(stuck_item)
-        end
+        create_system_comment(stuck_item) if config["create_system_comment"]
 
         true
       rescue StandardError => e
@@ -359,13 +305,8 @@ module Collavre
       def create_inbox_notification(owner, stuck_item)
         message_key, message_params = build_message(stuck_item)
 
-        creative = case stuck_item.type
-        when :task
-                     creative_id = stuck_item.item.trigger_event_payload&.dig("creative", "id")
-                     Creative.find_by(id: creative_id)
-        when :creative
-                     stuck_item.item
-        end
+        creative_id = stuck_item.item.trigger_event_payload&.dig("creative", "id")
+        creative = Creative.find_by(id: creative_id)
 
         inbox_creative = Creative.inbox_for(owner)
         system_topic = inbox_creative.system_topic(fallback_user: owner)
@@ -384,36 +325,19 @@ module Collavre
       end
 
       def build_message(stuck_item)
-        case stuck_item.type
-        when :task
-          task = stuck_item.item
-          minutes_stuck = ((Time.current - stuck_item.stuck_since) / 60).round
-          [
-            "collavre.stuck_detection.task_stuck",
-            {
-              task_name: task.name,
-              agent_name: task.agent&.display_name || "Unknown",
-              minutes: minutes_stuck
-            }
-          ]
-        when :creative
-          creative = stuck_item.item
-          hours_stuck = ((Time.current - stuck_item.stuck_since) / 3600).round
-
-          [
-            "collavre.stuck_detection.creative_stalled",
-            {
-              creative_title: creative.creative_snippet,
-              hours: hours_stuck,
-              progress: ((creative.progress || 0) * 100).round
-            }
-          ]
-        end
+        task = stuck_item.item
+        minutes_stuck = ((Time.current - stuck_item.stuck_since) / 60).round
+        [
+          "collavre.stuck_detection.task_stuck",
+          {
+            task_name: task.name,
+            agent_name: task.agent&.display_name || "Unknown",
+            minutes: minutes_stuck
+          }
+        ]
       end
 
       def create_system_comment(stuck_item)
-        return unless stuck_item.type == :task
-
         task = stuck_item.item
         creative_id = task.trigger_event_payload&.dig("creative", "id")
         creative = Creative.find_by(id: creative_id)

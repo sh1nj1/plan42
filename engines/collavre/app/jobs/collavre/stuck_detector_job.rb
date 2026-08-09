@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Collavre
-  # StuckDetectorJob runs periodically to detect stuck tasks and creatives.
+  # StuckDetectorJob runs periodically to recover and escalate stuck tasks.
   #
   # This job should be scheduled to run every 5-10 minutes via cron or similar.
   #
