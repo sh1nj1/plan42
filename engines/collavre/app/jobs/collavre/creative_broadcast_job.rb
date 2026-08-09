@@ -92,7 +92,7 @@ module Collavre
         end
 
         # Per-user can_write permission
-        user_data[:can_write] = creative.has_permission?(target_user, :write)
+        user_data[:can_write] = creative.has_permission?(target_user, :write) && !creative.read_only_source?
 
         # Per-user progress text
         creative.send(:add_progress_text!, user_data, target_user)

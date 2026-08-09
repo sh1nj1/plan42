@@ -66,7 +66,11 @@ test('realtime-created onboarding rows refresh through their mounted member URL'
   document.body.appendChild(row)
   csrfFetch.mockResolvedValue({
     ok: true,
-    json: () => Promise.resolve({ description: 'Completed' }),
+    json: () => Promise.resolve({
+      description: 'Completed',
+      progress: 1,
+      progress_html: '<span class="creative-progress-complete">100%</span>',
+    }),
   })
 
   applyRowProperties(row, {
@@ -82,4 +86,7 @@ test('realtime-created onboarding rows refresh through their mounted member URL'
     headers: { Accept: 'application/json' },
   })
   expect(row.descriptionHtml).toBe('Completed')
+  expect(row.progressHtml).toBe('<span class="creative-progress-complete">100%</span>')
+  expect(row.dataset.progressHtml).toBe('<span class="creative-progress-complete">100%</span>')
+  expect(row.dataset.progressValue).toBe('1')
 })

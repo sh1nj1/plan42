@@ -5,6 +5,7 @@ import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
+import { updateRowFromData } from "../modules/creative_inline_payload";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -654,7 +655,7 @@ class CreativeTreeRow extends LitElement {
     if (!response.ok) return
 
     const data = await response.json()
-    if (data.description != null) row.descriptionHtml = data.description
+    updateRowFromData(row, data)
   }
 
   _handleContentClick(event) {
