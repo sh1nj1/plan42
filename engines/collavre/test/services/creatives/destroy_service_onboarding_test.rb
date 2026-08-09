@@ -19,6 +19,21 @@ class DestroyServiceOnboardingTest < ActiveSupport::TestCase
     assert_not_nil @user.reload.onboarding_completed_at
   end
 
+  test "deletes onboarding descendants even when only the guide was requested" do
+    guide = Creative.create!(
+      user: @user,
+      description: "Onboarding",
+      data: { "kind" => Creative::ONBOARDING_KIND }
+    )
+    step = Creative.create!(user: @user, parent: guide, description: "Step")
+
+    Collavre::Creatives::DestroyService.new(creative: guide, user: @user).call
+
+    assert_not Creative.exists?(guide.id)
+    assert_not Creative.exists?(step.id)
+    assert_not_nil @user.reload.onboarding_completed_at
+  end
+
   test "does not record completion after deleting ordinary content" do
     creative = Creative.create!(user: @user, description: "Ordinary")
 

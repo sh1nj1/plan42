@@ -13,7 +13,7 @@ module Collavre
       def call
         onboarding_owner = @creative.user if @creative.onboarding_guide?
 
-        if @delete_with_children
+        if @delete_with_children || onboarding_owner
           destroy_descendants_recursively(@creative)
         else
           reparent_children

@@ -92,6 +92,40 @@ module Collavre
         assert_includes onboarding_welcome_messages.sole.content, collavre.creatives_path(id: replacement_root.id)
       end
 
+      test "welcome links preserve the engine mount prefix" do
+        root = Seeder.call(user: @user, script_name: "/collavre")
+
+        welcome = onboarding_welcome_messages.sole
+        assert_includes welcome.content, collavre.creatives_path(id: root.id, script_name: "/collavre")
+        assert_includes welcome.content, collavre.features_path(script_name: "/collavre")
+      end
+
+      test "reset removes a guide after it has been moved below another creative" do
+        root = Seeder.call(user: @user)
+        parent = Creative.create!(user: @user, description: "Parent")
+        root.update!(parent: parent)
+
+        Seeder.reset!(user: @user)
+
+        assert_not Creative.exists?(root.id)
+        assert_nil @user.reload.onboarding_seeded_at
+      end
+
+      test "reuses a welcome message after it has been moved to another creative" do
+        root = Seeder.call(user: @user)
+        welcome = onboarding_welcome_messages.sole
+        other = Creative.create!(user: @user, description: "Other")
+        welcome.update!(creative: other, topic: other.main_topic(fallback_user: @user))
+
+        Seeder.reset!(user: @user)
+        replacement_root = Seeder.call(user: @user)
+
+        assert_equal 1, onboarding_welcome_messages.count
+        assert_equal Creative.inbox_for(@user), welcome.reload.creative
+        assert_equal Creative::SYSTEM_TOPIC_NAME, welcome.topic.name
+        assert_includes welcome.content, collavre.creatives_path(id: replacement_root.id)
+      end
+
       private
 
       def onboarding_welcome_messages

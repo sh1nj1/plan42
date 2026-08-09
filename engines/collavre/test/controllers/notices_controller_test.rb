@@ -41,4 +41,10 @@ class NoticesControllerTest < ActionDispatch::IntegrationTest
     replacement = Collavre::Creative.onboarding_guides.find_by!(user: @user)
     assert_redirected_to collavre.creatives_path(id: replacement.id)
   end
+
+  test "reset_onboarding preserves the engine mount prefix" do
+    delete collavre.reset_onboarding_path, env: { "SCRIPT_NAME" => "/collavre" }
+
+    assert_redirected_to collavre.creatives_path(script_name: "/collavre")
+  end
 end

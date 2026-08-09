@@ -20,7 +20,7 @@ module Collavre
     def reset_onboarding
       Collavre::Onboarding::Seeder.reset!(user: Current.user)
 
-      redirect_to collavre_engine.creatives_path, notice: t("collavre.onboarding.reset.notice")
+      redirect_to creatives_path, notice: t("collavre.onboarding.reset.notice")
     end
   end
 end

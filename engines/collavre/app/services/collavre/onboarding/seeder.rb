@@ -6,13 +6,13 @@ module Collavre
       VERSION = 1
       WELCOME_NOTIFICATION_KEY_PREFIX = "onboarding_welcome_v1_user_"
 
-      def self.call(user:)
-        new(user: user).call
+      def self.call(user:, script_name: nil)
+        new(user: user, script_name: script_name).call
       end
 
       def self.reset!(user:)
         User.transaction do
-          Creative.onboarding_guides.where(user: user, parent_id: nil).find_each do |creative|
+          Creative.onboarding_guides.where(user: user).find_each do |creative|
             Collavre::Creatives::DestroyService.new(
               creative: creative,
               user: user,
@@ -24,8 +24,9 @@ module Collavre
         end
       end
 
-      def initialize(user:)
+      def initialize(user:, script_name: nil)
         @user = user
+        @script_name = script_name
       end
 
       def call
@@ -52,7 +53,7 @@ module Collavre
 
       private
 
-      attr_reader :user
+      attr_reader :user, :script_name
 
       def create_guide!
         root = Creative.create!(
@@ -73,14 +74,15 @@ module Collavre
         inbox = Creative.inbox_for(user)
         topic = inbox.system_topic(fallback_user: user)
         routes = Collavre::Engine.routes.url_helpers
-        comment = inbox.comments.find_or_initialize_by(notification_key: welcome_notification_key)
+        comment = Comment.find_or_initialize_by(notification_key: welcome_notification_key)
         comment.assign_attributes(
+          creative: inbox,
           topic: topic,
           user: nil,
           content: I18n.t(
             "collavre.onboarding.welcome",
-            onboarding_path: routes.creatives_path(id: root.id),
-            features_path: routes.features_path
+            onboarding_path: routes.creatives_path(id: root.id, script_name: script_name),
+            features_path: routes.features_path(script_name: script_name)
           ),
           skip_default_user: true,
           skip_dispatch: true,

@@ -563,7 +563,7 @@ module Collavre
       def ensure_onboarding_seeded
         return if Current.user.nil? || params[:id].present?
 
-        onboarding = Collavre::Onboarding::Seeder.call(user: Current.user)
+        onboarding = Collavre::Onboarding::Seeder.call(user: Current.user, script_name: request.script_name)
         redirect_to creatives_path(id: onboarding.id) if onboarding && request.format.html?
       end
 
