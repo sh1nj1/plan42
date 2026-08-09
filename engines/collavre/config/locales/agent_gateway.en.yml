@@ -95,6 +95,9 @@ en:
       actions: Actions
       approve: Approve
       revoke: Revoke approval
+      item_types:
+        skill: Skill
+        config: Configuration
       statuses:
         authenticated: Authenticated
         unauthenticated: Not authenticated

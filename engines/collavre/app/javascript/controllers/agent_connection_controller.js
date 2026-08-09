@@ -17,7 +17,8 @@ export default class extends Controller {
     approve: String,
     revoke: String,
     error: String,
-    statusLabels: Object
+    statusLabels: Object,
+    itemTypeLabels: Object
   }
 
   connect() {
@@ -159,7 +160,7 @@ export default class extends Controller {
           strong.textContent = value
           cell.append(strong)
         } else {
-          cell.textContent = index === 2 ? this.statusLabel(value) : value
+          cell.textContent = index === 2 ? this.statusLabel(value) : this.itemTypeLabel(value)
         }
         row.append(cell)
       })
@@ -237,6 +238,10 @@ export default class extends Controller {
 
   statusLabel(status) {
     return this.statusLabelsValue[status] || status
+  }
+
+  itemTypeLabel(type) {
+    return this.itemTypeLabelsValue[type] || type
   }
 
   async poll(engine, sessionId, expiresAt) {

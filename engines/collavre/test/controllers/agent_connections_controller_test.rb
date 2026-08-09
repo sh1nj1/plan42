@@ -67,5 +67,11 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "인증됨", labels.fetch("authenticated")
     assert_equal "승인 대기", labels.fetch("pending_approval")
     assert_equal "설치됨", labels.fetch("installed")
+
+    item_types = JSON.parse(css_select("[data-agent-connection-item-type-labels-value]").sole[
+      "data-agent-connection-item-type-labels-value"
+    ])
+    assert_equal "스킬", item_types.fetch("skill")
+    assert_equal "설정", item_types.fetch("config")
   end
 end

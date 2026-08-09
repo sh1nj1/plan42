@@ -95,6 +95,9 @@ ko:
       actions: 작업
       approve: 승인
       revoke: 승인 회수
+      item_types:
+        skill: 스킬
+        config: 설정
       statuses:
         authenticated: 인증됨
         unauthenticated: 미인증
