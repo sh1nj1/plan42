@@ -18,19 +18,22 @@ DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
 STAGING="$DESKTOP_DIR/staging/app"
 
-echo "[build-macos] 1/6 vendoring Ruby + gems"
+echo "[build-macos] 1/7 vendoring Ruby + gems"
 "$SCRIPT_DIR/bundle-ruby.sh"
+
+echo "[build-macos] 2/7 bundling cli-openai-proxy"
+"$SCRIPT_DIR/bundle-proxy.sh"
 
 # jsbundling-rails drives esbuild from node_modules during assets:precompile, so
 # the JS deps must be installed first (same as the Dockerfile/Render build). A
 # clean checkout or CI runner has no node_modules, so precompile fails without this.
-echo "[build-macos] 2/6 installing Node packages (npm ci)"
+echo "[build-macos] 3/7 installing Node packages (npm ci)"
 (
   cd "$APP_ROOT"
   npm ci
 )
 
-echo "[build-macos] 3/6 precompiling assets (desktop env)"
+echo "[build-macos] 4/7 precompiling assets (desktop env)"
 (
   cd "$APP_ROOT"
   export PATH="$DESKTOP_DIR/vendor/ruby/bin:$PATH"
@@ -41,7 +44,7 @@ echo "[build-macos] 3/6 precompiling assets (desktop env)"
     "$DESKTOP_DIR/vendor/ruby/bin/ruby" -S bundle exec rails assets:precompile
 )
 
-echo "[build-macos] 4/6 staging app tree into $STAGING"
+echo "[build-macos] 5/7 staging app tree into $STAGING"
 rm -rf "$DESKTOP_DIR/staging"
 mkdir -p "$STAGING"
 # Copy the app, excluding VCS, dev cruft, tests, and per-run state. The vendored
@@ -86,11 +89,17 @@ chmod -RN "$STAGING"                              # drop inherited/explicit ACLs
 chflags -R nouchg "$STAGING" 2>/dev/null || true  # clear immutable flags if present
 chmod -R u+rwX "$STAGING"                          # normalize POSIX mode bits
 
+# The proxy is a separate Tauri resource rather than part of the Rails source
+# tree. Its Node runtime and exact npm dependency tree are immutable after this
+# point and are covered by the same code signature as the final .app.
+mkdir -p "$STAGING/proxy"
+rsync -a --delete "$DESKTOP_DIR/vendor/proxy/" "$STAGING/proxy/"
+
 # Generate the Tauri icon set from the existing app icon. tauri.conf.json points
 # at src-tauri/icons/, which is .gitignored (generated, not committed) — without
 # this step `cargo tauri build` fails on a missing icon. Source of truth is the
 # app's own icon under public/, so the desktop app can't drift from the brand.
-echo "[build-macos] 5/6 generating app icons"
+echo "[build-macos] 6/7 generating app icons"
 ICON_SRC="$(ls "$APP_ROOT"/public/icon-*.png 2>/dev/null | head -1)"
 [ -n "$ICON_SRC" ] || { echo "no source icon at $APP_ROOT/public/icon-*.png"; exit 1; }
 (
@@ -111,7 +120,7 @@ for app_copy in "$DESKTOP_DIR/src-tauri/target"/*/app; do
   [ -d "$app_copy" ] && chmod -R u+w "$app_copy" 2>/dev/null || true
 done
 
-echo "[build-macos] 6/6 building the Tauri bundle"
+echo "[build-macos] 7/7 building the Tauri bundle"
 (
   cd "$DESKTOP_DIR/src-tauri"
   # CI=true makes Tauri's bundle_dmg.sh skip the AppleScript step that styles the

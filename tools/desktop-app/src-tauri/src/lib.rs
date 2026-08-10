@@ -8,18 +8,52 @@
 //!   4. Show the app in a native webview at `http://127.0.0.1:<port>`.
 //!   5. Gracefully stop the sidecar (and its process group) on quit.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 /// Holds the sidecar child so we can stop it on exit.
 struct Sidecar(Mutex<Option<Child>>);
+
+/// Holds the optional, user-approved cli-openai-proxy process. It is deliberately
+/// separate from the Rails sidecar: a failed or disabled proxy must never stop
+/// the local Collavre application from opening.
+struct ProxySidecar(Mutex<Option<Child>>);
+
+const PROXY_KEYCHAIN_SERVICE: &str = "net.collavre.desktop.cli-openai-proxy";
+const PROXY_ADMIN_KEY_ACCOUNT: &str = "admin-key";
+const PROXY_COMPLETION_KEY_ACCOUNT: &str = "completion-key";
+
+#[derive(Debug, Deserialize)]
+struct BundledProxyManifest {
+    package: String,
+    version: String,
+    integrity: String,
+    platform: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ProxyConfig {
+    port: u16,
+    version: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ProxyStatus {
+    installed: bool,
+    running: bool,
+    port: Option<u16>,
+    version: Option<String>,
+}
 
 /// Bind to port 0 to let the OS hand us a free port, then release it. There is a
 /// tiny TOCTOU window before the sidecar grabs it, acceptable for a loopback
@@ -57,9 +91,113 @@ fn data_dir(app: &tauri::AppHandle) -> PathBuf {
         .join("Collavre")
 }
 
+/// The installed proxy has no mutable content. Only a public port and its
+/// expected package version are persisted here; credentials live exclusively in
+/// Keychain and are never serialized into this directory or a log.
+fn proxy_state_dir(data: &Path) -> PathBuf {
+    data.join("proxy")
+}
+
+fn proxy_config_path(data: &Path) -> PathBuf {
+    proxy_state_dir(data).join("config.json")
+}
+
+fn proxy_pidfile_path(data: &Path) -> PathBuf {
+    proxy_state_dir(data).join("desktop-proxy.pid")
+}
+
+fn proxy_root(app: &tauri::AppHandle) -> PathBuf {
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let bundled = resource_dir.join("app/proxy");
+        if bundled.join("manifest.json").exists() {
+            return bundled;
+        }
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../vendor/proxy")
+}
+
+fn bundled_proxy_manifest(app: &tauri::AppHandle) -> Result<BundledProxyManifest, String> {
+    let root = proxy_root(app);
+    let manifest = fs::read_to_string(root.join("manifest.json")).map_err(|_| {
+        "The bundled cli-openai-proxy runtime is missing. Reinstall Collavre Desktop.".to_string()
+    })?;
+    parse_bundled_proxy_manifest(&manifest)
+}
+
+fn parse_bundled_proxy_manifest(manifest: &str) -> Result<BundledProxyManifest, String> {
+    let manifest: BundledProxyManifest = serde_json::from_str(manifest).map_err(|_| {
+        "The bundled cli-openai-proxy manifest is invalid. Reinstall Collavre Desktop.".to_string()
+    })?;
+    if manifest.package != "cli-openai-proxy"
+        || manifest.platform != "darwin-arm64"
+        || manifest.version.is_empty()
+        || !manifest.integrity.starts_with("sha512-")
+    {
+        return Err(
+            "The bundled cli-openai-proxy manifest is invalid. Reinstall Collavre Desktop."
+                .to_string(),
+        );
+    }
+    Ok(manifest)
+}
+
+fn read_proxy_config(data: &Path) -> Option<ProxyConfig> {
+    let json = fs::read_to_string(proxy_config_path(data)).ok()?;
+    let config: ProxyConfig = serde_json::from_str(&json).ok()?;
+    (config.port > 0 && !config.version.is_empty()).then_some(config)
+}
+
+fn write_proxy_config(data: &Path, config: &ProxyConfig) -> Result<(), String> {
+    let state_dir = proxy_state_dir(data);
+    fs::create_dir_all(&state_dir)
+        .map_err(|_| "Could not create the desktop proxy state directory.".to_string())?;
+    let temporary = state_dir.join("config.json.tmp");
+    let json = serde_json::to_vec(config)
+        .map_err(|_| "Could not write desktop proxy configuration.".to_string())?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|_| "Could not write desktop proxy configuration.".to_string())?;
+    file.write_all(&json)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| "Could not write desktop proxy configuration.".to_string())?;
+    fs::rename(temporary, proxy_config_path(data))
+        .map_err(|_| "Could not finalize desktop proxy configuration.".to_string())
+}
+
+fn generate_proxy_key(prefix: &str) -> Result<String, String> {
+    let mut bytes = [0u8; 48];
+    getrandom::fill(&mut bytes)
+        .map_err(|_| "Could not generate a desktop proxy key.".to_string())?;
+    Ok(format!("{prefix}_{}", URL_SAFE_NO_PAD.encode(bytes)))
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_proxy_key(account: &str, prefix: &str) -> Result<String, String> {
+    use security_framework::passwords::{get_generic_password, set_generic_password};
+
+    if let Ok(bytes) = get_generic_password(PROXY_KEYCHAIN_SERVICE, account) {
+        return String::from_utf8(bytes)
+            .map_err(|_| "The desktop proxy key in Keychain is invalid.".to_string());
+    }
+
+    let key = generate_proxy_key(prefix)?;
+    set_generic_password(PROXY_KEYCHAIN_SERVICE, account, key.as_bytes()).map_err(|_| {
+        "Collavre needs Keychain access to store the desktop proxy key.".to_string()
+    })?;
+    Ok(key)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_proxy_key(_account: &str, _prefix: &str) -> Result<String, String> {
+    Err("Desktop proxy installation is currently supported on macOS only.".to_string())
+}
+
 /// File recording the live sidecar's PID, so a launch that follows a crash can
 /// reap the orphan the graceful exit handler never got to stop.
-fn pidfile_path(data: &PathBuf) -> PathBuf {
+fn pidfile_path(data: &Path) -> PathBuf {
     data.join("desktop-sidecar.pid")
 }
 
@@ -69,7 +207,7 @@ fn pidfile_path(data: &PathBuf) -> PathBuf {
 /// survives and keeps the SQLite write locks held (and a fixed PORT bound in
 /// open mode), which would wedge this launch. Signal that stale group first.
 #[cfg(unix)]
-fn reap_orphan_sidecar(data: &PathBuf) {
+fn reap_orphan_sidecar(data: &Path) {
     let path = pidfile_path(data);
     let Ok(contents) = fs::read_to_string(&path) else {
         return;
@@ -98,11 +236,11 @@ fn reap_orphan_sidecar(data: &PathBuf) {
 }
 
 #[cfg(not(unix))]
-fn reap_orphan_sidecar(data: &PathBuf) {
+fn reap_orphan_sidecar(data: &Path) {
     let _ = fs::remove_file(pidfile_path(data));
 }
 
-fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
+fn spawn_sidecar(root: &Path, data: &Path, port: u16) -> Child {
     let launcher = root.join("bin/desktop-server");
     // Honor a caller-supplied bind host (open mode = 0.0.0.0 for LAN/Tailscale);
     // default to loopback. COLLAVRE_ALLOWED_HOSTS rides along via the inherited
@@ -139,11 +277,182 @@ fn spawn_sidecar(root: &PathBuf, data: &PathBuf, port: u16) -> Child {
     cmd.spawn().expect("spawn rails sidecar")
 }
 
+#[cfg(unix)]
+fn reap_orphan_proxy(data: &Path) {
+    let path = proxy_pidfile_path(data);
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return;
+    };
+    if let Ok(pid) = contents.trim().parse::<i32>() {
+        if pid > 1 && unsafe { libc_kill(-pid, 0) } == 0 {
+            unsafe {
+                libc_kill(-pid, 15);
+            }
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline {
+                if unsafe { libc_kill(-pid, 0) } != 0 {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            unsafe {
+                libc_kill(-pid, 9);
+            }
+        }
+    }
+    let _ = fs::remove_file(path);
+}
+
+#[cfg(not(unix))]
+fn reap_orphan_proxy(data: &Path) {
+    let _ = fs::remove_file(proxy_pidfile_path(data));
+}
+
+fn spawn_proxy(app: &tauri::AppHandle, data: &Path, config: &ProxyConfig) -> Result<Child, String> {
+    let root = proxy_root(app);
+    let node = root.join("node/bin/node");
+    let entrypoint = root.join("node_modules/cli-openai-proxy/dist/server/standalone.js");
+    if !node.is_file() || !entrypoint.is_file() {
+        return Err(
+            "The bundled cli-openai-proxy runtime is incomplete. Reinstall Collavre Desktop."
+                .to_string(),
+        );
+    }
+
+    let admin_key = keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
+    let completion_key = keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
+    let state = proxy_state_dir(data);
+    fs::create_dir_all(state.join("provision-state"))
+        .map_err(|_| "Could not create the desktop proxy state directory.".to_string())?;
+
+    let log_dir = data.join("log");
+    fs::create_dir_all(&log_dir).ok();
+    let mut command = Command::new(node);
+    command
+        .arg(entrypoint)
+        .current_dir(&state)
+        .env("HOST", "127.0.0.1")
+        .env("PORT", config.port.to_string())
+        .env("API_KEYS", completion_key)
+        .env("AUTH_ADMIN_KEYS", admin_key)
+        .env("PROVISION_STATE_DIR", state.join("provision-state"));
+
+    // The proxy deliberately inherits HOME and PATH: the user's already logged
+    // in Claude/Codex CLIs own their authentication. The proxy-only keys above
+    // are captured and removed by cli-openai-proxy before it starts a CLI child.
+    if let Ok(log) = File::create(log_dir.join("desktop-proxy.log")) {
+        if let Ok(error_log) = log.try_clone() {
+            command
+                .stdout(Stdio::from(log))
+                .stderr(Stdio::from(error_log));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    command
+        .spawn()
+        .map_err(|_| "Could not start cli-openai-proxy.".to_string())
+}
+
+fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> ProxyStatus {
+    let config = read_proxy_config(data);
+    let manifest = bundled_proxy_manifest(app).ok();
+    let installed = config.is_some() && manifest.is_some();
+    ProxyStatus {
+        installed,
+        running: sidecar
+            .0
+            .lock()
+            .map(|child| child.is_some())
+            .unwrap_or(false),
+        port: config.as_ref().map(|item| item.port),
+        version: manifest.map(|item| item.version),
+    }
+}
+
+fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> Result<(), String> {
+    if sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
+        .is_some()
+    {
+        return Ok(());
+    }
+    let config = read_proxy_config(data)
+        .ok_or_else(|| "Desktop proxy setup has not been approved.".to_string())?;
+    let manifest = bundled_proxy_manifest(app)?;
+    if config.version != manifest.version {
+        return Err("The desktop proxy version changed. Re-run desktop proxy setup.".to_string());
+    }
+    reap_orphan_proxy(data);
+    let child = spawn_proxy(app, data, &config)?;
+    fs::write(proxy_pidfile_path(data), child.id().to_string())
+        .map_err(|_| "Could not record the desktop proxy process.".to_string())?;
+    sidecar
+        .0
+        .lock()
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
+        .replace(child);
+    let healthy = sidecar
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut guard| {
+            guard
+                .as_mut()
+                .map(|child| wait_until_proxy_healthy(child, config.port, Duration::from_secs(15)))
+        })
+        .unwrap_or(false);
+    if !healthy {
+        if let Some(mut child) = sidecar.0.lock().ok().and_then(|mut guard| guard.take()) {
+            stop_sidecar(&mut child);
+        }
+        let _ = fs::remove_file(proxy_pidfile_path(data));
+        return Err(
+            "cli-openai-proxy did not pass its health check. See desktop-proxy.log.".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Invoked only after the user accepts the first-run proxy setup. The response
+/// intentionally contains no key material; Rails receives credentials during a
+/// separate authenticated gateway-registration step.
+#[tauri::command]
+fn desktop_proxy_install(
+    app: tauri::AppHandle,
+    sidecar: tauri::State<'_, ProxySidecar>,
+) -> Result<ProxyStatus, String> {
+    let data = data_dir(&app);
+    fs::create_dir_all(&data)
+        .map_err(|_| "Could not create the Collavre data directory.".to_string())?;
+    let manifest = bundled_proxy_manifest(&app)?;
+    let config = read_proxy_config(&data).unwrap_or(ProxyConfig {
+        port: free_port(),
+        version: manifest.version,
+    });
+    write_proxy_config(&data, &config)?;
+    start_proxy(&app, &data, &sidecar)?;
+    Ok(proxy_status(&app, &data, &sidecar))
+}
+
+#[tauri::command]
+fn desktop_proxy_status(
+    app: tauri::AppHandle,
+    sidecar: tauri::State<'_, ProxySidecar>,
+) -> ProxyStatus {
+    proxy_status(&app, &data_dir(&app), &sidecar)
+}
+
 /// Poll `GET /up` until it answers 200 or we give up.
 fn wait_until_healthy(port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if http_up_ok(port) {
+        if http_ok(port, "/up") {
             return true;
         }
         std::thread::sleep(Duration::from_millis(250));
@@ -151,14 +460,28 @@ fn wait_until_healthy(port: u16, timeout: Duration) -> bool {
     false
 }
 
-/// Minimal dependency-free HTTP GET /up; true only on a `200` status line.
-fn http_up_ok(port: u16) -> bool {
+fn wait_until_proxy_healthy(child: &mut Child, port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if child.try_wait().ok().flatten().is_some() {
+            return false;
+        }
+        if http_ok(port, "/health") {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    false
+}
+
+/// Minimal dependency-free HTTP GET; true only on a `200` status line.
+fn http_ok(port: u16, path: &str) -> bool {
     let addr = format!("127.0.0.1:{port}");
     let Ok(mut stream) = TcpStream::connect(&addr) else {
         return false;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
-    let req = format!("GET /up HTTP/1.0\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.0\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }
@@ -284,7 +607,7 @@ fn config_env_overrides(json: &str) -> Vec<(&'static str, String)> {
 /// file once (alongside the DBs, secrets, and logs the app already keeps here)
 /// lets every later launch pick the settings up. No file is the normal
 /// closed-loopback case and a no-op.
-fn apply_desktop_config(data: &PathBuf) {
+fn apply_desktop_config(data: &Path) {
     let path = data.join("config.json");
     let Ok(json) = fs::read_to_string(&path) else {
         return;
@@ -297,8 +620,9 @@ fn apply_desktop_config(data: &PathBuf) {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
-    use super::config_env_overrides;
+    use super::{config_env_overrides, generate_proxy_key, parse_bundled_proxy_manifest};
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
@@ -372,12 +696,46 @@ mod tests {
         assert!(pairs("").is_empty());
         assert!(pairs("[1,2,3]").is_empty());
     }
+
+    #[test]
+    fn bundled_proxy_manifest_accepts_only_the_expected_package_and_platform() {
+        let manifest = parse_bundled_proxy_manifest(
+            r#"{"package":"cli-openai-proxy","version":"0.1.0","integrity":"sha512-test","platform":"darwin-arm64"}"#,
+        )
+        .expect("valid manifest");
+        assert_eq!(manifest.version, "0.1.0");
+
+        assert!(parse_bundled_proxy_manifest(
+            r#"{"package":"other","version":"0.1.0","integrity":"sha512-test","platform":"darwin-arm64"}"#,
+        )
+        .is_err());
+        assert!(parse_bundled_proxy_manifest(
+            r#"{"package":"cli-openai-proxy","version":"0.1.0","integrity":"sha512-test","platform":"darwin-x64"}"#,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn generated_proxy_keys_are_prefixed_and_url_safe() {
+        let key = generate_proxy_key("cop_key").expect("random key");
+        assert!(key.starts_with("cop_key_"));
+        assert!(key
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric()
+                || character == '_'
+                || character == '-'));
+    }
 }
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(Sidecar(Mutex::new(None)))
+        .manage(ProxySidecar(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![
+            desktop_proxy_install,
+            desktop_proxy_status
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             let root = app_root(&handle);
@@ -406,6 +764,14 @@ pub fn run() {
             let child = spawn_sidecar(&root, &data, port);
             let _ = fs::write(pidfile_path(&data), child.id().to_string());
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
+
+            // A configured proxy means the user previously accepted its first
+            // run setup. Resume it opportunistically, but keep Collavre usable
+            // if Keychain access or the proxy itself fails; the setup wizard can
+            // surface the retry action and diagnostic log.
+            if read_proxy_config(&data).is_some() {
+                let _ = start_proxy(&handle, &data, &app.state::<ProxySidecar>());
+            }
 
             // Show the branded loading screen (dist/index.html) immediately so the
             // user sees custom UI while the sidecar boots, instead of a blank or
@@ -449,9 +815,13 @@ pub fn run() {
                 if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
                     stop_sidecar(&mut child);
                 }
+                if let Some(mut child) = app.state::<ProxySidecar>().0.lock().unwrap().take() {
+                    stop_sidecar(&mut child);
+                }
                 // Clear the pidfile so the next launch doesn't try to reap a pid
                 // that is gone (or, worse, reused by an unrelated process).
                 let _ = fs::remove_file(pidfile_path(&data_dir(app)));
+                let _ = fs::remove_file(proxy_pidfile_path(&data_dir(app)));
             }
         });
 }
