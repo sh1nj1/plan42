@@ -396,58 +396,12 @@ fn spawn_sidecar(root: &Path, data: &Path, port: u16) -> Child {
     cmd.spawn().expect("spawn rails sidecar")
 }
 
-#[cfg(unix)]
-fn proxy_process_matches_bundle(app: &tauri::AppHandle, pid: i32) -> bool {
-    let Ok(output) = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "command="])
-        .output()
-    else {
-        return false;
-    };
-    let command = String::from_utf8_lossy(&output.stdout);
-    proxy_command_matches_bundle(
-        &command,
-        &proxy_root(app).join("node/bin/node"),
-        &proxy_root(app).join("node_modules/cli-openai-proxy/dist/server/standalone.js"),
-    )
-}
-
-/// A pidfile can outlive the proxy process. Never signal a reused process group
-/// unless its leader is still the bundled Node proxy we started.
-#[cfg(unix)]
-fn proxy_command_matches_bundle(command: &str, node: &Path, entrypoint: &Path) -> bool {
-    command.contains(&node.to_string_lossy().to_string())
-        && command.contains(&entrypoint.to_string_lossy().to_string())
-}
-
-#[cfg(unix)]
-fn reap_orphan_proxy(app: &tauri::AppHandle, data: &Path) {
-    let path = proxy_pidfile_path(data);
-    let Ok(contents) = fs::read_to_string(&path) else {
-        return;
-    };
-    if let Ok(pid) = contents.trim().parse::<i32>() {
-        if pid > 1 && proxy_process_matches_bundle(app, pid) && unsafe { libc_kill(-pid, 0) } == 0 {
-            unsafe {
-                libc_kill(-pid, 15);
-            }
-            let deadline = Instant::now() + Duration::from_secs(5);
-            while Instant::now() < deadline {
-                if unsafe { libc_kill(-pid, 0) } != 0 {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            unsafe {
-                libc_kill(-pid, 9);
-            }
-        }
-    }
-    let _ = fs::remove_file(path);
-}
-
-#[cfg(not(unix))]
-fn reap_orphan_proxy(_app: &tauri::AppHandle, data: &Path) {
+/// A pidfile contains no unforgeable process identity. Never signal a process
+/// group from it: even a matching command can exit and have its numeric PID
+/// reused before a signal is delivered. Clean shutdown uses the `Child` handle
+/// held in memory; after a crash, discard the stale file and let repair select
+/// a new port if the abandoned proxy still owns the old one.
+fn reap_orphan_proxy(data: &Path) {
     let _ = fs::remove_file(proxy_pidfile_path(data));
 }
 
@@ -563,7 +517,7 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
         &mut config,
         credentials.regenerated,
     )?;
-    reap_orphan_proxy(app, data);
+    reap_orphan_proxy(data);
     let child = spawn_proxy(app, data, &config, credentials)?;
     fs::write(proxy_pidfile_path(data), child.id().to_string())
         .map_err(|_| "Could not record the desktop proxy process.".to_string())?;
@@ -608,7 +562,7 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
     // Clear a prior crashed proxy before probing its persisted port. If another
     // process owns it, choose a fresh loopback port and require registration so
     // Rails' gateway URL follows the repaired proxy.
-    reap_orphan_proxy(app, &data);
+    reap_orphan_proxy(&data);
     if !proxy_port_available(config.port) {
         replace_occupied_proxy_port(&mut config, free_port());
     }
@@ -1012,9 +966,9 @@ mod tests {
     use super::{
         append_unique_paths, config_env_overrides, generate_proxy_key,
         invalidate_proxy_registration_after_key_regeneration, migrate_proxy_config,
-        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
-        proxy_command_matches_bundle, read_proxy_config, replace_occupied_proxy_port,
-        wait_until_proxy_healthy, write_proxy_config, ProxyConfig,
+        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
+        reap_orphan_proxy, replace_occupied_proxy_port, wait_until_proxy_healthy,
+        write_proxy_config, ProxyConfig,
     };
     use std::{env, fs, path::PathBuf, process, time::Duration};
 
@@ -1182,30 +1136,18 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
-    fn stale_proxy_pid_must_match_the_bundled_node_command_before_reaping() {
-        let node =
-            PathBuf::from("/Applications/Collavre.app/Contents/Resources/app/proxy/node/bin/node");
-        let entrypoint = PathBuf::from(
-            "/Applications/Collavre.app/Contents/Resources/app/proxy/node_modules/cli-openai-proxy/dist/server/standalone.js",
-        );
+    fn orphan_proxy_reaping_only_discards_the_untrusted_pidfile() {
+        let data = env::temp_dir().join(format!("collavre-proxy-pidfile-{}", process::id()));
+        let pidfile = super::proxy_pidfile_path(&data);
+        let _ = fs::remove_dir_all(&data);
+        fs::create_dir_all(pidfile.parent().expect("pidfile parent")).expect("create state");
+        fs::write(&pidfile, "12345").expect("write stale pidfile");
 
-        assert!(proxy_command_matches_bundle(
-            &format!("{} {}", node.display(), entrypoint.display()),
-            &node,
-            &entrypoint
-        ));
-        assert!(!proxy_command_matches_bundle(
-            "/usr/bin/sleep 30",
-            &node,
-            &entrypoint
-        ));
-        assert!(!proxy_command_matches_bundle(
-            &format!("{} unrelated.js", node.display()),
-            &node,
-            &entrypoint
-        ));
+        reap_orphan_proxy(&data);
+
+        assert!(!pidfile.exists());
+        let _ = fs::remove_dir_all(&data);
     }
 
     #[cfg(unix)]
