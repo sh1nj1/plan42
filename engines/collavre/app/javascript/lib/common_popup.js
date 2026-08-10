@@ -1,3 +1,12 @@
+// Gap between the anchor (caret, button) and the popup edge.
+const ANCHOR_GAP = 4
+// Breathing room kept between the popup and the edge of its region.
+const BOUNDS_PADDING = 8
+// Floor for the space-derived max-height. Header + search input already eat
+// ~90px, so anything under this leaves no list at all; overflowing the region
+// slightly beats rendering a sliver.
+const MIN_POPUP_HEIGHT = 160
+
 export default class CommonPopup {
   constructor(element, { listElement, onSelect, renderItem, onClose, closeOnOutsideClick = true } = {}) {
     this.element = element
@@ -10,6 +19,7 @@ export default class CommonPopup {
     this.activeIndex = -1
 
     this.handleOutsideClick = this.handleOutsideClick.bind(this)
+    this.handleViewportResize = this.handleViewportResize.bind(this)
   }
 
   showAt(anchorRect, boundsElement = null) {
@@ -18,6 +28,10 @@ export default class CommonPopup {
     // When set, the popup is caged inside this element's rect (e.g. the chat
     // box) instead of the viewport — see updatePosition.
     this._boundsElement = boundsElement
+    // Kept so reposition() can re-place against the same anchor after the
+    // popup's content has changed size.
+    this._anchorRect = anchorRect
+    this._placedAbove = false
 
     // Re-opening while already open (e.g. clicking the same typo mark twice):
     // a listener from the previous open is still live, so the opening mousedown
@@ -43,42 +57,89 @@ export default class CommonPopup {
         document.addEventListener('mousedown', this.handleOutsideClick)
         document.addEventListener('touchstart', this.handleOutsideClick)
       }
+      // The on-screen keyboard shrinks the visual viewport without firing a
+      // window resize, and it opens *after* showAt (the consumer focuses its
+      // input a frame later), so the placement made here is already stale.
+      window.visualViewport?.addEventListener('resize', this.handleViewportResize)
     })
+  }
+
+  // Re-run placement against the anchor showAt was given. Call this whenever the
+  // popup's content changes size: showAt measures one frame after opening, so a
+  // popup whose body arrives asynchronously (a fetched tree, search results) was
+  // sized while it still read "Loading…" and would otherwise keep the placement
+  // that placeholder height implied.
+  reposition() {
+    if (!this.isOpen()) return
+    this.updatePosition(this._anchorRect)
+  }
+
+  handleViewportResize() {
+    this.reposition()
+  }
+
+  // The region the popup must stay inside: an explicit bounds element (the chat
+  // box) when caged, otherwise the visual viewport. window.innerHeight is the
+  // wrong number on mobile — it still counts the strip the keyboard covers.
+  regionRect() {
+    const bounds = this._boundsElement?.getBoundingClientRect?.()
+    if (bounds) return bounds
+
+    const viewport = window.visualViewport
+    const left = viewport?.offsetLeft || 0
+    const top = viewport?.offsetTop || 0
+    const width = viewport?.width || window.innerWidth
+    const height = viewport?.height || window.innerHeight
+    return { left, top, right: left + width, bottom: top + height, width, height }
   }
 
   updatePosition(anchorRect) {
     if (!this.element) return
 
-    const scrollX = window.scrollX || window.pageXOffset || 0
-    const scrollY = window.scrollY || window.pageYOffset || 0
     const offsetParent = this.element.offsetParent
     const parentRect = offsetParent?.getBoundingClientRect?.() || { left: 0, top: 0 }
     const parentScrollX = offsetParent?.scrollLeft || 0
     const parentScrollY = offsetParent?.scrollTop || 0
-    const boundsPadding = 8
     const rect = anchorRect || this.element.getBoundingClientRect()
+    const anchorTop = rect?.top || 0
+    const anchorBottom = rect?.bottom || 0
 
-    let viewportLeft = (rect?.left || 0)
-    let viewportTop = (rect?.bottom || 0) + 4
-
+    // Measure unconstrained. A max-height left behind by an earlier placement
+    // would make offsetHeight report that cap instead of the content height, so
+    // every later call would agree the popup "fits" wherever it was first put.
+    this.element.style.maxHeight = ''
     const { offsetWidth: width, offsetHeight: height } = this.element
 
-    // Clamp within a container's rect when bounded (keeps the popup caged inside
-    // the chat box), otherwise within the viewport.
-    const bounds = this._boundsElement?.getBoundingClientRect?.()
-    let minLeft = boundsPadding
-    let minTop = boundsPadding
-    let maxLeft = window.innerWidth - width - boundsPadding
-    let maxTop = window.innerHeight - height - boundsPadding
-    if (bounds) {
-      minLeft = bounds.left + boundsPadding
-      minTop = bounds.top + boundsPadding
-      maxLeft = bounds.right - width - boundsPadding
-      maxTop = bounds.bottom - height - boundsPadding
-      // Cap size so a long list scrolls inside the box instead of spilling past it.
-      this.element.style.maxWidth = `${bounds.width - boundsPadding * 2}px`
-      this.element.style.maxHeight = `${bounds.height - boundsPadding * 2}px`
+    const region = this.regionRect()
+    const spaceBelow = region.bottom - BOUNDS_PADDING - (anchorBottom + ANCHOR_GAP)
+    const spaceAbove = (anchorTop - ANCHOR_GAP) - (region.top + BOUNDS_PADDING)
+
+    // Flip above the anchor when the popup genuinely does not fit below it and
+    // there is more room up there — a chat composer pinned to the bottom of the
+    // screen leaves almost nothing under the caret. Once flipped, stay flipped
+    // for the rest of this open: content that shrinks again (collapsing tree
+    // nodes) must not make the popup hop back across the anchor.
+    const placeAbove = this._placedAbove || (height > spaceBelow && spaceAbove > spaceBelow)
+    this._placedAbove = placeAbove
+
+    // Cap to the space actually available so the list scrolls inside the popup
+    // instead of running off-screen, both now and if the content grows later.
+    const available = Math.max(placeAbove ? spaceAbove : spaceBelow, MIN_POPUP_HEIGHT)
+    this.element.style.maxHeight = `${available}px`
+    if (this._boundsElement) {
+      this.element.style.maxWidth = `${region.width - BOUNDS_PADDING * 2}px`
     }
+    const renderedHeight = Math.min(height, available)
+
+    let viewportLeft = rect?.left || 0
+    let viewportTop = placeAbove
+      ? anchorTop - ANCHOR_GAP - renderedHeight
+      : anchorBottom + ANCHOR_GAP
+
+    const minLeft = region.left + BOUNDS_PADDING
+    const maxLeft = region.right - width - BOUNDS_PADDING
+    const minTop = region.top + BOUNDS_PADDING
+    const maxTop = region.bottom - renderedHeight - BOUNDS_PADDING
 
     viewportLeft = Math.max(minLeft, Math.min(viewportLeft, maxLeft))
     viewportTop = Math.max(minTop, Math.min(viewportTop, maxTop))
@@ -208,6 +269,8 @@ export default class CommonPopup {
 
     document.removeEventListener('mousedown', this.handleOutsideClick)
     document.removeEventListener('touchstart', this.handleOutsideClick)
+    window.visualViewport?.removeEventListener('resize', this.handleViewportResize)
+    this._anchorRect = null
 
     if (typeof this.onClose === 'function') {
       this.onClose(reason)
