@@ -1104,10 +1104,19 @@ export default class extends Controller {
         if (!topicId) return
 
         const topics = this.topics || []
+        const archivedTopics = this.archivedTopics || []
         const nextTopics = topics.filter((topic) => String(topic.id) !== String(topicId))
-        if (nextTopics.length === topics.length) return
+        // An archived topic is deletable and now selectable, so the "deleted"
+        // broadcast has to reach this cache too — nothing else does. It is the
+        // only removal path that runs without a loadTopics(), so a topic dropped
+        // from here would keep an openable chip and, through pruneArchivedBadges
+        // never running, a lit toggle for a conversation that no longer exists.
+        const nextArchivedTopics = archivedTopics.filter((topic) => String(topic.id) !== String(topicId))
+        if (nextTopics.length === topics.length && nextArchivedTopics.length === archivedTopics.length) return
 
         this.topics = nextTopics
+        this.archivedTopics = nextArchivedTopics
+        this.pruneArchivedBadges()
         if (String(this.currentTopicId) === String(topicId)) {
             this.currentTopicId = ""
             this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })

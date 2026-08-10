@@ -19,9 +19,9 @@ const comment = (topicId) =>
 
 // currentTopicId "" is the All Messages view. archivedIds stands in for the
 // topics controller's archived_topics, which is what the real lookup reads.
-const buildController = ({ currentTopicId = '', archivedIds = [], withPopup = true } = {}) => {
+const buildController = ({ currentTopicId = '', archivedIds = [], withPopup = true, searchQuery = null } = {}) => {
   const controller = Object.create(CommentsListController.prototype)
-  controller.manualSearchQuery = null
+  controller.manualSearchQuery = searchQuery
   controller.currentTopicId = currentTopicId
   controller.allNewerLoaded = true
 
@@ -114,5 +114,52 @@ describe('CommentsListController archived streams in All Messages', () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(badgeEvents).toEqual([])
+  })
+
+  // An active search blocks every append, so the badge is the only thing left
+  // that can report traffic in a topic the user cannot see. It has to survive
+  // the search block, not be swallowed by it.
+  describe('while a search filter is active', () => {
+    test('badges an archived topic even though the append is blocked', () => {
+      const controller = buildController({ archivedIds: [7], searchQuery: 'deploy' })
+      const event = streamEvent({ html: comment(7) })
+
+      controller.handleStreamRender(event)
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      expect(badgeEvents).toEqual([{ topicId: '7' }])
+    })
+
+    test('badges a foreign topic while searching inside a specific topic', () => {
+      const controller = buildController({ currentTopicId: '2', searchQuery: 'deploy' })
+      const event = streamEvent({ html: comment(5) })
+
+      controller.handleStreamRender(event)
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      expect(badgeEvents).toEqual([{ topicId: '5' }])
+    })
+
+    // The search block still owns everything the topic routing lets past: the
+    // result set is a server-side match and a live append carries no verdict.
+    test('still blocks a message for the topic in view, without badging it', () => {
+      const controller = buildController({ currentTopicId: '2', searchQuery: 'deploy' })
+      const event = streamEvent({ html: comment(2) })
+
+      controller.handleStreamRender(event)
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      expect(badgeEvents).toEqual([])
+    })
+
+    test('still blocks a live-topic message in All Messages, without badging it', () => {
+      const controller = buildController({ archivedIds: [7], searchQuery: 'deploy' })
+      const event = streamEvent({ html: comment(2) })
+
+      controller.handleStreamRender(event)
+
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      expect(badgeEvents).toEqual([])
+    })
   })
 })

@@ -550,4 +550,81 @@ describe('TopicsController archived topic messages', () => {
       expect(changeEvents.at(-1).topicId).toBe('2')
     })
   })
+
+  // The "deleted" broadcast is the one removal path that runs without a
+  // loadTopics(), so it is the only thing that can prune the archived cache
+  // when an admin deletes an archived topic from another client or the API.
+  describe('a deleted broadcast for an archived topic', () => {
+    const deleteBroadcast = (topicId) =>
+      controller.handleTopicMessage({ action: 'deleted', topic_id: topicId })
+
+    test('drops it from the archived cache', () => {
+      deleteBroadcast(3)
+
+      expect(controller.archivedTopics.map((t) => t.id)).toEqual([4])
+    })
+
+    test('removes its chip so it can no longer be opened', () => {
+      controller.showingArchived = true
+      render()
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="3"]')).not.toBeNull()
+
+      deleteBroadcast(3)
+
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="3"]')).toBeNull()
+      expect(controller.listTarget.querySelector('.topic-archived[data-id="4"]')).not.toBeNull()
+    })
+
+    test('moves the viewer out of it instead of leaving them on a dead conversation', () => {
+      controller.serverLastTopicId = '3'
+
+      deleteBroadcast(3)
+
+      expect(changeEvents.at(-1).topicId).toBe('1')
+      expect(controller.serverLastTopicId).toBe('1')
+    })
+
+    test('clears the toggle badge it was holding', () => {
+      render()
+      controller.handleNewMessage({ detail: { topicId: '3' } })
+      expect(controller.archivedWithNewMessages.has('3')).toBe(true)
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .toContain('has-new-messages')
+
+      deleteBroadcast(3)
+
+      expect(controller.archivedWithNewMessages.has('3')).toBe(false)
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .not.toContain('has-new-messages')
+    })
+
+    // Another archived topic still unread keeps the toggle lit — the badge
+    // aggregates the whole section.
+    test('leaves the toggle lit when another archived topic is still unread', () => {
+      render()
+      controller.handleNewMessage({ detail: { topicId: '3' } })
+      controller.handleNewMessage({ detail: { topicId: '4' } })
+
+      deleteBroadcast(3)
+
+      expect([...controller.archivedWithNewMessages]).toEqual(['4'])
+      expect(controller.listTarget.querySelector('.topic-archived-toggle').classList)
+        .toContain('has-new-messages')
+    })
+
+    test('still removes a live topic', () => {
+      deleteBroadcast(2)
+
+      expect(controller.topics.map((t) => t.id)).toEqual([1])
+      expect(controller.archivedTopics.map((t) => t.id)).toEqual([3, 4])
+    })
+
+    test('does nothing for an id in neither list', () => {
+      deleteBroadcast(99)
+
+      expect(controller.topics.map((t) => t.id)).toEqual([1, 2])
+      expect(controller.archivedTopics.map((t) => t.id)).toEqual([3, 4])
+      expect(changeEvents).toEqual([])
+    })
+  })
 })
