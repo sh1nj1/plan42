@@ -1,6 +1,15 @@
 require "test_helper"
 
 class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    @desktop_proxy_setup = Rails.application.config.x.desktop_proxy_setup
+    Rails.application.config.x.desktop_proxy_setup = true
+  end
+
+  teardown do
+    Rails.application.config.x.desktop_proxy_setup = @desktop_proxy_setup
+  end
+
   test "first desktop account is created locally and becomes the administrator" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
 
@@ -56,6 +65,44 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
     assert_nil Collavre::User.find_by(email: "remote@desktop.test")
+  end
+
+  test "first administrator creation is unavailable outside desktop mode" do
+    Collavre::User.where(system_admin: true).update_all(system_admin: false)
+    Rails.application.config.x.desktop_proxy_setup = false
+
+    post collavre.desktop_setup_account_path, params: {
+      admin: { name: "Web", email: "web@desktop.test", password: "secure-password", password_confirmation: "secure-password" }
+    }
+
+    assert_response :not_found
+    assert_nil Collavre::User.find_by(email: "web@desktop.test")
+  end
+
+  test "a second local signup cannot become another first administrator" do
+    post collavre.desktop_setup_account_path, params: {
+      admin: { name: "Second", email: "second@desktop.test", password: "secure-password", password_confirmation: "secure-password" }
+    }
+
+    assert_redirected_to collavre.new_session_path
+    assert_nil Collavre::User.find_by(email: "second@desktop.test")
+    assert_equal 1, Collavre::User.where(system_admin: true).count
+  end
+
+  test "non-administrators cannot obtain a desktop registration token" do
+    sign_in_as(users(:two), password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+
+    assert_response :forbidden
+  end
+
+  test "registration tokens are limited to the local desktop webview" do
+    sign_in_as(users(:one), password: "password")
+
+    post collavre.desktop_setup_registration_token_path, headers: { "REMOTE_ADDR" => "10.0.0.25" }
+
+    assert_response :forbidden
   end
 
   test "an existing administrator returns to incomplete setup after login" do
