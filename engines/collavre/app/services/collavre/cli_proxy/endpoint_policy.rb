@@ -38,8 +38,7 @@ module Collavre
       end
 
       def resolve!(url)
-        uri = url.is_a?(URI) ? url : URI.parse(url.to_s)
-        raise UnsafeEndpoint unless uri.is_a?(URI::HTTPS) && uri.hostname.present?
+        uri = parsed_https_url!(url)
 
         addresses = @resolver.getaddresses(uri.hostname).uniq
         raise UnsafeEndpoint if addresses.empty? || addresses.any? { |address| unsafe_ip?(address) }
@@ -50,18 +49,25 @@ module Collavre
       end
 
       def safe_literal?(url)
-        uri = url.is_a?(URI) ? url : URI.parse(url.to_s)
-        return false unless uri.is_a?(URI::HTTPS) && uri.hostname.present?
+        uri = parsed_https_url!(url)
 
         literal = IPAddr.new(uri.hostname)
         !unsafe_ip?(literal)
       rescue IPAddr::InvalidAddressError
         !uri.hostname.casecmp("localhost").zero? && !uri.hostname.downcase.end_with?(".localhost")
-      rescue URI::InvalidURIError
+      rescue URI::InvalidURIError, UnsafeEndpoint
         false
       end
 
       private
+
+      def parsed_https_url!(url)
+        uri = url.is_a?(URI) ? url : URI.parse(url.to_s)
+        raise UnsafeEndpoint unless uri.is_a?(URI::HTTPS) && uri.hostname.present?
+        raise UnsafeEndpoint if uri.userinfo.present? || uri.query.present? || uri.fragment.present?
+
+        uri
+      end
 
       def unsafe_ip?(address)
         ip = address.is_a?(IPAddr) ? address : IPAddr.new(address)

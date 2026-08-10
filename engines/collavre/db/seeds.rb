@@ -17,6 +17,7 @@ module Collavre
 end
 
 Collavre::ChannelBotSeed.call
+Collavre::LlmModel.seed_default_suggestions!
 
 module Collavre
   # Seeds the "Typo Corrector" agent. Unlike event-routed agents (e.g. the GitHub

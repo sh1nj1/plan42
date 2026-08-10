@@ -41,11 +41,11 @@ module Collavre
         request(:get, "/v1/auth/#{segment(engine)}/sessions/#{segment(session_id)}")
       end
 
-      def submit_auth_session(engine, session_id, value)
+      def submit_auth_session(engine, session_id, value, base_url: nil)
         request(
           :post,
           "/v1/auth/#{segment(engine)}/sessions/#{segment(session_id)}",
-          body: { value: value }
+          body: { value: value, base_url: base_url }.compact
         )
       end
 
