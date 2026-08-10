@@ -1,14 +1,15 @@
 # frozen_string_literal: true
 
 class AddDesktopManagedToAgentGateways < ActiveRecord::Migration[8.1]
-  def change
+  def up
     add_column :agent_gateways, :desktop_managed, :boolean, default: false, null: false unless column_exists?(:agent_gateways, :desktop_managed)
-
-    reversible do |direction|
-      direction.up { backfill_legacy_desktop_gateway }
-    end
-
+    backfill_legacy_desktop_gateway
     add_index :agent_gateways, :desktop_managed, unique: true, where: "desktop_managed", name: "index_agent_gateways_on_desktop_managed" unless index_exists?(:agent_gateways, name: "index_agent_gateways_on_desktop_managed")
+  end
+
+  def down
+    remove_index :agent_gateways, name: "index_agent_gateways_on_desktop_managed" if index_exists?(:agent_gateways, name: "index_agent_gateways_on_desktop_managed")
+    remove_column :agent_gateways, :desktop_managed if column_exists?(:agent_gateways, :desktop_managed)
   end
 
   private
