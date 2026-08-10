@@ -21,6 +21,8 @@
      data-agent-connection-approve-value="<%= t('collavre.agent_connections.approve') %>"
      data-agent-connection-revoke-value="<%= t('collavre.agent_connections.revoke') %>"
      data-agent-connection-error-value="<%= t('collavre.agent_connections.error') %>"
+     data-agent-connection-manifest-unregistered-value="<%= t('collavre.agent_connections.manifest_unregistered') %>"
+     data-agent-connection-last-error-value="<%= t('collavre.agent_connections.last_error') %>"
      data-agent-connection-status-labels-value="<%= t('collavre.agent_connections.statuses').to_json %>"
      data-agent-connection-item-type-labels-value="<%= t('collavre.agent_connections.item_types').to_json %>">
   <section class="form-section">
@@ -41,6 +43,7 @@
       </div>
       <button type="button" class="btn btn-sm btn-primary" data-action="agent-connection#sync"><%= t("collavre.agent_connections.sync") %></button>
     </div>
+    <div data-agent-connection-target="manifest"></div>
     <table class="settings-table" style="width:100%">
       <thead><tr><th><%= t("collavre.agent_connections.item") %></th><th><%= t("collavre.agent_connections.kind") %></th><th><%= t("collavre.agent_connections.state") %></th><th><%= t("collavre.agent_connections.actions") %></th></tr></thead>
       <tbody data-agent-connection-target="provision">

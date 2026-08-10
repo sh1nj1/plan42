@@ -24,11 +24,14 @@ describe("AgentConnectionController", () => {
            data-agent-connection-approve-value="승인"
            data-agent-connection-revoke-value="승인 회수"
            data-agent-connection-error-value="CLI Proxy 오류"
+           data-agent-connection-manifest-unregistered-value="등록된 매니페스트가 없습니다"
+           data-agent-connection-last-error-value="최근 프로비저닝 오류"
            data-agent-connection-status-labels-value='{"unknown":"알 수 없음","authorized":"인증 완료","not_synced":"동기화되지 않음","pending_approval":"승인 대기","installed":"설치됨"}'
            data-agent-connection-item-type-labels-value='{"skill":"스킬","config":"설정"}'>
         <div data-agent-connection-target="error" hidden></div>
         <div data-agent-connection-target="engines"></div>
         <div data-agent-connection-target="session"></div>
+        <div data-agent-connection-target="manifest"></div>
         <table><tbody data-agent-connection-target="provision"></tbody></table>
       </div>
     `
@@ -83,6 +86,23 @@ describe("AgentConnectionController", () => {
 
     expect(controller.statusLabel("future_state")).toBe("future_state")
     expect(controller.itemTypeLabel("future_type")).toBe("future_type")
+  })
+
+  test("names why provisioning is stalled next to the sync button", async () => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'),
+      "agent-connection"
+    )
+    const manifest = document.querySelector('[data-agent-connection-target="manifest"]')
+
+    expect(manifest.textContent).toContain("등록된 매니페스트가 없습니다")
+
+    controller.renderProvision({ manifest_url: "https://collavre.example/provision.json", last_error: "manifest fetch failed" })
+    expect(manifest.textContent).toContain("최근 프로비저닝 오류: manifest fetch failed")
+
+    controller.renderProvision({ manifest_url: "https://collavre.example/provision.json", items: [] })
+    expect(manifest.textContent).toBe("")
   })
 
   test("submits provider credentials under a log-filtered parameter name", async () => {

@@ -57,6 +57,14 @@ module Collavre
         request(:get, "/v1/provision")
       end
 
+      # Registers the workspace manifest URL and applies it, without a login.
+      # The login-carried provisioning_url does the same thing as a side effect
+      # of authenticating; this route is how an already-authenticated workspace
+      # gets (re)provisioned.
+      def provision_register_manifest(url)
+        request(:post, "/v1/provision/manifest", body: { url: url })
+      end
+
       def provision_sync
         request(:post, "/v1/provision/sync")
       end
@@ -97,7 +105,7 @@ module Collavre
             headers: headers
           )
         end
-        parsed = response.json
+        parsed = parse_body(response)
         return parsed || {} if response.success?
 
         error = parsed.is_a?(Hash) ? (parsed["error"] || parsed) : {}
@@ -107,12 +115,23 @@ module Collavre
           code: error["code"],
           details: parsed
         )
-      rescue JSON::ParserError => e
-        raise Error.new("Invalid JSON from CLI proxy", details: e.message)
       rescue Collavre::HttpClient::ConnectionError => e
         raise Error.new(e.message, code: "proxy_unreachable")
       rescue EndpointPolicy::UnsafeEndpoint
         raise Error.new(I18n.t("collavre.agent_gateways.unsafe_endpoint"), code: "unsafe_proxy_endpoint")
+      end
+
+      # A failure may answer with a non-JSON body: the proxy itself answers JSON
+      # throughout, but anything in front of it (a reverse proxy, a gateway
+      # error page) does not. Keep the HTTP status in that case so a caller can
+      # branch on it — a 404 is how an endpoint this proxy version lacks reports
+      # itself — instead of collapsing it into a status-less parse error.
+      def parse_body(response)
+        response.json
+      rescue JSON::ParserError => e
+        raise Error.new("Invalid JSON from CLI proxy", details: e.message) if response.success?
+
+        nil
       end
 
       def segment(value)

@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["engines", "provision", "session", "error"]
+  static targets = ["engines", "provision", "session", "error", "manifest"]
   static values = {
     statusUrl: String,
     sessionUrl: String,
@@ -17,6 +17,8 @@ export default class extends Controller {
     approve: String,
     revoke: String,
     error: String,
+    manifestUnregistered: String,
+    lastError: String,
     statusLabels: Object,
     itemTypeLabels: Object
   }
@@ -144,6 +146,7 @@ export default class extends Controller {
   }
 
   renderProvision(data) {
+    this.renderManifestState(data)
     const items = data.items || data.data || []
     const expected = [
       { type: "skill", name: "collavre" },
@@ -173,6 +176,26 @@ export default class extends Controller {
       row.append(actions)
       return row
     }))
+  }
+
+  // Why provisioning is not happening, which the per-item states cannot say:
+  // an unregistered manifest leaves every item at "not synced", and a manifest
+  // the proxy could not fetch or parse leaves them at their previous state.
+  // Both are repaired by "Sync now", so name the cause next to that button.
+  renderManifestState(data) {
+    if (!this.hasManifestTarget) return
+    const notice = document.createElement("div")
+    if (data.last_error) {
+      notice.className = "alert alert-danger"
+      notice.textContent = `${this.lastErrorValue}: ${data.last_error}`
+    } else if (!data.manifest_url) {
+      notice.className = "alert alert-warning"
+      notice.textContent = this.manifestUnregisteredValue
+    } else {
+      this.manifestTarget.replaceChildren()
+      return
+    }
+    this.manifestTarget.replaceChildren(notice)
   }
 
   provisionButton(label, action, item) {
