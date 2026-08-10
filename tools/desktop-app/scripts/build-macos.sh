@@ -66,6 +66,7 @@ rsync -a --delete \
   --exclude 'log/*' \
   --exclude 'tmp/*' \
   --exclude 'storage/*' \
+  --exclude '/tools/desktop-app/vendor/proxy/***' \
   --include 'tools/desktop-app/vendor/**' \
   --exclude 'test' \
   --exclude 'spec' \
