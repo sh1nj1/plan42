@@ -1,41 +1,63 @@
 require "test_helper"
 
 class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
-  test "visitor can review every desktop setup mockup step in English" do
-    %w[account install adapters ready].each do |step|
-      get collavre.desktop_setup_path(step: step, locale: :en)
+  test "first desktop account is created locally and becomes the administrator" do
+    Collavre::User.where(system_admin: true).update_all(system_admin: false)
 
-      assert_response :success
-      assert_includes response.body, I18n.t("collavre.desktop_setup.preview", locale: :en)
-      assert_includes response.body, I18n.t("collavre.desktop_setup.steps.#{step}", locale: :en)
-    end
+    post collavre.desktop_setup_account_path, params: {
+      admin: { name: "Desktop owner", email: "owner@desktop.test", password: "secure-password", password_confirmation: "secure-password" }
+    }
+
+    owner = Collavre::User.find_by!(email: "owner@desktop.test")
+    assert owner.system_admin?
+    assert owner.email_verified?
+    assert_redirected_to collavre.desktop_setup_path(step: :install)
+    assert_not_nil cookies[:session_id]
   end
 
-  test "visitor can review the Korean CLI privacy guidance" do
-    get collavre.desktop_setup_path(step: :adapters, locale: :ko)
+  test "signed native registration creates the loopback gateway and detected presets" do
+    owner = users(:one)
+    sign_in_as(owner, password: "password")
 
+    post collavre.desktop_setup_registration_token_path
     assert_response :success
-    assert_includes response.body, I18n.t("collavre.desktop_setup.adapters.notice", locale: :ko)
-    assert_includes response.body, I18n.t("collavre.desktop_setup.adapters.codex.body", locale: :ko)
+    token = response.parsed_body.fetch("token")
+
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: token,
+      proxy_port: 34_567,
+      admin_key: "admin-key",
+      completion_key: "completion-key",
+      identity_secret: "i" * 48,
+      adapters: %w[claude codex unsupported]
+    }, as: :json
+
+    assert_response :created
+    gateway = owner.owned_agent_gateways.find_by!(name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME)
+    assert_equal "http://127.0.0.1:34567", gateway.base_url
+    assert_equal "admin-key", gateway.admin_key
+    assert_equal "completion-key", gateway.completion_key
+    assert_equal %w[paperclip/claude_local paperclip/codex_local], owner.created_ai_users.order(:llm_model).pluck(:llm_model)
+    assert_equal %w[claude codex], response.parsed_body.fetch("adapters")
   end
 
-  test "visitor can review the administrator account form without an existing account" do
-    get collavre.desktop_setup_path
+  test "registration rejects a missing native grant" do
+    post collavre.desktop_setup_register_gateway_path, params: { proxy_port: 34_567 }, as: :json
+
+    assert_response :unprocessable_entity
+  end
+
+  test "setup renders actual account controls and dynamic adapter statuses" do
+    Collavre::User.where(system_admin: true).update_all(system_admin: false)
+    get collavre.desktop_setup_path(step: :account, locale: :en)
 
     assert_response :success
-    assert_select "form.desktop-setup__account-form"
-    assert_select "input#desktop-setup-admin-name[name='admin[name]'][autocomplete='name']"
-    assert_select "input#desktop-setup-admin-email[name='admin[email]'][type='email']"
+    assert_select "form[action='#{collavre.desktop_setup_account_path}']"
     assert_select "input#desktop-setup-admin-password[type='password'][autocomplete='new-password']"
-    assert_select "input#desktop-setup-admin-password-confirmation[type='password'][autocomplete='new-password']"
-  end
 
-  test "unknown step falls back to the overview" do
-    sign_in_as(users(:one), password: "password")
-
-    get collavre.desktop_setup_path(step: "unsupported")
-
+    get collavre.desktop_setup_path(step: :adapters, claude: 1, locale: :en)
     assert_response :success
-    assert_includes response.body, I18n.t("collavre.desktop_setup.account.title")
+    assert_includes response.body, I18n.t("collavre.desktop_setup.adapters.detected", locale: :en)
+    assert_includes response.body, I18n.t("collavre.desktop_setup.adapters.not_detected", locale: :en)
   end
 end

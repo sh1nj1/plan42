@@ -7,7 +7,7 @@
 
 <section class="desktop-setup" aria-labelledby="desktop-setup-title">
   <header class="desktop-setup__header">
-    <p class="desktop-setup__eyebrow"><%= t("collavre.desktop_setup.preview") %></p>
+    <p class="desktop-setup__eyebrow"><%= t("collavre.desktop_setup.kicker") %></p>
     <h1 id="desktop-setup-title"><%= t("collavre.desktop_setup.title") %></h1>
     <p><%= t("collavre.desktop_setup.subtitle") %></p>
   </header>
@@ -26,27 +26,34 @@
       <p class="desktop-setup__kicker"><%= t("collavre.desktop_setup.account.kicker") %></p>
       <h2><%= t("collavre.desktop_setup.account.title") %></h2>
       <p class="desktop-setup__lead"><%= t("collavre.desktop_setup.account.body") %></p>
-      <form class="desktop-setup__account-form" aria-describedby="desktop-setup-account-hint">
-        <div class="desktop-setup__field">
-          <label for="desktop-setup-admin-name"><%= t("collavre.desktop_setup.account.name_label") %></label>
-          <input id="desktop-setup-admin-name" name="admin[name]" type="text" autocomplete="name" placeholder="<%= t("collavre.desktop_setup.account.name_placeholder") %>">
-        </div>
-        <div class="desktop-setup__field">
-          <label for="desktop-setup-admin-email"><%= t("collavre.desktop_setup.account.email_label") %></label>
-          <input id="desktop-setup-admin-email" name="admin[email]" type="email" autocomplete="email" placeholder="<%= t("collavre.desktop_setup.account.email_placeholder") %>">
-        </div>
-        <div class="desktop-setup__form-grid">
+      <% if @account_required %>
+        <% if @user&.errors&.any? %><p class="flash-alert"><%= @user.errors.full_messages.to_sentence %></p><% end %>
+        <%= form_with scope: :admin, url: collavre.desktop_setup_account_path, class: "desktop-setup__account-form", aria: { describedby: "desktop-setup-account-hint" } do |form| %>
           <div class="desktop-setup__field">
-            <label for="desktop-setup-admin-password"><%= t("collavre.desktop_setup.account.password_label") %></label>
-            <input id="desktop-setup-admin-password" name="admin[password]" type="password" autocomplete="new-password" placeholder="<%= t("collavre.desktop_setup.account.password_placeholder") %>">
+            <%= form.label :name, t("collavre.desktop_setup.account.name_label"), for: "desktop-setup-admin-name" %>
+            <%= form.text_field :name, id: "desktop-setup-admin-name", autocomplete: "name", placeholder: t("collavre.desktop_setup.account.name_placeholder"), required: true %>
           </div>
           <div class="desktop-setup__field">
-            <label for="desktop-setup-admin-password-confirmation"><%= t("collavre.desktop_setup.account.password_confirmation_label") %></label>
-            <input id="desktop-setup-admin-password-confirmation" name="admin[password_confirmation]" type="password" autocomplete="new-password" placeholder="<%= t("collavre.desktop_setup.account.password_confirmation_placeholder") %>">
+            <%= form.label :email, t("collavre.desktop_setup.account.email_label"), for: "desktop-setup-admin-email" %>
+            <%= form.email_field :email, id: "desktop-setup-admin-email", autocomplete: "email", placeholder: t("collavre.desktop_setup.account.email_placeholder"), required: true %>
           </div>
-        </div>
-      </form>
-      <p id="desktop-setup-account-hint" class="desktop-setup__hint"><%= t("collavre.desktop_setup.account.hint") %></p>
+          <div class="desktop-setup__form-grid">
+            <div class="desktop-setup__field">
+              <%= form.label :password, t("collavre.desktop_setup.account.password_label"), for: "desktop-setup-admin-password" %>
+              <%= form.password_field :password, id: "desktop-setup-admin-password", autocomplete: "new-password", placeholder: t("collavre.desktop_setup.account.password_placeholder"), required: true %>
+            </div>
+            <div class="desktop-setup__field">
+              <%= form.label :password_confirmation, t("collavre.desktop_setup.account.password_confirmation_label"), for: "desktop-setup-admin-password-confirmation" %>
+              <%= form.password_field :password_confirmation, id: "desktop-setup-admin-password-confirmation", autocomplete: "new-password", placeholder: t("collavre.desktop_setup.account.password_confirmation_placeholder"), required: true %>
+            </div>
+          </div>
+          <%= form.submit t("collavre.desktop_setup.account.continue"), class: "desktop-setup__button" %>
+        <% end %>
+        <p id="desktop-setup-account-hint" class="desktop-setup__hint"><%= t("collavre.desktop_setup.account.hint") %></p>
+      <% else %>
+        <p class="desktop-setup__lead"><%= t("collavre.desktop_setup.account.existing") %></p>
+        <%= link_to t("app.sign_in"), collavre.new_session_path, class: "desktop-setup__button" %>
+      <% end %>
       <aside class="desktop-setup__notice"><%= t("collavre.desktop_setup.account.notice") %></aside>
     <% when "install" %>
       <p class="desktop-setup__kicker"><%= t("collavre.desktop_setup.install.kicker") %></p>
@@ -57,17 +64,26 @@
           <div><strong><%= t("collavre.desktop_setup.install.items.#{item}.title") %></strong><span><%= t("collavre.desktop_setup.install.items.#{item}.body") %></span></div>
         <% end %>
       </div>
-      <label class="desktop-setup__consent"><input type="checkbox" disabled> <span><%= t("collavre.desktop_setup.install.consent") %></span></label>
-      <p class="desktop-setup__hint"><%= t("collavre.desktop_setup.install.hint") %></p>
+      <div data-controller="desktop-proxy-setup"
+           data-desktop-proxy-setup-token-url-value="<%= collavre.desktop_setup_registration_token_path %>"
+           data-desktop-proxy-setup-next-url-value="<%= collavre.desktop_setup_path(step: :adapters) %>"
+           data-desktop-proxy-setup-unavailable-value="<%= t("collavre.desktop_setup.install.unavailable") %>"
+           data-desktop-proxy-setup-failed-value="<%= t("collavre.desktop_setup.install.failed") %>">
+        <label class="desktop-setup__consent"><input type="checkbox" data-desktop-proxy-setup-target="consent" data-action="desktop-proxy-setup#toggle"> <span><%= t("collavre.desktop_setup.install.consent") %></span></label>
+        <p class="desktop-setup__hint"><%= t("collavre.desktop_setup.install.hint") %></p>
+        <p class="flash-alert" hidden data-desktop-proxy-setup-target="error"></p>
+        <button type="button" class="desktop-setup__button" disabled data-desktop-proxy-setup-target="submit" data-action="desktop-proxy-setup#install"><%= t("collavre.desktop_setup.install.continue") %></button>
+      </div>
     <% when "adapters" %>
       <p class="desktop-setup__kicker"><%= t("collavre.desktop_setup.adapters.kicker") %></p>
       <h2><%= t("collavre.desktop_setup.adapters.title") %></h2>
       <p class="desktop-setup__lead"><%= t("collavre.desktop_setup.adapters.body") %></p>
       <div class="desktop-setup__adapter-list">
         <% %w[claude codex].each do |adapter| %>
+          <% detected = params[adapter] == "1" %>
           <article>
             <div><h3><%= t("collavre.desktop_setup.adapters.#{adapter}.title") %></h3><p><%= t("collavre.desktop_setup.adapters.#{adapter}.body") %></p></div>
-            <span class="desktop-setup__status"><%= t("collavre.desktop_setup.adapters.status") %></span>
+            <span class="desktop-setup__status"><%= t("collavre.desktop_setup.adapters.#{detected ? "detected" : "not_detected"}") %></span>
           </article>
         <% end %>
       </div>
@@ -77,25 +93,19 @@
       <p class="desktop-setup__kicker"><%= t("collavre.desktop_setup.ready.kicker") %></p>
       <h2><%= t("collavre.desktop_setup.ready.title") %></h2>
       <p class="desktop-setup__lead"><%= t("collavre.desktop_setup.ready.body") %></p>
-      <ul class="desktop-setup__checklist">
-        <% %w[proxy gateway agents].each do |item| %>
-          <li>✓ <%= t("collavre.desktop_setup.ready.items.#{item}") %></li>
-        <% end %>
-      </ul>
+      <ul class="desktop-setup__checklist"><% %w[proxy gateway agents].each do |item| %><li>✓ <%= t("collavre.desktop_setup.ready.items.#{item}") %></li><% end %></ul>
       <aside class="desktop-setup__notice"><%= t("collavre.desktop_setup.ready.notice") %></aside>
     <% end %>
   </div>
 
   <footer class="desktop-setup__actions">
-    <% if current_index.positive? %>
-      <%= link_to t("collavre.desktop_setup.back"), collavre.desktop_setup_path(step: steps[current_index - 1]), class: "desktop-setup__button desktop-setup__button--secondary" %>
-    <% else %>
+    <% if current_index.positive? %><%= link_to t("collavre.desktop_setup.back"), collavre.desktop_setup_path(step: steps[current_index - 1]), class: "desktop-setup__button desktop-setup__button--secondary" %><% else %><span></span><% end %>
+    <% if @step == "account" || @step == "install" %>
       <span></span>
-    <% end %>
-    <% if current_index < steps.length - 1 %>
-      <%= link_to t("collavre.desktop_setup.next"), collavre.desktop_setup_path(step: steps[current_index + 1]), class: "desktop-setup__button" %>
+    <% elsif current_index < steps.length - 1 %>
+      <%= link_to t("collavre.desktop_setup.next"), collavre.desktop_setup_path(step: steps[current_index + 1], claude: params[:claude], codex: params[:codex]), class: "desktop-setup__button" %>
     <% else %>
-      <%= link_to t("collavre.desktop_setup.restart"), collavre.desktop_setup_path, class: "desktop-setup__button" %>
+      <%= link_to t("collavre.desktop_setup.ready.open"), main_app.root_path, class: "desktop-setup__button" %>
     <% end %>
   </footer>
 </section>

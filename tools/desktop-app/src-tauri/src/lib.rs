@@ -32,6 +32,7 @@ struct ProxySidecar(Mutex<Option<Child>>);
 const PROXY_KEYCHAIN_SERVICE: &str = "net.collavre.desktop.cli-openai-proxy";
 const PROXY_ADMIN_KEY_ACCOUNT: &str = "admin-key";
 const PROXY_COMPLETION_KEY_ACCOUNT: &str = "completion-key";
+const PROXY_IDENTITY_SECRET_ACCOUNT: &str = "identity-secret";
 
 #[derive(Debug, Deserialize)]
 struct BundledProxyManifest {
@@ -45,6 +46,8 @@ struct BundledProxyManifest {
 struct ProxyConfig {
     port: u16,
     version: String,
+    #[serde(default)]
+    registered: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +56,23 @@ struct ProxyStatus {
     running: bool,
     port: Option<u16>,
     version: Option<String>,
+    registered: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ProxySetupResult {
+    status: ProxyStatus,
+    adapters: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct GatewayRegistration<'a> {
+    registration_token: &'a str,
+    proxy_port: u16,
+    admin_key: &'a str,
+    completion_key: &'a str,
+    identity_secret: &'a str,
+    adapters: &'a [String],
 }
 
 /// Bind to port 0 to let the OS hand us a free port, then release it. There is a
@@ -342,6 +362,7 @@ fn spawn_proxy(app: &tauri::AppHandle, data: &Path, config: &ProxyConfig) -> Res
 
     let admin_key = keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
     let completion_key = keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
+    let identity_secret = keychain_proxy_key(PROXY_IDENTITY_SECRET_ACCOUNT, "cop_identity")?;
     let state = proxy_state_dir(data);
     fs::create_dir_all(state.join("provision-state"))
         .map_err(|_| "Could not create the desktop proxy state directory.".to_string())?;
@@ -356,11 +377,14 @@ fn spawn_proxy(app: &tauri::AppHandle, data: &Path, config: &ProxyConfig) -> Res
         .env("PORT", config.port.to_string())
         .env("API_KEYS", completion_key)
         .env("AUTH_ADMIN_KEYS", admin_key)
+        .env("USER_IDENTITY_HMAC_SECRET", identity_secret)
+        .env("PATH", desktop_cli_path())
         .env("PROVISION_STATE_DIR", state.join("provision-state"));
 
-    // The proxy deliberately inherits HOME and PATH: the user's already logged
-    // in Claude/Codex CLIs own their authentication. The proxy-only keys above
-    // are captured and removed by cli-openai-proxy before it starts a CLI child.
+    // The proxy inherits HOME and receives an expanded executable-only PATH:
+    // the user's already logged-in Claude/Codex CLIs own their authentication.
+    // The proxy-only keys above are captured and removed by cli-openai-proxy
+    // before it starts a CLI child.
     if let Ok(log) = File::create(log_dir.join("desktop-proxy.log")) {
         if let Ok(error_log) = log.try_clone() {
             command
@@ -391,6 +415,7 @@ fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> 
             .unwrap_or(false),
         port: config.as_ref().map(|item| item.port),
         version: manifest.map(|item| item.version),
+        registered: config.map(|item| item.registered).unwrap_or(false),
     }
 }
 
@@ -448,17 +473,61 @@ fn desktop_proxy_install(
     app: tauri::AppHandle,
     sidecar: tauri::State<'_, ProxySidecar>,
 ) -> Result<ProxyStatus, String> {
-    let data = data_dir(&app);
+    install_proxy(&app, &sidecar)
+}
+
+fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<ProxyStatus, String> {
+    let data = data_dir(app);
     fs::create_dir_all(&data)
         .map_err(|_| "Could not create the Collavre data directory.".to_string())?;
-    let manifest = bundled_proxy_manifest(&app)?;
+    let manifest = bundled_proxy_manifest(app)?;
     let config = read_proxy_config(&data).unwrap_or(ProxyConfig {
         port: free_port(),
         version: manifest.version,
+        registered: false,
     });
     write_proxy_config(&data, &config)?;
-    start_proxy(&app, &data, &sidecar)?;
-    Ok(proxy_status(&app, &data, &sidecar))
+    start_proxy(app, &data, sidecar)?;
+    Ok(proxy_status(app, &data, sidecar))
+}
+
+/// Complete the user-approved setup without exposing Keychain secrets to the
+/// webview. The registration grant is short-lived and Rails accepts it only
+/// over its loopback socket.
+#[tauri::command]
+fn desktop_proxy_complete_setup(
+    app: tauri::AppHandle,
+    sidecar: tauri::State<'_, ProxySidecar>,
+    registration_token: String,
+    server_port: u16,
+) -> Result<ProxySetupResult, String> {
+    install_proxy(&app, &sidecar)?;
+    let data = data_dir(&app);
+    let config = read_proxy_config(&data)
+        .ok_or_else(|| "Desktop proxy configuration is missing after installation.".to_string())?;
+    let admin_key = keychain_proxy_key(PROXY_ADMIN_KEY_ACCOUNT, "cop_admin")?;
+    let completion_key = keychain_proxy_key(PROXY_COMPLETION_KEY_ACCOUNT, "cop_key")?;
+    let identity_secret = keychain_proxy_key(PROXY_IDENTITY_SECRET_ACCOUNT, "cop_identity")?;
+    let adapters = detected_adapters();
+    let request = GatewayRegistration {
+        registration_token: &registration_token,
+        proxy_port: config.port,
+        admin_key: &admin_key,
+        completion_key: &completion_key,
+        identity_secret: &identity_secret,
+        adapters: &adapters,
+    };
+    register_gateway(server_port, &request)?;
+
+    let registered = ProxyConfig {
+        registered: true,
+        ..config
+    };
+    write_proxy_config(&data, &registered)?;
+    Ok(ProxySetupResult {
+        status: proxy_status(&app, &data, &sidecar),
+        adapters,
+    })
 }
 
 #[tauri::command]
@@ -467,6 +536,102 @@ fn desktop_proxy_status(
     sidecar: tauri::State<'_, ProxySidecar>,
 ) -> ProxyStatus {
     proxy_status(&app, &data_dir(&app), &sidecar)
+}
+
+/// Detect executables only. In particular, do not invoke a CLI or inspect its
+/// configuration, credential files, Keychain items, or login state.
+fn detected_adapters() -> Vec<String> {
+    ["claude", "codex"]
+        .into_iter()
+        .filter(|binary| executable_on_path(binary))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[cfg(unix)]
+fn executable_on_path(binary: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    desktop_cli_search_paths()
+        .into_iter()
+        .map(|directory| directory.join(binary))
+        .any(|candidate| {
+            candidate
+                .metadata()
+                .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        })
+}
+
+#[cfg(not(unix))]
+fn executable_on_path(binary: &str) -> bool {
+    desktop_cli_search_paths()
+        .into_iter()
+        .map(|directory| directory.join(binary))
+        .any(|candidate| candidate.is_file())
+}
+
+// Finder launches do not reliably inherit shell PATH additions. Check the
+// conventional user-install locations as well, then give the proxy that same
+// PATH so a detected CLI is actually executable. This is path discovery only;
+// it does not run a CLI or inspect provider configuration.
+fn desktop_cli_search_paths() -> Vec<PathBuf> {
+    let mut paths = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    paths.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ]);
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        paths.extend([
+            home.join(".local/bin"),
+            home.join(".npm-global/bin"),
+            home.join(".volta/bin"),
+        ]);
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn desktop_cli_path() -> std::ffi::OsString {
+    std::env::join_paths(desktop_cli_search_paths()).unwrap_or_else(|_| std::ffi::OsString::new())
+}
+
+fn register_gateway(port: u16, registration: &GatewayRegistration<'_>) -> Result<(), String> {
+    if port == 0 {
+        return Err("Collavre Desktop could not determine the local server port.".to_string());
+    }
+    let body = serde_json::to_vec(registration)
+        .map_err(|_| "Could not prepare the local gateway registration.".to_string())?;
+    let address = format!("127.0.0.1:{port}");
+    let mut stream = TcpStream::connect(&address)
+        .map_err(|_| "Could not connect to the local Collavre server.".to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+    let request = format!(
+        "POST /desktop/setup/register-gateway HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .and_then(|_| stream.write_all(&body))
+        .map_err(|_| "Could not send the local gateway registration.".to_string())?;
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|_| "Could not read the local gateway registration response.".to_string())?;
+    if response.starts_with("HTTP/1.1 201") || response.starts_with("HTTP/1.0 201") {
+        Ok(())
+    } else {
+        Err(
+            "Collavre could not register the local gateway. No setup was marked complete."
+                .to_string(),
+        )
+    }
 }
 
 /// Poll `GET /up` until it answers 200 or we give up.
@@ -755,6 +920,7 @@ pub fn run() {
         .manage(ProxySidecar(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             desktop_proxy_install,
+            desktop_proxy_complete_setup,
             desktop_proxy_status
         ])
         .setup(|app| {
@@ -793,6 +959,9 @@ pub fn run() {
             if read_proxy_config(&data).is_some() {
                 let _ = start_proxy(&handle, &data, &app.state::<ProxySidecar>());
             }
+            let first_run_complete = read_proxy_config(&data)
+                .map(|config| config.registered)
+                .unwrap_or(false);
 
             // Show the branded loading screen (dist/index.html) immediately so the
             // user sees custom UI while the sidecar boots, instead of a blank or
@@ -815,11 +984,12 @@ pub fn run() {
                     return;
                 };
                 if healthy {
-                    // The setup flow is currently a presentation-only mockup.
-                    // Open it directly after the sidecar is healthy so a fresh
-                    // desktop install can review the first-run experience.
-                    if let Ok(url) =
-                        format!("http://127.0.0.1:{port}/desktop/setup").parse::<tauri::Url>()
+                    let path = if first_run_complete {
+                        "/"
+                    } else {
+                        "/desktop/setup"
+                    };
+                    if let Ok(url) = format!("http://127.0.0.1:{port}{path}").parse::<tauri::Url>()
                     {
                         let _ = window.navigate(url);
                     }

@@ -105,21 +105,25 @@ its supplied SHA-256, requires a Darwin ARM64 runtime, then resolves and locks
 the exact npm package before `npm ci` installs it. The generated lockfile keeps
 the resolved tarball integrity values inside the signed application bundle.
 
-Tauri exposes two internal setup commands for the first-run wizard:
+Tauri exposes internal setup commands for the first-run wizard:
 
 - `desktop_proxy_install` creates a persistent loopback port, creates the
   proxy's admin and completion keys in the macOS Keychain if needed, then starts
   the embedded proxy.
 - `desktop_proxy_status` returns installation/process status and the public
   port/version only. It never returns either secret.
+- `desktop_proxy_complete_setup` detects executable availability for Claude
+  Code/Codex without running either CLI, then sends Keychain-held proxy secrets
+  directly to a short-lived, loopback-only Rails registration endpoint. It
+  registers the local Gateway and creates presets only for detected adapters.
 
-The setup UI must call `desktop_proxy_install` only after explicit consent. On
-later launches, a previously approved proxy is restarted automatically. The
-proxy keeps the user's `HOME` and `PATH` so existing Claude/Codex logins remain
-usable, but its own mutable provision state stays under the Collavre app-data
-directory. Gateway registration is intentionally a separate authenticated Rails
-step: it must pass the locally held completion key to the selected Collavre
-administrator without logging or displaying it.
+The setup UI calls `desktop_proxy_complete_setup` only after explicit consent
+and a locally created or signed-in administrator account. On later launches, a
+registered proxy is restarted automatically and the normal Collavre home opens.
+The proxy keeps the user's `HOME` and an executable-only PATH so existing
+Claude/Codex logins remain usable, but its own mutable provision state stays
+under the Collavre app-data directory. No existing provider credential or
+configuration is read, displayed, or sent externally.
 
 ## Run without packaging (verified)
 
