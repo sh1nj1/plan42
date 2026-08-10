@@ -258,7 +258,9 @@ describe('LlmModelController', () => {
         expect(global.fetch).toHaveBeenCalledTimes(3)
         expect(global.fetch.mock.calls[1][1]).toEqual({
             method: 'HEAD',
-            credentials: 'same-origin'
+            credentials: 'same-origin',
+            headers: { 'X-Sec-Purpose': 'prefetch' },
+            signal: undefined
         })
         expect(global.fetch.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
         expect(controller.modelsValue.map((model) => model.id)).toEqual([1, 3])
