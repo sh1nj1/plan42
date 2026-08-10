@@ -79,6 +79,11 @@ rsync -a --delete \
   --exclude 'tools/desktop-app/src-tauri/target' \
   "$APP_ROOT/" "$STAGING/"
 
+# Rails creates runtime files below Rails.root/tmp when starting the server.
+# The app bundle is read-only once distributed, so the directory itself must
+# already exist in the staged app even though its contents stay excluded.
+mkdir -p "$STAGING/tmp/pids"
+
 # tauri-build opens every staged file to bundle it as a resource; if any file is
 # not owner-readable the resource walk aborts with EACCES. A mode-only `chmod -R`
 # is not enough: on a managed/corporate Mac the checkout can carry inherited ACLs

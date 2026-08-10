@@ -66,10 +66,25 @@ fn free_port() -> u16 {
         .port()
 }
 
+/// Locate the macOS application resource directory from its executable.
+///
+/// `PathResolver::resource_dir` is normally this directory, but can be absent
+/// when the app is launched directly from a copied `.app` during installation.
+/// Resolving relative to the executable keeps an installed build independent of
+/// the development checkout in that case.
+fn packaged_resource_dir() -> Option<PathBuf> {
+    let executable_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let resources = executable_dir.parent()?.join("Resources");
+    resources.join("app").is_dir().then_some(resources)
+}
+
 /// Locate the bundled Rails app root. In a packaged `.app` the launcher and app
 /// tree live under `Contents/Resources/app`; in `tauri dev` they're resolved
 /// relative to the repo so the shell can be exercised without packaging.
 fn app_root(app: &tauri::AppHandle) -> PathBuf {
+    if let Some(resources) = packaged_resource_dir() {
+        return resources.join("app");
+    }
     if let Ok(res) = app.path().resource_dir() {
         let bundled = res.join("app");
         if bundled.join("bin/desktop-server").exists() {
@@ -107,6 +122,12 @@ fn proxy_pidfile_path(data: &Path) -> PathBuf {
 }
 
 fn proxy_root(app: &tauri::AppHandle) -> PathBuf {
+    if let Some(resources) = packaged_resource_dir() {
+        let bundled = resources.join("app/proxy");
+        if bundled.join("manifest.json").exists() {
+            return bundled;
+        }
+    }
     if let Ok(resource_dir) = app.path().resource_dir() {
         let bundled = resource_dir.join("app/proxy");
         if bundled.join("manifest.json").exists() {
@@ -794,7 +815,12 @@ pub fn run() {
                     return;
                 };
                 if healthy {
-                    if let Ok(url) = format!("http://127.0.0.1:{port}").parse::<tauri::Url>() {
+                    // The setup flow is currently a presentation-only mockup.
+                    // Open it directly after the sidecar is healthy so a fresh
+                    // desktop install can review the first-run experience.
+                    if let Ok(url) =
+                        format!("http://127.0.0.1:{port}/desktop/setup").parse::<tauri::Url>()
+                    {
                         let _ = window.navigate(url);
                     }
                 } else {
