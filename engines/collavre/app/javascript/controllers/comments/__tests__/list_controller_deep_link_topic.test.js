@@ -37,8 +37,11 @@ const buildListController = ({ currentTopicId = '', topicsController = null, ele
   Object.defineProperty(controller, 'listTarget', { value: list })
   Object.defineProperty(controller, 'element', { value: element || document.createElement('div') })
   Object.defineProperty(controller, 'popupController', {
-    value: topicsController ? { topicsController } : null,
+    value: topicsController ? { topicsController, updatePosition: () => {} } : null,
   })
+  // Both are prototype getters that reach into a Stimulus application; own
+  // properties shadow them without standing one up.
+  Object.defineProperty(controller, 'formController', { value: null })
 
   return controller
 }
@@ -70,6 +73,58 @@ describe('CommentsListController deep-linked topic resolution', () => {
     expect(topicsController.selectTopic).toHaveBeenCalledWith('3')
     expect(controller.currentTopicId).toBe('3')
     expect(controller.listTarget.dataset.currentTopicId).toBe('3')
+  })
+
+  // loadInitialComments drops responses whose topic no longer matches the one it
+  // requested, to survive creative switches. A server-resolved deep link trips
+  // that guard with its own answer and the list never leaves "Loading...".
+  test('renders a response that switched topic instead of discarding it as stale', async () => {
+    const topicsController = { setOverrideTopicId: jest.fn(), selectTopic: jest.fn() }
+    const controller = buildListController({ currentTopicId: '2', topicsController })
+    controller.selection = new Set()
+    controller._loadCommentsVersion = 0
+    controller.prevMsgNavigator = { reset: jest.fn() }
+    controller.highlightAfterLoad = 55
+    controller.highlightComment = jest.fn()
+    controller.markCommentsRead = jest.fn()
+    controller.scrollToBottom = jest.fn()
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: (name) => (name === 'X-Topic-Id' ? '3' : null) },
+      text: async () => '<div id="comment_55" class="comment-item">deep linked</div>',
+    })
+
+    controller.loadInitialComments()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.listTarget.innerHTML).toContain('comment_55')
+    expect(controller.highlightComment).toHaveBeenCalledWith(55)
+  })
+
+  // The allowance is scoped to the one request the server answered: a newer load
+  // must still be able to discard this one.
+  test('still discards a response superseded by a newer load', async () => {
+    const topicsController = { setOverrideTopicId: jest.fn(), selectTopic: jest.fn() }
+    const controller = buildListController({ currentTopicId: '2', topicsController })
+    controller.selection = new Set()
+    controller._loadCommentsVersion = 0
+    controller.prevMsgNavigator = { reset: jest.fn() }
+    controller.highlightComment = jest.fn()
+    controller.markCommentsRead = jest.fn()
+    controller.scrollToBottom = jest.fn()
+    global.fetch = jest.fn().mockImplementation(async () => {
+      controller._loadCommentsVersion += 1 // a newer load starts mid-flight
+      return {
+        ok: true,
+        headers: { get: (name) => (name === 'X-Topic-Id' ? '3' : null) },
+        text: async () => '<div id="comment_55">stale</div>',
+      }
+    })
+
+    controller.loadInitialComments()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(controller.listTarget.innerHTML).not.toContain('comment_55')
   })
 
   test('leaves the topics controller alone when the server confirms the current topic', async () => {

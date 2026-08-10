@@ -214,7 +214,13 @@ export default class extends Controller {
       // the old creative's comments to overwrite the new creative's list.
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+      // A server-resolved deep link moves currentTopicId off the topic this
+      // request asked for. That is this request's own answer, not a stale one,
+      // so the topic guard has to let it through — otherwise the list sits on
+      // "Loading..." forever for every comment link pointing outside the
+      // restored topic.
+      if (!this.isServerResolvedTopic(requestVersion) &&
+          String(this.currentTopicId || "") !== String(requestTopicId)) return
 
       this.listTarget.innerHTML = html
       this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
@@ -243,9 +249,18 @@ export default class extends Controller {
     }).catch((error) => {
       if (requestVersion !== this._loadCommentsVersion) return
       if (this.creativeId !== requestCreativeId) return
-      if (String(this.currentTopicId || "") !== String(requestTopicId)) return
+      if (!this.isServerResolvedTopic(requestVersion) &&
+          String(this.currentTopicId || "") !== String(requestTopicId)) return
       this.listTarget.innerHTML = `<div class="comments-list-error">${error.message}</div>`
     })
+  }
+
+  // fetchComments stamps the load version whose response carried an X-Topic-Id
+  // that moved the selection. Only that one request may ignore the stale-topic
+  // guard; a later load bumps _loadCommentsVersion and stops matching.
+  isServerResolvedTopic(requestVersion) {
+    return this._serverTopicRequestVersion !== undefined &&
+      this._serverTopicRequestVersion === requestVersion
   }
 
   loadOlderComments() {
@@ -340,6 +355,12 @@ export default class extends Controller {
 
         if (currentStr !== serverStr) {
           this.currentTopicId = serverTopicId
+          // Tell loadInitialComments' stale-topic guard that this switch is the
+          // answer to the load it is still awaiting. Deep links are the only
+          // requests the server answers with X-Topic-Id, and only
+          // loadInitialComments sends them, so the in-flight load version
+          // identifies it.
+          this._serverTopicRequestVersion = this._loadCommentsVersion
           // Notify topics controller to update UI
           const event = new CustomEvent("comments--topics:update-selection", { detail: { topicId: serverTopicId } })
           window.dispatchEvent(event)
