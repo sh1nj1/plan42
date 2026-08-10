@@ -478,6 +478,54 @@ describe('TopicsController archived topic messages', () => {
       expect(changeEvents.at(-1).topicId).toBe('2')
     })
 
+    // ?topic_id= outranks the saved preference in the currentTopicId getter and
+    // survives every reload, so it has to be cleared too — otherwise the guard
+    // is the only thing holding the selection back, and it lifts the moment the
+    // preference save lands.
+    describe('when the URL names the archived topic', () => {
+      beforeEach(() => {
+        window.history.replaceState({}, '', '/?topic_id=2')
+      })
+
+      afterEach(() => {
+        window.history.replaceState({}, '', '/')
+      })
+
+      test('drops the query parameter', async () => {
+        render()
+        stubFetch(2)
+
+        await archive('2')
+
+        expect(new URLSearchParams(window.location.search).get('topic_id')).toBeNull()
+        expect(controller.currentTopicId).toBe('1')
+      })
+
+      test('a later reload does not put the user back into it', async () => {
+        render()
+        stubFetch(2)
+        await archive('2')
+
+        // The preference save has landed by now, so the guard's old lift
+        // condition would fire here.
+        stubFetch(null)
+        await controller.loadTopics()
+
+        expect(changeEvents.at(-1).topicId).toBe('1')
+        expect(controller.showingArchived).toBe(false)
+      })
+
+      test('leaves a query parameter naming a different topic alone', async () => {
+        controller.topics = [...TOPICS, { id: 5, name: 'Beta' }]
+        render()
+        stubFetch(2)
+
+        await archive('5')
+
+        expect(new URLSearchParams(window.location.search).get('topic_id')).toBe('2')
+      })
+    })
+
     test('archiving a topic that is not in view leaves the selection alone', async () => {
       controller.topics = [...TOPICS, { id: 5, name: 'Beta' }]
       controller.serverLastTopicId = '2'

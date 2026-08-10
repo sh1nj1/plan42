@@ -154,11 +154,13 @@ export default class extends Controller {
                 this.archivedTopics = data.archived_topics || []
                 this.pruneArchivedBadges()
                 this.serverLastTopicId = data.last_topic_id ? String(data.last_topic_id) : ""
-                // The archive guard only has to outlive the stale preference.
-                // Once the server stops naming that topic the transition is
-                // over, so a later reselection (another tab, a deep link) is
-                // honoured normally.
-                if (this.archivedAwayTopicId && this.serverLastTopicId !== this.archivedAwayTopicId) {
+                // The archive guard only has to outlive the sources that still
+                // name the topic. Test the effective selection, not just the
+                // preference: an unchanged ?topic_id= outranks it in the getter,
+                // so keying on serverLastTopicId would drop the guard while the
+                // URL was still pointing at the archived topic. Once nothing
+                // names it, a later reselection is honoured normally.
+                if (this.archivedAwayTopicId && String(this.currentTopicId) !== this.archivedAwayTopicId) {
                     this.archivedAwayTopicId = null
                 }
                 this.isInbox = !!data.is_inbox
@@ -553,10 +555,13 @@ export default class extends Controller {
                     // flushing the save: the broadcast reload cannot be ordered
                     // behind the flush, only ignored.
                     this.archivedAwayTopicId = String(topicId)
-                    // A deep link pins currentTopicId through overrideTopicId,
-                    // which outranks serverLastTopicId in the getter — leaving it
-                    // set would keep reporting the archived topic as current.
+                    // Both sources that outrank serverLastTopicId in the
+                    // currentTopicId getter have to go too, or the archived
+                    // topic stays the effective selection no matter what the
+                    // preference says: overrideTopicId (deep link) and the
+                    // ?topic_id= query parameter.
                     this.clearOverrideTopicId()
+                    this.clearUrlTopicId(topicId)
                     this.currentTopicId = ""
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
@@ -928,6 +933,18 @@ export default class extends Controller {
         if (urlTopicId) return urlTopicId
 
         return this.serverLastTopicId || ""
+    }
+
+    // Drop ?topic_id= when it names the topic being archived. It is a selection
+    // source in its own right and survives every reload, so leaving it would
+    // re-select the topic the user just archived out of. replaceState, not a
+    // navigation: the chat state around it must stay put.
+    clearUrlTopicId(topicId) {
+        const url = new URL(window.location.href)
+        if (url.searchParams.get('topic_id') !== String(topicId)) return
+
+        url.searchParams.delete('topic_id')
+        window.history.replaceState(window.history.state, '', url.toString())
     }
 
     setOverrideTopicId(id) {
