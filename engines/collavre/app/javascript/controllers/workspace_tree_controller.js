@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 
 // Module-scoped: a history restore replaces the whole body, swapping this
 // controller's instance mid-visit. The instance that observes turbo:visit is
@@ -153,7 +154,7 @@ export default class extends Controller {
       toggle.className = 'creative-workspace-tree-branch-toggle'
       toggle.setAttribute('aria-expanded', String(expanded))
       toggle.setAttribute('aria-label', node.label)
-      toggle.textContent = expanded ? '▾' : '▸'
+      toggle.innerHTML = expanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED
       toggle.addEventListener('click', () => this.toggleBranch(item, toggle))
       row.appendChild(toggle)
     } else {

@@ -258,6 +258,13 @@ body.creative-workspace .creative-content {
         overflow: visible;
     }
 
+    /* The floating chat is rendered after the tree in the workspace shell and
+       uses the modal layer. Keep the opened tree above it so its rows remain
+       visible and tappable on one-panel screens. */
+    .creative-workspace-tree-region {
+	z-index: calc(var(--layer-modal) + 1);
+    }
+
     .creative-workspace-shell {
         display: block;
     }

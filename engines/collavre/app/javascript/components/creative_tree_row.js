@@ -1,5 +1,6 @@
-import { LitElement, html, svg, nothing } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from "../utils/chevron_icons";
 import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
@@ -485,14 +486,7 @@ class CreativeTreeRow extends LitElement {
   }
 
   _toggleIcon() {
-    if (this.expanded) {
-      return svg`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 9L12 15L18 9"/>
-      </svg>`;
-    }
-    return svg`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M9 6L15 12L9 18"/>
-    </svg>`;
+    return unsafeHTML(this.expanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED);
   }
 
   _handleToggleClick(event) {

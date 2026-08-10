@@ -1,16 +1,10 @@
 import CommonPopupController from './common_popup_controller'
 import creativesApi from '../lib/api/creatives'
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
 
 // Minimum characters before a text search fires. Below this the popup shows the
 // browsable mini-tree instead (empty input => tree, >= MIN_QUERY chars => search).
 const MIN_QUERY = 2
-
-// Chevron icons matched to the main creative tree (creative_tree_row.js#_toggleIcon)
-// so the mini-tree expand/collapse affordance is visually identical.
-const CHEVRON_COLLAPSED =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6L15 12L9 18"/></svg>'
-const CHEVRON_EXPANDED =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9L12 15L18 9"/></svg>'
 
 export default class extends CommonPopupController {
     static targets = ['input', 'list', 'close']

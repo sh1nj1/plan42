@@ -41,6 +41,17 @@ afterEach(() => {
 });
 
 describe("creative-tree-row parentId convention", () => {
+  test("uses the shared chevrons for collapsed and expanded branches", async () => {
+    const el = await mountRow({ creativeId: "8", hasChildren: true, expanded: true });
+
+    expect(el.querySelector(".creative-toggle-btn path").getAttribute("d")).toBe("M6 9L12 15L18 9");
+
+    el.expanded = false;
+    await el.updateComplete;
+
+    expect(el.querySelector(".creative-toggle-btn path").getAttribute("d")).toBe("M9 6L15 12L9 18");
+  });
+
   test("non-title row under a page-title parent keeps the parent id", async () => {
     const el = await mountRow({ creativeId: "8", parentId: "5", level: 2 });
     const tree = treeOf(el);

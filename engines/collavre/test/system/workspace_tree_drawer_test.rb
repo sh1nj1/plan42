@@ -67,6 +67,22 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     end
   end
 
+  test "the opened tree stays above the floating chat at mobile width" do
+    visit_workspace(MOBILE_WIDTH)
+    find(".creative-workspace-tree-toggle").click
+    assert_selector ".creative-workspace-tree-region.is-open"
+
+    # The docked chat is normally closed below 768px. Show it at its mobile
+    # position to exercise the exact overlap that previously hid the drawer.
+    page.execute_script(<<~JS)
+      var popup = document.querySelector('#comments-popup');
+      popup.style.display = 'flex';
+      popup.classList.add('open');
+    JS
+
+    assert_tree_covers_floating_chat
+  end
+
   # The handle is a fixed overlay. In the two-panel band it lands in the gutter
   # main leaves itself, but one-panel main runs flush to the left edge, so the
   # same offset would sit on top of the breadcrumb row and eat taps meant for it.
@@ -132,5 +148,26 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     JS
 
     assert hit, message || "the drawer toggle is not tappable — its centre is off screen or covered"
+  end
+
+  def assert_tree_covers_floating_chat
+    covered_by_tree = page.evaluate_script(<<~JS)
+      (function () {
+	var tree = document.querySelector('.creative-workspace-tree-region');
+	var popup = document.querySelector('#comments-popup');
+	var treeRect = tree.getBoundingClientRect();
+	var popupRect = popup.getBoundingClientRect();
+	var left = Math.max(treeRect.left, popupRect.left);
+	var right = Math.min(treeRect.right, popupRect.right);
+	var top = Math.max(treeRect.top, popupRect.top);
+	var bottom = Math.min(treeRect.bottom, popupRect.bottom);
+	if (right <= left || bottom <= top) return false;
+
+	var target = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+	return tree.contains(target);
+      })();
+    JS
+
+    assert covered_by_tree, "the floating chat covers the opened workspace tree"
   end
 end
