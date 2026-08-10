@@ -4,34 +4,40 @@ let pendingRequestController = null
 const SEQUENCE_HEADER = 'X-Collavre-Last-Visited-Creative-Sequence'
 const TOKEN_HEADER = 'X-Collavre-Last-Visited-Creative-Token'
 
-function sequenceStorageKey() {
-  return 'collavre:last-visited-creative-sequence'
+function sequenceUrl(baseUrl) {
+  const url = new URL(baseUrl, window.location.origin)
+  url.pathname = `${url.pathname.replace(/\/$/, '')}/next_last_visited_sequence`
+  return `${url.pathname}${url.search}`
 }
 
-export function nextLastVisitedCreativeSequence(currentSequence = 0) {
-  try {
-    const stored = Number.parseInt(window.localStorage.getItem(sequenceStorageKey()), 10) || 0
-    const sequence = Math.max(stored, Number(currentSequence) || 0) + 1
-    window.localStorage.setItem(sequenceStorageKey(), String(sequence))
+async function nextLastVisitedCreativeSequence(baseUrl, signal) {
+  const response = await csrfFetch(sequenceUrl(baseUrl), {
+    method: 'PATCH',
+    headers: { Accept: 'application/json' },
+    signal,
+  })
+  if (!response.ok) return null
 
-    // A storage implementation can silently ignore writes. Only submit a
-    // client sequence after confirming tabs can share it; otherwise Rails
-    // allocates the sequence atomically while holding the user lock.
-    return Number.parseInt(window.localStorage.getItem(sequenceStorageKey()), 10) === sequence ? sequence : null
-  } catch (_) {
-    return null
-  }
+  const sequence = Number((await response.json()).sequence)
+  return Number.isSafeInteger(sequence) && sequence > 0 ? sequence : null
 }
 
-export function prepareLastVisitedCreativeNavigation(event, visitToken, currentSequence) {
+export async function prepareLastVisitedCreativeNavigation(event, baseUrl, visitToken) {
   const fetchOptions = event.detail?.fetchOptions
-  if (!visitToken || !fetchOptions || String(fetchOptions.method || 'GET').toUpperCase() !== 'GET') return
+  if (!baseUrl || !visitToken || !fetchOptions || String(fetchOptions.method || 'GET').toUpperCase() !== 'GET') return
 
-  const headers = new Headers(fetchOptions.headers)
-  headers.set(TOKEN_HEADER, visitToken)
-  const sequence = nextLastVisitedCreativeSequence(currentSequence)
-  if (sequence) headers.set(SEQUENCE_HEADER, String(sequence))
-  fetchOptions.headers = headers
+  event.preventDefault()
+  try {
+    const sequence = await nextLastVisitedCreativeSequence(baseUrl)
+    if (!sequence) return
+
+    const headers = new Headers(fetchOptions.headers)
+    headers.set(TOKEN_HEADER, visitToken)
+    headers.set(SEQUENCE_HEADER, String(sequence))
+    fetchOptions.headers = headers
+  } finally {
+    event.detail.resume?.()
+  }
 }
 
 export function cancelPendingLastVisitedCreative() {
@@ -39,32 +45,38 @@ export function cancelPendingLastVisitedCreative() {
   pendingRequestController = null
 }
 
-export function rememberLastVisitedCreative(baseUrl, creativeId, visitToken, currentSequence) {
+export function rememberLastVisitedCreative(baseUrl, creativeId, visitToken) {
   if (!baseUrl || !creativeId || !visitToken) return
 
   cancelPendingLastVisitedCreative()
   const requestController = new AbortController()
   pendingRequestController = requestController
-  const sequence = nextLastVisitedCreativeSequence(currentSequence)
   const url = new URL(baseUrl, window.location.origin)
   url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(creativeId)}/remember_last_visited`
   url.searchParams.set('visit_token', visitToken)
-  const request = () => csrfFetch(`${url.pathname}${url.search}`, {
+  const request = (sequence) => csrfFetch(`${url.pathname}${url.search}`, {
     method: 'PATCH',
     headers: {
       Accept: 'application/json',
-      ...(sequence && { [SEQUENCE_HEADER]: String(sequence) }),
+      [SEQUENCE_HEADER]: String(sequence),
     },
     signal: requestController.signal,
   })
 
-  request()
+  nextLastVisitedCreativeSequence(baseUrl, requestController.signal)
+    .then(async (sequence) => {
+      if (!sequence || requestController.signal.aborted) return null
+      return request(sequence)
+    })
     .then(async (response) => {
+      if (!response) return
       if (requestController.signal.aborted || response.ok || response.status !== 422) return
 
       await refreshCsrfToken({ signal: requestController.signal })
       if (requestController.signal.aborted) return
-      await request()
+      const sequence = await nextLastVisitedCreativeSequence(baseUrl, requestController.signal)
+      if (!sequence || requestController.signal.aborted) return
+      await request(sequence)
     })
     .catch(() => {})
     .finally(() => {

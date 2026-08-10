@@ -149,6 +149,7 @@ Collavre::Engine.routes.draw do
     collection do
       post :reorder
       post :link_drop
+      patch :next_last_visited_sequence
       get :append_as_parent, to: "creatives#append_as_parent", as: :append_as_parent_creative
       get :append_below, to: "creatives#append_below", as: :append_below_creative
       get :export_markdown

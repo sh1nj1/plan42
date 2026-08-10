@@ -14,9 +14,13 @@ describe('WorkspaceTreeController', () => {
 
   beforeEach(async () => {
     window.localStorage.clear()
-    fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
+      url === '/creatives/next_last_visited_sequence'
+        ? { ok: true, headers: new Headers(), json: async () => ({ sequence: 2 }) }
+        : {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
         creatives: [
           {
             id: 1,
@@ -36,8 +40,9 @@ describe('WorkspaceTreeController', () => {
             ],
           },
         ],
-      }),
-    })
+          }),
+        }
+    ))
     global.fetch = fetchMock
     window.history.replaceState({}, '', '/creatives?id=2')
     preventNavigation = (event) => event.preventDefault()
@@ -103,6 +108,7 @@ describe('WorkspaceTreeController', () => {
     document.dispatchEvent(new Event('turbo:render'))
 
     await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     const [url, options] = fetchMock.mock.calls.at(-1)
     expect(url).toBe('/creatives/2/remember_last_visited?visit_token=server-token')
@@ -142,6 +148,7 @@ describe('WorkspaceTreeController', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     controller = application.getControllerForElementAndIdentifier(
       document.querySelector('[data-controller="workspace-tree"]'),
@@ -159,8 +166,10 @@ describe('WorkspaceTreeController', () => {
     document.head.innerHTML = '<meta name="csrf-token" content="stale-token">'
     fetchMock.mockReset()
     fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }), headers: { get: () => null } })
       .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
       .mockResolvedValueOnce({ headers: { get: () => 'fresh-token' } })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 3 }), headers: { get: () => null } })
       .mockResolvedValueOnce({ ok: true, status: 204, headers: { get: () => null } })
 
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
@@ -169,15 +178,16 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => requestAnimationFrame(resolve))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost/creatives?id=2', expect.objectContaining({
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'http://localhost/creatives?id=2', expect.objectContaining({
       method: 'HEAD',
       credentials: 'same-origin',
       headers: { 'X-Sec-Purpose': 'prefetch' },
       signal: expect.any(AbortSignal),
     }))
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
-    expect(fetchMock.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
+    expect(fetchMock).toHaveBeenNthCalledWith(5, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock.mock.calls[4][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
   })
 
   test('does not retry a restored visit after a newer navigation starts', async () => {
@@ -185,6 +195,7 @@ describe('WorkspaceTreeController', () => {
     let resolveRefresh
     fetchMock.mockReset()
     fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sequence: 2 }), headers: { get: () => null } })
       .mockResolvedValueOnce({ ok: false, status: 422, headers: { get: () => null } })
       .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve }))
 
@@ -194,12 +205,12 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => requestAnimationFrame(resolve))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'advance' } }))
     resolveRefresh({ headers: { get: () => 'fresh-token' } })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   test('uses the frame response token after workspace navigation', async () => {
@@ -220,10 +231,11 @@ describe('WorkspaceTreeController', () => {
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
     document.dispatchEvent(new Event('turbo:render'))
     await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     const [url, options] = fetchMock.mock.calls.at(-1)
     expect(url).toBe('/creatives/1/remember_last_visited?visit_token=new-server-token')
-    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('3')
+    expect(options.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
   })
 
   test('lazily reloads toggled branches and restores focus and scroll', async () => {

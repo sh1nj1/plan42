@@ -305,8 +305,8 @@ export default class extends Controller {
   handleFetchRequest(event) {
     prepareLastVisitedCreativeNavigation(
       event,
+      this.lastVisitedCreativeUrlValue,
       this.lastVisitedCreativeVisitTokenValue,
-      this.lastVisitedCreativeVisitSequenceValue
     )
   }
 
@@ -440,8 +440,7 @@ export default class extends Controller {
     rememberLastVisitedCreative(
       this.lastVisitedCreativeUrlValue,
       creativeId,
-      this.lastVisitedCreativeVisitTokenValue,
-      this.lastVisitedCreativeVisitSequenceValue
+      this.lastVisitedCreativeVisitTokenValue
     )
   }
 

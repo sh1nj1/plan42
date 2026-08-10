@@ -57,6 +57,41 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, user.last_visited_creative_visit_sequence
   end
 
+  test "server-issued sequences preserve navigation order when requests arrive out of order" do
+    user = users(:one)
+    earlier_creative = creatives(:root_parent)
+    later_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: earlier_creative.id)
+    visit_token = last_visited_creative_token
+
+    patch next_last_visited_sequence_creatives_path, as: :json
+    earlier_sequence = response.parsed_body.fetch("sequence")
+    patch next_last_visited_sequence_creatives_path, as: :json
+    later_sequence = response.parsed_body.fetch("sequence")
+
+    get creatives_path(id: later_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => visit_token,
+      "X-Collavre-Last-Visited-Creative-Sequence" => later_sequence.to_s
+    }
+    patch remember_last_visited_creative_path(earlier_creative),
+      params: { visit_token: visit_token },
+      headers: { "X-Collavre-Last-Visited-Creative-Sequence" => earlier_sequence.to_s },
+      as: :json
+
+    assert_response :no_content
+    assert_equal later_creative, user.reload.last_visited_creative
+    assert_equal later_sequence, user.last_visited_creative_visit_sequence
+  end
+
+  test "issuing a visit sequence requires an authenticated user" do
+    delete session_path
+
+    patch next_last_visited_sequence_creatives_path, as: :json
+
+    assert_response :forbidden
+  end
+
   test "an earlier request from another browser session cannot overwrite a later visit" do
     user = users(:one)
     earlier_creative = creatives(:root_parent)

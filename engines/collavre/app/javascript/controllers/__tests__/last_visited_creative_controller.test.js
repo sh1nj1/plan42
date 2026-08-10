@@ -12,7 +12,11 @@ describe('LastVisitedCreativeController', () => {
 
   beforeEach(async () => {
     window.localStorage.clear()
-    fetchMock = jest.fn().mockResolvedValue({ ok: true, headers: new Headers() })
+    fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
+      url === '/creatives/next_last_visited_sequence'
+        ? { ok: true, headers: new Headers(), json: async () => ({ sequence: 2 }) }
+        : { ok: true, headers: new Headers() }
+    ))
     global.fetch = fetchMock
     document.head.innerHTML = '<meta name="csrf-token" content="token">'
     document.body.innerHTML = `
@@ -24,6 +28,7 @@ describe('LastVisitedCreativeController', () => {
     `
     application = Application.start()
     application.register('last-visited-creative', LastVisitedCreativeController)
+    await new Promise((resolve) => requestAnimationFrame(resolve))
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
@@ -40,12 +45,13 @@ describe('LastVisitedCreativeController', () => {
     document.dispatchEvent(new Event('turbo:render'))
 
     await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(fetchMock).toHaveBeenCalledWith('/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({
       method: 'PATCH',
       credentials: 'same-origin',
     }))
-    expect(fetchMock.mock.calls[0][1].headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
+    expect(fetchMock.mock.calls[1][1].headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
   })
 
   test('records a cached history restore after Turbo reconnects the page', async () => {
@@ -59,8 +65,9 @@ describe('LastVisitedCreativeController', () => {
     `
     document.dispatchEvent(new Event('turbo:render'))
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
     await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(fetchMock).toHaveBeenCalledWith('/creatives/1/remember_last_visited?visit_token=server-token', expect.objectContaining({
       method: 'PATCH',
@@ -68,24 +75,29 @@ describe('LastVisitedCreativeController', () => {
     }))
   })
 
-  test('adds an ordered visit token to a Turbo navigation request', () => {
+  test('obtains an ordered visit token from Rails before a Turbo navigation request', async () => {
     const fetchOptions = { method: 'GET', headers: new Headers() }
-    document.dispatchEvent(new CustomEvent('turbo:before-fetch-request', { detail: { fetchOptions } }))
+    const resume = jest.fn()
+    const event = new CustomEvent('turbo:before-fetch-request', {
+      cancelable: true,
+      detail: { fetchOptions, resume },
+    })
+    document.dispatchEvent(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
+    expect(event.defaultPrevented).toBe(true)
+    expect(resume).toHaveBeenCalled()
     expect(fetchOptions.headers.get('X-Collavre-Last-Visited-Creative-Token')).toBe('server-token')
-    expect(Number(fetchOptions.headers.get('X-Collavre-Last-Visited-Creative-Sequence'))).toBeGreaterThan(1)
+    expect(fetchOptions.headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
   })
 
-  test('lets Rails allocate a restored visit sequence when local storage is unavailable', async () => {
-    const storageGetter = jest.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
-      throw new Error('denied')
-    })
-
+  test('uses Rails to allocate a restored visit sequence without browser storage', async () => {
     document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
     document.dispatchEvent(new Event('turbo:render'))
     await new Promise((resolve) => requestAnimationFrame(resolve))
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(fetchMock.mock.calls[0][1].headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBeNull()
-    storageGetter.mockRestore()
+    expect(fetchMock).toHaveBeenCalledWith('/creatives/next_last_visited_sequence', expect.objectContaining({ method: 'PATCH' }))
+    expect(fetchMock.mock.calls.at(-1)[1].headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBe('2')
   })
 })

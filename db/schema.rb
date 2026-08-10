@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_10_030000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_10_060000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -988,6 +988,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_10_030000) do
     t.datetime "last_visited_creative_at"
     t.string "last_visited_creative_client_id"
     t.integer "last_visited_creative_id"
+    t.bigint "last_visited_creative_issued_sequence"
     t.bigint "last_visited_creative_visit_sequence"
     t.string "llm_api_key"
     t.string "llm_model"

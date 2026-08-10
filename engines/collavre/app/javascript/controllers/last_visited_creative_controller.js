@@ -46,13 +46,13 @@ export default class extends Controller {
   }
 
   handleFetchRequest(event) {
-    prepareLastVisitedCreativeNavigation(event, this.visitTokenValue, this.visitSequenceValue)
+    prepareLastVisitedCreativeNavigation(event, this.urlValue, this.visitTokenValue)
   }
 
   rememberRestoredCreative() {
     if (lastVisitAction !== 'restore' || !this.element.isConnected) return
 
-    rememberLastVisitedCreative(this.urlValue, this.creativeIdValue, this.visitTokenValue, this.visitSequenceValue)
+    rememberLastVisitedCreative(this.urlValue, this.creativeIdValue, this.visitTokenValue)
     lastVisitAction = null
   }
 }

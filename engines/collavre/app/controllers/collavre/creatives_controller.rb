@@ -574,6 +574,15 @@ module Collavre
       head :no_content
     end
 
+    # Reserve an ordering value before Turbo starts a Creative navigation.
+    # Reserving does not change the remembered Creative, so a cancelled request
+    # leaves only a harmless gap in the sequence.
+    def next_last_visited_sequence
+      return head :forbidden unless Current.user
+
+      render json: { sequence: issue_last_visited_creative_sequence }
+    end
+
     def destroy
       parent = @creative.parent
       unless @creative.has_permission?(Current.user, :admin)
@@ -592,7 +601,7 @@ module Collavre
 
         Current.user.with_lock do
           same_client = Current.user.last_visited_creative_client_id == client_id
-          sequence ||= same_client ? Current.user.last_visited_creative_visit_sequence.to_i + 1 : 1
+          sequence ||= issue_last_visited_creative_sequence_locked
           return sequence if same_client && Current.user.last_visited_creative_visit_sequence.to_i >= sequence
           return sequence if !same_client && Current.user.last_visited_creative_at &&
             Current.user.last_visited_creative_at >= received_at
@@ -608,6 +617,19 @@ module Collavre
           )
           sequence
         end
+      end
+
+      def issue_last_visited_creative_sequence
+        Current.user.with_lock { issue_last_visited_creative_sequence_locked }
+      end
+
+      def issue_last_visited_creative_sequence_locked
+        sequence = [
+          Current.user.last_visited_creative_issued_sequence.to_i,
+          Current.user.last_visited_creative_visit_sequence.to_i
+        ].max + 1
+        Current.user.update_column(:last_visited_creative_issued_sequence, sequence)
+        sequence
       end
 
       def last_visited_creative_client_id
