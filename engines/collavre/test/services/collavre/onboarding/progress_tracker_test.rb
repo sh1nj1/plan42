@@ -48,10 +48,41 @@ module Collavre
         assert_equal "mention", current_step
       end
 
+      test "requires a mentionable AI agent with feedback access" do
+        advance_to_mention_step
+        agent = User.create!(
+          name: "Unavailable helper",
+          email: "unavailable-helper@example.com",
+          password: "password",
+          llm_vendor: "openai"
+        )
+        comment = Comment.create!(creative: @second, user: @user, content: "@Unavailable helper: Please help")
+
+        ProgressTracker.record(user: @user, event: :agent_mentioned, comment: comment)
+        assert_equal "mention", current_step
+
+        CreativeShare.create!(creative: @session.root, user: agent, permission: :feedback)
+        CreativeSharesCache.find_or_create_by!(creative: @session.root, user: agent, permission: :feedback)
+
+        ProgressTracker.record(user: @user, event: :agent_mentioned, comment: comment)
+        assert_equal "complete", current_step
+      end
+
       private
 
       def current_step
         Session.for_user(@user).data["current_step"]
+      end
+
+      def advance_to_mention_step
+        ProgressTracker.record(user: @user, event: :ui)
+        @first.update!(progress: 1.0)
+        ProgressTracker.record(user: @user, event: :progress_changed, creative: @first, before_progress: 0)
+        @second.update!(description: "Changed")
+        ProgressTracker.record(user: @user, event: :description_changed, creative: @second, before_description: "Before")
+        comment = Comment.create!(creative: @second, user: @user, content: "Hello")
+        ProgressTracker.record(user: @user, event: :comment_created, comment: comment)
+        assert_equal "mention", current_step
       end
     end
   end

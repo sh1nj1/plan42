@@ -41,6 +41,16 @@ module Collavre
         assert_equal "first_steps", session.data["scenario_key"]
         assert user.reload.onboarding_seeded_at?
       end
+
+      test "marks a deleted onboarding session complete without reseeding it" do
+        user = User.create!(name: "Deleted onboarding", email: "deleted-onboarding@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        session.root.destroy!
+
+        assert_nil Seeder.new(user: user).call
+        assert user.reload.onboarding_completed_at?
+        assert_nil Session.for_user(user)
+      end
     end
   end
 end

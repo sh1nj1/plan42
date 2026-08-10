@@ -9,11 +9,14 @@ module Collavre
       end
 
       def call
-        return Session.for_user(user) if user.onboarding_seeded_at?
-        return mark_existing_workspace_complete! if existing_workspace? && !force?
-
         user.with_lock do
-          return Session.for_user(user) if user.onboarding_seeded_at?
+          session = Session.for_user(user)
+          return session if session
+
+          # A deleted onboarding root cannot be resumed. Mark it complete rather
+          # than silently creating another practice tree on a later visit.
+          return mark_existing_workspace_complete! if user.onboarding_seeded_at?
+          return mark_existing_workspace_complete! if existing_workspace? && !force?
 
           session_id = SecureRandom.uuid
           root = Creative.create!(user: user, description: t(:root), progress: 0.0)

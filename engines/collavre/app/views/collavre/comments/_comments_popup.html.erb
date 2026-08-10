@@ -3,6 +3,7 @@
 <% auto_fullscreen = local_assigns.fetch(:auto_fullscreen, false) %>
 <% docked = local_assigns.fetch(:docked, false) %>
 <% creative = local_assigns[:creative] %>
+<% onboarding_creative = local_assigns[:onboarding_creative] %>
 <div id="comments-popup" data-controller="comments--popup comments--list comments--form comments--presence comments--mention-menu comments--topics comments--contexts comments--drop-trigger share-modal" class="popup-box"
      data-fullscreen="<%= fullscreen %>"
      data-docked="<%= docked %>"
@@ -134,7 +135,8 @@
       <button id="close-comments-btn" data-comments--popup-target="closeButton" class="popup-close-btn" type="button" aria-label="<%= t('collavre.comments.close') %>" title="<%= t('collavre.comments.close') %>">&times;</button>
     </div>
   </div>
-  <%= render "collavre/onboarding/card", creative: popup_creative if popup_creative.present? %>
+  <% card_creative = onboarding_creative || popup_creative %>
+  <%= render "collavre/onboarding/card", creative: card_creative if card_creative.present? %>
   <div id="comment-contexts" data-comments--contexts-target="list" class="comment-contexts-list" style="display:none;"
        data-inherited-label="<%= t('collavre.contexts.inherited_label', default: 'Inherited from parent') %>"
        data-self-context-label="<%= t('collavre.contexts.self_context_label', default: 'Current creative context') %>"

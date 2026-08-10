@@ -628,6 +628,7 @@ module Collavre
         session = Onboarding::Seeder.new(user: Current.user).call
         return unless session
 
+        @onboarding_card_creative = session.root
         session.update! do |onboarding|
           next unless onboarding.delete("chat_autoopen_pending")
 

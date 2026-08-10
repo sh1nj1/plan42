@@ -19,14 +19,29 @@ module Collavre
       end
 
       def self.onboarding_root(creatives, session_id: nil)
-        records = creatives.respond_to?(:reload) ? creatives.reload : Array(creatives)
-        records.find do |creative|
-          onboarding = creative.data.is_a?(Hash) ? creative.data["onboarding"] : nil
-          onboarding.is_a?(Hash) && onboarding["scenario_key"].present? &&
-            (session_id.blank? || onboarding["session_id"] == session_id)
-        end
+        return Array(creatives).find { |creative| onboarding_root?(creative, session_id) } unless creatives.respond_to?(:where)
+
+        scope = creatives.where("#{onboarding_value('scenario_key')} IS NOT NULL")
+        scope = scope.where("#{onboarding_value('session_id')} = ?", session_id) if session_id.present?
+        scope.first
       end
       private_class_method :onboarding_root
+
+      def self.onboarding_root?(creative, session_id)
+        onboarding = creative.data.is_a?(Hash) ? creative.data["onboarding"] : nil
+        onboarding.is_a?(Hash) && onboarding["scenario_key"].present? &&
+          (session_id.blank? || onboarding["session_id"] == session_id)
+      end
+      private_class_method :onboarding_root?
+
+      def self.onboarding_value(key)
+        if Creative.connection.adapter_name.match?(/sqlite/i)
+          "json_extract(data, '$.onboarding.#{key}')"
+        else
+          "data -> 'onboarding' ->> '#{key}'"
+        end
+      end
+      private_class_method :onboarding_value
 
       def initialize(root)
         @root = root

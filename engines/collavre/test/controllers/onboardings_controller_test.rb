@@ -23,6 +23,7 @@ module Collavre
       get creatives_path
       assert_response :success
       refute_includes response.body, "data-creative-id=\"#{session.root.id}\""
+      assert_includes response.body, "onboarding-card"
     end
 
     test "advances and completes onboarding through the namespaced services" do

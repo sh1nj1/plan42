@@ -60,9 +60,18 @@ module Collavre
             MentionParser.resolve_all_users(comment.content).none?(&:ai_user?)
         when :agent_mentioned
           comment&.user_id == user.id && !comment.private? && practices.key?(comment.creative_id) &&
-            MentionParser.resolve_all_users(comment.content).any?(&:ai_user?)
+            eligible_mentioned_agents(comment).any?
         else
           false
+        end
+      end
+
+      def eligible_mentioned_agents(comment)
+        mentioned_ids = MentionParser.resolve_all_users(comment.content).select(&:ai_user?).map(&:id)
+        return [] if mentioned_ids.empty?
+
+        User.mentionable_for(comment.creative).where(id: mentioned_ids).select do |agent|
+          agent.ai_user? && comment.creative.has_permission?(agent, :feedback)
         end
       end
     end
