@@ -14,7 +14,8 @@ module Collavre
     private
 
     # If the original request was for "/" and the user is signed in,
-    # honor SystemSetting.home_page_path_authenticated by redirecting.
+    # return them to their last readable Creative when the authenticated home
+    # page is the Creative index; otherwise honor the configured home page.
     # The middleware preserves "/" as a stable URL for unauthenticated
     # visitors; authenticated users get a real URL change so the address
     # bar reflects state.
@@ -31,11 +32,20 @@ module Collavre
       return unless request.env["collavre.root_request"]
       return unless authenticated?
 
-      target = SystemSetting.home_page_path_authenticated
+      target = last_visited_creative_path || SystemSetting.home_page_path_authenticated
       return if target.blank?
       return if target == "/"
 
       redirect_to target
+    end
+
+    def last_visited_creative_path
+      return unless SystemSetting.home_page_path_authenticated == "/creatives"
+
+      creative = Current.user.last_visited_creative
+      return unless creative&.has_permission?(Current.user, :read)
+
+      collavre_engine.creatives_path(id: creative.id)
     end
 
     def set_csrf_token_header

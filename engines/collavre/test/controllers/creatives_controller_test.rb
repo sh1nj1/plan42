@@ -11,6 +11,29 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     "turbo-cable-stream-source[signed-stream-name='#{signed_name}']"
   end
 
+  test "opening a readable creative remembers it as the user's last visited creative" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+    user.update!(last_visited_creative_id: nil)
+
+    get creatives_path(id: creative.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_equal creative, user.reload.last_visited_creative
+  end
+
+  test "opening an inaccessible creative does not replace the last visited creative" do
+    user = users(:one)
+    remembered_creative = creatives(:root_parent)
+    inaccessible_creative = Creative.create!(user: users(:two), description: "Private workspace creative")
+    user.update!(last_visited_creative: remembered_creative)
+
+    get creatives_path(id: inaccessible_creative.id), headers: { "Turbo-Frame" => "creative-workspace-content" }
+
+    assert_response :success
+    assert_equal remembered_creative, user.reload.last_visited_creative
+  end
+
   test "creative workspace is disabled by default" do
     users(:one).update!(creative_workspace_enabled: false)
     creative = creatives(:root_parent)

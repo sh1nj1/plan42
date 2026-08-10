@@ -30,6 +30,7 @@ module Collavre
           if params[:id].present?
             creative = Creative.find_by(id: params[:id])
             @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+            remember_last_visited_creative(@parent_creative)
           end
           @creatives = []  # CSR will fetch via JSON
           @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
@@ -559,6 +560,13 @@ module Collavre
     end
 
     private
+      def remember_last_visited_creative(creative)
+        return unless Current.user && creative
+        return if Current.user.last_visited_creative_id == creative.id
+
+        Current.user.update_column(:last_visited_creative_id, creative.id)
+      end
+
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
           user: Current.user,
