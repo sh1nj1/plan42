@@ -50,6 +50,15 @@ module Collavre
         assert_equal :first_steps, session.scenario.key
       end
 
+      test "builds progress navigation inside a mounted engine" do
+        user = User.create!(name: "Mounted learner", email: "mounted-onboarding@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        progress_step = session.scenario.steps.find { |step| step.key == :progress }
+
+        assert_equal "/collavre/creatives?id=#{session.root.id}",
+                     session.navigation_path(progress_step, script_name: "/collavre")
+      end
+
       test "does not add onboarding to an existing workspace" do
         user = users(:one)
 

@@ -108,6 +108,7 @@ describe('OnboardingCardController', () => {
     await controller.refresh()
 
     expect(visit).toHaveBeenCalledWith('/creatives?id=1')
+    expect(visit).toHaveBeenCalledTimes(1)
   })
 
   test('renders the completed state and ignores incomplete or failed responses', async () => {
@@ -146,6 +147,7 @@ describe('OnboardingCardController', () => {
 
     expect(fetchMock).toHaveBeenLastCalledWith('/onboarding/complete', expect.objectContaining({ method: 'POST' }))
     expect(visit).toHaveBeenCalledWith('/features')
+    expect(visit).toHaveBeenCalledTimes(1)
   })
 
   test('cleans up its polling timer and anchor highlight when disconnected', () => {

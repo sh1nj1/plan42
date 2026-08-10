@@ -26,7 +26,7 @@ export default class extends Controller {
   async complete() {
     const response = await csrfFetch(this.completeUrlValue, { method: 'POST' })
     const data = await response.json()
-    if (data.redirect_url) window.Turbo?.visit(data.redirect_url) || (window.location.href = data.redirect_url)
+    if (data.redirect_url) this.navigate(data.redirect_url)
   }
 
   async refresh() {
@@ -42,7 +42,7 @@ export default class extends Controller {
     if (!state.current_step) return
     this.currentStepValue = state.current_step
     if (state.navigation_path && this.currentPath() !== state.navigation_path) {
-      window.Turbo?.visit(state.navigation_path) || (window.location.href = state.navigation_path)
+      this.navigate(state.navigation_path)
       return
     }
     this.instructionTarget.textContent = state.instruction
@@ -57,6 +57,15 @@ export default class extends Controller {
 
   currentPath() {
     return `${window.location.pathname}${window.location.search}`
+  }
+
+  navigate(path) {
+    if (window.Turbo) {
+      window.Turbo.visit(path)
+      return
+    }
+
+    window.location.href = path
   }
 
   highlight(anchor, key) {

@@ -39,7 +39,7 @@ module Collavre
         current_step: step&.key,
         anchor: step&.anchor,
         anchor_key: session.anchor_key(step),
-        navigation_path: session.navigation_path(step),
+        navigation_path: session.navigation_path(step, script_name: request.script_name),
         completion: step&.completion,
         complete: session.data["current_step"] == "complete",
         completed_steps: session.data.fetch("steps", {}).select { |_key, value| value["status"] == "completed" }.keys,
