@@ -118,6 +118,14 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
     assert_equal "none", computed_style(".creative-workspace-tree-toggle", "display")
   end
 
+  test "the mobile drawer tree contains vertical overscroll" do
+    visit_workspace(MOBILE_WIDTH)
+
+    find(".creative-workspace-tree-toggle").click
+
+    assert_equal "contain", computed_style(".creative-workspace-tree-nav", "overscroll-behavior-y")
+  end
+
   private
 
   def visit_workspace(width)
