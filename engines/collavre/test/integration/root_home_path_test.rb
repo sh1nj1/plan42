@@ -90,6 +90,21 @@ class RootHomePathTest < ActionDispatch::IntegrationTest
     assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
   end
 
+  test "authenticated user returns to their last visited creative when the home path has a trailing slash" do
+    creative = creatives(:tshirt)
+    @user.update!(last_visited_creative: creative)
+    SystemSetting.create!(key: "home_page_path_authenticated", value: "/creatives/")
+    Rails.cache.clear
+
+    sign_in_as(@user, password: "password")
+    get "/"
+
+    assert_response :redirect
+    location = URI.parse(response.location)
+    assert_equal "/creatives", location.path
+    assert_equal creative.id.to_s, Rack::Utils.parse_nested_query(location.query)["id"]
+  end
+
   test "authenticated user redirect preserves the engine mount prefix" do
     creative = creatives(:tshirt)
     @user.update!(last_visited_creative: creative)

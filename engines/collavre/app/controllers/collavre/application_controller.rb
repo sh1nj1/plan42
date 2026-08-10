@@ -40,7 +40,7 @@ module Collavre
     end
 
     def last_visited_creative_path
-      return unless SystemSetting.home_page_path_authenticated == "/creatives"
+      return unless SystemSetting.home_page_path_authenticated.chomp("/") == "/creatives"
 
       creative = Current.user.last_visited_creative
       return unless creative&.has_permission?(Current.user, :read)
