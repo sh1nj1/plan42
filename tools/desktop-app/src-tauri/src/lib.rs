@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 /// Holds the sidecar child so we can stop it on exit.
-struct Sidecar(Mutex<Option<Child>>);
+struct Sidecar {
+    child: Mutex<Option<Child>>,
+    port: Mutex<Option<u16>>,
+}
 
 /// Holds the optional, user-approved cli-openai-proxy process. It is deliberately
 /// separate from the Rails sidecar: a failed or disabled proxy must never stop
@@ -433,13 +436,24 @@ fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> 
     let config = read_proxy_config(data);
     let manifest = bundled_proxy_manifest(app).ok();
     let installed = config.is_some() && manifest.is_some();
+    let running = sidecar
+        .0
+        .lock()
+        .map(|mut child| {
+            let exited = child
+                .as_mut()
+                .and_then(|process| process.try_wait().ok().flatten())
+                .is_some();
+            if exited {
+                child.take();
+                let _ = fs::remove_file(proxy_pidfile_path(data));
+            }
+            child.is_some()
+        })
+        .unwrap_or(false);
     ProxyStatus {
         installed,
-        running: sidecar
-            .0
-            .lock()
-            .map(|child| child.is_some())
-            .unwrap_or(false),
+        running,
         port: config.as_ref().map(|item| item.port),
         version: manifest.map(|item| item.version),
         registered: config.map(|item| item.registered).unwrap_or(false),
@@ -447,14 +461,22 @@ fn proxy_status(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> 
 }
 
 fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> Result<(), String> {
-    if sidecar
+    let mut child = sidecar
         .0
         .lock()
-        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?
-        .is_some()
-    {
+        .map_err(|_| "The desktop proxy process lock is unavailable.".to_string())?;
+    let exited = child
+        .as_mut()
+        .and_then(|process| process.try_wait().ok().flatten())
+        .is_some();
+    if exited {
+        child.take();
+        let _ = fs::remove_file(proxy_pidfile_path(data));
+    }
+    if child.is_some() {
         return Ok(());
     }
+    drop(child);
     let config = read_proxy_config(data)
         .ok_or_else(|| "Desktop proxy setup has not been approved.".to_string())?;
     let manifest = bundled_proxy_manifest(app)?;
@@ -525,8 +547,8 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
 fn desktop_proxy_complete_setup(
     app: tauri::AppHandle,
     sidecar: tauri::State<'_, ProxySidecar>,
+    rails_sidecar: tauri::State<'_, Sidecar>,
     registration_token: String,
-    server_port: u16,
 ) -> Result<ProxySetupResult, String> {
     install_proxy(&app, &sidecar)?;
     let data = data_dir(&app);
@@ -544,6 +566,11 @@ fn desktop_proxy_complete_setup(
         identity_secret: &identity_secret,
         adapters: &adapters,
     };
+    let server_port = rails_sidecar
+        .port
+        .lock()
+        .map_err(|_| "The local Collavre server port is unavailable.".to_string())?
+        .ok_or_else(|| "Collavre Desktop could not determine the local server port.".to_string())?;
     register_gateway(server_port, &request)?;
 
     let registered = ProxyConfig {
@@ -989,7 +1016,10 @@ mod tests {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(Sidecar(Mutex::new(None)))
+        .manage(Sidecar {
+            child: Mutex::new(None),
+            port: Mutex::new(None),
+        })
         .manage(ProxySidecar(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             desktop_proxy_install,
@@ -1023,7 +1053,8 @@ pub fn run() {
             reap_orphan_sidecar(&data);
             let child = spawn_sidecar(&root, &data, port);
             let _ = fs::write(pidfile_path(&data), child.id().to_string());
-            app.state::<Sidecar>().0.lock().unwrap().replace(child);
+            app.state::<Sidecar>().child.lock().unwrap().replace(child);
+            app.state::<Sidecar>().port.lock().unwrap().replace(port);
 
             // A configured proxy means the user previously accepted its first
             // run setup. Migrate its expected bundled version before restarting
@@ -1086,7 +1117,7 @@ pub fn run() {
         .expect("build tauri app")
         .run(|app, event| {
             if let RunEvent::ExitRequested { .. } = event {
-                if let Some(mut child) = app.state::<Sidecar>().0.lock().unwrap().take() {
+                if let Some(mut child) = app.state::<Sidecar>().child.lock().unwrap().take() {
                     stop_sidecar(&mut child);
                 }
                 if let Some(mut child) = app.state::<ProxySidecar>().0.lock().unwrap().take() {

@@ -47,7 +47,46 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_equal "admin-key", gateway.admin_key
     assert_equal "completion-key", gateway.completion_key
     assert_equal %w[paperclip/claude_local paperclip/codex_local], owner.created_ai_users.order(:llm_model).pluck(:llm_model)
+    assert_equal 2, Collavre::Contact.where(user: owner, contact_user: owner.created_ai_users).count
     assert_equal %w[claude codex], response.parsed_body.fetch("adapters")
+  end
+
+  test "repair preserves an existing desktop preset's custom attributes" do
+    owner = users(:one)
+    sign_in_as(owner, password: "password")
+
+    post collavre.desktop_setup_registration_token_path
+    token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: token,
+      proxy_port: 34_567,
+      admin_key: "admin-key",
+      completion_key: "completion-key",
+      identity_secret: "i" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+
+    existing = owner.created_ai_users.find_by!(email: "collavre-desktop-claude-code@ai.local")
+    existing.update!(name: "Customized Claude", llm_model: "custom/model", searchable: true, tools: [ "web_search" ])
+
+    post collavre.desktop_setup_registration_token_path
+    token = response.parsed_body.fetch("token")
+    post collavre.desktop_setup_register_gateway_path, params: {
+      registration_token: token,
+      proxy_port: 34_567,
+      admin_key: "new-admin-key",
+      completion_key: "new-completion-key",
+      identity_secret: "i" * 48,
+      adapters: [ "claude" ]
+    }, as: :json
+
+    assert_response :created
+    existing.reload
+    assert_equal "Customized Claude", existing.name
+    assert_equal "custom/model", existing.llm_model
+    assert_predicate existing, :searchable?
+    assert_equal [ "web_search" ], existing.tools
+    assert Collavre::Contact.exists?(user: owner, contact_user: existing)
   end
 
   test "registration rejects a missing native grant" do

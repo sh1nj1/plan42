@@ -25,7 +25,6 @@ export default class extends Controller {
       const { token } = await response.json()
       const result = await invoke("desktop_proxy_complete_setup", {
         registrationToken: token,
-        serverPort: Number(window.location.port),
       })
       const query = new URLSearchParams()
       for (const adapter of result.adapters || []) query.set(adapter, "1")

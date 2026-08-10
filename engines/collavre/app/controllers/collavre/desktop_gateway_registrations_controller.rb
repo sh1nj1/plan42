@@ -51,17 +51,20 @@ module Collavre
     def provision_preset!(owner, gateway, adapter)
       name, email, model = DesktopSetupController::PRESETS.fetch(adapter)
       agent = owner.created_ai_users.find_or_initialize_by(email: email)
-      agent.assign_attributes(
-        name: name,
-        password: SecureRandom.hex(36),
-        email_verified_at: Time.current,
-        llm_vendor: "cli_proxy",
-        llm_model: model,
-        agent_gateway: gateway,
-        searchable: false,
-        tools: []
-      )
-      agent.save!
+      if agent.new_record?
+        agent.assign_attributes(
+          name: name,
+          password: SecureRandom.hex(36),
+          email_verified_at: Time.current,
+          llm_vendor: "cli_proxy",
+          llm_model: model,
+          agent_gateway: gateway,
+          searchable: false,
+          tools: []
+        )
+        agent.save!
+      end
+      Collavre::Contact.ensure(user: owner, contact_user: agent)
     end
 
     def registration_owner!
