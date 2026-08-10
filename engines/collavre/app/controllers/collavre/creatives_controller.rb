@@ -633,9 +633,9 @@ module Collavre
         visit = Rails.application.message_verifier(:last_visited_creative).verified(params[:visit_token])
         sequence = request.headers["X-Collavre-Last-Visited-Creative-Sequence"].to_i
         return unless visit.is_a?(Hash) && visit["creative_id"] == @creative.id &&
-          visit["client_id"] == last_visited_creative_client_id && sequence.positive?
+          visit["client_id"] == last_visited_creative_client_id
 
-        { client_id: visit.fetch("client_id"), sequence: sequence }
+        { client_id: visit.fetch("client_id"), sequence: sequence.positive? ? sequence : nil }
       rescue ActiveSupport::MessageVerifier::InvalidSignature, KeyError, ArgumentError
         nil
       end

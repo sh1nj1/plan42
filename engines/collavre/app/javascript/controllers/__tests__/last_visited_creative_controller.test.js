@@ -75,4 +75,17 @@ describe('LastVisitedCreativeController', () => {
     expect(fetchOptions.headers.get('X-Collavre-Last-Visited-Creative-Token')).toBe('server-token')
     expect(Number(fetchOptions.headers.get('X-Collavre-Last-Visited-Creative-Sequence'))).toBeGreaterThan(1)
   })
+
+  test('lets Rails allocate a restored visit sequence when local storage is unavailable', async () => {
+    const storageGetter = jest.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('denied')
+    })
+
+    document.dispatchEvent(new CustomEvent('turbo:visit', { detail: { action: 'restore' } }))
+    document.dispatchEvent(new Event('turbo:render'))
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    expect(fetchMock.mock.calls[0][1].headers.get('X-Collavre-Last-Visited-Creative-Sequence')).toBeNull()
+    storageGetter.mockRestore()
+  })
 })

@@ -40,6 +40,23 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, user.last_visited_creative_visit_sequence
   end
 
+  test "storage-disabled tabs receive distinct server-allocated visit sequences" do
+    user = users(:one)
+    first_creative = creatives(:root_parent)
+    second_creative = creatives(:unconvert_target)
+
+    get creatives_path(id: first_creative.id)
+    visit_token = last_visited_creative_token
+
+    get creatives_path(id: second_creative.id), headers: {
+      "X-Collavre-Last-Visited-Creative-Token" => visit_token
+    }
+
+    assert_response :success
+    assert_equal second_creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
+  end
+
   test "an earlier request from another browser session cannot overwrite a later visit" do
     user = users(:one)
     earlier_creative = creatives(:root_parent)
@@ -106,6 +123,23 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
     assert_equal creative, user.reload.last_visited_creative
+  end
+
+  test "a storage-disabled browser history restore receives a server-allocated sequence" do
+    user = users(:one)
+    creative = creatives(:root_parent)
+
+    get creatives_path(id: creative.id)
+    visit_token = last_visited_creative_token
+    user.update!(last_visited_creative_id: nil)
+
+    patch remember_last_visited_creative_path(creative),
+      params: { visit_token: visit_token },
+      as: :json
+
+    assert_response :no_content
+    assert_equal creative, user.reload.last_visited_creative
+    assert_equal 2, user.last_visited_creative_visit_sequence
   end
 
   test "a delayed restored visit cannot overwrite a later Creative navigation" do

@@ -1,7 +1,6 @@
 import csrfFetch, { refreshCsrfToken } from './api/csrf_fetch'
 
 let pendingRequestController = null
-let inMemorySequence = 0
 const SEQUENCE_HEADER = 'X-Collavre-Last-Visited-Creative-Sequence'
 const TOKEN_HEADER = 'X-Collavre-Last-Visited-Creative-Token'
 
@@ -9,29 +8,19 @@ function sequenceStorageKey() {
   return 'collavre:last-visited-creative-sequence'
 }
 
-function storedSequence() {
+export function nextLastVisitedCreativeSequence(currentSequence = 0) {
   try {
-    return Number.parseInt(window.localStorage.getItem(sequenceStorageKey()), 10) || 0
+    const stored = Number.parseInt(window.localStorage.getItem(sequenceStorageKey()), 10) || 0
+    const sequence = Math.max(stored, Number(currentSequence) || 0) + 1
+    window.localStorage.setItem(sequenceStorageKey(), String(sequence))
+
+    // A storage implementation can silently ignore writes. Only submit a
+    // client sequence after confirming tabs can share it; otherwise Rails
+    // allocates the sequence atomically while holding the user lock.
+    return Number.parseInt(window.localStorage.getItem(sequenceStorageKey()), 10) === sequence ? sequence : null
   } catch (_) {
     return null
   }
-}
-
-function storeSequence(sequence) {
-  try {
-    window.localStorage.setItem(sequenceStorageKey(), String(sequence))
-  } catch (_) {
-    // Private browsing can deny storage. The signed server sequence still
-    // provides a safe baseline for this page.
-  }
-}
-
-export function nextLastVisitedCreativeSequence(visitToken, currentSequence = 0) {
-  const stored = storedSequence()
-  const sequence = Math.max(stored === null ? inMemorySequence : stored, Number(currentSequence) || 0) + 1
-  inMemorySequence = sequence
-  storeSequence(sequence)
-  return sequence
 }
 
 export function prepareLastVisitedCreativeNavigation(event, visitToken, currentSequence) {
@@ -40,7 +29,8 @@ export function prepareLastVisitedCreativeNavigation(event, visitToken, currentS
 
   const headers = new Headers(fetchOptions.headers)
   headers.set(TOKEN_HEADER, visitToken)
-  headers.set(SEQUENCE_HEADER, String(nextLastVisitedCreativeSequence(visitToken, currentSequence)))
+  const sequence = nextLastVisitedCreativeSequence(currentSequence)
+  if (sequence) headers.set(SEQUENCE_HEADER, String(sequence))
   fetchOptions.headers = headers
 }
 
@@ -55,7 +45,7 @@ export function rememberLastVisitedCreative(baseUrl, creativeId, visitToken, cur
   cancelPendingLastVisitedCreative()
   const requestController = new AbortController()
   pendingRequestController = requestController
-  const sequence = nextLastVisitedCreativeSequence(visitToken, currentSequence)
+  const sequence = nextLastVisitedCreativeSequence(currentSequence)
   const url = new URL(baseUrl, window.location.origin)
   url.pathname = `${url.pathname.replace(/\/$/, '')}/${encodeURIComponent(creativeId)}/remember_last_visited`
   url.searchParams.set('visit_token', visitToken)
@@ -63,7 +53,7 @@ export function rememberLastVisitedCreative(baseUrl, creativeId, visitToken, cur
     method: 'PATCH',
     headers: {
       Accept: 'application/json',
-      [SEQUENCE_HEADER]: String(sequence),
+      ...(sequence && { [SEQUENCE_HEADER]: String(sequence) }),
     },
     signal: requestController.signal,
   })
