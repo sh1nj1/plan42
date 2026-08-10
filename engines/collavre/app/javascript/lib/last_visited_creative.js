@@ -1,6 +1,7 @@
 import csrfFetch, { refreshCsrfToken } from './api/csrf_fetch'
 
 let pendingRequestController = null
+let inMemorySequence = 0
 const SEQUENCE_HEADER = 'X-Collavre-Last-Visited-Creative-Sequence'
 const TOKEN_HEADER = 'X-Collavre-Last-Visited-Creative-Token'
 
@@ -12,7 +13,7 @@ function storedSequence() {
   try {
     return Number.parseInt(window.localStorage.getItem(sequenceStorageKey()), 10) || 0
   } catch (_) {
-    return 0
+    return null
   }
 }
 
@@ -26,7 +27,9 @@ function storeSequence(sequence) {
 }
 
 export function nextLastVisitedCreativeSequence(visitToken, currentSequence = 0) {
-  const sequence = Math.max(storedSequence(), Number(currentSequence) || 0) + 1
+  const stored = storedSequence()
+  const sequence = Math.max(stored === null ? inMemorySequence : stored, Number(currentSequence) || 0) + 1
+  inMemorySequence = sequence
   storeSequence(sequence)
   return sequence
 }
