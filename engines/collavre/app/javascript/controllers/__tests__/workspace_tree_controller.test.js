@@ -170,10 +170,12 @@ describe('WorkspaceTreeController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost/creatives?id=2', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost/creatives?id=2', expect.objectContaining({
       method: 'HEAD',
       credentials: 'same-origin',
-    })
+      headers: { 'X-Sec-Purpose': 'prefetch' },
+      signal: expect.any(AbortSignal),
+    }))
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/creatives/2/remember_last_visited?visit_token=server-token', expect.objectContaining({ method: 'PATCH' }))
     expect(fetchMock.mock.calls[2][1].headers.get('X-CSRF-Token')).toBe('fresh-token')
   })

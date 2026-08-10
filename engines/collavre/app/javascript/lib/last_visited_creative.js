@@ -62,7 +62,7 @@ export function rememberLastVisitedCreative(baseUrl, creativeId, visitToken, cur
     .then(async (response) => {
       if (requestController.signal.aborted || response.ok || response.status !== 422) return
 
-      await refreshCsrfToken()
+      await refreshCsrfToken({ signal: requestController.signal })
       if (requestController.signal.aborted) return
       await request()
     })
