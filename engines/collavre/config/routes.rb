@@ -18,6 +18,7 @@ Collavre::Engine.routes.draw do
   get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
   post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
   post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token
+  post "desktop/setup/validate-registration-grant", to: "desktop_gateway_registrations#validate_registration_grant", as: :desktop_setup_validate_registration_grant
   post "desktop/setup/register-gateway", to: "desktop_gateway_registrations#create", as: :desktop_setup_register_gateway
   resources :users, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
     collection do

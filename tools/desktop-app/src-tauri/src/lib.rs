@@ -397,13 +397,37 @@ fn spawn_sidecar(root: &Path, data: &Path, port: u16) -> Child {
 }
 
 #[cfg(unix)]
-fn reap_orphan_proxy(data: &Path) {
+fn proxy_process_matches_bundle(app: &tauri::AppHandle, pid: i32) -> bool {
+    let Ok(output) = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+    else {
+        return false;
+    };
+    let command = String::from_utf8_lossy(&output.stdout);
+    proxy_command_matches_bundle(
+        &command,
+        &proxy_root(app).join("node/bin/node"),
+        &proxy_root(app).join("node_modules/cli-openai-proxy/dist/server/standalone.js"),
+    )
+}
+
+/// A pidfile can outlive the proxy process. Never signal a reused process group
+/// unless its leader is still the bundled Node proxy we started.
+#[cfg(unix)]
+fn proxy_command_matches_bundle(command: &str, node: &Path, entrypoint: &Path) -> bool {
+    command.contains(&node.to_string_lossy().to_string())
+        && command.contains(&entrypoint.to_string_lossy().to_string())
+}
+
+#[cfg(unix)]
+fn reap_orphan_proxy(app: &tauri::AppHandle, data: &Path) {
     let path = proxy_pidfile_path(data);
     let Ok(contents) = fs::read_to_string(&path) else {
         return;
     };
     if let Ok(pid) = contents.trim().parse::<i32>() {
-        if pid > 1 && unsafe { libc_kill(-pid, 0) } == 0 {
+        if pid > 1 && proxy_process_matches_bundle(app, pid) && unsafe { libc_kill(-pid, 0) } == 0 {
             unsafe {
                 libc_kill(-pid, 15);
             }
@@ -423,7 +447,7 @@ fn reap_orphan_proxy(data: &Path) {
 }
 
 #[cfg(not(unix))]
-fn reap_orphan_proxy(data: &Path) {
+fn reap_orphan_proxy(_app: &tauri::AppHandle, data: &Path) {
     let _ = fs::remove_file(proxy_pidfile_path(data));
 }
 
@@ -539,7 +563,7 @@ fn start_proxy(app: &tauri::AppHandle, data: &Path, sidecar: &ProxySidecar) -> R
         &mut config,
         credentials.regenerated,
     )?;
-    reap_orphan_proxy(data);
+    reap_orphan_proxy(app, data);
     let child = spawn_proxy(app, data, &config, credentials)?;
     fs::write(proxy_pidfile_path(data), child.id().to_string())
         .map_err(|_| "Could not record the desktop proxy process.".to_string())?;
@@ -584,7 +608,7 @@ fn install_proxy(app: &tauri::AppHandle, sidecar: &ProxySidecar) -> Result<Proxy
     // Clear a prior crashed proxy before probing its persisted port. If another
     // process owns it, choose a fresh loopback port and require registration so
     // Rails' gateway URL follows the repaired proxy.
-    reap_orphan_proxy(&data);
+    reap_orphan_proxy(app, &data);
     if !proxy_port_available(config.port) {
         replace_occupied_proxy_port(&mut config, free_port());
     }
@@ -603,6 +627,16 @@ fn desktop_proxy_complete_setup(
     rails_sidecar: tauri::State<'_, Sidecar>,
     registration_token: String,
 ) -> Result<ProxySetupResult, String> {
+    let server_port = rails_sidecar
+        .port
+        .lock()
+        .map_err(|_| "The local Collavre server port is unavailable.".to_string())?
+        .ok_or_else(|| "Collavre Desktop could not determine the local server port.".to_string())?;
+    // Validate the Rails-issued, short-lived consent grant before creating
+    // Keychain credentials, writing proxy state, or starting the proxy. The
+    // Tauri command is callable from loopback pages, so an arbitrary string
+    // must not be allowed to trigger those side effects.
+    validate_registration_grant(server_port, &registration_token)?;
     install_proxy(&app, &sidecar)?;
     let data = data_dir(&app);
     let config = read_proxy_config(&data)
@@ -617,11 +651,6 @@ fn desktop_proxy_complete_setup(
         identity_secret: &credentials.identity_secret,
         adapters: &adapters,
     };
-    let server_port = rails_sidecar
-        .port
-        .lock()
-        .map_err(|_| "The local Collavre server port is unavailable.".to_string())?
-        .ok_or_else(|| "Collavre Desktop could not determine the local server port.".to_string())?;
     register_gateway(server_port, &request)?;
 
     let registered = ProxyConfig {
@@ -765,6 +794,37 @@ fn register_gateway(port: u16, registration: &GatewayRegistration<'_>) -> Result
     } else {
         Err(
             "Collavre could not register the local gateway. No setup was marked complete."
+                .to_string(),
+        )
+    }
+}
+
+/// Ask Rails to validate the signed, short-lived setup consent grant before
+/// native installation mutates persistent state. This call deliberately sends
+/// no proxy credentials.
+fn validate_registration_grant(port: u16, registration_token: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "registration_token": registration_token }).to_string();
+    let address = format!("127.0.0.1:{port}");
+    let mut stream = TcpStream::connect(&address)
+        .map_err(|_| "Could not connect to the local Collavre server.".to_string())?;
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+    let request = format!(
+        "POST /desktop/setup/validate-registration-grant HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|_| "Could not validate the desktop setup consent.".to_string())?;
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|_| "Could not read the desktop setup consent response.".to_string())?;
+    if response.starts_with("HTTP/1.1 204") || response.starts_with("HTTP/1.0 204") {
+        Ok(())
+    } else {
+        Err(
+            "Desktop proxy setup consent is invalid or has expired. Return to setup and try again."
                 .to_string(),
         )
     }
@@ -952,8 +1012,9 @@ mod tests {
     use super::{
         append_unique_paths, config_env_overrides, generate_proxy_key,
         invalidate_proxy_registration_after_key_regeneration, migrate_proxy_config,
-        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest, read_proxy_config,
-        replace_occupied_proxy_port, wait_until_proxy_healthy, write_proxy_config, ProxyConfig,
+        normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
+        proxy_command_matches_bundle, read_proxy_config, replace_occupied_proxy_port,
+        wait_until_proxy_healthy, write_proxy_config, ProxyConfig,
     };
     use std::{env, fs, path::PathBuf, process, time::Duration};
 
@@ -1119,6 +1180,32 @@ mod tests {
                 PathBuf::from("/usr/local/bin"),
             ]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stale_proxy_pid_must_match_the_bundled_node_command_before_reaping() {
+        let node =
+            PathBuf::from("/Applications/Collavre.app/Contents/Resources/app/proxy/node/bin/node");
+        let entrypoint = PathBuf::from(
+            "/Applications/Collavre.app/Contents/Resources/app/proxy/node_modules/cli-openai-proxy/dist/server/standalone.js",
+        );
+
+        assert!(proxy_command_matches_bundle(
+            &format!("{} {}", node.display(), entrypoint.display()),
+            &node,
+            &entrypoint
+        ));
+        assert!(!proxy_command_matches_bundle(
+            "/usr/bin/sleep 30",
+            &node,
+            &entrypoint
+        ));
+        assert!(!proxy_command_matches_bundle(
+            &format!("{} unrelated.js", node.display()),
+            &node,
+            &entrypoint
+        ));
     }
 
     #[cfg(unix)]

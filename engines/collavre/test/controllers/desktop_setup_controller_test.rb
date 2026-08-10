@@ -200,6 +200,21 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "native setup consent validation accepts only a current administrator grant" do
+    owner = users(:one)
+    sign_in_as(owner, password: "password")
+    post collavre.desktop_setup_registration_token_path
+    token = response.parsed_body.fetch("token")
+
+    post collavre.desktop_setup_validate_registration_grant_path,
+         params: { registration_token: token }, as: :json
+    assert_response :no_content
+
+    post collavre.desktop_setup_validate_registration_grant_path,
+         params: { registration_token: "invalid" }, as: :json
+    assert_response :unprocessable_entity
+  end
+
   test "first administrator creation rejects non-loopback requests" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
 

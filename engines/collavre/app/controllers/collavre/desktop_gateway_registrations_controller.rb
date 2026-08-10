@@ -7,6 +7,20 @@ module Collavre
   # browser session or CSRF cookie; authorization is the signed, short-lived
   # grant issued to the authenticated desktop webview.
   class DesktopGatewayRegistrationsController < ActionController::API
+    # Native code calls this before it creates Keychain credentials or starts
+    # the local proxy. The signed token is the administrator's short-lived
+    # setup consent and remains the sole authorization for the sessionless
+    # loopback handoff.
+    def validate_registration_grant
+      return unless require_desktop_mode!
+      return unless require_loopback!
+
+      registration_owner!
+      head :no_content
+    rescue ActionController::ParameterMissing, ActiveSupport::MessageVerifier::InvalidSignature => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+
     def create
       return unless require_desktop_mode!
       return unless require_loopback!
