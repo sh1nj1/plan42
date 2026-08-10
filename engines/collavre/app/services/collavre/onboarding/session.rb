@@ -77,12 +77,32 @@ module Collavre
         creative && (creative.id == root.id || practice_creative_ids.include?(creative.id))
       end
 
+      def anchor_key(step = current_step)
+        target_creative(step)&.id
+      end
+
+      def navigation_path(step = current_step)
+        return unless step&.key == :progress
+
+        Collavre::Engine.routes.url_helpers.creatives_path(id: root.id)
+      end
+
       def update!(attributes = {})
         root.with_lock do
           onboarding = root.reload.data.fetch("onboarding").deep_dup
           yield onboarding if block_given?
           onboarding.merge!(attributes.stringify_keys) unless block_given?
           root.update!(data: root.data.merge("onboarding" => onboarding))
+        end
+      end
+
+      private
+
+      def target_creative(step)
+        case step&.target
+        when :root then root
+        when :first_practice then practice_creatives.find_by(id: practice_creative_ids.first)
+        when :second_practice then practice_creatives.find_by(id: practice_creative_ids.second)
         end
       end
     end

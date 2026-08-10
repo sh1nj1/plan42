@@ -72,6 +72,44 @@ describe('OnboardingCardController', () => {
     expect(document.querySelector('[data-guide-anchor="chat.composer"]').classList.contains('guide-anchor-highlight')).toBe(true)
   })
 
+  test('highlights the keyed actionable anchor when a scenario step targets one Creative', async () => {
+    state = {
+      current_step: 'progress',
+      instruction: 'Check the practice item.',
+      completion: 'progress_changed',
+      completed_steps: ['welcome'],
+      anchor: 'tree.progress',
+      anchor_key: 2,
+    }
+    document.body.insertAdjacentHTML('beforeend', `
+      <button data-guide-anchor="tree.progress" data-guide-anchor-key="1"></button>
+      <button data-guide-anchor="tree.progress" data-guide-anchor-key="2"></button>
+    `)
+
+    await controller.refresh()
+
+    expect(document.querySelector('[data-guide-anchor-key="1"]').classList.contains('guide-anchor-highlight')).toBe(false)
+    expect(document.querySelector('[data-guide-anchor-key="2"]').classList.contains('guide-anchor-highlight')).toBe(true)
+  })
+
+  test('navigates to the practice tree before highlighting a progress step', async () => {
+    const visit = jest.fn()
+    window.Turbo = { visit }
+    state = {
+      current_step: 'progress',
+      instruction: 'Check the practice item.',
+      completion: 'progress_changed',
+      completed_steps: ['welcome'],
+      anchor: 'tree.progress',
+      anchor_key: 2,
+      navigation_path: '/creatives?id=1',
+    }
+
+    await controller.refresh()
+
+    expect(visit).toHaveBeenCalledWith('/creatives?id=1')
+  })
+
   test('renders the completed state and ignores incomplete or failed responses', async () => {
     state = { complete: true, instruction: 'All done.' }
     await controller.refresh()

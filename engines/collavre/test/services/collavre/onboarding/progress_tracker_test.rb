@@ -68,6 +68,24 @@ module Collavre
         assert_equal "complete", current_step
       end
 
+      test "uses the seeded agent share to complete the mention step" do
+        @user = User.create!(name: "Seeded agent learner", email: "seeded-agent-learner@example.com", password: "password")
+        agent = User.create!(
+          name: "Seeded helper", email: "seeded-helper@example.com", password: "password",
+          llm_vendor: "openai", searchable: true
+        )
+        @session = Seeder.new(user: @user).call
+        @first, @second = @session.practice_creatives.order(:id)
+        share = CreativeShare.find_by!(creative: @session.root, user: agent)
+        Creatives::PermissionCacheBuilder.propagate_share(share)
+        advance_to_mention_step
+        comment = Comment.create!(creative: @second, user: @user, content: "@Seeded helper: Please help")
+
+        ProgressTracker.record(user: @user, event: :agent_mentioned, comment: comment)
+
+        assert_equal "complete", current_step
+      end
+
       private
 
       def current_step

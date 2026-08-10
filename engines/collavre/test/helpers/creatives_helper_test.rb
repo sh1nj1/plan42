@@ -196,6 +196,16 @@ class CreativesHelperTest < ActionView::TestCase
     assert_equal 1, calls
   end
 
+  test "render_progress_toggle marks the interactive control as a keyed guide anchor" do
+    creative = Creative.create!(user: users(:one), description: "Practice item")
+
+    html = render_progress_toggle(creative, 0)
+
+    assert_includes html, 'data-guide-anchor="tree.progress"'
+    assert_includes html, "data-guide-anchor-key=\"#{creative.id}\""
+    assert_includes html, "progress-toggle-checkbox"
+  end
+
   test "render_creative_tree_markdown includes children of origin for linked creatives" do
     user = users(:one)
 

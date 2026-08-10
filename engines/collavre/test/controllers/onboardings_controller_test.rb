@@ -19,6 +19,7 @@ module Collavre
       get onboarding_path, as: :json
       assert_response :success
       assert_equal "tree_node", response.parsed_body.fetch("current_step")
+      assert_equal session.root.id, response.parsed_body.fetch("anchor_key")
 
       get creatives_path
       assert_response :success
@@ -35,6 +36,8 @@ module Collavre
 
       assert_response :success
       assert_equal "progress", response.parsed_body.fetch("current_step")
+      assert_equal session.practice_creative_ids.first, response.parsed_body.fetch("anchor_key")
+      assert_equal creatives_path(id: session.root), response.parsed_body.fetch("navigation_path")
 
       post complete_onboarding_path, as: :json
 
@@ -57,6 +60,20 @@ module Collavre
       assert_equal 2, session.root.children.count
       assert user.onboarding_seeded_at?
       assert_nil user.onboarding_completed_at
+    end
+
+    test "reset enables workspace mode so the runner can be displayed" do
+      user = User.create!(
+        name: "Workspace disabled learner", email: "workspace-disabled-onboarding@example.com", password: "password",
+        creative_workspace_enabled: false
+      )
+      sign_in_as(user, password: "password")
+
+      post reset_onboarding_path
+
+      assert_redirected_to creatives_path
+      assert_predicate user.reload, :creative_workspace_enabled?
+      assert Onboarding::Session.for_user(user)
     end
 
     test "description editing advances when the inline form also submits unchanged progress" do

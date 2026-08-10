@@ -20,6 +20,7 @@ module Collavre
 
           session_id = SecureRandom.uuid
           root = Creative.create!(user: user, description: t(:root), progress: 0.0)
+          share_available_agent!(root)
           first = Creative.create!(user: user, parent: root, description: t(:progress_practice), progress: 0.0,
                                    data: { "onboarding" => { "session_id" => session_id } })
           second = Creative.create!(user: user, parent: root, description: t(:editor_practice), progress: 0.0,
@@ -49,6 +50,16 @@ module Collavre
 
       def existing_workspace?
         user.creatives.where(parent_id: nil).to_a.any? { |creative| !creative.inbox? }
+      end
+
+      def share_available_agent!(root)
+        agent = User.accessible_ai_agents_for(user).first
+        return unless agent
+
+        CreativeShare.find_or_create_by!(creative: root, user: agent) do |share|
+          share.shared_by = user
+          share.permission = :feedback
+        end
       end
 
       def t(key)

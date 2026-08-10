@@ -18,7 +18,11 @@ module Collavre
 
     def reset
       Onboarding::CompletionService.new(user: Current.user).call
-      Current.user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+      Current.user.update!(
+        creative_workspace_enabled: true,
+        onboarding_seeded_at: nil,
+        onboarding_completed_at: nil
+      )
       Onboarding::Seeder.new(user: Current.user, force: true).call
       redirect_to creatives_path
     end
@@ -34,6 +38,8 @@ module Collavre
         success: true,
         current_step: step&.key,
         anchor: step&.anchor,
+        anchor_key: session.anchor_key(step),
+        navigation_path: session.navigation_path(step),
         completion: step&.completion,
         complete: session.data["current_step"] == "complete",
         completed_steps: session.data.fetch("steps", {}).select { |_key, value| value["status"] == "completed" }.keys,

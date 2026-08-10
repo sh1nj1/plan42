@@ -16,6 +16,18 @@ module Collavre
         assert_equal session.root, Seeder.new(user: user).call.root
       end
 
+      test "shares the practice tree with an available AI agent" do
+        user = User.create!(name: "Learner with agent", email: "learner-with-agent@example.com", password: "password")
+        agent = User.create!(
+          name: "Helpful agent", email: "helpful-agent@example.com", password: "password",
+          llm_vendor: "openai", searchable: true
+        )
+
+        session = Seeder.new(user: user).call
+
+        assert_equal "feedback", CreativeShare.find_by!(creative: session.root, user: agent).permission
+      end
+
       test "resolves a practice creative to its scenario root" do
         user = User.create!(name: "Practice learner", email: "practice-learner@example.com", password: "password")
         seeded_session = Seeder.new(user: user).call

@@ -212,8 +212,6 @@ export default class extends Controller {
     if (node.progress !== undefined) {
       const progress = document.createElement('span')
       progress.className = 'creative-workspace-tree-progress'
-      progress.dataset.guideAnchor = 'tree.progress'
-      progress.dataset.guideAnchorKey = String(node.id)
       progress.textContent = `${Math.round(Number(node.progress) * 100)}%`
       row.appendChild(progress)
     }

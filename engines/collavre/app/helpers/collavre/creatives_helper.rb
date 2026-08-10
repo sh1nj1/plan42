@@ -129,7 +129,9 @@ module Collavre
           progress_toggle: true,
           creative_id: creative.id,
           current_progress: value,
-          new_progress: new_value
+          new_progress: new_value,
+          guide_anchor: "tree.progress",
+          guide_anchor_key: creative.id
         },
         title: tooltip
       ) do

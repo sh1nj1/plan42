@@ -41,6 +41,10 @@ export default class extends Controller {
     }
     if (!state.current_step) return
     this.currentStepValue = state.current_step
+    if (state.navigation_path && this.currentPath() !== state.navigation_path) {
+      window.Turbo?.visit(state.navigation_path) || (window.location.href = state.navigation_path)
+      return
+    }
     this.instructionTarget.textContent = state.instruction
     this.nextTarget.hidden = state.completion !== 'ui'
     this.finishTarget.hidden = true
@@ -48,12 +52,19 @@ export default class extends Controller {
       step.classList.toggle('is-current', step.dataset.stepKey === state.current_step)
       step.classList.toggle('is-complete', state.completed_steps.includes(step.dataset.stepKey))
     })
-    this.highlight(state.anchor)
+    this.highlight(state.anchor, state.anchor_key)
   }
 
-  highlight(anchor) {
+  currentPath() {
+    return `${window.location.pathname}${window.location.search}`
+  }
+
+  highlight(anchor, key) {
     document.querySelectorAll('.guide-anchor-highlight').forEach((el) => el.classList.remove('guide-anchor-highlight'))
-    const target = anchor && document.querySelector(`[data-guide-anchor="${anchor}"]`)
+    const anchors = anchor ? document.querySelectorAll(`[data-guide-anchor="${anchor}"]`) : []
+    const target = key == null
+      ? anchors[0]
+      : [...anchors].find((element) => element.dataset.guideAnchorKey === String(key)) || anchors[0]
     target?.classList.add('guide-anchor-highlight')
   }
 }
