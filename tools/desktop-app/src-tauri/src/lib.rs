@@ -203,6 +203,18 @@ fn normalized_proxy_config(
     }
 }
 
+/// Update only the proxy version tracked in local state when a new desktop
+/// bundle is installed. The port, registration state, and all Keychain-backed
+/// credentials remain untouched.
+fn migrate_proxy_config(data: &Path, version: String) -> Result<Option<ProxyConfig>, String> {
+    let Some(existing) = read_proxy_config(data) else {
+        return Ok(None);
+    };
+    let config = normalized_proxy_config(Some(existing), version, 0);
+    write_proxy_config(data, &config)?;
+    Ok(Some(config))
+}
+
 fn write_proxy_config(data: &Path, config: &ProxyConfig) -> Result<(), String> {
     let state_dir = proxy_state_dir(data);
     fs::create_dir_all(&state_dir)
@@ -824,9 +836,10 @@ fn apply_desktop_config(data: &Path) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        config_env_overrides, generate_proxy_key, normalized_proxy_config,
-        parse_bundled_proxy_manifest, ProxyConfig,
+        config_env_overrides, generate_proxy_key, migrate_proxy_config, normalized_proxy_config,
+        parse_bundled_proxy_manifest, read_proxy_config, write_proxy_config, ProxyConfig,
     };
+    use std::{env, fs, process};
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
@@ -946,6 +959,31 @@ mod tests {
         assert_eq!("0.2.0", config.version);
         assert!(config.registered);
     }
+
+    #[test]
+    fn startup_proxy_upgrade_persists_the_new_version() {
+        let data = env::temp_dir().join(format!("collavre-proxy-upgrade-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        write_proxy_config(
+            &data,
+            &ProxyConfig {
+                port: 34_567,
+                version: "0.1.0".to_string(),
+                registered: true,
+            },
+        )
+        .expect("write existing proxy configuration");
+
+        let upgraded = migrate_proxy_config(&data, "0.2.0".to_string())
+            .expect("migrate proxy configuration")
+            .expect("existing proxy configuration");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert_eq!(34_567, upgraded.port);
+        assert!(upgraded.registered);
+        assert_eq!("0.2.0", persisted.version);
+    }
 }
 
 pub fn run() {
@@ -988,14 +1026,19 @@ pub fn run() {
             app.state::<Sidecar>().0.lock().unwrap().replace(child);
 
             // A configured proxy means the user previously accepted its first
-            // run setup. Resume it opportunistically, but keep Collavre usable
-            // if Keychain access or the proxy itself fails; the setup wizard can
-            // surface the retry action and diagnostic log.
-            if read_proxy_config(&data).is_some() {
-                let _ = start_proxy(&handle, &data, &app.state::<ProxySidecar>());
-            }
-            let first_run_complete = read_proxy_config(&data)
-                .map(|config| config.registered)
+            // run setup. Migrate its expected bundled version before restarting
+            // it: otherwise an app update leaves the old version on disk and the
+            // restart is rejected forever. If migration or restart fails, open
+            // the setup recovery screen rather than silently navigating to home.
+            let first_run_complete = bundled_proxy_manifest(&handle)
+                .and_then(|manifest| migrate_proxy_config(&data, manifest.version))
+                .and_then(|config| match config {
+                    Some(config) => {
+                        start_proxy(&handle, &data, &app.state::<ProxySidecar>())?;
+                        Ok(config.registered)
+                    }
+                    None => Ok(false),
+                })
                 .unwrap_or(false);
 
             // Show the branded loading screen (dist/index.html) immediately so the
