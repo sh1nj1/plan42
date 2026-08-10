@@ -7,7 +7,7 @@ class AgentProvisioningArchiveTest < ActiveSupport::TestCase
     first = Collavre::AgentProvisioning::Archive.collavre_skill
     second = Collavre::AgentProvisioning::Archive.send(
       :build_from_directory,
-      Rails.root.join("skills/collavre")
+      Collavre::Engine.root.join("skills/collavre")
     )
 
     assert_equal first, second
@@ -15,6 +15,18 @@ class AgentProvisioningArchiveTest < ActiveSupport::TestCase
     assert_includes entries.keys, "SKILL.md"
     assert_includes entries.keys, "scripts/collavre"
     assert_includes entries.fetch("SKILL.md"), "Manage Collavre Creatives"
+  end
+
+  test "the repository skill copy matches the packaged skill" do
+    packaged = Collavre::Engine.root.join("skills/collavre")
+    repository = Rails.root.join("skills/collavre")
+
+    assert_equal(
+      skill_tree(packaged),
+      skill_tree(repository),
+      "skills/collavre and engines/collavre/skills/collavre have drifted. " \
+      "The engine copy is the one provisioned to agents — copy it over the repository copy."
+    )
   end
 
   test "engine gem packages the provisioning skill" do
@@ -69,6 +81,12 @@ class AgentProvisioningArchiveTest < ActiveSupport::TestCase
   end
 
   private
+
+  def skill_tree(root)
+    Pathname.glob(root.join("**/*")).select(&:file?).to_h do |path|
+      [ path.relative_path_from(root).to_s, path.read ]
+    end
+  end
 
   def archive_entries(bytes)
     gzip = Zlib::GzipReader.new(StringIO.new(bytes))
