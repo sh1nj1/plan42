@@ -19,7 +19,15 @@ module Collavre
       @step = STEPS.first unless STEPS.include?(@step)
       @user = Current.user
       @account_required = !Collavre::User.where(system_admin: true).exists?
-      return if @account_required || @user
+      return if @account_required
+
+      # Recovery is entered without a step after native setup fails. An
+      # authenticated owner must resume at installation rather than see the
+      # sign-in-only account panel.
+      if @user
+        @step = "install" if @step == "account"
+        return
+      end
 
       # A failed native registration leaves the proxy installed but incomplete.
       # Preserve the exact setup destination through login so the local owner

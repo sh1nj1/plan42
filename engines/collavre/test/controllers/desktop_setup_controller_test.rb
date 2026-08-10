@@ -155,6 +155,15 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to collavre.desktop_setup_path(step: :install)
   end
 
+  test "an authenticated administrator resumes recovery at installation" do
+    sign_in_as(users(:one), password: "password")
+
+    get collavre.desktop_setup_path
+
+    assert_response :success
+    assert_select "[data-controller='desktop-proxy-setup']"
+  end
+
   test "setup renders actual account controls and dynamic adapter statuses" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
     get collavre.desktop_setup_path(step: :account, locale: :en)
