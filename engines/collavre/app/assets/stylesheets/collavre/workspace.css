@@ -65,6 +65,7 @@ body.creative-workspace .creative-content {
     min-height: 0;
     padding: var(--space-2);
     overflow: auto;
+    overscroll-behavior-y: contain;
     background: transparent;
     border: 0;
 }
