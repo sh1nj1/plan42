@@ -61,6 +61,25 @@ module Collavre
       render json: { error: e.message }, status: :unprocessable_entity
     end
 
+    # Native startup checks this before trusting its persisted `registered`
+    # flag. It proves that the Rails gateway still exists at this proxy port
+    # and still holds the Keychain credentials without exposing them to the
+    # webview or requiring a browser session.
+    def registered
+      return unless require_desktop_mode!
+      return unless require_loopback!
+
+      gateway = Collavre::AgentGateway.find_by(
+        desktop_managed: true,
+        base_url: "http://127.0.0.1:#{proxy_port}"
+      )
+      return head :not_found unless gateway && gateway_credentials_match?(gateway)
+
+      head :no_content
+    rescue ActionController::ParameterMissing => e
+      render json: { error: e.message }, status: :unprocessable_entity
+    end
+
     private
 
     def proxy_port
@@ -73,6 +92,12 @@ module Collavre
 
     def detected_adapters
       Array(params[:adapters]).map(&:to_s).intersection(DesktopSetupController::PRESETS.keys)
+    end
+
+    def gateway_credentials_match?(gateway)
+      %i[admin_key completion_key identity_secret].all? do |attribute|
+        ActiveSupport::SecurityUtils.secure_compare(gateway.public_send(attribute), params.require(attribute))
+      end
     end
 
     def provision_preset!(owner, gateway, adapter)

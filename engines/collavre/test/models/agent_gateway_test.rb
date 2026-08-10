@@ -116,6 +116,19 @@ class AgentGatewayTest < ActiveSupport::TestCase
     assert_equal "http://127.0.0.1:45678", gateway.reload.base_url
   end
 
+  test "desktop-managed gateways remain in shared workspace mode" do
+    gateway = build_gateway(
+      base_url: "http://127.0.0.1:34567",
+      desktop_managed: true,
+      identity_secret: "i" * 32
+    )
+    gateway.save!
+
+    assert_not gateway.update(workspace_mode: :per_user)
+    assert_includes gateway.errors.details[:workspace_mode].pluck(:error), :desktop_shared_only
+    assert_predicate gateway.reload, :shared?
+  end
+
   test "switching to shared replaces per-user workspaces with an isolated shared workspace" do
     gateway = build_gateway(identity_secret: "s" * 32)
     gateway.save!

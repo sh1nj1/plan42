@@ -351,6 +351,35 @@ class DesktopSetupControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
   end
 
+  test "native startup confirms the current desktop gateway credentials" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: users(:one),
+      name: Collavre::DesktopSetupController::DESKTOP_GATEWAY_NAME,
+      base_url: "http://127.0.0.1:34567",
+      admin_key: "desktop-admin-key",
+      completion_key: "desktop-completion-key",
+      identity_secret: "i" * 48,
+      desktop_managed: true
+    )
+    params = {
+      proxy_port: 34_567,
+      admin_key: gateway.admin_key,
+      completion_key: gateway.completion_key,
+      identity_secret: gateway.identity_secret
+    }
+
+    post collavre.desktop_setup_gateway_registered_path, params: params, as: :json
+    assert_response :no_content
+
+    post collavre.desktop_setup_gateway_registered_path,
+         params: params.merge(completion_key: "replaced-key"), as: :json
+    assert_response :not_found
+
+    gateway.destroy!
+    post collavre.desktop_setup_gateway_registered_path, params: params, as: :json
+    assert_response :not_found
+  end
+
   test "first administrator creation rejects non-loopback requests" do
     Collavre::User.where(system_admin: true).update_all(system_admin: false)
 

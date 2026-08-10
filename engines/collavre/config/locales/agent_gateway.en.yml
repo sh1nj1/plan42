@@ -20,6 +20,8 @@ en:
               invalid: "must be an http(s) origin without credentials, query or fragment"
               unsafe: "must use HTTPS and cannot target a local, private, or reserved network address"
               immutable: "cannot be changed for a desktop-managed gateway"
+            workspace_mode:
+              desktop_shared_only: "must remain shared for a desktop-managed gateway"
             tenant_id:
               invalid: "may only contain letters, digits and . _ : @ / -"
             identity_secret:

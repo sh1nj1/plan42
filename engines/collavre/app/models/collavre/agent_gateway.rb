@@ -27,6 +27,7 @@ module Collavre
     validate :base_url_is_http
     validate :base_url_is_safe_for_owner
     validate :desktop_managed_base_url_is_immutable
+    validate :desktop_managed_gateway_uses_shared_workspace
     validate :identity_secret_is_usable
     after_update :reconcile_workspaces_after_gateway_change, if: :workspace_credentials_changed?
 
@@ -96,6 +97,14 @@ module Collavre
       return if @desktop_registration_update
 
       errors.add(:base_url, :immutable)
+    end
+
+    # The macOS bundle deliberately runs one shared local proxy. Per-user
+    # routing requires a worker and identity secret that desktop never starts.
+    def desktop_managed_gateway_uses_shared_workspace
+      return unless desktop_managed? && !shared?
+
+      errors.add(:workspace_mode, :desktop_shared_only)
     end
 
     def identity_secret_is_usable

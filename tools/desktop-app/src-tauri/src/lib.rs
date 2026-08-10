@@ -83,6 +83,14 @@ struct GatewayRegistration<'a> {
     adapters: &'a [String],
 }
 
+#[derive(Serialize)]
+struct GatewayRegistrationStatus<'a> {
+    proxy_port: u16,
+    admin_key: &'a str,
+    completion_key: &'a str,
+    identity_secret: &'a str,
+}
+
 /// Bind to port 0 to let the OS hand us a free port, then release it. There is a
 /// tiny TOCTOU window before the sidecar grabs it, acceptable for a loopback
 /// single-user app.
@@ -779,7 +787,7 @@ fn nvm_bin_paths(home: &Path) -> Vec<PathBuf> {
         .map(|entry| entry.path().join("bin"))
         .filter(|path| path.is_dir())
         .collect::<Vec<_>>();
-    paths.sort_by(|left, right| nvm_version_sort_key(right).cmp(&nvm_version_sort_key(left)));
+    paths.sort_by_key(|path| std::cmp::Reverse(nvm_version_sort_key(path)));
     if let Some(default) = nvm_default_bin_path(home, &paths) {
         paths.retain(|path| path != &default);
         paths.insert(0, default);
@@ -883,6 +891,61 @@ fn register_gateway(port: u16, registration: &GatewayRegistration<'_>) -> Result
                 .to_string(),
         )
     }
+}
+
+/// Confirm that the Rails record backing the locally healthy proxy still
+/// exists and has the current Keychain credentials. A removed desktop owner
+/// deletes that record, so the persisted flag alone is never enough to skip
+/// recovery setup on a later launch.
+fn registered_gateway_exists(
+    rails_port: u16,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+) -> bool {
+    if rails_port == 0 {
+        return false;
+    }
+    let body = match serde_json::to_vec(&GatewayRegistrationStatus {
+        proxy_port: config.port,
+        admin_key: &credentials.admin_key,
+        completion_key: &credentials.completion_key,
+        identity_secret: &credentials.identity_secret,
+    }) {
+        Ok(body) => body,
+        Err(_) => return false,
+    };
+    let address = format!("127.0.0.1:{rails_port}");
+    let Ok(mut stream) = TcpStream::connect(&address) else {
+        return false;
+    };
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+    let request = format!(
+        "POST /desktop/setup/gateway-registered HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    if stream
+        .write_all(request.as_bytes())
+        .and_then(|_| stream.write_all(&body))
+        .is_err()
+    {
+        return false;
+    }
+    let mut response = String::new();
+    stream.read_to_string(&mut response).is_ok()
+        && (response.starts_with("HTTP/1.1 204") || response.starts_with("HTTP/1.0 204"))
+}
+
+fn invalidate_proxy_registration_when_gateway_is_missing(
+    data: &Path,
+    config: &mut ProxyConfig,
+    gateway_exists: bool,
+) -> Result<(), String> {
+    if config.registered && !gateway_exists {
+        config.registered = false;
+        write_proxy_config(data, config)?;
+    }
+    Ok(())
 }
 
 /// Ask Rails to validate the signed, short-lived setup consent grant before
@@ -1098,10 +1161,11 @@ mod tests {
     use super::{
         append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
         generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
-        managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
-        parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
-        replace_occupied_proxy_port, wait_until_proxy_healthy, write_proxy_config, ManagedProxy,
-        ProxyConfig, ProxyCredentials, ProxySidecar,
+        invalidate_proxy_registration_when_gateway_is_missing, managed_proxy_runs_on_port,
+        migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
+        read_proxy_config, reap_orphan_proxy, replace_occupied_proxy_port,
+        wait_until_proxy_healthy, write_proxy_config, ManagedProxy, ProxyConfig, ProxyCredentials,
+        ProxySidecar,
     };
     use std::{
         env,
@@ -1457,6 +1521,27 @@ mod tests {
         assert_eq!(34_567, persisted.port);
         assert_eq!("0.1.0", persisted.version);
     }
+
+    #[test]
+    fn missing_rails_gateway_requires_proxy_reregistration() {
+        let data =
+            env::temp_dir().join(format!("collavre-proxy-gateway-missing-{}", process::id()));
+        let _ = fs::remove_dir_all(&data);
+        let mut config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: true,
+        };
+        write_proxy_config(&data, &config).expect("write registered proxy configuration");
+
+        invalidate_proxy_registration_when_gateway_is_missing(&data, &mut config, false)
+            .expect("invalidate missing gateway registration");
+        let persisted = read_proxy_config(&data).expect("persisted proxy configuration");
+        let _ = fs::remove_dir_all(&data);
+
+        assert!(!config.registered);
+        assert!(!persisted.registered);
+    }
 }
 
 pub fn run() {
@@ -1524,9 +1609,22 @@ pub fn run() {
                     .and_then(|config| match config {
                         Some(_) => {
                             start_proxy(&handle, &data, &handle.state::<ProxySidecar>())?;
-                            Ok(read_proxy_config(&data)
-                                .map(|config| config.registered)
-                                .unwrap_or(false))
+                            let mut config = read_proxy_config(&data).ok_or_else(|| {
+                                "Desktop proxy configuration is missing.".to_string()
+                            })?;
+                            if config.registered {
+                                let credentials = proxy_credentials()?;
+                                let gateway_exists =
+                                    registered_gateway_exists(port, &config, &credentials);
+                                invalidate_proxy_registration_when_gateway_is_missing(
+                                    &data,
+                                    &mut config,
+                                    gateway_exists,
+                                )?;
+                                Ok(gateway_exists)
+                            } else {
+                                Ok(false)
+                            }
                         }
                         None => Ok(false),
                     })
