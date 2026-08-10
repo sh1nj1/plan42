@@ -410,6 +410,25 @@ fn reap_orphan_proxy(data: &Path) {
     let _ = fs::remove_file(proxy_pidfile_path(data));
 }
 
+fn configure_desktop_proxy_environment(
+    command: &mut Command,
+    config: &ProxyConfig,
+    credentials: &ProxyCredentials,
+    state: &Path,
+) {
+    command
+        .env("HOST", "127.0.0.1")
+        .env("PORT", config.port.to_string())
+        .env("API_KEYS", &credentials.completion_key)
+        .env("AUTH_ADMIN_KEYS", &credentials.admin_key)
+        .env("PATH", desktop_cli_path())
+        .env("PROVISION_STATE_DIR", state.join("provision-state"))
+        .env_remove("USER_WORKER_MODE")
+        .env_remove("USER_WORKER_PROVISIONER_ENDPOINT")
+        .env_remove("USER_API_KEYS")
+        .env_remove("USER_IDENTITY_HMAC_SECRET");
+}
+
 fn spawn_proxy(
     app: &tauri::AppHandle,
     data: &Path,
@@ -433,19 +452,15 @@ fn spawn_proxy(
     let log_dir = data.join("log");
     fs::create_dir_all(&log_dir).ok();
     let mut command = Command::new(node);
-    command
-        .arg(entrypoint)
-        .current_dir(&state)
-        .env("HOST", "127.0.0.1")
-        .env("PORT", config.port.to_string())
-        .env("API_KEYS", credentials.completion_key)
-        .env("AUTH_ADMIN_KEYS", credentials.admin_key)
-        .env("USER_IDENTITY_HMAC_SECRET", credentials.identity_secret)
-        .env("PATH", desktop_cli_path())
-        .env("PROVISION_STATE_DIR", state.join("provision-state"));
+    command.arg(entrypoint).current_dir(&state);
+    configure_desktop_proxy_environment(&mut command, config, &credentials, &state);
 
     // The proxy inherits HOME and receives an expanded executable-only PATH:
     // the user's already logged-in Claude/Codex CLIs own their authentication.
+    // Desktop runs one macOS user's shared gateway. cli-openai-proxy reserves
+    // signed identity routing for its isolated per-user worker mode, which is
+    // not available on macOS; passing that secret here prevents the standalone
+    // gateway from starting at all.
     // The proxy-only keys above are captured and removed by cli-openai-proxy
     // before it starts a CLI child.
     if let Ok(log) = File::create(log_dir.join("desktop-proxy.log")) {
@@ -1081,13 +1096,22 @@ fn apply_desktop_config(data: &Path) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        append_unique_paths, config_env_overrides, generate_proxy_key,
-        invalidate_proxy_registration_after_key_regeneration, managed_proxy_runs_on_port,
-        migrate_proxy_config, normalized_proxy_config, nvm_bin_paths, parse_bundled_proxy_manifest,
-        read_proxy_config, reap_orphan_proxy, replace_occupied_proxy_port,
-        wait_until_proxy_healthy, write_proxy_config, ManagedProxy, ProxyConfig, ProxySidecar,
+        append_unique_paths, config_env_overrides, configure_desktop_proxy_environment,
+        generate_proxy_key, invalidate_proxy_registration_after_key_regeneration,
+        managed_proxy_runs_on_port, migrate_proxy_config, normalized_proxy_config, nvm_bin_paths,
+        parse_bundled_proxy_manifest, read_proxy_config, reap_orphan_proxy,
+        replace_occupied_proxy_port, wait_until_proxy_healthy, write_proxy_config, ManagedProxy,
+        ProxyConfig, ProxyCredentials, ProxySidecar,
     };
-    use std::{env, fs, path::PathBuf, process, sync::Mutex, time::Duration};
+    use std::{
+        env,
+        ffi::{OsStr, OsString},
+        fs,
+        path::PathBuf,
+        process,
+        sync::Mutex,
+        time::Duration,
+    };
 
     fn pairs(json: &str) -> Vec<(&'static str, String)> {
         config_env_overrides(json)
@@ -1189,6 +1213,49 @@ mod tests {
             .all(|character| character.is_ascii_alphanumeric()
                 || character == '_'
                 || character == '-'));
+    }
+
+    #[test]
+    fn desktop_proxy_uses_shared_key_mode_without_worker_identity_environment() {
+        let config = ProxyConfig {
+            port: 34_567,
+            version: "0.1.0".to_string(),
+            registered: false,
+        };
+        let credentials = ProxyCredentials {
+            admin_key: "admin-key".to_string(),
+            completion_key: "completion-key".to_string(),
+            identity_secret: "identity-secret".to_string(),
+            regenerated: false,
+        };
+        let mut command = process::Command::new("true");
+        configure_desktop_proxy_environment(
+            &mut command,
+            &config,
+            &credentials,
+            PathBuf::from("/tmp/proxy").as_path(),
+        );
+
+        assert_eq!(
+            Some(OsString::from("completion-key")),
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new("API_KEYS"))
+                .and_then(|(_, value)| value.map(OsStr::to_os_string))
+        );
+        for key in [
+            "USER_WORKER_MODE",
+            "USER_WORKER_PROVISIONER_ENDPOINT",
+            "USER_API_KEYS",
+            "USER_IDENTITY_HMAC_SECRET",
+        ] {
+            assert!(matches!(
+                command
+                    .get_envs()
+                    .find(|(name, _)| *name == OsStr::new(key)),
+                Some((_, None))
+            ));
+        }
     }
 
     #[test]
